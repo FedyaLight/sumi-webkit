@@ -70,12 +70,9 @@ private struct ShortcutSidebarLiveRowContent: View {
     let onRemove: () -> Void
 
     @EnvironmentObject private var browserManager: BrowserManager
-    @EnvironmentObject private var splitManager: SplitViewManager
     @Environment(BrowserWindowState.self) private var windowState
 
     var body: some View {
-        let isInVisibleSplit = splitManager.isTabVisibleInSplit(liveTab.id, in: windowState.id)
-
         ShortcutSidebarRowChrome(
             pin: pin,
             liveTab: liveTab,
@@ -84,8 +81,6 @@ private struct ShortcutSidebarLiveRowContent: View {
                 for: pin,
                 in: windowState
             ),
-            showsSplitBadge: isInVisibleSplit,
-            splitBadgeIsSelected: splitManager.isTabActiveInSplit(liveTab.id, in: windowState.id),
             accessibilityID: accessibilityID,
             contextMenuEntries: contextMenuEntries,
             action: action,
@@ -125,8 +120,6 @@ private struct ShortcutSidebarStoredRowContent: View {
                 for: pin,
                 in: windowState
             ),
-            showsSplitBadge: false,
-            splitBadgeIsSelected: false,
             accessibilityID: accessibilityID,
             contextMenuEntries: contextMenuEntries,
             action: action,
@@ -146,8 +139,6 @@ private struct ShortcutSidebarRowChrome: View {
     let liveTab: Tab?
     let resolvedTitle: String
     let runtimeAffordance: SumiLauncherRuntimeAffordanceState
-    let showsSplitBadge: Bool
-    let splitBadgeIsSelected: Bool
     var accessibilityID: String? = nil
     var contextMenuEntries: (@escaping () -> Void) -> [SidebarContextMenuEntry] = { _ in [] }
     let action: () -> Void
@@ -239,17 +230,6 @@ private struct ShortcutSidebarRowChrome: View {
                 .padding(.trailing, SidebarRowLayout.trailingInset)
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .overlay(alignment: .bottomTrailing) {
-            if showsSplitBadge {
-                Image(systemName: "rectangle.split.2x1")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(splitBadgeIsSelected ? Color.accentColor : tokens.secondaryText)
-                    .padding(4)
-                    .background(tokens.fieldBackground, in: Circle())
-                    .padding(.trailing, 8)
-                    .padding(.bottom, 6)
-            }
-        }
         // Expose the row container itself so the launcher keeps the same source identity
         // when runtime drift replaces the leading favicon with the reset control.
         .accessibilityElement(children: .contain)

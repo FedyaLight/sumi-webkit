@@ -880,20 +880,13 @@ private struct PinnedSplitPlaceholderTile: View {
         PinnedTileVisual(
             tabIcon: resolvedFavicon,
             chromeTemplateSystemImageName: resolvedChromeTemplateSystemImageName,
-            presentationState: isSelected ? .visuallySelected : .launcherOnly,
+            presentationState: isSelected ? .visuallySelected : .liveBackgrounded,
             isHovered: displayIsHovered,
             isLoading: false,
-            faviconOpacity: 0.25,
+            showsSplitGroupOutline: true,
+            faviconOpacity: 1,
             configuration: configuration
         )
-        .overlay {
-            Image(systemName: "rectangle.split.2x1")
-                .font(.system(size: configuration.faviconHeight * 0.58, weight: .bold))
-                .symbolRenderingMode(.monochrome)
-                .foregroundStyle(tokens.primaryText.opacity(0.82))
-                .frame(width: configuration.faviconHeight, height: configuration.faviconHeight)
-                .background(tokens.fieldBackground.opacity(0.58), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-        }
         .frame(maxWidth: .infinity)
         .frame(height: configuration.height)
         .frame(minWidth: configuration.minWidth)
@@ -1071,6 +1064,7 @@ private struct LivePinnedTileContent: View {
             accessibilityID: accessibilityID,
             isAppKitInteractionEnabled: isAppKitInteractionEnabled,
             showsUnloadIndicator: false,
+            showsSplitGroupOutline: essentialRuntimeState?.showsSplitProxyOutline == true,
             supportsMiddleClickUnload: true,
             contextMenuEntries: makeEssentialsContextMenuEntries(
                 showsCloseCurrentPage: showsCloseAction,
@@ -1088,19 +1082,6 @@ private struct LivePinnedTileContent: View {
             action: onActivate,
             onUnload: onUnload
         )
-        .overlay(alignment: .bottomTrailing) {
-            if essentialRuntimeState?.showsSplitProxyBadge == true {
-                Image(systemName: "rectangle.split.2x1")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(
-                        essentialRuntimeState?.isSelected == true ? Color.accentColor : Color.secondary
-                    )
-                    .padding(4)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .padding(6)
-                    .allowsHitTesting(false)
-            }
-        }
     }
 
     private static func chromeTemplateSystemImageName(for liveTab: Tab) -> String? {
@@ -1172,6 +1153,7 @@ private struct StoredPinnedTileContent: View {
             accessibilityID: accessibilityID,
             isAppKitInteractionEnabled: isAppKitInteractionEnabled,
             showsUnloadIndicator: false,
+            showsSplitGroupOutline: essentialRuntimeState?.showsSplitProxyOutline == true,
             supportsMiddleClickUnload: true,
             contextMenuEntries: makeEssentialsContextMenuEntries(
                 showsCloseCurrentPage: showsCloseAction,
@@ -1196,19 +1178,6 @@ private struct StoredPinnedTileContent: View {
             loadedStoredFaviconURL = nil
             loadedStoredFavicon = nil
             faviconCacheRefreshID = UUID()
-        }
-        .overlay(alignment: .bottomTrailing) {
-            if essentialRuntimeState?.showsSplitProxyBadge == true {
-                Image(systemName: "rectangle.split.2x1")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(
-                        essentialRuntimeState?.isSelected == true ? Color.accentColor : Color.secondary
-                    )
-                    .padding(4)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .padding(6)
-                    .allowsHitTesting(false)
-            }
         }
     }
 

@@ -12,7 +12,7 @@ enum SumiEssentialRuntimeState {
     case splitProxyBackgrounded
     case splitProxySelected
 
-    var showsSplitProxyBadge: Bool {
+    var showsSplitProxyOutline: Bool {
         switch self {
         case .splitProxyBackgrounded, .splitProxySelected:
             return true

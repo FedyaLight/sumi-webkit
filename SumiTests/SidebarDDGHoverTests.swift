@@ -315,6 +315,68 @@ final class SidebarDDGHoverTests: XCTestCase {
         XCTAssertTrue(source.contains("view.setHoverTrackingEnabled(isEnabled)"))
     }
 
+    func testSplitGroupHoverBackgroundIsRowScoped() throws {
+        let source = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SplitGroupSidebarRow.swift")
+        let segmentStart = try XCTUnwrap(source.range(of: "private struct SplitGroupSegment"))
+        let actionButtonStart = try XCTUnwrap(
+            source.range(
+                of: "private func segmentActionButton",
+                range: segmentStart.lowerBound..<source.endIndex
+            )
+        )
+        let rowSource = String(source[..<segmentStart.lowerBound])
+        let segmentContentSource = String(source[segmentStart.lowerBound..<actionButtonStart.lowerBound])
+
+        XCTAssertTrue(rowSource.contains(".fill(rowBackground)"))
+        XCTAssertTrue(rowSource.contains(".sidebarDDGHover($isRowHovered, isEnabled: isRowHoverTrackingEnabled)"))
+        XCTAssertTrue(rowSource.contains("private var rowBackground: Color"))
+        XCTAssertTrue(rowSource.contains("private var showsRowHoverBackground: Bool"))
+        XCTAssertTrue(rowSource.contains("private var isRowHoverTrackingEnabled: Bool"))
+        XCTAssertTrue(rowSource.contains("private var isFocusedGroup: Bool"))
+        XCTAssertTrue(rowSource.contains("return Color.clear"))
+        XCTAssertFalse(rowSource.contains("fieldBackground"))
+
+        XCTAssertFalse(segmentContentSource.contains(".background("))
+        XCTAssertFalse(segmentContentSource.contains(".fill("))
+        XCTAssertFalse(segmentContentSource.contains("sidebarRowHover"))
+        XCTAssertFalse(segmentContentSource.contains("sidebarRowActive"))
+        XCTAssertFalse(segmentContentSource.contains("displayIsHovering"))
+        XCTAssertTrue(segmentContentSource.contains("showsActionControls"))
+    }
+
+    func testEssentialSplitProxyUsesDashedOutlineInsteadOfCornerBadge() throws {
+        let pinnedGridSource = try Self.source(named: "Sumi/Components/Sidebar/PinnedButtons/PinnedGrid.swift")
+        let pinnedTileSource = try Self.source(named: "Sumi/Components/Sidebar/PinnedButtons/PinnedTabView.swift")
+        let shortcutPinSource = try Self.source(named: "Sumi/Models/Tab/ShortcutPin.swift")
+        let shortcutRowSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/ShortcutSidebarRow.swift")
+        let transitionSnapshotSource = try Self.source(named: "Navigation/Sidebar/SpacesSideBarView.swift")
+
+        XCTAssertFalse(pinnedGridSource.contains("EssentialSplitBadge"))
+        XCTAssertFalse(pinnedGridSource.contains("showsSplitProxyBadge"))
+        XCTAssertFalse(pinnedGridSource.contains("rectangle.split.2x1"))
+        XCTAssertTrue(pinnedGridSource.contains("showsSplitGroupOutline: true"))
+        XCTAssertTrue(pinnedGridSource.contains("showsSplitGroupOutline: essentialRuntimeState?.showsSplitProxyOutline == true"))
+
+        XCTAssertTrue(shortcutPinSource.contains("showsSplitProxyOutline"))
+        XCTAssertFalse(shortcutPinSource.contains("showsSplitProxyBadge"))
+
+        XCTAssertFalse(shortcutRowSource.contains("showsSplitBadge"))
+        XCTAssertFalse(shortcutRowSource.contains("splitBadge"))
+        XCTAssertFalse(shortcutRowSource.contains("rectangle.split.2x1"))
+
+        XCTAssertFalse(transitionSnapshotSource.contains("showsSplitProxyBadge"))
+        XCTAssertFalse(transitionSnapshotSource.contains("showsSplitBadge"))
+        XCTAssertFalse(transitionSnapshotSource.contains("splitBadge"))
+        XCTAssertFalse(transitionSnapshotSource.contains("rectangle.split.2x1"))
+        XCTAssertTrue(transitionSnapshotSource.contains("showsSplitOutline"))
+        XCTAssertTrue(transitionSnapshotSource.contains("PinnedTileSplitGroupOutlineMask"))
+
+        XCTAssertTrue(pinnedTileSource.contains("PinnedTileSplitGroupOutlineMask"))
+        XCTAssertTrue(pinnedTileSource.contains("dash: [dash, gap]"))
+        XCTAssertTrue(pinnedTileSource.contains("x: size.width * 0.3"))
+        XCTAssertTrue(pinnedTileSource.contains("x: size.width * 0.7"))
+    }
+
     func testMigratedSidebarHoverDoesNotUseGlobalHoverOrDelayedHoverPatterns() throws {
         let sourceByPath = try Self.sidebarHoverSourceByPath()
         let sidebarBridgeSource = try XCTUnwrap(sourceByPath["Sumi/Components/Sidebar/SidebarDDGHover.swift"])
