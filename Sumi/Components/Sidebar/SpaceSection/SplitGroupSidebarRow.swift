@@ -108,15 +108,14 @@ struct SplitGroupSidebarRow: View {
             }
         }
         .frame(height: SidebarRowLayout.rowHeight)
-        .frame(minWidth: 0, maxWidth: .infinity)
         .padding(.horizontal, 2)
-        .background(background)
-        .clipShape(RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(8), style: .continuous))
-        .overlay {
+        .frame(minWidth: 0, maxWidth: .infinity)
+        .background(
             RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(8), style: .continuous)
-                .stroke(tokens.separator.opacity(displayIsHovering ? 0.9 : 0.45), lineWidth: 0.5)
-        }
-        .sidebarDDGHover($isRowHovered, isEnabled: isAppKitInteractionEnabled)
+                .fill(rowBackground)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(8), style: .continuous))
+        .sidebarDDGHover($isRowHovered, isEnabled: isRowHoverTrackingEnabled)
         .accessibilityIdentifier("space-split-group-\(group.id.uuidString)")
     }
 
@@ -130,21 +129,31 @@ struct SplitGroupSidebarRow: View {
         }
     }
 
-    private var background: Color {
-        if let currentTabId, group.contains(currentTabId) {
+    private var rowBackground: Color {
+        if isFocusedGroup {
             return tokens.sidebarRowActive
         }
-        if displayIsHovering {
+        if showsRowHoverBackground {
             return tokens.sidebarRowHover
         }
-        return tokens.fieldBackground.opacity(0.65)
+        return Color.clear
     }
 
-    private var displayIsHovering: Bool {
-        SidebarHoverChrome.displayHover(
+    private var showsRowHoverBackground: Bool {
+        guard !isFocusedGroup else { return false }
+        return SidebarHoverChrome.displayHover(
             isRowHovered,
             freezesHoverState: windowState.sidebarInteractionState.freezesSidebarHoverState
         )
+    }
+
+    private var isRowHoverTrackingEnabled: Bool {
+        !isFocusedGroup && isAppKitInteractionEnabled
+    }
+
+    private var isFocusedGroup: Bool {
+        guard let currentTabId else { return false }
+        return group.contains(currentTabId)
     }
 
     private var currentTabId: UUID? {
@@ -227,7 +236,7 @@ private struct SplitGroupSegment: View {
     let onActivate: () -> Void
     let onSegmentAction: () -> Void
 
-    @State private var isHovered = false
+    @State private var isSegmentHoveredForActions = false
     @State private var isActionHovered = false
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
@@ -241,18 +250,21 @@ private struct SplitGroupSegment: View {
                     title: item.title,
                     font: .systemFont(ofSize: 12, weight: isActive ? .semibold : .regular),
                     textColor: tokens.primaryText,
-                    trailingFadePadding: displayIsHovering ? 2 : 0,
+                    trailingFadePadding: showsActionControls ? 2 : 0,
                     isLoading: item.tab?.isLoading ?? false
                 )
                 .lineLimit(1)
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             }
             .padding(.leading, 7)
-            .padding(.trailing, displayIsHovering && segmentAction != nil ? 28 : 7)
+            .padding(.trailing, showsActionControls ? 28 : 7)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
             .onTapGesture(perform: onActivate)
-            .sidebarDDGHover($isHovered, isEnabled: isAppKitInteractionEnabled)
+            .sidebarDDGHover(
+                $isSegmentHoveredForActions,
+                isEnabled: segmentAction != nil && isAppKitInteractionEnabled
+            )
             .sidebarAppKitContextMenu(
                 isInteractionEnabled: (item.tab != nil || dragSourceConfiguration != nil) && isAppKitInteractionEnabled,
                 dragSource: resolvedDragSourceConfiguration,
@@ -266,10 +278,7 @@ private struct SplitGroupSegment: View {
                     .padding(.trailing, 4)
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(6), style: .continuous)
-                .fill(isActive ? tokens.sidebarRowActive.opacity(0.9) : (displayIsHovering ? tokens.sidebarRowHover : Color.clear))
-        )
+        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .task(id: item.tab?.url) {
             await item.tab?.fetchFaviconForVisiblePresentation()
         }
@@ -317,9 +326,10 @@ private struct SplitGroupSegment: View {
         }
     }
 
-    private var displayIsHovering: Bool {
-        SidebarHoverChrome.displayHover(
-            isHovered,
+    private var showsActionControls: Bool {
+        guard segmentAction != nil else { return false }
+        return SidebarHoverChrome.displayHover(
+            isSegmentHoveredForActions,
             freezesHoverState: windowState.sidebarInteractionState.freezesSidebarHoverState
         )
     }
@@ -342,17 +352,17 @@ private struct SplitGroupSegment: View {
         }
         .buttonStyle(
             SidebarZenActionButtonStyle(
-                isEnabled: displayIsHovering && !windowState.sidebarInteractionState.freezesSidebarHoverState
+                isEnabled: showsActionControls && !windowState.sidebarInteractionState.freezesSidebarHoverState
             )
         )
-        .opacity(displayIsHovering ? 1 : 0)
-        .sidebarZenActionOpacity(displayIsHovering)
-        .allowsHitTesting(displayIsHovering && !windowState.sidebarInteractionState.freezesSidebarHoverState)
-        .sidebarDDGHover($isActionHovered, isEnabled: displayIsHovering && isAppKitInteractionEnabled)
+        .opacity(showsActionControls ? 1 : 0)
+        .sidebarZenActionOpacity(showsActionControls)
+        .allowsHitTesting(showsActionControls && !windowState.sidebarInteractionState.freezesSidebarHoverState)
+        .sidebarDDGHover($isActionHovered, isEnabled: showsActionControls && isAppKitInteractionEnabled)
         .accessibilityIdentifier("\(action.accessibilityPrefix)-\(item.id.uuidString)")
         .help(action.help)
         .sidebarAppKitPrimaryAction(
-            isEnabled: displayIsHovering && !windowState.sidebarInteractionState.freezesSidebarHoverState,
+            isEnabled: showsActionControls && !windowState.sidebarInteractionState.freezesSidebarHoverState,
             isInteractionEnabled: isAppKitInteractionEnabled,
             action: onSegmentAction
         )

@@ -27,6 +27,7 @@ struct PinnedTabView: View {
     var accessibilityID: String? = nil
     var isAppKitInteractionEnabled: Bool = true
     var showsUnloadIndicator: Bool = false
+    var showsSplitGroupOutline: Bool = false
     var supportsMiddleClickUnload: Bool = false
     var contextMenuEntries: [SidebarContextMenuEntry] = []
     var action: () -> Void
@@ -49,6 +50,7 @@ struct PinnedTabView: View {
                 presentationState: presentationState,
                 isHovered: displayIsHovered,
                 isLoading: liveTab?.isLoading ?? false,
+                showsSplitGroupOutline: showsSplitGroupOutline,
                 configuration: pinnedTabsConfiguration
             )
 
@@ -219,6 +221,7 @@ struct PinnedTileVisual: View {
     var presentationState: ShortcutPresentationState
     var isHovered: Bool = false
     var isLoading: Bool = false
+    var showsSplitGroupOutline: Bool = false
     var faviconOpacity: Double = 1
     var configuration: PinnedTabsConfiguration? = nil
 
@@ -257,7 +260,20 @@ struct PinnedTileVisual: View {
                 Spacer()
             }
 
-            if presentationState.isSelected {
+            if showsSplitGroupOutline {
+                splitGroupOutlineOverlay(
+                    corner: cornerRadius,
+                    thickness: max(1.25, pinnedTabsConfiguration.strokeWidth * 0.7),
+                    scale: faviconScale,
+                    blur: faviconBlur
+                )
+                .conditionally(if: isLoading && !reduceMotion) { view in
+                    view.mask {
+                        PinnedTileLoadingAlphaWaveMask()
+                    }
+                }
+                .allowsHitTesting(false)
+            } else if presentationState.isSelected {
                 faviconStrokeOverlay(
                     corner: cornerRadius,
                     thickness: pinnedTabsConfiguration.strokeWidth,
@@ -396,6 +412,82 @@ struct PinnedTileVisual: View {
                 )
             }
         }
+    }
+
+    private func splitGroupOutlineOverlay(
+        corner: CGFloat,
+        thickness: CGFloat,
+        scale: CGFloat,
+        blur: CGFloat
+    ) -> some View {
+        GeometryReader { proxy in
+            let size = proxy.size
+            let outlineMask = PinnedTileSplitGroupOutlineMask(
+                corner: corner,
+                thickness: thickness
+            )
+
+            strokeFaviconSource(
+                size: size,
+                scale: scale,
+                blur: blur,
+                ringMask: outlineMask
+            )
+        }
+    }
+}
+
+struct PinnedTileSplitGroupOutlineMask: View {
+    let corner: CGFloat
+    let thickness: CGFloat
+
+    var body: some View {
+        GeometryReader { proxy in
+            let size = proxy.size
+            let dash = max(3.8, size.height * 0.1)
+            let gap = max(3.4, size.height * 0.085)
+            let strokeStyle = StrokeStyle(
+                lineWidth: thickness,
+                lineCap: .round,
+                lineJoin: .round,
+                dash: [dash, gap]
+            )
+            let verticalTop = max(size.height * 0.24, thickness * 4)
+            let verticalBottom = min(size.height * 0.76, size.height - thickness * 4)
+
+            ZStack {
+                RoundedRectangle(cornerRadius: max(0, corner - thickness / 2), style: .continuous)
+                    .inset(by: thickness / 2)
+                    .stroke(Color.white, style: strokeStyle)
+
+                verticalRule(
+                    x: size.width * 0.3,
+                    top: verticalTop,
+                    bottom: verticalBottom,
+                    style: strokeStyle
+                )
+
+                verticalRule(
+                    x: size.width * 0.7,
+                    top: verticalTop,
+                    bottom: verticalBottom,
+                    style: strokeStyle
+                )
+            }
+        }
+    }
+
+    private func verticalRule(
+        x: CGFloat,
+        top: CGFloat,
+        bottom: CGFloat,
+        style: StrokeStyle
+    ) -> some View {
+        Path { path in
+            path.move(to: CGPoint(x: x, y: top))
+            path.addLine(to: CGPoint(x: x, y: bottom))
+        }
+        .stroke(Color.white, style: style)
     }
 }
 
