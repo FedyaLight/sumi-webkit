@@ -13,14 +13,6 @@ enum SpaceViewRenderMode {
         self == .interactive
     }
 
-    var debugDescription: String {
-        switch self {
-        case .interactive:
-            return "interactive"
-        case .transitionSnapshot:
-            return "transitionSnapshot"
-        }
-    }
 }
 
 enum RegularTabRenderedItem: Hashable {

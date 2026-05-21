@@ -15,7 +15,4 @@ extension NSApplication {
         return event.keyCode == 36 || event.keyCode == 76
     }
 
-    var sumi_findIsReturnOrEnterPressed: Bool {
-        sumi_chromeIsReturnOrEnterPressed
-    }
 }

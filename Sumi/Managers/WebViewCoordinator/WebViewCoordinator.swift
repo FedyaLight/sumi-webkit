@@ -41,8 +41,7 @@ enum WebViewSyncLoadPolicy {
 enum VisibleTabPreparationPlan {
     static func visibleTabIDs(
         currentTabId: UUID?,
-        splitTabIds: [UUID],
-        isPreviewActive _: Bool
+        splitTabIds: [UUID]
     ) -> [UUID] {
         guard let currentTabId else { return [] }
 
@@ -50,8 +49,10 @@ enum VisibleTabPreparationPlan {
             return [currentTabId]
         }
 
+        var seenIDs = Set<UUID>()
         var orderedIDs: [UUID] = []
-        for tabId in splitTabIds where orderedIDs.contains(tabId) == false {
+        for tabId in splitTabIds {
+            guard seenIDs.insert(tabId).inserted else { continue }
             orderedIDs.append(tabId)
         }
         return orderedIDs.isEmpty ? [currentTabId] : orderedIDs
@@ -62,7 +63,6 @@ enum VisibleTabPreparationPlan {
 final class SumiWebViewContainerView: NSView {
     let tabID: UUID
     let webView: WKWebView
-    weak var tab: Tab?
 
     private var viewportCornerRadius: CGFloat = 0
     private var preservesDisplayedContentOnNextRemoval = false
@@ -70,7 +70,6 @@ final class SumiWebViewContainerView: NSView {
     override var constraints: [NSLayoutConstraint] { [] }
 
     init(tab: Tab, webView: WKWebView) {
-        self.tab = tab
         self.tabID = tab.id
         self.webView = webView
         super.init(frame: .zero)
@@ -1745,8 +1744,7 @@ class WebViewCoordinator {
     ) -> [UUID] {
         VisibleTabPreparationPlan.visibleTabIDs(
             currentTabId: browserManager.currentTab(for: windowState)?.id,
-            splitTabIds: browserManager.splitManager.visibleTabIds(for: windowState.id),
-            isPreviewActive: browserManager.splitManager.isPreviewActive(for: windowState.id)
+            splitTabIds: browserManager.splitManager.visibleTabIds(for: windowState.id)
         ).filter { tabId in
             guard let tab = resolveTab(for: tabId, in: windowState, browserManager: browserManager) else {
                 return false

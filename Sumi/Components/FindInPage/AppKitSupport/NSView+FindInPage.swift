@@ -52,23 +52,4 @@ extension NSView {
         window.makeFirstResponder(self)
     }
 
-    func sumi_findVisibleRectClampedToBounds() -> NSRect {
-        sumi_chromeVisibleRectClampedToBounds()
-    }
-
-    func sumi_findWithMouseLocationInViewCoordinates<T>(_ point: NSPoint? = nil, body: (NSPoint) -> T?) -> T? {
-        sumi_chromeWithMouseLocationInViewCoordinates(point, body: body)
-    }
-
-    func sumi_findMouseLocationInsideBounds(_ point: NSPoint? = nil) -> NSPoint? {
-        sumi_chromeMouseLocationInsideBounds(point)
-    }
-
-    func sumi_findIsMouseLocationInsideBounds(_ point: NSPoint? = nil) -> Bool {
-        sumi_chromeIsMouseLocationInsideBounds(point)
-    }
-
-    func sumi_findMakeMeFirstResponder() {
-        sumi_chromeMakeMeFirstResponder()
-    }
 }

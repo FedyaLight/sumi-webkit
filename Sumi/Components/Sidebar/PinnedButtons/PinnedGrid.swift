@@ -515,7 +515,6 @@ struct PinnedGrid: View {
     ) -> some View {
         if let placeholderGroup = splitPlaceholderGroup(for: pin) {
             PinnedSplitPlaceholderTile(
-                group: placeholderGroup,
                 pin: pin,
                 isSelected: isSplitPlaceholderSelected(placeholderGroup, pin: pin),
                 accessibilityID: "essential-split-placeholder-\(pin.id.uuidString)",
@@ -854,7 +853,6 @@ struct PinnedGrid: View {
 }
 
 private struct PinnedSplitPlaceholderTile: View {
-    let group: SplitGroup
     @ObservedObject var pin: ShortcutPin
     let isSelected: Bool
     let accessibilityID: String
@@ -882,7 +880,6 @@ private struct PinnedSplitPlaceholderTile: View {
             chromeTemplateSystemImageName: resolvedChromeTemplateSystemImageName,
             presentationState: isSelected ? .visuallySelected : .liveBackgrounded,
             isHovered: displayIsHovered,
-            isLoading: false,
             showsSplitGroupOutline: true,
             faviconOpacity: 1,
             configuration: configuration

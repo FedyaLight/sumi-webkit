@@ -298,10 +298,6 @@ private struct AdblockProtectionSettingsView: View {
         .accessibilityElement(children: .combine)
     }
 
-    private var diagnosticsPlan: SumiProtectionRulePlan {
-        coordinator.cachedRulePlan(for: diagnosticsTarget.url, profileId: diagnosticsTarget.tab?.resolveProfile()?.id)
-    }
-
     private var globalDiagnostics: SumiProtectionGlobalDiagnostics {
         coordinator.globalDiagnostics()
     }
@@ -423,86 +419,6 @@ private struct AdblockProtectionSettingsView: View {
         }
     }
 
-    private var debugProtectionRows: [(String, String)] {
-        let global = globalDiagnostics
-        let plan = diagnosticsPlan
-        let contentBlockingSummary = diagnosticsTarget.tab?
-            .existingWebView?
-            .configuration
-            .userContentController
-            .sumiNormalTabUserContentController?
-            .contentBlockingAssetSummary
-        let actualAttachedIdentifiers = contentBlockingSummary?.globalRuleListIdentifiers ?? []
-        let expectedSet = Set(plan.expectedRuleListIdentifiers)
-        let actualSet = Set(actualAttachedIdentifiers)
-        let missingAfterAttachment = plan.expectedRuleListIdentifiers.filter { !actualSet.contains($0) }
-        let unexpectedOldIdentifiers = actualAttachedIdentifiers.filter {
-            !expectedSet.contains($0)
-                && ($0.hasPrefix("sumi.adblock.")
-                    || $0.hasPrefix("sumi.tracking."))
-        }
-        return [
-            ("GLOBAL selected protection level", global.selectedProtectionLevel.rawValue),
-            ("GLOBAL applied protection level", global.appliedProtectionLevel.rawValue),
-            ("GLOBAL apply needed", global.applyNeeded.description),
-            ("GLOBAL last apply summary", global.lastApplySummary ?? "nil"),
-            ("GLOBAL last apply error", global.lastApplyError ?? "nil"),
-            ("GLOBAL generation source", global.generationSource?.rawValue ?? "nil"),
-            ("GLOBAL native bundle id", global.nativeRuleBundleId ?? "nil"),
-            ("GLOBAL bundle profile id", global.bundleProfileId ?? "nil"),
-            ("GLOBAL remote release version", global.remoteReleaseVersion ?? "nil"),
-            ("GLOBAL remote manifest signature required", global.remoteManifestSignatureRequired.description),
-            ("GLOBAL remote manifest signature verified", global.remoteManifestSignatureVerified.map(String.init) ?? "false"),
-            ("GLOBAL signing key id", global.remoteSigningKeyId ?? "nil"),
-            ("GLOBAL signing key version", global.remoteSigningKeyVersion.map(String.init) ?? "nil"),
-            ("GLOBAL last remote update error", global.lastRemoteUpdateError ?? "nil"),
-            ("GLOBAL last signature error", global.lastSignatureError ?? "nil"),
-            ("GLOBAL downgrade rejected", global.downgradeRejected.description),
-            ("GLOBAL required bundle profile", global.requiredBundleProfileId ?? "nil"),
-            ("GLOBAL prepared bundle available", global.preparedBundleAvailable.description),
-            ("GLOBAL prepared bundle source", global.preparedBundleSource?.rawValue ?? "nil"),
-            ("GLOBAL searched bundle paths", global.searchedBundlePaths.map { "\($0.source.rawValue): exists=\($0.exists) path=\($0.path) rejected=\($0.rejectionReason ?? "nil")" }.joined(separator: " | ")),
-            ("GLOBAL active generation", global.activeGenerationId ?? "nil"),
-            ("GLOBAL groups available", global.globalGroupsAvailable.map(\.rawValue).joined(separator: ", ")),
-            ("GLOBAL tracking source available", global.trackingSourceAvailable.description),
-            ("GLOBAL adblock bundle available", global.adblockBundleAvailable.description),
-            ("GLOBAL strict Off active", global.strictOffActive.description),
-            ("Diagnostics target", diagnosticsTarget.source),
-            ("Diagnostics URL", diagnosticsTarget.url?.absoluteString ?? "nil"),
-            ("PAGE requested level", plan.requestedLevel.rawValue),
-            ("Effective level", plan.effectiveLevel.rawValue),
-            ("Desired groups", plan.requestedLevel.requestedGroups.map(\.rawValue).joined(separator: ", ")),
-            ("Active groups", plan.activeGroups.map(\.rawValue).joined(separator: ", ")),
-            ("Inactive groups", plan.inactiveGroups.map(\.rawValue).joined(separator: ", ")),
-            ("Per-site protection", plan.sitePolicyAllowsProtection.description),
-            ("Site override", plan.siteOverride.rawValue),
-            ("Generation source", plan.bundleSource?.rawValue ?? "nil"),
-            ("Native bundle id", plan.nativeRuleBundleId ?? "nil"),
-            ("Bundle profile id", plan.bundleProfileId ?? "nil"),
-            ("Required bundle profile", plan.requiredBundleProfileId ?? "nil"),
-            ("Active generation", plan.activeGenerationId ?? "nil"),
-            ("Previous generation", plan.previousGenerationId ?? "nil"),
-            ("Previous retained", plan.previousGenerationRetained.description),
-            ("Tracking active", plan.trackingGroupActive.description),
-            ("Adblock active", plan.adblockGroupActive.description),
-            ("Rule counts", debugCounts(plan.ruleCountsByGroup)),
-            ("Shard counts", debugCounts(plan.shardCountsByGroup)),
-            ("Dedupe", plan.dedupeSummary.reportLine),
-            ("Overlap", plan.overlapSummary.reportLine),
-            ("Expected identifiers", plan.expectedRuleListIdentifiers.joined(separator: ", ")),
-            ("Lookup succeeded identifiers", contentBlockingSummary?.lookupSucceededIdentifiers.joined(separator: ", ") ?? "nil"),
-            ("Lookup failed identifiers", contentBlockingSummary?.lookupFailedIdentifiers.joined(separator: ", ") ?? "nil"),
-            ("Added identifiers", contentBlockingSummary?.addedToUserContentControllerIdentifiers.joined(separator: ", ") ?? "nil"),
-            ("Actual attached identifiers", actualAttachedIdentifiers.joined(separator: ", ")),
-            ("Missing after attachment", missingAfterAttachment.joined(separator: ", ")),
-            ("Unexpected old identifiers", unexpectedOldIdentifiers.joined(separator: ", ")),
-            ("Applied generation", diagnosticsTarget.tab?.protectionAppliedAttachmentState?.activeGenerationId ?? "nil"),
-            ("Applied groups", diagnosticsTarget.tab?.protectionAppliedAttachmentState?.activeGroups.map(\.rawValue).joined(separator: ", ") ?? "nil"),
-            ("Ineligible surface", plan.ineligibleSurfaceReason ?? "nil"),
-            ("Planning errors", plan.planningErrors.joined(separator: " | ")),
-        ]
-    }
-
     private func copyUnifiedProtectionDiagnostics() {
         let target = diagnosticsTarget
         let report = coordinator.copyDiagnosticsReport(
@@ -515,14 +431,6 @@ private struct AdblockProtectionSettingsView: View {
         pasteboard.clearContents()
         pasteboard.setString(report, forType: .string)
         copyDiagnosticsStatus = "Copied \(debugDateString(Date())) for \(target.url?.absoluteString ?? target.source)."
-    }
-
-    private func debugCounts(_ counts: [SumiProtectionGroupKind: Int]) -> String {
-        SumiProtectionGroupKind.allCases
-            .compactMap { group in
-                counts[group].map { "\(group.rawValue)=\($0)" }
-            }
-            .joined(separator: ", ")
     }
 
     private func debugDateString(_ date: Date?) -> String {

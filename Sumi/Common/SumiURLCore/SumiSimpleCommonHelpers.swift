@@ -22,7 +22,6 @@ struct SumiNavigationalScheme: RawRepresentable, Hashable, Sendable {
     static let blob = SumiNavigationalScheme(rawValue: "blob")
     static let about = SumiNavigationalScheme(rawValue: "about")
     static let duck = SumiNavigationalScheme(rawValue: "duck")
-    static let mailto = SumiNavigationalScheme(rawValue: "mailto")
     static let webkitExtension = SumiNavigationalScheme(rawValue: "webkit-extension")
     static let javascript = SumiNavigationalScheme(rawValue: "javascript")
 }

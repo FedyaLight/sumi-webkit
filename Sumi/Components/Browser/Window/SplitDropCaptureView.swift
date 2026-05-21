@@ -164,14 +164,12 @@ final class SplitDropCaptureView: NSView {
         currentTarget = target
         if splitManager.isPreviewActive(for: windowId) {
             splitManager.updatePreview(
-                side: target.side,
                 targetRect: target.targetRect,
                 style: target.previewStyle,
                 for: windowId
             )
         } else {
             splitManager.beginPreview(
-                side: target.side,
                 targetRect: target.targetRect,
                 style: target.previewStyle,
                 for: windowId
@@ -219,7 +217,9 @@ final class SplitDropCaptureView: NSView {
         currentTarget = nil
         guard let windowId, let splitManager else { return hadLocalDragState }
         let hadPreview = splitManager.isPreviewActive(for: windowId)
-        splitManager.endPreview(for: windowId)
+        if hadPreview {
+            splitManager.endPreview(for: windowId)
+        }
         return hadLocalDragState || hadPreview
     }
 
@@ -236,7 +236,7 @@ final class SplitDropCaptureView: NSView {
         _ = endDrag()
     }
 
-    @objc private func handleTabDragDidEnd(_ notification: Notification) {
+    @objc private func handleTabDragDidEnd(_: Notification) {
         cancelActiveDragPreview()
     }
 }

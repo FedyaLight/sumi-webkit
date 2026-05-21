@@ -193,14 +193,11 @@ final class GlanceManagerTests: XCTestCase {
 
         browserManager.glanceManager.moveToSplitView()
 
-        let splitState = browserManager.splitManager.getSplitState(for: sourceWindow.id)
         let splitGroup = try XCTUnwrap(browserManager.tabManager.splitGroup(containing: previewTab.id))
         XCTAssertNil(browserManager.glanceManager.currentSession)
         XCTAssertEqual(browserManager.glanceManager.phase, .idle)
-        XCTAssertTrue(splitState.isSplit)
         XCTAssertEqual(splitGroup.tabIds, [sourceTab.id, previewTab.id])
         XCTAssertEqual(splitGroup.activeTabId, previewTab.id)
-        XCTAssertEqual(splitState.activeTabId, previewTab.id)
         XCTAssertEqual(windowRegistry.activeWindow?.id, sourceWindow.id)
         XCTAssertEqual(sourceWindow.currentTabId, previewTab.id)
         XCTAssertTrue(previewTab.existingWebView === webView)
