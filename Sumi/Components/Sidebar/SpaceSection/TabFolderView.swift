@@ -711,30 +711,59 @@ struct TabFolderView: View {
             .accessibilityHidden(true)
     }
 
+    @ViewBuilder
     private func folderShortcutView(_ pin: ShortcutPin) -> some View {
-        return ShortcutSidebarRow(
-            pin: pin,
-            liveTab: browserManager.tabManager.shortcutLiveTab(for: pin.id, in: windowState.id),
-            accessibilityID: "folder-shortcut-\(pin.id.uuidString)",
-            contextMenuEntries: { toggleEditIcon in
-                folderShortcutContextMenuEntries(pin, toggleEditIcon: toggleEditIcon)
-            },
-            action: { activateShortcutPin(pin) },
-            dragSourceZone: .folder(folder.id),
-            dragHasTrailingActionExclusion: true,
-            dragIsEnabled: isInteractive,
-            onLauncherIconSelected: { newIconAsset in
-                _ = browserManager.tabManager.updateShortcutPin(pin, iconAsset: newIconAsset)
-            },
-            onResetToLaunchURL: { resetShortcutPin(pin) },
-            onUnload: { unloadShortcutPin(pin) },
-            onRemove: { removeShortcutPin(pin) }
-        )
-        .opacity(
-            dragState.isDragging && dragState.activeDragItemId == pin.id
-                ? 0.001
-                : 1
-        )
+        if let placeholderGroup = browserManager.tabManager.regularHostedSplitPlaceholderGroup(for: pin) {
+            ShortcutSplitPlaceholderRow(
+                pin: pin,
+                isSelected: isFolderSplitPlaceholderSelected(placeholderGroup, pin: pin),
+                accessibilityID: "folder-split-placeholder-\(pin.id.uuidString)",
+                isAppKitInteractionEnabled: isInteractive,
+                action: {
+                    browserManager.focusSplitGroup(placeholderGroup, in: windowState)
+                }
+            )
+            .opacity(
+                dragState.isDragging && dragState.activeDragItemId == pin.id
+                    ? 0.001
+                    : 1
+            )
+        } else {
+            ShortcutSidebarRow(
+                pin: pin,
+                liveTab: browserManager.tabManager.shortcutLiveTab(for: pin.id, in: windowState.id),
+                accessibilityID: "folder-shortcut-\(pin.id.uuidString)",
+                contextMenuEntries: { toggleEditIcon in
+                    folderShortcutContextMenuEntries(pin, toggleEditIcon: toggleEditIcon)
+                },
+                action: { activateShortcutPin(pin) },
+                dragSourceZone: .folder(folder.id),
+                dragHasTrailingActionExclusion: true,
+                dragIsEnabled: isInteractive,
+                onLauncherIconSelected: { newIconAsset in
+                    _ = browserManager.tabManager.updateShortcutPin(pin, iconAsset: newIconAsset)
+                },
+                onResetToLaunchURL: { resetShortcutPin(pin) },
+                onUnload: { unloadShortcutPin(pin) },
+                onRemove: { removeShortcutPin(pin) }
+            )
+            .opacity(
+                dragState.isDragging && dragState.activeDragItemId == pin.id
+                    ? 0.001
+                    : 1
+            )
+        }
+    }
+
+    private func isFolderSplitPlaceholderSelected(_ group: SplitGroup, pin: ShortcutPin) -> Bool {
+        if windowState.currentShortcutPinId == pin.id {
+            return true
+        }
+        guard let currentTabId = windowState.currentTabId else {
+            return false
+        }
+        return group.contains(currentTabId)
+            || group.member(forPinId: pin.id)?.tabId == currentTabId
     }
 
     private func folderShortcutContextMenuEntries(

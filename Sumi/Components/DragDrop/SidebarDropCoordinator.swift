@@ -173,7 +173,7 @@ enum SidebarDropCoordinator {
             return tabManager.essentialPins(for: scope.profileId).count
 
         case .spacePinned(let spaceId):
-            return tabManager.topLevelSpacePinnedItems(for: spaceId).count
+            return tabManager.topLevelSpacePinnedVisualItems(for: spaceId).count
 
         case .spaceRegular(let spaceId):
             return tabManager.tabsBySpace[spaceId]?.count
@@ -204,13 +204,15 @@ enum SidebarDropCoordinator {
                 .firstIndex { $0.id == sourceItemId || payload.matchesShortcutPinId($0.id) }
 
         case .spacePinned(let spaceId):
-            return tabManager.topLevelSpacePinnedItems(for: spaceId)
+            return tabManager.topLevelSpacePinnedVisualItems(for: spaceId)
                 .firstIndex { item in
                     switch item {
-                    case .folder(let folder):
-                        return folder.id == sourceItemId
-                    case .shortcut(let pin):
-                        return pin.id == sourceItemId || payload.matchesShortcutPinId(pin.id)
+                    case .folder(let folderId):
+                        return folderId == sourceItemId
+                    case .shortcut(let pinId):
+                        return pinId == sourceItemId || payload.matchesShortcutPinId(pinId)
+                    case .splitGroup(let groupId):
+                        return groupId == sourceItemId || payload.matchesSplitGroupId(groupId)
                     }
                 }
 
@@ -238,8 +240,14 @@ private extension DragOperation.Payload {
             return pin.id == pinId
         case .tab(let tab):
             return tab.shortcutPinId == pinId
-        case .folder:
+        case .folder,
+             .splitGroup:
             return false
         }
+    }
+
+    func matchesSplitGroupId(_ groupId: UUID) -> Bool {
+        guard case .splitGroup(let group) = self else { return false }
+        return group.id == groupId
     }
 }

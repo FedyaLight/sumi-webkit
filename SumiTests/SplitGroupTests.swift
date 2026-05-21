@@ -5,9 +5,558 @@ import XCTest
 
 @MainActor
 final class SplitGroupTests: XCTestCase {
+    private struct LegacySplitGroupPayload: Encodable {
+        let id: UUID
+        let layoutKind: SplitLayoutKind
+        let layoutTree: SplitLayoutTree
+        let activeTabId: UUID?
+    }
+
     func testRejectsInvalidTabCounts() {
         XCTAssertNil(SplitGroup.make(tabIds: [UUID()], layoutKind: .vertical))
         XCTAssertNil(SplitGroup.make(tabIds: makeIDs(5), layoutKind: .grid))
+    }
+
+    func testLegacySplitGroupDecodeDefaultsToRegularHost() throws {
+        let ids = makeIDs(2)
+        let original = try XCTUnwrap(SplitGroup.make(tabIds: ids, layoutKind: .vertical, activeTabId: ids[0]))
+        let legacyPayload = LegacySplitGroupPayload(
+            id: original.id,
+            layoutKind: original.layoutKind,
+            layoutTree: original.layoutTree,
+            activeTabId: original.activeTabId
+        )
+
+        let data = try JSONEncoder().encode(legacyPayload)
+        let decoded = try JSONDecoder().decode(SplitGroup.self, from: data)
+
+        XCTAssertEqual(decoded.id, original.id)
+        XCTAssertEqual(decoded.tabIds, original.tabIds)
+        XCTAssertEqual(decoded.host, .regular(spaceId: nil))
+        XCTAssertTrue(decoded.members.isEmpty)
+    }
+
+    func testSanitizedDropsGroupsOverlappingByShortcutPin() throws {
+        let ids = makeIDs(4)
+        let pinId = UUID()
+        let spaceId = UUID()
+        let first = try XCTUnwrap(SplitGroup.make(
+            tabIds: [ids[0], ids[1]],
+            layoutKind: .vertical,
+            members: [
+                SplitGroupMember(
+                    tabId: ids[0],
+                    pinId: pinId,
+                    origin: .spacePinned(spaceId: spaceId, folderId: nil, index: 0)
+                )
+            ]
+        ))
+        let overlapping = try XCTUnwrap(SplitGroup.make(
+            tabIds: [ids[2], ids[3]],
+            layoutKind: .horizontal,
+            members: [
+                SplitGroupMember(
+                    tabId: ids[2],
+                    pinId: pinId,
+                    origin: .spacePinned(spaceId: spaceId, folderId: nil, index: 0)
+                )
+            ]
+        ))
+
+        let sanitized = SplitGroup.sanitized([first, overlapping])
+
+        XCTAssertEqual(sanitized.map(\.id), [first.id])
+    }
+
+    func testShortcutHostedSplitGroupAppearsInsidePinnedVisualItemsAtHostIndex() throws {
+        let harness = try makeHarness()
+        let space = harness.tabManager.createSpace(name: "Work")
+        let visiblePin = makeSpacePin(spaceId: space.id, index: 0, title: "Visible")
+        let groupedPin = makeSpacePin(spaceId: space.id, index: 1, title: "Grouped")
+        harness.tabManager.setSpacePinnedShortcuts([visiblePin, groupedPin], for: space.id)
+
+        let otherId = UUID()
+        let group = try XCTUnwrap(SplitGroup.make(
+            tabIds: [groupedPin.id, otherId],
+            layoutKind: .vertical,
+            host: .shortcutPinned(spaceId: space.id, profileId: nil, index: 1),
+            members: [
+                SplitGroupMember(
+                    tabId: groupedPin.id,
+                    pinId: groupedPin.id,
+                    origin: .spacePinned(spaceId: space.id, folderId: nil, index: 1)
+                ),
+                SplitGroupMember(
+                    tabId: otherId,
+                    pinId: nil,
+                    origin: .regular(spaceId: space.id, index: nil)
+                )
+            ]
+        ))
+
+        harness.tabManager.upsertSplitGroup(group)
+
+        XCTAssertEqual(
+            harness.tabManager.topLevelSpacePinnedVisualItems(for: space.id),
+            [.shortcut(visiblePin.id), .splitGroup(group.id)]
+        )
+    }
+
+    func testEssentialOnlyShortcutHostedSplitStartsBeforePinnedRows() throws {
+        let harness = try makeHarness()
+        let space = harness.tabManager.createSpace(name: "Work")
+        let folder = harness.tabManager.createFolder(for: space.id, name: "Docs")
+        let visiblePin = makeSpacePin(spaceId: space.id, index: 0, title: "Visible")
+        harness.tabManager.setSpacePinnedShortcuts([visiblePin], for: space.id)
+
+        let firstEssentialId = UUID()
+        let secondEssentialId = UUID()
+        let group = try XCTUnwrap(SplitGroup.make(
+            tabIds: [firstEssentialId, secondEssentialId],
+            layoutKind: .vertical,
+            host: .shortcutPinned(spaceId: space.id, profileId: nil, index: 0),
+            members: [
+                SplitGroupMember(
+                    tabId: firstEssentialId,
+                    pinId: firstEssentialId,
+                    origin: .essential(profileId: nil, index: 0)
+                ),
+                SplitGroupMember(
+                    tabId: secondEssentialId,
+                    pinId: secondEssentialId,
+                    origin: .essential(profileId: nil, index: 1)
+                )
+            ]
+        ))
+
+        harness.tabManager.upsertSplitGroup(group)
+
+        XCTAssertEqual(
+            harness.tabManager.topLevelSpacePinnedVisualItems(for: space.id),
+            [.splitGroup(group.id), .folder(folder.id), .shortcut(visiblePin.id)]
+        )
+    }
+
+    func testMovingShortcutHostedSplitGroupUpdatesPinnedVisualIndex() throws {
+        let harness = try makeHarness()
+        let space = harness.tabManager.createSpace(name: "Work")
+        let firstPin = makeSpacePin(spaceId: space.id, index: 0, title: "First")
+        let groupedPin = makeSpacePin(spaceId: space.id, index: 1, title: "Grouped")
+        let lastPin = makeSpacePin(spaceId: space.id, index: 2, title: "Last")
+        harness.tabManager.setSpacePinnedShortcuts([firstPin, groupedPin, lastPin], for: space.id)
+
+        let otherId = UUID()
+        let group = try XCTUnwrap(SplitGroup.make(
+            tabIds: [groupedPin.id, otherId],
+            layoutKind: .vertical,
+            host: .shortcutPinned(spaceId: space.id, profileId: nil, index: 1),
+            members: [
+                SplitGroupMember(
+                    tabId: groupedPin.id,
+                    pinId: groupedPin.id,
+                    origin: .spacePinned(spaceId: space.id, folderId: nil, index: 1)
+                ),
+                SplitGroupMember(
+                    tabId: otherId,
+                    pinId: nil,
+                    origin: .regular(spaceId: space.id, index: nil)
+                )
+            ]
+        ))
+        harness.tabManager.upsertSplitGroup(group)
+
+        XCTAssertTrue(harness.tabManager.moveShortcutHostedSplitGroup(group, in: space.id, to: 0))
+
+        XCTAssertEqual(
+            harness.tabManager.topLevelSpacePinnedVisualItems(for: space.id),
+            [.splitGroup(group.id), .shortcut(firstPin.id), .shortcut(lastPin.id)]
+        )
+
+        let movedGroup = try XCTUnwrap(harness.tabManager.splitGroup(with: group.id))
+        XCTAssertTrue(harness.tabManager.moveShortcutHostedSplitGroup(movedGroup, in: space.id, to: 3))
+
+        XCTAssertEqual(
+            harness.tabManager.topLevelSpacePinnedVisualItems(for: space.id),
+            [.shortcut(firstPin.id), .shortcut(lastPin.id), .splitGroup(group.id)]
+        )
+        XCTAssertTrue(harness.tabManager.spacePinnedPins(for: space.id).contains { $0.id == groupedPin.id })
+    }
+
+    func testMovingEssentialFromRegularHostedSplitIntoShortcutHostedSplitPreservesLauncherOrigin() throws {
+        let harness = try makeHarness()
+        let profileId = UUID()
+        let space = harness.tabManager.createSpace(name: "Work", profileId: profileId)
+        harness.windowState.currentSpaceId = space.id
+        harness.windowState.currentProfileId = profileId
+
+        let essentialPin = makeEssentialPin(profileId: profileId, index: 0, title: "Essential")
+        harness.tabManager.setPinnedTabs([essentialPin], for: profileId)
+        let liveEssential = harness.tabManager.activateShortcutPin(
+            essentialPin,
+            in: harness.windowState.id,
+            currentSpaceId: space.id
+        )
+        let regular = harness.tabManager.createNewTab(url: "https://regular.example", in: space, activate: false)
+        let sourceGroup = try XCTUnwrap(SplitGroup.make(
+            tabIds: [liveEssential.id, regular.id],
+            layoutKind: .vertical,
+            activeTabId: liveEssential.id,
+            host: .regular(spaceId: space.id),
+            members: [
+                SplitGroupMember(
+                    tabId: liveEssential.id,
+                    pinId: essentialPin.id,
+                    origin: .essential(profileId: profileId, index: 0)
+                ),
+                SplitGroupMember(
+                    tabId: regular.id,
+                    pinId: nil,
+                    origin: .regular(spaceId: space.id, index: regular.index)
+                )
+            ]
+        ))
+        harness.tabManager.upsertSplitGroup(sourceGroup)
+
+        let firstPinned = makeSpacePin(spaceId: space.id, index: 0, title: "PinnedA")
+        let secondPinned = makeSpacePin(spaceId: space.id, index: 1, title: "PinnedB")
+        harness.tabManager.setSpacePinnedShortcuts([firstPinned, secondPinned], for: space.id)
+        let liveFirstPinned = harness.tabManager.activateShortcutPin(
+            firstPinned,
+            in: harness.windowState.id,
+            currentSpaceId: space.id
+        )
+        let liveSecondPinned = harness.tabManager.activateShortcutPin(
+            secondPinned,
+            in: harness.windowState.id,
+            currentSpaceId: space.id
+        )
+        let targetGroup = try XCTUnwrap(SplitGroup.make(
+            tabIds: [liveFirstPinned.id, liveSecondPinned.id],
+            layoutKind: .vertical,
+            activeTabId: liveFirstPinned.id,
+            host: .shortcutPinned(spaceId: space.id, profileId: profileId, index: 0),
+            members: [
+                SplitGroupMember(
+                    tabId: liveFirstPinned.id,
+                    pinId: firstPinned.id,
+                    origin: .spacePinned(spaceId: space.id, folderId: nil, index: 0)
+                ),
+                SplitGroupMember(
+                    tabId: liveSecondPinned.id,
+                    pinId: secondPinned.id,
+                    origin: .spacePinned(spaceId: space.id, folderId: nil, index: 1)
+                )
+            ]
+        ))
+        harness.tabManager.upsertSplitGroup(targetGroup)
+
+        XCTAssertTrue(harness.browserManager.splitManager.dropTab(
+            liveEssential,
+            on: SplitDropTarget(tabId: liveFirstPinned.id, side: .right, targetRect: .zero),
+            in: harness.windowState
+        ))
+
+        let updatedTarget = try XCTUnwrap(harness.tabManager.splitGroup(containingPinId: essentialPin.id))
+        XCTAssertEqual(updatedTarget.id, targetGroup.id)
+        let movedMember = try XCTUnwrap(updatedTarget.member(forPinId: essentialPin.id))
+        XCTAssertEqual(movedMember.origin, .essential(profileId: profileId, index: 0))
+        XCTAssertTrue(movedMember.isShortcutBacked)
+        XCTAssertEqual(harness.tabManager.splitGroup(containing: movedMember.tabId)?.id, targetGroup.id)
+        XCTAssertNil(harness.tabManager.splitGroup(with: sourceGroup.id))
+    }
+
+    func testMovingPinnedProxyBetweenSplitGroupsKeepsRemainingRegularSplitAndPinnedPlaceholder() throws {
+        let harness = try makeHarness()
+        let profileId = UUID()
+        let space = harness.tabManager.createSpace(name: "Work", profileId: profileId)
+        harness.windowState.currentSpaceId = space.id
+        harness.windowState.currentProfileId = profileId
+
+        let movedPin = makeSpacePin(spaceId: space.id, index: 0, title: "Moved")
+        harness.tabManager.setSpacePinnedShortcuts([movedPin], for: space.id)
+        let liveMovedPin = harness.tabManager.activateShortcutPin(
+            movedPin,
+            in: harness.windowState.id,
+            currentSpaceId: space.id
+        )
+        let firstRegular = harness.tabManager.createNewTab(url: "https://first.example", in: space, activate: false)
+        let secondRegular = harness.tabManager.createNewTab(url: "https://second.example", in: space, activate: false)
+        let sourceGroup = try XCTUnwrap(SplitGroup.make(
+            tabIds: [liveMovedPin.id, firstRegular.id, secondRegular.id],
+            layoutKind: .vertical,
+            activeTabId: liveMovedPin.id,
+            host: .regular(spaceId: space.id),
+            members: [
+                SplitGroupMember(
+                    tabId: liveMovedPin.id,
+                    pinId: movedPin.id,
+                    origin: .spacePinned(spaceId: space.id, folderId: nil, index: 0)
+                ),
+                SplitGroupMember(
+                    tabId: firstRegular.id,
+                    pinId: nil,
+                    origin: .regular(spaceId: space.id, index: firstRegular.index)
+                ),
+                SplitGroupMember(
+                    tabId: secondRegular.id,
+                    pinId: nil,
+                    origin: .regular(spaceId: space.id, index: secondRegular.index)
+                )
+            ]
+        ))
+        harness.tabManager.upsertSplitGroup(sourceGroup)
+
+        let firstEssential = makeEssentialPin(profileId: profileId, index: 0, title: "EssentialA")
+        let secondEssential = makeEssentialPin(profileId: profileId, index: 1, title: "EssentialB")
+        harness.tabManager.setPinnedTabs([firstEssential, secondEssential], for: profileId)
+        let liveFirstEssential = harness.tabManager.activateShortcutPin(
+            firstEssential,
+            in: harness.windowState.id,
+            currentSpaceId: space.id
+        )
+        let liveSecondEssential = harness.tabManager.activateShortcutPin(
+            secondEssential,
+            in: harness.windowState.id,
+            currentSpaceId: space.id
+        )
+        let targetGroup = try XCTUnwrap(SplitGroup.make(
+            tabIds: [liveFirstEssential.id, liveSecondEssential.id],
+            layoutKind: .vertical,
+            activeTabId: liveFirstEssential.id,
+            host: .shortcutPinned(spaceId: space.id, profileId: profileId, index: 0),
+            members: [
+                SplitGroupMember(
+                    tabId: liveFirstEssential.id,
+                    pinId: firstEssential.id,
+                    origin: .essential(profileId: profileId, index: 0)
+                ),
+                SplitGroupMember(
+                    tabId: liveSecondEssential.id,
+                    pinId: secondEssential.id,
+                    origin: .essential(profileId: profileId, index: 1)
+                )
+            ]
+        ))
+        harness.tabManager.upsertSplitGroup(targetGroup)
+
+        let pinnedProxy = harness.tabManager.dragProxyTab(for: movedPin)
+        XCTAssertTrue(harness.browserManager.splitManager.dropTab(
+            pinnedProxy,
+            on: SplitDropTarget(tabId: liveFirstEssential.id, side: .right, targetRect: .zero),
+            in: harness.windowState
+        ))
+
+        let updatedTarget = try XCTUnwrap(harness.tabManager.splitGroup(containingPinId: movedPin.id))
+        XCTAssertEqual(updatedTarget.id, targetGroup.id)
+        let movedMember = try XCTUnwrap(updatedTarget.member(forPinId: movedPin.id))
+        XCTAssertEqual(movedMember.origin, .spacePinned(spaceId: space.id, folderId: nil, index: 0))
+        XCTAssertTrue(movedMember.isShortcutBacked)
+
+        let remainingSource = try XCTUnwrap(harness.tabManager.splitGroup(containing: firstRegular.id))
+        XCTAssertEqual(remainingSource.id, sourceGroup.id)
+        XCTAssertEqual(remainingSource.tabIds, [firstRegular.id, secondRegular.id])
+        XCTAssertNil(remainingSource.member(forPinId: movedPin.id))
+        XCTAssertEqual(harness.tabManager.splitGroup(containingPinId: movedPin.id)?.id, targetGroup.id)
+    }
+
+    func testUpsertRepairsShortcutBackedMemberForLiveEssentialSegment() throws {
+        let harness = try makeHarness()
+        let profileId = UUID()
+        let space = harness.tabManager.createSpace(name: "Work", profileId: profileId)
+        harness.windowState.currentSpaceId = space.id
+        harness.windowState.currentProfileId = profileId
+
+        let essentialPin = makeEssentialPin(profileId: profileId, index: 0, title: "Essential")
+        harness.tabManager.setPinnedTabs([essentialPin], for: profileId)
+        let liveEssential = harness.tabManager.activateShortcutPin(
+            essentialPin,
+            in: harness.windowState.id,
+            currentSpaceId: space.id
+        )
+        let regular = harness.tabManager.createNewTab(url: "https://regular.example", in: space, activate: false)
+        let malformedGroup = try XCTUnwrap(SplitGroup.make(
+            tabIds: [liveEssential.id, regular.id],
+            layoutKind: .vertical,
+            activeTabId: liveEssential.id,
+            host: .regular(spaceId: space.id),
+            members: [
+                SplitGroupMember(
+                    tabId: liveEssential.id,
+                    pinId: nil,
+                    origin: .regular(spaceId: space.id, index: liveEssential.index)
+                ),
+                SplitGroupMember(
+                    tabId: regular.id,
+                    pinId: nil,
+                    origin: .regular(spaceId: space.id, index: regular.index)
+                )
+            ]
+        ))
+
+        harness.tabManager.upsertSplitGroup(malformedGroup)
+
+        let repaired = try XCTUnwrap(harness.tabManager.splitGroup(containingPinId: essentialPin.id))
+        let member = try XCTUnwrap(repaired.member(forPinId: essentialPin.id))
+        XCTAssertEqual(member.tabId, liveEssential.id)
+        XCTAssertEqual(member.origin, .essential(profileId: profileId, index: 0))
+        XCTAssertTrue(member.isShortcutBacked)
+    }
+
+    func testUpsertRepairsShortcutMembersAcrossPinnedEssentialMixedGroup() throws {
+        let harness = try makeHarness()
+        let profileId = UUID()
+        let space = harness.tabManager.createSpace(name: "Work", profileId: profileId)
+        harness.windowState.currentSpaceId = space.id
+        harness.windowState.currentProfileId = profileId
+
+        let essentialPin = makeEssentialPin(profileId: profileId, index: 0, title: "Essential")
+        harness.tabManager.setPinnedTabs([essentialPin], for: profileId)
+        let spacePin = makeSpacePin(spaceId: space.id, index: 1, title: "Pinned")
+        harness.tabManager.setSpacePinnedShortcuts([spacePin], for: space.id)
+        let liveEssential = harness.tabManager.activateShortcutPin(
+            essentialPin,
+            in: harness.windowState.id,
+            currentSpaceId: space.id
+        )
+        let livePinned = harness.tabManager.activateShortcutPin(
+            spacePin,
+            in: harness.windowState.id,
+            currentSpaceId: space.id
+        )
+        let regular = harness.tabManager.createNewTab(url: "https://regular.example", in: space, activate: false)
+        let malformedGroup = try XCTUnwrap(SplitGroup.make(
+            tabIds: [livePinned.id, liveEssential.id, regular.id],
+            layoutKind: .vertical,
+            activeTabId: livePinned.id,
+            host: .shortcutPinned(spaceId: space.id, profileId: profileId, index: 1),
+            members: [
+                SplitGroupMember(
+                    tabId: regular.id,
+                    pinId: nil,
+                    origin: .regular(spaceId: space.id, index: regular.index)
+                )
+            ]
+        ))
+
+        harness.tabManager.upsertSplitGroup(malformedGroup)
+
+        let repaired = try XCTUnwrap(harness.tabManager.splitGroup(with: malformedGroup.id))
+        XCTAssertEqual(
+            repaired.member(forPinId: essentialPin.id)?.origin,
+            .essential(profileId: profileId, index: 0)
+        )
+        XCTAssertEqual(
+            repaired.member(forPinId: spacePin.id)?.origin,
+            .spacePinned(spaceId: space.id, folderId: nil, index: 1)
+        )
+        XCTAssertEqual(harness.tabManager.splitGroup(containingPinId: essentialPin.id)?.id, malformedGroup.id)
+        XCTAssertEqual(harness.tabManager.splitGroup(containingPinId: spacePin.id)?.id, malformedGroup.id)
+    }
+
+    func testRestoreShortcutSplitMemberKeepsLiveInstanceLoaded() throws {
+        let harness = try makeHarness()
+        let profileId = UUID()
+        let space = harness.tabManager.createSpace(name: "Work", profileId: profileId)
+        harness.windowState.currentSpaceId = space.id
+        harness.windowState.currentProfileId = profileId
+
+        let essentialPin = makeEssentialPin(profileId: profileId, index: 0, title: "Essential")
+        harness.tabManager.setPinnedTabs([essentialPin], for: profileId)
+        let liveEssential = harness.tabManager.activateShortcutPin(
+            essentialPin,
+            in: harness.windowState.id,
+            currentSpaceId: space.id
+        )
+        let regular = harness.tabManager.createNewTab(url: "https://regular.example", in: space, activate: false)
+        harness.browserManager.selectTab(liveEssential, in: harness.windowState)
+
+        let group = try XCTUnwrap(SplitGroup.make(
+            tabIds: [liveEssential.id, regular.id],
+            layoutKind: .vertical,
+            activeTabId: liveEssential.id,
+            host: .regular(spaceId: space.id),
+            members: [
+                SplitGroupMember(
+                    tabId: liveEssential.id,
+                    pinId: essentialPin.id,
+                    origin: .essential(profileId: profileId, index: 0)
+                ),
+                SplitGroupMember(
+                    tabId: regular.id,
+                    pinId: nil,
+                    origin: .regular(spaceId: space.id, index: regular.index)
+                )
+            ]
+        ))
+        harness.tabManager.upsertSplitGroup(group)
+
+        harness.browserManager.restoreShortcutSplitMember(
+            liveEssential.id,
+            from: group,
+            in: harness.windowState
+        )
+
+        XCTAssertNil(harness.tabManager.splitGroup(containingPinId: essentialPin.id))
+        XCTAssertEqual(
+            harness.tabManager.shortcutLiveTab(for: essentialPin.id, in: harness.windowState.id)?.id,
+            liveEssential.id
+        )
+        XCTAssertEqual(harness.tabManager.tab(for: liveEssential.id)?.id, liveEssential.id)
+        XCTAssertEqual(harness.windowState.currentTabId, liveEssential.id)
+        XCTAssertEqual(harness.windowState.currentShortcutPinId, essentialPin.id)
+        XCTAssertEqual(harness.tabManager.essentialPins(for: profileId).map(\.id), [essentialPin.id])
+    }
+
+    func testClosingShortcutSplitMemberStillUnloadsLiveInstance() throws {
+        let harness = try makeHarness()
+        let profileId = UUID()
+        let space = harness.tabManager.createSpace(name: "Work", profileId: profileId)
+        harness.windowState.currentSpaceId = space.id
+        harness.windowState.currentProfileId = profileId
+
+        let essentialPin = makeEssentialPin(profileId: profileId, index: 0, title: "Essential")
+        harness.tabManager.setPinnedTabs([essentialPin], for: profileId)
+        let liveEssential = harness.tabManager.activateShortcutPin(
+            essentialPin,
+            in: harness.windowState.id,
+            currentSpaceId: space.id
+        )
+        let regular = harness.tabManager.createNewTab(url: "https://regular.example", in: space, activate: false)
+        harness.browserManager.selectTab(liveEssential, in: harness.windowState)
+
+        let group = try XCTUnwrap(SplitGroup.make(
+            tabIds: [liveEssential.id, regular.id],
+            layoutKind: .vertical,
+            activeTabId: liveEssential.id,
+            host: .regular(spaceId: space.id),
+            members: [
+                SplitGroupMember(
+                    tabId: liveEssential.id,
+                    pinId: essentialPin.id,
+                    origin: .essential(profileId: profileId, index: 0)
+                ),
+                SplitGroupMember(
+                    tabId: regular.id,
+                    pinId: nil,
+                    origin: .regular(spaceId: space.id, index: regular.index)
+                )
+            ]
+        ))
+        harness.tabManager.upsertSplitGroup(group)
+
+        harness.browserManager.restoreShortcutSplitMember(
+            liveEssential.id,
+            from: group,
+            in: harness.windowState,
+            preserveLiveInstance: false
+        )
+
+        XCTAssertNil(harness.tabManager.splitGroup(containingPinId: essentialPin.id))
+        XCTAssertNil(harness.tabManager.shortcutLiveTab(for: essentialPin.id, in: harness.windowState.id))
+        XCTAssertNil(harness.tabManager.tab(for: liveEssential.id))
+        XCTAssertEqual(harness.windowState.currentTabId, regular.id)
+        XCTAssertNil(harness.windowState.currentShortcutPinId)
+        XCTAssertEqual(harness.tabManager.essentialPins(for: profileId).map(\.id), [essentialPin.id])
     }
 
     func testVerticalHorizontalAndGridTreeShapes() throws {
@@ -1643,6 +2192,26 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertNil(state.previewTargetRect)
     }
 
+    func testSplitDropCaptureClearsStalePreviewWhenDragSessionEndsElsewhere() throws {
+        let harness = try makeHarness()
+        let captureView = SplitDropCaptureView(frame: CGRect(x: 0, y: 0, width: 1000, height: 800))
+        captureView.splitManager = harness.browserManager.splitManager
+        captureView.windowId = harness.windowState.id
+
+        harness.browserManager.splitManager.beginPreview(
+            side: .bottom,
+            targetRect: CGRect(x: 0, y: 0, width: 1000, height: 400),
+            for: harness.windowState.id
+        )
+
+        NotificationCenter.default.post(name: .tabDragDidEnd, object: nil)
+
+        let state = harness.browserManager.splitManager.getSplitState(for: harness.windowState.id)
+        XCTAssertFalse(state.isPreviewActive)
+        XCTAssertNil(state.previewSide)
+        XCTAssertNil(state.previewTargetRect)
+    }
+
     func testSanitizedDropsInvalidDuplicateAndOverlappingGroups() throws {
         let ids = makeIDs(5)
         let first = try XCTUnwrap(SplitGroup.make(tabIds: [ids[0], ids[1]], layoutKind: .vertical))
@@ -1766,7 +2335,7 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(group.activeTabId, right.id)
     }
 
-    func testPinnedTabIsDuplicatedAsRegularForSplit() throws {
+    func testLegacyDuplicateAsRegularHelperCreatesRegularCopy() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.createSpace(name: "Work")
         let regular = harness.tabManager.createNewTab(url: "https://anchor.example", in: space)
@@ -2055,6 +2624,32 @@ final class SplitGroupTests: XCTestCase {
             tabManager: tabManager,
             windowRegistry: windowRegistry,
             windowState: windowState
+        )
+    }
+
+    private func makeSpacePin(spaceId: UUID, index: Int, title: String) -> ShortcutPin {
+        ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            profileId: nil,
+            spaceId: spaceId,
+            index: index,
+            folderId: nil,
+            launchURL: URL(string: "https://\(title.lowercased()).example")!,
+            title: title
+        )
+    }
+
+    private func makeEssentialPin(profileId: UUID, index: Int, title: String) -> ShortcutPin {
+        ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: profileId,
+            spaceId: nil,
+            index: index,
+            folderId: nil,
+            launchURL: URL(string: "https://\(title.lowercased()).example")!,
+            title: title
         )
     }
 

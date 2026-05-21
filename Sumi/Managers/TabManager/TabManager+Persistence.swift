@@ -903,11 +903,11 @@ extension TabManager {
 
         spaces = restoredSpaces
         tabsBySpace = restoredTabsBySpace
-        splitGroups = SplitGroup.sanitized(payload.splitGroups)
         foldersBySpace = restoredFoldersBySpace
         pinnedByProfile = restoredPinnedByProfile
         pendingPinnedWithoutProfile = restoredPendingPinned
         spacePinnedShortcuts = restoredSpacePinnedShortcuts
+        splitGroups = sanitizedRepairedSplitGroups(payload.splitGroups)
 
         for tab in restoredTabsBySpace.values.flatMap(\.self) {
             tab.browserManager = browserManager

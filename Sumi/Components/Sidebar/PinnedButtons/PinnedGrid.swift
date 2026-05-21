@@ -513,44 +513,69 @@ struct PinnedGrid: View {
         configuration: PinnedTabsConfiguration,
         tileSize: CGSize
     ) -> some View {
-        let presentationState = pinPresentationState(pin)
-        let liveTab = browserManager.tabManager.shortcutLiveTab(
-            for: pin.id,
-            in: windowState.id
-        )
+        if let placeholderGroup = splitPlaceholderGroup(for: pin) {
+            PinnedSplitPlaceholderTile(
+                group: placeholderGroup,
+                pin: pin,
+                isSelected: isSplitPlaceholderSelected(placeholderGroup, pin: pin),
+                accessibilityID: "essential-split-placeholder-\(pin.id.uuidString)",
+                isAppKitInteractionEnabled: isAppKitInteractionEnabled,
+                onActivate: {
+                    browserManager.focusSplitGroup(placeholderGroup, in: windowState)
+                }
+            )
+            .frame(width: tileSize.width, height: tileSize.height, alignment: .center)
+            .opacity(
+                dragState.isDragging && dragState.activeDragItemId == pin.id
+                    ? 0.001
+                    : 1
+            )
+            .environmentObject(browserManager)
+            .transition(
+                reduceMotion
+                    ? .identity
+                    : .scale(scale: 0.96, anchor: .center).combined(with: .opacity)
+            )
+        } else {
+            let presentationState = pinPresentationState(pin)
+            let liveTab = browserManager.tabManager.shortcutLiveTab(
+                for: pin.id,
+                in: windowState.id
+            )
 
-        PinnedTile(
-            pin: pin,
-            presentationState: presentationState,
-            liveTab: liveTab,
-            essentialRuntimeState: essentialRuntimeState(pin),
-            accessibilityID: "essential-shortcut-\(pin.id.uuidString)",
-            onActivate: { activate(pin) },
-            onClose: { closeIfActive(pin) },
-            onUnload: { unload(pin) },
-            onRemovePin: { removeFromEssentials(pin) },
-            onUnpinToRegular: { moveToRegularTabs(pin) },
-            onSplitRight: { openInSplit(pin, side: .right) },
-            onSplitLeft: { openInSplit(pin, side: .left) },
-            onSplitTop: { openInSplit(pin, side: .top) },
-            onSplitBottom: { openInSplit(pin, side: .bottom) },
-            showsCloseAction: presentationState.isSelected,
-            dragPinnedConfiguration: configuration,
-            dragIsEnabled: !browserManager.isTransitioningProfile && isAppKitInteractionEnabled,
-            isAppKitInteractionEnabled: isAppKitInteractionEnabled
-        )
-        .frame(width: tileSize.width, height: tileSize.height, alignment: .center)
-        .opacity(
-            dragState.isDragging && dragState.activeDragItemId == pin.id
-                ? 0.001
-                : 1
-        )
-        .environmentObject(browserManager)
-        .transition(
-            reduceMotion
-                ? .identity
-                : .scale(scale: 0.96, anchor: .center).combined(with: .opacity)
-        )
+            PinnedTile(
+                pin: pin,
+                presentationState: presentationState,
+                liveTab: liveTab,
+                essentialRuntimeState: essentialRuntimeState(pin),
+                accessibilityID: "essential-shortcut-\(pin.id.uuidString)",
+                onActivate: { activate(pin) },
+                onClose: { closeIfActive(pin) },
+                onUnload: { unload(pin) },
+                onRemovePin: { removeFromEssentials(pin) },
+                onUnpinToRegular: { moveToRegularTabs(pin) },
+                onSplitRight: { openInSplit(pin, side: .right) },
+                onSplitLeft: { openInSplit(pin, side: .left) },
+                onSplitTop: { openInSplit(pin, side: .top) },
+                onSplitBottom: { openInSplit(pin, side: .bottom) },
+                showsCloseAction: presentationState.isSelected,
+                dragPinnedConfiguration: configuration,
+                dragIsEnabled: !browserManager.isTransitioningProfile && isAppKitInteractionEnabled,
+                isAppKitInteractionEnabled: isAppKitInteractionEnabled
+            )
+            .frame(width: tileSize.width, height: tileSize.height, alignment: .center)
+            .opacity(
+                dragState.isDragging && dragState.activeDragItemId == pin.id
+                    ? 0.001
+                    : 1
+            )
+            .environmentObject(browserManager)
+            .transition(
+                reduceMotion
+                    ? .identity
+                    : .scale(scale: 0.96, anchor: .center).combined(with: .opacity)
+            )
+        }
     }
 
     @ViewBuilder
@@ -575,6 +600,21 @@ struct PinnedGrid: View {
             in: windowState,
             splitManager: browserManager.splitManager
         )
+    }
+
+    private func splitPlaceholderGroup(for pin: ShortcutPin) -> SplitGroup? {
+        browserManager.tabManager.splitGroup(containingPinId: pin.id)
+    }
+
+    private func isSplitPlaceholderSelected(_ group: SplitGroup, pin: ShortcutPin) -> Bool {
+        if windowState.currentShortcutPinId == pin.id {
+            return true
+        }
+        guard let currentTabId = windowState.currentTabId else {
+            return false
+        }
+        return group.contains(currentTabId)
+            || group.member(forPinId: pin.id)?.tabId == currentTabId
     }
 
     private func activate(_ pin: ShortcutPin) {
@@ -811,6 +851,113 @@ struct PinnedGrid: View {
         }
     }
 
+}
+
+private struct PinnedSplitPlaceholderTile: View {
+    let group: SplitGroup
+    @ObservedObject var pin: ShortcutPin
+    let isSelected: Bool
+    let accessibilityID: String
+    let isAppKitInteractionEnabled: Bool
+    let onActivate: () -> Void
+
+    @Environment(BrowserWindowState.self) private var windowState
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @State private var isTileHovered = false
+    @State private var faviconCacheRefreshID = UUID()
+    @State private var loadedStoredFaviconURL: URL?
+    @State private var loadedStoredFavicon: Image?
+
+    var body: some View {
+        let _ = faviconCacheRefreshID
+        let configuration = PinnedTabsConfiguration.large
+        let resolvedFavicon = currentLoadedStoredFavicon ?? pin.storedFavicon
+        let resolvedChromeTemplateSystemImageName = currentLoadedStoredFavicon == nil
+            ? pin.storedChromeTemplateSystemImageName
+            : nil
+
+        PinnedTileVisual(
+            tabIcon: resolvedFavicon,
+            chromeTemplateSystemImageName: resolvedChromeTemplateSystemImageName,
+            presentationState: isSelected ? .visuallySelected : .launcherOnly,
+            isHovered: displayIsHovered,
+            isLoading: false,
+            faviconOpacity: 0.25,
+            configuration: configuration
+        )
+        .overlay {
+            Image(systemName: "rectangle.split.2x1")
+                .font(.system(size: configuration.faviconHeight * 0.58, weight: .bold))
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(tokens.primaryText.opacity(0.82))
+                .frame(width: configuration.faviconHeight, height: configuration.faviconHeight)
+                .background(tokens.fieldBackground.opacity(0.58), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: configuration.height)
+        .frame(minWidth: configuration.minWidth)
+        .contentShape(
+            RoundedRectangle(
+                cornerRadius: sumiSettings.resolvedCornerRadius(configuration.cornerRadius),
+                style: .continuous
+            )
+        )
+        .onTapGesture(perform: onActivate)
+        .accessibilityIdentifier(accessibilityID)
+        .accessibilityValue(isSelected ? "selected" : "split placeholder")
+        .sidebarDDGHover($isTileHovered, isEnabled: isAppKitInteractionEnabled)
+        .sidebarZenPressEffect(sourceID: accessibilityID, isEnabled: isAppKitInteractionEnabled)
+        .sidebarAppKitPrimaryAction(
+            isInteractionEnabled: isAppKitInteractionEnabled,
+            sourceID: accessibilityID,
+            action: onActivate
+        )
+        .shadow(
+            color: isSelected ? tokens.sidebarSelectionShadow : .clear,
+            radius: isSelected ? 2 : 0,
+            y: isSelected ? 1 : 0
+        )
+        .task(id: storedFaviconLoadKey) {
+            await loadStoredFavicon()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { _ in
+            loadedStoredFaviconURL = nil
+            loadedStoredFavicon = nil
+            faviconCacheRefreshID = UUID()
+        }
+    }
+
+    private var displayIsHovered: Bool {
+        SidebarHoverChrome.displayHover(
+            isTileHovered,
+            freezesHoverState: windowState.sidebarInteractionState.freezesSidebarHoverState
+        )
+    }
+
+    private var currentLoadedStoredFavicon: Image? {
+        loadedStoredFaviconURL == pin.launchURL ? loadedStoredFavicon : nil
+    }
+
+    private var storedFaviconLoadKey: String {
+        "\(pin.launchURL.absoluteString)|\(faviconCacheRefreshID.uuidString)"
+    }
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
+    }
+
+    @MainActor
+    private func loadStoredFavicon() async {
+        let launchURL = pin.launchURL
+        guard let image = await TabFaviconStore.loadCachedLauncherImage(forDocumentURL: launchURL),
+              !Task.isCancelled,
+              launchURL == pin.launchURL
+        else { return }
+
+        loadedStoredFaviconURL = launchURL
+        loadedStoredFavicon = Image(nsImage: image)
+    }
 }
 
 private struct PinnedTile: View {

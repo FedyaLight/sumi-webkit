@@ -43,13 +43,18 @@ enum SidebarDragOperationContextValidator {
             return folder.id == operation.scope.sourceItemId
         case (.folder, _):
             return false
+        case (.splitGroup, .splitGroup(let group)):
+            return group.id == operation.scope.sourceItemId
+        case (.splitGroup, _):
+            return false
         case (.tab, .pin(let pin)):
             return pin.id == operation.scope.sourceItemId
         case (.tab, .tab(let tab)):
             return tab.id == operation.scope.sourceItemId
                 || tab.shortcutPinId == operation.scope.sourceItemId
                 || shortcutPin(operation.scope.sourceItemId)?.id == tab.shortcutPinId
-        case (.tab, .folder):
+        case (.tab, .folder),
+             (.tab, .splitGroup):
             return false
         }
     }
@@ -78,6 +83,14 @@ enum SidebarDragOperationContextValidator {
         shortcutPin: ShortcutPinResolver
     ) -> Bool {
         switch operation.payload {
+        case .splitGroup(let group):
+            guard case .spacePinned(let spaceId) = operation.fromContainer else {
+                return false
+            }
+            return group.isShortcutHosted
+                && group.hostSpaceId == operation.scope.spaceId
+                && group.hostSpaceId == spaceId
+
         case .folder(let folder):
             guard case .spacePinned(let spaceId) = operation.fromContainer else {
                 return false
@@ -156,6 +169,9 @@ extension TabManager {
              .folderHeaderUnsupported(let folder):
             return executeFolderHeaderDragPlan(folder, operation: operation)
 
+        case .shortcutSplitGroup(let group):
+            return executeShortcutSplitGroupDragPlan(group, operation: operation)
+
         case .launcher(let pin, let launcherOperation):
             return executeLauncherDragPlan(
                 pin,
@@ -180,6 +196,18 @@ extension TabManager {
         operation: DragOperation
     ) -> Bool {
         handleFolderDragOperation(folder, operation: operation)
+    }
+
+    private func executeShortcutSplitGroupDragPlan(
+        _ group: SplitGroup,
+        operation: DragOperation
+    ) -> Bool {
+        switch (operation.fromContainer, operation.toContainer) {
+        case (.spacePinned(let fromSpaceId), .spacePinned(let toSpaceId)) where fromSpaceId == toSpaceId:
+            return moveShortcutHostedSplitGroup(group, in: toSpaceId, to: operation.toIndex)
+        default:
+            return false
+        }
     }
 
     private func executeLauncherDragPlan(

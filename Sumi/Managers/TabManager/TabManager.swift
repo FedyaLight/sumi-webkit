@@ -88,6 +88,9 @@ class TabManager: ObservableObject {
             for tabId in group.tabIds {
                 splitGroupIdByTabId[tabId] = group.id
             }
+            for pinId in group.shortcutPinIds {
+                splitGroupIdByTabId[pinId] = group.id
+            }
         }
     }
     
@@ -177,6 +180,8 @@ class TabManager: ObservableObject {
             return resolveDragTab(for: item.tabId).map { .tab($0) }
         case .folder:
             return folder(by: item.tabId).map { .folder($0) }
+        case .splitGroup:
+            return splitGroup(with: item.tabId).map { .splitGroup($0) }
         }
     }
     

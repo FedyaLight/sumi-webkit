@@ -9,6 +9,7 @@ struct SidebarDragOperationPlan {
 enum SidebarDragOperationKind {
     case folderHeaderReorder(folder: TabFolder, spaceId: UUID)
     case folderHeaderUnsupported(folder: TabFolder)
+    case shortcutSplitGroup(group: SplitGroup)
     case launcher(pin: ShortcutPin, operation: SidebarLauncherDragOperationKind)
     case regularTab(tab: Tab, operation: SidebarRegularTabDragOperationKind)
     case unsupported
@@ -43,6 +44,12 @@ enum SidebarDragOperationPlanner {
         if let folder = operation.folder {
             return SidebarDragOperationPlan(
                 kind: folderOperation(folder, operation: operation)
+            )
+        }
+
+        if let splitGroup = operation.splitGroup {
+            return SidebarDragOperationPlan(
+                kind: shortcutSplitGroupOperation(splitGroup, operation: operation)
             )
         }
 
@@ -86,6 +93,18 @@ enum SidebarDragOperationPlanner {
             return .folderHeaderReorder(folder: folder, spaceId: toSpaceId)
         default:
             return .folderHeaderUnsupported(folder: folder)
+        }
+    }
+
+    private static func shortcutSplitGroupOperation(
+        _ group: SplitGroup,
+        operation: DragOperation
+    ) -> SidebarDragOperationKind {
+        switch (operation.fromContainer, operation.toContainer) {
+        case (.spacePinned(let fromSpaceId), .spacePinned(let toSpaceId)) where fromSpaceId == toSpaceId:
+            return .shortcutSplitGroup(group: group)
+        default:
+            return .unsupported
         }
     }
 

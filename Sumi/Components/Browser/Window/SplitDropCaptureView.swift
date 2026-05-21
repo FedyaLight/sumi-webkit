@@ -55,6 +55,11 @@ final class SplitDropCaptureView: NSView {
     var windowId: UUID?
     private var currentTarget: SplitDropTarget?
     private var isDragActive = false
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         commonInit()
@@ -67,6 +72,26 @@ final class SplitDropCaptureView: NSView {
 
     private func commonInit() {
         registerForDraggedTypes([.sumiSidebarDragPayload])
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleTabDragDidEnd),
+            name: .tabDragDidEnd,
+            object: nil
+        )
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        if superview == nil {
+            cancelActiveDragPreview()
+        }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            cancelActiveDragPreview()
+        }
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -87,11 +112,11 @@ final class SplitDropCaptureView: NSView {
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
-        finishDrag(cancelPreview: true)
+        cancelActiveDragPreview()
     }
 
     override func draggingEnded(_ sender: NSDraggingInfo) {
-        finishDrag(cancelPreview: true)
+        finishDrag(cancelPreview: true, resetSidebarDragState: true)
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
@@ -103,12 +128,12 @@ final class SplitDropCaptureView: NSView {
               let tab = bm.tabManager.resolveDragTab(for: item.tabId),
               let target = currentTarget ?? resolvedDropTarget(sender)
         else {
-            finishDrag(cancelPreview: true)
+            finishDrag(cancelPreview: true, resetSidebarDragState: true)
             return false
         }
 
         let didDrop = sm.dropTab(tab, on: target, in: windowState)
-        finishDrag(cancelPreview: true)
+        finishDrag(cancelPreview: true, resetSidebarDragState: true)
         DispatchQueue.main.async { [weak sm] in
             sm?.endPreview(cancel: true, for: windowId)
         }
@@ -118,8 +143,7 @@ final class SplitDropCaptureView: NSView {
     private func updateDragState(_ sender: NSDraggingInfo) -> NSDragOperation {
         isDragActive = true
         guard let item = SidebarDropCoordinator.draggedItem(from: sender.draggingPasteboard) else {
-            currentTarget = nil
-            finishDrag(cancelPreview: true)
+            cancelActiveDragPreview()
             return []
         }
 
@@ -127,8 +151,7 @@ final class SplitDropCaptureView: NSView {
             sourceMask: sender.draggingSourceOperationMask
         )
         guard operation != [] else {
-            currentTarget = nil
-            finishDrag(cancelPreview: true)
+            cancelActiveDragPreview()
             return []
         }
 
@@ -137,8 +160,7 @@ final class SplitDropCaptureView: NSView {
         updateSidebarDragPreviewLocation(sender)
 
         guard let target = resolvedDropTarget(sender, draggedTabId: item.tabId) else {
-            currentTarget = nil
-            splitManager.endPreview(cancel: true, for: windowId)
+            cancelActiveDragPreview()
             return []
         }
 
@@ -204,13 +226,20 @@ final class SplitDropCaptureView: NSView {
         return hadLocalDragState || hadPreview
     }
 
-    private func finishDrag(cancelPreview: Bool) {
+    private func finishDrag(cancelPreview: Bool, resetSidebarDragState: Bool = false) {
         if endDrag(cancelPreview: cancelPreview) {
             NotificationCenter.default.post(name: .tabDragDidEnd, object: nil)
+        }
+        if resetSidebarDragState {
+            SidebarDragState.shared.resetInteractionState()
         }
     }
 
     func cancelActiveDragPreview() {
         _ = endDrag(cancelPreview: true)
+    }
+
+    @objc private func handleTabDragDidEnd(_ notification: Notification) {
+        cancelActiveDragPreview()
     }
 }

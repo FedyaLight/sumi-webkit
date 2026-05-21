@@ -34,6 +34,12 @@ struct SidebarFolderProjectionStore: Equatable {
     }
 }
 
+struct SplitGroupFocusRequest: Equatable {
+    let id = UUID()
+    let groupId: UUID
+    let targetSpaceId: UUID
+}
+
 /// Represents the state of a single browser window, allowing multiple windows
 /// to have independent tab selections and UI states while sharing the same tab data.
 @MainActor
@@ -93,6 +99,9 @@ class BrowserWindowState {
 
     /// Window-local sidebar projection state that must not publish through shared models.
     var sidebarFolderProjectionStore: SidebarFolderProjectionStore = .init()
+
+    /// Deferred split focus request used when a sidebar placeholder targets a split in another space.
+    var pendingSplitGroupFocusRequest: SplitGroupFocusRequest?
 
     /// Window-scoped AppKit coordinator for sidebar context menus.
     @ObservationIgnored

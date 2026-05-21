@@ -148,6 +148,12 @@ enum SpaceSidebarSnapshotIcon {
     case emoji(String)
 }
 
+enum SpaceShortcutSplitPlaceholderStyle: Equatable {
+    case none
+    case essentialOverlay
+    case replaceIcon
+}
+
 struct SpaceTabRowSnapshot: Identifiable {
     let id: UUID
     let title: String
@@ -167,6 +173,7 @@ struct SpaceShortcutSnapshot: Identifiable {
     let isMuted: Bool
     let showsSplitBadge: Bool
     let splitBadgeIsSelected: Bool
+    let splitPlaceholderStyle: SpaceShortcutSplitPlaceholderStyle
 }
 
 struct SpaceFolderSnapshot: Identifiable {
@@ -352,6 +359,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                     shortcutSnapshot(
                         for: $0,
                         liveTab: browserManager.tabManager.shortcutLiveTab(for: $0.id, in: windowState.id),
+                        isEssential: true,
                         browserManager: browserManager,
                         windowState: windowState,
                         splitManager: splitManager
@@ -478,6 +486,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
     private static func shortcutSnapshot(
         for pin: ShortcutPin,
         liveTab: Tab?,
+        isEssential: Bool = false,
         browserManager: BrowserManager,
         windowState: BrowserWindowState,
         splitManager: SplitViewManager
@@ -492,6 +501,10 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             in: windowState,
             splitManager: splitManager
         )
+        let isSplitPlaceholder = browserManager.tabManager.splitGroup(containingPinId: pin.id) != nil
+        let splitPlaceholderStyle: SpaceShortcutSplitPlaceholderStyle = isSplitPlaceholder
+            ? (isEssential ? .essentialOverlay : .replaceIcon)
+            : .none
 
         return SpaceShortcutSnapshot(
             id: pin.id,
@@ -500,9 +513,11 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             presentationState: presentationState,
             showsAudioButton: liveTab?.audioState.showsTabAudioButton ?? false,
             isMuted: liveTab?.audioState.isMuted ?? false,
-            showsSplitBadge: essentialRuntimeState?.showsSplitProxyBadge == true || isInVisibleSplit,
+            showsSplitBadge: splitPlaceholderStyle == .none
+                && (essentialRuntimeState?.showsSplitProxyBadge == true || isInVisibleSplit),
             splitBadgeIsSelected: essentialRuntimeState?.isSelected == true
-                || liveTab.map { splitManager.isTabActiveInSplit($0.id, in: windowState.id) } == true
+                || liveTab.map { splitManager.isTabActiveInSplit($0.id, in: windowState.id) } == true,
+            splitPlaceholderStyle: splitPlaceholderStyle
         )
     }
 
@@ -770,14 +785,36 @@ private struct SpaceSnapshotPinnedTileView: View {
                     }
                 }
 
-            SpaceSnapshotIconView(
-                icon: item.icon,
-                size: configuration.faviconHeight,
-                cornerRadius: PinnedTileFaviconLayout.cornerRadius,
-                foregroundColor: tokens.primaryText
-            )
-            .saturation(item.presentationState.shouldDesaturateIcon ? 0.0 : 1.0)
-            .opacity(item.presentationState.shouldDesaturateIcon ? 0.8 : 1.0)
+            ZStack {
+                if item.splitPlaceholderStyle == .replaceIcon {
+                    Image(systemName: "rectangle.split.2x1")
+                        .font(.system(size: configuration.faviconHeight * 0.78, weight: .medium))
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(tokens.primaryText)
+                } else {
+                    SpaceSnapshotIconView(
+                        icon: item.icon,
+                        size: configuration.faviconHeight,
+                        cornerRadius: PinnedTileFaviconLayout.cornerRadius,
+                        foregroundColor: tokens.primaryText
+                    )
+                    .saturation(item.presentationState.shouldDesaturateIcon ? 0.0 : 1.0)
+                    .opacity(
+                        (item.presentationState.shouldDesaturateIcon ? 0.8 : 1.0)
+                            * (item.splitPlaceholderStyle == .essentialOverlay ? 0.25 : 1.0)
+                    )
+                }
+
+                if item.splitPlaceholderStyle == .essentialOverlay {
+                    Image(systemName: "rectangle.split.2x1")
+                        .font(.system(size: configuration.faviconHeight * 0.58, weight: .bold))
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(tokens.primaryText.opacity(0.82))
+                        .frame(width: configuration.faviconHeight, height: configuration.faviconHeight)
+                        .background(tokens.fieldBackground.opacity(0.58), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .frame(width: configuration.faviconHeight, height: configuration.faviconHeight)
+                }
+            }
 
             if item.showsAudioButton {
                 VStack {
@@ -979,16 +1016,39 @@ private struct SpaceSnapshotShortcutRowView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            SpaceSnapshotIconView(
-                icon: shortcut.icon,
-                size: SidebarRowLayout.faviconSize,
-                cornerRadius: 6,
-                foregroundColor: tokens.primaryText
-            )
+            ZStack {
+                if shortcut.splitPlaceholderStyle == .replaceIcon {
+                    Image(systemName: "rectangle.split.2x1")
+                        .font(.system(size: SidebarRowLayout.faviconSize * 0.78, weight: .medium))
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(tokens.primaryText)
+                } else {
+                    SpaceSnapshotIconView(
+                        icon: shortcut.icon,
+                        size: SidebarRowLayout.faviconSize,
+                        cornerRadius: 6,
+                        foregroundColor: tokens.primaryText
+                    )
+                    .saturation(shortcut.presentationState.shouldDesaturateIcon ? 0.0 : 1.0)
+                    .opacity(
+                        (shortcut.presentationState.shouldDesaturateIcon ? 0.8 : 1.0)
+                            * (shortcut.splitPlaceholderStyle == .essentialOverlay ? 0.25 : 1.0)
+                    )
+                }
+
+                if shortcut.splitPlaceholderStyle == .essentialOverlay {
+                    Image(systemName: "rectangle.split.2x1")
+                        .font(.system(size: SidebarRowLayout.faviconSize * 0.58, weight: .bold))
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(tokens.primaryText.opacity(0.82))
+                        .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
+                        .background(tokens.fieldBackground.opacity(0.58), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
+                }
+            }
+            .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
             .padding(.leading, SidebarRowLayout.leadingInset)
             .padding(.trailing, SidebarRowLayout.iconTrailingSpacing)
-            .saturation(shortcut.presentationState.shouldDesaturateIcon ? 0.0 : 1.0)
-            .opacity(shortcut.presentationState.shouldDesaturateIcon ? 0.8 : 1.0)
 
             if shortcut.showsAudioButton {
                 Image(systemName: shortcut.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
@@ -1333,6 +1393,15 @@ struct SpacesSideBarView: View {
                 sidebarInteractionState.syncSidebarItemDrag(isDragging)
             }
         }
+        .onAppear {
+            handlePendingSplitGroupFocusRequest(
+                windowState.pendingSplitGroupFocusRequest,
+                spaces: spaces
+            )
+        }
+        .onChange(of: windowState.pendingSplitGroupFocusRequest) { _, request in
+            handlePendingSplitGroupFocusRequest(request, spaces: spaces)
+        }
     }
 
     // MARK: - Spaces Page View
@@ -1627,6 +1696,28 @@ struct SpacesSideBarView: View {
     private func space(for id: UUID?, in spaces: [Space]) -> Space? {
         guard let id else { return nil }
         return spaces.first(where: { $0.id == id })
+    }
+
+    private func handlePendingSplitGroupFocusRequest(
+        _ request: SplitGroupFocusRequest?,
+        spaces: [Space]
+    ) {
+        guard let request else { return }
+
+        if windowState.currentSpaceId == request.targetSpaceId {
+            browserManager.completePendingSplitGroupFocusIfReady(
+                in: windowState,
+                spaceId: request.targetSpaceId
+            )
+            return
+        }
+
+        guard let targetSpace = space(for: request.targetSpaceId, in: spaces) else {
+            windowState.pendingSplitGroupFocusRequest = nil
+            return
+        }
+
+        switchSpace(to: targetSpace, spaces: spaces)
     }
 
     private func handleSpacesCollectionChange(_ spaces: [Space]) {

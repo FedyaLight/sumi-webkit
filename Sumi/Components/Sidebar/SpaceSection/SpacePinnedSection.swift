@@ -6,17 +6,7 @@
 import AppKit
 import SwiftUI
 
-private enum SpacePinnedListItem: Hashable {
-    case folder(UUID)
-    case shortcut(UUID)
-
-    var id: UUID {
-        switch self {
-        case .folder(let id), .shortcut(let id):
-            return id
-        }
-    }
-}
+private typealias SpacePinnedListItem = TabManager.SpacePinnedVisualItem
 
 private struct SpacePinnedDisplayEntry: Identifiable {
     let item: ProjectedItem<SpacePinnedListItem>
@@ -45,7 +35,7 @@ extension SpaceView {
     }
 
     private var hasSpacePinnedContent: Bool {
-        !topLevelPinnedPins.isEmpty || !folders.isEmpty
+        !spacePinnedItems.isEmpty
     }
 
     private var showsEmptyPinnedDropPlaceholder: Bool {
@@ -71,32 +61,8 @@ extension SpaceView {
     }
 
     private var spacePinnedItems: [SpacePinnedListItem] {
-        let currentFolders = folders
-        let currentPins = topLevelPinnedPins
-
-        // Early return if no content
-        guard !currentPins.isEmpty || !currentFolders.isEmpty else {
-            return []
-        }
-
-        return (
-            currentFolders.map { ($0.index, SpacePinnedListItem.folder($0.id)) }
-            + currentPins.map { ($0.index, SpacePinnedListItem.shortcut($0.id)) }
-        )
-        .sorted { lhs, rhs in
-            if lhs.0 != rhs.0 { return lhs.0 < rhs.0 }
-            switch (lhs.1, rhs.1) {
-            case (.folder(let leftId), .folder(let rightId)):
-                return leftId.uuidString < rightId.uuidString
-            case (.shortcut(let leftId), .shortcut(let rightId)):
-                return leftId.uuidString < rightId.uuidString
-            case (.folder, .shortcut):
-                return true
-            case (.shortcut, .folder):
-                return false
-            }
-        }
-        .map(\.1)
+        guard !windowState.isIncognito else { return [] }
+        return browserManager.tabManager.topLevelSpacePinnedVisualItems(for: space.id)
     }
 
     private var projectedSpacePinnedItems: [ProjectedItem<SpacePinnedListItem>] {
@@ -259,6 +225,168 @@ extension SpaceView {
         )
     }
 
+    private func shortcutHostedSplitGroupItems(_ group: SplitGroup) -> [SplitGroupSidebarItem] {
+        group.tabIds.compactMap { id in
+            if let tab = browserManager.tabManager.tab(for: id) {
+                return .tab(tab)
+            }
+            if let pinId = group.member(for: id)?.pinId,
+               let pin = browserManager.tabManager.shortcutPin(by: pinId) {
+                return .pin(pin)
+            }
+            if let pin = browserManager.tabManager.shortcutPin(by: id) {
+                return .pin(pin)
+            }
+            return nil
+        }
+    }
+
+    private func shortcutHostedSegmentAction(
+        for item: SplitGroupSidebarItem,
+        in group: SplitGroup
+    ) -> SplitGroupSidebarSegmentAction? {
+        if shortcutHostedSplitMember(for: item, in: group)?.isShortcutBacked == true {
+            return .restore
+        }
+        return item.tab == nil ? nil : .close
+    }
+
+    private func performShortcutHostedSegmentAction(
+        for item: SplitGroupSidebarItem,
+        in group: SplitGroup
+    ) {
+        if shortcutHostedSplitMember(for: item, in: group)?.isShortcutBacked == true {
+            browserManager.restoreShortcutSplitMember(item.id, from: group, in: windowState)
+            return
+        }
+
+        guard let tab = item.tab else { return }
+        browserManager.closeTab(tab, in: windowState)
+    }
+
+    private func shortcutHostedSplitMember(
+        for item: SplitGroupSidebarItem,
+        in group: SplitGroup
+    ) -> SplitGroupMember? {
+        if let pin = item.pin {
+            return group.member(forPinId: pin.id) ?? group.member(for: pin.id)
+        }
+        if let tab = item.tab {
+            if let pinId = tab.shortcutPinId {
+                return group.member(forPinId: pinId) ?? group.member(for: tab.id)
+            }
+            return group.member(for: tab.id)
+        }
+        return nil
+    }
+
+    @ViewBuilder
+    private func shortcutHostedSplitGroupView(_ group: SplitGroup, topLevelPinnedIndex: Int) -> some View {
+        let items = shortcutHostedSplitGroupItems(group)
+        if !items.isEmpty {
+            SplitGroupSidebarRow(
+                group: group,
+                items: items,
+                spaceId: space.id,
+                isAppKitInteractionEnabled: isInteractive,
+                segmentAction: { item in
+                    shortcutHostedSegmentAction(for: item, in: group)
+                },
+                dragSource: { item in
+                    shortcutHostedSplitSegmentDragSource(for: item, in: group)
+                },
+                contextMenuEntries: { _ in [] },
+                onActivate: { tab in
+                    browserManager.requestUserTabActivation(tab, in: windowState)
+                },
+                onActivateGroup: {
+                    browserManager.focusSplitGroup(group, in: windowState)
+                },
+                onSegmentAction: { item in
+                    performShortcutHostedSegmentAction(for: item, in: group)
+                }
+            )
+            .environmentObject(browserManager)
+            .environmentObject(splitManager)
+            .accessibilityIdentifier("shortcut-host-split-row-\(group.id.uuidString)")
+            .sidebarTopLevelPinnedItemGeometry(
+                itemId: group.id,
+                spaceId: space.id,
+                topLevelIndex: topLevelPinnedIndex,
+                generation: dragState.sidebarGeometryGeneration,
+                isActive: isInteractive
+            )
+            .sidebarZenRowLifecycleTransition(isEnabled: isInteractive)
+        }
+    }
+
+    private func shortcutHostedSplitSegmentDragSource(
+        for item: SplitGroupSidebarItem,
+        in group: SplitGroup
+    ) -> SidebarDragSourceConfiguration? {
+        let member = shortcutHostedSplitMember(for: item, in: group)
+        if let pin = shortcutHostedSegmentShortcutPin(for: item, member: member) {
+            let dragItemId = item.tab?.id ?? pin.id
+            return SidebarDragSourceConfiguration(
+                item: SumiDragItem(
+                    tabId: dragItemId,
+                    title: item.title,
+                    urlString: item.tab?.url.absoluteString ?? pin.launchURL.absoluteString
+                ),
+                sourceZone: shortcutHostedSegmentSourceZone(for: pin),
+                previewKind: .row,
+                previewIcon: item.tab?.favicon ?? pin.storedFavicon,
+                exclusionZones: [.trailingStrip(32)],
+                onActivate: {
+                    browserManager.focusSplitGroup(group, in: windowState)
+                },
+                isEnabled: isInteractive
+            )
+        }
+
+        guard let tab = item.tab else { return nil }
+        return SidebarDragSourceConfiguration(
+            item: SumiDragItem(
+                tabId: tab.id,
+                title: tab.name,
+                urlString: tab.url.absoluteString
+            ),
+            sourceZone: .spaceRegular(space.id),
+            previewKind: .row,
+            previewIcon: tab.favicon,
+            exclusionZones: [.trailingStrip(32)],
+            onActivate: {
+                browserManager.requestUserTabActivation(tab, in: windowState)
+            },
+            isEnabled: isInteractive
+        )
+    }
+
+    private func shortcutHostedSegmentShortcutPin(
+        for item: SplitGroupSidebarItem,
+        member: SplitGroupMember?
+    ) -> ShortcutPin? {
+        if let pin = item.pin {
+            return pin
+        }
+        if let pinId = item.tab?.shortcutPinId ?? member?.pinId {
+            return browserManager.tabManager.shortcutPin(by: pinId)
+        }
+        return nil
+    }
+
+    private func shortcutHostedSegmentSourceZone(for pin: ShortcutPin) -> DropZoneID {
+        switch pin.role {
+        case .essential:
+            return .essentials
+        case .spacePinned:
+            if let folderId = pin.folderId {
+                return .folder(folderId)
+            }
+            return .spacePinned(pin.spaceId ?? space.id)
+        }
+    }
+
     private var pinnedTabsList: some View {
         let allItems = projectedSpacePinnedDisplayEntries
         
@@ -277,6 +405,10 @@ extension SpaceView {
                     case .item(.shortcut(let pinId)):
                         if let pin = topLevelPinnedPins.first(where: { $0.id == pinId }) {
                             pinnedShortcutView(pin, topLevelPinnedIndex: entry.dropIndex)
+                        }
+                    case .item(.splitGroup(let groupId)):
+                        if let group = browserManager.tabManager.splitGroup(with: groupId) {
+                            shortcutHostedSplitGroupView(group, topLevelPinnedIndex: entry.dropIndex)
                         }
                     case .placeholder:
                         pinnedDropGap
@@ -377,39 +509,65 @@ extension SpaceView {
         .sidebarZenCompositeLifecycleTransition(isEnabled: isInteractive)
     }
 
+    @ViewBuilder
     private func pinnedShortcutView(_ pin: ShortcutPin, topLevelPinnedIndex: Int) -> some View {
-        let activeTab = activeShortcutTab(for: pin)
-        return ShortcutSidebarRow(
-            pin: pin,
-            liveTab: activeTab,
-            accessibilityID: "space-pinned-shortcut-\(pin.id.uuidString)",
-            contextMenuEntries: { toggleEditIcon in
-                pinnedShortcutContextMenuEntries(pin, toggleEditIcon: toggleEditIcon)
-            },
-            action: { activateShortcutPin(pin) },
-            dragSourceZone: .spacePinned(space.id),
-            dragHasTrailingActionExclusion: true,
-            dragIsEnabled: isInteractive,
-            onLauncherIconSelected: { newIconAsset in
-                _ = browserManager.tabManager.updateShortcutPin(pin, iconAsset: newIconAsset)
-            },
-            onResetToLaunchURL: { resetShortcutPin(pin) },
-            onUnload: { unloadShortcutPin(pin) },
-            onRemove: { removeShortcutPin(pin) }
-        )
-        .opacity(
-            dragState.isDragging && dragState.activeDragItemId == pin.id
-                ? 0.001
-                : 1
-        )
-        .sidebarTopLevelPinnedItemGeometry(
-            itemId: pin.id,
-            spaceId: space.id,
-            topLevelIndex: topLevelPinnedIndex,
-            generation: dragState.sidebarGeometryGeneration,
-            isActive: isInteractive
-        )
-        .sidebarZenRowLifecycleTransition(isEnabled: isInteractive)
+        if let placeholderGroup = browserManager.tabManager.regularHostedSplitPlaceholderGroup(for: pin) {
+            ShortcutSplitPlaceholderRow(
+                pin: pin,
+                isSelected: isPinnedSplitPlaceholderSelected(placeholderGroup, pin: pin),
+                accessibilityID: "space-pinned-split-placeholder-\(pin.id.uuidString)",
+                isAppKitInteractionEnabled: isInteractive,
+                action: {
+                    browserManager.focusSplitGroup(placeholderGroup, in: windowState)
+                }
+            )
+            .opacity(
+                dragState.isDragging && dragState.activeDragItemId == pin.id
+                    ? 0.001
+                    : 1
+            )
+            .sidebarTopLevelPinnedItemGeometry(
+                itemId: pin.id,
+                spaceId: space.id,
+                topLevelIndex: topLevelPinnedIndex,
+                generation: dragState.sidebarGeometryGeneration,
+                isActive: isInteractive
+            )
+            .sidebarZenRowLifecycleTransition(isEnabled: isInteractive)
+        } else {
+            let activeTab = activeShortcutTab(for: pin)
+            ShortcutSidebarRow(
+                pin: pin,
+                liveTab: activeTab,
+                accessibilityID: "space-pinned-shortcut-\(pin.id.uuidString)",
+                contextMenuEntries: { toggleEditIcon in
+                    pinnedShortcutContextMenuEntries(pin, toggleEditIcon: toggleEditIcon)
+                },
+                action: { activateShortcutPin(pin) },
+                dragSourceZone: .spacePinned(space.id),
+                dragHasTrailingActionExclusion: true,
+                dragIsEnabled: isInteractive,
+                onLauncherIconSelected: { newIconAsset in
+                    _ = browserManager.tabManager.updateShortcutPin(pin, iconAsset: newIconAsset)
+                },
+                onResetToLaunchURL: { resetShortcutPin(pin) },
+                onUnload: { unloadShortcutPin(pin) },
+                onRemove: { removeShortcutPin(pin) }
+            )
+            .opacity(
+                dragState.isDragging && dragState.activeDragItemId == pin.id
+                    ? 0.001
+                    : 1
+            )
+            .sidebarTopLevelPinnedItemGeometry(
+                itemId: pin.id,
+                spaceId: space.id,
+                topLevelIndex: topLevelPinnedIndex,
+                generation: dragState.sidebarGeometryGeneration,
+                isActive: isInteractive
+            )
+            .sidebarZenRowLifecycleTransition(isEnabled: isInteractive)
+        }
     }
 
     private func pinnedShortcutContextMenuEntries(
@@ -532,6 +690,17 @@ extension SpaceView {
         browserManager.tabManager.shortcutLiveTab(for: pin.id, in: windowState.id)
     }
 
+    private func isPinnedSplitPlaceholderSelected(_ group: SplitGroup, pin: ShortcutPin) -> Bool {
+        if windowState.currentShortcutPinId == pin.id {
+            return true
+        }
+        guard let currentTabId = windowState.currentTabId else {
+            return false
+        }
+        return group.contains(currentTabId)
+            || group.member(forPinId: pin.id)?.tabId == currentTabId
+    }
+
 
 
     private func activateShortcutPin(_ pin: ShortcutPin) {
@@ -593,5 +762,78 @@ extension SpaceView {
             syntheticTab,
             context: .init(windowState: windowState, spaceId: space.id)
         )
+    }
+}
+
+struct ShortcutSplitPlaceholderRow: View {
+    @ObservedObject var pin: ShortcutPin
+    let isSelected: Bool
+    let accessibilityID: String
+    let isAppKitInteractionEnabled: Bool
+    let action: () -> Void
+
+    @Environment(BrowserWindowState.self) private var windowState
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @State private var isRowHovered = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Image(systemName: "rectangle.split.2x1")
+                .font(.system(size: SidebarRowLayout.faviconSize * 0.78, weight: .medium))
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(tokens.primaryText)
+                .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .padding(.leading, SidebarRowLayout.leadingInset)
+                .padding(.trailing, SidebarRowLayout.iconTrailingSpacing)
+
+            SumiTabTitleLabel(
+                title: pin.preferredDisplayTitle,
+                font: .systemFont(ofSize: 13, weight: .medium),
+                textColor: tokens.primaryText,
+                trailingFadePadding: 0,
+                animated: false,
+                isLoading: false
+            )
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.trailing, SidebarRowLayout.trailingInset)
+        .frame(height: SidebarRowLayout.rowHeight)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(backgroundColor)
+        .clipShape(RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(12), style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture(perform: action)
+        .sidebarDDGHover($isRowHovered, isEnabled: isAppKitInteractionEnabled)
+        .sidebarZenPressEffect(sourceID: accessibilityID, isEnabled: isAppKitInteractionEnabled)
+        .sidebarAppKitPrimaryAction(
+            isInteractionEnabled: isAppKitInteractionEnabled,
+            sourceID: accessibilityID,
+            action: action
+        )
+        .accessibilityIdentifier(accessibilityID)
+        .accessibilityValue(isSelected ? "selected" : "split placeholder")
+    }
+
+    private var backgroundColor: Color {
+        if isSelected {
+            return tokens.sidebarRowActive
+        }
+        if displayIsHovering {
+            return tokens.sidebarRowHover
+        }
+        return .clear
+    }
+
+    private var displayIsHovering: Bool {
+        SidebarHoverChrome.displayHover(
+            isRowHovered,
+            freezesHoverState: windowState.sidebarInteractionState.freezesSidebarHoverState
+        )
+    }
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
     }
 }

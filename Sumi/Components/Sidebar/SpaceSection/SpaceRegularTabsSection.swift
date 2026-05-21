@@ -203,7 +203,7 @@ extension SpaceView {
             let groupedTabIds = Set(splitGroups.flatMap(\.tabIds))
             let splitGroupByFirstTabId = Dictionary(
                 uniqueKeysWithValues: splitGroups.compactMap { group -> (UUID, SplitGroup)? in
-                    guard let first = group.tabIds.first else { return nil }
+                    guard let first = currentTabs.first(where: { group.contains($0.id) })?.id else { return nil }
                     return (first, group)
                 }
             )
@@ -211,15 +211,24 @@ extension SpaceView {
                 switch item {
                 case .tab(let tabId):
                     if let group = splitGroupByFirstTabId[tabId] {
-                        let groupTabs = group.tabIds.compactMap { tabById[$0] }
+                        let groupItems = splitGroupItems(for: group, tabById: tabById)
                         SplitGroupSidebarRow(
                             group: group,
-                            tabs: groupTabs,
+                            items: groupItems,
                             spaceId: space.id,
                             isAppKitInteractionEnabled: isInteractive,
+                            segmentAction: { item in
+                                splitSegmentAction(for: item, in: group)
+                            },
+                            dragSource: { item in
+                                splitSegmentDragSource(for: item, in: group)
+                            },
                             contextMenuEntries: regularTabContextMenuEntries,
                             onActivate: onActivateTab,
-                            onClose: closeRegularTab
+                            onActivateGroup: { browserManager.focusSplitGroup(group, in: windowState) },
+                            onSegmentAction: { item in
+                                performSplitSegmentAction(for: item, in: group)
+                            }
                         )
                         .environmentObject(browserManager)
                         .environmentObject(splitManager)
@@ -246,13 +255,141 @@ extension SpaceView {
         var seenGroupIds = Set<UUID>()
         return currentTabs.compactMap { tab in
             guard let group = browserManager.tabManager.splitGroup(containing: tab.id),
+                  !group.isShortcutHosted,
                   seenGroupIds.insert(group.id).inserted,
                   group.tabIds.count >= SplitGroup.minimumTabs,
-                  group.tabIds.allSatisfy({ currentTabIds.contains($0) })
+                  group.tabIds.contains(where: { currentTabIds.contains($0) })
             else {
                 return nil
             }
             return group
+        }
+    }
+
+    private func splitGroupItems(
+        for group: SplitGroup,
+        tabById: [UUID: Tab]
+    ) -> [SplitGroupSidebarItem] {
+        group.tabIds.compactMap { id in
+            if let tab = tabById[id] ?? browserManager.tabManager.tab(for: id) {
+                return .tab(tab)
+            }
+            if let pinId = group.member(for: id)?.pinId,
+               let pin = browserManager.tabManager.shortcutPin(by: pinId) {
+                return .pin(pin)
+            }
+            if let pin = browserManager.tabManager.shortcutPin(by: id) {
+                return .pin(pin)
+            }
+            return nil
+        }
+    }
+
+    private func splitSegmentAction(
+        for item: SplitGroupSidebarItem,
+        in group: SplitGroup
+    ) -> SplitGroupSidebarSegmentAction? {
+        if splitMember(for: item, in: group)?.isShortcutBacked == true {
+            return .restore
+        }
+        return item.tab == nil ? nil : .close
+    }
+
+    private func performSplitSegmentAction(
+        for item: SplitGroupSidebarItem,
+        in group: SplitGroup
+    ) {
+        if splitMember(for: item, in: group)?.isShortcutBacked == true {
+            browserManager.restoreShortcutSplitMember(item.id, from: group, in: windowState)
+            return
+        }
+
+        guard let tab = item.tab else { return }
+        closeRegularTab(tab)
+    }
+
+    private func splitMember(
+        for item: SplitGroupSidebarItem,
+        in group: SplitGroup
+    ) -> SplitGroupMember? {
+        if let pin = item.pin {
+            return group.member(forPinId: pin.id) ?? group.member(for: pin.id)
+        }
+        if let tab = item.tab {
+            if let pinId = tab.shortcutPinId {
+                return group.member(forPinId: pinId) ?? group.member(for: tab.id)
+            }
+            return group.member(for: tab.id)
+        }
+        return nil
+    }
+
+    private func splitSegmentDragSource(
+        for item: SplitGroupSidebarItem,
+        in group: SplitGroup
+    ) -> SidebarDragSourceConfiguration? {
+        let member = splitMember(for: item, in: group)
+        if let pin = splitSegmentShortcutPin(for: item, member: member) {
+            let dragItemId = item.tab?.id ?? pin.id
+            return SidebarDragSourceConfiguration(
+                item: SumiDragItem(
+                    tabId: dragItemId,
+                    title: item.title,
+                    urlString: item.tab?.url.absoluteString ?? pin.launchURL.absoluteString
+                ),
+                sourceZone: splitSegmentSourceZone(for: pin),
+                previewKind: .row,
+                previewIcon: item.tab?.favicon ?? pin.storedFavicon,
+                exclusionZones: [.trailingStrip(32)],
+                onActivate: {
+                    if let tab = item.tab {
+                        onActivateTab(tab)
+                    } else {
+                        browserManager.focusSplitGroup(group, in: windowState)
+                    }
+                },
+                isEnabled: isInteractive
+            )
+        }
+
+        guard let tab = item.tab else { return nil }
+        return SidebarDragSourceConfiguration(
+            item: SumiDragItem(
+                tabId: tab.id,
+                title: tab.name,
+                urlString: tab.url.absoluteString
+            ),
+            sourceZone: .spaceRegular(space.id),
+            previewKind: .row,
+            previewIcon: tab.favicon,
+            exclusionZones: [.trailingStrip(32)],
+            onActivate: { onActivateTab(tab) },
+            isEnabled: isInteractive
+        )
+    }
+
+    private func splitSegmentShortcutPin(
+        for item: SplitGroupSidebarItem,
+        member: SplitGroupMember?
+    ) -> ShortcutPin? {
+        if let pin = item.pin {
+            return pin
+        }
+        if let pinId = item.tab?.shortcutPinId ?? member?.pinId {
+            return browserManager.tabManager.shortcutPin(by: pinId)
+        }
+        return nil
+    }
+
+    private func splitSegmentSourceZone(for pin: ShortcutPin) -> DropZoneID {
+        switch pin.role {
+        case .essential:
+            return .essentials
+        case .spacePinned:
+            if let folderId = pin.folderId {
+                return .folder(folderId)
+            }
+            return .spacePinned(pin.spaceId ?? space.id)
         }
     }
 

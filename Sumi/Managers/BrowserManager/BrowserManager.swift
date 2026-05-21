@@ -2102,6 +2102,7 @@ class BrowserManager: ObservableObject {
             adoptProfileIfNeeded(for: windowState, context: .spaceChange)
         }
         persistWindowSession(for: windowState)
+        completePendingSplitGroupFocusIfReady(in: windowState, spaceId: space.id)
     }
 
     private func selectionTargetForSpaceActivation(
@@ -2346,6 +2347,24 @@ class BrowserManager: ObservableObject {
 
     private func closeShortcutLiveTab(_ tab: Tab, in windowState: BrowserWindowState) {
         guard tab.isShortcutLiveInstance else { return }
+        if let group = tabManager.splitGroup(containing: tab.id)
+            ?? tab.shortcutPinId.flatMap({ tabManager.splitGroup(containingPinId: $0) }) {
+            if group.isShortcutHosted {
+                unloadShortcutHostedSplitGroup(group, in: windowState)
+                return
+            }
+            if group.member(for: tab.id)?.isShortcutBacked == true
+                || tab.shortcutPinId.flatMap({ group.member(forPinId: $0)?.isShortcutBacked }) == true {
+                restoreShortcutSplitMember(
+                    tab.id,
+                    from: group,
+                    in: windowState,
+                    preserveLiveInstance: false
+                )
+                return
+            }
+        }
+
         let wasCurrent =
             windowState.currentTabId == tab.id
             || (tab.shortcutPinId != nil && windowState.currentShortcutPinId == tab.shortcutPinId)
