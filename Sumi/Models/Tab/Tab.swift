@@ -84,8 +84,6 @@ enum SumiAuxiliaryWebViewShutdown {
 
         if let controller = webView.configuration.userContentController.sumiNormalTabUserContentController {
             controller.cleanUpBeforeClosing()
-        } else {
-            webView.configuration.userContentController.removeAllUserScripts()
         }
 
         webView.navigationDelegate = nil
@@ -992,21 +990,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             || adblockAppliedAttachmentState?.isEnabled == committedState.isEnabled {
             clearAdblockReloadRequirement()
         }
-    }
-
-    func adblockCurrentTabDiagnostics() -> SumiAdblockCurrentTabDiagnostics? {
-        browserManager?.adBlockingModule.currentTabDiagnostics(
-            for: url,
-            appliedState: adblockAppliedAttachmentState,
-            reloadRequired: isAdblockReloadRequired,
-            actualAttachedRuleListIdentifiers: existingWebView?
-                .configuration
-                .userContentController
-                .sumiNormalTabUserContentController?
-                .contentBlockingAssetSummary
-                .globalRuleListIdentifiers
-                .filter { $0.hasPrefix("sumi.adblock.") }
-        )
     }
 
     func protectionDesiredAttachmentState(

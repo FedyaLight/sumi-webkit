@@ -678,10 +678,6 @@ actor AdblockUpdateManifestStore {
         rootDirectory.appendingPathComponent("Staging", isDirectory: true)
     }
 
-    func removeStagingDirectory(_ url: URL) {
-        try? fileManager.removeItem(at: url)
-    }
-
     private func generationDirectory(for generationId: String) -> URL {
         rootDirectory
             .appendingPathComponent("Generated", isDirectory: true)
@@ -989,8 +985,6 @@ actor AdblockUpdateCoordinator {
             garbageCollector: garbageCollector
         )
     }
-
-    func latestDiagnosticsSnapshot() -> AdblockUpdateDiagnostics? { latestDiagnostics }
 
     func prepareEmbeddedBundlePublication(
         manifest: AdblockCompiledGenerationManifest,

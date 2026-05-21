@@ -61,6 +61,33 @@ The current repository keeps any temporary generation scripts as developer tooli
 
 There is no browser-side DDG TrackerRadarKit fallback. Protection requires a prepared `trackingNetwork` group from the signed app, development, or remote bundle. Adblock requires both prepared `trackingNetwork` and prepared `adblockAdsPrivacyNetwork`.
 
+## Refactor parity ledger
+
+Protection-runtime refactors must preserve Sumi as a prepared-bundle consumer. The browser may verify signed release manifests, validate SHA-256 hashes, validate byte sizes and paths, reject downgrades, cache prepared bundles, compile prepared WebKit shards, restore cached generations, and roll back after install or lookup failure.
+
+The following are legacy/runtime-generation surfaces and should stay absent from Sumi.app runtime:
+
+- TrackerRadarKit imports or DDG TDS conversion code.
+- Raw tracker/adblock list fetching, raw filter parsing, EasyList/EasyPrivacy runtime references, and `adblock-rust` invocation.
+- Browser-side WebKit rule generation or `runtimeGenerated` fallback paths.
+- Automatic background bundle/list update timers.
+- Old debug-only adblock status/current-tab diagnostics and embedded catalog install APIs.
+
+Allowed DDG/TDS references are limited to prepared `trackingNetwork` source metadata: source name, source URL, license, attribution, generated timestamp, source hash, source rule count, and source shard count.
+
+Run these checks after each protection-runtime cleanup pass:
+
+```sh
+git diff --check
+scripts/check_userscript_hot_paths.sh
+scripts/check_tracker_radar_import_boundary.sh
+scripts/check_prepared_bundle_runtime_boundary.sh
+xcodebuild test -project Sumi.xcodeproj -scheme Sumi -destination 'platform=macOS,arch=arm64' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO -only-testing:SumiTests/SumiAdBlockingModuleTests -only-testing:SumiTests/SumiAdblockNativeRuleBundleTests -only-testing:SumiTests/SumiAdblockUpdatePipelineTests -only-testing:SumiTests/SumiProtectionBundleRemoteUpdateTests -only-testing:SumiTests/SumiProtectionCoordinatorTests
+scripts/run_perf_regression.sh verify
+```
+
+Split these changes into separate migration tasks if product direction changes: removing local development prepared-bundle import, removing signed app-resource bundle support, changing the GitHub repository/schema/signing keys, moving content blocking into SwiftPM, or changing Off/Protection/Adblock semantics.
+
 ## Manual validation
 
 1. Open Privacy / Protection settings and press **Update bundles**.
