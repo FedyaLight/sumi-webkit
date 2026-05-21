@@ -12,12 +12,14 @@ struct SumiCommands: Commands {
     let browserManager: BrowserManager
     let windowRegistry: WindowRegistry
     let shortcutManager: KeyboardShortcutManager
+    @ObservedObject private var recentlyClosedManager: RecentlyClosedManager
     @Environment(\.sumiSettings) var sumiSettings
 
     init(browserManager: BrowserManager, windowRegistry: WindowRegistry, shortcutManager: KeyboardShortcutManager) {
         self.browserManager = browserManager
         self.windowRegistry = windowRegistry
         self.shortcutManager = shortcutManager
+        self.recentlyClosedManager = browserManager.recentlyClosedManager
     }
 
     // MARK: - Dynamic Keyboard Shortcuts
@@ -162,7 +164,8 @@ struct SumiCommands: Commands {
             Button("Undo Close Tab") {
                 browserManager.undoCloseTab()
             }
-            .keyboardShortcut("t", modifiers: [.command, .shift])
+            .modifier(dynamicShortcut(.undoCloseTab))
+            .disabled(recentlyClosedManager.canReopenRecentlyClosedItem == false)
         }
 
         // File Section

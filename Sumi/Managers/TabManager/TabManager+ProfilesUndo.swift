@@ -172,7 +172,7 @@ extension TabManager {
     }
 
     func undoCloseTab() {
-        browserManager?.reopenLastClosedItem()
+        browserManager?.reopenMostRecentClosedItem()
     }
 
 }
