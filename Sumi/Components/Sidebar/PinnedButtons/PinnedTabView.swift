@@ -20,6 +20,7 @@ struct PinnedTabView: View {
     }
 
     var tabIcon: SwiftUI.Image
+    var glyphText: String? = nil
     /// Draw with `ChromeThemeTokens.primaryText` + monochrome (new-tab globe, settings gear, uncached globe fallback).
     var chromeTemplateSystemImageName: String? = nil
     var presentationState: ShortcutPresentationState
@@ -47,6 +48,7 @@ struct PinnedTabView: View {
         ZStack {
             PinnedTileVisual(
                 tabIcon: tabIcon,
+                glyphText: glyphText,
                 chromeTemplateSystemImageName: chromeTemplateSystemImageName,
                 presentationState: presentationState,
                 isHovered: displayIsHovered,
@@ -218,6 +220,7 @@ struct PinnedTileVisual: View {
     }
 
     var tabIcon: SwiftUI.Image
+    var glyphText: String? = nil
     var chromeTemplateSystemImageName: String? = nil
     var presentationState: ShortcutPresentationState
     var isHovered: Bool = false
@@ -321,7 +324,13 @@ struct PinnedTileVisual: View {
     @ViewBuilder
     private func resolvedFaviconSymbol(height: CGFloat) -> some View {
         Group {
-            if let systemName = chromeTemplateSystemImageName {
+            if let glyphText {
+                Text(glyphText)
+                    .font(.system(size: height * 0.72))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.45)
+                    .multilineTextAlignment(.center)
+            } else if let systemName = chromeTemplateSystemImageName {
                 Image(systemName: systemName)
                     .font(.system(size: height * 0.78, weight: .medium))
                     .symbolRenderingMode(.monochrome)

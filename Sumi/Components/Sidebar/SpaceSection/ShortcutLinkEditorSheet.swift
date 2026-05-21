@@ -11,6 +11,7 @@ private enum ShortcutLinkEditorFocusedField: Hashable {
 }
 
 struct ShortcutLinkEditorSheet: View {
+    let dialogTitle: String
     let pin: ShortcutPin
     let onSave: (String, URL) -> Void
     /// Dismiss `DialogManager` overlay — use async when closing from `NSMenu`-related paths (`FolderIconPickerSheet`).
@@ -20,10 +21,12 @@ struct ShortcutLinkEditorSheet: View {
     @State private var urlText: String
     @FocusState private var focusedField: ShortcutLinkEditorFocusedField?
     init(
+        dialogTitle: String = "Edit Pinned Tab",
         pin: ShortcutPin,
         onSave: @escaping (String, URL) -> Void,
         onRequestClose: @escaping () -> Void
     ) {
+        self.dialogTitle = dialogTitle
         self.pin = pin
         self.onSave = onSave
         self.onRequestClose = onRequestClose
@@ -36,7 +39,7 @@ struct ShortcutLinkEditorSheet: View {
             VStack(alignment: .leading, spacing: 18) {
                 DialogHeader(
                     icon: "link",
-                    title: "Edit Launcher Link",
+                    title: dialogTitle,
                     subtitle: previewSubtitle
                 )
 
@@ -63,7 +66,7 @@ struct ShortcutLinkEditorSheet: View {
 
                     VStack(alignment: .leading, spacing: 6) {
                         ShortcutLinkEditorField(
-                            label: "Launcher URL",
+                            label: "URL",
                             systemImage: "link",
                             placeholder: "https://example.com",
                             text: $urlText,
@@ -143,7 +146,7 @@ struct ShortcutLinkEditorSheet: View {
     private var urlValidationMessage: String? {
         let trimmed = urlText.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
-            return "Enter a launcher URL."
+            return "Enter a URL."
         }
         if normalizedURL == nil {
             return "Enter a valid URL."

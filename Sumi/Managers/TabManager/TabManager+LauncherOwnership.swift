@@ -153,9 +153,7 @@ extension TabManager {
         preserveCurrentPage: Bool = false
     ) -> ShortcutPin? {
         return withStructuralUpdateTransaction {
-            guard pin.role == .spacePinned,
-                  let liveTab = shortcutLiveTab(for: pin.id, in: windowState.id),
-                  let targetSpaceId = pin.spaceId ?? windowState.currentSpaceId else {
+            guard let liveTab = shortcutLiveTab(for: pin.id, in: windowState.id) else {
                 return nil
             }
 
@@ -163,6 +161,9 @@ extension TabManager {
                 && liveTab.url.absoluteString != pin.launchURL.absoluteString
 
             if shouldPreserveCurrentPage {
+                guard let targetSpaceId = pin.spaceId ?? windowState.currentSpaceId else {
+                    return nil
+                }
                 let duplicateTab = Tab(
                     url: liveTab.url,
                     name: liveTab.name,

@@ -331,6 +331,8 @@ struct PinnedGrid: View {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
     init(
         width: CGFloat,
         spaceId: UUID? = nil,
@@ -551,13 +553,30 @@ struct PinnedGrid: View {
                 onActivate: { activate(pin) },
                 onClose: { closeIfActive(pin) },
                 onUnload: { unload(pin) },
-                onRemovePin: { removeFromEssentials(pin) },
-                onUnpinToRegular: { moveToRegularTabs(pin) },
-                onSplitRight: { openInSplit(pin, side: .right) },
-                onSplitLeft: { openInSplit(pin, side: .left) },
-                onSplitTop: { openInSplit(pin, side: .top) },
-                onSplitBottom: { openInSplit(pin, side: .bottom) },
-                showsCloseAction: presentationState.isSelected,
+                onDuplicate: { duplicateAsRegularTab(pin) },
+                onCopyLink: { copyLink(pin.launchURL) },
+                onShare: {
+                    presentSharePicker(
+                        for: pin.launchURL,
+                        source: windowState.resolveSidebarPresentationSource()
+                    )
+                },
+                onRename: { presentShortcutLinkEditor(for: pin) },
+                onBackToSavedURL: { resetShortcutPin(pin) },
+                onUseCurrentPageAsSavedURL: { _ = browserManager.tabManager.replaceShortcutPinURLWithCurrent(pin, in: windowState) },
+                onEditURL: { presentShortcutLinkEditor(for: pin) },
+                onIconSelected: { newIconAsset in
+                    _ = browserManager.tabManager.updateShortcutPin(pin, iconAsset: newIconAsset)
+                },
+                onDeleteSavedTab: { confirmDeleteEssential(pin) },
+                folderChoices: essentialFolderChoices,
+                spaceChoices: essentialSpaceChoices,
+                profileChoices: currentSpaceProfileChoices,
+                onMoveToFolder: { folderId in moveEssential(pin, toFolder: folderId) },
+                onMoveToSpace: { targetSpaceId in moveEssential(pin, toSpace: targetSpaceId) },
+                onConvertSpaceToProfile: { profileId in convertCurrentSpace(toProfile: profileId) },
+                hasLiveInstance: presentationState.isOpenLive,
+                hasSavedURLDrift: browserManager.tabManager.shortcutHasDrifted(pin, in: windowState),
                 dragPinnedConfiguration: configuration,
                 dragIsEnabled: !browserManager.isTransitioningProfile && isAppKitInteractionEnabled,
                 isAppKitInteractionEnabled: isAppKitInteractionEnabled
@@ -643,29 +662,178 @@ struct PinnedGrid: View {
         browserManager.tabManager.deactivateShortcutLiveTab(pinId: pin.id, in: windowState.id)
     }
 
-    private func openInSplit(_ pin: ShortcutPin, side: SplitDropSide) {
-        let tab = browserManager.tabManager.activateShortcutPin(
-            pin,
-            in: windowState.id,
-            currentSpaceId: windowState.currentSpaceId
+    private func duplicateAsRegularTab(_ pin: ShortcutPin) {
+        _ = browserManager.openNewTab(
+            url: pin.launchURL.absoluteString,
+            context: .foreground(
+                windowState: windowState,
+                preferredSpaceId: windowState.currentSpaceId
+            )
         )
-        browserManager.splitManager.enterSplit(with: tab, placeOn: side, in: windowState)
     }
 
-    private func moveToRegularTabs(_ pin: ShortcutPin) {
-        guard let targetSpace =
-            windowState.currentSpaceId.flatMap({ id in browserManager.tabManager.spaces.first(where: { $0.id == id }) })
-            ?? browserManager.tabManager.currentSpace
-        else { return }
+    private var contextMenuSpace: Space? {
+        let targetSpaceId = windowState.currentSpaceId
+            ?? spaceId
+            ?? browserManager.tabManager.currentSpace?.id
+        guard let targetSpaceId else { return nil }
+        return browserManager.tabManager.spaces.first { $0.id == targetSpaceId }
+    }
+
+    private var essentialFolderChoices: [SidebarContextMenuChoice] {
+        guard let contextMenuSpace else { return [] }
+        return makeSidebarContextMenuFolderChoices(
+            folders: browserManager.tabManager.folders(for: contextMenuSpace.id)
+        )
+    }
+
+    private var essentialSpaceChoices: [SidebarContextMenuChoice] {
+        makeSidebarContextMenuSpaceChoices(
+            spaces: browserManager.tabManager.spaces,
+            profiles: browserManager.profileManager.profiles
+        )
+    }
+
+    private var currentSpaceProfileChoices: [SidebarContextMenuChoice] {
+        guard let contextMenuSpace else { return [] }
+        return makeSidebarContextMenuProfileChoices(
+            profiles: browserManager.profileManager.profiles,
+            selectedProfileId: contextMenuSpace.profileId
+        )
+    }
+
+    private func moveEssential(_ pin: ShortcutPin, toFolder folderId: UUID) {
+        guard let targetFolder = browserManager.tabManager.folder(by: folderId) else { return }
+        let targetIndex = browserManager.tabManager.folderPinnedPins(
+            for: folderId,
+            in: targetFolder.spaceId
+        ).count
+
         mutateContentLayout {
-            browserManager.tabManager.convertShortcutPinToRegularTab(pin, in: targetSpace.id)
+            _ = browserManager.tabManager.moveShortcutPin(
+                pin,
+                to: .spacePinned,
+                profileId: nil,
+                spaceId: targetFolder.spaceId,
+                folderId: folderId,
+                index: targetIndex
+            )
         }
+    }
+
+    private func moveEssential(_ pin: ShortcutPin, toSpace targetSpaceId: UUID) {
+        let targetIndex = browserManager.tabManager.topLevelSpacePinnedItems(for: targetSpaceId).count
+
+        mutateContentLayout {
+            _ = browserManager.tabManager.moveShortcutPin(
+                pin,
+                to: .spacePinned,
+                profileId: nil,
+                spaceId: targetSpaceId,
+                folderId: nil,
+                index: targetIndex
+            )
+        }
+    }
+
+    private func convertCurrentSpace(toProfile profileId: UUID) {
+        guard let spaceId = contextMenuSpace?.id else { return }
+        browserManager.tabManager.assign(spaceId: spaceId, toProfile: profileId)
+    }
+
+    private func resetShortcutPin(_ pin: ShortcutPin) {
+        let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+        let preserveCurrentPage = modifiers.contains(.command) || modifiers.contains(.control)
+        _ = browserManager.tabManager.resetShortcutPinToLaunchURL(
+            pin,
+            in: windowState,
+            preserveCurrentPage: preserveCurrentPage
+        )
     }
 
     private func removeFromEssentials(_ pin: ShortcutPin) {
         mutateContentLayout {
             browserManager.tabManager.removeFromEssentials(pin)
         }
+    }
+
+    private func confirmDeleteEssential(_ pin: ShortcutPin) {
+        let manager = browserManager
+        let settings = sumiSettings
+        let theme = themeContext
+        let source = windowState.resolveSidebarPresentationSource()
+        DispatchQueue.main.async {
+            manager.showDialog(
+                SavedTabDeleteConfirmationDialog(
+                    kind: .essential,
+                    displayName: pin.preferredDisplayTitle,
+                    url: pin.launchURL,
+                    onDelete: {
+                        manager.closeDialog()
+                        removeFromEssentials(pin)
+                    },
+                    onCancel: { manager.closeDialog() }
+                )
+                .environment(\.sumiSettings, settings)
+                .environment(\.resolvedThemeContext, theme),
+                source: source
+            )
+        }
+    }
+
+    private func presentShortcutLinkEditor(for pin: ShortcutPin) {
+        let manager = browserManager
+        let settings = sumiSettings
+        let theme = themeContext
+        let source = windowState.resolveSidebarPresentationSource()
+        DispatchQueue.main.async {
+            manager.showDialog(
+                ShortcutLinkEditorSheet(
+                    dialogTitle: "Edit Essential",
+                    pin: pin,
+                    onSave: { newTitle, newURL in
+                        DispatchQueue.main.async {
+                            _ = manager.tabManager.updateShortcutPin(
+                                pin,
+                                title: newTitle,
+                                launchURL: newURL
+                            )
+                        }
+                    },
+                    onRequestClose: {
+                        manager.closeDialog()
+                    }
+                )
+                .environment(\.sumiSettings, settings)
+                .environment(\.resolvedThemeContext, theme),
+                source: source
+            )
+        }
+    }
+
+    private func copyLink(_ url: URL) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+    }
+
+    private func presentSharePicker(
+        for url: URL,
+        source: SidebarTransientPresentationSource? = nil
+    ) {
+        if let source {
+            browserManager.presentSharingServicePicker([url], source: source)
+            return
+        }
+
+        guard let contentView = NSApp.keyWindow?.contentView else { return }
+        let picker = NSSharingServicePicker(items: [url])
+        let anchor = NSRect(
+            x: contentView.bounds.midX,
+            y: contentView.bounds.midY,
+            width: 1,
+            height: 1
+        )
+        picker.show(relativeTo: anchor, of: contentView, preferredEdge: .minY)
     }
 
     private func mutateContentLayout(_ update: () -> Void) {
@@ -950,6 +1118,22 @@ private struct PinnedSplitPlaceholderTile: View {
     }
 }
 
+private extension ShortcutPin {
+    var glyphText: String? {
+        guard let iconAsset, SumiPersistentGlyph.presentsAsEmoji(iconAsset) else {
+            return nil
+        }
+        return iconAsset
+    }
+
+    var chromeTemplateSystemImageName: String? {
+        guard let iconAsset, SumiPersistentGlyph.presentsAsEmoji(iconAsset) == false else {
+            return nil
+        }
+        return SumiPersistentGlyph.resolvedLauncherSystemImageName(iconAsset)
+    }
+}
+
 private struct PinnedTile: View {
     @ObservedObject var pin: ShortcutPin
     let presentationState: ShortcutPresentationState
@@ -959,16 +1143,30 @@ private struct PinnedTile: View {
     let onActivate: () -> Void
     let onClose: () -> Void
     let onUnload: () -> Void
-    let onRemovePin: () -> Void
-    let onUnpinToRegular: () -> Void
-    let onSplitRight: () -> Void
-    let onSplitLeft: () -> Void
-    let onSplitTop: () -> Void
-    let onSplitBottom: () -> Void
-    let showsCloseAction: Bool
+    let onDuplicate: () -> Void
+    let onCopyLink: () -> Void
+    let onShare: () -> Void
+    let onRename: () -> Void
+    let onBackToSavedURL: () -> Void
+    let onUseCurrentPageAsSavedURL: () -> Void
+    let onEditURL: () -> Void
+    let onIconSelected: (String) -> Void
+    let onDeleteSavedTab: () -> Void
+    let folderChoices: [SidebarContextMenuChoice]
+    let spaceChoices: [SidebarContextMenuChoice]
+    let profileChoices: [SidebarContextMenuChoice]
+    let onMoveToFolder: (UUID) -> Void
+    let onMoveToSpace: (UUID) -> Void
+    let onConvertSpaceToProfile: (UUID) -> Void
+    let hasLiveInstance: Bool
+    let hasSavedURLDrift: Bool
     let dragPinnedConfiguration: PinnedTabsConfiguration
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
+    @Environment(BrowserWindowState.self) private var windowState
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @StateObject private var emojiManager = EmojiPickerManager()
 
     var body: some View {
         Group {
@@ -982,13 +1180,23 @@ private struct PinnedTile: View {
                     onActivate: onActivate,
                     onClose: onClose,
                     onUnload: onUnload,
-                    onRemovePin: onRemovePin,
-                    onUnpinToRegular: onUnpinToRegular,
-                    onSplitRight: onSplitRight,
-                    onSplitLeft: onSplitLeft,
-                    onSplitTop: onSplitTop,
-                    onSplitBottom: onSplitBottom,
-                    showsCloseAction: showsCloseAction,
+                    onDuplicate: onDuplicate,
+                    onCopyLink: onCopyLink,
+                    onShare: onShare,
+                    onRename: onRename,
+                    onBackToSavedURL: onBackToSavedURL,
+                    onUseCurrentPageAsSavedURL: onUseCurrentPageAsSavedURL,
+                    onEditIcon: toggleEssentialIconPicker,
+                    onEditURL: onEditURL,
+                    onDeleteSavedTab: onDeleteSavedTab,
+                    folderChoices: folderChoices,
+                    spaceChoices: spaceChoices,
+                    profileChoices: profileChoices,
+                    onMoveToFolder: onMoveToFolder,
+                    onMoveToSpace: onMoveToSpace,
+                    onConvertSpaceToProfile: onConvertSpaceToProfile,
+                    hasLiveInstance: hasLiveInstance,
+                    hasSavedURLDrift: hasSavedURLDrift,
                     dragPinnedConfiguration: dragPinnedConfiguration,
                     dragIsEnabled: dragIsEnabled,
                     isAppKitInteractionEnabled: isAppKitInteractionEnabled
@@ -1002,13 +1210,23 @@ private struct PinnedTile: View {
                     onActivate: onActivate,
                     onClose: onClose,
                     onUnload: onUnload,
-                    onRemovePin: onRemovePin,
-                    onUnpinToRegular: onUnpinToRegular,
-                    onSplitRight: onSplitRight,
-                    onSplitLeft: onSplitLeft,
-                    onSplitTop: onSplitTop,
-                    onSplitBottom: onSplitBottom,
-                    showsCloseAction: showsCloseAction,
+                    onDuplicate: onDuplicate,
+                    onCopyLink: onCopyLink,
+                    onShare: onShare,
+                    onRename: onRename,
+                    onBackToSavedURL: onBackToSavedURL,
+                    onUseCurrentPageAsSavedURL: onUseCurrentPageAsSavedURL,
+                    onEditIcon: toggleEssentialIconPicker,
+                    onEditURL: onEditURL,
+                    onDeleteSavedTab: onDeleteSavedTab,
+                    folderChoices: folderChoices,
+                    spaceChoices: spaceChoices,
+                    profileChoices: profileChoices,
+                    onMoveToFolder: onMoveToFolder,
+                    onMoveToSpace: onMoveToSpace,
+                    onConvertSpaceToProfile: onConvertSpaceToProfile,
+                    hasLiveInstance: hasLiveInstance,
+                    hasSavedURLDrift: hasSavedURLDrift,
                     dragPinnedConfiguration: dragPinnedConfiguration,
                     dragIsEnabled: dragIsEnabled,
                     isAppKitInteractionEnabled: isAppKitInteractionEnabled
@@ -1016,6 +1234,28 @@ private struct PinnedTile: View {
             }
         }
         .frame(maxWidth: .infinity)
+        .background(EmojiPickerAnchor(manager: emojiManager))
+        .onChange(of: emojiManager.committedEmoji) { _, newValue in
+            guard !newValue.isEmpty else { return }
+            let normalized = SumiPersistentGlyph.normalizedLauncherIconValue(newValue)
+            DispatchQueue.main.async {
+                onIconSelected(normalized)
+            }
+        }
+    }
+
+    private func toggleEssentialIconPicker() {
+        emojiManager.selectedEmoji = pin.iconAsset.flatMap { iconAsset in
+            SumiPersistentGlyph.presentsAsEmoji(iconAsset) ? iconAsset : nil
+        } ?? ""
+        emojiManager.toggle(
+            source: windowState.resolveSidebarPresentationSource(),
+            settings: sumiSettings,
+            themeContext: themeContext
+        ) { picked in
+            let normalized = SumiPersistentGlyph.normalizedLauncherIconValue(picked)
+            onIconSelected(normalized)
+        }
     }
 }
 
@@ -1028,22 +1268,35 @@ private struct LivePinnedTileContent: View {
     let onActivate: () -> Void
     let onClose: () -> Void
     let onUnload: () -> Void
-    let onRemovePin: () -> Void
-    let onUnpinToRegular: () -> Void
-    let onSplitRight: () -> Void
-    let onSplitLeft: () -> Void
-    let onSplitTop: () -> Void
-    let onSplitBottom: () -> Void
-    let showsCloseAction: Bool
+    let onDuplicate: () -> Void
+    let onCopyLink: () -> Void
+    let onShare: () -> Void
+    let onRename: () -> Void
+    let onBackToSavedURL: () -> Void
+    let onUseCurrentPageAsSavedURL: () -> Void
+    let onEditIcon: () -> Void
+    let onEditURL: () -> Void
+    let onDeleteSavedTab: () -> Void
+    let folderChoices: [SidebarContextMenuChoice]
+    let spaceChoices: [SidebarContextMenuChoice]
+    let profileChoices: [SidebarContextMenuChoice]
+    let onMoveToFolder: (UUID) -> Void
+    let onMoveToSpace: (UUID) -> Void
+    let onConvertSpaceToProfile: (UUID) -> Void
+    let hasLiveInstance: Bool
+    let hasSavedURLDrift: Bool
     let dragPinnedConfiguration: PinnedTabsConfiguration
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
 
     var body: some View {
         let resolvedTitle = pin.resolvedDisplayTitle(liveTab: liveTab)
-        let chromeTemplateSystemImageName = Self.chromeTemplateSystemImageName(for: liveTab)
+        let glyphText = pin.glyphText
+        let chromeTemplateSystemImageName = pin.chromeTemplateSystemImageName
+            ?? Self.chromeTemplateSystemImageName(for: liveTab)
         PinnedTabView(
             tabIcon: liveTab.favicon,
+            glyphText: glyphText,
             chromeTemplateSystemImageName: chromeTemplateSystemImageName,
             presentationState: presentationState,
             liveTab: liveTab,
@@ -1063,17 +1316,29 @@ private struct LivePinnedTileContent: View {
             showsUnloadIndicator: false,
             showsSplitGroupOutline: essentialRuntimeState?.showsSplitProxyOutline == true,
             supportsMiddleClickUnload: true,
-            contextMenuEntries: makeEssentialsContextMenuEntries(
-                showsCloseCurrentPage: showsCloseAction,
+            contextMenuEntries: makeSidebarTabContextMenuEntries(
+                role: .essential,
+                capabilities: .init(
+                    folders: folderChoices,
+                    spaces: spaceChoices,
+                    profiles: profileChoices,
+                    hasSavedURLDrift: hasSavedURLDrift,
+                    hasLiveInstance: hasLiveInstance
+                ),
                 callbacks: .init(
-                    onOpen: onActivate,
-                    onSplitRight: onSplitRight,
-                    onSplitLeft: onSplitLeft,
-                    onSplitTop: onSplitTop,
-                    onSplitBottom: onSplitBottom,
-                    onCloseCurrentPage: onClose,
-                    onRemoveFromEssentials: onRemovePin,
-                    onMoveToRegularTabs: onUnpinToRegular
+                    onDuplicate: onDuplicate,
+                    onCopyLink: onCopyLink,
+                    onShare: onShare,
+                    onRename: onRename,
+                    onMoveToFolder: onMoveToFolder,
+                    onMoveToSpace: onMoveToSpace,
+                    onConvertSpaceToProfile: onConvertSpaceToProfile,
+                    onBackToSavedURL: onBackToSavedURL,
+                    onUseCurrentPageAsSavedURL: onUseCurrentPageAsSavedURL,
+                    onChangeIcon: onEditIcon,
+                    onEditURL: onEditURL,
+                    onUnload: onUnload,
+                    onDeleteSavedTab: onDeleteSavedTab
                 )
             ),
             action: onActivate,
@@ -1110,13 +1375,23 @@ private struct StoredPinnedTileContent: View {
     let onActivate: () -> Void
     let onClose: () -> Void
     let onUnload: () -> Void
-    let onRemovePin: () -> Void
-    let onUnpinToRegular: () -> Void
-    let onSplitRight: () -> Void
-    let onSplitLeft: () -> Void
-    let onSplitTop: () -> Void
-    let onSplitBottom: () -> Void
-    let showsCloseAction: Bool
+    let onDuplicate: () -> Void
+    let onCopyLink: () -> Void
+    let onShare: () -> Void
+    let onRename: () -> Void
+    let onBackToSavedURL: () -> Void
+    let onUseCurrentPageAsSavedURL: () -> Void
+    let onEditIcon: () -> Void
+    let onEditURL: () -> Void
+    let onDeleteSavedTab: () -> Void
+    let folderChoices: [SidebarContextMenuChoice]
+    let spaceChoices: [SidebarContextMenuChoice]
+    let profileChoices: [SidebarContextMenuChoice]
+    let onMoveToFolder: (UUID) -> Void
+    let onMoveToSpace: (UUID) -> Void
+    let onConvertSpaceToProfile: (UUID) -> Void
+    let hasLiveInstance: Bool
+    let hasSavedURLDrift: Bool
     let dragPinnedConfiguration: PinnedTabsConfiguration
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
@@ -1128,11 +1403,13 @@ private struct StoredPinnedTileContent: View {
         let _ = faviconCacheRefreshID
         let resolvedTitle = pin.preferredDisplayTitle
         let resolvedFavicon = currentLoadedStoredFavicon ?? pin.storedFavicon
+        let glyphText = pin.glyphText
         let resolvedChromeTemplateSystemImageName = currentLoadedStoredFavicon == nil
-            ? pin.storedChromeTemplateSystemImageName
+            ? (pin.chromeTemplateSystemImageName ?? pin.storedChromeTemplateSystemImageName)
             : nil
         PinnedTabView(
             tabIcon: resolvedFavicon,
+            glyphText: glyphText,
             chromeTemplateSystemImageName: resolvedChromeTemplateSystemImageName,
             presentationState: presentationState,
             liveTab: nil,
@@ -1152,17 +1429,29 @@ private struct StoredPinnedTileContent: View {
             showsUnloadIndicator: false,
             showsSplitGroupOutline: essentialRuntimeState?.showsSplitProxyOutline == true,
             supportsMiddleClickUnload: true,
-            contextMenuEntries: makeEssentialsContextMenuEntries(
-                showsCloseCurrentPage: showsCloseAction,
+            contextMenuEntries: makeSidebarTabContextMenuEntries(
+                role: .essential,
+                capabilities: .init(
+                    folders: folderChoices,
+                    spaces: spaceChoices,
+                    profiles: profileChoices,
+                    hasSavedURLDrift: hasSavedURLDrift,
+                    hasLiveInstance: hasLiveInstance
+                ),
                 callbacks: .init(
-                    onOpen: onActivate,
-                    onSplitRight: onSplitRight,
-                    onSplitLeft: onSplitLeft,
-                    onSplitTop: onSplitTop,
-                    onSplitBottom: onSplitBottom,
-                    onCloseCurrentPage: onClose,
-                    onRemoveFromEssentials: onRemovePin,
-                    onMoveToRegularTabs: onUnpinToRegular
+                    onDuplicate: onDuplicate,
+                    onCopyLink: onCopyLink,
+                    onShare: onShare,
+                    onRename: onRename,
+                    onMoveToFolder: onMoveToFolder,
+                    onMoveToSpace: onMoveToSpace,
+                    onConvertSpaceToProfile: onConvertSpaceToProfile,
+                    onBackToSavedURL: onBackToSavedURL,
+                    onUseCurrentPageAsSavedURL: onUseCurrentPageAsSavedURL,
+                    onChangeIcon: onEditIcon,
+                    onEditURL: onEditURL,
+                    onUnload: onUnload,
+                    onDeleteSavedTab: onDeleteSavedTab
                 )
             ),
             action: onActivate,

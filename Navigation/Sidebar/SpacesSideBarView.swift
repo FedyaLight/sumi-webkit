@@ -2014,17 +2014,11 @@ struct SpacesSideBarView: View {
     // MARK: - Context Menu
 
     private func sidebarContextMenuEntries() -> [SidebarContextMenuEntry] {
-        let hasSelectedTab = browserManager.currentTab(for: windowState) != nil
-
         return makeSidebarShellContextMenuEntries(
-            hasSelectedTab: hasSelectedTab,
             isCompactModeEnabled: sumiSettings.sidebarCompactSpaces,
             callbacks: .init(
-                onCreateSpace: showSpaceCreationDialog,
-                onCreateFolder: {
-                    if let currentSpace = resolveCurrentSpace() {
-                        _ = browserManager.tabManager.createFolder(for: currentSpace.id)
-                    }
+                onNewTab: {
+                    browserManager.createNewTab(in: windowState)
                 },
                 onNewSplit: {
                     if let current = browserManager.currentTab(for: windowState) {
@@ -2033,32 +2027,10 @@ struct SpacesSideBarView: View {
                         browserManager.createNewTab(in: windowState)
                     }
                 },
-                onNewTab: {
-                    browserManager.createNewTab(in: windowState)
-                },
-                onReloadSelectedTab: {
-                    browserManager.currentTab(for: windowState)?.refresh()
-                },
-                onBookmarkSelectedTab: {
-                    if let current = browserManager.currentTab(for: windowState) {
-                        browserManager.tabManager.pinTab(
-                            current,
-                            context: .init(windowState: windowState, spaceId: windowState.currentSpaceId)
-                        )
-                    }
-                },
-                onReopenClosedTab: {
-                    browserManager.undoCloseTab()
-                },
                 onToggleCompactMode: {
                     sumiSettings.sidebarCompactSpaces.toggle()
                 },
-                onEditTheme: {
-                    browserManager.showGradientEditor(
-                        source: windowState.resolveSidebarPresentationSource()
-                    )
-                },
-                onOpenLayout: {
+                onOpenSettings: {
                     browserManager.openSettingsTab(selecting: .appearance, in: windowState)
                 }
             )
