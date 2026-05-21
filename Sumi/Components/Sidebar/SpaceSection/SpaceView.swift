@@ -35,6 +35,7 @@ struct SpaceView: View {
     @State var regularInsertedTabHeights: [UUID: CGFloat] = [:]
     @State var regularDeferredRemovalGapIdsByTabId: [UUID: UUID] = [:]
     @State var regularLayoutAnimationGeneration = 0
+    @State var tabListVerticalScrollOffset: CGFloat = 0
     @Environment(\.resolvedThemeContext) var themeContext
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
