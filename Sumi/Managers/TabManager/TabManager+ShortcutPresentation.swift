@@ -14,8 +14,7 @@ extension TabManager {
         _ pin: ShortcutPin,
         in windowState: BrowserWindowState
     ) -> Bool {
-        guard pin.role == .spacePinned,
-              let liveTab = shortcutLiveTab(for: pin.id, in: windowState.id) else {
+        guard let liveTab = shortcutLiveTab(for: pin.id, in: windowState.id) else {
             return false
         }
 

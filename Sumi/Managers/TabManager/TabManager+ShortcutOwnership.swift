@@ -84,6 +84,16 @@ extension TabManager {
         resolveEssentialsTarget(using: context).profileId
     }
 
+    func canAddURLToEssentials(
+        _ url: URL,
+        using context: EssentialsTargetContext? = nil
+    ) -> Bool {
+        guard let profileId = resolvedEssentialsProfileId(using: context) else { return false }
+        let pins = essentialPins(for: profileId)
+        guard pins.count < EssentialsCapacityPolicy.maxItems else { return false }
+        return pins.contains { $0.launchURL == url } == false
+    }
+
     func resolveEssentialsInsertion(
         using context: EssentialsInsertionContext
     ) -> EssentialsInsertionPlan? {

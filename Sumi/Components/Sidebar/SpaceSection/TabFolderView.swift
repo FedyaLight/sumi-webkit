@@ -771,30 +771,63 @@ struct TabFolderView: View {
         toggleEditIcon: @escaping () -> Void
     ) -> [SidebarContextMenuEntry] {
         let presentationState = shortcutPresentationState(for: pin)
+        let profiles = browserManager.profileManager.profiles
+        let folderChoices = makeSidebarContextMenuFolderChoices(
+            folders: browserManager.tabManager.folders(for: space.id),
+            selectedFolderId: pin.folderId
+        )
+        let spaceChoices = makeSidebarContextMenuSpaceChoices(
+            spaces: browserManager.tabManager.spaces,
+            profiles: profiles,
+            selectedSpaceId: pin.spaceId
+        )
+        let profileChoices = makeSidebarContextMenuProfileChoices(
+            profiles: profiles,
+            selectedProfileId: space.profileId
+        )
 
-        return makeFolderLauncherContextMenuEntries(
-            hasRuntimeResetActions: browserManager.tabManager.shortcutHasDrifted(pin, in: windowState),
-            showsCloseCurrentPage: presentationState.isSelected,
+        return makeSidebarTabContextMenuEntries(
+            role: .folderPinnedTab,
+            capabilities: .init(
+                folders: folderChoices,
+                spaces: spaceChoices,
+                profiles: profileChoices,
+                showsAddToEssentials: canAddShortcutToEssentials(pin),
+                hasSavedURLDrift: browserManager.tabManager.shortcutHasDrifted(pin, in: windowState),
+                hasLiveInstance: presentationState.isOpenLive
+            ),
             callbacks: .init(
-                onOpen: { activateShortcutPin(pin) },
-                onSplitRight: { openShortcutPinInSplit(pin, side: .right) },
-                onSplitLeft: { openShortcutPinInSplit(pin, side: .left) },
-                onSplitTop: { openShortcutPinInSplit(pin, side: .top) },
-                onSplitBottom: { openShortcutPinInSplit(pin, side: .bottom) },
                 onDuplicate: { duplicateShortcutPin(pin) },
-                onResetToLaunchURL: { resetShortcutPin(pin) },
-                onReplaceLauncherURLWithCurrent: { _ = browserManager.tabManager.replaceShortcutPinURLWithCurrent(pin, in: windowState) },
-                onEditIcon: toggleEditIcon,
-                onEditLink: {
+                onCopyLink: { copyLink(pin.launchURL) },
+                onShare: {
+                    presentSharePicker(
+                        for: pin.launchURL,
+                        source: windowState.resolveSidebarPresentationSource()
+                    )
+                },
+                onRename: {
                     presentShortcutLinkEditor(
                         for: pin,
                         source: windowState.resolveSidebarPresentationSource()
                     )
                 },
-                onUnpin: { removeShortcutPin(pin) },
-                onMoveToRegularTabs: { moveShortcutPinToRegularTabs(pin) },
-                onPinGlobally: nil,
-                onCloseCurrentPage: { closeShortcutPinIfActive(pin) }
+                onMoveToFolder: { folderId in moveShortcutPin(pin, toFolder: folderId) },
+                onMoveToSpace: { targetSpaceId in moveShortcutPin(pin, toSpace: targetSpaceId) },
+                onConvertSpaceToProfile: { profileId in
+                    browserManager.tabManager.assign(spaceId: space.id, toProfile: profileId)
+                },
+                onAddToEssentials: { pinShortcutGlobally(pin) },
+                onBackToSavedURL: { resetShortcutPin(pin) },
+                onUseCurrentPageAsSavedURL: { _ = browserManager.tabManager.replaceShortcutPinURLWithCurrent(pin, in: windowState) },
+                onChangeIcon: toggleEditIcon,
+                onEditURL: {
+                    presentShortcutLinkEditor(
+                        for: pin,
+                        source: windowState.resolveSidebarPresentationSource()
+                    )
+                },
+                onUnload: { unloadShortcutPin(pin) },
+                onDeleteSavedTab: { confirmDeleteShortcutPin(pin) }
             )
         )
     }
@@ -802,6 +835,7 @@ struct TabFolderView: View {
     private func folderHeaderContextMenuEntries() -> [SidebarContextMenuEntry] {
         makeFolderHeaderContextMenuEntries(
             hasCustomIcon: folderHasCustomIcon,
+            showsUnloadActiveTabs: folderHasLiveSavedTabs,
             callbacks: .init(
                 onRename: startRenaming,
                 onChangeIcon: {
@@ -812,6 +846,7 @@ struct TabFolderView: View {
                 onResetIcon: { browserManager.tabManager.updateFolderIcon(folder.id, icon: "") },
                 onAddTab: onAddTab,
                 onAlphabetize: alphabetizeTabs,
+                onUnloadActiveTabs: unloadActiveFolderTabs,
                 onDelete: onDelete
             )
         )
@@ -871,6 +906,7 @@ struct TabFolderView: View {
         let theme = themeContext
         DispatchQueue.main.async {
             let editor = ShortcutLinkEditorSheet(
+                dialogTitle: "Edit Pinned Tab",
                 pin: pin,
                 onSave: { newTitle, newURL in
                     DispatchQueue.main.async {
@@ -959,6 +995,10 @@ struct TabFolderView: View {
         browserManager.tabManager.shortcutPresentationState(for: pin, in: windowState)
     }
 
+    private func activeShortcutTab(for pin: ShortcutPin) -> Tab? {
+        browserManager.tabManager.shortcutLiveTab(for: pin.id, in: windowState.id)
+    }
+
     private var folderGlyphPresentation: SumiFolderGlyphPresentationState {
         SumiFolderGlyphPresentationState(
             iconValue: folder.icon,
@@ -1038,9 +1078,27 @@ struct TabFolderView: View {
         }
     }
 
-    private func moveShortcutPinToRegularTabs(_ pin: ShortcutPin) {
-        mutateFolderContent {
-            browserManager.tabManager.convertShortcutPinToRegularTab(pin, in: space.id)
+    private func confirmDeleteShortcutPin(_ pin: ShortcutPin) {
+        let manager = browserManager
+        let settings = sumiSettings
+        let theme = themeContext
+        let source = windowState.resolveSidebarPresentationSource()
+        DispatchQueue.main.async {
+            manager.showDialog(
+                SavedTabDeleteConfirmationDialog(
+                    kind: .pinnedTab,
+                    displayName: pin.preferredDisplayTitle,
+                    url: pin.launchURL,
+                    onDelete: {
+                        manager.closeDialog()
+                        removeShortcutPin(pin)
+                    },
+                    onCancel: { manager.closeDialog() }
+                )
+                .environment(\.sumiSettings, settings)
+                .environment(\.resolvedThemeContext, theme),
+                source: source
+            )
         }
     }
 
@@ -1061,15 +1119,6 @@ struct TabFolderView: View {
         browserManager.tabManager.deactivateShortcutLiveTab(pinId: pin.id, in: windowState.id)
     }
 
-    private func openShortcutPinInSplit(_ pin: ShortcutPin, side: SplitDropSide) {
-        let liveTab = browserManager.tabManager.activateShortcutPin(
-            pin,
-            in: windowState.id,
-            currentSpaceId: space.id
-        )
-        browserManager.splitManager.enterSplit(with: liveTab, placeOn: side, in: windowState)
-    }
-
     private func duplicateShortcutPin(_ pin: ShortcutPin) {
         _ = browserManager.openNewTab(
             url: pin.launchURL.absoluteString,
@@ -1080,6 +1129,40 @@ struct TabFolderView: View {
         )
     }
 
+    private func moveShortcutPin(_ pin: ShortcutPin, toFolder folderId: UUID) {
+        guard let targetFolder = browserManager.tabManager.folder(by: folderId) else { return }
+        let targetIndex = browserManager.tabManager.folderPinnedPins(
+            for: folderId,
+            in: targetFolder.spaceId
+        ).count
+
+        mutateFolderContent {
+            _ = browserManager.tabManager.moveShortcutPin(
+                pin,
+                to: .spacePinned,
+                profileId: nil,
+                spaceId: targetFolder.spaceId,
+                folderId: folderId,
+                index: targetIndex
+            )
+        }
+    }
+
+    private func moveShortcutPin(_ pin: ShortcutPin, toSpace targetSpaceId: UUID) {
+        let targetIndex = browserManager.tabManager.topLevelSpacePinnedItems(for: targetSpaceId).count
+
+        mutateFolderContent {
+            _ = browserManager.tabManager.moveShortcutPin(
+                pin,
+                to: .spacePinned,
+                profileId: nil,
+                spaceId: targetSpaceId,
+                folderId: nil,
+                index: targetIndex
+            )
+        }
+    }
+
     private func resetShortcutPin(_ pin: ShortcutPin) {
         let modifiers = NSApp.currentEvent?.modifierFlags ?? []
         let preserveCurrentPage = modifiers.contains(.command) || modifiers.contains(.control)
@@ -1088,6 +1171,65 @@ struct TabFolderView: View {
             in: windowState,
             preserveCurrentPage: preserveCurrentPage
         )
+    }
+
+    private func pinShortcutGlobally(_ pin: ShortcutPin) {
+        let syntheticTab = Tab(
+            url: pin.launchURL,
+            name: pin.resolvedDisplayTitle(liveTab: activeShortcutTab(for: pin)),
+            favicon: SumiPersistentGlyph.launcherSystemImageFallback,
+            spaceId: space.id,
+            index: 0,
+            browserManager: browserManager
+        )
+        browserManager.tabManager.pinTab(
+            syntheticTab,
+            context: .init(windowState: windowState, spaceId: space.id)
+        )
+    }
+
+    private func canAddShortcutToEssentials(_ pin: ShortcutPin) -> Bool {
+        browserManager.tabManager.canAddURLToEssentials(
+            pin.launchURL,
+            using: .init(windowState: windowState, spaceId: space.id)
+        )
+    }
+
+    private var folderHasLiveSavedTabs: Bool {
+        shortcutPinsInFolder.contains { pin in
+            browserManager.tabManager.shortcutLiveTab(for: pin.id, in: windowState.id) != nil
+        }
+    }
+
+    private func unloadActiveFolderTabs() {
+        for pin in shortcutPinsInFolder {
+            unloadShortcutPin(pin)
+        }
+    }
+
+    private func copyLink(_ url: URL) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+    }
+
+    private func presentSharePicker(
+        for url: URL,
+        source: SidebarTransientPresentationSource? = nil
+    ) {
+        if let source {
+            browserManager.presentSharingServicePicker([url], source: source)
+            return
+        }
+
+        guard let contentView = NSApp.keyWindow?.contentView else { return }
+        let picker = NSSharingServicePicker(items: [url])
+        let anchor = NSRect(
+            x: contentView.bounds.midX,
+            y: contentView.bounds.midY,
+            width: 1,
+            height: 1
+        )
+        picker.show(relativeTo: anchor, of: contentView, preferredEdge: .minY)
     }
 
 }

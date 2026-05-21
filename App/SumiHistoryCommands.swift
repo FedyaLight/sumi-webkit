@@ -45,7 +45,7 @@ struct SumiHistoryCommands: Commands {
             Button(
                 recentlyClosedManager.mostRecentItem.map { item in
                     if case .window = item { return "Reopen Last Closed Window" }
-                    if case .shortcutLauncher = item { return "Reopen Last Closed Launcher" }
+                    if case .shortcutLauncher = item { return "Reopen Last Closed Pinned Tab" }
                     return "Reopen Last Closed Tab"
                 } ?? "Reopen Last Closed Tab"
             ) {

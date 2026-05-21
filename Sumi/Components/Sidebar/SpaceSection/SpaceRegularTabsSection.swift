@@ -847,34 +847,33 @@ extension SpaceView {
     }
 
     private func regularTabContextMenuEntries(_ tab: Tab) -> [SidebarContextMenuEntry] {
-        let folderChoices = browserManager.tabManager.folders(for: space.id).map { folder in
-            SidebarContextMenuChoice(id: folder.id, title: folder.name)
-        }
-        let spaceChoices = browserManager.tabManager.spaces.map { targetSpace in
-            SidebarContextMenuChoice(
-                id: targetSpace.id,
-                title: targetSpace.name,
-                isSelected: targetSpace.id == tab.spaceId
-            )
-        }
+        let profiles = browserManager.profileManager.profiles
+        let folderChoices = makeSidebarContextMenuFolderChoices(
+            folders: browserManager.tabManager.folders(for: space.id)
+        )
+        let spaceChoices = makeSidebarContextMenuSpaceChoices(
+            spaces: browserManager.tabManager.spaces,
+            profiles: profiles,
+            selectedSpaceId: tab.spaceId
+        )
+        let profileChoices = makeSidebarContextMenuProfileChoices(
+            profiles: profiles,
+            selectedProfileId: space.profileId
+        )
 
-        return makeRegularTabContextMenuEntries(
-            folders: folderChoices,
-            spaces: spaceChoices,
-            showsAddToFavorites: !tab.isPinned && !tab.isSpacePinned,
-            canMoveUp: !isFirstTab(tab),
-            canMoveDown: !isLastTab(tab),
-            showsCloseAllBelow: !tab.isPinned && !tab.isSpacePinned && tab.spaceId != nil,
+        return makeSidebarTabContextMenuEntries(
+            role: .regularTab,
+            capabilities: .init(
+                folders: folderChoices,
+                spaces: spaceChoices,
+                profiles: profileChoices,
+                showsAddToEssentials: canAddTabToEssentials(tab),
+                canMoveUp: !isFirstTab(tab),
+                canMoveDown: !isLastTab(tab),
+                showsCloseTabsBelow: !tab.isPinned && !tab.isSpacePinned && tab.spaceId != nil
+            ),
             callbacks: .init(
-                onAddToFolder: { folderId in
-                    browserManager.tabManager.moveTabToFolder(tab: tab, folderId: folderId)
-                },
-                onAddToFavorites: {
-                    browserManager.tabManager.pinTab(
-                        tab,
-                        context: .init(windowState: windowState, spaceId: space.id)
-                    )
-                },
+                onDuplicate: { browserManager.duplicateTab(tab, in: windowState) },
                 onCopyLink: { copyLink(tab.url) },
                 onShare: {
                     presentSharePicker(
@@ -883,19 +882,35 @@ extension SpaceView {
                     )
                 },
                 onRename: { tab.startRenaming() },
-                onSplitRight: { browserManager.splitManager.enterSplit(with: tab, placeOn: .right, in: windowState) },
-                onSplitLeft: { browserManager.splitManager.enterSplit(with: tab, placeOn: .left, in: windowState) },
-                onSplitTop: { browserManager.splitManager.enterSplit(with: tab, placeOn: .top, in: windowState) },
-                onSplitBottom: { browserManager.splitManager.enterSplit(with: tab, placeOn: .bottom, in: windowState) },
-                onDuplicate: { browserManager.duplicateTab(tab, in: windowState) },
+                onMoveToFolder: { folderId in
+                    browserManager.tabManager.moveTabToFolder(tab: tab, folderId: folderId)
+                },
                 onMoveToSpace: { targetSpaceId in browserManager.tabManager.moveTab(tab.id, to: targetSpaceId) },
+                onConvertSpaceToProfile: { profileId in
+                    browserManager.tabManager.assign(spaceId: space.id, toProfile: profileId)
+                },
                 onMoveUp: { onMoveTabUp(tab) },
                 onMoveDown: { onMoveTabDown(tab) },
-                onPinToSpace: { browserManager.tabManager.pinTabToSpace(tab, spaceId: space.id) },
-                onPinGlobally: { onPinTab(tab) },
-                onCloseAllBelow: { browserManager.tabManager.closeAllTabsBelow(tab) },
+                onPinToSpace: tab.isPinned || tab.isSpacePinned
+                    ? nil
+                    : { browserManager.tabManager.pinTabToSpace(tab, spaceId: space.id) },
+                onAddToEssentials: {
+                    browserManager.tabManager.pinTab(
+                        tab,
+                        context: .init(windowState: windowState, spaceId: space.id)
+                    )
+                },
+                onCloseTabsBelow: { browserManager.tabManager.closeAllTabsBelow(tab) },
                 onClose: { closeRegularTab(tab) }
             )
+        )
+    }
+
+    private func canAddTabToEssentials(_ tab: Tab) -> Bool {
+        guard !tab.isPinned && !tab.isSpacePinned else { return false }
+        return browserManager.tabManager.canAddURLToEssentials(
+            tab.url,
+            using: .init(windowState: windowState, spaceId: space.id)
         )
     }
 
