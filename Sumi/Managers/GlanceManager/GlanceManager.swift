@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AppKit
+import WebKit
 
 enum GlancePresentationPhase: Equatable {
     case idle
@@ -112,6 +113,18 @@ final class GlanceManager: ObservableObject {
         guard currentSession != nil || isActive else { return }
         transition(to: .closing)
         finishCurrentSession(preservesPreviewWebView: false)
+    }
+
+    @discardableResult
+    func handleWebViewDidClose(_ webView: WKWebView) -> Bool {
+        guard currentSession?.previewTab.existingWebView === webView
+            || currentSession?.previewTab.assignedWebView === webView
+        else {
+            return false
+        }
+
+        dismissGlance()
+        return true
     }
 
     var isPreviewActive: Bool {

@@ -96,6 +96,14 @@ final class ExternalMiniWindowManager {
         self.browserManager = browserManager
     }
 
+    func closeAll() {
+        let controllers = sessions.values.map(\.controller)
+        sessions.removeAll()
+        for controller in controllers {
+            controller.close()
+        }
+    }
+
     func present(url: URL, authCompletionHandler: ((Bool, URL?) -> Void)? = nil) {
         guard let browserManager else { return }
         let profile = browserManager.currentProfile

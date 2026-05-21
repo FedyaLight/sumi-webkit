@@ -77,6 +77,46 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertNil(previewTab.primaryWindowId)
     }
 
+    func testWebKitCloseDismissesAndCleansPreviewInstance() async throws {
+        let browserManager = BrowserManager()
+        let sourceTab = makeSourceTab(in: browserManager)
+        let url = URL(string: "https://destination.example/page")!
+
+        browserManager.glanceManager.presentExternalURL(url, from: sourceTab)
+        let session = try XCTUnwrap(browserManager.glanceManager.currentSession)
+        let previewTab = session.previewTab
+        let webView = try await waitForPreviewWebView(in: session)
+
+        XCTAssertTrue(browserManager.handleWebViewDidClose(webView))
+
+        XCTAssertNil(browserManager.glanceManager.currentSession)
+        XCTAssertEqual(browserManager.glanceManager.phase, .idle)
+        XCTAssertNil(previewTab.existingWebView)
+        XCTAssertNil(previewTab.primaryWindowId)
+    }
+
+    func testWebKitCloseForTrackedRegularWebViewClosesOwningTab() throws {
+        let browserManager = BrowserManager()
+        browserManager.webViewCoordinator = WebViewCoordinator()
+        let sourceTab = makeSourceTab(in: browserManager)
+        let (_, sourceWindow) = makeRegisteredWindow(in: browserManager, selecting: sourceTab)
+        let webView = WKWebView()
+
+        browserManager.webViewCoordinator?.setWebView(
+            webView,
+            for: sourceTab.id,
+            in: sourceWindow.id
+        )
+
+        XCTAssertTrue(browserManager.handleWebViewDidClose(webView))
+
+        XCTAssertNil(browserManager.tabManager.tab(for: sourceTab.id))
+        XCTAssertNil(browserManager.webViewCoordinator?.getWebView(
+            for: sourceTab.id,
+            in: sourceWindow.id
+        ))
+    }
+
     func testMoveToNewTabAdoptsSamePreviewTabAndWebView() async throws {
         let browserManager = BrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)

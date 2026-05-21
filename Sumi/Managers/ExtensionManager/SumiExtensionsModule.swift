@@ -284,6 +284,10 @@ final class SumiExtensionsModule {
         cachedManager?.cancelNativeMessagingSessions(reason: reason)
     }
 
+    func closeAllOptionsWindowsIfLoaded() {
+        cachedManager?.closeAllOptionsWindows()
+    }
+
     private func tearDownLoadedRuntime(reason: String) {
         guard let cachedManager else {
             surfaceStore.bind(nil)
