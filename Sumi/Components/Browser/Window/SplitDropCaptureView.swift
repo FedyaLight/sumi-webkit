@@ -116,7 +116,7 @@ final class SplitDropCaptureView: NSView {
     }
 
     override func draggingEnded(_ sender: NSDraggingInfo) {
-        finishDrag(cancelPreview: true, resetSidebarDragState: true)
+        finishDrag(resetSidebarDragState: true)
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
@@ -128,15 +128,12 @@ final class SplitDropCaptureView: NSView {
               let tab = bm.tabManager.resolveDragTab(for: item.tabId),
               let target = currentTarget ?? resolvedDropTarget(sender)
         else {
-            finishDrag(cancelPreview: true, resetSidebarDragState: true)
+            finishDrag(resetSidebarDragState: true)
             return false
         }
 
         let didDrop = sm.dropTab(tab, on: target, in: windowState)
-        finishDrag(cancelPreview: true, resetSidebarDragState: true)
-        DispatchQueue.main.async { [weak sm] in
-            sm?.endPreview(cancel: true, for: windowId)
-        }
+        finishDrag(resetSidebarDragState: true)
         return didDrop
     }
 
@@ -216,18 +213,18 @@ final class SplitDropCaptureView: NSView {
     }
 
     @discardableResult
-    private func endDrag(cancelPreview: Bool) -> Bool {
+    private func endDrag() -> Bool {
         let hadLocalDragState = isDragActive || currentTarget != nil
         isDragActive = false
         currentTarget = nil
         guard let windowId, let splitManager else { return hadLocalDragState }
         let hadPreview = splitManager.isPreviewActive(for: windowId)
-        splitManager.endPreview(cancel: cancelPreview, for: windowId)
+        splitManager.endPreview(for: windowId)
         return hadLocalDragState || hadPreview
     }
 
-    private func finishDrag(cancelPreview: Bool, resetSidebarDragState: Bool = false) {
-        if endDrag(cancelPreview: cancelPreview) {
+    private func finishDrag(resetSidebarDragState: Bool = false) {
+        if endDrag() {
             NotificationCenter.default.post(name: .tabDragDidEnd, object: nil)
         }
         if resetSidebarDragState {
@@ -236,7 +233,7 @@ final class SplitDropCaptureView: NSView {
     }
 
     func cancelActiveDragPreview() {
-        _ = endDrag(cancelPreview: true)
+        _ = endDrag()
     }
 
     @objc private func handleTabDragDidEnd(_ notification: Notification) {

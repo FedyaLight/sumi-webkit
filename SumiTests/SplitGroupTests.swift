@@ -2162,7 +2162,7 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(state.previewTargetRect, secondRect)
         XCTAssertEqual(state.previewStyle, .center)
 
-        harness.browserManager.splitManager.endPreview(cancel: true, for: harness.windowState.id)
+        harness.browserManager.splitManager.endPreview(for: harness.windowState.id)
         state = harness.browserManager.splitManager.getSplitState(for: harness.windowState.id)
         XCTAssertFalse(state.isPreviewActive)
         XCTAssertNil(state.previewSide)

@@ -397,12 +397,6 @@ extension TabManager {
             notifyTransientShortcutStateChanged()
             tab.performComprehensiveWebViewCleanup()
             browserManager?.compositorManager.unloadTab(tab)
-            if let browserManager {
-                browserManager.requireWebViewCoordinator().removeAllWebViews(
-                    for: tab,
-                    closeActiveFullscreenMedia: true
-                )
-            }
             detach(tab)
             NotificationCenter.default.post(
                 name: .sumiTabLifecycleDidChange,
