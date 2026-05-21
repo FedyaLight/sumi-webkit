@@ -6,9 +6,7 @@
 import AppKit
 
 struct SidebarFolderHeaderMenuActions {
-    let rename: () -> Void
-    let changeIcon: () -> Void
-    let addTab: () -> Void
+    let edit: () -> Void
     let alphabetize: () -> Void
     let unloadActiveTabs: (() -> Void)?
     let delete: () -> Void
@@ -77,6 +75,7 @@ struct SidebarTabContextMenuActions {
     var duplicate: (() -> Void)? = nil
     var copyLink: (() -> Void)? = nil
     var share: (() -> Void)? = nil
+    var edit: (() -> Void)? = nil
     var rename: (() -> Void)? = nil
     var folderTarget: SidebarChoiceMenuAction? = nil
     var moveToSpace: SidebarSpaceDestinationAction? = nil
@@ -404,17 +403,10 @@ private func makeSavedSidebarTabEntries(
         },
     ].compactMap { $0 }
 
-    let editSection: [SidebarContextMenuEntry] = [
-        actions.rename.map {
-            .action(.init(title: "Rename \(label)", systemImage: "character.cursor.ibeam", onAction: $0))
-        },
-        actions.changeIcon.map {
-            .action(.init(title: "Change Icon…", systemImage: "photo", classification: .presentationOnly, onAction: $0))
-        },
-        actions.editURL.map {
-            .action(.init(title: "Edit URL…", systemImage: "link.badge.plus", classification: .presentationOnly, onAction: $0))
-        },
-    ].compactMap { $0 }
+    let editAction = actions.edit ?? actions.rename ?? actions.editURL
+    let editSection: [SidebarContextMenuEntry] = editAction.map {
+        [.action(.init(title: "Edit", systemImage: "pencil", classification: .presentationOnly, onAction: $0))]
+    } ?? []
 
     let driftSection: [SidebarContextMenuEntry] = actions.savedURLDrift.map {
         [
@@ -480,12 +472,10 @@ private func makeSavedSidebarTabEntries(
 
 func makeFolderHeaderContextMenuEntries(actions: SidebarFolderHeaderMenuActions) -> [SidebarContextMenuEntry] {
     let iconSection: [SidebarContextMenuEntry] = [
-        .action(.init(title: "Rename Folder", onAction: actions.rename)),
-        .action(.init(title: "Change Folder Icon…", classification: .presentationOnly, onAction: actions.changeIcon)),
+        .action(.init(title: "Edit", systemImage: "pencil", classification: .presentationOnly, onAction: actions.edit)),
     ]
 
     let contentsSection: [SidebarContextMenuEntry] = [
-        .action(.init(title: "New Tab in Folder", classification: .structuralMutation, onAction: actions.addTab)),
         .action(.init(title: "Sort by Name", classification: .structuralMutation, onAction: actions.alphabetize)),
     ] + (actions.unloadActiveTabs.map {
         [.action(.init(title: "Unload Active Tabs in Folder", systemImage: "xmark.circle", onAction: $0))]

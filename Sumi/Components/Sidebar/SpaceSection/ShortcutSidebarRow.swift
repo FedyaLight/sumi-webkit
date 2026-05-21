@@ -9,12 +9,11 @@ struct ShortcutSidebarRow: View {
     @ObservedObject var pin: ShortcutPin
     var liveTab: Tab? = nil
     var accessibilityID: String? = nil
-    var contextMenuEntries: (@escaping () -> Void) -> [SidebarContextMenuEntry] = { _ in [] }
+    var contextMenuEntries: () -> [SidebarContextMenuEntry] = { [] }
     let action: () -> Void
     var dragSourceZone: DropZoneID? = nil
     var dragHasTrailingActionExclusion: Bool = true
     var dragIsEnabled: Bool = true
-    var onLauncherIconSelected: ((String) -> Void)? = nil
     let onResetToLaunchURL: (() -> Void)?
     let onUnload: () -> Void
     let onRemove: () -> Void
@@ -31,7 +30,6 @@ struct ShortcutSidebarRow: View {
                     dragSourceZone: dragSourceZone,
                     dragHasTrailingActionExclusion: dragHasTrailingActionExclusion,
                     dragIsEnabled: dragIsEnabled,
-                    onLauncherIconSelected: onLauncherIconSelected,
                     onResetToLaunchURL: onResetToLaunchURL,
                     onUnload: onUnload,
                     onRemove: onRemove
@@ -45,7 +43,6 @@ struct ShortcutSidebarRow: View {
                     dragSourceZone: dragSourceZone,
                     dragHasTrailingActionExclusion: dragHasTrailingActionExclusion,
                     dragIsEnabled: dragIsEnabled,
-                    onLauncherIconSelected: onLauncherIconSelected,
                     onResetToLaunchURL: onResetToLaunchURL,
                     onUnload: onUnload,
                     onRemove: onRemove
@@ -59,12 +56,11 @@ private struct ShortcutSidebarLiveRowContent: View {
     @ObservedObject var pin: ShortcutPin
     @ObservedObject var liveTab: Tab
     var accessibilityID: String?
-    var contextMenuEntries: (@escaping () -> Void) -> [SidebarContextMenuEntry]
+    var contextMenuEntries: () -> [SidebarContextMenuEntry]
     let action: () -> Void
     var dragSourceZone: DropZoneID?
     var dragHasTrailingActionExclusion: Bool
     var dragIsEnabled: Bool
-    var onLauncherIconSelected: ((String) -> Void)?
     let onResetToLaunchURL: (() -> Void)?
     let onUnload: () -> Void
     let onRemove: () -> Void
@@ -87,7 +83,6 @@ private struct ShortcutSidebarLiveRowContent: View {
             dragSourceZone: dragSourceZone,
             dragHasTrailingActionExclusion: dragHasTrailingActionExclusion,
             dragIsEnabled: dragIsEnabled,
-            onLauncherIconSelected: onLauncherIconSelected,
             onResetToLaunchURL: onResetToLaunchURL,
             onUnload: onUnload,
             onRemove: onRemove
@@ -98,12 +93,11 @@ private struct ShortcutSidebarLiveRowContent: View {
 private struct ShortcutSidebarStoredRowContent: View {
     @ObservedObject var pin: ShortcutPin
     var accessibilityID: String?
-    var contextMenuEntries: (@escaping () -> Void) -> [SidebarContextMenuEntry]
+    var contextMenuEntries: () -> [SidebarContextMenuEntry]
     let action: () -> Void
     var dragSourceZone: DropZoneID?
     var dragHasTrailingActionExclusion: Bool
     var dragIsEnabled: Bool
-    var onLauncherIconSelected: ((String) -> Void)?
     let onResetToLaunchURL: (() -> Void)?
     let onUnload: () -> Void
     let onRemove: () -> Void
@@ -126,7 +120,6 @@ private struct ShortcutSidebarStoredRowContent: View {
             dragSourceZone: dragSourceZone,
             dragHasTrailingActionExclusion: dragHasTrailingActionExclusion,
             dragIsEnabled: dragIsEnabled,
-            onLauncherIconSelected: onLauncherIconSelected,
             onResetToLaunchURL: onResetToLaunchURL,
             onUnload: onUnload,
             onRemove: onRemove
@@ -140,12 +133,11 @@ private struct ShortcutSidebarRowChrome: View {
     let resolvedTitle: String
     let runtimeAffordance: SumiLauncherRuntimeAffordanceState
     var accessibilityID: String? = nil
-    var contextMenuEntries: (@escaping () -> Void) -> [SidebarContextMenuEntry] = { _ in [] }
+    var contextMenuEntries: () -> [SidebarContextMenuEntry] = { [] }
     let action: () -> Void
     var dragSourceZone: DropZoneID? = nil
     var dragHasTrailingActionExclusion: Bool = true
     var dragIsEnabled: Bool = true
-    var onLauncherIconSelected: ((String) -> Void)? = nil
     let onResetToLaunchURL: (() -> Void)?
     let onUnload: () -> Void
     let onRemove: () -> Void
@@ -162,7 +154,6 @@ private struct ShortcutSidebarRowChrome: View {
     @State private var faviconCacheRefreshID = UUID()
     @State private var loadedStoredFaviconURL: URL?
     @State private var loadedStoredFavicon: Image?
-    @StateObject private var emojiManager = EmojiPickerManager()
 
     var body: some View {
         let _ = faviconCacheRefreshID
@@ -221,7 +212,6 @@ private struct ShortcutSidebarRowChrome: View {
         .frame(height: SidebarRowLayout.rowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(backgroundColor)
-        .background(EmojiPickerAnchor(manager: emojiManager))
         .overlay(alignment: .leading) {
             rowActivationOverlay
         }
@@ -262,16 +252,8 @@ private struct ShortcutSidebarRowChrome: View {
             dragSource: dragSourceConfiguration,
             primaryAction: action,
             sourceID: rowSourceID,
-            entries: { contextMenuEntries(toggleLauncherIconPicker) }
+            entries: contextMenuEntries
         )
-        .onChange(of: emojiManager.committedEmoji) { _, newValue in
-            guard !newValue.isEmpty else { return }
-            let normalized = SumiPersistentGlyph.normalizedLauncherIconValue(newValue)
-            guard let onLauncherIconSelected else { return }
-            DispatchQueue.main.async {
-                onLauncherIconSelected(normalized)
-            }
-        }
         .shadow(
             color: runtimeAffordance.isSelected ? tokens.sidebarSelectionShadow : .clear,
             radius: runtimeAffordance.isSelected ? 2 : 0,
@@ -338,21 +320,6 @@ private struct ShortcutSidebarRowChrome: View {
                 .font(.system(size: SidebarRowLayout.faviconSize * 0.78, weight: .medium))
                 .symbolRenderingMode(.monochrome)
                 .foregroundStyle(textColor)
-        }
-    }
-
-    private func toggleLauncherIconPicker() {
-        guard onLauncherIconSelected != nil else { return }
-        emojiManager.selectedEmoji = pin.iconAsset.flatMap { iconAsset in
-            SumiPersistentGlyph.presentsAsEmoji(iconAsset) ? iconAsset : nil
-        } ?? ""
-        emojiManager.toggle(
-            source: windowState.resolveSidebarPresentationSource(),
-            settings: sumiSettings,
-            themeContext: themeContext
-        ) { picked in
-            let normalized = SumiPersistentGlyph.normalizedLauncherIconValue(picked)
-            onLauncherIconSelected?(normalized)
         }
     }
 

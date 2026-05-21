@@ -223,9 +223,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
                 "Copy Link",
                 "Share…",
                 "---",
-                "Rename Essential",
-                "Change Icon…",
-                "Edit URL…",
+                "Edit",
                 "---",
                 "Delete Essential [destructive]",
             ]
@@ -284,9 +282,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
                 "Copy Link",
                 "Share…",
                 "---",
-                "Rename Pinned Tab",
-                "Change Icon…",
-                "Edit URL…",
+                "Edit",
                 "---",
                 "Add to Essentials",
                 "> Add to Folder",
@@ -400,9 +396,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
     func testFolderHeaderAndSidebarBackgroundSnapshots() {
         let folderHeader = makeFolderHeaderContextMenuEntries(
             actions: .init(
-                rename: Self.noop,
-                changeIcon: Self.noop,
-                addTab: Self.noop,
+                edit: Self.noop,
                 alphabetize: Self.noop,
                 unloadActiveTabs: Self.noop,
                 delete: Self.noop
@@ -411,10 +405,8 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
         XCTAssertEqual(
             Self.snapshot(folderHeader),
             [
-                "Rename Folder",
-                "Change Folder Icon…",
+                "Edit",
                 "---",
-                "New Tab in Folder",
                 "Sort by Name",
                 "Unload Active Tabs in Folder",
                 "---",

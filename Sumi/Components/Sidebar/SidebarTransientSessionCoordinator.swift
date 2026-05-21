@@ -97,6 +97,8 @@ func sidebarDropZoneDebugDescription(_ dropZoneID: DropZoneID) -> String {
 enum SidebarTransientUIKind: String, CaseIterable {
     case contextMenu
     case dialog
+    case folderEditorPopover
+    case shortcutEditorPopover
     case themePicker
     case urlHubPopover
     case emojiPopover
@@ -107,7 +109,7 @@ enum SidebarTransientUIKind: String, CaseIterable {
 
     var blocksSidebarDragSources: Bool {
         switch self {
-        case .contextMenu, .dialog, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt:
+        case .contextMenu, .dialog, .folderEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt:
             return true
         case .drag:
             return false
@@ -116,7 +118,7 @@ enum SidebarTransientUIKind: String, CaseIterable {
 
     var pinsCollapsedSidebar: Bool {
         switch self {
-        case .contextMenu, .dialog, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
+        case .contextMenu, .dialog, .folderEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
             return true
         }
     }
@@ -541,7 +543,7 @@ final class SidebarTransientSessionCoordinator {
         switch kind {
         case .contextMenu:
             return pendingMenuActionRecoveryTier
-        case .dialog, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
+        case .dialog, .folderEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
             return .soft
         }
     }

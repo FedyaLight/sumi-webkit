@@ -554,9 +554,6 @@ struct PinnedGrid: View {
                 onActivate: { activate(pin) },
                 onClose: { closeIfActive(pin) },
                 onUnload: { unload(pin) },
-                onIconSelected: { newIconAsset in
-                    _ = browserManager.tabManager.updateShortcutPin(pin, iconAsset: newIconAsset)
-                },
                 contextMenuActions: contextMenuActions,
                 dragPinnedConfiguration: configuration,
                 dragIsEnabled: !browserManager.isTransitioningProfile && isAppKitInteractionEnabled,
@@ -654,7 +651,7 @@ struct PinnedGrid: View {
     }
 
     private func essentialContextMenuActions(for pin: ShortcutPin) -> EssentialTileContextMenuActions {
-        EssentialTileContextMenuActions(makeEntries: { onEditIcon in
+        EssentialTileContextMenuActions(makeEntries: {
             let savedURLDriftActions: SidebarSavedURLDriftActions? =
                 browserManager.tabManager.shortcutHasDrifted(pin, in: windowState)
                     ? .init(
@@ -681,7 +678,7 @@ struct PinnedGrid: View {
                             source: windowState.resolveSidebarPresentationSource()
                         )
                     },
-                    rename: { presentShortcutLinkEditor(for: pin) },
+                    edit: { presentShortcutLinkEditor(for: pin) },
                     folderTarget: .init(
                         choices: essentialFolderChoices,
                         onSelect: { folderId in moveEssential(pin, toFolder: folderId) }
@@ -712,8 +709,6 @@ struct PinnedGrid: View {
                         }
                     ),
                     savedURLDrift: savedURLDriftActions,
-                    changeIcon: onEditIcon,
-                    editURL: { presentShortcutLinkEditor(for: pin) },
                     unload: unloadAction,
                     deleteSavedTab: { confirmDeleteEssential(pin) }
                 )
@@ -827,33 +822,11 @@ struct PinnedGrid: View {
     }
 
     private func presentShortcutLinkEditor(for pin: ShortcutPin) {
-        let manager = browserManager
-        let settings = sumiSettings
-        let theme = themeContext
-        let source = windowState.resolveSidebarPresentationSource()
-        DispatchQueue.main.async {
-            manager.showDialog(
-                ShortcutLinkEditorSheet(
-                    dialogTitle: "Edit Essential",
-                    pin: pin,
-                    onSave: { newTitle, newURL in
-                        DispatchQueue.main.async {
-                            _ = manager.tabManager.updateShortcutPin(
-                                pin,
-                                title: newTitle,
-                                launchURL: newURL
-                            )
-                        }
-                    },
-                    onRequestClose: {
-                        manager.closeDialog()
-                    }
-                )
-                .environment(\.sumiSettings, settings)
-                .environment(\.resolvedThemeContext, theme),
-                source: source
-            )
-        }
+        browserManager.showShortcutEditor(
+            for: pin,
+            in: windowState,
+            source: windowState.resolveSidebarPresentationSource()
+        )
     }
 
     private func copyLink(_ url: URL) {
@@ -1180,10 +1153,10 @@ private extension ShortcutPin {
 }
 
 private struct EssentialTileContextMenuActions {
-    let makeEntries: (@escaping () -> Void) -> [SidebarContextMenuEntry]
+    let makeEntries: () -> [SidebarContextMenuEntry]
 
-    func entries(onEditIcon: @escaping () -> Void) -> [SidebarContextMenuEntry] {
-        makeEntries(onEditIcon)
+    func entries() -> [SidebarContextMenuEntry] {
+        makeEntries()
     }
 }
 
@@ -1196,15 +1169,10 @@ private struct PinnedTile: View {
     let onActivate: () -> Void
     let onClose: () -> Void
     let onUnload: () -> Void
-    let onIconSelected: (String) -> Void
     let contextMenuActions: EssentialTileContextMenuActions
     let dragPinnedConfiguration: PinnedTabsConfiguration
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
-    @Environment(BrowserWindowState.self) private var windowState
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
-    @StateObject private var emojiManager = EmojiPickerManager()
 
     var body: some View {
         Group {
@@ -1218,7 +1186,6 @@ private struct PinnedTile: View {
                     onActivate: onActivate,
                     onClose: onClose,
                     onUnload: onUnload,
-                    onEditIcon: toggleEssentialIconPicker,
                     contextMenuActions: contextMenuActions,
                     dragPinnedConfiguration: dragPinnedConfiguration,
                     dragIsEnabled: dragIsEnabled,
@@ -1233,7 +1200,6 @@ private struct PinnedTile: View {
                     onActivate: onActivate,
                     onClose: onClose,
                     onUnload: onUnload,
-                    onEditIcon: toggleEssentialIconPicker,
                     contextMenuActions: contextMenuActions,
                     dragPinnedConfiguration: dragPinnedConfiguration,
                     dragIsEnabled: dragIsEnabled,
@@ -1242,28 +1208,6 @@ private struct PinnedTile: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .background(EmojiPickerAnchor(manager: emojiManager))
-        .onChange(of: emojiManager.committedEmoji) { _, newValue in
-            guard !newValue.isEmpty else { return }
-            let normalized = SumiPersistentGlyph.normalizedLauncherIconValue(newValue)
-            DispatchQueue.main.async {
-                onIconSelected(normalized)
-            }
-        }
-    }
-
-    private func toggleEssentialIconPicker() {
-        emojiManager.selectedEmoji = pin.iconAsset.flatMap { iconAsset in
-            SumiPersistentGlyph.presentsAsEmoji(iconAsset) ? iconAsset : nil
-        } ?? ""
-        emojiManager.toggle(
-            source: windowState.resolveSidebarPresentationSource(),
-            settings: sumiSettings,
-            themeContext: themeContext
-        ) { picked in
-            let normalized = SumiPersistentGlyph.normalizedLauncherIconValue(picked)
-            onIconSelected(normalized)
-        }
     }
 }
 
@@ -1276,7 +1220,6 @@ private struct LivePinnedTileContent: View {
     let onActivate: () -> Void
     let onClose: () -> Void
     let onUnload: () -> Void
-    let onEditIcon: () -> Void
     let contextMenuActions: EssentialTileContextMenuActions
     let dragPinnedConfiguration: PinnedTabsConfiguration
     let dragIsEnabled: Bool
@@ -1309,7 +1252,7 @@ private struct LivePinnedTileContent: View {
             showsUnloadIndicator: false,
             showsSplitGroupOutline: essentialRuntimeState?.showsSplitProxyOutline == true,
             supportsMiddleClickUnload: true,
-            contextMenuEntries: { contextMenuActions.entries(onEditIcon: onEditIcon) },
+            contextMenuEntries: { contextMenuActions.entries() },
             action: onActivate,
             onUnload: onUnload
         )
@@ -1344,7 +1287,6 @@ private struct StoredPinnedTileContent: View {
     let onActivate: () -> Void
     let onClose: () -> Void
     let onUnload: () -> Void
-    let onEditIcon: () -> Void
     let contextMenuActions: EssentialTileContextMenuActions
     let dragPinnedConfiguration: PinnedTabsConfiguration
     let dragIsEnabled: Bool
@@ -1383,7 +1325,7 @@ private struct StoredPinnedTileContent: View {
             showsUnloadIndicator: false,
             showsSplitGroupOutline: essentialRuntimeState?.showsSplitProxyOutline == true,
             supportsMiddleClickUnload: true,
-            contextMenuEntries: { contextMenuActions.entries(onEditIcon: onEditIcon) },
+            contextMenuEntries: { contextMenuActions.entries() },
             action: onActivate,
             onUnload: onUnload
         )

@@ -31,10 +31,7 @@ struct TabFolderView: View {
     let renderMode: SpaceViewRenderMode
     let topLevelPinnedIndex: Int?
     let onDelete: () -> Void
-    let onAddTab: () -> Void
 
-    @State private var isRenaming: Bool = false
-    @State private var draftName: String = ""
     @State private var measuredExpandedFolderContentHeight: CGFloat = 0
     @State private var measuredExpandedFolderContentItemCount: Int?
     @State private var measuredCollapsedFolderContentHeight: CGFloat = 0
@@ -42,7 +39,6 @@ struct TabFolderView: View {
     @State private var deferredExpandedHeightMutation = SidebarDeferredStateMutation<CGFloat>()
     @State private var deferredCollapsedHeightMutation = SidebarDeferredStateMutation<CGFloat>()
     @State private var isFolderHeaderHovered = false
-    @FocusState private var nameFieldFocused: Bool
 
     @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject var splitManager: SplitViewManager
@@ -506,14 +502,8 @@ struct TabFolderView: View {
             generation: dragState.sidebarGeometryGeneration,
             isActive: isInteractive
         )
-        .onChange(of: nameFieldFocused) { _, focused in
-            // When losing focus during rename, commit
-            if isRenaming && !focused {
-                commitRename()
-            }
-        }
         .sidebarAppKitContextMenu(
-            isEnabled: !isRenaming,
+            isEnabled: true,
             isInteractionEnabled: isInteractive,
             dragSource: SidebarDragSourceConfiguration(
                 item: SumiDragItem.folder(folderId: folder.id, title: folder.name),
@@ -525,11 +515,9 @@ struct TabFolderView: View {
                 onActivate: {
                     toggleFolderOpenState()
                 },
-                isEnabled: !isRenaming
-                    && isInteractive
+                isEnabled: isInteractive
             ),
             primaryAction: {
-                guard !isRenaming else { return }
                 toggleFolderOpenState()
             },
             sourceID: folderHeaderSourceID,
@@ -569,34 +557,12 @@ struct TabFolderView: View {
         .sidebarDDGHover($isFolderHeaderHovered, isEnabled: isInteractive)
     }
 
-    @ViewBuilder
     private var folderTitleView: some View {
-        if isRenaming {
-            TextField("", text: $draftName)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(folderForegroundColor)
-                .textFieldStyle(PlainTextFieldStyle())
-                .autocorrectionDisabled()
-                .focused($nameFieldFocused)
-                .onAppear {
-                    draftName = folder.name
-                    DispatchQueue.main.async {
-                        nameFieldFocused = true
-                    }
-                }
-                .onSubmit {
-                    commitRename()
-                }
-                .onExitCommand {
-                    cancelRename()
-                }
-        } else {
-            Text(folder.name)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(folderForegroundColor)
-                .lineLimit(1)
-                .truncationMode(.tail)
-        }
+        Text(folder.name)
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(folderForegroundColor)
+            .lineLimit(1)
+            .truncationMode(.tail)
     }
 
     private var folderIconView: some View {
@@ -733,16 +699,13 @@ struct TabFolderView: View {
                 pin: pin,
                 liveTab: browserManager.tabManager.shortcutLiveTab(for: pin.id, in: windowState.id),
                 accessibilityID: "folder-shortcut-\(pin.id.uuidString)",
-                contextMenuEntries: { toggleEditIcon in
-                    folderShortcutContextMenuEntries(pin, toggleEditIcon: toggleEditIcon)
+                contextMenuEntries: {
+                    folderShortcutContextMenuEntries(pin)
                 },
                 action: { activateShortcutPin(pin) },
                 dragSourceZone: .folder(folder.id),
                 dragHasTrailingActionExclusion: true,
                 dragIsEnabled: isInteractive,
-                onLauncherIconSelected: { newIconAsset in
-                    _ = browserManager.tabManager.updateShortcutPin(pin, iconAsset: newIconAsset)
-                },
                 onResetToLaunchURL: { resetShortcutPin(pin) },
                 onUnload: { unloadShortcutPin(pin) },
                 onRemove: { removeShortcutPin(pin) }
@@ -766,10 +729,7 @@ struct TabFolderView: View {
             || group.member(forPinId: pin.id)?.tabId == currentTabId
     }
 
-    private func folderShortcutContextMenuEntries(
-        _ pin: ShortcutPin,
-        toggleEditIcon: @escaping () -> Void
-    ) -> [SidebarContextMenuEntry] {
+    private func folderShortcutContextMenuEntries(_ pin: ShortcutPin) -> [SidebarContextMenuEntry] {
         let presentationState = shortcutPresentationState(for: pin)
         let profiles = browserManager.profileManager.profiles
         let folderChoices = makeSidebarContextMenuFolderChoices(
@@ -818,7 +778,7 @@ struct TabFolderView: View {
                         source: windowState.resolveSidebarPresentationSource()
                     )
                 },
-                rename: {
+                edit: {
                     presentShortcutLinkEditor(
                         for: pin,
                         source: windowState.resolveSidebarPresentationSource()
@@ -855,13 +815,6 @@ struct TabFolderView: View {
                 ),
                 addToEssentials: addToEssentialsAction,
                 savedURLDrift: savedURLDriftActions,
-                changeIcon: toggleEditIcon,
-                editURL: {
-                    presentShortcutLinkEditor(
-                        for: pin,
-                        source: windowState.resolveSidebarPresentationSource()
-                    )
-                },
                 unload: unloadAction,
                 deleteSavedTab: { confirmDeleteShortcutPin(pin) }
             )
@@ -878,13 +831,13 @@ struct TabFolderView: View {
 
         return makeFolderHeaderContextMenuEntries(
             actions: .init(
-                rename: startRenaming,
-                changeIcon: {
-                    presentFolderIconPicker(
+                edit: {
+                    browserManager.showFolderEditor(
+                        for: folder,
+                        in: windowState,
                         source: windowState.resolveSidebarPresentationSource()
                     )
                 },
-                addTab: onAddTab,
                 alphabetize: alphabetizeTabs,
                 unloadActiveTabs: unloadActiveTabsAction,
                 delete: onDelete
@@ -892,90 +845,15 @@ struct TabFolderView: View {
         )
     }
 
-    /// Uses `DialogManager` instead of SwiftUI `.sheet` so presenting after `NSMenu` does not trip
-    /// `_NSTouchBarFinderObservation` KVO faults on `SumiBrowserWindow` (see `BrowserManager+DialogsUtilities`).
-    private func presentFolderIconPicker(
-        source: SidebarTransientPresentationSource? = nil
-    ) {
-        let folderId = folder.id
-        let iconSnapshot = folder.icon
-        let settings = sumiSettings
-        let theme = themeContext
-        let manager = browserManager
-        DispatchQueue.main.async {
-            let picker = FolderIconPickerSheet(
-                currentIconValue: iconSnapshot,
-                onSelect: { value in
-                    DispatchQueue.main.async {
-                        manager.tabManager.updateFolderIcon(folderId, icon: value)
-                    }
-                },
-                onReset: {
-                    DispatchQueue.main.async {
-                        manager.tabManager.updateFolderIcon(folderId, icon: "")
-                    }
-                },
-                onRequestClose: {
-                    manager.closeDialog()
-                }
-            )
-            .environment(\.sumiSettings, settings)
-            .environment(\.resolvedThemeContext, theme)
-
-            if let source {
-                manager.showDialog(
-                    picker,
-                    source: source
-                )
-                return
-            }
-
-            manager.showDialog(
-                picker
-            )
-        }
-    }
-
-    /// Same rationale as `presentFolderIconPicker`: avoid SwiftUI `.sheet` immediately after `NSMenu` (TouchBar KVO).
     private func presentShortcutLinkEditor(
         for pin: ShortcutPin,
         source: SidebarTransientPresentationSource? = nil
     ) {
-        let manager = browserManager
-        let settings = sumiSettings
-        let theme = themeContext
-        DispatchQueue.main.async {
-            let editor = ShortcutLinkEditorSheet(
-                dialogTitle: "Edit Pinned Tab",
-                pin: pin,
-                onSave: { newTitle, newURL in
-                    DispatchQueue.main.async {
-                        _ = manager.tabManager.updateShortcutPin(
-                            pin,
-                            title: newTitle,
-                            launchURL: newURL
-                        )
-                    }
-                },
-                onRequestClose: {
-                    manager.closeDialog()
-                }
-            )
-            .environment(\.sumiSettings, settings)
-            .environment(\.resolvedThemeContext, theme)
-
-            if let source {
-                manager.showDialog(
-                    editor,
-                    source: source
-                )
-                return
-            }
-
-            manager.showDialog(
-                editor
-            )
-        }
+        browserManager.showShortcutEditor(
+            for: pin,
+            in: windowState,
+            source: source ?? windowState.resolveSidebarPresentationSource()
+        )
     }
 
     private var tokens: ChromeThemeTokens {
@@ -1007,28 +885,6 @@ struct TabFolderView: View {
         withAnimation(Self.zenFolderContentAnimation) {
             browserManager.tabManager.toggleFolderOpenState(folder.id)
         }
-    }
-
-    // MARK: - Rename Actions
-
-    private func startRenaming() {
-        draftName = folder.name
-        isRenaming = true
-    }
-
-    private func cancelRename() {
-        isRenaming = false
-        draftName = folder.name
-        nameFieldFocused = false
-    }
-
-    private func commitRename() {
-        let newName = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !newName.isEmpty && newName != folder.name {
-            browserManager.tabManager.renameFolder(folder.id, newName: newName)
-        }
-        isRenaming = false
-        nameFieldFocused = false
     }
 
     private func shortcutPresentationState(for pin: ShortcutPin) -> ShortcutPresentationState {
