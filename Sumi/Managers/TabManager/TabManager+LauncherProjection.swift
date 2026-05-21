@@ -25,18 +25,24 @@ extension TabManager {
     ) -> SpaceLauncherProjection {
         let regularTabs = Array(tabsBySpace[spaceId] ?? [])
         let persistedPins = spacePinnedPins(for: spaceId)
+        let shortcutHostedHiddenPinIds = Set(
+            shortcutHostedSplitGroups(for: spaceId).flatMap { group in
+                group.members.compactMap(\.pinId)
+            }
+        )
+        let visiblePersistedPins = persistedPins.filter { !shortcutHostedHiddenPinIds.contains($0.id) }
         let topLevelFolders = (foldersBySpace[spaceId] ?? []).sorted { lhs, rhs in
             if lhs.index != rhs.index { return lhs.index < rhs.index }
             return lhs.id.uuidString < rhs.id.uuidString
         }
-        let topLevelPins = persistedPins
+        let topLevelPins = visiblePersistedPins
             .filter { $0.folderId == nil }
             .sorted { lhs, rhs in
                 if lhs.index != rhs.index { return lhs.index < rhs.index }
                 return lhs.id.uuidString < rhs.id.uuidString
             }
         let folderPins = Dictionary(
-            grouping: persistedPins.filter { $0.folderId != nil },
+            grouping: visiblePersistedPins.filter { $0.folderId != nil },
             by: { $0.folderId! }
         ).mapValues { pins in
             pins.sorted { lhs, rhs in

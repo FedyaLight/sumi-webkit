@@ -79,6 +79,7 @@ struct DragOperation {
         case tab(Tab)
         case folder(TabFolder)
         case pin(ShortcutPin)
+        case splitGroup(SplitGroup)
     }
 
     let payload: Payload
@@ -109,6 +110,11 @@ struct DragOperation {
     var folder: TabFolder? {
         guard case .folder(let folder) = payload else { return nil }
         return folder
+    }
+
+    var splitGroup: SplitGroup? {
+        guard case .splitGroup(let group) = payload else { return nil }
+        return group
     }
 
     var pin: ShortcutPin? {

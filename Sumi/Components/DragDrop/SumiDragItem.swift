@@ -175,6 +175,7 @@ extension SidebarDragScope {
 enum SumiDragItemKind: String, Codable, Equatable {
     case tab
     case folder
+    case splitGroup
 }
 
 struct SumiDragItem: Codable, Equatable {

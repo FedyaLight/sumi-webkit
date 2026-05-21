@@ -1,13 +1,82 @@
 import SwiftUI
 
+enum SplitGroupSidebarItem: Identifiable {
+    case tab(Tab)
+    case pin(ShortcutPin)
+
+    var id: UUID {
+        switch self {
+        case .tab(let tab):
+            return tab.id
+        case .pin(let pin):
+            return pin.id
+        }
+    }
+
+    @MainActor
+    var title: String {
+        switch self {
+        case .tab(let tab):
+            return tab.name
+        case .pin(let pin):
+            return pin.preferredDisplayTitle
+        }
+    }
+
+    var tab: Tab? {
+        if case .tab(let tab) = self { return tab }
+        return nil
+    }
+
+    var pin: ShortcutPin? {
+        if case .pin(let pin) = self { return pin }
+        return nil
+    }
+}
+
+enum SplitGroupSidebarSegmentAction {
+    case close
+    case restore
+
+    var systemImageName: String {
+        switch self {
+        case .close:
+            return "xmark"
+        case .restore:
+            return "arrow.uturn.backward"
+        }
+    }
+
+    var accessibilityPrefix: String {
+        switch self {
+        case .close:
+            return "space-split-tab-close"
+        case .restore:
+            return "space-split-segment-restore"
+        }
+    }
+
+    var help: String {
+        switch self {
+        case .close:
+            return "Close split segment"
+        case .restore:
+            return "Return launcher to original place"
+        }
+    }
+}
+
 struct SplitGroupSidebarRow: View {
     let group: SplitGroup
-    let tabs: [Tab]
+    let items: [SplitGroupSidebarItem]
     let spaceId: UUID
     let isAppKitInteractionEnabled: Bool
+    let segmentAction: (SplitGroupSidebarItem) -> SplitGroupSidebarSegmentAction?
+    var dragSource: (SplitGroupSidebarItem) -> SidebarDragSourceConfiguration? = { _ in nil }
     let contextMenuEntries: (Tab) -> [SidebarContextMenuEntry]
     let onActivate: (Tab) -> Void
-    let onClose: (Tab) -> Void
+    let onActivateGroup: () -> Void
+    let onSegmentAction: (SplitGroupSidebarItem) -> Void
 
     @EnvironmentObject private var browserManager: BrowserManager
     @EnvironmentObject private var splitManager: SplitViewManager
@@ -18,17 +87,19 @@ struct SplitGroupSidebarRow: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                 SplitGroupSegment(
-                    tab: tab,
+                    item: item,
                     spaceId: spaceId,
-                    isActive: currentTabId == tab.id,
+                    isActive: isActive(item),
+                    segmentAction: segmentAction(item),
                     isAppKitInteractionEnabled: isAppKitInteractionEnabled,
-                    contextMenuEntries: splitContextMenuEntries(for: tab),
-                    onActivate: { onActivate(tab) },
-                    onClose: { onClose(tab) }
+                    dragSourceConfiguration: dragSource(item),
+                    contextMenuEntries: item.tab.map(splitContextMenuEntries) ?? [],
+                    onActivate: { activate(item) },
+                    onSegmentAction: { onSegmentAction(item) }
                 )
-                if index < tabs.count - 1 {
+                if index < items.count - 1 {
                     Rectangle()
                         .fill(tokens.separator.opacity(0.7))
                         .frame(width: 1, height: 22)
@@ -47,6 +118,16 @@ struct SplitGroupSidebarRow: View {
         }
         .sidebarDDGHover($isRowHovered, isEnabled: isAppKitInteractionEnabled)
         .accessibilityIdentifier("space-split-group-\(group.id.uuidString)")
+    }
+
+    private func activate(_ item: SplitGroupSidebarItem) {
+        if item.tab == nil {
+            onActivateGroup()
+            return
+        }
+        if let tab = item.tab {
+            onActivate(tab)
+        }
     }
 
     private var background: Color {
@@ -68,6 +149,21 @@ struct SplitGroupSidebarRow: View {
 
     private var currentTabId: UUID? {
         browserManager.currentTab(for: windowState)?.id
+    }
+
+    private func isActive(_ item: SplitGroupSidebarItem) -> Bool {
+        if currentTabId == item.id {
+            return true
+        }
+        if let pin = item.pin {
+            return windowState.currentShortcutPinId == pin.id
+                || group.activeTabId == pin.id
+                || group.member(forPinId: pin.id)?.tabId == currentTabId
+        }
+        if let tab = item.tab, let pinId = tab.shortcutPinId {
+            return windowState.currentShortcutPinId == pinId
+        }
+        return false
     }
 
     private func splitContextMenuEntries(for tab: Tab) -> [SidebarContextMenuEntry] {
@@ -121,16 +217,18 @@ struct SplitGroupSidebarRow: View {
 }
 
 private struct SplitGroupSegment: View {
-    @ObservedObject var tab: Tab
+    let item: SplitGroupSidebarItem
     let spaceId: UUID
     let isActive: Bool
+    let segmentAction: SplitGroupSidebarSegmentAction?
     let isAppKitInteractionEnabled: Bool
+    let dragSourceConfiguration: SidebarDragSourceConfiguration?
     let contextMenuEntries: [SidebarContextMenuEntry]
     let onActivate: () -> Void
-    let onClose: () -> Void
+    let onSegmentAction: () -> Void
 
     @State private var isHovered = false
-    @State private var isCloseHovered = false
+    @State private var isActionHovered = false
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
@@ -138,57 +236,85 @@ private struct SplitGroupSegment: View {
     var body: some View {
         ZStack(alignment: .trailing) {
             HStack(spacing: 6) {
-                SidebarTabFaviconView(tab: tab, size: 16, cornerRadius: 4)
+                icon
                 SumiTabTitleLabel(
-                    title: tab.name,
+                    title: item.title,
                     font: .systemFont(ofSize: 12, weight: isActive ? .semibold : .regular),
                     textColor: tokens.primaryText,
                     trailingFadePadding: displayIsHovering ? 2 : 0,
-                    isLoading: tab.isLoading
+                    isLoading: item.tab?.isLoading ?? false
                 )
                 .lineLimit(1)
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             }
             .padding(.leading, 7)
-            .padding(.trailing, displayIsHovering ? 28 : 7)
+            .padding(.trailing, displayIsHovering && segmentAction != nil ? 28 : 7)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
             .onTapGesture(perform: onActivate)
             .sidebarDDGHover($isHovered, isEnabled: isAppKitInteractionEnabled)
             .sidebarAppKitContextMenu(
-                isInteractionEnabled: isAppKitInteractionEnabled,
-                dragSource: SidebarDragSourceConfiguration(
-                    item: SumiDragItem(
-                        tabId: tab.id,
-                        title: tab.name,
-                        urlString: tab.url.absoluteString
-                    ),
-                    sourceZone: .spaceRegular(spaceId),
-                    previewKind: .row,
-                    previewIcon: tab.favicon,
-                    exclusionZones: [.trailingStrip(32)],
-                    onActivate: onActivate,
-                    isEnabled: isAppKitInteractionEnabled
-                ),
+                isInteractionEnabled: (item.tab != nil || dragSourceConfiguration != nil) && isAppKitInteractionEnabled,
+                dragSource: resolvedDragSourceConfiguration,
                 primaryAction: onActivate,
                 sourceID: rowSourceID,
                 entries: { contextMenuEntries }
             )
 
-            closeButton
-                .padding(.trailing, 4)
+            if let segmentAction {
+                segmentActionButton(segmentAction)
+                    .padding(.trailing, 4)
+            }
         }
         .background(
             RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(6), style: .continuous)
                 .fill(isActive ? tokens.sidebarRowActive.opacity(0.9) : (displayIsHovering ? tokens.sidebarRowHover : Color.clear))
         )
-        .task(id: tab.url) {
-            await tab.fetchFaviconForVisiblePresentation()
+        .task(id: item.tab?.url) {
+            await item.tab?.fetchFaviconForVisiblePresentation()
         }
     }
 
+    @ViewBuilder
+    private var icon: some View {
+        if let tab = item.tab {
+            SidebarTabFaviconView(tab: tab, size: 16, cornerRadius: 4)
+        } else if let pin = item.pin {
+            pin.storedFavicon
+                .resizable()
+                .scaledToFit()
+                .frame(width: 16, height: 16)
+                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        }
+    }
+
+    private var resolvedDragSourceConfiguration: SidebarDragSourceConfiguration? {
+        if let dragSourceConfiguration {
+            return dragSourceConfiguration
+        }
+        guard let tab = item.tab else { return nil }
+        return SidebarDragSourceConfiguration(
+            item: SumiDragItem(
+                tabId: tab.id,
+                title: tab.name,
+                urlString: tab.url.absoluteString
+            ),
+            sourceZone: .spaceRegular(spaceId),
+            previewKind: .row,
+            previewIcon: tab.favicon,
+            exclusionZones: [.trailingStrip(32)],
+            onActivate: onActivate,
+            isEnabled: isAppKitInteractionEnabled
+        )
+    }
+
     private var rowSourceID: String {
-        "space-split-tab-\(tab.id.uuidString)"
+        switch item {
+        case .tab(let tab):
+            return "space-split-tab-\(tab.id.uuidString)"
+        case .pin(let pin):
+            return "space-split-pin-\(pin.id.uuidString)"
+        }
     }
 
     private var displayIsHovering: Bool {
@@ -198,20 +324,20 @@ private struct SplitGroupSegment: View {
         )
     }
 
-    private var displayIsCloseHovering: Bool {
+    private var displayIsActionHovering: Bool {
         SidebarHoverChrome.displayHover(
-            isCloseHovered,
+            isActionHovered,
             freezesHoverState: windowState.sidebarInteractionState.freezesSidebarHoverState
         )
     }
 
-    private var closeButton: some View {
-        Button(action: onClose) {
-            Image(systemName: "xmark")
+    private func segmentActionButton(_ action: SplitGroupSidebarSegmentAction) -> some View {
+        Button(action: onSegmentAction) {
+            Image(systemName: action.systemImageName)
                 .font(.system(size: 10, weight: .bold))
                 .foregroundColor(tokens.primaryText)
                 .frame(width: 20, height: 20)
-                .background(displayIsCloseHovering ? tokens.fieldBackgroundHover : Color.clear)
+                .background(displayIsActionHovering ? tokens.fieldBackgroundHover : Color.clear)
                 .clipShape(RoundedRectangle(cornerRadius: 5))
         }
         .buttonStyle(
@@ -222,12 +348,13 @@ private struct SplitGroupSegment: View {
         .opacity(displayIsHovering ? 1 : 0)
         .sidebarZenActionOpacity(displayIsHovering)
         .allowsHitTesting(displayIsHovering && !windowState.sidebarInteractionState.freezesSidebarHoverState)
-        .sidebarDDGHover($isCloseHovered, isEnabled: displayIsHovering && isAppKitInteractionEnabled)
-        .accessibilityIdentifier("space-split-tab-close-\(tab.id.uuidString)")
+        .sidebarDDGHover($isActionHovered, isEnabled: displayIsHovering && isAppKitInteractionEnabled)
+        .accessibilityIdentifier("\(action.accessibilityPrefix)-\(item.id.uuidString)")
+        .help(action.help)
         .sidebarAppKitPrimaryAction(
             isEnabled: displayIsHovering && !windowState.sidebarInteractionState.freezesSidebarHoverState,
             isInteractionEnabled: isAppKitInteractionEnabled,
-            action: onClose
+            action: onSegmentAction
         )
     }
 

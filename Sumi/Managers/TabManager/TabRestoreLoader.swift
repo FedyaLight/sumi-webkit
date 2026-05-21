@@ -603,20 +603,27 @@ actor TabRestoreLoader {
         do {
             let decoded = try JSONDecoder().decode([SplitGroup].self, from: data)
             let restored = decoded.compactMap { group -> SplitGroup? in
-                let tabIds = group.tabIds.filter { validTabIds.contains($0) }
+                let repairedGroup = repairShortcutBackedSplitGroup(
+                    group,
+                    validTabIds: validTabIds,
+                    repairReasons: &repairReasons
+                )
+                let tabIds = repairedGroup.tabIds.filter { validTabIds.contains($0) }
                 guard tabIds.count >= SplitGroup.minimumTabs else {
                     repairReasons.insert("removed stale split group")
                     return nil
                 }
-                if tabIds != group.tabIds {
+                if tabIds != repairedGroup.tabIds {
                     repairReasons.insert("repaired stale split group tabs")
                     return SplitGroup.make(
                         tabIds: tabIds,
-                        layoutKind: group.layoutKind,
-                        activeTabId: group.activeTabId.flatMap { tabIds.contains($0) ? $0 : tabIds.first }
+                        layoutKind: repairedGroup.layoutKind,
+                        activeTabId: repairedGroup.activeTabId.flatMap { tabIds.contains($0) ? $0 : tabIds.first },
+                        host: repairedGroup.host,
+                        members: repairedGroup.members
                     )
                 }
-                return group
+                return repairedGroup
             }
             let sanitized = SplitGroup.sanitized(restored)
             if sanitized.count != restored.count {
@@ -627,6 +634,25 @@ actor TabRestoreLoader {
             repairReasons.insert("removed unreadable split groups")
             return []
         }
+    }
+
+    private func repairShortcutBackedSplitGroup(
+        _ group: SplitGroup,
+        validTabIds: Set<UUID>,
+        repairReasons: inout Set<String>
+    ) -> SplitGroup {
+        var repaired = group
+        for tabId in group.tabIds where !validTabIds.contains(tabId) {
+            guard let member = repaired.member(for: tabId),
+                  let pinId = member.pinId,
+                  validTabIds.contains(pinId)
+            else {
+                continue
+            }
+            repairReasons.insert("repaired split group shortcut binding")
+            repaired = repaired.replacingMemberTab(tabId, with: pinId)
+        }
+        return repaired
     }
 
     private func makeSnapshotTab(

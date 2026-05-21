@@ -219,6 +219,7 @@ struct PinnedTileVisual: View {
     var presentationState: ShortcutPresentationState
     var isHovered: Bool = false
     var isLoading: Bool = false
+    var faviconOpacity: Double = 1
     var configuration: PinnedTabsConfiguration? = nil
 
     @Environment(\.sumiSettings) private var sumiSettings
@@ -239,7 +240,7 @@ struct PinnedTileVisual: View {
                     if presentationState.isSelected {
                         resolvedFaviconSymbol(height: pinnedTabsConfiguration.faviconHeight)
                             .blur(radius: 30)
-                            .opacity(0.5)
+                            .opacity(0.5 * faviconOpacity)
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -250,7 +251,7 @@ struct PinnedTileVisual: View {
                     Spacer()
                     resolvedFaviconSymbol(height: pinnedTabsConfiguration.faviconHeight)
                         .saturation(presentationState.shouldDesaturateIcon ? 0.0 : 1.0)
-                        .opacity(presentationState.shouldDesaturateIcon ? 0.8 : 1.0)
+                        .opacity((presentationState.shouldDesaturateIcon ? 0.8 : 1.0) * faviconOpacity)
                     Spacer()
                 }
                 Spacer()
