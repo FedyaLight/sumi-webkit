@@ -82,7 +82,7 @@ extension TabManager {
             browserManager: browserManager
         )
         tab.bindToShortcutPin(pin)
-        tab.profileId = pin.profileId
+        tab.profileId = resolvedExecutionProfileId(for: pin, currentSpaceId: pin.spaceId)
         tab.folderId = pin.folderId
         _ = tab.applyCachedFaviconOrPlaceholder(for: pin.launchURL)
         return tab

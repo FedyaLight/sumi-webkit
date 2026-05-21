@@ -256,6 +256,7 @@ struct RecentlyClosedShortcutPinState: Equatable {
     let id: UUID
     let role: ShortcutPinRole
     let profileId: UUID?
+    let executionProfileId: UUID?
     let spaceId: UUID?
     let index: Int
     let folderId: UUID?
@@ -268,6 +269,7 @@ struct RecentlyClosedShortcutPinState: Equatable {
         self.id = pin.id
         self.role = pin.role
         self.profileId = pin.profileId
+        self.executionProfileId = pin.executionProfileId
         self.spaceId = pin.spaceId
         self.index = pin.index
         self.folderId = pin.folderId

@@ -74,13 +74,15 @@ extension TabManager {
         _ pin: ShortcutPin,
         title: String? = nil,
         launchURL: URL? = nil,
-        iconAsset: String?? = nil
+        iconAsset: String?? = nil,
+        executionProfileId: UUID?? = nil
     ) -> ShortcutPin? {
         return withStructuralUpdateTransaction {
             let updatedPin = pin.updated(
                 title: title,
                 launchURL: launchURL,
-                iconAsset: iconAsset
+                iconAsset: iconAsset,
+                executionProfileId: executionProfileId
             )
 
             switch pin.role {
@@ -281,7 +283,10 @@ extension TabManager {
                     let currentSpaceId = browserManager?.windowRegistry?.windows[windowId]?.currentSpaceId
                     tab.spaceId = resolvedLiveSpaceId(for: insertedPin, currentSpaceId: currentSpaceId)
                     tab.folderId = nil
-                    tab.profileId = insertedPin.profileId
+                    assignProfile(
+                        resolvedExecutionProfileId(for: insertedPin, currentSpaceId: currentSpaceId),
+                        to: tab
+                    )
 
                     if let windowState = browserManager?.windowRegistry?.windows[windowId],
                        windowState.currentShortcutPinId == sourcePin.id {
@@ -311,6 +316,7 @@ extension TabManager {
                 id: pin.id,
                 role: pin.role,
                 profileId: pin.profileId,
+                executionProfileId: pin.executionProfileId,
                 spaceId: pin.spaceId,
                 index: index,
                 folderId: pin.folderId,
@@ -356,7 +362,10 @@ extension TabManager {
                 existing.bindToShortcutPin(pin)
                 existing.spaceId = resolvedLiveSpaceId(for: pin, currentSpaceId: currentSpaceId)
                 existing.folderId = pin.folderId
-                existing.profileId = pin.profileId
+                assignProfile(
+                    resolvedExecutionProfileId(for: pin, currentSpaceId: currentSpaceId),
+                    to: existing
+                )
                 attach(existing)
                 return existing
             }
@@ -371,7 +380,7 @@ extension TabManager {
                 browserManager: browserManager
             )
             tab.bindToShortcutPin(pin)
-            tab.profileId = pin.profileId
+            tab.profileId = resolvedExecutionProfileId(for: pin, currentSpaceId: currentSpaceId)
             tab.folderId = pin.folderId
             _ = tab.applyCachedFaviconOrPlaceholder(for: pin.launchURL)
             attach(tab)

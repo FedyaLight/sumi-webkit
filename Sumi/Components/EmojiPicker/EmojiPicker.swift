@@ -35,6 +35,7 @@ class EmojiPickerManager: NSObject, ObservableObject {
     private var activeCommitHandler: ((String) -> Void)?
     private var activeSettings: SumiSettingsService?
     private var activeThemeContext: ResolvedThemeContext?
+    private var didSelectGlyph = false
 
     func toggle(
         source: SidebarTransientPresentationSource? = nil,
@@ -50,6 +51,7 @@ class EmojiPickerManager: NSObject, ObservableObject {
         }
 
         committedEmoji = ""
+        didSelectGlyph = false
         activePresentationSource = source
         activeCommitHandler = onCommit
         activeSettings = settings
@@ -142,6 +144,7 @@ class EmojiPickerManager: NSObject, ObservableObject {
             model: pickerViewModel,
             onEmojiSelected: { [weak self] emoji in
                 DispatchQueue.main.async { [weak self] in
+                    self?.didSelectGlyph = true
                     self?.selectedEmoji = emoji
                 }
             }
@@ -166,8 +169,9 @@ class EmojiPickerManager: NSObject, ObservableObject {
 extension EmojiPickerManager: NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         let selectedEmojiForCommit = selectedEmoji
+        let shouldCommitSelection = didSelectGlyph
         let commitPickedEmoji = { [weak self] in
-            guard let self, !selectedEmojiForCommit.isEmpty else { return }
+            guard let self, shouldCommitSelection else { return }
             if let activeCommitHandler = self.activeCommitHandler {
                 activeCommitHandler(selectedEmojiForCommit)
             } else {
@@ -194,6 +198,7 @@ extension EmojiPickerManager: NSPopoverDelegate {
         transientSessionToken = nil
         activePresentationSource = nil
         activeCommitHandler = nil
+        didSelectGlyph = false
     }
 }
 

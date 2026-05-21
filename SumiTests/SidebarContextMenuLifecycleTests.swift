@@ -48,24 +48,23 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
     }
 
     func testRegularTabContextMenuSnapshot() {
+        let folders: [SidebarContextMenuChoice] = [.init(id: Self.folderA, title: "Project")]
+        let spaces: [SidebarContextMenuChoice] = [
+            .init(id: Self.spaceA, title: "Current", isSelected: true),
+            .init(id: Self.spaceB, title: "Work"),
+        ]
+        let profiles: [SidebarContextMenuChoice] = [
+            .init(id: Self.profileA, title: "Personal", isSelected: true),
+            .init(id: Self.profileB, title: "Work Profile"),
+        ]
         let entries = makeSidebarTabContextMenuEntries(
             role: .regularTab,
-            capabilities: .init(
-                folders: [.init(id: Self.folderA, title: "Project")],
-                spaces: [
-                    .init(id: Self.spaceA, title: "Current", isSelected: true),
-                    .init(id: Self.spaceB, title: "Work"),
-                ],
-                profiles: [
-                    .init(id: Self.profileA, title: "Personal", isSelected: true),
-                    .init(id: Self.profileB, title: "Work Profile"),
-                ],
-                showsAddToEssentials: true,
-                canMoveUp: false,
-                canMoveDown: true,
-                showsCloseTabsBelow: true
-            ),
-            callbacks: Self.regularCallbacks()
+            actions: Self.regularActions(
+                folders: folders,
+                spaces: spaces,
+                profiles: profiles,
+                moveUp: nil
+            )
         )
 
         XCTAssertEqual(
@@ -79,10 +78,9 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
                 "---",
                 "> Add to Folder",
                 "  Project",
-                "> Move to…",
-                "  Current [disabled] [on]",
+                "> Move to Space",
                 "  Work",
-                "> Convert Space to Profile",
+                "> Use Profile",
                 "  Personal [disabled] [on]",
                 "  Work Profile",
                 "Move Down",
@@ -106,7 +104,6 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
         XCTAssertTrue(
             makeSidebarContextMenuSpaceChoices(
                 spaces: [currentSpace],
-                profiles: [personalProfile],
                 selectedSpaceId: currentSpace.id
             ).isEmpty
         )
@@ -119,10 +116,9 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
 
         let spaceChoices = makeSidebarContextMenuSpaceChoices(
             spaces: [currentSpace, workSpace],
-            profiles: [personalProfile, workProfile],
             selectedSpaceId: currentSpace.id
         )
-        XCTAssertEqual(spaceChoices.map(\.title), ["Personal: Current", "Work: Work"])
+        XCTAssertEqual(spaceChoices.map(\.title), ["Current", "Work"])
         XCTAssertTrue(spaceChoices.first?.isSelected == true)
 
         let profileChoices = makeSidebarContextMenuProfileChoices(
@@ -133,47 +129,83 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
         XCTAssertTrue(profileChoices.first?.isSelected == true)
     }
 
+    @MainActor
+    func testChoiceFactoriesPreserveSpaceProfileAndFolderIcons() {
+        XCTAssertFalse(SumiPersistentGlyph.presentsAsEmoji("square.grid.2x2"))
+
+        let personalProfile = Profile(id: Self.profileA, name: "Personal", icon: "😀")
+        let workProfile = Profile(id: Self.profileB, name: "Work", icon: "briefcase")
+        let currentSpace = Space(id: Self.spaceA, name: "Current", icon: "✨", profileId: personalProfile.id)
+        let workSpace = Space(id: Self.spaceB, name: "Work", icon: "square.grid.2x2", profileId: workProfile.id)
+        let folder = TabFolder(
+            id: Self.folderA,
+            name: "Project",
+            spaceId: Self.spaceA,
+            icon: SumiZenFolderIconCatalog.storageValue(for: "folder")
+        )
+
+        let spaceChoices = makeSidebarContextMenuSpaceChoices(
+            spaces: [currentSpace, workSpace],
+            selectedSpaceId: currentSpace.id
+        )
+        XCTAssertEqual(spaceChoices.first?.icon, .emoji("✨"))
+        XCTAssertEqual(spaceChoices.last?.icon, .systemImage("square.grid.2x2"))
+
+        let profileChoices = makeSidebarContextMenuProfileChoices(
+            profiles: [personalProfile, workProfile],
+            selectedProfileId: personalProfile.id
+        )
+        XCTAssertEqual(profileChoices.first?.icon, .emoji("😀"))
+        XCTAssertEqual(profileChoices.last?.icon, .systemImage("briefcase"))
+
+        let folderChoices = makeSidebarContextMenuFolderChoices(folders: [folder])
+        XCTAssertEqual(
+            folderChoices.first?.icon,
+            .folderIcon(SumiZenFolderIconCatalog.storageValue(for: "folder"))
+        )
+    }
+
     func testContextMenusHideOrganizationActionsWithoutUsefulTargets() {
         let regular = makeSidebarTabContextMenuEntries(
             role: .regularTab,
-            capabilities: .init(
+            actions: Self.regularActions(
                 folders: [.init(id: Self.folderA, title: "Project")],
                 spaces: [.init(id: Self.spaceA, title: "Only Space", isSelected: true)],
                 profiles: [.init(id: Self.profileA, title: "Only Profile", isSelected: true)],
-                showsAddToEssentials: false,
-                canMoveUp: false,
-                canMoveDown: false
-            ),
-            callbacks: Self.regularCallbacks()
+                moveUp: nil,
+                moveDown: nil,
+                addToEssentials: nil,
+                closeTabsBelow: nil
+            )
         )
         let regularSnapshot = Self.snapshot(regular)
         XCTAssertTrue(regularSnapshot.contains("> Add to Folder"))
-        XCTAssertFalse(regularSnapshot.contains("> Move to…"))
-        XCTAssertFalse(regularSnapshot.contains("> Convert Space to Profile"))
+        XCTAssertFalse(regularSnapshot.contains("> Move to Space"))
+        XCTAssertFalse(regularSnapshot.contains("> Move to Space…"))
+        XCTAssertFalse(regularSnapshot.contains("> Use Profile"))
         XCTAssertFalse(regularSnapshot.contains("Move Up"))
         XCTAssertFalse(regularSnapshot.contains("Move Down"))
         XCTAssertFalse(regularSnapshot.contains("Add to Essentials"))
 
         let saved = makeSidebarTabContextMenuEntries(
             role: .essential,
-            capabilities: .init(
+            actions: Self.savedTabActions(
                 folders: [.init(id: Self.folderA, title: "Project")],
                 spaces: [.init(id: Self.spaceA, title: "Only Space")],
                 profiles: [.init(id: Self.profileA, title: "Only Profile")]
-            ),
-            callbacks: Self.savedTabCallbacks()
+            )
         )
         let savedSnapshot = Self.snapshot(saved)
         XCTAssertTrue(savedSnapshot.contains("> Add to Folder"))
-        XCTAssertFalse(savedSnapshot.contains("> Move to…"))
-        XCTAssertFalse(savedSnapshot.contains("> Convert Space to Profile"))
+        XCTAssertFalse(savedSnapshot.contains("> Move to Space"))
+        XCTAssertFalse(savedSnapshot.contains("> Move to Space…"))
+        XCTAssertFalse(savedSnapshot.contains("> Use Profile"))
 
         let folderPinnedOnlyCurrentFolder = makeSidebarTabContextMenuEntries(
             role: .folderPinnedTab,
-            capabilities: .init(
+            actions: Self.savedTabActions(
                 folders: [.init(id: Self.folderA, title: "Project", isSelected: true)]
-            ),
-            callbacks: Self.savedTabCallbacks()
+            )
         )
         XCTAssertFalse(Self.snapshot(folderPinnedOnlyCurrentFolder).contains("> Move to Folder"))
     }
@@ -181,8 +213,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
     func testEssentialContextMenuSnapshots() {
         let stored = makeSidebarTabContextMenuEntries(
             role: .essential,
-            capabilities: .init(),
-            callbacks: Self.savedTabCallbacks()
+            actions: Self.savedTabActions()
         )
         XCTAssertEqual(
             Self.snapshot(stored),
@@ -205,21 +236,16 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
 
         let live = makeSidebarTabContextMenuEntries(
             role: .essential,
-            capabilities: .init(hasLiveInstance: true),
-            callbacks: Self.savedTabCallbacks(onUnload: Self.noop)
+            actions: Self.savedTabActions(unload: Self.noop)
         )
         XCTAssertTrue(Self.snapshot(live).contains("Unload Essential"))
 
         let drifted = makeSidebarTabContextMenuEntries(
             role: .essential,
-            capabilities: .init(
-                hasSavedURLDrift: true,
-                hasLiveInstance: true
-            ),
-            callbacks: Self.savedTabCallbacks(
+            actions: Self.savedTabActions(
                 onBackToSavedURL: Self.noop,
                 onUseCurrentPageAsSavedURL: Self.noop,
-                onUnload: Self.noop
+                unload: Self.noop
             )
         )
         XCTAssertEqual(
@@ -232,21 +258,23 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
     }
 
     func testPinnedTabContextMenuSnapshots() {
+        let folders: [SidebarContextMenuChoice] = [.init(id: Self.folderA, title: "Project")]
+        let spaces: [SidebarContextMenuChoice] = [
+            .init(id: Self.spaceA, title: "Current", isSelected: true),
+            .init(id: Self.spaceB, title: "Work"),
+        ]
+        let profiles: [SidebarContextMenuChoice] = [
+            .init(id: Self.profileA, title: "Personal", isSelected: true),
+            .init(id: Self.profileB, title: "Work Profile"),
+        ]
         let stored = makeSidebarTabContextMenuEntries(
             role: .pinnedTab,
-            capabilities: .init(
-                folders: [.init(id: Self.folderA, title: "Project")],
-                spaces: [
-                    .init(id: Self.spaceA, title: "Personal: Current", isSelected: true),
-                    .init(id: Self.spaceB, title: "Work Profile: Work"),
-                ],
-                profiles: [
-                    .init(id: Self.profileA, title: "Personal", isSelected: true),
-                    .init(id: Self.profileB, title: "Work Profile"),
-                ],
-                showsAddToEssentials: true
-            ),
-            callbacks: Self.savedTabCallbacks()
+            actions: Self.savedTabActions(
+                folders: folders,
+                spaces: spaces,
+                profiles: profiles,
+                addToEssentials: Self.noop
+            )
         )
         XCTAssertEqual(
             Self.snapshot(stored),
@@ -263,10 +291,9 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
                 "Add to Essentials",
                 "> Add to Folder",
                 "  Project",
-                "> Move to…",
-                "  Personal: Current [disabled] [on]",
-                "  Work Profile: Work",
-                "> Convert Space to Profile",
+                "> Move to Space",
+                "  Work",
+                "> Use Profile",
                 "  Personal [disabled] [on]",
                 "  Work Profile",
                 "---",
@@ -276,26 +303,21 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
 
         let live = makeSidebarTabContextMenuEntries(
             role: .pinnedTab,
-            capabilities: .init(hasLiveInstance: true),
-            callbacks: Self.savedTabCallbacks(onUnload: Self.noop)
+            actions: Self.savedTabActions(unload: Self.noop)
         )
         XCTAssertTrue(Self.snapshot(live).contains("Unload Pinned Tab"))
         XCTAssertFalse(Self.snapshot(live).contains("Add to Essentials"))
 
         let driftedFolderPinned = makeSidebarTabContextMenuEntries(
             role: .folderPinnedTab,
-            capabilities: .init(
+            actions: Self.savedTabActions(
                 folders: [
                     .init(id: Self.folderA, title: "Project", isSelected: true),
                     .init(id: Self.folderB, title: "Archive"),
                 ],
-                hasSavedURLDrift: true,
-                hasLiveInstance: true
-            ),
-            callbacks: Self.savedTabCallbacks(
                 onBackToSavedURL: Self.noop,
                 onUseCurrentPageAsSavedURL: Self.noop,
-                onUnload: Self.noop
+                unload: Self.noop
             )
         )
         let folderPinnedSnapshot = Self.snapshot(driftedFolderPinned)
@@ -307,23 +329,83 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
             ]
         )
         XCTAssertTrue(folderPinnedSnapshot.contains("> Move to Folder"))
-        XCTAssertTrue(folderPinnedSnapshot.contains("  Project [disabled] [on]"))
+        XCTAssertFalse(folderPinnedSnapshot.contains("  Project [disabled] [on]"))
+        XCTAssertTrue(folderPinnedSnapshot.contains("  Archive"))
         XCTAssertFalse(folderPinnedSnapshot.contains("> Add to Folder"))
         XCTAssertTrue(folderPinnedSnapshot.contains("Delete Pinned Tab [destructive]"))
     }
 
+    func testMoveToSpaceUsesPickerForLongDestinationLists() {
+        var didPresentPicker = false
+        let spaces = (0..<10).map { index in
+            SidebarContextMenuChoice(
+                id: UUID(),
+                title: "Space \(index)",
+                isSelected: index == 0
+            )
+        }
+        let entries = makeSidebarTabContextMenuEntries(
+            role: .regularTab,
+            actions: Self.regularActions(
+                spaces: spaces,
+                presentSpacePicker: { didPresentPicker = true }
+            )
+        )
+        let snapshot = Self.snapshot(entries)
+
+        XCTAssertTrue(snapshot.contains("Move to Space…"))
+        XCTAssertFalse(snapshot.contains("> Move to Space"))
+
+        Self.action(named: "Move to Space…", in: entries)?.action()
+        XCTAssertTrue(didPresentPicker)
+    }
+
+    @MainActor
+    func testContextMenuBuilderRendersChoiceIcons() {
+        let entries: [SidebarContextMenuEntry] = [
+            .submenu(
+                title: "Move",
+                children: [
+                    .action(.init(title: "Emoji", icon: .emoji("✨"), action: Self.noop)),
+                    .action(.init(title: "Symbol", icon: .systemImage("briefcase"), action: Self.noop)),
+                    .action(
+                        .init(
+                            title: "Folder",
+                            icon: .folderIcon(SumiZenFolderIconCatalog.storageValue(for: "folder")),
+                            action: Self.noop
+                        )
+                    ),
+                ]
+            ),
+        ]
+
+        let menu = SidebarContextMenuBuilder(entries: entries).buildMenu()
+        let submenuItems = menu.items.first?.submenu?.items ?? []
+
+        XCTAssertEqual(submenuItems.map(\.title), ["Emoji", "Symbol", "Folder"])
+        XCTAssertTrue(submenuItems.allSatisfy { $0.image != nil })
+        XCTAssertTrue(submenuItems.allSatisfy { $0.image?.size == NSSize(width: 16, height: 16) })
+
+        let secondMenu = SidebarContextMenuBuilder(entries: entries).buildMenu()
+        let secondSubmenuItems = secondMenu.items.first?.submenu?.items ?? []
+        for (firstItem, secondItem) in zip(submenuItems, secondSubmenuItems) {
+            guard let firstImage = firstItem.image, let secondImage = secondItem.image else {
+                XCTFail("Expected menu images to be rendered")
+                continue
+            }
+            XCTAssertTrue(firstImage === secondImage)
+        }
+    }
+
     func testFolderHeaderAndSidebarBackgroundSnapshots() {
         let folderHeader = makeFolderHeaderContextMenuEntries(
-            hasCustomIcon: true,
-            showsUnloadActiveTabs: true,
-            callbacks: .init(
-                onRename: Self.noop,
-                onChangeIcon: Self.noop,
-                onResetIcon: Self.noop,
-                onAddTab: Self.noop,
-                onAlphabetize: Self.noop,
-                onUnloadActiveTabs: Self.noop,
-                onDelete: Self.noop
+            actions: .init(
+                rename: Self.noop,
+                changeIcon: Self.noop,
+                addTab: Self.noop,
+                alphabetize: Self.noop,
+                unloadActiveTabs: Self.noop,
+                delete: Self.noop
             )
         )
         XCTAssertEqual(
@@ -331,7 +413,6 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
             [
                 "Rename Folder",
                 "Change Folder Icon…",
-                "Reset Folder Icon",
                 "---",
                 "New Tab in Folder",
                 "Sort by Name",
@@ -343,11 +424,11 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
 
         let background = makeSidebarShellContextMenuEntries(
             isCompactModeEnabled: true,
-            callbacks: .init(
-                onNewTab: Self.noop,
-                onNewSplit: Self.noop,
-                onToggleCompactMode: Self.noop,
-                onOpenSettings: Self.noop
+            actions: .init(
+                newTab: Self.noop,
+                newSplit: Self.noop,
+                toggleCompactMode: Self.noop,
+                openSettings: Self.noop
             )
         )
         XCTAssertEqual(
@@ -369,10 +450,9 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
         var didDelete = false
         let entries = makeSidebarTabContextMenuEntries(
             role: .pinnedTab,
-            capabilities: .init(hasLiveInstance: true),
-            callbacks: Self.savedTabCallbacks(
-                onUnload: { didUnload = true },
-                onDeleteSavedTab: { didDelete = true }
+            actions: Self.savedTabActions(
+                unload: { didUnload = true },
+                deleteSavedTab: { didDelete = true }
             )
         )
 
@@ -451,45 +531,86 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
         return nil
     }
 
-    private static func regularCallbacks() -> SidebarTabContextMenuCallbacks {
+    private static func choiceAction(_ choices: [SidebarContextMenuChoice]) -> SidebarChoiceMenuAction {
         .init(
-            onDuplicate: noop,
-            onCopyLink: noop,
-            onShare: noop,
-            onRename: noop,
-            onMoveToFolder: { _ in },
-            onMoveToSpace: { _ in },
-            onConvertSpaceToProfile: { _ in },
-            onMoveUp: noop,
-            onMoveDown: noop,
-            onPinToSpace: noop,
-            onAddToEssentials: noop,
-            onCloseTabsBelow: noop,
-            onClose: noop
+            choices: choices,
+            onSelect: { _ in }
         )
     }
 
-    private static func savedTabCallbacks(
+    private static func spaceDestinationAction(
+        _ choices: [SidebarContextMenuChoice],
+        presentPicker: @escaping () -> Void = {}
+    ) -> SidebarSpaceDestinationAction {
+        .init(
+            choices: choices,
+            onSelect: { _ in },
+            presentPicker: presentPicker
+        )
+    }
+
+    private static func regularActions(
+        folders: [SidebarContextMenuChoice] = [],
+        spaces: [SidebarContextMenuChoice] = [],
+        profiles: [SidebarContextMenuChoice] = [],
+        moveUp: (() -> Void)? = {},
+        moveDown: (() -> Void)? = {},
+        pinToSpace: (() -> Void)? = {},
+        addToEssentials: (() -> Void)? = {},
+        closeTabsBelow: (() -> Void)? = {},
+        presentSpacePicker: @escaping () -> Void = {}
+    ) -> SidebarTabContextMenuActions {
+        return SidebarTabContextMenuActions(
+            duplicate: noop,
+            copyLink: noop,
+            share: noop,
+            rename: noop,
+            folderTarget: choiceAction(folders),
+            moveToSpace: spaceDestinationAction(spaces, presentPicker: presentSpacePicker),
+            profileTarget: choiceAction(profiles),
+            moveUp: moveUp,
+            moveDown: moveDown,
+            pinToSpace: pinToSpace,
+            addToEssentials: addToEssentials,
+            closeTabsBelow: closeTabsBelow,
+            close: noop
+        )
+    }
+
+    private static func savedTabActions(
+        folders: [SidebarContextMenuChoice] = [],
+        spaces: [SidebarContextMenuChoice] = [],
+        profiles: [SidebarContextMenuChoice] = [],
+        addToEssentials: (() -> Void)? = nil,
         onBackToSavedURL: (() -> Void)? = nil,
         onUseCurrentPageAsSavedURL: (() -> Void)? = nil,
-        onUnload: (() -> Void)? = nil,
-        onDeleteSavedTab: @escaping () -> Void = {}
-    ) -> SidebarTabContextMenuCallbacks {
-        .init(
-            onDuplicate: noop,
-            onCopyLink: noop,
-            onShare: noop,
-            onRename: noop,
-            onMoveToFolder: { _ in },
-            onMoveToSpace: { _ in },
-            onConvertSpaceToProfile: { _ in },
-            onAddToEssentials: noop,
-            onBackToSavedURL: onBackToSavedURL,
-            onUseCurrentPageAsSavedURL: onUseCurrentPageAsSavedURL,
-            onChangeIcon: noop,
-            onEditURL: noop,
-            onUnload: onUnload,
-            onDeleteSavedTab: onDeleteSavedTab
+        unload: (() -> Void)? = nil,
+        deleteSavedTab: @escaping () -> Void = {}
+    ) -> SidebarTabContextMenuActions {
+        let driftActions: SidebarSavedURLDriftActions?
+        if let onBackToSavedURL, let onUseCurrentPageAsSavedURL {
+            driftActions = SidebarSavedURLDriftActions(
+                onBackToSavedURL: onBackToSavedURL,
+                onUseCurrentPageAsSavedURL: onUseCurrentPageAsSavedURL
+            )
+        } else {
+            driftActions = nil
+        }
+
+        return SidebarTabContextMenuActions(
+            duplicate: noop,
+            copyLink: noop,
+            share: noop,
+            rename: noop,
+            folderTarget: choiceAction(folders),
+            moveToSpace: spaceDestinationAction(spaces),
+            profileTarget: choiceAction(profiles),
+            addToEssentials: addToEssentials,
+            savedURLDrift: driftActions,
+            changeIcon: noop,
+            editURL: noop,
+            unload: unload,
+            deleteSavedTab: deleteSavedTab
         )
     }
 

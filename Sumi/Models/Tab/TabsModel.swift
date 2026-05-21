@@ -21,6 +21,8 @@ final class TabEntity {
     var spaceId: UUID?
     // Profile association for global pinned tabs (essentials).
     var profileId: UUID?
+    // Optional profile used to run a saved launcher without moving its owning container.
+    var executionProfileId: UUID? = nil
     var folderId: UUID? // Folder membership for tabs within spacepinned area
     var iconAsset: String?
 
@@ -38,6 +40,7 @@ final class TabEntity {
         index: Int,
         spaceId: UUID?,
         profileId: UUID? = nil,
+        executionProfileId: UUID? = nil,
         folderId: UUID? = nil,
         iconAsset: String? = nil,
         currentURLString: String? = nil,
@@ -52,6 +55,7 @@ final class TabEntity {
         self.index = index
         self.spaceId = spaceId
         self.profileId = profileId
+        self.executionProfileId = executionProfileId
         self.folderId = folderId
         self.iconAsset = iconAsset
 

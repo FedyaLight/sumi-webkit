@@ -15,6 +15,7 @@ struct TabRestoreTabDTO: Sendable {
     let name: String
     let index: Int
     let spaceId: UUID
+    let profileId: UUID?
     let folderId: UUID?
     let canGoBack: Bool
     let canGoForward: Bool
@@ -24,6 +25,7 @@ struct TabRestoreShortcutDTO: Sendable {
     let id: UUID
     let role: ShortcutPinRole
     let profileId: UUID?
+    let executionProfileId: UUID?
     let spaceId: UUID?
     let index: Int
     let folderId: UUID?
@@ -91,6 +93,7 @@ actor TabRestoreLoader {
         let index: Int
         let spaceId: UUID?
         let profileId: UUID?
+        let executionProfileId: UUID?
         let folderId: UUID?
         let iconAsset: String?
         let currentURLString: String?
@@ -140,6 +143,7 @@ actor TabRestoreLoader {
                 index: entity.index,
                 spaceId: entity.spaceId,
                 profileId: entity.profileId,
+                executionProfileId: entity.executionProfileId,
                 folderId: entity.folderId,
                 iconAsset: entity.iconAsset,
                 currentURLString: entity.currentURLString,
@@ -372,6 +376,7 @@ actor TabRestoreLoader {
                     id: raw.id,
                     role: .essential,
                     profileId: profileId,
+                    executionProfileId: raw.executionProfileId,
                     spaceId: nil,
                     index: raw.index,
                     folderId: nil,
@@ -407,6 +412,7 @@ actor TabRestoreLoader {
                     id: raw.id,
                     role: .spacePinned,
                     profileId: nil,
+                    executionProfileId: raw.executionProfileId ?? raw.profileId,
                     spaceId: spaceId,
                     index: raw.index,
                     folderId: folderId,
@@ -440,6 +446,7 @@ actor TabRestoreLoader {
                     name: raw.name,
                     index: raw.index,
                     spaceId: spaceId,
+                    profileId: raw.profileId,
                     folderId: nil,
                     canGoBack: raw.canGoBack,
                     canGoForward: raw.canGoForward
@@ -557,7 +564,8 @@ actor TabRestoreLoader {
                     spaceId: tab.spaceId,
                     isPinned: false,
                     isSpacePinned: false,
-                    profileId: nil,
+                    profileId: tab.profileId,
+                    executionProfileId: nil,
                     folderId: nil,
                     iconAsset: nil,
                     currentURLString: tab.url.absoluteString,
@@ -668,6 +676,7 @@ actor TabRestoreLoader {
             isPinned: shortcut.role == .essential,
             isSpacePinned: shortcut.role == .spacePinned,
             profileId: shortcut.profileId,
+            executionProfileId: shortcut.executionProfileId,
             folderId: shortcut.folderId,
             iconAsset: shortcut.iconAsset,
             currentURLString: shortcut.launchURL.absoluteString,

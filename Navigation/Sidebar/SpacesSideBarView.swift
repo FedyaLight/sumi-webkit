@@ -2016,21 +2016,21 @@ struct SpacesSideBarView: View {
     private func sidebarContextMenuEntries() -> [SidebarContextMenuEntry] {
         return makeSidebarShellContextMenuEntries(
             isCompactModeEnabled: sumiSettings.sidebarCompactSpaces,
-            callbacks: .init(
-                onNewTab: {
+            actions: .init(
+                newTab: {
                     browserManager.createNewTab(in: windowState)
                 },
-                onNewSplit: {
+                newSplit: {
                     if let current = browserManager.currentTab(for: windowState) {
                         browserManager.splitManager.enterSplit(with: current, placeOn: .right, in: windowState)
                     } else {
                         browserManager.createNewTab(in: windowState)
                     }
                 },
-                onToggleCompactMode: {
+                toggleCompactMode: {
                     sumiSettings.sidebarCompactSpaces.toggle()
                 },
-                onOpenSettings: {
+                openSettings: {
                     browserManager.openSettingsTab(selecting: .appearance, in: windowState)
                 }
             )

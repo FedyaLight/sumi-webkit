@@ -185,34 +185,41 @@ struct SpaceTitle: View {
     }
 
     private func spaceContextMenuEntries() -> [SidebarContextMenuEntry] {
+        let deleteSpaceAction: (() -> Void)?
+        if canDeleteSpace {
+            deleteSpaceAction = { showDeleteConfirmation(source: windowState.resolveSidebarPresentationSource()) }
+        } else {
+            deleteSpaceAction = nil
+        }
+
         let profiles = browserManager.profileManager.profiles.map { profile in
             SidebarContextMenuChoice(
                 id: profile.id,
                 title: profile.name,
+                icon: SumiPersistentGlyph.presentsAsEmoji(profile.icon)
+                    ? .emoji(profile.icon)
+                    : .systemImage(SumiPersistentGlyph.resolvedProfileSystemImageName(profile.icon)),
                 isSelected: profile.id == space.profileId
             )
         }
 
         return makeSpaceContextMenuEntries(
             profiles: profiles,
-            canRename: true,
-            canChangeIcon: true,
-            canDelete: canDeleteSpace,
-            callbacks: .init(
-                onSelectProfile: { newProfileId in
+            actions: .init(
+                selectProfile: { newProfileId in
                     browserManager.tabManager.assign(spaceId: space.id, toProfile: newProfileId)
                 },
-                onRename: { startRenaming() },
-                onChangeIcon: {
+                rename: { startRenaming() },
+                changeIcon: {
                     toggleSpaceIconPicker()
                 },
-                onChangeTheme: {
+                changeTheme: {
                     browserManager.showGradientEditor(
                         for: space,
                         source: windowState.resolveSidebarPresentationSource()
                     )
                 },
-                onOpenSettings: {
+                openSettings: {
                     let source = windowState.resolveSidebarPresentationSource()
                     browserManager.showDialog(
                         SpaceEditDialog(
@@ -227,9 +234,7 @@ struct SpaceTitle: View {
                         source: source
                     )
                 },
-                onDeleteSpace: {
-                    showDeleteConfirmation(source: windowState.resolveSidebarPresentationSource())
-                }
+                deleteSpace: deleteSpaceAction
             )
         )
     }

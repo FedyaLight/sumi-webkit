@@ -161,6 +161,12 @@ extension TabManager {
             id: UUID(),
             role: role,
             profileId: profileId,
+            executionProfileId: shortcutExecutionProfileId(
+                from: tab,
+                role: role,
+                profileId: profileId,
+                spaceId: spaceId
+            ),
             spaceId: spaceId,
             index: index,
             folderId: folderId,
@@ -178,6 +184,21 @@ extension TabManager {
         }
     }
 
+    func resolvedExecutionProfileId(for pin: ShortcutPin, currentSpaceId: UUID? = nil) -> UUID? {
+        if let executionProfileId = pin.executionProfileId {
+            return executionProfileId
+        }
+
+        switch pin.role {
+        case .essential:
+            return pin.profileId
+        case .spacePinned:
+            return (pin.spaceId ?? currentSpaceId).flatMap { spaceId in
+                spaces.first(where: { $0.id == spaceId })?.profileId
+            }
+        }
+    }
+
     func updateTransientShortcutBindings(for pin: ShortcutPin) {
         for (windowId, tabsByPin) in transientShortcutTabsByWindow {
             if let tab = tabsByPin[pin.id] {
@@ -185,7 +206,10 @@ extension TabManager {
                 let windowCurrentSpaceId = browserManager?.windowRegistry?.windows[windowId]?.currentSpaceId
                 tab.spaceId = resolvedLiveSpaceId(for: pin, currentSpaceId: windowCurrentSpaceId)
                 tab.folderId = pin.folderId
-                tab.profileId = pin.profileId
+                assignProfile(
+                    resolvedExecutionProfileId(for: pin, currentSpaceId: windowCurrentSpaceId),
+                    to: tab
+                )
                 if let windowState = browserManager?.windowRegistry?.windows[windowId] {
                     if windowState.currentShortcutPinId == pin.id {
                         windowState.currentShortcutPinRole = pin.role
@@ -420,6 +444,27 @@ extension TabManager {
 }
 
 private extension TabManager {
+    func shortcutExecutionProfileId(
+        from tab: Tab,
+        role: ShortcutPinRole,
+        profileId: UUID?,
+        spaceId: UUID?
+    ) -> UUID? {
+        guard let tabProfileId = tab.profileId else { return nil }
+
+        let containerProfileId: UUID?
+        switch role {
+        case .essential:
+            containerProfileId = profileId
+        case .spacePinned:
+            containerProfileId = spaceId.flatMap { targetSpaceId in
+                spaces.first(where: { $0.id == targetSpaceId })?.profileId
+            }
+        }
+
+        return tabProfileId == containerProfileId ? nil : tabProfileId
+    }
+
     func adjustedShortcutMoveIndex(
         _ pin: ShortcutPin,
         to role: ShortcutPinRole,
@@ -479,6 +524,7 @@ private extension TabManager {
             id: pin.id,
             role: role,
             profileId: profileId,
+            executionProfileId: pin.executionProfileId,
             spaceId: spaceId,
             index: index,
             folderId: folderId,

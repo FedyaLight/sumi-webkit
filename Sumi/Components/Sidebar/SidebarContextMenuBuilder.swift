@@ -82,7 +82,7 @@ final class SidebarContextMenuBuilder: NSObject, NSMenuDelegate {
                 let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
                 item.submenu = submenu
                 if let systemImage {
-                    item.image = NSImage(systemSymbolName: systemImage, accessibilityDescription: title)
+                    item.image = SidebarContextMenuImageStore.image(for: .systemImage(systemImage))
                 }
                 menu.addItem(item)
 
@@ -104,8 +104,10 @@ final class SidebarContextMenuBuilder: NSObject, NSMenuDelegate {
                 item.target = target
                 item.isEnabled = action.isEnabled
                 item.state = action.state
-                if let systemImage = action.systemImage {
-                    item.image = NSImage(systemSymbolName: systemImage, accessibilityDescription: action.title)
+                if let icon = action.icon {
+                    item.image = SidebarContextMenuImageStore.image(for: icon)
+                } else if let systemImage = action.systemImage {
+                    item.image = SidebarContextMenuImageStore.image(for: .systemImage(systemImage))
                 }
                 if action.role == .destructive {
                     item.attributedTitle = NSAttributedString(
@@ -115,6 +117,105 @@ final class SidebarContextMenuBuilder: NSObject, NSMenuDelegate {
                 }
                 menu.addItem(item)
             }
+        }
+    }
+}
+
+@MainActor
+private enum SidebarContextMenuImageStore {
+    private static let imageSize = NSSize(width: 16, height: 16)
+    private static let cache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 160
+        return cache
+    }()
+
+    static func image(for icon: SidebarContextMenuIcon) -> NSImage? {
+        let key = cacheKey(for: icon) as NSString
+        if let cached = cache.object(forKey: key) {
+            return cached
+        }
+
+        guard let image = makeImage(for: icon) else {
+            return nil
+        }
+        cache.setObject(image, forKey: key)
+        return image
+    }
+
+    private static func makeImage(for icon: SidebarContextMenuIcon) -> NSImage? {
+        switch icon {
+        case .systemImage(let name):
+            return sizedCopy(NSImage(systemSymbolName: name, accessibilityDescription: nil))
+        case .emoji(let glyph):
+            return emojiImage(glyph)
+        case .folderIcon(let value):
+            return folderImage(value)
+        }
+    }
+
+    private static func emojiImage(_ glyph: String) -> NSImage {
+        let image = NSImage(size: imageSize)
+        image.lockFocus()
+        defer { image.unlockFocus() }
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13),
+        ]
+        let textSize = glyph.size(withAttributes: attributes)
+        let rect = NSRect(
+            x: (imageSize.width - textSize.width) / 2,
+            y: (imageSize.height - textSize.height) / 2,
+            width: textSize.width,
+            height: textSize.height
+        )
+        glyph.draw(in: rect, withAttributes: attributes)
+        return image
+    }
+
+    private static func folderImage(_ value: String) -> NSImage? {
+        switch SumiZenFolderIconCatalog.resolveFolderIcon(value) {
+        case .bundled(let name):
+            guard let source = SumiZenFolderIconCatalog.bundledFolderImage(named: name) else {
+                return nil
+            }
+            return rasterizedCopy(source, isTemplate: true)
+        case .none:
+            return sizedCopy(NSImage(systemSymbolName: "folder.fill", accessibilityDescription: nil))
+        }
+    }
+
+    private static func sizedCopy(_ source: NSImage?) -> NSImage? {
+        guard let prepared = source?.copy() as? NSImage else {
+            return source
+        }
+        prepared.size = imageSize
+        return prepared
+    }
+
+    private static func rasterizedCopy(_ source: NSImage, isTemplate: Bool) -> NSImage {
+        let image = NSImage(size: imageSize)
+        image.lockFocus()
+        defer { image.unlockFocus() }
+
+        source.draw(
+            in: NSRect(origin: .zero, size: imageSize),
+            from: .zero,
+            operation: .sourceOver,
+            fraction: 1
+        )
+        image.isTemplate = isTemplate
+        return image
+    }
+
+    private static func cacheKey(for icon: SidebarContextMenuIcon) -> String {
+        switch icon {
+        case .systemImage(let name):
+            return "system:\(name)"
+        case .emoji(let glyph):
+            return "emoji:\(glyph)"
+        case .folderIcon(let value):
+            return "folder:\(value)"
         }
     }
 }

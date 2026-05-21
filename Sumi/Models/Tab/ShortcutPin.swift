@@ -97,6 +97,7 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
     let id: UUID
     let role: ShortcutPinRole
     let profileId: UUID?
+    let executionProfileId: UUID?
     let spaceId: UUID?
     let index: Int
     let folderId: UUID?
@@ -109,6 +110,7 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
         id: UUID,
         role: ShortcutPinRole,
         profileId: UUID? = nil,
+        executionProfileId: UUID? = nil,
         spaceId: UUID? = nil,
         index: Int,
         folderId: UUID? = nil,
@@ -119,6 +121,7 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
         self.id = id
         self.role = role
         self.profileId = profileId
+        self.executionProfileId = executionProfileId
         self.spaceId = spaceId
         self.index = index
         self.folderId = folderId
@@ -133,6 +136,7 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
             id: id,
             role: role,
             profileId: profileId,
+            executionProfileId: executionProfileId,
             spaceId: spaceId,
             index: index ?? self.index,
             folderId: self.folderId,
@@ -147,6 +151,7 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
             id: id,
             role: role,
             profileId: profileId,
+            executionProfileId: executionProfileId,
             spaceId: spaceId,
             index: index,
             folderId: folderId,
@@ -160,16 +165,19 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
         title: String? = nil,
         launchURL: URL? = nil,
         iconAsset: String?? = nil,
+        executionProfileId: UUID?? = nil,
         index: Int? = nil,
         folderId: UUID?? = nil
     ) -> ShortcutPin {
         let resolvedLaunchURL = launchURL ?? self.launchURL
         let resolvedFolderId = folderId ?? self.folderId
+        let resolvedExecutionProfileId = executionProfileId ?? self.executionProfileId
 
         return ShortcutPin(
             id: id,
             role: role,
             profileId: profileId,
+            executionProfileId: resolvedExecutionProfileId,
             spaceId: spaceId,
             index: index ?? self.index,
             folderId: resolvedFolderId,

@@ -825,7 +825,7 @@ extension SpaceView {
             action: { handleUserTabActivation(tab) },
             onClose: { closeRegularTab(tab) },
             onMute: { onMuteTab(tab) },
-            contextMenuEntries: regularTabContextMenuEntries(tab)
+            contextMenuEntries: { regularTabContextMenuEntries(tab) }
         )
         .opacity(
             dragState.isDragging && dragState.activeDragItemId == tab.id
@@ -853,55 +853,78 @@ extension SpaceView {
         )
         let spaceChoices = makeSidebarContextMenuSpaceChoices(
             spaces: browserManager.tabManager.spaces,
-            profiles: profiles,
             selectedSpaceId: tab.spaceId
         )
         let profileChoices = makeSidebarContextMenuProfileChoices(
             profiles: profiles,
-            selectedProfileId: space.profileId
+            selectedProfileId: tab.profileId ?? space.profileId
         )
+        let moveUpAction: (() -> Void)? = isFirstTab(tab) ? nil : { onMoveTabUp(tab) }
+        let moveDownAction: (() -> Void)? = isLastTab(tab) ? nil : { onMoveTabDown(tab) }
+        let pinToSpaceAction: (() -> Void)? = tab.isPinned || tab.isSpacePinned
+            ? nil
+            : { browserManager.tabManager.pinTabToSpace(tab, spaceId: space.id) }
+        let addToEssentialsAction: (() -> Void)? = canAddTabToEssentials(tab)
+            ? {
+                browserManager.tabManager.pinTab(
+                    tab,
+                    context: .init(windowState: windowState, spaceId: space.id)
+                )
+            }
+            : nil
+        let closeTabsBelowAction: (() -> Void)? = !tab.isPinned && !tab.isSpacePinned && tab.spaceId != nil
+            ? { browserManager.tabManager.closeAllTabsBelow(tab) }
+            : nil
+        let moveToSpaceAction: (UUID) -> Void = { targetSpaceId in
+            browserManager.tabManager.moveTab(tab.id, to: targetSpaceId)
+        }
 
         return makeSidebarTabContextMenuEntries(
             role: .regularTab,
-            capabilities: .init(
-                folders: folderChoices,
-                spaces: spaceChoices,
-                profiles: profileChoices,
-                showsAddToEssentials: canAddTabToEssentials(tab),
-                canMoveUp: !isFirstTab(tab),
-                canMoveDown: !isLastTab(tab),
-                showsCloseTabsBelow: !tab.isPinned && !tab.isSpacePinned && tab.spaceId != nil
-            ),
-            callbacks: .init(
-                onDuplicate: { browserManager.duplicateTab(tab, in: windowState) },
-                onCopyLink: { copyLink(tab.url) },
-                onShare: {
+            actions: .init(
+                duplicate: { browserManager.duplicateTab(tab, in: windowState) },
+                copyLink: { copyLink(tab.url) },
+                share: {
                     presentSharePicker(
                         for: tab.url,
                         source: windowState.resolveSidebarPresentationSource()
                     )
                 },
-                onRename: { tab.startRenaming() },
-                onMoveToFolder: { folderId in
-                    browserManager.tabManager.moveTabToFolder(tab: tab, folderId: folderId)
-                },
-                onMoveToSpace: { targetSpaceId in browserManager.tabManager.moveTab(tab.id, to: targetSpaceId) },
-                onConvertSpaceToProfile: { profileId in
-                    browserManager.tabManager.assign(spaceId: space.id, toProfile: profileId)
-                },
-                onMoveUp: { onMoveTabUp(tab) },
-                onMoveDown: { onMoveTabDown(tab) },
-                onPinToSpace: tab.isPinned || tab.isSpacePinned
-                    ? nil
-                    : { browserManager.tabManager.pinTabToSpace(tab, spaceId: space.id) },
-                onAddToEssentials: {
-                    browserManager.tabManager.pinTab(
-                        tab,
-                        context: .init(windowState: windowState, spaceId: space.id)
-                    )
-                },
-                onCloseTabsBelow: { browserManager.tabManager.closeAllTabsBelow(tab) },
-                onClose: { closeRegularTab(tab) }
+                rename: { tab.startRenaming() },
+                folderTarget: .init(
+                    choices: folderChoices,
+                    onSelect: { folderId in
+                        browserManager.tabManager.moveTabToFolder(tab: tab, folderId: folderId)
+                    }
+                ),
+                moveToSpace: .init(
+                    choices: spaceChoices,
+                    onSelect: moveToSpaceAction,
+                    presentPicker: {
+                        MainActor.assumeIsolated {
+                            presentSidebarSpaceDestinationPicker(
+                                choices: spaceChoices,
+                                browserManager: browserManager,
+                                settings: sumiSettings,
+                                themeContext: themeContext,
+                                source: windowState.resolveSidebarPresentationSource(),
+                                onSelect: moveToSpaceAction
+                            )
+                        }
+                    }
+                ),
+                profileTarget: .init(
+                    choices: profileChoices,
+                    onSelect: { profileId in
+                        browserManager.tabManager.assign(tab: tab, toProfile: profileId)
+                    }
+                ),
+                moveUp: moveUpAction,
+                moveDown: moveDownAction,
+                pinToSpace: pinToSpaceAction,
+                addToEssentials: addToEssentialsAction,
+                closeTabsBelow: closeTabsBelowAction,
+                close: { closeRegularTab(tab) }
             )
         )
     }

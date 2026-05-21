@@ -73,6 +73,73 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         XCTAssertNil(tabManager.pinnedByProfile[deletedProfileId])
     }
 
+    func testAssigningRegularTabProfileDoesNotChangeSpaceProfile() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let spaceProfileId = UUID()
+        let tabProfileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: spaceProfileId)
+        let tab = tabManager.createNewTab(in: space, activate: true)
+
+        XCTAssertTrue(tabManager.assign(tab: tab, toProfile: tabProfileId))
+
+        XCTAssertEqual(space.profileId, spaceProfileId)
+        XCTAssertEqual(tab.profileId, tabProfileId)
+    }
+
+    func testAssigningPinnedTabProfileUpdatesLauncherAndLiveInstanceOnly() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let spaceProfileId = UUID()
+        let pinnedProfileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: spaceProfileId)
+        let tab = tabManager.createNewTab(url: "https://example.com", in: space, activate: false)
+        let pin = try XCTUnwrap(
+            tabManager.convertTabToShortcutPin(
+                tab,
+                role: .spacePinned,
+                profileId: nil,
+                spaceId: space.id,
+                folderId: nil,
+                at: 0
+            )
+        )
+        let liveTab = tabManager.activateShortcutPin(pin, in: UUID(), currentSpaceId: space.id)
+
+        let updatedPin = try XCTUnwrap(
+            tabManager.assign(shortcutPin: pin, toExecutionProfile: pinnedProfileId)
+        )
+
+        XCTAssertEqual(space.profileId, spaceProfileId)
+        XCTAssertNil(updatedPin.profileId)
+        XCTAssertEqual(updatedPin.executionProfileId, pinnedProfileId)
+        XCTAssertEqual(liveTab.profileId, pinnedProfileId)
+    }
+
+    func testAssigningEssentialProfileKeepsEssentialOwnerProfile() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let ownerProfileId = UUID()
+        let executionProfileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: ownerProfileId)
+        let tab = tabManager.createNewTab(url: "https://example.com", in: space, activate: false)
+        let pin = try XCTUnwrap(
+            tabManager.convertTabToShortcutPin(
+                tab,
+                role: .essential,
+                profileId: ownerProfileId,
+                spaceId: nil,
+                folderId: nil,
+                at: 0
+            )
+        )
+
+        let updatedPin = try XCTUnwrap(
+            tabManager.assign(shortcutPin: pin, toExecutionProfile: executionProfileId)
+        )
+
+        XCTAssertEqual(updatedPin.profileId, ownerProfileId)
+        XCTAssertEqual(updatedPin.executionProfileId, executionProfileId)
+        XCTAssertEqual(tabManager.essentialPins(for: ownerProfileId).first?.id, pin.id)
+    }
+
     private func makeInMemoryTabManager() throws -> TabManager {
         let container = try ModelContainer(
             for: SumiStartupPersistence.schema,

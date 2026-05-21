@@ -31,7 +31,7 @@ struct PinnedTabView: View {
     var showsUnloadIndicator: Bool = false
     var showsSplitGroupOutline: Bool = false
     var supportsMiddleClickUnload: Bool = false
-    var contextMenuEntries: [SidebarContextMenuEntry] = []
+    var contextMenuEntries: () -> [SidebarContextMenuEntry] = { [] }
     var action: () -> Void
     var onUnload: () -> Void
 
@@ -129,7 +129,7 @@ struct PinnedTabView: View {
             primaryAction: action,
             onMiddleClick: supportsMiddleClickUnload ? onUnload : nil,
             sourceID: tileSourceID,
-            entries: { contextMenuEntries }
+            entries: contextMenuEntries
         )
         .shadow(
             color: presentationState.isSelected ? tokens.sidebarSelectionShadow : .clear,

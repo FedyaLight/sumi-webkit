@@ -47,6 +47,40 @@ extension TabManager {
             didChange = true
         }
 
+        let pinnedProfilesWithDeletedExecution = pinnedByProfile.compactMap { profileId, pins in
+            pins.contains(where: { $0.executionProfileId == deletedProfileId }) ? (profileId, pins) : nil
+        }
+        for (profileId, pins) in pinnedProfilesWithDeletedExecution {
+            setPinnedTabs(
+                reindexed(
+                    pins.map { pin in
+                        pin.executionProfileId == deletedProfileId
+                            ? pin.updated(executionProfileId: .some(nil))
+                            : pin
+                    }
+                ),
+                for: profileId
+            )
+            didChange = true
+        }
+
+        let spacesWithDeletedExecution = spacePinnedShortcuts.compactMap { spaceId, pins in
+            pins.contains(where: { $0.executionProfileId == deletedProfileId }) ? (spaceId, pins) : nil
+        }
+        for (spaceId, pins) in spacesWithDeletedExecution {
+            setSpacePinnedShortcuts(
+                normalizedSpacePinnedShortcuts(
+                    pins.map { pin in
+                        pin.executionProfileId == deletedProfileId
+                            ? pin.updated(executionProfileId: .some(nil))
+                            : pin
+                    }
+                ),
+                for: spaceId
+            )
+            didChange = true
+        }
+
         if didChange {
             markAllSpacesStructurallyDirty()
             for spaceId in dirtySpaceIds {
@@ -127,6 +161,73 @@ extension TabManager {
             markAllSpacesStructurallyDirty()
             scheduleStructuralPersistence()
         }
+    }
+
+    @discardableResult
+    func assign(tab: Tab, toProfile profileId: UUID) -> Bool {
+        guard profileExists(profileId) else {
+            RuntimeDiagnostics.emit(
+                "⚠️ [TabManager] Attempted to assign tab to unknown profile: \(profileId)"
+            )
+            return false
+        }
+
+        guard tab.profileId != profileId else { return false }
+        assignProfile(profileId, to: tab)
+        if let spaceId = tab.spaceId {
+            markRegularTabsStructurallyDirty(for: spaceId)
+        }
+        scheduleStructuralPersistence()
+        requestStructuralPublish()
+        return true
+    }
+
+    @discardableResult
+    func assign(shortcutPin pin: ShortcutPin, toExecutionProfile profileId: UUID) -> ShortcutPin? {
+        guard profileExists(profileId) else {
+            RuntimeDiagnostics.emit(
+                "⚠️ [TabManager] Attempted to assign pinned tab to unknown profile: \(profileId)"
+            )
+            return nil
+        }
+
+        let currentPin = shortcutPin(by: pin.id) ?? pin
+        guard currentPin.executionProfileId != profileId else { return currentPin }
+        return updateShortcutPin(
+            currentPin,
+            executionProfileId: .some(profileId)
+        )
+    }
+
+    func assignProfile(_ profileId: UUID?, to tab: Tab) {
+        guard tab.profileId != profileId else { return }
+
+        let targetURL = tab.existingWebView?.url ?? tab.url
+        let trackedWindowIds = browserManager?.webViewCoordinator?.windowIDs(for: tab.id) ?? []
+        let hasTrackedWebViews = trackedWindowIds.isEmpty == false || tab.primaryWindowId != nil
+        let hasUntrackedWebView = tab.existingWebView != nil && !hasTrackedWebViews
+
+        if hasTrackedWebViews,
+           let webViewCoordinator = browserManager?.webViewCoordinator,
+           #available(macOS 15.5, *) {
+            tab.profileId = profileId
+            webViewCoordinator.rebuildLiveWebViews(
+                for: tab,
+                preferredPrimaryWindowId: tab.primaryWindowId,
+                load: targetURL
+            )
+        } else if hasTrackedWebViews || hasUntrackedWebView {
+            tab.unloadWebView()
+            tab.profileId = profileId
+            tab.loadWebViewIfNeeded()
+        } else {
+            tab.profileId = profileId
+        }
+    }
+
+    func profileExists(_ profileId: UUID) -> Bool {
+        guard let browserManager else { return true }
+        return browserManager.profileManager.profiles.contains { $0.id == profileId }
     }
 }
 

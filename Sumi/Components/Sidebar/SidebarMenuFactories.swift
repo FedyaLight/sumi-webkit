@@ -5,35 +5,34 @@
 
 import AppKit
 
-struct SidebarFolderHeaderMenuCallbacks {
-    let onRename: () -> Void
-    let onChangeIcon: () -> Void
-    let onResetIcon: () -> Void
-    let onAddTab: () -> Void
-    let onAlphabetize: () -> Void
-    let onUnloadActiveTabs: (() -> Void)?
-    let onDelete: () -> Void
+struct SidebarFolderHeaderMenuActions {
+    let rename: () -> Void
+    let changeIcon: () -> Void
+    let addTab: () -> Void
+    let alphabetize: () -> Void
+    let unloadActiveTabs: (() -> Void)?
+    let delete: () -> Void
 }
 
-struct SidebarSpaceMenuCallbacks {
-    let onSelectProfile: (UUID) -> Void
-    let onRename: (() -> Void)?
-    let onChangeIcon: (() -> Void)?
-    let onChangeTheme: () -> Void
-    let onOpenSettings: () -> Void
-    let onDeleteSpace: (() -> Void)?
+struct SidebarSpaceMenuActions {
+    let selectProfile: (UUID) -> Void
+    let rename: (() -> Void)?
+    let changeIcon: (() -> Void)?
+    let changeTheme: () -> Void
+    let openSettings: () -> Void
+    let deleteSpace: (() -> Void)?
 }
 
-struct SidebarSpaceListMenuCallbacks {
-    let onOpenSettings: () -> Void
-    let onDeleteSpace: (() -> Void)?
+struct SidebarSpaceListMenuActions {
+    let openSettings: () -> Void
+    let deleteSpace: (() -> Void)?
 }
 
-struct SidebarShellMenuCallbacks {
-    let onNewTab: () -> Void
-    let onNewSplit: () -> Void
-    let onToggleCompactMode: () -> Void
-    let onOpenSettings: () -> Void
+struct SidebarShellMenuActions {
+    let newTab: () -> Void
+    let newSplit: () -> Void
+    let toggleCompactMode: () -> Void
+    let openSettings: () -> Void
 }
 
 enum SidebarTabContextMenuRole {
@@ -58,38 +57,41 @@ enum SidebarTabContextMenuRole {
     }
 }
 
-struct SidebarTabContextMenuCapabilities {
-    var folders: [SidebarContextMenuChoice] = []
-    var spaces: [SidebarContextMenuChoice] = []
-    var profiles: [SidebarContextMenuChoice] = []
-    var showsAddToEssentials = false
-    var canMoveUp = false
-    var canMoveDown = false
-    var showsCloseTabsBelow = false
-    var hasSavedURLDrift = false
-    var hasLiveInstance = false
+struct SidebarChoiceMenuAction {
+    let choices: [SidebarContextMenuChoice]
+    let onSelect: (UUID) -> Void
 }
 
-struct SidebarTabContextMenuCallbacks {
-    var onDuplicate: (() -> Void)?
-    var onCopyLink: (() -> Void)?
-    var onShare: (() -> Void)?
-    var onRename: (() -> Void)?
-    var onMoveToFolder: ((UUID) -> Void)?
-    var onMoveToSpace: ((UUID) -> Void)?
-    var onConvertSpaceToProfile: ((UUID) -> Void)?
-    var onMoveUp: (() -> Void)?
-    var onMoveDown: (() -> Void)?
-    var onPinToSpace: (() -> Void)?
-    var onAddToEssentials: (() -> Void)?
-    var onBackToSavedURL: (() -> Void)?
-    var onUseCurrentPageAsSavedURL: (() -> Void)?
-    var onChangeIcon: (() -> Void)?
-    var onEditURL: (() -> Void)?
-    var onUnload: (() -> Void)?
-    var onCloseTabsBelow: (() -> Void)?
-    var onClose: (() -> Void)?
-    var onDeleteSavedTab: (() -> Void)?
+struct SidebarSpaceDestinationAction {
+    let choices: [SidebarContextMenuChoice]
+    let onSelect: (UUID) -> Void
+    let presentPicker: () -> Void
+}
+
+struct SidebarSavedURLDriftActions {
+    let onBackToSavedURL: () -> Void
+    let onUseCurrentPageAsSavedURL: () -> Void
+}
+
+struct SidebarTabContextMenuActions {
+    var duplicate: (() -> Void)? = nil
+    var copyLink: (() -> Void)? = nil
+    var share: (() -> Void)? = nil
+    var rename: (() -> Void)? = nil
+    var folderTarget: SidebarChoiceMenuAction? = nil
+    var moveToSpace: SidebarSpaceDestinationAction? = nil
+    var profileTarget: SidebarChoiceMenuAction? = nil
+    var moveUp: (() -> Void)? = nil
+    var moveDown: (() -> Void)? = nil
+    var pinToSpace: (() -> Void)? = nil
+    var addToEssentials: (() -> Void)? = nil
+    var savedURLDrift: SidebarSavedURLDriftActions? = nil
+    var changeIcon: (() -> Void)? = nil
+    var editURL: (() -> Void)? = nil
+    var unload: (() -> Void)? = nil
+    var closeTabsBelow: (() -> Void)? = nil
+    var close: (() -> Void)? = nil
+    var deleteSavedTab: (() -> Void)? = nil
 }
 
 private enum SidebarChoiceSubmenuAvailability {
@@ -106,6 +108,8 @@ private enum SidebarChoiceSubmenuAvailability {
         }
     }
 }
+
+private let sidebarInlineSpaceDestinationLimit = 8
 
 private func joinSidebarMenuSections(_ sections: [[SidebarContextMenuEntry]]) -> [SidebarContextMenuEntry] {
     sections
@@ -125,6 +129,7 @@ func makeSidebarContextMenuFolderChoices(
         SidebarContextMenuChoice(
             id: folder.id,
             title: folder.name,
+            icon: .folderIcon(folder.icon),
             isSelected: folder.id == selectedFolderId
         )
     }
@@ -133,20 +138,18 @@ func makeSidebarContextMenuFolderChoices(
 @MainActor
 func makeSidebarContextMenuSpaceChoices(
     spaces: [Space],
-    profiles: [Profile],
     selectedSpaceId: UUID? = nil
 ) -> [SidebarContextMenuChoice] {
     guard spaces.count > 1 else { return [] }
 
-    let fallbackProfileName = profiles.first?.name ?? "Default"
     return spaces.map { space in
-        let profileName = space.profileId.flatMap { profileId in
-            profiles.first(where: { $0.id == profileId })?.name
-        } ?? fallbackProfileName
-
-        return SidebarContextMenuChoice(
+        SidebarContextMenuChoice(
             id: space.id,
-            title: "\(profileName): \(space.name)",
+            title: space.name,
+            icon: sidebarContextMenuPersistentGlyphIcon(
+                space.icon,
+                fallbackSystemImage: SumiPersistentGlyph.spaceSystemImageFallback
+            ),
             isSelected: space.id == selectedSpaceId
         )
     }
@@ -163,134 +166,201 @@ func makeSidebarContextMenuProfileChoices(
         SidebarContextMenuChoice(
             id: profile.id,
             title: profile.name,
+            icon: sidebarContextMenuPersistentGlyphIcon(
+                profile.icon,
+                fallbackSystemImage: SumiPersistentGlyph.profileSystemImageFallback
+            ),
             isSelected: profile.id == selectedProfileId
         )
     }
 }
 
-private func sidebarChoiceSubmenu(
+private func sidebarContextMenuPersistentGlyphIcon(
+    _ value: String,
+    fallbackSystemImage: String
+) -> SidebarContextMenuIcon {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    if SumiPersistentGlyph.isValidSystemSymbolName(trimmed) {
+        return .systemImage(trimmed)
+    }
+    if SumiPersistentGlyph.presentsAsEmoji(trimmed) {
+        return .emoji(trimmed)
+    }
+    return .systemImage(fallbackSystemImage)
+}
+
+private func sidebarDestinationSubmenu(
     title: String,
     systemImage: String?,
     choiceSystemImage: String? = nil,
-    choices: [SidebarContextMenuChoice],
-    classification: SidebarContextMenuActionClassification = .structuralMutation,
-    availability: SidebarChoiceSubmenuAvailability = .anySelectableChoice,
-    onSelect: ((UUID) -> Void)?
+    action: SidebarChoiceMenuAction?,
+    classification: SidebarContextMenuActionClassification = .structuralMutation
 ) -> SidebarContextMenuEntry? {
-    guard availability.permits(choices),
-          let onSelect else {
+    guard let action else {
+        return nil
+    }
+
+    let selectableChoices = action.choices.filter { $0.isSelected == false }
+    guard selectableChoices.isEmpty == false else { return nil }
+
+    return .submenu(
+        title: title,
+        systemImage: systemImage,
+        children: selectableChoices.map { choice in
+            let fallbackIcon = choiceSystemImage.map { SidebarContextMenuIcon.systemImage($0) }
+            return .action(
+                .init(
+                    title: choice.title,
+                    systemImage: nil,
+                    classification: classification,
+                    onAction: { action.onSelect(choice.id) }
+                )
+            )
+            .withIcon(choice.icon ?? fallbackIcon)
+        }
+    )
+}
+
+private func sidebarSpaceDestinationEntry(action: SidebarSpaceDestinationAction?) -> SidebarContextMenuEntry? {
+    guard let action else { return nil }
+
+    let selectableChoices = action.choices.filter { $0.isSelected == false }
+    guard action.choices.count > 1, selectableChoices.isEmpty == false else { return nil }
+
+    if selectableChoices.count > sidebarInlineSpaceDestinationLimit {
+        return .action(
+            .init(
+                title: "Move to Space…",
+                systemImage: "arrow.right",
+                classification: .structuralMutation,
+                onAction: action.presentPicker
+            )
+        )
+    }
+
+    return .submenu(
+        title: "Move to Space",
+        systemImage: "arrow.right",
+        children: selectableChoices.map { choice in
+            .action(
+                .init(
+                    title: choice.title,
+                    classification: .structuralMutation,
+                    onAction: { action.onSelect(choice.id) }
+                )
+            )
+            .withIcon(choice.icon)
+        }
+    )
+}
+
+private func sidebarStateSubmenu(
+    title: String,
+    systemImage: String?,
+    action: SidebarChoiceMenuAction?,
+    classification: SidebarContextMenuActionClassification = .stateMutationNonStructural
+) -> SidebarContextMenuEntry? {
+    guard let action,
+          SidebarChoiceSubmenuAvailability.multipleChoicesWithSelectableTarget.permits(action.choices) else {
         return nil
     }
 
     return .submenu(
         title: title,
         systemImage: systemImage,
-        children: choices.map { choice in
+        children: action.choices.map { choice in
             .action(
                 .init(
                     title: choice.title,
-                    systemImage: choiceSystemImage,
                     isEnabled: choice.isSelected == false,
                     state: choice.isSelected ? .on : .off,
                     classification: classification,
-                    onAction: { onSelect(choice.id) }
+                    onAction: { action.onSelect(choice.id) }
                 )
             )
+            .withIcon(choice.icon)
         }
     )
 }
 
 func makeSidebarTabContextMenuEntries(
     role: SidebarTabContextMenuRole,
-    capabilities: SidebarTabContextMenuCapabilities,
-    callbacks: SidebarTabContextMenuCallbacks
+    actions: SidebarTabContextMenuActions
 ) -> [SidebarContextMenuEntry] {
     if role.isSavedTab {
         return makeSavedSidebarTabEntries(
             role: role,
-            capabilities: capabilities,
-            callbacks: callbacks
+            actions: actions
         )
     }
 
     return makeRegularSidebarTabEntries(
-        capabilities: capabilities,
-        callbacks: callbacks
+        actions: actions
     )
 }
 
 private func makeRegularSidebarTabEntries(
-    capabilities: SidebarTabContextMenuCapabilities,
-    callbacks: SidebarTabContextMenuCallbacks
+    actions: SidebarTabContextMenuActions
 ) -> [SidebarContextMenuEntry] {
-    let duplicateSection: [SidebarContextMenuEntry] = callbacks.onDuplicate.map {
+    let duplicateSection: [SidebarContextMenuEntry] = actions.duplicate.map {
         [.action(.init(title: "Duplicate Tab", systemImage: "plus.square.on.square", classification: .structuralMutation, onAction: $0))]
     } ?? []
 
     let editSection: [SidebarContextMenuEntry] = [
-        callbacks.onCopyLink.map {
+        actions.copyLink.map {
             .action(.init(title: "Copy Link", systemImage: "link", classification: .presentationOnly, onAction: $0))
         },
-        callbacks.onShare.map {
+        actions.share.map {
             .action(.init(title: "Share…", systemImage: "square.and.arrow.up", classification: .presentationOnly, onAction: $0))
         },
-        callbacks.onRename.map {
+        actions.rename.map {
             .action(.init(title: "Rename Tab", systemImage: "character.cursor.ibeam", onAction: $0))
         },
     ].compactMap { $0 }
 
     var organizationSection: [SidebarContextMenuEntry] = []
-    if let folderSubmenu = sidebarChoiceSubmenu(
+    if let folderSubmenu = sidebarDestinationSubmenu(
         title: "Add to Folder",
         systemImage: "folder.badge.plus",
         choiceSystemImage: "folder.fill",
-        choices: capabilities.folders,
-        onSelect: callbacks.onMoveToFolder
+        action: actions.folderTarget
     ) {
         organizationSection.append(folderSubmenu)
     }
-    if let spaceSubmenu = sidebarChoiceSubmenu(
-        title: "Move to…",
-        systemImage: "arrow.right",
-        choices: capabilities.spaces,
-        availability: .multipleChoicesWithSelectableTarget,
-        onSelect: callbacks.onMoveToSpace
-    ) {
+    if let spaceSubmenu = sidebarSpaceDestinationEntry(action: actions.moveToSpace) {
         organizationSection.append(spaceSubmenu)
     }
-    if let profileSubmenu = sidebarChoiceSubmenu(
-        title: "Convert Space to Profile",
+    if let profileSubmenu = sidebarStateSubmenu(
+        title: "Use Profile",
         systemImage: "person.crop.circle",
-        choices: capabilities.profiles,
-        availability: .multipleChoicesWithSelectableTarget,
-        onSelect: callbacks.onConvertSpaceToProfile
+        action: actions.profileTarget
     ) {
         organizationSection.append(profileSubmenu)
     }
-    if capabilities.canMoveUp, let onMoveUp = callbacks.onMoveUp {
+    if let onMoveUp = actions.moveUp {
         organizationSection.append(
             .action(.init(title: "Move Up", systemImage: "arrow.up", classification: .structuralMutation, onAction: onMoveUp))
         )
     }
-    if capabilities.canMoveDown, let onMoveDown = callbacks.onMoveDown {
+    if let onMoveDown = actions.moveDown {
         organizationSection.append(
             .action(.init(title: "Move Down", systemImage: "arrow.down", classification: .structuralMutation, onAction: onMoveDown))
         )
     }
 
     var saveSection: [SidebarContextMenuEntry] = []
-    if let onPinToSpace = callbacks.onPinToSpace {
+    if let onPinToSpace = actions.pinToSpace {
         saveSection.append(.action(.init(title: "Pin to This Space", systemImage: "pin", classification: .structuralMutation, onAction: onPinToSpace)))
     }
-    if capabilities.showsAddToEssentials, let onAddToEssentials = callbacks.onAddToEssentials {
+    if let onAddToEssentials = actions.addToEssentials {
         saveSection.append(.action(.init(title: "Add to Essentials", systemImage: "star.fill", classification: .structuralMutation, onAction: onAddToEssentials)))
     }
 
     var closeSection: [SidebarContextMenuEntry] = []
-    if capabilities.showsCloseTabsBelow, let onCloseTabsBelow = callbacks.onCloseTabsBelow {
+    if let onCloseTabsBelow = actions.closeTabsBelow {
         closeSection.append(.action(.init(title: "Close Tabs Below", systemImage: "arrow.down.to.line", classification: .structuralMutation, onAction: onCloseTabsBelow)))
     }
-    if let onClose = callbacks.onClose {
+    if let onClose = actions.close {
         closeSection.append(
             .action(
                 .init(
@@ -317,84 +387,71 @@ private func makeRegularSidebarTabEntries(
 
 private func makeSavedSidebarTabEntries(
     role: SidebarTabContextMenuRole,
-    capabilities: SidebarTabContextMenuCapabilities,
-    callbacks: SidebarTabContextMenuCallbacks
+    actions: SidebarTabContextMenuActions
 ) -> [SidebarContextMenuEntry] {
     let label = role.displayName
     var openSection: [SidebarContextMenuEntry] = []
-    if let onDuplicate = callbacks.onDuplicate {
+    if let onDuplicate = actions.duplicate {
         openSection.append(.action(.init(title: "Duplicate as Tab", systemImage: "doc.on.doc", classification: .structuralMutation, onAction: onDuplicate)))
     }
 
     let shareSection: [SidebarContextMenuEntry] = [
-        callbacks.onCopyLink.map {
+        actions.copyLink.map {
             .action(.init(title: "Copy Link", systemImage: "link", classification: .presentationOnly, onAction: $0))
         },
-        callbacks.onShare.map {
+        actions.share.map {
             .action(.init(title: "Share…", systemImage: "square.and.arrow.up", classification: .presentationOnly, onAction: $0))
         },
     ].compactMap { $0 }
 
     let editSection: [SidebarContextMenuEntry] = [
-        callbacks.onRename.map {
+        actions.rename.map {
             .action(.init(title: "Rename \(label)", systemImage: "character.cursor.ibeam", onAction: $0))
         },
-        callbacks.onChangeIcon.map {
+        actions.changeIcon.map {
             .action(.init(title: "Change Icon…", systemImage: "photo", classification: .presentationOnly, onAction: $0))
         },
-        callbacks.onEditURL.map {
+        actions.editURL.map {
             .action(.init(title: "Edit URL…", systemImage: "link.badge.plus", classification: .presentationOnly, onAction: $0))
         },
     ].compactMap { $0 }
 
-    var driftSection: [SidebarContextMenuEntry] = []
-    if capabilities.hasSavedURLDrift,
-       let onBackToSavedURL = callbacks.onBackToSavedURL,
-       let onUseCurrentPageAsSavedURL = callbacks.onUseCurrentPageAsSavedURL {
-        driftSection = [
-            .action(.init(title: "Back to \(label) URL", systemImage: "arrow.counterclockwise", onAction: onBackToSavedURL)),
-            .action(.init(title: "Use Current Page as \(label) URL", systemImage: "arrow.triangle.2.circlepath", onAction: onUseCurrentPageAsSavedURL)),
+    let driftSection: [SidebarContextMenuEntry] = actions.savedURLDrift.map {
+        [
+            .action(.init(title: "Back to \(label) URL", systemImage: "arrow.counterclockwise", onAction: $0.onBackToSavedURL)),
+            .action(.init(title: "Use Current Page as \(label) URL", systemImage: "arrow.triangle.2.circlepath", onAction: $0.onUseCurrentPageAsSavedURL)),
         ]
-    }
+    } ?? []
 
     var runtimeSection: [SidebarContextMenuEntry] = []
-    if capabilities.hasLiveInstance, let onUnload = callbacks.onUnload {
+    if let onUnload = actions.unload {
         runtimeSection.append(.action(.init(title: "Unload \(label)", systemImage: "xmark.circle", onAction: onUnload)))
     }
 
     var organizationSection: [SidebarContextMenuEntry] = []
-    if capabilities.showsAddToEssentials, let onAddToEssentials = callbacks.onAddToEssentials {
+    if let onAddToEssentials = actions.addToEssentials {
         organizationSection.append(.action(.init(title: "Add to Essentials", systemImage: "star.fill", classification: .structuralMutation, onAction: onAddToEssentials)))
     }
-    if let folderSubmenu = sidebarChoiceSubmenu(
+    if let folderSubmenu = sidebarDestinationSubmenu(
         title: role == .folderPinnedTab ? "Move to Folder" : "Add to Folder",
         systemImage: role == .folderPinnedTab ? "folder" : "folder.badge.plus",
         choiceSystemImage: "folder.fill",
-        choices: capabilities.folders,
-        onSelect: callbacks.onMoveToFolder
+        action: actions.folderTarget
     ) {
         organizationSection.append(folderSubmenu)
     }
-    if let spaceSubmenu = sidebarChoiceSubmenu(
-        title: "Move to…",
-        systemImage: "arrow.right",
-        choices: capabilities.spaces,
-        availability: .multipleChoicesWithSelectableTarget,
-        onSelect: callbacks.onMoveToSpace
-    ) {
+    if let spaceSubmenu = sidebarSpaceDestinationEntry(action: actions.moveToSpace) {
         organizationSection.append(spaceSubmenu)
     }
-    if let profileSubmenu = sidebarChoiceSubmenu(
-        title: "Convert Space to Profile",
+    if let profileSubmenu = sidebarStateSubmenu(
+        title: "Use Profile",
         systemImage: "person.crop.circle",
-        choices: capabilities.profiles,
-        availability: .multipleChoicesWithSelectableTarget,
-        onSelect: callbacks.onConvertSpaceToProfile
+        action: actions.profileTarget
     ) {
         organizationSection.append(profileSubmenu)
     }
 
-    let deleteSection: [SidebarContextMenuEntry] = callbacks.onDeleteSavedTab.map {
+    let deleteSection: [SidebarContextMenuEntry] = actions.deleteSavedTab.map {
         [
             .action(
                 .init(
@@ -421,24 +478,18 @@ private func makeSavedSidebarTabEntries(
     )
 }
 
-func makeFolderHeaderContextMenuEntries(
-    hasCustomIcon: Bool,
-    showsUnloadActiveTabs: Bool = false,
-    callbacks: SidebarFolderHeaderMenuCallbacks
-) -> [SidebarContextMenuEntry] {
+func makeFolderHeaderContextMenuEntries(actions: SidebarFolderHeaderMenuActions) -> [SidebarContextMenuEntry] {
     let iconSection: [SidebarContextMenuEntry] = [
-        .action(.init(title: "Rename Folder", onAction: callbacks.onRename)),
-        .action(.init(title: "Change Folder Icon…", classification: .presentationOnly, onAction: callbacks.onChangeIcon)),
-    ] + (hasCustomIcon
-        ? [.action(.init(title: "Reset Folder Icon", onAction: callbacks.onResetIcon))]
-        : [])
+        .action(.init(title: "Rename Folder", onAction: actions.rename)),
+        .action(.init(title: "Change Folder Icon…", classification: .presentationOnly, onAction: actions.changeIcon)),
+    ]
 
     let contentsSection: [SidebarContextMenuEntry] = [
-        .action(.init(title: "New Tab in Folder", classification: .structuralMutation, onAction: callbacks.onAddTab)),
-        .action(.init(title: "Sort by Name", classification: .structuralMutation, onAction: callbacks.onAlphabetize)),
-    ] + (showsUnloadActiveTabs && callbacks.onUnloadActiveTabs != nil
-        ? [.action(.init(title: "Unload Active Tabs in Folder", systemImage: "xmark.circle", onAction: callbacks.onUnloadActiveTabs ?? {}))]
-        : [])
+        .action(.init(title: "New Tab in Folder", classification: .structuralMutation, onAction: actions.addTab)),
+        .action(.init(title: "Sort by Name", classification: .structuralMutation, onAction: actions.alphabetize)),
+    ] + (actions.unloadActiveTabs.map {
+        [.action(.init(title: "Unload Active Tabs in Folder", systemImage: "xmark.circle", onAction: $0))]
+    } ?? [])
 
     return joinSidebarMenuSections(
         [
@@ -450,7 +501,7 @@ func makeFolderHeaderContextMenuEntries(
                         title: "Delete Folder",
                         role: .destructive,
                         classification: .structuralMutation,
-                        onAction: callbacks.onDelete
+                        onAction: actions.delete
                     )
                 ),
             ],
@@ -460,85 +511,74 @@ func makeFolderHeaderContextMenuEntries(
 
 func makeSpaceContextMenuEntries(
     profiles: [SidebarContextMenuChoice],
-    canRename: Bool,
-    canChangeIcon: Bool,
-    canDelete: Bool,
-    callbacks: SidebarSpaceMenuCallbacks
+    actions: SidebarSpaceMenuActions
 ) -> [SidebarContextMenuEntry] {
-    let profileEntries = profiles.map { profile in
-        SidebarContextMenuEntry.action(
-            .init(
-                title: profile.title,
-                state: profile.isSelected ? .on : .off,
-                onAction: { callbacks.onSelectProfile(profile.id) }
-            )
-        )
-    }
-
     var editSection: [SidebarContextMenuEntry] = []
-    if canRename, let onRename = callbacks.onRename {
+    if let onRename = actions.rename {
         editSection.append(.action(.init(title: "Rename", systemImage: "textformat", onAction: onRename)))
     }
-    if canChangeIcon, let onChangeIcon = callbacks.onChangeIcon {
+    if let onChangeIcon = actions.changeIcon {
         editSection.append(.action(.init(title: "Change Icon", systemImage: "face.smiling", classification: .presentationOnly, onAction: onChangeIcon)))
     }
-    editSection.append(.action(.init(title: "Change Theme", systemImage: "paintpalette", classification: .presentationOnly, onAction: callbacks.onChangeTheme)))
+    editSection.append(.action(.init(title: "Change Theme", systemImage: "paintpalette", classification: .presentationOnly, onAction: actions.changeTheme)))
 
     var settingsSection: [SidebarContextMenuEntry] = [
-        .action(.init(title: "Space Settings", systemImage: "gear", classification: .presentationOnly, onAction: callbacks.onOpenSettings)),
+        .action(.init(title: "Space Settings", systemImage: "gear", classification: .presentationOnly, onAction: actions.openSettings)),
     ]
-    if canDelete, let onDeleteSpace = callbacks.onDeleteSpace {
+    if let onDeleteSpace = actions.deleteSpace {
         settingsSection.append(
             .action(.init(title: "Delete Space", systemImage: "trash", role: .destructive, classification: .structuralMutation, onAction: onDeleteSpace))
         )
     }
 
+    let profileSection = sidebarStateSubmenu(
+        title: "Profile",
+        systemImage: "person.crop.circle",
+        action: .init(choices: profiles, onSelect: actions.selectProfile),
+        classification: .stateMutationNonStructural
+    ).map { [$0] } ?? []
+
     return joinSidebarMenuSections(
         [
-            [
-                .submenu(title: "Profile", systemImage: "person.crop.circle", children: profileEntries),
-            ],
+            profileSection,
             editSection,
             settingsSection,
         ]
     )
 }
 
-func makeSpaceListContextMenuEntries(
-    canDelete: Bool,
-    callbacks: SidebarSpaceListMenuCallbacks
-) -> [SidebarContextMenuEntry] {
+func makeSpaceListContextMenuEntries(actions: SidebarSpaceListMenuActions) -> [SidebarContextMenuEntry] {
     joinSidebarMenuSections(
         [
         [
-            .action(.init(title: "Space Settings", systemImage: "gear", classification: .presentationOnly, onAction: callbacks.onOpenSettings)),
+            .action(.init(title: "Space Settings", systemImage: "gear", classification: .presentationOnly, onAction: actions.openSettings)),
         ],
-        canDelete && callbacks.onDeleteSpace != nil
-            ? [
+        actions.deleteSpace.map {
+            [
                 .action(
                     .init(
                         title: "Delete Space",
                         systemImage: "trash",
                         role: .destructive,
                         classification: .structuralMutation,
-                        onAction: callbacks.onDeleteSpace ?? {}
+                        onAction: $0
                     )
                 ),
             ]
-                : [],
+        } ?? [],
         ]
     )
 }
 
 func makeSidebarShellContextMenuEntries(
     isCompactModeEnabled: Bool,
-    callbacks: SidebarShellMenuCallbacks
+    actions: SidebarShellMenuActions
 ) -> [SidebarContextMenuEntry] {
     joinSidebarMenuSections(
         [
             [
-                .action(.init(title: "New Tab", systemImage: "plus", classification: .structuralMutation, onAction: callbacks.onNewTab)),
-                .action(.init(title: "New Split", systemImage: "rectangle.split.2x1", onAction: callbacks.onNewSplit)),
+                .action(.init(title: "New Tab", systemImage: "plus", classification: .structuralMutation, onAction: actions.newTab)),
+                .action(.init(title: "New Split", systemImage: "rectangle.split.2x1", onAction: actions.newSplit)),
             ],
             [
                 .action(
@@ -546,10 +586,10 @@ func makeSidebarShellContextMenuEntries(
                         title: "Toggle Compact Mode",
                         systemImage: "circle.grid.2x2",
                         state: isCompactModeEnabled ? .on : .off,
-                        onAction: callbacks.onToggleCompactMode
+                        onAction: actions.toggleCompactMode
                     )
                 ),
-                .action(.init(title: "Sidebar Settings…", systemImage: "slider.horizontal.3", classification: .presentationOnly, onAction: callbacks.onOpenSettings)),
+                .action(.init(title: "Sidebar Settings…", systemImage: "slider.horizontal.3", classification: .presentationOnly, onAction: actions.openSettings)),
             ],
         ]
     )

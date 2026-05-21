@@ -61,7 +61,7 @@ enum SplitGroupSidebarSegmentAction {
         case .close:
             return "Close split segment"
         case .restore:
-            return "Return launcher to original place"
+            return "Return pinned tab to original place"
         }
     }
 }
@@ -95,7 +95,9 @@ struct SplitGroupSidebarRow: View {
                     segmentAction: segmentAction(item),
                     isAppKitInteractionEnabled: isAppKitInteractionEnabled,
                     dragSourceConfiguration: dragSource(item),
-                    contextMenuEntries: item.tab.map(splitContextMenuEntries) ?? [],
+                    contextMenuEntries: {
+                        item.tab.map(splitContextMenuEntries) ?? []
+                    },
                     onActivate: { activate(item) },
                     onSegmentAction: { onSegmentAction(item) }
                 )
@@ -232,7 +234,7 @@ private struct SplitGroupSegment: View {
     let segmentAction: SplitGroupSidebarSegmentAction?
     let isAppKitInteractionEnabled: Bool
     let dragSourceConfiguration: SidebarDragSourceConfiguration?
-    let contextMenuEntries: [SidebarContextMenuEntry]
+    let contextMenuEntries: () -> [SidebarContextMenuEntry]
     let onActivate: () -> Void
     let onSegmentAction: () -> Void
 
@@ -270,7 +272,7 @@ private struct SplitGroupSegment: View {
                 dragSource: resolvedDragSourceConfiguration,
                 primaryAction: onActivate,
                 sourceID: rowSourceID,
-                entries: { contextMenuEntries }
+                entries: contextMenuEntries
             )
 
             if let segmentAction {

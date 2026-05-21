@@ -170,7 +170,6 @@ private struct SpaceEditContent: View {
             }
         }
         .onChange(of: emojiManager.selectedEmoji) { _, newValue in
-            guard !newValue.isEmpty else { return }
             let picked = newValue
             DispatchQueue.main.async {
                 spaceIcon = SumiPersistentGlyph.normalizedSpaceIconValue(picked)
