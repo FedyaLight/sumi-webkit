@@ -1208,7 +1208,7 @@ final class PaneContainerView: NSView {
 private final class SplitPaneControlsView: NSVisualEffectView {
     private let stackView = NSStackView()
     private let dragButton = SplitPaneDragButton()
-    private let expandButton = SplitPaneToolbarButton(symbolName: "arrow.up.left.and.arrow.down.right")
+    private let expandButton = SplitPaneToolbarButton(icon: .fullscreen)
     private weak var browserManager: BrowserManager?
     private weak var splitManager: SplitViewManager?
     private weak var windowState: BrowserWindowState?
@@ -1220,12 +1220,12 @@ private final class SplitPaneControlsView: NSVisualEffectView {
         blendingMode = .withinWindow
         state = .active
         wantsLayer = true
-        layer?.cornerRadius = 7
+        layer?.cornerRadius = 6
 
         stackView.orientation = .horizontal
         stackView.alignment = .centerY
-        stackView.spacing = 6
-        stackView.edgeInsets = NSEdgeInsets(top: 3, left: 7, bottom: 3, right: 7)
+        stackView.spacing = 13
+        stackView.edgeInsets = NSEdgeInsets(top: 6.5, left: 9.5, bottom: 3.5, right: 9.5)
         stackView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stackView)
 
@@ -1252,7 +1252,7 @@ private final class SplitPaneControlsView: NSVisualEffectView {
     }
 
     override var intrinsicContentSize: NSSize {
-        NSSize(width: 74, height: 24)
+        NSSize(width: 64, height: 26)
     }
 
     func configure(
@@ -1296,12 +1296,79 @@ private final class SplitPaneControlsView: NSVisualEffectView {
     }
 }
 
+private enum SplitPaneToolbarIcon {
+    case dragHandle
+    case fullscreen
+
+    var image: NSImage {
+        switch self {
+        case .dragHandle:
+            return Self.dragHandleImage
+        case .fullscreen:
+            return Self.fullscreenImage
+        }
+    }
+
+    private static let dragHandleImage: NSImage = {
+        let image = NSImage(size: NSSize(width: 14, height: 14))
+        image.lockFocus()
+        NSColor.black.setFill()
+        let dotDiameter: CGFloat = 1.2
+        let dotOrigins: [CGPoint] = [
+            CGPoint(x: 2.6, y: 4.0),
+            CGPoint(x: 6.4, y: 4.0),
+            CGPoint(x: 10.2, y: 4.0),
+            CGPoint(x: 2.6, y: 8.8),
+            CGPoint(x: 6.4, y: 8.8),
+            CGPoint(x: 10.2, y: 8.8),
+        ]
+        for origin in dotOrigins {
+            NSBezierPath(ovalIn: NSRect(
+                x: origin.x,
+                y: origin.y,
+                width: dotDiameter,
+                height: dotDiameter
+            )).fill()
+        }
+        image.unlockFocus()
+        image.isTemplate = true
+        return image
+    }()
+
+    private static let fullscreenImage: NSImage = {
+        let image = NSImage(size: NSSize(width: 14, height: 14))
+        image.lockFocus()
+        NSColor.black.setStroke()
+        let path = NSBezierPath()
+        path.lineWidth = 1.2
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+
+        path.move(to: CGPoint(x: 8.4, y: 11.9))
+        path.line(to: CGPoint(x: 11.9, y: 11.9))
+        path.line(to: CGPoint(x: 11.9, y: 8.4))
+        path.move(to: CGPoint(x: 11.9, y: 11.9))
+        path.line(to: CGPoint(x: 8.4, y: 8.4))
+
+        path.move(to: CGPoint(x: 2.1, y: 5.6))
+        path.line(to: CGPoint(x: 2.1, y: 2.1))
+        path.line(to: CGPoint(x: 5.6, y: 2.1))
+        path.move(to: CGPoint(x: 2.1, y: 2.1))
+        path.line(to: CGPoint(x: 5.6, y: 5.6))
+
+        path.stroke()
+        image.unlockFocus()
+        image.isTemplate = true
+        return image
+    }()
+}
+
 private class SplitPaneToolbarButton: NSButton {
-    init(symbolName: String) {
-        super.init(frame: NSRect(x: 0, y: 0, width: 18, height: 18))
-        image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 11, weight: .semibold))
+    init(icon: SplitPaneToolbarIcon) {
+        super.init(frame: NSRect(x: 0, y: 0, width: 16, height: 16))
+        image = icon.image
         imagePosition = .imageOnly
+        imageScaling = .scaleProportionallyDown
         isBordered = false
         bezelStyle = .regularSquare
         setButtonType(.momentaryChange)
@@ -1316,7 +1383,11 @@ private class SplitPaneToolbarButton: NSButton {
     }
 
     override var intrinsicContentSize: NSSize {
-        NSSize(width: 18, height: 18)
+        NSSize(width: 16, height: 16)
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
     }
 
     override func updateLayer() {
@@ -1345,7 +1416,7 @@ private final class SplitPaneDragButton: SplitPaneToolbarButton, NSDraggingSourc
     private var mouseDownEvent: NSEvent?
 
     init() {
-        super.init(symbolName: "arrow.up.and.down.and.arrow.left.and.right")
+        super.init(icon: .dragHandle)
         contentTintColor = .labelColor
     }
 
