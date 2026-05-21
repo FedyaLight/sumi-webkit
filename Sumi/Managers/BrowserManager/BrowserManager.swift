@@ -185,6 +185,8 @@ class BrowserManager: ObservableObject {
     var downloadManager: DownloadManager
     let downloadsPopoverPresenter: DownloadsPopoverPresenter
     let workspaceThemePickerPopoverPresenter: WorkspaceThemePickerPopoverPresenter
+    let folderEditorPopoverPresenter: FolderEditorPopoverPresenter
+    let shortcutEditorPopoverPresenter: ShortcutEditorPopoverPresenter
     var authenticationManager: AuthenticationManager
     var historyManager: HistoryManager
     var bookmarkManager: SumiBookmarkManager
@@ -414,6 +416,8 @@ class BrowserManager: ObservableObject {
         self.downloadManager = DownloadManager()
         self.downloadsPopoverPresenter = DownloadsPopoverPresenter()
         self.workspaceThemePickerPopoverPresenter = WorkspaceThemePickerPopoverPresenter()
+        self.folderEditorPopoverPresenter = FolderEditorPopoverPresenter()
+        self.shortcutEditorPopoverPresenter = ShortcutEditorPopoverPresenter()
         self.authenticationManager = AuthenticationManager()
         // Initialize managers with current profile context for isolation
         self.historyManager = HistoryManager(context: startupModelContext, profileId: initialProfile?.id)

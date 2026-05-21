@@ -20,6 +20,8 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
         XCTAssertTrue(source.contains("title: \"Adblock & Protection\""))
         XCTAssertTrue(source.contains("Protection off for this site"))
         XCTAssertTrue(source.contains("Restart Sumi to apply global changes"))
+        XCTAssertFalse(source.contains("showsProtectionToggle"))
+        XCTAssertFalse(source.contains(".toggleStyle(.switch)"))
         XCTAssertFalse(source.contains("URLBarTrackingProtectionPresenter"))
         XCTAssertFalse(source.contains("URLBarAdblockPresenter"))
         XCTAssertFalse(source.contains("kind: .tracking("))

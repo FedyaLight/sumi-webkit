@@ -135,62 +135,15 @@ extension SpaceView {
         return slot
     }
 
-    /// Uses `DialogManager` instead of SwiftUI `.sheet` so presenting after `NSMenu` does not trip
-    /// `_NSTouchBarFinderObservation` KVO faults on `SumiBrowserWindow` (see `TabFolderView.presentFolderIconPicker`).
     private func presentShortcutLinkEditor(
         for pin: ShortcutPin,
         source: SidebarTransientPresentationSource? = nil
     ) {
-        let manager = browserManager
-        let settings = sumiSettings
-        let theme = themeContext
-        DispatchQueue.main.async {
-            if let source {
-                manager.showDialog(
-                    ShortcutLinkEditorSheet(
-                        dialogTitle: "Edit Pinned Tab",
-                        pin: pin,
-                        onSave: { newTitle, newURL in
-                            DispatchQueue.main.async {
-                                _ = manager.tabManager.updateShortcutPin(
-                                    pin,
-                                    title: newTitle,
-                                    launchURL: newURL
-                                )
-                            }
-                        },
-                        onRequestClose: {
-                            manager.closeDialog()
-                        }
-                    )
-                    .environment(\.sumiSettings, settings)
-                    .environment(\.resolvedThemeContext, theme),
-                    source: source
-                )
-                return
-            }
-
-            manager.showDialog(
-                ShortcutLinkEditorSheet(
-                    dialogTitle: "Edit Pinned Tab",
-                    pin: pin,
-                    onSave: { newTitle, newURL in
-                        DispatchQueue.main.async {
-                            _ = manager.tabManager.updateShortcutPin(
-                                pin,
-                                title: newTitle,
-                                launchURL: newURL
-                            )
-                        }
-                    },
-                    onRequestClose: {
-                        manager.closeDialog()
-                    }
-                )
-                .environment(\.sumiSettings, settings)
-                .environment(\.resolvedThemeContext, theme)
-            )
-        }
+        browserManager.showShortcutEditor(
+            for: pin,
+            in: windowState,
+            source: source ?? windowState.resolveSidebarPresentationSource()
+        )
     }
 
     var pinnedTabsSection: some View {
@@ -496,8 +449,7 @@ extension SpaceView {
             shortcutPins: launcherProjection?.folderPins[folder.id] ?? [],
             renderMode: renderMode,
             topLevelPinnedIndex: topLevelPinnedIndex,
-            onDelete: { deleteFolder(folder) },
-            onAddTab: { addTabToFolder(folder) }
+            onDelete: { deleteFolder(folder) }
         )
         .environmentObject(browserManager)
         .environment(windowState)
@@ -542,16 +494,13 @@ extension SpaceView {
                 pin: pin,
                 liveTab: activeTab,
                 accessibilityID: "space-pinned-shortcut-\(pin.id.uuidString)",
-                contextMenuEntries: { toggleEditIcon in
-                    pinnedShortcutContextMenuEntries(pin, toggleEditIcon: toggleEditIcon)
+                contextMenuEntries: {
+                    pinnedShortcutContextMenuEntries(pin)
                 },
                 action: { activateShortcutPin(pin) },
                 dragSourceZone: .spacePinned(space.id),
                 dragHasTrailingActionExclusion: true,
                 dragIsEnabled: isInteractive,
-                onLauncherIconSelected: { newIconAsset in
-                    _ = browserManager.tabManager.updateShortcutPin(pin, iconAsset: newIconAsset)
-                },
                 onResetToLaunchURL: { resetShortcutPin(pin) },
                 onUnload: { unloadShortcutPin(pin) },
                 onRemove: { removeShortcutPin(pin) }
@@ -572,10 +521,7 @@ extension SpaceView {
         }
     }
 
-    private func pinnedShortcutContextMenuEntries(
-        _ pin: ShortcutPin,
-        toggleEditIcon: @escaping () -> Void
-    ) -> [SidebarContextMenuEntry] {
+    private func pinnedShortcutContextMenuEntries(_ pin: ShortcutPin) -> [SidebarContextMenuEntry] {
         let presentationState = shortcutPresentationState(for: pin)
         let profiles = browserManager.profileManager.profiles
         let folderChoices = makeSidebarContextMenuFolderChoices(
@@ -624,7 +570,7 @@ extension SpaceView {
                         source: windowState.resolveSidebarPresentationSource()
                     )
                 },
-                rename: {
+                edit: {
                     presentShortcutLinkEditor(
                         for: pin,
                         source: windowState.resolveSidebarPresentationSource()
@@ -661,13 +607,6 @@ extension SpaceView {
                 ),
                 addToEssentials: addToEssentialsAction,
                 savedURLDrift: savedURLDriftActions,
-                changeIcon: toggleEditIcon,
-                editURL: {
-                    presentShortcutLinkEditor(
-                        for: pin,
-                        source: windowState.resolveSidebarPresentationSource()
-                    )
-                },
                 unload: unloadAction,
                 deleteSavedTab: { confirmDeleteShortcutPin(pin) }
             )
@@ -795,11 +734,6 @@ extension SpaceView {
         } else {
             update()
         }
-    }
-
-    private func addTabToFolder(_ folder: TabFolder) {
-        let newTab = browserManager.tabManager.createNewTab(in: space)
-        browserManager.tabManager.moveTabToFolder(tab: newTab, folderId: folder.id)
     }
 
     private func shortcutPresentationState(for pin: ShortcutPin) -> ShortcutPresentationState {
