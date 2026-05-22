@@ -97,9 +97,13 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         popover.delegate = self
         popover.contentViewController = hostingController
         popover.contentSize = Self.Metrics.contentSize
-        popover.appearance = resolvedAnchor.view.window?.effectiveAppearance
-            ?? windowState.window?.effectiveAppearance
-            ?? NSApplication.shared.effectiveAppearance
+        popover.appearance = NSAppearance.sumiChromeAppearance(
+            for: nativeSurfaceColorScheme(
+                in: windowState,
+                settings: browserManager.sumiSettings ?? SumiSettingsService()
+            ),
+            fallback: resolvedAnchor.view.window?.effectiveAppearance ?? windowState.window?.effectiveAppearance
+        )
 
         activeSession = ActiveSession(
             session: session,
@@ -454,6 +458,34 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         guard sidebarRect.contains(pointInContentView) else { return }
         close(sessionID: activeSession.session.id, committing: true)
     }
+
+    private func nativeSurfaceColorScheme(
+        in windowState: BrowserWindowState,
+        settings: SumiSettingsService
+    ) -> ColorScheme {
+        windowState.resolvedThemeContext(
+            global: browserWindowGlobalColorScheme(in: windowState, settings: settings),
+            settings: settings
+        )
+        .nativeSurfaceColorScheme
+    }
+
+    private func browserWindowGlobalColorScheme(
+        in windowState: BrowserWindowState,
+        settings: SumiSettingsService
+    ) -> ColorScheme {
+        switch settings.windowSchemeMode {
+        case .auto:
+            return ColorScheme(
+                workspaceThemePopoverAppearance: windowState.window?.effectiveAppearance
+                    ?? NSApplication.shared.effectiveAppearance
+            )
+        case .light:
+            return .light
+        case .dark:
+            return .dark
+        }
+    }
 }
 
 private struct WorkspaceThemePickerPopoverContent: View {
@@ -473,17 +505,27 @@ private struct WorkspaceThemePickerPopoverContent: View {
             }
         )
         .environment(\.resolvedThemeContext, resolvedThemeContext)
-        .preferredColorScheme(globalColorScheme)
+        .environment(\.colorScheme, surfaceColorScheme)
+        .preferredColorScheme(surfaceColorScheme)
     }
 
     private var resolvedThemeContext: ResolvedThemeContext {
         windowState.resolvedThemeContext(
-            global: globalColorScheme,
+            global: browserWindowGlobalColorScheme,
             settings: sumiSettings
         )
+        .nativeSurfaceThemeContext
     }
 
-    private var globalColorScheme: ColorScheme {
+    private var surfaceColorScheme: ColorScheme {
+        windowState.resolvedThemeContext(
+            global: browserWindowGlobalColorScheme,
+            settings: sumiSettings
+        )
+        .nativeSurfaceColorScheme
+    }
+
+    private var browserWindowGlobalColorScheme: ColorScheme {
         switch sumiSettings.windowSchemeMode {
         case .auto:
             return ColorScheme(workspaceThemePopoverAppearance: appKitAppearance)

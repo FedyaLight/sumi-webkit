@@ -45,6 +45,7 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         pin: ShortcutPin,
         in windowState: BrowserWindowState,
         browserManager: BrowserManager,
+        themeContext: ResolvedThemeContext,
         source: SidebarTransientPresentationSource
     ) {
         if activeSession != nil {
@@ -61,6 +62,8 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         }
 
         let editorSession = ShortcutLinkEditorSession(pin: pin)
+        let surfaceThemeContext = themeContext.nativeSurfaceThemeContext
+        let surfaceColorScheme = surfaceThemeContext.nativeSurfaceColorScheme
         let hostingController = NSHostingController(
             rootView: ShortcutLinkEditorSheet(
                 session: editorSession,
@@ -75,6 +78,9 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
             .environmentObject(browserManager)
             .environment(windowState)
             .environment(\.sumiSettings, browserManager.sumiSettings ?? SumiSettingsService())
+            .environment(\.resolvedThemeContext, surfaceThemeContext)
+            .environment(\.colorScheme, surfaceColorScheme)
+            .preferredColorScheme(surfaceColorScheme)
             .frame(
                 width: Self.Metrics.contentSize.width,
                 height: Self.Metrics.contentSize.height
@@ -87,9 +93,10 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         popover.delegate = self
         popover.contentViewController = hostingController
         popover.contentSize = Self.Metrics.contentSize
-        popover.appearance = anchor.view.window?.effectiveAppearance
-            ?? windowState.window?.effectiveAppearance
-            ?? NSApplication.shared.effectiveAppearance
+        popover.appearance = NSAppearance.sumiChromeAppearance(
+            for: surfaceColorScheme,
+            fallback: anchor.view.window?.effectiveAppearance ?? windowState.window?.effectiveAppearance
+        )
 
         let token = source.coordinator?.beginSession(
             kind: .shortcutEditorPopover,
@@ -224,12 +231,14 @@ extension BrowserManager {
     func showShortcutEditor(
         for pin: ShortcutPin,
         in windowState: BrowserWindowState,
+        themeContext: ResolvedThemeContext,
         source: SidebarTransientPresentationSource
     ) {
         shortcutEditorPopoverPresenter.present(
             pin: pin,
             in: windowState,
             browserManager: self,
+            themeContext: themeContext,
             source: source
         )
     }

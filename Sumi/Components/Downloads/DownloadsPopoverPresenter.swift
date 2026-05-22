@@ -300,16 +300,20 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
                 .environment(\.sumiSettings, settings)
                 .environment(\.resolvedThemeContext, popoverThemeContext(for: registration, colorScheme: colorScheme))
                 .environment(\.colorScheme, colorScheme)
+                .preferredColorScheme(colorScheme)
                 .frame(width: Metrics.width, height: contentSize.height)
         )
     }
 
     private func popoverAppearance(for registration: AnchorRegistration) -> NSAppearance {
-        registration.view?.window?.effectiveAppearance ?? NSApplication.shared.effectiveAppearance
+        NSAppearance.sumiChromeAppearance(
+            for: popoverColorScheme(for: registration),
+            fallback: registration.view?.window?.effectiveAppearance
+        )
     }
 
     private func popoverColorScheme(for registration: AnchorRegistration) -> ColorScheme {
-        ColorScheme(downloadsPopoverAppearance: popoverAppearance(for: registration))
+        registration.themeContext.nativeSurfaceColorScheme
     }
 
     private func popoverThemeContext(
@@ -426,12 +430,5 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
             pendingSession.token,
             reason: reason
         )
-    }
-}
-
-private extension ColorScheme {
-    init(downloadsPopoverAppearance appearance: NSAppearance) {
-        let bestMatch = appearance.bestMatch(from: [.darkAqua, .aqua])
-        self = bestMatch == .darkAqua ? .dark : .light
     }
 }

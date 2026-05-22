@@ -825,6 +825,7 @@ struct PinnedGrid: View {
         browserManager.showShortcutEditor(
             for: pin,
             in: windowState,
+            themeContext: themeContext,
             source: windowState.resolveSidebarPresentationSource()
         )
     }

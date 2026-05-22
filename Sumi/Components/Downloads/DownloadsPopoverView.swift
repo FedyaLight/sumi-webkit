@@ -4,9 +4,14 @@ struct DownloadsPopoverView: View {
     @ObservedObject var downloadManager: DownloadManager
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.displayScale) private var displayScale
 
     private var tokens: ChromeThemeTokens {
         themeContext.tokens(settings: sumiSettings)
+    }
+
+    private var separatorHeight: CGFloat {
+        1 / max(displayScale, 1)
     }
 
     var body: some View {
@@ -29,9 +34,9 @@ struct DownloadsPopoverView: View {
                 .frame(maxHeight: 330)
             }
 
-            Divider()
-                .padding(.horizontal, 26)
-                .overlay(tokens.separator.opacity(0.65))
+            Rectangle()
+                .fill(tokens.separator.opacity(0.65))
+                .frame(height: separatorHeight)
 
             HStack(spacing: 8) {
                 DownloadsFooterActionButton(
