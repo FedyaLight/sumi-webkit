@@ -36,10 +36,6 @@ enum URLBarPresentationMode {
     }
 }
 
-enum URLBarHubInitialMode {
-    case controls
-}
-
 struct URLBarView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject var glanceManager: GlanceManager

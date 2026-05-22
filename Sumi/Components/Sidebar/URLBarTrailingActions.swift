@@ -72,7 +72,7 @@ extension URLBarView {
     var hubButton: some View {
         let action = {
             closeZoomPopover()
-            browserManager.toggleURLBarHubPopover(in: windowState, initialMode: .controls)
+            browserManager.toggleURLBarHubPopover(in: windowState)
         }
 
         return Button(action: action) {

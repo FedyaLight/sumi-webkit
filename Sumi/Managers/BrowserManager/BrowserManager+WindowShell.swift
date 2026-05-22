@@ -44,25 +44,17 @@ extension BrowserManager {
         downloadsPopoverPresenter.close(in: windowState)
     }
 
-    func toggleURLBarHubPopover(
-        in windowState: BrowserWindowState,
-        initialMode: URLBarHubInitialMode = .controls
-    ) {
+    func toggleURLBarHubPopover(in windowState: BrowserWindowState) {
         urlBarHubPopoverPresenter.toggle(
             in: windowState,
-            browserManager: self,
-            initialMode: initialMode
+            browserManager: self
         )
     }
 
-    func presentURLBarHubPopover(
-        in windowState: BrowserWindowState,
-        initialMode: URLBarHubInitialMode = .controls
-    ) {
+    func presentURLBarHubPopover(in windowState: BrowserWindowState) {
         urlBarHubPopoverPresenter.present(
             in: windowState,
-            browserManager: self,
-            initialMode: initialMode
+            browserManager: self
         )
     }
 
