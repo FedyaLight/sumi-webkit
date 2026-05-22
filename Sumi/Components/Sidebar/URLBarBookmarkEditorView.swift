@@ -2,8 +2,6 @@ import SwiftUI
 
 struct URLBarBookmarkEditorView: View {
     @EnvironmentObject private var browserManager: BrowserManager
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
 
     let state: SumiBookmarkEditorState
     let currentTab: Tab?
@@ -35,10 +33,6 @@ struct URLBarBookmarkEditorView: View {
         )
     }
 
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             header
@@ -47,7 +41,7 @@ struct URLBarBookmarkEditorView: View {
             if let errorMessage {
                 Text(errorMessage)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.red.opacity(0.92))
+                    .foregroundStyle(URLBarHubNativeStyle.destructiveText)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -56,7 +50,6 @@ struct URLBarBookmarkEditorView: View {
         .padding(.horizontal, 22)
         .padding(.top, 22)
         .padding(.bottom, 18)
-        .background(tokens.floatingBarBackground)
     }
 
     private var header: some View {
@@ -66,13 +59,13 @@ struct URLBarBookmarkEditorView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(editorTitle)
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(tokens.primaryText)
+                    .foregroundStyle(URLBarHubNativeStyle.primaryText)
                     .lineLimit(1)
 
                 if let pageSubtitle {
                     Text(pageSubtitle)
                         .font(.system(size: 12.5, weight: .medium))
-                        .foregroundStyle(tokens.secondaryText)
+                        .foregroundStyle(URLBarHubNativeStyle.secondaryText)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -85,10 +78,10 @@ struct URLBarBookmarkEditorView: View {
     private var faviconBadge: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(tokens.floatingBarChipBackground)
+                .fill(URLBarHubNativeStyle.controlBackground)
                 .overlay {
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .stroke(tokens.separator.opacity(0.5), lineWidth: 1)
+                        .stroke(URLBarHubNativeStyle.separator, lineWidth: 1)
                 }
 
             faviconImage
@@ -107,7 +100,7 @@ struct URLBarBookmarkEditorView: View {
             Image(systemName: "globe")
                 .resizable()
                 .scaledToFit()
-                .foregroundStyle(tokens.secondaryText)
+                .foregroundStyle(URLBarHubNativeStyle.secondaryText)
         }
     }
 
@@ -134,7 +127,7 @@ struct URLBarBookmarkEditorView: View {
         VStack(alignment: .leading, spacing: 7) {
             Text(title)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(tokens.secondaryText)
+                .foregroundStyle(URLBarHubNativeStyle.secondaryText)
 
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -152,11 +145,11 @@ struct URLBarBookmarkEditorView: View {
             HStack(spacing: 9) {
                 Image(systemName: "bookmark.fill")
                     .font(.system(size: 13.5, weight: .semibold))
-                    .foregroundStyle(tokens.secondaryText)
+                    .foregroundStyle(URLBarHubNativeStyle.secondaryText)
 
                 Text(selectedFolderTitle)
                     .font(.system(size: 13.5, weight: .semibold))
-                    .foregroundStyle(tokens.primaryText)
+                    .foregroundStyle(URLBarHubNativeStyle.primaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
 
@@ -164,11 +157,11 @@ struct URLBarBookmarkEditorView: View {
 
                 Image(systemName: "chevron.down")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(tokens.secondaryText)
+                    .foregroundStyle(URLBarHubNativeStyle.secondaryText)
             }
             .padding(.horizontal, 12)
             .frame(height: 38)
-            .background(tokens.fieldBackground)
+            .background(URLBarHubNativeStyle.controlBackground)
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -283,27 +276,14 @@ struct URLBarBookmarkEditorView: View {
 }
 
 private struct URLBarBookmarkTextFieldChrome: ViewModifier {
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.isEnabled) private var isEnabled
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
 
     func body(content: Content) -> some View {
         content
             .font(.system(size: 13.5))
-            .foregroundStyle(tokens.primaryText)
-            .textFieldStyle(.plain)
-            .padding(.horizontal, 11)
+            .foregroundStyle(URLBarHubNativeStyle.primaryText)
+            .textFieldStyle(.roundedBorder)
             .frame(height: 38)
-            .background(tokens.fieldBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .stroke(tokens.separator.opacity(0.6), lineWidth: 1)
-            }
             .opacity(isEnabled ? 1 : 0.5)
     }
 }
@@ -314,16 +294,10 @@ private struct URLBarBookmarkFooterButtonStyle: ButtonStyle {
         case destructive
     }
 
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
 
     let role: Role
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -341,21 +315,19 @@ private struct URLBarBookmarkFooterButtonStyle: ButtonStyle {
     private var foregroundColor: Color {
         switch role {
         case .primary:
-            return tokens.buttonPrimaryText
+            return URLBarHubNativeStyle.accentText
         case .destructive:
-            return tokens.secondaryText
+            return URLBarHubNativeStyle.destructiveText
         }
     }
 
     private func backgroundColor(isPressed: Bool) -> Color {
         switch role {
         case .primary:
-            return isPressed || isHovering
-                ? tokens.buttonPrimaryBackground.opacity(0.92)
-                : tokens.buttonPrimaryBackground
+            return URLBarHubNativeStyle.accentBackground
         case .destructive:
             return isPressed || isHovering
-                ? tokens.fieldBackgroundHover
+                ? URLBarHubNativeStyle.hoveredControlBackground
                 : Color.clear
         }
     }

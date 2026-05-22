@@ -197,8 +197,6 @@ private struct SumiScriptsToolbarControl: View {
 
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isHovering = false
     @State private var isPressed = false
     @State private var showingPopup = false
@@ -207,10 +205,6 @@ private struct SumiScriptsToolbarControl: View {
 
     private var isPinnedToToolbar: Bool {
         browserManager.extensionsModule.isPinnedToToolbar(sumiToolbarId)
-    }
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
     }
 
     var body: some View {
@@ -231,19 +225,19 @@ private struct SumiScriptsToolbarControl: View {
             case .hubTile:
                 Image(systemName: "curlybraces.square")
                     .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(tokens.primaryText)
+                    .foregroundStyle(URLBarHubNativeStyle.primaryText)
                     .frame(maxWidth: .infinity)
                     .frame(height: 36)
                     .background(hubBackgroundFill)
                     .overlay {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .stroke(tokens.separator.opacity(0.75), lineWidth: 0.5)
+                            .stroke(URLBarHubNativeStyle.separator, lineWidth: 0.5)
                     }
                     .overlay(alignment: .topTrailing) {
                         if isPinnedToToolbar {
                             Image(systemName: "pin.fill")
                                 .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(tokens.primaryText.opacity(0.75))
+                                .foregroundStyle(URLBarHubNativeStyle.secondaryText)
                                 .padding(6)
                         }
                     }
@@ -278,16 +272,8 @@ private struct SumiScriptsToolbarControl: View {
         }
     }
 
-    private var hubBackgroundFill: some ShapeStyle {
-        LinearGradient(
-            colors: ThemeChromeRecipeBuilder.urlBarHubVeilGradientColors(
-                tokens: tokens,
-                isActive: false,
-                isHovered: isHovering
-            ),
-            startPoint: .top,
-            endPoint: .bottom
-        )
+    private var hubBackgroundFill: Color {
+        isHovering ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubNativeStyle.controlBackground
     }
 
     private var hubButtonScale: CGFloat {
@@ -365,8 +351,6 @@ struct ExtensionActionButton: View {
     var layout: ExtensionActionLayout = .compactStrip
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isHovering: Bool = false
     @State private var isPressed = false
     
@@ -409,7 +393,7 @@ struct ExtensionActionButton: View {
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 7))
             case .hubTiles:
-                iconView(tint: tokens.primaryText)
+                iconView(tint: URLBarHubNativeStyle.primaryText)
                     .frame(maxWidth: .infinity)
                     .frame(height: 36)
                     .background(hubBackgroundFill)
@@ -421,13 +405,13 @@ struct ExtensionActionButton: View {
                     )
                     .overlay {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .stroke(tokens.separator.opacity(0.75), lineWidth: 0.5)
+                            .stroke(URLBarHubNativeStyle.separator, lineWidth: 0.5)
                     }
                     .overlay(alignment: .topTrailing) {
                         if isPinnedToToolbar {
                             Image(systemName: "pin.fill")
                                 .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(tokens.primaryText.opacity(0.75))
+                                .foregroundStyle(URLBarHubNativeStyle.secondaryText)
                                 .padding(6)
                         }
                     }
@@ -459,20 +443,8 @@ struct ExtensionActionButton: View {
         }
     }
 
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
-
-    private var hubBackgroundFill: some ShapeStyle {
-        LinearGradient(
-            colors: ThemeChromeRecipeBuilder.urlBarHubVeilGradientColors(
-                tokens: tokens,
-                isActive: false,
-                isHovered: isHovering
-            ),
-            startPoint: .top,
-            endPoint: .bottom
-        )
+    private var hubBackgroundFill: Color {
+        isHovering ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubNativeStyle.controlBackground
     }
 
     private var hubButtonScale: CGFloat {
@@ -556,14 +528,8 @@ struct ExtensionActionButton: View {
 @available(macOS 15.5, *)
 private struct InstallExtensionTileButton: View {
     @EnvironmentObject private var browserManager: BrowserManager
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isHovering = false
     @State private var isPressed = false
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
 
     var body: some View {
         Button {
@@ -571,13 +537,13 @@ private struct InstallExtensionTileButton: View {
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(tokens.primaryText)
+                .foregroundStyle(URLBarHubNativeStyle.primaryText)
                 .frame(maxWidth: .infinity)
                 .frame(height: 36)
                 .background(backgroundFill)
                 .overlay {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(tokens.separator.opacity(0.75), lineWidth: 0.5)
+                        .stroke(URLBarHubNativeStyle.separator, lineWidth: 0.5)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .scaleEffect(buttonScale)
@@ -598,16 +564,8 @@ private struct InstallExtensionTileButton: View {
         )
     }
 
-    private var backgroundFill: some ShapeStyle {
-        LinearGradient(
-            colors: ThemeChromeRecipeBuilder.urlBarHubVeilGradientColors(
-                tokens: tokens,
-                isActive: false,
-                isHovered: isHovering
-            ),
-            startPoint: .top,
-            endPoint: .bottom
-        )
+    private var backgroundFill: Color {
+        isHovering ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubNativeStyle.controlBackground
     }
 
     private var buttonScale: CGFloat {

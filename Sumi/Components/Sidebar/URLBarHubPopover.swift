@@ -20,243 +20,16 @@ private struct URLBarHubPopoverContentSizePreferenceKey: PreferenceKey {
 }
 
 private struct URLBarHubNativeBackground: View {
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
 
     var body: some View {
         ZStack {
             NativeChromeMaterialBackground(role: .popover)
 
             if reduceTransparency {
-                tokens.floatingBarBackground
-            } else {
-                tokens.floatingBarBackground.opacity(materialTintOpacity)
+                URLBarHubNativeStyle.backgroundFallback
             }
         }
-    }
-
-    private var materialTintOpacity: Double {
-        themeContext.chromeColorScheme == .dark ? 0.72 : 0.58
-    }
-}
-
-struct SiteControlsSettingRowModel: Equatable, Identifiable {
-    enum Kind: Equatable {
-        case protection(
-            plan: SumiProtectionRulePlan,
-            reloadRequired: Bool
-        )
-        case cookies
-        case localPage
-    }
-
-    let id: String
-    let chromeIconName: String?
-    let fallbackSystemName: String
-    let title: String
-    let subtitle: String?
-    let kind: Kind
-
-    var isDisabled: Bool {
-        switch kind {
-        case .protection(let plan, _):
-            return plan.requestedLevel == .off || plan.siteHost == nil
-        case .cookies,
-             .localPage:
-            return false
-        }
-    }
-
-    var isInteractive: Bool {
-        switch kind {
-        case .protection(let plan, _):
-            return plan.requestedLevel != .off && plan.siteHost != nil
-        case .cookies:
-            return true
-        default:
-            return false
-        }
-    }
-
-    var showsDisclosure: Bool {
-        switch kind {
-        case .cookies:
-            return true
-        default:
-            return false
-        }
-    }
-
-}
-
-struct SiteControlsSnapshot: Equatable {
-    enum HubAnchorAppearance: Equatable {
-        case zenPermissions
-    }
-
-    enum ReaderAvailability: Equatable {
-        case disabledPlaceholder
-        case available
-    }
-
-    enum SecurityState: Equatable {
-        case secure
-        case notSecure
-        case localPage
-        case internalPage
-
-        var footerTitle: String {
-            switch self {
-            case .secure: return "Secure connection"
-            case .notSecure: return "Connection not secure"
-            case .localPage: return "Local page"
-            case .internalPage: return "Page information"
-            }
-        }
-
-        var chromeIconName: String? {
-            switch self {
-            case .secure:
-                return "security"
-            case .notSecure:
-                return "security-broken"
-            case .localPage:
-                return nil
-            case .internalPage:
-                return nil
-            }
-        }
-
-        var fallbackSystemName: String {
-            switch self {
-            case .secure: return "lock.fill"
-            case .notSecure: return "lock.open.fill"
-            case .localPage: return "doc.fill"
-            case .internalPage: return "info.circle.fill"
-            }
-        }
-
-        var showsFooterButton: Bool {
-            self != .internalPage
-        }
-
-    }
-
-    let hubAnchorAppearance: HubAnchorAppearance
-    let securityState: SecurityState
-    let readerAvailability: ReaderAvailability
-    let settingsRows: [SiteControlsSettingRowModel]
-
-    @MainActor
-    static func resolve(
-        url: URL?,
-        profile: Profile?,
-        protectionCoordinator: SumiProtectionCoordinator? = nil,
-        protectionBrowserRestartRequired: Bool = false,
-        protectionReloadRequired: Bool = false
-    ) -> SiteControlsSnapshot {
-        guard let url else {
-            return SiteControlsSnapshot(
-                hubAnchorAppearance: .zenPermissions,
-                securityState: .internalPage,
-                readerAvailability: .disabledPlaceholder,
-                settingsRows: []
-            )
-        }
-
-        let rawHost = url.host ?? url.absoluteString
-        let displayHost = rawHost.hasPrefix("www.")
-            ? String(rawHost.dropFirst(4))
-            : rawHost
-        let scheme = url.scheme?.lowercased() ?? ""
-
-        let securityState: SecurityState
-        switch scheme {
-        case "https":
-            securityState = .secure
-        case "file":
-            securityState = .localPage
-        case "about", "data", "blob", "javascript", "sumi":
-            securityState = .internalPage
-        default:
-            securityState = .notSecure
-        }
-
-        let settingsRows: [SiteControlsSettingRowModel]
-        switch securityState {
-        case .secure, .notSecure:
-            var rows: [SiteControlsSettingRowModel] = []
-            _ = profile
-
-            if let protectionCoordinator {
-                let plan = protectionCoordinator.cachedRulePlan(for: url, profileId: profile?.id)
-                let subtitle: String
-                if protectionBrowserRestartRequired {
-                    subtitle = "Restart Sumi to apply global changes"
-                } else if protectionReloadRequired {
-                    subtitle = "Reload required"
-                } else if plan.requestedLevel == .off {
-                    subtitle = "Off globally"
-                } else if !plan.sitePolicyAllowsProtection {
-                    subtitle = "Protection off for this site"
-                } else {
-                    subtitle = "\(plan.effectiveLevel.displayTitle) on for this site"
-                }
-                rows.append(
-                    .init(
-                        id: "adblock-protection",
-                        chromeIconName: plan.sitePolicyAllowsProtection && plan.effectiveLevel != .off
-                            ? nil
-                            : "shield-off",
-                        fallbackSystemName: plan.sitePolicyAllowsProtection && plan.effectiveLevel != .off
-                            ? "shield.lefthalf.filled"
-                            : "shield.slash",
-                        title: "Adblock & Protection",
-                        subtitle: subtitle,
-                        kind: .protection(
-                            plan: plan,
-                            reloadRequired: protectionReloadRequired
-                        )
-                    )
-                )
-            }
-            rows.append(
-                .init(
-                    id: "cookies",
-                    chromeIconName: "cookies-fill",
-                    fallbackSystemName: "network",
-                    title: "Cookies & Site Data",
-                    subtitle: displayHost,
-                    kind: .cookies
-                )
-            )
-            settingsRows = rows
-        case .localPage:
-            settingsRows = [
-                .init(
-                    id: "local",
-                    chromeIconName: nil,
-                    fallbackSystemName: "doc",
-                    title: "Page Type",
-                    subtitle: "Local file or bundled resource",
-                    kind: .localPage
-                )
-            ]
-        case .internalPage:
-            settingsRows = []
-        }
-
-        return SiteControlsSnapshot(
-            hubAnchorAppearance: .zenPermissions,
-            securityState: securityState,
-            readerAvailability: .disabledPlaceholder,
-            settingsRows: settingsRows
-        )
     }
 }
 
@@ -264,8 +37,6 @@ struct URLBarHubPopover: View {
     @EnvironmentObject private var browserManager: BrowserManager
     @EnvironmentObject private var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @Environment(BrowserWindowState.self) private var windowState
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
 
     @ObservedObject var bookmarkManager: SumiBookmarkManager
 
@@ -273,8 +44,6 @@ struct URLBarHubPopover: View {
     let currentTab: Tab?
     let profile: Profile?
     let profileId: UUID?
-    let initialMode: URLBarHubInitialMode
-    let modeRequestNonce: Int
     let onClose: () -> Void
     let onContentSizeChange: (CGSize) -> Void
 
@@ -333,10 +102,6 @@ struct URLBarHubPopover: View {
         return !extensionSurfaceStore.enabledExtensions.isEmpty || sumiScriptsEnabled
     }
 
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
-
     private var permissionDependencies: SumiCurrentSitePermissionsViewModel.LoadDependencies {
         SumiCurrentSitePermissionsViewModel.LoadDependencies(
             coordinator: browserManager.permissionCoordinator,
@@ -393,7 +158,6 @@ struct URLBarHubPopover: View {
         .clipped()
         .animation(Self.modeAnimation, value: containerWidth)
         .onAppear {
-            applyInitialMode(animated: false)
             handleBookmarkPresentationRequest(bookmarkPresentationRequest)
         }
         .task(id: permissionsLoadKey) {
@@ -401,9 +165,6 @@ struct URLBarHubPopover: View {
         }
         .onChange(of: bookmarkPresentationRequest) { _, request in
             handleBookmarkPresentationRequest(request)
-        }
-        .onChange(of: modeRequestNonce) { _, _ in
-            applyInitialMode(animated: true)
         }
         .onChange(of: currentTab?.id) { _, _ in
             resetToControls()
@@ -588,23 +349,6 @@ struct URLBarHubPopover: View {
         containerWidth = Mode.controls.preferredWidth
     }
 
-    private func applyInitialMode(animated: Bool) {
-        let requestedMode: Mode = .controls
-        guard requestedMode != mode else {
-            containerWidth = requestedMode.preferredWidth
-            return
-        }
-
-        let direction: NavigationDirection = .backward
-        if animated {
-            setMode(requestedMode, direction: direction)
-        } else {
-            navigationDirection = direction
-            mode = requestedMode
-            containerWidth = requestedMode.preferredWidth
-        }
-    }
-
     private var activeProfile: Profile? {
         if let profile {
             return profile
@@ -727,7 +471,7 @@ struct URLBarHubPopover: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(SumiCurrentSitePermissionsStrings.rowTitle)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(tokens.primaryText)
+                    .foregroundStyle(URLBarHubNativeStyle.primaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 VStack(spacing: 8) {
@@ -1013,13 +757,7 @@ private struct URLBarSiteDataDetailsView: View {
     let onClose: () -> Void
     let onDidMutate: () -> Void
 
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
     @State private var pendingDeletionEntry: SumiSiteDataEntry?
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
 
     private var displayHost: String {
         let host = currentTab?.url.host ?? currentTab?.url.absoluteString ?? "This site"
@@ -1107,12 +845,12 @@ private struct URLBarSiteDataDetailsView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("Cookies & Site Data")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(tokens.primaryText)
+                    .foregroundStyle(URLBarHubNativeStyle.primaryText)
                     .lineLimit(1)
                 URLBarFadingText(
                     displayHost,
                     font: .system(size: 12, weight: .medium),
-                    color: tokens.secondaryText
+                    color: URLBarHubNativeStyle.secondaryText
                 )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1129,10 +867,10 @@ private struct URLBarSiteDataDetailsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Site data stored on this device")
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(tokens.primaryText)
+                .foregroundStyle(URLBarHubNativeStyle.primaryText)
             Text("Sites can store preferences, session data, and cached files on your device. This data is available to the site and its subdomains.")
                 .font(.system(size: 13))
-                .foregroundStyle(tokens.secondaryText)
+                .foregroundStyle(URLBarHubNativeStyle.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -1142,7 +880,7 @@ private struct URLBarSiteDataDetailsView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Data from this site")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(tokens.primaryText)
+                .foregroundStyle(URLBarHubNativeStyle.primaryText)
 
             if model.isLoading && model.entries.isEmpty {
                 HStack(spacing: 8) {
@@ -1150,13 +888,13 @@ private struct URLBarSiteDataDetailsView: View {
                         .controlSize(.small)
                     Text("Loading site data...")
                         .font(.system(size: 12))
-                        .foregroundStyle(tokens.secondaryText)
+                        .foregroundStyle(URLBarHubNativeStyle.secondaryText)
                 }
                 .frame(maxWidth: .infinity, minHeight: 64, alignment: .center)
             } else if model.entries.isEmpty {
                 Text("No site data is stored for \(displayHost).")
                     .font(.system(size: 12.5))
-                    .foregroundStyle(tokens.secondaryText)
+                    .foregroundStyle(URLBarHubNativeStyle.secondaryText)
                     .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
             } else {
                 VStack(spacing: 0) {
@@ -1223,13 +961,7 @@ private struct URLBarSiteDataDeleteConfirmationView: View {
     let onCancel: () -> Void
     let onDelete: () -> Void
 
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.colorScheme) private var colorScheme
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
 
     var body: some View {
         ZStack {
@@ -1249,11 +981,11 @@ private struct URLBarSiteDataDeleteConfirmationView: View {
                 VStack(spacing: 6) {
                     Text("Delete cookies and site data?")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(tokens.primaryText)
+                        .foregroundStyle(URLBarHubNativeStyle.primaryText)
                         .multilineTextAlignment(.center)
                     Text("This will delete cookies and site data for \(domain).")
                         .font(.system(size: 12.5))
-                        .foregroundStyle(tokens.secondaryText)
+                        .foregroundStyle(URLBarHubNativeStyle.secondaryText)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1268,11 +1000,11 @@ private struct URLBarSiteDataDeleteConfirmationView: View {
             }
             .padding(18)
             .frame(maxWidth: 330)
-            .background(tokens.floatingBarBackground)
+            .background(URLBarHubNativeStyle.backgroundFallback)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(tokens.separator.opacity(0.65), lineWidth: 1)
+                    .stroke(URLBarHubNativeStyle.separator, lineWidth: 1)
             }
             .shadow(color: .black.opacity(colorScheme == .dark ? 0.45 : 0.18), radius: 18, x: 0, y: 8)
             .padding(16)
@@ -1280,7 +1012,7 @@ private struct URLBarSiteDataDeleteConfirmationView: View {
     }
 
     private var destructiveColor: Color {
-        Color(red: 0.94, green: 0.05, blue: 0.16)
+        URLBarHubNativeStyle.destructiveBackground
     }
 }
 
@@ -1290,16 +1022,10 @@ private struct URLBarSiteDataConfirmationButtonStyle: ButtonStyle {
         case destructive
     }
 
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
 
     let role: Role
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -1320,7 +1046,7 @@ private struct URLBarSiteDataConfirmationButtonStyle: ButtonStyle {
     private var foregroundColor: Color {
         switch role {
         case .secondary:
-            return tokens.primaryText
+            return URLBarHubNativeStyle.primaryText
         case .destructive:
             return .white
         }
@@ -1330,10 +1056,10 @@ private struct URLBarSiteDataConfirmationButtonStyle: ButtonStyle {
         switch role {
         case .secondary:
             return isPressed || isHovering
-                ? tokens.fieldBackgroundHover
-                : tokens.fieldBackground
+                ? URLBarHubNativeStyle.hoveredControlBackground
+                : URLBarHubNativeStyle.controlBackground
         case .destructive:
-            let base = Color(red: 0.94, green: 0.05, blue: 0.16)
+            let base = URLBarHubNativeStyle.destructiveBackground
             return isPressed || isHovering ? base.opacity(0.88) : base
         }
     }
@@ -1348,14 +1074,8 @@ private struct URLBarSiteDataEntryRow: View {
     let onToggleBlockStorage: () -> Void
     let onToggleDeleteOnClose: () -> Void
 
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isTitleHovered = false
     @State private var isDeleteHovered = false
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1365,7 +1085,7 @@ private struct URLBarSiteDataEntryRow: View {
                 Button(action: onDelete) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(isDeleteHovered ? tokens.fieldBackgroundHover : Color.clear)
+                            .fill(isDeleteHovered ? URLBarHubNativeStyle.hoveredControlBackground : Color.clear)
 
                         if isDeleting {
                             ProgressView()
@@ -1379,7 +1099,7 @@ private struct URLBarSiteDataEntryRow: View {
                     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(tokens.secondaryText)
+                .foregroundStyle(URLBarHubNativeStyle.secondaryText)
                 .disabled(isDeleting)
                 .help("Delete data for \(entry.domain)")
                 .onHover { hovering in
@@ -1418,12 +1138,12 @@ private struct URLBarSiteDataEntryRow: View {
                 URLBarFadingText(
                     entry.domain,
                     font: .system(size: 13, weight: .medium),
-                    color: tokens.primaryText
+                    color: URLBarHubNativeStyle.primaryText
                 )
                 URLBarFadingText(
                     summary,
                     font: .system(size: 11.5),
-                    color: tokens.secondaryText
+                    color: URLBarHubNativeStyle.secondaryText
                 )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1434,7 +1154,7 @@ private struct URLBarSiteDataEntryRow: View {
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isTitleHovered ? tokens.fieldBackground.opacity(0.55) : Color.clear)
+                .fill(isTitleHovered ? URLBarHubNativeStyle.hoveredControlBackground : Color.clear)
         )
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.12)) {
@@ -1449,13 +1169,7 @@ private struct URLBarSiteDataActionButton: View {
     let systemName: String
     let action: () -> Void
 
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isHovered = false
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
 
     var body: some View {
         Button(action: action) {
@@ -1468,10 +1182,10 @@ private struct URLBarSiteDataActionButton: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(tokens.primaryText)
+            .foregroundStyle(URLBarHubNativeStyle.primaryText)
             .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
             .padding(.horizontal, 8)
-            .background(isHovered ? tokens.fieldBackgroundHover : tokens.fieldBackground)
+            .background(isHovered ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubNativeStyle.controlBackground)
             .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
@@ -1487,13 +1201,6 @@ private struct URLBarSiteDataActionButton: View {
 private struct URLBarSiteDataFavicon: View {
     let domain: String
 
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
-
     var body: some View {
         Group {
             if let image = cachedFavicon {
@@ -1503,7 +1210,7 @@ private struct URLBarSiteDataFavicon: View {
             } else {
                 Image(systemName: "globe")
                     .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(tokens.secondaryText)
+                    .foregroundStyle(URLBarHubNativeStyle.secondaryText)
             }
         }
         .frame(width: 22, height: 22)
@@ -1539,21 +1246,15 @@ private struct URLBarSiteDataIconButton: View {
     let help: String
     let action: () -> Void
 
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isHovered = false
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
 
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(tokens.primaryText)
+                .foregroundStyle(URLBarHubNativeStyle.primaryText)
                 .frame(width: 34, height: 34)
-                .background(isHovered ? tokens.fieldBackgroundHover : tokens.fieldBackground)
+                .background(isHovered ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubNativeStyle.controlBackground)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -1603,26 +1304,19 @@ private struct HubSectionHeader: View {
     var actionTitle: String? = nil
     var action: (() -> Void)? = nil
 
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isHovering = false
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
 
     var body: some View {
         HStack(spacing: 8) {
             Text(title)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(tokens.primaryText)
+                .foregroundStyle(URLBarHubNativeStyle.primaryText)
             Spacer(minLength: 0)
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
                     .buttonStyle(.plain)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(tokens.secondaryText)
-                    .opacity(isHovering ? 0.92 : 0.55)
+                    .foregroundStyle(isHovering ? URLBarHubNativeStyle.secondaryText : URLBarHubNativeStyle.tertiaryText)
             }
         }
         .onHover { isHovering = $0 }
@@ -1637,14 +1331,8 @@ private struct SumiHubHeaderButton: View {
     var isActive: Bool = false
     let action: () -> Void
 
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isHovered = false
     @State private var isPressed = false
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
 
     var body: some View {
         Button(action: action) {
@@ -1659,7 +1347,7 @@ private struct SumiHubHeaderButton: View {
             .background(backgroundFill)
             .overlay {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(tokens.separator.opacity(0.75), lineWidth: 0.5)
+                    .stroke(URLBarHubNativeStyle.separator, lineWidth: 0.5)
             }
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .scaleEffect(buttonScale)
@@ -1685,20 +1373,15 @@ private struct SumiHubHeaderButton: View {
         )
     }
 
-    private var backgroundFill: some ShapeStyle {
-        LinearGradient(
-            colors: ThemeChromeRecipeBuilder.urlBarHubVeilGradientColors(
-                tokens: tokens,
-                isActive: isActive,
-                isHovered: isHovered
-            ),
-            startPoint: .top,
-            endPoint: .bottom
-        )
+    private var backgroundFill: Color {
+        if isPressed || isHovered || isActive {
+            return URLBarHubNativeStyle.hoveredControlBackground
+        }
+        return URLBarHubNativeStyle.controlBackground
     }
 
     private var iconTint: Color {
-        tokens.primaryText
+        URLBarHubNativeStyle.primaryText
     }
 
     private var buttonScale: CGFloat {
@@ -1714,13 +1397,6 @@ private struct SumiHubHeaderButton: View {
 
 private struct SumiFooterSecurityStatus: View {
     let securityState: SiteControlsSnapshot.SecurityState
-
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -1740,12 +1416,12 @@ private struct SumiFooterSecurityStatus: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
         .padding(.vertical, 9)
-        .background(tokens.fieldBackground)
+        .background(URLBarHubNativeStyle.controlBackground)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private var labelColor: Color {
-        securityState == .notSecure ? Color.red.opacity(0.9) : tokens.primaryText
+        securityState == .notSecure ? URLBarHubNativeStyle.destructiveText : URLBarHubNativeStyle.primaryText
     }
 }
 
@@ -1754,22 +1430,16 @@ private struct SumiFooterSiteSettingsButton: View {
     let clearSiteDataAction: () -> Void
     let resetPermissionsAction: () -> Void
 
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isHovered = false
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
 
     var body: some View {
         Button(action: siteSettingsAction) {
             Image(systemName: "gearshape")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(tokens.primaryText)
+                .foregroundStyle(URLBarHubNativeStyle.primaryText)
                 .frame(maxWidth: .infinity)
                 .frame(height: 34)
-                .background(isHovered ? tokens.fieldBackgroundHover : tokens.fieldBackground)
+                .background(isHovered ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubNativeStyle.controlBackground)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -1808,13 +1478,7 @@ private struct URLHubPermissionInlineRow: View {
     let onSelect: (SumiCurrentSitePermissionOption) -> Void
     let onOpenSystemSettings: () -> Void
 
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isHovered = false
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
 
     private var canCycle: Bool {
         row.isEditable && row.disabledReason == nil && !row.availableOptions.isEmpty
@@ -1886,15 +1550,15 @@ private struct URLHubPermissionInlineRow: View {
                         iconName: iconVisual.iconName,
                         fallbackSystemName: iconVisual.fallbackSystemName,
                         size: 16,
-                        tint: tokens.primaryText
+                        tint: URLBarHubNativeStyle.primaryText
                     )
 
                     if iconVisual.showsSlash {
                         RoundedRectangle(cornerRadius: 1, style: .continuous)
-                            .fill(tokens.primaryText)
+                            .fill(URLBarHubNativeStyle.primaryText)
                             .frame(width: 2, height: 23)
                             .rotationEffect(.degrees(-42))
-                            .shadow(color: tokens.fieldBackground.opacity(0.7), radius: 0, x: 1, y: 0)
+                            .shadow(color: URLBarHubNativeStyle.controlBackground, radius: 0, x: 1, y: 0)
                     }
                 }
             }
@@ -1904,13 +1568,13 @@ private struct URLHubPermissionInlineRow: View {
                 URLBarFadingText(
                     row.title,
                     font: .system(size: 13, weight: .medium),
-                    color: tokens.primaryText
+                    color: URLBarHubNativeStyle.primaryText
                 )
                 if let status = row.statusLines.first {
                     URLBarFadingText(
                         status,
                         font: .system(size: 11.5),
-                        color: tokens.secondaryText
+                        color: URLBarHubNativeStyle.secondaryText
                     )
                 }
             }
@@ -1922,13 +1586,13 @@ private struct URLHubPermissionInlineRow: View {
 
     private var iconCapsuleFill: Color {
         if isHovered {
-            return tokens.fieldBackgroundHover
+            return URLBarHubNativeStyle.hoveredControlBackground
         }
         switch iconState {
         case .on:
-            return tokens.fieldBackgroundHover
+            return URLBarHubNativeStyle.hoveredControlBackground
         case .neutral, .off:
-            return tokens.fieldBackground
+            return URLBarHubNativeStyle.controlBackground
         }
     }
 
@@ -2035,13 +1699,7 @@ private struct HubSettingRow: View {
     let resetAction: (() -> Void)?
     let action: () -> Void
 
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isHovered = false
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
 
     init(
         model: SiteControlsSettingRowModel,
@@ -2103,13 +1761,13 @@ private struct HubSettingRow: View {
                 URLBarFadingText(
                     model.title,
                     font: .system(size: 13, weight: .medium),
-                    color: tokens.primaryText
+                    color: URLBarHubNativeStyle.primaryText
                 )
                 if let subtitle = model.subtitle {
                     URLBarFadingText(
                         subtitle,
                         font: .system(size: 11.5),
-                        color: tokens.secondaryText
+                        color: URLBarHubNativeStyle.secondaryText
                     )
                 }
             }
@@ -2118,7 +1776,7 @@ private struct HubSettingRow: View {
             if model.showsDisclosure {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(tokens.secondaryText.opacity(0.78))
+                    .foregroundStyle(URLBarHubNativeStyle.secondaryText)
                     .frame(width: 14, height: 22)
             }
         }
@@ -2127,11 +1785,11 @@ private struct HubSettingRow: View {
     }
 
     private var capsuleFill: Color {
-        isHovered ? tokens.fieldBackgroundHover : tokens.fieldBackground
+        isHovered ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubNativeStyle.controlBackground
     }
 
     private var iconTint: Color {
-        tokens.primaryText
+        URLBarHubNativeStyle.primaryText
     }
 
     private var capsuleScale: CGFloat {

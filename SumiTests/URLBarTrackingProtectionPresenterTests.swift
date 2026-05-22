@@ -14,18 +14,20 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
     }
 
     func testURLHubSourceContainsOnlyUnifiedProtectionRow() throws {
-        let source = try Self.source(named: "Sumi/Components/Sidebar/URLBarHubPopover.swift")
+        let modelSource = try Self.source(named: "Sumi/Components/Sidebar/URLBarHubModels.swift")
+        let popoverSource = try Self.source(named: "Sumi/Components/Sidebar/URLBarHubPopover.swift")
+        let combinedSource = [modelSource, popoverSource].joined(separator: "\n")
 
-        XCTAssertTrue(source.contains("id: \"adblock-protection\""))
-        XCTAssertTrue(source.contains("title: \"Adblock & Protection\""))
-        XCTAssertTrue(source.contains("Protection off for this site"))
-        XCTAssertTrue(source.contains("Restart Sumi to apply global changes"))
-        XCTAssertFalse(source.contains("showsProtectionToggle"))
-        XCTAssertFalse(source.contains(".toggleStyle(.switch)"))
-        XCTAssertFalse(source.contains("URLBarTrackingProtectionPresenter"))
-        XCTAssertFalse(source.contains("URLBarAdblockPresenter"))
-        XCTAssertFalse(source.contains("kind: .tracking("))
-        XCTAssertFalse(source.contains("kind: .adBlocking("))
+        XCTAssertTrue(modelSource.contains("id: \"adblock-protection\""))
+        XCTAssertTrue(modelSource.contains("title: \"Adblock & Protection\""))
+        XCTAssertTrue(modelSource.contains("Protection off for this site"))
+        XCTAssertTrue(modelSource.contains("Restart Sumi to apply global changes"))
+        XCTAssertFalse(combinedSource.contains("showsProtectionToggle"))
+        XCTAssertFalse(combinedSource.contains(".toggleStyle(.switch)"))
+        XCTAssertFalse(combinedSource.contains("URLBarTrackingProtectionPresenter"))
+        XCTAssertFalse(combinedSource.contains("URLBarAdblockPresenter"))
+        XCTAssertFalse(combinedSource.contains("kind: .tracking("))
+        XCTAssertFalse(combinedSource.contains("kind: .adBlocking("))
     }
 
     @MainActor

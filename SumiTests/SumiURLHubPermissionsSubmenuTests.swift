@@ -6,6 +6,7 @@ import XCTest
 final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
     func testURLHubEmbedsPermissionsInlineWithoutSubmenuMode() throws {
         let source = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
+        let models = try sourceFile("Sumi/Components/Sidebar/URLBarHubModels.swift")
 
         XCTAssertTrue(source.contains("Text(SumiCurrentSitePermissionsStrings.rowTitle)"))
         XCTAssertTrue(source.contains("URLHubPermissionInlineRow("))
@@ -14,14 +15,21 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
         XCTAssertFalse(source.contains("case permissions"))
         XCTAssertFalse(source.contains("SumiCurrentSitePermissionsView("))
         XCTAssertFalse(source.contains("kind: .permissions"))
+        XCTAssertFalse(source.contains("URLBarHubInitialMode"))
+        XCTAssertFalse(source.contains("modeRequestNonce"))
+        XCTAssertFalse(source.contains("applyInitialMode"))
+        XCTAssertTrue(models.contains("id: \"cookies\""))
 
-        let cookiesRange = try XCTUnwrap(source.range(of: "id: \"cookies\""))
+        let cookiesRange = try XCTUnwrap(source.range(of: "ForEach(snapshot.settingsRows)"))
         let permissionsRange = try XCTUnwrap(source.range(of: "permissionsInlineSection"))
         XCTAssertLessThan(cookiesRange.lowerBound, permissionsRange.lowerBound)
     }
 
     func testURLHubPermissionsRowKeepsCookiesAndUnifiedProtectionRows() throws {
-        let source = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
+        let source = [
+            try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift"),
+            try sourceFile("Sumi/Components/Sidebar/URLBarHubModels.swift"),
+        ].joined(separator: "\n")
 
         XCTAssertTrue(source.contains("kind: .cookies"))
         XCTAssertTrue(source.contains("kind: .protection("))
@@ -58,6 +66,9 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
     func testURLHubUsesNativeAdaptivePopoverHostAndTheming() throws {
         let trailingActions = try sourceFile("Sumi/Components/Sidebar/URLBarTrailingActions.swift")
         let popover = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
+        let bookmarkEditor = try sourceFile("Sumi/Components/Sidebar/URLBarBookmarkEditorView.swift")
+        let nativeStyle = try sourceFile("Sumi/Components/Sidebar/URLBarHubNativeStyle.swift")
+        let extensionActions = try sourceFile("Sumi/Components/Extensions/ExtensionActionView.swift")
         let presenter = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopoverPresenter.swift")
         let material = try sourceFile("Sumi/Theme/NativeChromeMaterialBackground.swift")
 
@@ -67,10 +78,23 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
         XCTAssertTrue(presenter.contains("popover.appearance = popoverAppearance(for: registration)"))
         XCTAssertTrue(presenter.contains("registration.themeContext.nativeSurfaceColorScheme"))
         XCTAssertTrue(popover.contains("NativeChromeMaterialBackground(role: .popover)"))
+        XCTAssertTrue(popover.contains("URLBarHubNativeStyle.backgroundFallback"))
+        XCTAssertTrue(bookmarkEditor.contains(".textFieldStyle(.roundedBorder)"))
+        XCTAssertTrue(nativeStyle.contains("Color(nsColor: .labelColor)"))
+        XCTAssertTrue(nativeStyle.contains("Color(nsColor: .controlBackgroundColor)"))
         XCTAssertTrue(material.contains("case popover"))
         XCTAssertTrue(material.contains("return .popover"))
+        XCTAssertFalse(popover.contains("ChromeThemeTokens"))
+        XCTAssertFalse(popover.contains("tokens."))
+        XCTAssertFalse(popover.contains("ThemeChromeRecipeBuilder.urlBarHubVeilGradientColors"))
+        XCTAssertFalse(bookmarkEditor.contains("ChromeThemeTokens"))
+        XCTAssertFalse(bookmarkEditor.contains("tokens."))
+        XCTAssertFalse(bookmarkEditor.contains("floatingBarBackground"))
+        XCTAssertFalse(extensionActions.contains("ThemeChromeRecipeBuilder.urlBarHubVeilGradientColors"))
         XCTAssertFalse(presenter.contains("Timer"))
         XCTAssertFalse(presenter.contains("NotificationCenter.default.addObserver"))
+        XCTAssertFalse(presenter.contains("modeRequestNonce"))
+        XCTAssertFalse(presenter.contains("URLBarHubInitialMode"))
     }
 
     func testURLHubPermissionRowsUseClickCycleAndContextMenu() throws {

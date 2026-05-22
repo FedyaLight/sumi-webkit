@@ -49,8 +49,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         weak var browserManager: BrowserManager?
         weak var transientCoordinator: SidebarTransientSessionCoordinator?
         let transientSessionToken: SidebarTransientSessionToken?
-        var initialMode: URLBarHubInitialMode
-        var modeRequestNonce: Int
         var contentSize: NSSize
         var resizeAnimationTask: Task<Void, Never>?
         var closeFallbackTask: Task<Void, Never>?
@@ -63,8 +61,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
             browserManager: BrowserManager,
             transientCoordinator: SidebarTransientSessionCoordinator?,
             transientSessionToken: SidebarTransientSessionToken?,
-            initialMode: URLBarHubInitialMode,
-            modeRequestNonce: Int,
             contentSize: NSSize
         ) {
             self.popover = popover
@@ -73,8 +69,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
             self.browserManager = browserManager
             self.transientCoordinator = transientCoordinator
             self.transientSessionToken = transientSessionToken
-            self.initialMode = initialMode
-            self.modeRequestNonce = modeRequestNonce
             self.contentSize = contentSize
         }
 
@@ -93,7 +87,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
     private var activeSessions: [UUID: ActiveSession] = [:]
     private var pendingTransientSessions: [UUID: PendingTransientSession] = [:]
     private var pendingContentSizes: [UUID: NSSize] = [:]
-    private var nextModeRequestNonce: Int = 0
 
     func registerAnchor(
         _ view: NSView,
@@ -129,11 +122,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         pendingContentSizes[windowID] = nil
     }
 
-    func toggle(
-        in windowState: BrowserWindowState,
-        browserManager: BrowserManager,
-        initialMode: URLBarHubInitialMode = .controls
-    ) {
+    func toggle(in windowState: BrowserWindowState, browserManager: BrowserManager) {
         if activeSessions[windowState.id]?.popover.isShown == true {
             close(in: windowState)
             return
@@ -141,27 +130,21 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
 
         present(
             in: windowState,
-            browserManager: browserManager,
-            initialMode: initialMode
+            browserManager: browserManager
         )
     }
 
-    func present(
-        in windowState: BrowserWindowState,
-        browserManager: BrowserManager,
-        initialMode: URLBarHubInitialMode = .controls
-    ) {
+    func present(in windowState: BrowserWindowState, browserManager: BrowserManager) {
         if let session = activeSessions[windowState.id],
            let registration = anchors[windowState.id]
         {
-            route(session, to: initialMode, using: registration)
+            update(session, using: registration)
             return
         }
 
         presentOrRetry(
             in: windowState,
             browserManager: browserManager,
-            initialMode: initialMode,
             allowRetry: true
         )
     }
@@ -185,7 +168,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
     private func presentOrRetry(
         in windowState: BrowserWindowState,
         browserManager: BrowserManager,
-        initialMode: URLBarHubInitialMode,
         allowRetry: Bool
     ) {
         guard let registration = anchors[windowState.id],
@@ -203,7 +185,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
                     self.presentOrRetry(
                         in: windowState,
                         browserManager: browserManager,
-                        initialMode: initialMode,
                         allowRetry: false
                     )
                 }
@@ -216,17 +197,13 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
             return
         }
 
-        nextModeRequestNonce += 1
-        let modeRequestNonce = nextModeRequestNonce
         let hostingController = makeHostingController(
             registration: registration,
-            initialMode: initialMode,
-            modeRequestNonce: modeRequestNonce,
             windowID: windowState.id
         )
         let initialSize = measuredContentSize(
             for: hostingController,
-            fallback: fallbackContentSize(for: initialMode)
+            fallback: Metrics.fallbackControlsSize
         )
 
         let popover = NSPopover()
@@ -250,8 +227,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
             browserManager: browserManager,
             transientCoordinator: windowState.sidebarTransientSessionCoordinator,
             transientSessionToken: transientSessionToken,
-            initialMode: initialMode,
-            modeRequestNonce: modeRequestNonce,
             contentSize: initialSize
         )
         activeSessions[windowState.id] = session
@@ -308,17 +283,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         SidebarHostRecoveryCoordinator.shared.recover(anchor: anchor)
     }
 
-    private func route(
-        _ session: ActiveSession,
-        to initialMode: URLBarHubInitialMode,
-        using registration: AnchorRegistration
-    ) {
-        nextModeRequestNonce += 1
-        session.initialMode = initialMode
-        session.modeRequestNonce = nextModeRequestNonce
-        update(session, using: registration)
-    }
-
     private func update(
         _ session: ActiveSession,
         using registration: AnchorRegistration
@@ -326,8 +290,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         session.popover.appearance = popoverAppearance(for: registration)
         session.hostingController.rootView = rootView(
             registration: registration,
-            initialMode: session.initialMode,
-            modeRequestNonce: session.modeRequestNonce,
             windowID: registration.windowState?.id
         )
         session.hostingController.view.frame.size = session.contentSize
@@ -335,15 +297,11 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
 
     private func makeHostingController(
         registration: AnchorRegistration,
-        initialMode: URLBarHubInitialMode,
-        modeRequestNonce: Int,
         windowID: UUID
     ) -> NSHostingController<AnyView> {
         NSHostingController(
             rootView: rootView(
                 registration: registration,
-                initialMode: initialMode,
-                modeRequestNonce: modeRequestNonce,
                 windowID: windowID
             )
         )
@@ -351,8 +309,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
 
     private func rootView(
         registration: AnchorRegistration,
-        initialMode: URLBarHubInitialMode,
-        modeRequestNonce: Int,
         windowID: UUID?
     ) -> AnyView {
         guard let browserManager = registration.browserManager,
@@ -369,8 +325,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
             currentTab: registration.currentTab,
             profile: registration.profile,
             profileId: registration.profileId,
-            initialMode: initialMode,
-            modeRequestNonce: modeRequestNonce,
             onClose: { [weak self] in
                 guard let windowID else { return }
                 self?.close(windowID: windowID)
@@ -439,13 +393,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         }
 
         return clampedContentSize(fittingSize)
-    }
-
-    private func fallbackContentSize(for initialMode: URLBarHubInitialMode) -> NSSize {
-        switch initialMode {
-        case .controls:
-            return Metrics.fallbackControlsSize
-        }
     }
 
     private func clampedContentSize(_ size: NSSize) -> NSSize {
