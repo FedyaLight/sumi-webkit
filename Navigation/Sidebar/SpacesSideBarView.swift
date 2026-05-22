@@ -2014,19 +2014,27 @@ struct SpacesSideBarView: View {
     // MARK: - Context Menu
 
     private func sidebarContextMenuEntries() -> [SidebarContextMenuEntry] {
+        let newFolderAction: (() -> Void)? = browserManager.spaceForSidebarActions(in: windowState) == nil
+            ? nil
+            : {
+                browserManager.createFolderInCurrentSpace(in: windowState)
+            }
+        let changeThemeAction: (() -> Void)? = browserManager.tabManager.currentSpace == nil
+            ? nil
+            : {
+                browserManager.showGradientEditor(
+                    source: windowState.resolveSidebarPresentationSource()
+                )
+            }
+
         return makeSidebarShellContextMenuEntries(
             isCompactModeEnabled: sumiSettings.sidebarCompactSpaces,
             actions: .init(
                 newTab: {
-                    browserManager.createNewTab(in: windowState)
+                    browserManager.showNewTabFloatingBar(in: windowState)
                 },
-                newSplit: {
-                    if let current = browserManager.currentTab(for: windowState) {
-                        browserManager.splitManager.enterSplit(with: current, placeOn: .right, in: windowState)
-                    } else {
-                        browserManager.createNewTab(in: windowState)
-                    }
-                },
+                newFolder: newFolderAction,
+                changeTheme: changeThemeAction,
                 toggleCompactMode: {
                     sumiSettings.sidebarCompactSpaces.toggle()
                 },

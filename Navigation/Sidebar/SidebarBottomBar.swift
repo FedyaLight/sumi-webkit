@@ -98,10 +98,6 @@ struct SidebarBottomBar: View {
     }
 
     private func createFolderInCurrentSpace() {
-        if let currentSpace = windowState.currentSpaceId
-            .flatMap({ id in browserManager.tabManager.spaces.first(where: { $0.id == id }) })
-            ?? browserManager.tabManager.currentSpace {
-            _ = browserManager.tabManager.createFolder(for: currentSpace.id)
-        }
+        browserManager.createFolderInCurrentSpace(in: windowState)
     }
 }

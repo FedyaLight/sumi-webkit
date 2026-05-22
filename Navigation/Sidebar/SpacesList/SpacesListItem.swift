@@ -137,12 +137,25 @@ struct SpacesListItem: View {
             deleteSpaceAction = nil
         }
 
-        let actions = SidebarSpaceListMenuActions(
-            openSettings: { showSpaceEditDialog() },
+        let actions = SidebarSpaceMenuActions(
+            edit: {
+                browserManager.showSpaceEditor(
+                    for: space,
+                    in: windowState,
+                    themeContext: themeContext,
+                    source: windowState.resolveSidebarPresentationSource()
+                )
+            },
+            changeTheme: {
+                browserManager.showGradientEditor(
+                    for: space,
+                    source: windowState.resolveSidebarPresentationSource()
+                )
+            },
             deleteSpace: deleteSpaceAction
         )
 
-        return makeSpaceListContextMenuEntries(actions: actions)
+        return makeSpaceContextMenuEntries(actions: actions)
     }
 
     // MARK: - Helper Methods
@@ -161,45 +174,6 @@ struct SpacesListItem: View {
                     browserManager.closeDialog()
                     DispatchQueue.main.async {
                         browserManager.tabManager.removeSpace(space.id)
-                    }
-                },
-                onCancel: {
-                    browserManager.closeDialog()
-                }
-            ),
-            source: source
-        )
-    }
-
-    private func showSpaceEditDialog() {
-        let source = windowState.resolveSidebarPresentationSource()
-        browserManager.showDialog(
-            SpaceEditDialog(
-                space: space,
-                onSave: { newName, newIcon, newProfileId in
-                    browserManager.closeDialog()
-                    DispatchQueue.main.async {
-                        do {
-                            if newIcon != space.icon {
-                                try browserManager.tabManager.updateSpaceIcon(
-                                    spaceId: space.id,
-                                    icon: newIcon
-                                )
-                            }
-
-                            if newName != space.name {
-                                try browserManager.tabManager.renameSpace(
-                                    spaceId: space.id,
-                                    newName: newName
-                                )
-                            }
-
-                            if newProfileId != space.profileId, let profileId = newProfileId {
-                                browserManager.tabManager.assign(spaceId: space.id, toProfile: profileId)
-                            }
-                        } catch {
-                            RuntimeDiagnostics.emit("⚠️ Failed to update space \(space.id.uuidString):", error)
-                        }
                     }
                 },
                 onCancel: {

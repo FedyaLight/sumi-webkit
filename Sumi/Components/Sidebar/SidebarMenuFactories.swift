@@ -13,22 +13,15 @@ struct SidebarFolderHeaderMenuActions {
 }
 
 struct SidebarSpaceMenuActions {
-    let selectProfile: (UUID) -> Void
-    let rename: (() -> Void)?
-    let changeIcon: (() -> Void)?
+    let edit: () -> Void
     let changeTheme: () -> Void
-    let openSettings: () -> Void
-    let deleteSpace: (() -> Void)?
-}
-
-struct SidebarSpaceListMenuActions {
-    let openSettings: () -> Void
     let deleteSpace: (() -> Void)?
 }
 
 struct SidebarShellMenuActions {
     let newTab: () -> Void
-    let newSplit: () -> Void
+    let newFolder: (() -> Void)?
+    let changeTheme: (() -> Void)?
     let toggleCompactMode: () -> Void
     let openSettings: () -> Void
 }
@@ -499,63 +492,18 @@ func makeFolderHeaderContextMenuEntries(actions: SidebarFolderHeaderMenuActions)
     )
 }
 
-func makeSpaceContextMenuEntries(
-    profiles: [SidebarContextMenuChoice],
-    actions: SidebarSpaceMenuActions
-) -> [SidebarContextMenuEntry] {
-    var editSection: [SidebarContextMenuEntry] = []
-    if let onRename = actions.rename {
-        editSection.append(.action(.init(title: "Rename", systemImage: "textformat", onAction: onRename)))
-    }
-    if let onChangeIcon = actions.changeIcon {
-        editSection.append(.action(.init(title: "Change Icon", systemImage: "face.smiling", classification: .presentationOnly, onAction: onChangeIcon)))
-    }
-    editSection.append(.action(.init(title: "Change Theme", systemImage: "paintpalette", classification: .presentationOnly, onAction: actions.changeTheme)))
-
-    var settingsSection: [SidebarContextMenuEntry] = [
-        .action(.init(title: "Space Settings", systemImage: "gear", classification: .presentationOnly, onAction: actions.openSettings)),
-    ]
-    if let onDeleteSpace = actions.deleteSpace {
-        settingsSection.append(
-            .action(.init(title: "Delete Space", systemImage: "trash", role: .destructive, classification: .structuralMutation, onAction: onDeleteSpace))
-        )
-    }
-
-    let profileSection = sidebarStateSubmenu(
-        title: "Profile",
-        systemImage: "person.crop.circle",
-        action: .init(choices: profiles, onSelect: actions.selectProfile),
-        classification: .stateMutationNonStructural
-    ).map { [$0] } ?? []
-
+func makeSpaceContextMenuEntries(actions: SidebarSpaceMenuActions) -> [SidebarContextMenuEntry] {
     return joinSidebarMenuSections(
         [
-            profileSection,
-            editSection,
-            settingsSection,
-        ]
-    )
-}
-
-func makeSpaceListContextMenuEntries(actions: SidebarSpaceListMenuActions) -> [SidebarContextMenuEntry] {
-    joinSidebarMenuSections(
-        [
-        [
-            .action(.init(title: "Space Settings", systemImage: "gear", classification: .presentationOnly, onAction: actions.openSettings)),
-        ],
-        actions.deleteSpace.map {
             [
-                .action(
-                    .init(
-                        title: "Delete Space",
-                        systemImage: "trash",
-                        role: .destructive,
-                        classification: .structuralMutation,
-                        onAction: $0
-                    )
-                ),
-            ]
-        } ?? [],
+                .action(.init(title: "Edit", systemImage: "pencil", classification: .presentationOnly, onAction: actions.edit)),
+                .action(.init(title: "Change Theme", systemImage: "paintpalette", classification: .presentationOnly, onAction: actions.changeTheme)),
+            ],
+            actions.deleteSpace.map {
+                [
+                    .action(.init(title: "Delete Space", systemImage: "trash", role: .destructive, classification: .structuralMutation, onAction: $0)),
+                ]
+            } ?? [],
         ]
     )
 }
@@ -564,25 +512,29 @@ func makeSidebarShellContextMenuEntries(
     isCompactModeEnabled: Bool,
     actions: SidebarShellMenuActions
 ) -> [SidebarContextMenuEntry] {
-    joinSidebarMenuSections(
-        [
-            [
-                .action(.init(title: "New Tab", systemImage: "plus", classification: .structuralMutation, onAction: actions.newTab)),
-                .action(.init(title: "New Split", systemImage: "rectangle.split.2x1", onAction: actions.newSplit)),
-            ],
-            [
-                .action(
-                    .init(
-                        title: "Toggle Compact Mode",
-                        systemImage: "circle.grid.2x2",
-                        state: isCompactModeEnabled ? .on : .off,
-                        onAction: actions.toggleCompactMode
-                    )
-                ),
-                .action(.init(title: "Sidebar Settings…", systemImage: "slider.horizontal.3", classification: .presentationOnly, onAction: actions.openSettings)),
-            ],
-        ]
-    )
+    let createSection: [SidebarContextMenuEntry] = [
+        .action(.init(title: "New Tab", systemImage: "plus", classification: .presentationOnly, onAction: actions.newTab)),
+        actions.newFolder.map {
+            .action(.init(title: "New Folder", systemImage: "folder.badge.plus", classification: .structuralMutation, onAction: $0))
+        },
+    ].compactMap { $0 }
+
+    let appearanceSection: [SidebarContextMenuEntry] = [
+        actions.changeTheme.map {
+            .action(.init(title: "Change Theme", systemImage: "paintpalette", classification: .presentationOnly, onAction: $0))
+        },
+        .action(
+            .init(
+                title: "Toggle Compact Mode",
+                systemImage: "circle.grid.2x2",
+                state: isCompactModeEnabled ? .on : .off,
+                onAction: actions.toggleCompactMode
+            )
+        ),
+        .action(.init(title: "Sidebar Settings…", systemImage: "slider.horizontal.3", classification: .presentationOnly, onAction: actions.openSettings)),
+    ].compactMap { $0 }
+
+    return joinSidebarMenuSections([createSection, appearanceSection])
 }
 
 extension SidebarContextMenuAction {
