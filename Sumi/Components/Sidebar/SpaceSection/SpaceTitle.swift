@@ -192,46 +192,20 @@ struct SpaceTitle: View {
             deleteSpaceAction = nil
         }
 
-        let profiles = browserManager.profileManager.profiles.map { profile in
-            SidebarContextMenuChoice(
-                id: profile.id,
-                title: profile.name,
-                icon: SumiPersistentGlyph.presentsAsEmoji(profile.icon)
-                    ? .emoji(profile.icon)
-                    : .systemImage(SumiPersistentGlyph.resolvedProfileSystemImageName(profile.icon)),
-                isSelected: profile.id == space.profileId
-            )
-        }
-
         return makeSpaceContextMenuEntries(
-            profiles: profiles,
             actions: .init(
-                selectProfile: { newProfileId in
-                    browserManager.tabManager.assign(spaceId: space.id, toProfile: newProfileId)
-                },
-                rename: { startRenaming() },
-                changeIcon: {
-                    toggleSpaceIconPicker()
+                edit: {
+                    browserManager.showSpaceEditor(
+                        for: space,
+                        in: windowState,
+                        themeContext: themeContext,
+                        source: windowState.resolveSidebarPresentationSource()
+                    )
                 },
                 changeTheme: {
                     browserManager.showGradientEditor(
                         for: space,
                         source: windowState.resolveSidebarPresentationSource()
-                    )
-                },
-                openSettings: {
-                    let source = windowState.resolveSidebarPresentationSource()
-                    browserManager.showDialog(
-                        SpaceEditDialog(
-                            space: space,
-                            onSave: { newName, newIcon, newProfileId in
-                                updateSpace(name: newName, icon: newIcon, profileId: newProfileId)
-                            },
-                            onCancel: {
-                                browserManager.closeDialog()
-                            }
-                        ),
-                        source: source
                     )
                 },
                 deleteSpace: deleteSpaceAction
@@ -281,25 +255,6 @@ struct SpaceTitle: View {
                 }
             )
         )
-    }
-
-    private func updateSpace(name: String, icon: String, profileId: UUID?) {
-        browserManager.closeDialog()
-        DispatchQueue.main.async {
-            do {
-                if icon != space.icon {
-                    try browserManager.tabManager.updateSpaceIcon(spaceId: space.id, icon: icon)
-                }
-                if name != space.name {
-                    try browserManager.tabManager.renameSpace(spaceId: space.id, newName: name)
-                }
-                if profileId != space.profileId, let profileId = profileId {
-                    browserManager.tabManager.assign(spaceId: space.id, toProfile: profileId)
-                }
-            } catch {
-                RuntimeDiagnostics.emit("⚠️ Failed to update space \(space.id.uuidString):", error)
-            }
-        }
     }
 
     private func toggleSpaceIconPicker() {

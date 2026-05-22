@@ -393,7 +393,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
         }
     }
 
-    func testFolderHeaderAndSidebarBackgroundSnapshots() {
+    func testFolderHeaderSpaceAndSidebarBackgroundSnapshots() {
         let folderHeader = makeFolderHeaderContextMenuEntries(
             actions: .init(
                 edit: Self.noop,
@@ -414,11 +414,29 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
             ]
         )
 
+        let spaceMenu = makeSpaceContextMenuEntries(
+            actions: .init(
+                edit: Self.noop,
+                changeTheme: Self.noop,
+                deleteSpace: Self.noop
+            )
+        )
+        XCTAssertEqual(
+            Self.snapshot(spaceMenu),
+            [
+                "Edit",
+                "Change Theme",
+                "---",
+                "Delete Space [destructive]",
+            ]
+        )
+
         let background = makeSidebarShellContextMenuEntries(
             isCompactModeEnabled: true,
             actions: .init(
                 newTab: Self.noop,
-                newSplit: Self.noop,
+                newFolder: Self.noop,
+                changeTheme: Self.noop,
                 toggleCompactMode: Self.noop,
                 openSettings: Self.noop
             )
@@ -427,14 +445,28 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
             Self.snapshot(background),
             [
                 "New Tab",
-                "New Split",
+                "New Folder",
                 "---",
+                "Change Theme",
                 "Toggle Compact Mode [on]",
                 "Sidebar Settings…",
             ]
         )
         XCTAssertFalse(Self.snapshot(background).contains("Create Folder"))
+        XCTAssertFalse(Self.snapshot(background).contains("New Split"))
         XCTAssertFalse(Self.snapshot(background).contains { $0.contains("Selected Tab") })
+
+        let backgroundWithoutFolder = makeSidebarShellContextMenuEntries(
+            isCompactModeEnabled: false,
+            actions: .init(
+                newTab: Self.noop,
+                newFolder: nil,
+                changeTheme: Self.noop,
+                toggleCompactMode: Self.noop,
+                openSettings: Self.noop
+            )
+        )
+        XCTAssertFalse(Self.snapshot(backgroundWithoutFolder).contains("New Folder"))
     }
 
     func testSavedTabRuntimeActionsAreSeparatedFromDeleteActions() {

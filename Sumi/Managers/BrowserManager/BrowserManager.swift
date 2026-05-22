@@ -187,6 +187,7 @@ class BrowserManager: ObservableObject {
     let urlBarHubPopoverPresenter: URLBarHubPopoverPresenter
     let workspaceThemePickerPopoverPresenter: WorkspaceThemePickerPopoverPresenter
     let folderEditorPopoverPresenter: FolderEditorPopoverPresenter
+    let spaceEditorPopoverPresenter: SpaceEditorPopoverPresenter
     let shortcutEditorPopoverPresenter: ShortcutEditorPopoverPresenter
     var authenticationManager: AuthenticationManager
     var historyManager: HistoryManager
@@ -422,6 +423,7 @@ class BrowserManager: ObservableObject {
         self.urlBarHubPopoverPresenter = URLBarHubPopoverPresenter()
         self.workspaceThemePickerPopoverPresenter = WorkspaceThemePickerPopoverPresenter()
         self.folderEditorPopoverPresenter = FolderEditorPopoverPresenter()
+        self.spaceEditorPopoverPresenter = SpaceEditorPopoverPresenter()
         self.shortcutEditorPopoverPresenter = ShortcutEditorPopoverPresenter()
         self.authenticationManager = AuthenticationManager()
         // Initialize managers with current profile context for isolation
@@ -867,6 +869,17 @@ class BrowserManager: ObservableObject {
         windowState.isFloatingBarVisible = true
         dismissWorkspaceThemePickerIfNeededDiscarding()
         persistWindowSession(for: windowState)
+    }
+
+    func spaceForSidebarActions(in windowState: BrowserWindowState) -> Space? {
+        windowState.currentSpaceId
+            .flatMap { spaceId in tabManager.spaces.first(where: { $0.id == spaceId }) }
+            ?? tabManager.currentSpace
+    }
+
+    func createFolderInCurrentSpace(in windowState: BrowserWindowState) {
+        guard let space = spaceForSidebarActions(in: windowState) else { return }
+        _ = tabManager.createFolder(for: space.id)
     }
 
     func updateFloatingBarDraft(
