@@ -30,7 +30,7 @@ final class SumiPermissionRuntimeControlIntegrationTests: XCTestCase {
         XCTAssertTrue(viewModel.contains("screenSharingControlledByWebKit"))
     }
 
-    func testURLBarIndicatorRoutesRuntimeStatesToPermissionsSubmenuWithoutOverlappingPrompt() throws {
+    func testURLBarIndicatorRoutesRuntimeStatesToPopoverWithoutOverlappingPrompt() throws {
         let source = try [
             sourceFile("Sumi/Components/Sidebar/URLBarView.swift"),
             sourceFile("Sumi/Components/Sidebar/URLBarTrailingActions.swift"),
@@ -38,21 +38,27 @@ final class SumiPermissionRuntimeControlIntegrationTests: XCTestCase {
         ].joined(separator: "\n")
 
         XCTAssertTrue(source.contains("permissionPromptPresenter.presentFromIndicatorClick()"))
-        XCTAssertTrue(source.contains("prefersRuntimeControlsSurface"))
-        XCTAssertTrue(source.contains("hubInitialMode = .permissions"))
-        XCTAssertTrue(source.contains("initialMode: hubInitialMode"))
-        XCTAssertTrue(source.contains("modeRequestNonce: hubModeRequestNonce"))
+        XCTAssertFalse(source.contains("initialMode: .permissions"))
+        XCTAssertFalse(source.contains("browserManager.presentURLBarHubPopover(in: windowState, initialMode: .controls)"))
+        XCTAssertTrue(source.contains("URLBarHubPopoverAnchorView("))
         XCTAssertTrue(source.contains(".onChange(of: permissionPromptPresenter.isPresented)"))
-        XCTAssertTrue(source.contains("isHubPresented = false"))
+        XCTAssertTrue(source.contains("browserManager.closeURLBarHubPopover(in: windowState)"))
+        XCTAssertTrue(source.contains("SumiPermissionIndicatorActionPopover"))
+        XCTAssertTrue(source.contains("permissionRuntimeControlsModel.load"))
+        XCTAssertFalse(source.contains("SumiPermissionIndicatorDeviceMenuRow"))
+        XCTAssertFalse(source.contains("AVCaptureDevice.DiscoverySession"))
     }
 
-    func testRuntimeControlsAreInCurrentSitePermissionsSurfaceOnly() throws {
+    func testRuntimeControlsAreLimitedToCurrentSiteAndIndicatorSurfaces() throws {
         let currentSiteView = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionsView.swift")
+        let indicatorView = try sourceFile("Sumi/Components/Sidebar/URLBarPermissionViews.swift")
         let siteSettingsView = try sourceFile("Sumi/Permissions/UI/SumiSiteSettingsView.swift")
         let siteDetailView = try sourceFile("Sumi/Permissions/UI/SumiSiteSettingsSiteDetailView.swift")
 
         XCTAssertTrue(currentSiteView.contains("SumiPermissionRuntimeControlsView"))
         XCTAssertTrue(currentSiteView.contains("queryPermissionState"))
+        XCTAssertTrue(indicatorView.contains("SumiPermissionRuntimeControlsView"))
+        XCTAssertTrue(indicatorView.contains("queryPermissionState"))
         XCTAssertFalse(siteSettingsView.contains("SumiPermissionRuntimeControlsView"))
         XCTAssertFalse(siteDetailView.contains("SumiPermissionRuntimeControlsView"))
     }

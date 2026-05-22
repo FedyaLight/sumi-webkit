@@ -68,7 +68,7 @@ extension URLBarView {
     }
 
     func toggleZoomPopoverFromToolbar(for tab: Tab) {
-        isHubPresented = false
+        browserManager.closeURLBarHubPopover(in: windowState)
         zoomPopoverSource = .toolbar
         if isZoomPopoverPresented {
             closeZoomPopover()
@@ -85,7 +85,7 @@ extension URLBarView {
               request.tabId == currentTab?.id
         else { return }
 
-        isHubPresented = false
+        browserManager.closeURLBarHubPopover(in: windowState)
         zoomPopoverSource = request.source
         isZoomPopoverPresented = true
         updateZoomPopoverAutoCloseTask()

@@ -38,7 +38,6 @@ enum URLBarPresentationMode {
 
 enum URLBarHubInitialMode {
     case controls
-    case permissions
 }
 
 struct URLBarView: View {
@@ -52,17 +51,16 @@ struct URLBarView: View {
 
     @State var isHovering = false
     @State var showCheckmark = false
-    @State var isHubPresented = false
-    @State var hubInitialMode: URLBarHubInitialMode = .controls
-    @State var hubModeRequestNonce = 0
     @State var isZoomPopoverPresented = false
     @State var zoomPopoverSource: ZoomPopoverSource = .toolbar
     @State var zoomPopoverSize = CGSize(width: 252, height: 48)
     @State var isZoomButtonHovering = false
     @State var isZoomPopoverHovering = false
     @State var zoomPopoverHideTask: Task<Void, Never>?
+    @State var isPermissionIndicatorPopoverPresented = false
     @StateObject var permissionIndicatorViewModel = SumiPermissionIndicatorViewModel()
     @StateObject var permissionPromptPresenter = SumiPermissionPromptPresenter()
+    @StateObject var permissionRuntimeControlsModel = SumiPermissionRuntimeControlsViewModel()
 
     init(
         presentationMode: URLBarPresentationMode = .sidebar
@@ -131,18 +129,21 @@ struct URLBarView: View {
         .onChange(of: currentTab?.id) { _, _ in
             DispatchQueue.main.async {
                 closeZoomPopover()
-                isHubPresented = false
+                closePermissionIndicatorPopover()
+                browserManager.closeURLBarHubPopover(in: windowState)
                 permissionPromptPresenter.closeForCurrentTabChange()
             }
         }
         .onChange(of: permissionPromptPresenter.isPresented) { _, isPresented in
             if isPresented {
-                isHubPresented = false
+                closePermissionIndicatorPopover()
+                browserManager.closeURLBarHubPopover(in: windowState)
             }
         }
         .onDisappear {
             cancelZoomPopoverHideTask()
-            isHubPresented = false
+            closePermissionIndicatorPopover()
+            browserManager.closeURLBarHubPopover(in: windowState)
             permissionPromptPresenter.clear()
         }
     }
@@ -184,8 +185,7 @@ struct URLBarView: View {
     var siteControlsSnapshot: SiteControlsSnapshot {
         SiteControlsSnapshot.resolve(
             url: activePageURL,
-            profile: effectiveProfile,
-            showsAutoplayPermission: currentTab?.audioState.isPlayingAudio == true
+            profile: effectiveProfile
         )
     }
 

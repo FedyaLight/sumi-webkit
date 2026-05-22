@@ -11,6 +11,7 @@ final class SumiPermissionSettingsRepository {
     private let systemPermissionService: any SumiSystemPermissionService
     private let autoplayStore: SumiAutoplayPolicyStoreAdapter
     private let recentActivityStore: SumiPermissionRecentActivityStore
+    private let siteActivityStore: SumiPermissionSiteActivityStore
     private let blockedPopupStore: SumiBlockedPopupStore
     private let externalSchemeSessionStore: SumiExternalSchemeSessionStore
     private let indicatorEventStore: SumiPermissionIndicatorEventStore
@@ -24,6 +25,7 @@ final class SumiPermissionSettingsRepository {
         systemPermissionService: any SumiSystemPermissionService,
         autoplayStore: SumiAutoplayPolicyStoreAdapter? = nil,
         recentActivityStore: SumiPermissionRecentActivityStore,
+        siteActivityStore: SumiPermissionSiteActivityStore = .shared,
         blockedPopupStore: SumiBlockedPopupStore,
         externalSchemeSessionStore: SumiExternalSchemeSessionStore,
         indicatorEventStore: SumiPermissionIndicatorEventStore,
@@ -36,6 +38,7 @@ final class SumiPermissionSettingsRepository {
         self.systemPermissionService = systemPermissionService
         self.autoplayStore = autoplayStore ?? .shared
         self.recentActivityStore = recentActivityStore
+        self.siteActivityStore = siteActivityStore
         self.blockedPopupStore = blockedPopupStore
         self.externalSchemeSessionStore = externalSchemeSessionStore
         self.indicatorEventStore = indicatorEventStore
@@ -51,6 +54,7 @@ final class SumiPermissionSettingsRepository {
             systemPermissionService: browserManager.systemPermissionService,
             autoplayStore: .shared,
             recentActivityStore: browserManager.permissionRecentActivityStore,
+            siteActivityStore: browserManager.permissionSiteActivityStore,
             blockedPopupStore: browserManager.blockedPopupStore,
             externalSchemeSessionStore: browserManager.externalSchemeSessionStore,
             indicatorEventStore: browserManager.permissionIndicatorEventStore,
@@ -279,12 +283,28 @@ final class SumiPermissionSettingsRepository {
                     state: nil,
                     now: now()
                 )
+                siteActivityStore.recordSettingsChange(
+                    displayDomain: row.scope.displayDomain,
+                    key: key,
+                    state: nil,
+                    autoplayPolicy: .default,
+                    reason: "privacy-site-settings-autoplay-default",
+                    now: now()
+                )
             case .allowAll:
                 try await autoplayStore.setPolicy(.allowAll, for: key, source: .user, now: now())
                 recentActivityStore.recordSettingsChange(
                     displayDomain: row.scope.displayDomain,
                     key: key,
                     state: .allow,
+                    now: now()
+                )
+                siteActivityStore.recordSettingsChange(
+                    displayDomain: row.scope.displayDomain,
+                    key: key,
+                    state: .allow,
+                    autoplayPolicy: .allowAll,
+                    reason: "privacy-site-settings-autoplay-allow-all",
                     now: now()
                 )
             case .blockAudible:
@@ -295,12 +315,28 @@ final class SumiPermissionSettingsRepository {
                     state: .deny,
                     now: now()
                 )
+                siteActivityStore.recordSettingsChange(
+                    displayDomain: row.scope.displayDomain,
+                    key: key,
+                    state: .deny,
+                    autoplayPolicy: .blockAudible,
+                    reason: "privacy-site-settings-autoplay-block-audible",
+                    now: now()
+                )
             case .blockAll:
                 try await autoplayStore.setPolicy(.blockAll, for: key, source: .user, now: now())
                 recentActivityStore.recordSettingsChange(
                     displayDomain: row.scope.displayDomain,
                     key: key,
                     state: .deny,
+                    now: now()
+                )
+                siteActivityStore.recordSettingsChange(
+                    displayDomain: row.scope.displayDomain,
+                    key: key,
+                    state: .deny,
+                    autoplayPolicy: .blockAll,
+                    reason: "privacy-site-settings-autoplay-block-all",
                     now: now()
                 )
             case .ask, .allow, .block:
@@ -387,6 +423,13 @@ final class SumiPermissionSettingsRepository {
                 state: .allow,
                 now: now()
             )
+            siteActivityStore.recordSettingsChange(
+                displayDomain: displayDomain,
+                key: key,
+                state: .allow,
+                reason: "privacy-site-settings-allow",
+                now: now()
+            )
         case .block:
             try await coordinator.setSiteDecision(
                 for: key,
@@ -398,6 +441,13 @@ final class SumiPermissionSettingsRepository {
                 displayDomain: displayDomain,
                 key: key,
                 state: .deny,
+                now: now()
+            )
+            siteActivityStore.recordSettingsChange(
+                displayDomain: displayDomain,
+                key: key,
+                state: .deny,
+                reason: "privacy-site-settings-block",
                 now: now()
             )
         case .allowAll, .blockAudible, .blockAll:
@@ -415,6 +465,14 @@ final class SumiPermissionSettingsRepository {
             displayDomain: displayDomain,
             key: key,
             state: nil,
+            now: now()
+        )
+        siteActivityStore.recordSettingsChange(
+            displayDomain: displayDomain,
+            key: key,
+            state: nil,
+            autoplayPolicy: key.permissionType == .autoplay ? .default : nil,
+            reason: "privacy-site-settings-reset",
             now: now()
         )
     }

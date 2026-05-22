@@ -6,9 +6,44 @@
 //
 
 import AppKit
+import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 import WebKit
+
+private struct URLBarHubPopoverContentSizePreferenceKey: PreferenceKey {
+    static let defaultValue: CGSize = .zero
+
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
+    }
+}
+
+private struct URLBarHubNativeBackground: View {
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
+    }
+
+    var body: some View {
+        ZStack {
+            NativeChromeMaterialBackground(role: .popover)
+
+            if reduceTransparency {
+                tokens.floatingBarBackground
+            } else {
+                tokens.floatingBarBackground.opacity(materialTintOpacity)
+            }
+        }
+    }
+
+    private var materialTintOpacity: Double {
+        themeContext.chromeColorScheme == .dark ? 0.72 : 0.58
+    }
+}
 
 struct SiteControlsSettingRowModel: Equatable, Identifiable {
     enum Kind: Equatable {
@@ -17,7 +52,6 @@ struct SiteControlsSettingRowModel: Equatable, Identifiable {
             reloadRequired: Bool
         )
         case cookies
-        case permissions
         case localPage
     }
 
@@ -33,7 +67,6 @@ struct SiteControlsSettingRowModel: Equatable, Identifiable {
         case .protection(let plan, _):
             return plan.requestedLevel == .off || plan.siteHost == nil
         case .cookies,
-             .permissions,
              .localPage:
             return false
         }
@@ -43,8 +76,7 @@ struct SiteControlsSettingRowModel: Equatable, Identifiable {
         switch kind {
         case .protection(let plan, _):
             return plan.requestedLevel != .off && plan.siteHost != nil
-        case .cookies,
-             .permissions:
+        case .cookies:
             return true
         default:
             return false
@@ -53,7 +85,7 @@ struct SiteControlsSettingRowModel: Equatable, Identifiable {
 
     var showsDisclosure: Bool {
         switch kind {
-        case .cookies, .permissions:
+        case .cookies:
             return true
         default:
             return false
@@ -124,9 +156,6 @@ struct SiteControlsSnapshot: Equatable {
     static func resolve(
         url: URL?,
         profile: Profile?,
-        showsAutoplayPermission: Bool = false,
-        autoplayReloadRequired: Bool = false,
-        permissionsSummary: String? = nil,
         protectionCoordinator: SumiProtectionCoordinator? = nil,
         protectionBrowserRestartRequired: Bool = false,
         protectionReloadRequired: Bool = false
@@ -159,19 +188,9 @@ struct SiteControlsSnapshot: Equatable {
         }
 
         let settingsRows: [SiteControlsSettingRowModel]
-        let permissionsRow = SiteControlsSettingRowModel(
-            id: "permissions",
-            chromeIconName: nil,
-            fallbackSystemName: "hand.raised",
-            title: SumiCurrentSitePermissionsStrings.rowTitle,
-            subtitle: permissionsSummary ?? SumiCurrentSitePermissionsStrings.defaultSummary,
-            kind: .permissions
-        )
         switch securityState {
         case .secure, .notSecure:
             var rows: [SiteControlsSettingRowModel] = []
-            _ = showsAutoplayPermission
-            _ = autoplayReloadRequired
             _ = profile
 
             if let protectionCoordinator {
@@ -216,7 +235,6 @@ struct SiteControlsSnapshot: Equatable {
                     kind: .cookies
                 )
             )
-            rows.append(permissionsRow)
             settingsRows = rows
         case .localPage:
             settingsRows = [
@@ -227,11 +245,10 @@ struct SiteControlsSnapshot: Equatable {
                     title: "Page Type",
                     subtitle: "Local file or bundled resource",
                     kind: .localPage
-                ),
-                permissionsRow,
+                )
             ]
         case .internalPage:
-            settingsRows = [permissionsRow]
+            settingsRows = []
         }
 
         return SiteControlsSnapshot(
@@ -259,11 +276,11 @@ struct URLBarHubPopover: View {
     let initialMode: URLBarHubInitialMode
     let modeRequestNonce: Int
     let onClose: () -> Void
+    let onContentSizeChange: (CGSize) -> Void
 
     private enum Mode: Equatable {
         case controls
         case siteDataDetails
-        case permissions
         case bookmark(SumiBookmarkEditorState)
 
         var preferredWidth: CGFloat {
@@ -271,7 +288,6 @@ struct URLBarHubPopover: View {
             case .controls:
                 return 234
             case .siteDataDetails,
-                 .permissions,
                  .bookmark:
                 return 392
             }
@@ -294,7 +310,7 @@ struct URLBarHubPopover: View {
     @State private var navigationDirection: NavigationDirection = .forward
     @State private var containerWidth: CGFloat = Mode.controls.preferredWidth
     @State private var bookmarkErrorMessage: String?
-    @State private var transientSessionToken: SidebarTransientSessionToken?
+    @State private var scheduledPermissionsReloadTask: Task<Void, Never>?
     @StateObject private var siteDataDetailsModel = URLBarSiteDataDetailsViewModel()
     @StateObject private var currentSitePermissionsModel = SumiCurrentSitePermissionsViewModel()
 
@@ -304,26 +320,12 @@ struct URLBarHubPopover: View {
         let resolved = SiteControlsSnapshot.resolve(
             url: currentTab?.url,
             profile: activeProfile,
-            showsAutoplayPermission: currentTab?.audioState.isPlayingAudio == true,
-            autoplayReloadRequired: currentTab?.isAutoplayReloadRequired == true,
-            permissionsSummary: permissionsTopLevelSummary,
             protectionCoordinator: browserManager.protectionCoordinator,
             protectionBrowserRestartRequired: browserManager.protectionCoordinator.settings.browserRestartRequired,
             protectionReloadRequired: currentTab?.isProtectionReloadRequired == true
         )
         currentTab?.lastProtectionURLHubSummaryDuration = Date().timeIntervalSince(start)
         return resolved
-    }
-
-    private var permissionsTopLevelSummary: String {
-        SumiCurrentSitePermissionSummary.topLevelSubtitle(
-            tab: currentTab,
-            profile: activeProfile,
-            runtimeController: browserManager.runtimePermissionController,
-            blockedPopupStore: browserManager.blockedPopupStore,
-            externalSchemeSessionStore: browserManager.externalSchemeSessionStore,
-            indicatorEventStore: browserManager.permissionIndicatorEventStore
-        )
     }
 
     private var showsExtensionSection: Bool {
@@ -335,6 +337,42 @@ struct URLBarHubPopover: View {
         themeContext.tokens(settings: sumiSettings)
     }
 
+    private var permissionDependencies: SumiCurrentSitePermissionsViewModel.LoadDependencies {
+        SumiCurrentSitePermissionsViewModel.LoadDependencies(
+            coordinator: browserManager.permissionCoordinator,
+            systemPermissionService: browserManager.systemPermissionService,
+            runtimeController: browserManager.runtimePermissionController,
+            autoplayStore: SumiAutoplayPolicyStoreAdapter.shared,
+            blockedPopupStore: browserManager.blockedPopupStore,
+            externalSchemeSessionStore: browserManager.externalSchemeSessionStore,
+            indicatorEventStore: browserManager.permissionIndicatorEventStore,
+            siteActivityStore: browserManager.permissionSiteActivityStore
+        )
+    }
+
+    private var permissionsLoadKey: String {
+        [
+            activeProfile?.id.uuidString ?? "none",
+            activeProfile?.isEphemeral == true ? "ephemeral" : "persistent",
+            currentTab?.id.uuidString ?? "none",
+            currentTab?.currentPermissionPageId() ?? "none",
+            currentTab?.url.absoluteString ?? "none",
+            currentTab?.isAutoplayReloadRequired == true ? "autoplay-reload" : "autoplay-ready",
+            currentTab?.audioState.isPlayingAudio == true ? "audio-playing" : "audio-idle",
+            "\(browserManager.permissionSiteActivityStore.revision)",
+        ].joined(separator: "|")
+    }
+
+    private var audioStatePublisher: AnyPublisher<SumiWebViewAudioState, Never> {
+        guard let currentTab else {
+            return Empty<SumiWebViewAudioState, Never>().eraseToAnyPublisher()
+        }
+        return currentTab.$audioState
+            .removeDuplicates()
+            .dropFirst()
+            .eraseToAnyPublisher()
+    }
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             modeContent
@@ -343,16 +381,23 @@ struct URLBarHubPopover: View {
                 .transition(modeTransition)
         }
         .frame(width: containerWidth)
-        .background(tokens.floatingBarBackground)
+        .background(URLBarHubNativeBackground())
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: URLBarHubPopoverContentSizePreferenceKey.self,
+                    value: proxy.size
+                )
+            }
+        )
         .clipped()
         .animation(Self.modeAnimation, value: containerWidth)
         .onAppear {
-            beginSidebarTransientSessionIfNeeded()
             applyInitialMode(animated: false)
             handleBookmarkPresentationRequest(bookmarkPresentationRequest)
         }
-        .onDisappear {
-            finishSidebarTransientSession(reason: "URLBarHubPopover.disappear")
+        .task(id: permissionsLoadKey) {
+            await reloadPermissionsImmediately()
         }
         .onChange(of: bookmarkPresentationRequest) { _, request in
             handleBookmarkPresentationRequest(request)
@@ -363,6 +408,7 @@ struct URLBarHubPopover: View {
         .onChange(of: currentTab?.id) { _, _ in
             resetToControls()
             refreshNonce += 1
+            schedulePermissionsReloadAfterStoreChange()
         }
         .onReceive(NotificationCenter.default.publisher(for: .sumiTabNavigationStateDidChange)) { notification in
             handleNavigationStateDidChange(notification)
@@ -372,6 +418,28 @@ struct URLBarHubPopover: View {
         }
         .onReceive(browserManager.protectionCoordinator.sitePolicyChangesPublisher()) {
             _ in refreshNonce += 1
+        }
+        .onReceive(browserManager.blockedPopupStore.objectWillChange) { _ in
+            schedulePermissionsReloadAfterStoreChange()
+        }
+        .onReceive(browserManager.externalSchemeSessionStore.objectWillChange) { _ in
+            schedulePermissionsReloadAfterStoreChange()
+        }
+        .onReceive(browserManager.permissionIndicatorEventStore.objectWillChange) { _ in
+            schedulePermissionsReloadAfterStoreChange()
+        }
+        .onReceive(browserManager.permissionSiteActivityStore.objectWillChange) { _ in
+            schedulePermissionsReloadAfterStoreChange()
+        }
+        .onReceive(audioStatePublisher) { _ in
+            schedulePermissionsReloadAfterStoreChange()
+        }
+        .onDisappear {
+            scheduledPermissionsReloadTask?.cancel()
+            scheduledPermissionsReloadTask = nil
+        }
+        .onPreferenceChange(URLBarHubPopoverContentSizePreferenceKey.self) { size in
+            onContentSizeChange(size)
         }
     }
 
@@ -389,32 +457,6 @@ struct URLBarHubPopover: View {
                     setMode(.controls, direction: .backward)
                 },
                 onClose: onClose,
-                onDidMutate: {
-                    refreshNonce += 1
-                }
-            )
-        case .permissions:
-            SumiCurrentSitePermissionsView(
-                model: currentSitePermissionsModel,
-                currentTab: currentTab,
-                profile: activeProfile,
-                permissionCoordinator: browserManager.permissionCoordinator,
-                runtimePermissionController: browserManager.runtimePermissionController,
-                systemPermissionService: browserManager.systemPermissionService,
-                blockedPopupStore: browserManager.blockedPopupStore,
-                externalSchemeSessionStore: browserManager.externalSchemeSessionStore,
-                permissionIndicatorEventStore: browserManager.permissionIndicatorEventStore,
-                onBack: {
-                    setMode(.controls, direction: .backward)
-                },
-                onClose: onClose,
-                onOpenSiteSettings: {
-                    browserManager.openSiteSettingsTab(
-                        focusing: currentTab,
-                        in: windowState
-                    )
-                    onClose()
-                },
                 onDidMutate: {
                     refreshNonce += 1
                 }
@@ -460,7 +502,7 @@ struct URLBarHubPopover: View {
                     .padding(.bottom, 8)
             }
 
-            if !snapshot.settingsRows.isEmpty {
+            if !snapshot.settingsRows.isEmpty || !currentSitePermissionsModel.rows.isEmpty {
                 Divider()
                     .padding(.horizontal, 8)
                 settingsSection
@@ -487,8 +529,6 @@ struct URLBarHubPopover: View {
             return "controls"
         case .siteDataDetails:
             return "site-data-details"
-        case .permissions:
-            return "permissions"
         case .bookmark(let state):
             return "bookmark-\(state.id)"
         }
@@ -549,13 +589,13 @@ struct URLBarHubPopover: View {
     }
 
     private func applyInitialMode(animated: Bool) {
-        let requestedMode: Mode = initialMode == .permissions ? .permissions : .controls
+        let requestedMode: Mode = .controls
         guard requestedMode != mode else {
             containerWidth = requestedMode.preferredWidth
             return
         }
 
-        let direction: NavigationDirection = requestedMode == .permissions ? .forward : .backward
+        let direction: NavigationDirection = .backward
         if animated {
             setMode(requestedMode, direction: direction)
         } else {
@@ -647,14 +687,8 @@ struct URLBarHubPopover: View {
     }
 
     private var settingsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HubSectionHeader(
-                title: "Settings",
-                actionTitle: "More",
-                action: {
-                    browserManager.openSettingsTab(selecting: .privacy, in: windowState)
-                }
-            )
+        VStack(alignment: .leading, spacing: 10) {
+            HubSectionHeader(title: "Settings")
 
             VStack(spacing: 8) {
                 ForEach(snapshot.settingsRows) { row in
@@ -666,13 +700,180 @@ struct URLBarHubPopover: View {
                     }
                 }
             }
+
+            permissionsInlineSection
         }
     }
 
     private var footerRow: some View {
-        SumiFooterSecurityStatus(
-            securityState: snapshot.securityState
+        HStack(spacing: 8) {
+            SumiFooterSecurityStatus(
+                securityState: snapshot.securityState
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            SumiFooterSiteSettingsButton(
+                siteSettingsAction: openSiteSettings,
+                clearSiteDataAction: openSiteDataDetails,
+                resetPermissionsAction: resetPermissionsToDefault
+            )
+            .frame(width: 42)
+        }
+    }
+
+    @ViewBuilder
+    private var permissionsInlineSection: some View {
+        if !currentSitePermissionsModel.rows.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(SumiCurrentSitePermissionsStrings.rowTitle)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(tokens.primaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(spacing: 8) {
+                    ForEach(currentSitePermissionsModel.rows) { row in
+                        URLHubPermissionInlineRow(
+                            row: row,
+                            onCycle: {
+                                cyclePermission(row)
+                            },
+                            onSelect: { option in
+                                selectPermission(option, for: row)
+                            },
+                            onOpenSystemSettings: {
+                                openSystemSettings(for: row)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private func reloadPermissionsImmediately() async {
+        scheduledPermissionsReloadTask?.cancel()
+        scheduledPermissionsReloadTask = nil
+        await reloadPermissions()
+    }
+
+    private func schedulePermissionsReloadAfterStoreChange() {
+        scheduledPermissionsReloadTask?.cancel()
+        scheduledPermissionsReloadTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            guard !Task.isCancelled else { return }
+            await reloadPermissions()
+            refreshNonce += 1
+            scheduledPermissionsReloadTask = nil
+        }
+    }
+
+    private func reloadPermissions() async {
+        await currentSitePermissionsModel.load(
+            tab: currentTab,
+            profile: activeProfile,
+            dependencies: permissionDependencies,
+            systemSnapshotMode: .none
         )
+    }
+
+    private func cyclePermission(_ row: SumiCurrentSitePermissionRow) {
+        guard let nextOption = nextInlineOption(for: row) else { return }
+        selectPermission(nextOption, for: row)
+    }
+
+    private func selectPermission(
+        _ option: SumiCurrentSitePermissionOption,
+        for row: SumiCurrentSitePermissionRow
+    ) {
+        Task { @MainActor in
+            await currentSitePermissionsModel.select(
+                option,
+                for: row,
+                profile: activeProfile,
+                dependencies: permissionDependencies,
+                onAutoplayChanged: {
+                    currentTab?.markAutoplayReloadRequiredIfNeeded(afterChangingPolicyFor: currentTab?.url)
+                    currentTab?.updateAutoplayReloadRequirementForCurrentSite()
+                }
+            )
+            await reloadPermissionsImmediately()
+            refreshNonce += 1
+        }
+    }
+
+    private func nextInlineOption(
+        for row: SumiCurrentSitePermissionRow
+    ) -> SumiCurrentSitePermissionOption? {
+        let proposed: SumiCurrentSitePermissionOption
+        switch row.kind {
+        case .autoplay:
+            switch row.currentOption ?? .default {
+            case .default, .ask:
+                proposed = .blockAll
+            case .blockAll, .blockAudible, .block:
+                proposed = .allowAll
+            case .allowAll, .allow:
+                proposed = .blockAll
+            }
+        case .popups:
+            switch row.currentOption ?? .default {
+            case .default, .ask:
+                proposed = .block
+            case .block:
+                proposed = .allow
+            case .allow:
+                proposed = .block
+            case .allowAll, .blockAudible, .blockAll:
+                proposed = .block
+            }
+        case .sitePermission, .externalScheme:
+            switch row.currentOption ?? .ask {
+            case .ask, .default:
+                proposed = .block
+            case .block:
+                proposed = .allow
+            case .allow:
+                proposed = .block
+            case .allowAll, .blockAudible, .blockAll:
+                proposed = .block
+            }
+        case .externalApps, .filePicker:
+            return nil
+        }
+
+        return row.availableOptions.contains(proposed) ? proposed : row.availableOptions.first
+    }
+
+    private func openSystemSettings(for row: SumiCurrentSitePermissionRow) {
+        Task { @MainActor in
+            await currentSitePermissionsModel.openSystemSettings(
+                for: row,
+                systemPermissionService: browserManager.systemPermissionService
+            )
+        }
+    }
+
+    private func openSiteSettings() {
+        browserManager.openSiteSettingsTab(
+            focusing: currentTab,
+            in: windowState
+        )
+        onClose()
+    }
+
+    private func openSiteDataDetails() {
+        setMode(.siteDataDetails, direction: .forward)
+    }
+
+    private func resetPermissionsToDefault() {
+        Task { @MainActor in
+            await currentSitePermissionsModel.resetCurrentSite(
+                profile: activeProfile,
+                dependencies: permissionDependencies
+            )
+            await reloadPermissionsImmediately()
+            refreshNonce += 1
+        }
     }
 
     private func handleSettingAction(_ row: SiteControlsSettingRowModel) {
@@ -684,8 +885,6 @@ struct URLBarHubPopover: View {
             )
         case .cookies:
             setMode(.siteDataDetails, direction: .forward)
-        case .permissions:
-            setMode(.permissions, direction: .forward)
         case .localPage:
             break
         }
@@ -782,32 +981,13 @@ struct URLBarHubPopover: View {
         }
 
         refreshNonce += 1
+        schedulePermissionsReloadAfterStoreChange()
         if case .bookmark(let state) = mode,
            state.tabID == tab.id,
            state.pageURL.absoluteString != tab.url.absoluteString
         {
             resetToControls()
         }
-    }
-
-    private func beginSidebarTransientSessionIfNeeded() {
-        guard transientSessionToken == nil else { return }
-        let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
-            window: windowState.window
-        )
-        transientSessionToken = windowState.sidebarTransientSessionCoordinator.beginSession(
-            kind: .urlHubPopover,
-            source: source,
-            path: "URLBarHubPopover"
-        )
-    }
-
-    private func finishSidebarTransientSession(reason: String) {
-        windowState.sidebarTransientSessionCoordinator.finishSession(
-            transientSessionToken,
-            reason: reason
-        )
-        transientSessionToken = nil
     }
 
     private func handleReaderMode() {
@@ -1420,8 +1600,8 @@ private struct URLBarFadingText: View {
 
 private struct HubSectionHeader: View {
     let title: String
-    let actionTitle: String
-    let action: () -> Void
+    var actionTitle: String? = nil
+    var action: (() -> Void)? = nil
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
@@ -1437,11 +1617,13 @@ private struct HubSectionHeader: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(tokens.primaryText)
             Spacer(minLength: 0)
-            Button(actionTitle, action: action)
-                .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(tokens.secondaryText)
-                .opacity(isHovering ? 0.92 : 0.55)
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(tokens.secondaryText)
+                    .opacity(isHovering ? 0.92 : 0.55)
+            }
         }
         .onHover { isHovering = $0 }
     }
@@ -1551,6 +1733,8 @@ private struct SumiFooterSecurityStatus: View {
             Text(securityState.footerTitle)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(labelColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.86)
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1562,6 +1746,287 @@ private struct SumiFooterSecurityStatus: View {
 
     private var labelColor: Color {
         securityState == .notSecure ? Color.red.opacity(0.9) : tokens.primaryText
+    }
+}
+
+private struct SumiFooterSiteSettingsButton: View {
+    let siteSettingsAction: () -> Void
+    let clearSiteDataAction: () -> Void
+    let resetPermissionsAction: () -> Void
+
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @State private var isHovered = false
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
+    }
+
+    var body: some View {
+        Button(action: siteSettingsAction) {
+            Image(systemName: "gearshape")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(tokens.primaryText)
+                .frame(maxWidth: .infinity)
+                .frame(height: 34)
+                .background(isHovered ? tokens.fieldBackgroundHover : tokens.fieldBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help("Site Settings")
+        .accessibilityLabel("Site Settings")
+        .accessibilityIdentifier("urlhub-site-settings-button")
+        .contextMenu {
+            Button("Site Settings", action: siteSettingsAction)
+            Button("Clear Site Data", action: clearSiteDataAction)
+            Divider()
+            Button("Reset Permissions to Default", action: resetPermissionsAction)
+        }
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.12)) {
+                isHovered = hovering
+            }
+        }
+    }
+}
+
+private struct URLHubPermissionInlineRow: View {
+    private enum IconState {
+        case neutral
+        case on
+        case off
+    }
+
+    private struct IconVisual {
+        let iconName: String?
+        let fallbackSystemName: String
+        let showsSlash: Bool
+    }
+
+    let row: SumiCurrentSitePermissionRow
+    let onCycle: () -> Void
+    let onSelect: (SumiCurrentSitePermissionOption) -> Void
+    let onOpenSystemSettings: () -> Void
+
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @State private var isHovered = false
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
+    }
+
+    private var canCycle: Bool {
+        row.isEditable && row.disabledReason == nil && !row.availableOptions.isEmpty
+    }
+
+    private var iconState: IconState {
+        switch row.currentOption {
+        case .allow, .allowAll:
+            return .on
+        case .block, .blockAudible, .blockAll:
+            return .off
+        case .ask, .default, nil:
+            return .neutral
+        }
+    }
+
+    var body: some View {
+        Group {
+            if canCycle {
+                Button(action: onCycle) {
+                    rowContent
+                }
+                .buttonStyle(.plain)
+            } else {
+                rowContent
+            }
+        }
+        .opacity(row.disabledReason == nil ? 1 : 0.55)
+        .contextMenu {
+            if !row.availableOptions.isEmpty {
+                ForEach(row.availableOptions, id: \.self) { option in
+                    Button {
+                        onSelect(option)
+                    } label: {
+                        Label(
+                            option.title,
+                            systemImage: option == row.currentOption ? "checkmark" : "circle"
+                        )
+                    }
+                }
+            }
+            if row.showsSystemSettingsAction {
+                Divider()
+                Button("Open System Settings", action: onOpenSystemSettings)
+            }
+        }
+        .onHover { hovering in
+            guard canCycle else {
+                isHovered = false
+                return
+            }
+            withAnimation(.easeInOut(duration: 0.12)) {
+                isHovered = hovering
+            }
+        }
+        .accessibilityLabel(row.accessibilityLabel)
+        .accessibilityIdentifier("urlhub-permission-row-\(row.id)")
+    }
+
+    private var rowContent: some View {
+        HStack(spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(iconCapsuleFill)
+                    .scaleEffect(isHovered ? 1.05 : 1)
+
+                ZStack {
+                    SumiZenChromeIcon(
+                        iconName: iconVisual.iconName,
+                        fallbackSystemName: iconVisual.fallbackSystemName,
+                        size: 16,
+                        tint: tokens.primaryText
+                    )
+
+                    if iconVisual.showsSlash {
+                        RoundedRectangle(cornerRadius: 1, style: .continuous)
+                            .fill(tokens.primaryText)
+                            .frame(width: 2, height: 23)
+                            .rotationEffect(.degrees(-42))
+                            .shadow(color: tokens.fieldBackground.opacity(0.7), radius: 0, x: 1, y: 0)
+                    }
+                }
+            }
+            .frame(width: 34, height: 34)
+
+            VStack(alignment: .leading, spacing: 2) {
+                URLBarFadingText(
+                    row.title,
+                    font: .system(size: 13, weight: .medium),
+                    color: tokens.primaryText
+                )
+                if let status = row.statusLines.first {
+                    URLBarFadingText(
+                        status,
+                        font: .system(size: 11.5),
+                        color: tokens.secondaryText
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
+    private var iconCapsuleFill: Color {
+        if isHovered {
+            return tokens.fieldBackgroundHover
+        }
+        switch iconState {
+        case .on:
+            return tokens.fieldBackgroundHover
+        case .neutral, .off:
+            return tokens.fieldBackground
+        }
+    }
+
+    private var iconVisual: IconVisual {
+        switch iconState {
+        case .neutral:
+            return IconVisual(
+                iconName: row.iconName,
+                fallbackSystemName: row.fallbackSystemName,
+                showsSlash: false
+            )
+        case .on:
+            return filledIconVisual
+        case .off:
+            return blockedIconVisual
+        }
+    }
+
+    private var filledIconVisual: IconVisual {
+        switch row.kind {
+        case .sitePermission(let permissionType):
+            return filledIconVisual(for: permissionType)
+        case .popups:
+            return IconVisual(iconName: "popup-fill", fallbackSystemName: "rectangle.on.rectangle.fill", showsSlash: false)
+        case .externalScheme:
+            return IconVisual(iconName: nil, fallbackSystemName: "arrow.up.forward.square.fill", showsSlash: false)
+        case .autoplay:
+            return IconVisual(iconName: "autoplay-media-fill", fallbackSystemName: "play.rectangle.fill", showsSlash: false)
+        case .externalApps:
+            return IconVisual(iconName: nil, fallbackSystemName: "arrow.up.forward.square.fill", showsSlash: false)
+        case .filePicker:
+            return IconVisual(iconName: nil, fallbackSystemName: "doc.badge.plus.fill", showsSlash: false)
+        }
+    }
+
+    private func filledIconVisual(
+        for permissionType: SumiPermissionType
+    ) -> IconVisual {
+        switch permissionType {
+        case .camera:
+            return IconVisual(iconName: "camera-fill", fallbackSystemName: "camera.fill", showsSlash: false)
+        case .microphone:
+            return IconVisual(iconName: "microphone-fill", fallbackSystemName: "mic.fill", showsSlash: false)
+        case .cameraAndMicrophone:
+            return IconVisual(iconName: "permissions-fill", fallbackSystemName: "video.fill", showsSlash: false)
+        case .geolocation:
+            return IconVisual(iconName: "location", fallbackSystemName: "location.fill", showsSlash: false)
+        case .notifications:
+            return IconVisual(iconName: nil, fallbackSystemName: "bell.fill", showsSlash: false)
+        case .screenCapture:
+            return IconVisual(iconName: "screen", fallbackSystemName: "display", showsSlash: false)
+        case .popups:
+            return IconVisual(iconName: "popup-fill", fallbackSystemName: "rectangle.on.rectangle.fill", showsSlash: false)
+        case .externalScheme:
+            return IconVisual(iconName: nil, fallbackSystemName: "arrow.up.forward.square.fill", showsSlash: false)
+        case .autoplay:
+            return IconVisual(iconName: "autoplay-media-fill", fallbackSystemName: "play.rectangle.fill", showsSlash: false)
+        case .storageAccess:
+            return IconVisual(iconName: "cookies-fill", fallbackSystemName: "externaldrive.fill", showsSlash: false)
+        case .filePicker:
+            return IconVisual(iconName: nil, fallbackSystemName: "doc.badge.plus.fill", showsSlash: false)
+        }
+    }
+
+    private var blockedIconVisual: IconVisual {
+        switch row.kind {
+        case .sitePermission(let permissionType):
+            return blockedIconVisual(for: permissionType)
+        case .popups:
+            return IconVisual(iconName: "popup", fallbackSystemName: "rectangle.on.rectangle", showsSlash: true)
+        case .externalScheme:
+            return IconVisual(iconName: "open", fallbackSystemName: "arrow.up.forward.square", showsSlash: true)
+        case .autoplay:
+            return IconVisual(iconName: "autoplay-media", fallbackSystemName: "play.rectangle", showsSlash: true)
+        case .externalApps:
+            return IconVisual(iconName: "open", fallbackSystemName: "arrow.up.forward.square", showsSlash: true)
+        case .filePicker:
+            return IconVisual(iconName: nil, fallbackSystemName: "doc.badge.plus", showsSlash: true)
+        }
+    }
+
+    private func blockedIconVisual(
+        for permissionType: SumiPermissionType
+    ) -> IconVisual {
+        switch permissionType {
+        case .geolocation:
+            return IconVisual(iconName: "location", fallbackSystemName: "location.fill", showsSlash: true)
+        case .notifications:
+            return IconVisual(iconName: "desktop-notification-blocked", fallbackSystemName: "bell.slash", showsSlash: false)
+        case .screenCapture:
+            return IconVisual(iconName: "screen-blocked", fallbackSystemName: "display", showsSlash: false)
+        case .autoplay:
+            return IconVisual(iconName: "autoplay-media", fallbackSystemName: "play.rectangle", showsSlash: true)
+        case .storageAccess:
+            return IconVisual(iconName: "cookies-fill", fallbackSystemName: "externaldrive", showsSlash: true)
+        default:
+            return IconVisual(iconName: row.iconName, fallbackSystemName: row.fallbackSystemName, showsSlash: true)
+        }
     }
 }
 

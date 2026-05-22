@@ -21,17 +21,35 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.context?.isSupportedWebOrigin ?? true)
     }
 
-    func testBuildsImplementedRowsWithoutUnsupportedContentSettings() async {
+    func testBuildsOnlyRowsWithUsageOrResolvedDecisions() async throws {
         let coordinator = CurrentSiteFakePermissionCoordinator()
         let viewModel = SumiCurrentSitePermissionsViewModel()
         let context = context()
+        let blockedStore = SumiBlockedPopupStore()
+        let indicatorStore = SumiPermissionIndicatorEventStore()
+        let autoplayStore = CurrentSiteFakeAutoplayStore()
+        await coordinator.seed(key: context.key(for: .microphone), state: .deny)
+        await coordinator.seed(key: context.key(for: .externalScheme("mailto")), state: .allow)
+        blockedStore.record(blockedPopup(context: context))
+        indicatorStore.record(indicatorEvent(context: context, permissionType: .camera))
+        indicatorStore.record(indicatorEvent(context: context, permissionType: .screenCapture))
+        indicatorStore.record(indicatorEvent(context: context, permissionType: .geolocation))
+        indicatorStore.record(indicatorEvent(context: context, permissionType: .notifications))
+        indicatorStore.record(indicatorEvent(context: context, permissionType: .storageAccess))
+        indicatorStore.record(indicatorEvent(context: context, permissionType: .filePicker))
+        try await autoplayStore.setPolicy(.blockAll, for: context.mainFrameURL, profile: nil, source: .user, now: Date())
 
         await viewModel.load(
             context: context,
             webView: nil,
             profile: nil,
             reloadRequired: false,
-            dependencies: dependencies(coordinator: coordinator)
+            dependencies: dependencies(
+                coordinator: coordinator,
+                autoplayStore: autoplayStore,
+                blockedPopupStore: blockedStore,
+                indicatorEventStore: indicatorStore
+            )
         )
 
         let ids = viewModel.rows.map(\.id)
@@ -41,16 +59,71 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
         XCTAssertTrue(ids.contains("geolocation"))
         XCTAssertTrue(ids.contains("notifications"))
         XCTAssertTrue(ids.contains("popups"))
-        XCTAssertTrue(ids.contains("external-apps"))
+        XCTAssertTrue(ids.contains("external-scheme-mailto"))
         XCTAssertTrue(ids.contains("autoplay"))
         XCTAssertTrue(ids.contains("storage-access"))
         XCTAssertTrue(ids.contains("file-picker"))
+        XCTAssertFalse(ids.contains("external-apps"))
         XCTAssertFalse(ids.contains("javascript"))
         XCTAssertFalse(ids.contains("images"))
         XCTAssertFalse(ids.contains("downloads"))
         XCTAssertFalse(ids.contains("ads"))
         XCTAssertFalse(ids.contains("background-sync"))
         XCTAssertFalse(ids.contains("sound"))
+    }
+
+    func testDefaultURLHubLoadHidesUnusedPermissionRows() async {
+        let viewModel = SumiCurrentSitePermissionsViewModel()
+        let context = context()
+
+        await viewModel.load(
+            context: context,
+            webView: nil,
+            profile: nil,
+            reloadRequired: false,
+            dependencies: dependencies()
+        )
+
+        XCTAssertTrue(viewModel.rows.isEmpty)
+        XCTAssertNil(viewModel.summary.activityText)
+    }
+
+    func testAutoplayActivityPersistsAcrossRegistrableSitePages() async throws {
+        let defaults = UserDefaults(suiteName: "SumiAutoplaySiteActivity-\(UUID().uuidString)")!
+        let siteActivityStore = SumiPermissionSiteActivityStore(userDefaults: defaults)
+        let deps = dependencies(siteActivityStore: siteActivityStore)
+        let mediaContext = context(
+            url: URL(string: "https://video.example.com/watch")!,
+            pageId: "tab-a:media"
+        )
+        let rootContext = context(
+            url: URL(string: "https://example.com/")!,
+            pageId: "tab-a:root"
+        )
+
+        let firstViewModel = SumiCurrentSitePermissionsViewModel()
+        await firstViewModel.load(
+            context: mediaContext,
+            webView: nil,
+            profile: nil,
+            reloadRequired: false,
+            autoplayInUse: true,
+            dependencies: deps
+        )
+
+        let reloadedStore = SumiPermissionSiteActivityStore(userDefaults: defaults)
+        let rootViewModel = SumiCurrentSitePermissionsViewModel()
+        await rootViewModel.load(
+            context: rootContext,
+            webView: nil,
+            profile: nil,
+            reloadRequired: false,
+            dependencies: dependencies(siteActivityStore: reloadedStore)
+        )
+
+        let autoplay = try XCTUnwrap(rootViewModel.rows.first { $0.id == "autoplay" })
+        XCTAssertEqual(autoplay.currentOption, .default)
+        XCTAssertEqual(autoplay.subtitle, "Default")
     }
 
     func testDefaultURLHubLoadDoesNotRequestSystemSnapshots() async throws {
@@ -66,9 +139,7 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
             dependencies: dependencies(system: system)
         )
 
-        let camera = try XCTUnwrap(viewModel.rows.first { $0.id == "camera" })
-        XCTAssertNil(camera.systemStatus)
-        XCTAssertFalse(camera.showsSystemSettingsAction)
+        XCTAssertTrue(viewModel.rows.isEmpty)
         let snapshotCallCount = await system.authorizationSnapshotCallCount()
         let stateCallCount = await system.authorizationStateCallCount()
         XCTAssertEqual(snapshotCallCount, 0)
@@ -77,9 +148,11 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
 
     func testCameraWriteSemanticsResetAllowAndBlock() async throws {
         let coordinator = CurrentSiteFakePermissionCoordinator()
+        let indicatorStore = SumiPermissionIndicatorEventStore()
         let viewModel = SumiCurrentSitePermissionsViewModel()
         let context = context()
-        let deps = dependencies(coordinator: coordinator)
+        indicatorStore.record(indicatorEvent(context: context, permissionType: .camera))
+        let deps = dependencies(coordinator: coordinator, indicatorEventStore: indicatorStore)
 
         await viewModel.load(
             context: context,
@@ -106,9 +179,11 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
 
     func testEphemeralProfileWritesSessionDecisions() async throws {
         let coordinator = CurrentSiteFakePermissionCoordinator()
+        let indicatorStore = SumiPermissionIndicatorEventStore()
         let viewModel = SumiCurrentSitePermissionsViewModel()
         let context = context(isEphemeralProfile: true)
-        let deps = dependencies(coordinator: coordinator)
+        indicatorStore.record(indicatorEvent(context: context, permissionType: .microphone))
+        let deps = dependencies(coordinator: coordinator, indicatorEventStore: indicatorStore)
 
         await viewModel.load(
             context: context,
@@ -160,15 +235,21 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
     func testSystemDeniedDoesNotBecomeSiteDenyOrRequestAuthorization() async throws {
         let coordinator = CurrentSiteFakePermissionCoordinator()
         let system = FakeSumiSystemPermissionService(states: [.camera: .denied])
+        let indicatorStore = SumiPermissionIndicatorEventStore()
         let viewModel = SumiCurrentSitePermissionsViewModel()
         let context = context()
+        indicatorStore.record(indicatorEvent(context: context, permissionType: .camera))
 
         await viewModel.load(
             context: context,
             webView: nil,
             profile: nil,
             reloadRequired: false,
-            dependencies: dependencies(coordinator: coordinator, system: system),
+            dependencies: dependencies(
+                coordinator: coordinator,
+                system: system,
+                indicatorEventStore: indicatorStore
+            ),
             systemSnapshotMode: .live
         )
 
@@ -224,14 +305,15 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
 
         let camera = try XCTUnwrap(viewModel.rows.first { $0.id == "camera" })
         XCTAssertEqual(camera.currentOption, .ask)
-        XCTAssertEqual(camera.subtitle, "Allowed this time")
+        XCTAssertEqual(camera.subtitle, "On")
     }
 
-    func testResetClearsCurrentSitePermissionDecisionsAndPageEventsOnly() async throws {
+    func testResetClearsCurrentSitePermissionDecisionsPageEventsAndSiteActivity() async throws {
         let coordinator = CurrentSiteFakePermissionCoordinator()
         let blockedPopupStore = SumiBlockedPopupStore()
         let externalStore = SumiExternalSchemeSessionStore()
         let indicatorStore = SumiPermissionIndicatorEventStore()
+        let siteActivityStore = makeSiteActivityStore()
         let context = context()
         await coordinator.seed(key: context.key(for: .camera), state: .allow)
         await coordinator.seed(key: context.key(for: .popups), state: .deny)
@@ -245,7 +327,8 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
             coordinator: coordinator,
             blockedPopupStore: blockedPopupStore,
             externalSchemeSessionStore: externalStore,
-            indicatorEventStore: indicatorStore
+            indicatorEventStore: indicatorStore,
+            siteActivityStore: siteActivityStore
         )
         await viewModel.load(
             context: context,
@@ -265,16 +348,22 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
         XCTAssertNil(mailtoRecord)
         XCTAssertEqual(blockedPopupStore.records(forPageId: context.pageId!).count, 0)
         XCTAssertEqual(indicatorStore.recordsSnapshot(forPageId: context.pageId!).count, 0)
+        XCTAssertTrue(siteActivityStore.records(
+            forSiteOf: context.origin,
+            profilePartitionId: context.profilePartitionId,
+            isEphemeralProfile: context.isEphemeralProfile
+        ).isEmpty)
     }
 
     private func context(
         url: URL = URL(string: "https://example.com/path")!,
-        isEphemeralProfile: Bool = false
+        isEphemeralProfile: Bool = false,
+        pageId: String = "tab-a:1"
     ) -> SumiCurrentSitePermissionsViewModel.Context {
         let origin = SumiPermissionOrigin(url: url)
         return SumiCurrentSitePermissionsViewModel.Context(
             tabId: "tab-a",
-            pageId: "tab-a:1",
+            pageId: pageId,
             committedURL: url,
             visibleURL: url,
             mainFrameURL: url,
@@ -293,7 +382,8 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
         autoplayStore: CurrentSiteFakeAutoplayStore? = nil,
         blockedPopupStore: SumiBlockedPopupStore? = nil,
         externalSchemeSessionStore: SumiExternalSchemeSessionStore? = nil,
-        indicatorEventStore: SumiPermissionIndicatorEventStore? = nil
+        indicatorEventStore: SumiPermissionIndicatorEventStore? = nil,
+        siteActivityStore: SumiPermissionSiteActivityStore? = nil
     ) -> SumiCurrentSitePermissionsViewModel.LoadDependencies {
         SumiCurrentSitePermissionsViewModel.LoadDependencies(
             coordinator: coordinator ?? CurrentSiteFakePermissionCoordinator(),
@@ -308,7 +398,14 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
             autoplayStore: autoplayStore ?? CurrentSiteFakeAutoplayStore(),
             blockedPopupStore: blockedPopupStore ?? SumiBlockedPopupStore(),
             externalSchemeSessionStore: externalSchemeSessionStore ?? SumiExternalSchemeSessionStore(),
-            indicatorEventStore: indicatorEventStore ?? SumiPermissionIndicatorEventStore()
+            indicatorEventStore: indicatorEventStore ?? SumiPermissionIndicatorEventStore(),
+            siteActivityStore: siteActivityStore ?? makeSiteActivityStore()
+        )
+    }
+
+    private func makeSiteActivityStore() -> SumiPermissionSiteActivityStore {
+        SumiPermissionSiteActivityStore(
+            userDefaults: UserDefaults(suiteName: "SumiCurrentSiteActivity-\(UUID().uuidString)")!
         )
     }
 

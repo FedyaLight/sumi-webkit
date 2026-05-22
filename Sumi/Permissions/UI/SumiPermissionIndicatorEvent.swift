@@ -137,6 +137,7 @@ final class SumiPermissionIndicatorEventStore: ObservableObject {
         var pageIndex = duplicateIndexByPageId[pageId] ?? [:]
         pageIndex[duplicateIdentity] = record.id
         duplicateIndexByPageId[pageId] = pageIndex
+
         return record
     }
 
