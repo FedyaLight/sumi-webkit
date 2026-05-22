@@ -114,6 +114,47 @@ final class WindowThemeStateTests: XCTestCase {
         XCTAssertTrue(opaqueTransition.rendersOpaqueCustomChromeTheme)
     }
 
+    @MainActor
+    func testNativeSurfaceSchemeFollowsWorkspaceChromeInsteadOfDarkGlobalScheme() {
+        let lightWorkspaceContext = ResolvedThemeContext(
+            globalColorScheme: .dark,
+            chromeColorScheme: .light,
+            sourceChromeColorScheme: .light,
+            targetChromeColorScheme: .light,
+            workspaceTheme: makeTheme(opacity: 0.72),
+            sourceWorkspaceTheme: makeTheme(opacity: 0.72),
+            targetWorkspaceTheme: makeTheme(opacity: 0.72),
+            isInteractiveTransition: false,
+            transitionProgress: 1
+        )
+
+        let nativeSurfaceScheme = lightWorkspaceContext.nativeSurfaceColorScheme
+        let nativeSurfaceThemeContext = lightWorkspaceContext.nativeSurfaceThemeContext
+
+        XCTAssertEqual(nativeSurfaceScheme, .light)
+        XCTAssertEqual(nativeSurfaceThemeContext.globalColorScheme, .light)
+        XCTAssertEqual(nativeSurfaceThemeContext.chromeColorScheme, .light)
+    }
+
+    @MainActor
+    func testNativeSurfaceSchemeStaysDarkWhenTransitionIncludesDarkChrome() {
+        let mixedTransitionContext = ResolvedThemeContext(
+            globalColorScheme: .light,
+            chromeColorScheme: .light,
+            sourceChromeColorScheme: .dark,
+            targetChromeColorScheme: .light,
+            workspaceTheme: makeTheme(opacity: 0.72),
+            sourceWorkspaceTheme: .incognito,
+            targetWorkspaceTheme: makeTheme(opacity: 0.72),
+            isInteractiveTransition: true,
+            transitionProgress: 0.5
+        )
+
+        let nativeSurfaceScheme = mixedTransitionContext.nativeSurfaceColorScheme
+
+        XCTAssertEqual(nativeSurfaceScheme, .dark)
+    }
+
     func testCancelRestoresSourceThemeWithoutIntermediateSnap() {
         let sourceTheme = WorkspaceTheme(gradient: .default)
         let targetTheme = WorkspaceTheme(gradient: .incognito)

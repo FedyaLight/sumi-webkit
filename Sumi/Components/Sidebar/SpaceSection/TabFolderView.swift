@@ -835,6 +835,7 @@ struct TabFolderView: View {
                     browserManager.showFolderEditor(
                         for: folder,
                         in: windowState,
+                        themeContext: themeContext,
                         source: windowState.resolveSidebarPresentationSource()
                     )
                 },
@@ -852,6 +853,7 @@ struct TabFolderView: View {
         browserManager.showShortcutEditor(
             for: pin,
             in: windowState,
+            themeContext: themeContext,
             source: source ?? windowState.resolveSidebarPresentationSource()
         )
     }

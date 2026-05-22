@@ -55,7 +55,7 @@ class EmojiPickerManager: NSObject, ObservableObject {
         activePresentationSource = source
         activeCommitHandler = onCommit
         activeSettings = settings
-        activeThemeContext = themeContext
+        activeThemeContext = themeContext?.nativeSurfaceThemeContext
         transientSessionToken = source.flatMap {
             $0.coordinator?.beginSession(
                 kind: .emojiPopover,
@@ -83,7 +83,11 @@ class EmojiPickerManager: NSObject, ObservableObject {
             width: SumiEmojiPickerMetrics.popoverWidth,
             height: SumiEmojiPickerMetrics.popoverHeight
         )
-        popover?.appearance = anchorView.window?.effectiveAppearance
+        let colorScheme = popoverColorScheme(anchorView: anchorView)
+        popover?.appearance = NSAppearance.sumiChromeAppearance(
+            for: colorScheme,
+            fallback: anchorView.window?.effectiveAppearance
+        )
 
         guard let window = anchorView.window,
             let screen = window.screen
@@ -155,6 +159,8 @@ class EmojiPickerManager: NSObject, ObservableObject {
                 panel
                     .environment(\.sumiSettings, activeSettings)
                     .environment(\.resolvedThemeContext, activeThemeContext)
+                    .environment(\.colorScheme, activeThemeContext.nativeSurfaceColorScheme)
+                    .preferredColorScheme(activeThemeContext.nativeSurfaceColorScheme)
             )
         }
 
@@ -163,6 +169,17 @@ class EmojiPickerManager: NSObject, ObservableObject {
         }
 
         return AnyView(panel)
+    }
+
+    private func popoverColorScheme(anchorView: NSView) -> ColorScheme {
+        if let activeThemeContext {
+            return activeThemeContext.nativeSurfaceColorScheme
+        }
+
+        return ColorScheme(
+            sumiChromeAppearance: anchorView.window?.effectiveAppearance
+                ?? NSApplication.shared.effectiveAppearance
+        )
     }
 }
 

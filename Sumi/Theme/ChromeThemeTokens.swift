@@ -76,8 +76,7 @@ extension ResolvedThemeContext {
     }
 
     var nativeSurfaceColorScheme: ColorScheme {
-        if globalColorScheme == .dark
-            || chromeColorScheme == .dark
+        if chromeColorScheme == .dark
             || sourceChromeColorScheme == .dark
             || targetChromeColorScheme == .dark
         {

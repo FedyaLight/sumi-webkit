@@ -88,7 +88,7 @@ struct WindowView: View {
                     windowState: windowState,
                     sumiSettings: sumiSettings,
                     resolvedThemeContext: resolvedThemeContext,
-                    colorScheme: globalColorScheme,
+                    colorScheme: nativeSurfaceColorScheme,
                     isPresented: windowState.isFloatingBarVisible && !transientChromeModalSuppressed
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -120,7 +120,7 @@ struct WindowView: View {
                             windowState: windowState,
                             sumiSettings: sumiSettings,
                             resolvedThemeContext: resolvedThemeContext,
-                            colorScheme: globalColorScheme
+                            colorScheme: nativeSurfaceColorScheme
                         )
                         .frame(width: max(contentFrame.width, 0), height: max(contentFrame.height, 0))
                         .position(x: contentFrame.midX, y: contentFrame.midY)
@@ -255,7 +255,7 @@ struct WindowView: View {
         }
         // Keep Sumi's theme override inside SwiftUI so AppKit chrome stays stable while custom
         // sidebar chrome resolves its appearance from SwiftUI state.
-        .environment(\.colorScheme, globalColorScheme)
+        .environment(\.colorScheme, nativeSurfaceColorScheme)
     }
 
     private var shouldRenderCollapsedSidebarOverlay: Bool {
@@ -424,7 +424,7 @@ struct WindowView: View {
                 windowState: windowState,
                 sumiSettings: sumiSettings,
                 resolvedThemeContext: resolvedThemeContext,
-                colorScheme: globalColorScheme,
+                colorScheme: nativeSurfaceColorScheme,
                 isSuppressed: findChromeBelongsToGlance
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -506,6 +506,10 @@ struct WindowView: View {
             global: globalColorScheme,
             settings: sumiSettings
         )
+    }
+
+    private var nativeSurfaceColorScheme: ColorScheme {
+        resolvedThemeContext.nativeSurfaceColorScheme
     }
 
     @ViewBuilder

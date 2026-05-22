@@ -183,6 +183,7 @@ final class FolderEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         folder: TabFolder,
         in windowState: BrowserWindowState,
         browserManager: BrowserManager,
+        themeContext: ResolvedThemeContext,
         source: SidebarTransientPresentationSource
     ) {
         if activeSession != nil {
@@ -199,6 +200,8 @@ final class FolderEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         }
 
         let editorSession = FolderEditorSession(folder: folder)
+        let surfaceThemeContext = themeContext.nativeSurfaceThemeContext
+        let surfaceColorScheme = surfaceThemeContext.nativeSurfaceColorScheme
         let hostingController = NSHostingController(
             rootView: FolderEditorPopover(
                 session: editorSession,
@@ -213,6 +216,9 @@ final class FolderEditorPopoverPresenter: NSObject, NSPopoverDelegate {
             .environmentObject(browserManager)
             .environment(windowState)
             .environment(\.sumiSettings, browserManager.sumiSettings ?? SumiSettingsService())
+            .environment(\.resolvedThemeContext, surfaceThemeContext)
+            .environment(\.colorScheme, surfaceColorScheme)
+            .preferredColorScheme(surfaceColorScheme)
             .frame(
                 width: Self.Metrics.contentSize.width,
                 height: Self.Metrics.contentSize.height
@@ -225,9 +231,10 @@ final class FolderEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         popover.delegate = self
         popover.contentViewController = hostingController
         popover.contentSize = Self.Metrics.contentSize
-        popover.appearance = anchor.view.window?.effectiveAppearance
-            ?? windowState.window?.effectiveAppearance
-            ?? NSApplication.shared.effectiveAppearance
+        popover.appearance = NSAppearance.sumiChromeAppearance(
+            for: surfaceColorScheme,
+            fallback: anchor.view.window?.effectiveAppearance ?? windowState.window?.effectiveAppearance
+        )
 
         let token = source.coordinator?.beginSession(
             kind: .folderEditorPopover,
@@ -362,12 +369,14 @@ extension BrowserManager {
     func showFolderEditor(
         for folder: TabFolder,
         in windowState: BrowserWindowState,
+        themeContext: ResolvedThemeContext,
         source: SidebarTransientPresentationSource
     ) {
         folderEditorPopoverPresenter.present(
             folder: folder,
             in: windowState,
             browserManager: self,
+            themeContext: themeContext,
             source: source
         )
     }

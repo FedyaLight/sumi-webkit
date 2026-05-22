@@ -142,6 +142,7 @@ extension SpaceView {
         browserManager.showShortcutEditor(
             for: pin,
             in: windowState,
+            themeContext: themeContext,
             source: source ?? windowState.resolveSidebarPresentationSource()
         )
     }
