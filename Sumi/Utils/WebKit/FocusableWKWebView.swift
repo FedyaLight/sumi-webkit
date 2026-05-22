@@ -46,6 +46,7 @@ final class FocusableWKWebView: WKWebView {
     private var lastGlancePageCursor: NSCursor?
     private var lastGlancePageCursorPoint: CGPoint?
     private var lastGlancePageCursorTimestamp: TimeInterval = 0
+    private lazy var webPageMenuController = SumiWebPageMenuController()
 
     weak var owningTab: Tab?
     let interactionEventsPublisher = PassthroughSubject<SumiWebViewInteractionEvent, Never>()
@@ -467,8 +468,14 @@ final class FocusableWKWebView: WKWebView {
     }
 
     override func rightMouseDown(with event: NSEvent) {
-        super.rightMouseDown(with: event)
         owningTab?.activate()
+        isInspectable = true
+        super.rightMouseDown(with: event)
+    }
+
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        super.willOpenMenu(menu, with: event)
+        webPageMenuController.prepare(menu, for: self)
     }
 
     override var isInFullScreenMode: Bool {

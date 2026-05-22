@@ -56,21 +56,24 @@ class WindowRegistry {
 
     /// Register a new window
     func register(_ window: BrowserWindowState) {
+        let wasRegistered = windows[window.id] != nil
         windows[window.id] = window
 
-        let matchingAwaiterIDs = windowAwaiters.compactMap { entry in
-            entry.value.existingWindowIDs.contains(window.id) ? nil : entry.key
-        }
-        for awaiterID in matchingAwaiterIDs {
-            guard let awaiter = windowAwaiters.removeValue(forKey: awaiterID) else {
-                continue
+        if wasRegistered == false {
+            let matchingAwaiterIDs = windowAwaiters.compactMap { entry in
+                entry.value.existingWindowIDs.contains(window.id) ? nil : entry.key
             }
-            awaiter.continuation.resume(returning: window)
-        }
+            for awaiterID in matchingAwaiterIDs {
+                guard let awaiter = windowAwaiters.removeValue(forKey: awaiterID) else {
+                    continue
+                }
+                awaiter.continuation.resume(returning: window)
+            }
 
-        onWindowRegister?(window)
-        RuntimeDiagnostics.emit {
-            "🪟 [WindowRegistry] Registered window: \(window.id)"
+            onWindowRegister?(window)
+            RuntimeDiagnostics.emit {
+                "🪟 [WindowRegistry] Registered window: \(window.id)"
+            }
         }
     }
 

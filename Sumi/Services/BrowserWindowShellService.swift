@@ -28,10 +28,17 @@ final class BrowserWindowShellService {
             return
         }
 
+        let windowState = BrowserWindowState()
+        windowState.tabManager = context.tabManager
+
         let newWindow = makeWindow(
             title: "Sumi",
-            contentView: context.makeContentView(windowRegistry, webViewCoordinator, nil)
+            contentView: context.makeContentView(windowRegistry, webViewCoordinator, windowState)
         )
+        windowState.window = newWindow
+
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
         newWindow.makeKeyAndOrderFront(nil)
     }
 

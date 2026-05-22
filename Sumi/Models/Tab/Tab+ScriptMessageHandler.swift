@@ -11,6 +11,7 @@ extension Tab {
     func normalTabCoreUserScripts() -> [SumiUserScript] {
         [
             SumiLinkInteractionUserScript(tab: self),
+            SumiWebPageContextMenuUserScript(tab: self),
             SumiIdentityUserScript(tab: self),
             SumiTabSuspensionUserScript(tab: self),
             SumiWebNotificationUserScript(tab: self),
