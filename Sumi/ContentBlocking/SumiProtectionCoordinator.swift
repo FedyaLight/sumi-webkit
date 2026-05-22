@@ -1177,7 +1177,7 @@ final class SumiProtectionCoordinator {
     ) -> [SumiContentRuleListDefinition] {
         guard let manifest else { return [] }
         let expectedIdentifiers = Set(identifiers)
-        return manifest.allNativeShards
+        return manifest.networkShards
             .filter { expectedIdentifiers.contains($0.webKitIdentifier) }
             .sorted { lhs, rhs in
                 lhs.kind == rhs.kind

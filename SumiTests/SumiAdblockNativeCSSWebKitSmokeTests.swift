@@ -24,6 +24,7 @@ final class SumiAdblockNativeCSSWebKitSmokeTests: XCTestCase {
         XCTAssertEqual(bundle.manifest.nativeCSSSafetyPolicyVersion, SumiAdblockNativeRuleBundle.requiredNativeCSSSafetyPolicyVersion)
         XCTAssertEqual(manifest.networkShards.count, 2)
         XCTAssertEqual(manifest.nativeCSSShards.count, 1)
+        XCTAssertEqual(manifest.webKitRuleListIdentifiers, manifest.networkShards.map(\.webKitIdentifier).sorted())
     }
 
     func testUnsafePreparedBundlePolicyVersionIsRejectedBeforeUse() throws {

@@ -176,7 +176,7 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
         self.selectedFilterLists = selectedFilterLists
         self.networkShards = networkShards
         self.nativeCSSShards = nativeCSSShards
-        self.webKitRuleListIdentifiers = (networkShards + nativeCSSShards)
+        self.webKitRuleListIdentifiers = networkShards
             .map(\.webKitIdentifier)
             .sorted()
         self.nativeCompiler = nativeCompiler
@@ -565,9 +565,11 @@ actor AdblockUpdateManifestStore {
     }
 
     func compiledShardDefinitions(
-        for manifest: AdblockCompiledGenerationManifest
+        for manifest: AdblockCompiledGenerationManifest,
+        includingRuleKinds ruleKinds: Set<AdblockCompiledRuleGroupKind> = [.network]
     ) throws -> [SumiContentRuleListDefinition] {
         try manifest.allNativeShards
+            .filter { ruleKinds.contains($0.kind) }
             .sorted(by: Self.shardSort)
             .map { shard in
                 let url = generationDirectory(for: shard.generationId)

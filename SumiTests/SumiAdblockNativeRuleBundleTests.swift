@@ -54,6 +54,22 @@ final class SumiAdblockNativeRuleBundleTests: XCTestCase {
         XCTAssertTrue(trackingGroup.reportLine.contains("sourceLicense=CC BY-NC-SA 4.0"))
     }
 
+    func testPreparedBundleDefinitionsDefaultToNetworkShardsOnly() throws {
+        let bundleURL = temporaryDirectory().appendingPathComponent("SumiAdblockBundle", isDirectory: true)
+        try PreparedAdblockTestSupport.makeBundle(at: bundleURL, includeNativeCSS: true)
+        let bundle = try SumiAdblockNativeRuleBundle.load(directoryURL: bundleURL)
+
+        let defaultDefinitions = try bundle.contentRuleListDefinitions()
+        XCTAssertEqual(defaultDefinitions.count, 2)
+        XCTAssertFalse(defaultDefinitions.contains { $0.webKitStoreIdentifier.contains(".nativeCSS.") })
+
+        let allDefinitions = try bundle.contentRuleListDefinitions(
+            includingRuleKinds: Set(AdblockCompiledRuleGroupKind.allCases)
+        )
+        XCTAssertEqual(allDefinitions.count, 3)
+        XCTAssertTrue(allDefinitions.contains { $0.webKitStoreIdentifier.contains(".nativeCSS.") })
+    }
+
     func testPreparedBundleInstallPublishesDevelopmentBundleWithoutGeneration() async throws {
         let bundleURL = temporaryDirectory().appendingPathComponent("SumiAdblockBundle", isDirectory: true)
         try PreparedAdblockTestSupport.makeBundle(at: bundleURL)
