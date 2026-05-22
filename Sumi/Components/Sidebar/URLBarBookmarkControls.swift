@@ -18,7 +18,7 @@ extension URLBarView {
         else { return }
 
         closeZoomPopover()
-        isHubPresented = true
+        browserManager.presentURLBarHubPopover(in: windowState, initialMode: .controls)
     }
 
 }

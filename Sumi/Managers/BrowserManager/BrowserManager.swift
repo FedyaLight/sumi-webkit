@@ -184,6 +184,7 @@ class BrowserManager: ObservableObject {
     var dialogManager: DialogManager
     var downloadManager: DownloadManager
     let downloadsPopoverPresenter: DownloadsPopoverPresenter
+    let urlBarHubPopoverPresenter: URLBarHubPopoverPresenter
     let workspaceThemePickerPopoverPresenter: WorkspaceThemePickerPopoverPresenter
     let folderEditorPopoverPresenter: FolderEditorPopoverPresenter
     let shortcutEditorPopoverPresenter: ShortcutEditorPopoverPresenter
@@ -207,6 +208,7 @@ class BrowserManager: ObservableObject {
     let storageAccessPermissionBridge: SumiStorageAccessPermissionBridge
     let permissionIndicatorEventStore: SumiPermissionIndicatorEventStore
     let permissionRecentActivityStore: SumiPermissionRecentActivityStore
+    let permissionSiteActivityStore: SumiPermissionSiteActivityStore
     let permissionCleanupService: SumiPermissionCleanupService
     let blockedPopupStore: SumiBlockedPopupStore
     let popupPermissionBridge: SumiPopupPermissionBridge
@@ -333,6 +335,7 @@ class BrowserManager: ObservableObject {
         storageAccessPermissionBridge: SumiStorageAccessPermissionBridge? = nil,
         permissionIndicatorEventStore: SumiPermissionIndicatorEventStore? = nil,
         permissionRecentActivityStore: SumiPermissionRecentActivityStore? = nil,
+        permissionSiteActivityStore: SumiPermissionSiteActivityStore? = nil,
         permissionCleanupService: SumiPermissionCleanupService? = nil,
         blockedPopupStore: SumiBlockedPopupStore? = nil,
         popupPermissionBridge: SumiPopupPermissionBridge? = nil,
@@ -369,6 +372,7 @@ class BrowserManager: ObservableObject {
         let filePickerPanelPresenter = filePickerPanelPresenter ?? SumiFilePickerPanelPresenter()
         let permissionIndicatorEventStore = permissionIndicatorEventStore ?? SumiPermissionIndicatorEventStore()
         let permissionRecentActivityStore = permissionRecentActivityStore ?? SumiPermissionRecentActivityStore()
+        let permissionSiteActivityStore = permissionSiteActivityStore ?? SumiPermissionSiteActivityStore.shared
         let permissionCleanupService = permissionCleanupService
             ?? SumiPermissionCleanupService(
                 store: persistentPermissionStore,
@@ -415,6 +419,7 @@ class BrowserManager: ObservableObject {
         self.dialogManager = DialogManager()
         self.downloadManager = DownloadManager()
         self.downloadsPopoverPresenter = DownloadsPopoverPresenter()
+        self.urlBarHubPopoverPresenter = URLBarHubPopoverPresenter()
         self.workspaceThemePickerPopoverPresenter = WorkspaceThemePickerPopoverPresenter()
         self.folderEditorPopoverPresenter = FolderEditorPopoverPresenter()
         self.shortcutEditorPopoverPresenter = ShortcutEditorPopoverPresenter()
@@ -466,12 +471,14 @@ class BrowserManager: ObservableObject {
             )
         self.permissionIndicatorEventStore = permissionIndicatorEventStore
         self.permissionRecentActivityStore = permissionRecentActivityStore
+        self.permissionSiteActivityStore = permissionSiteActivityStore
         self.permissionCleanupService = permissionCleanupService
         self.blockedPopupStore = blockedPopupStore
         self.popupPermissionBridge = popupPermissionBridge
             ?? SumiPopupPermissionBridge(
                 coordinator: permissionCoordinator,
-                blockedPopupStore: blockedPopupStore
+                blockedPopupStore: blockedPopupStore,
+                siteActivityStore: permissionSiteActivityStore
             )
         self.externalAppResolver = externalAppResolver
         self.externalSchemeSessionStore = externalSchemeSessionStore
@@ -489,10 +496,12 @@ class BrowserManager: ObservableObject {
             blockedPopupStore: blockedPopupStore,
             externalSchemeSessionStore: externalSchemeSessionStore
         )
-        self.permissionRecentActivityTask = Task { @MainActor [permissionCoordinator, permissionRecentActivityStore] in
+        self.permissionRecentActivityTask = Task {
+            @MainActor [permissionCoordinator, permissionRecentActivityStore, permissionSiteActivityStore] in
             let events = await permissionCoordinator.events()
             for await event in events {
                 permissionRecentActivityStore.record(event)
+                permissionSiteActivityStore.record(event: event)
             }
         }
         self.permissionSidebarPinningTask = Task { @MainActor [weak self, permissionCoordinator] in

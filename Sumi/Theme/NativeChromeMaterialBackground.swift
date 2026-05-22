@@ -6,6 +6,7 @@ enum NativeChromeMaterialRole {
     case collapsedSidebar
     case windowChrome
     case nativeGlassChrome
+    case popover
 
     var material: NSVisualEffectView.Material {
         switch self {
@@ -17,6 +18,8 @@ enum NativeChromeMaterialRole {
             return .underWindowBackground
         case .nativeGlassChrome:
             return .hudWindow
+        case .popover:
+            return .popover
         }
     }
 
@@ -24,7 +27,7 @@ enum NativeChromeMaterialRole {
         switch self {
         case .sidebar:
             return .withinWindow
-        case .collapsedSidebar, .windowChrome, .nativeGlassChrome:
+        case .collapsedSidebar, .windowChrome, .nativeGlassChrome, .popover:
             return .behindWindow
         }
     }

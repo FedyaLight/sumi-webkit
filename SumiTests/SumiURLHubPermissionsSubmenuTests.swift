@@ -4,16 +4,19 @@ import XCTest
 @testable import Sumi
 
 final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
-    func testURLHubDefinesPermissionsRowBelowCookiesAndUsesSubmenuMode() throws {
+    func testURLHubEmbedsPermissionsInlineWithoutSubmenuMode() throws {
         let source = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
 
-        XCTAssertTrue(source.contains("case permissions"))
-        XCTAssertTrue(source.contains("SumiCurrentSitePermissionsView("))
-        XCTAssertTrue(source.contains("title: SumiCurrentSitePermissionsStrings.rowTitle"))
-        XCTAssertTrue(source.contains("kind: .permissions"))
+        XCTAssertTrue(source.contains("Text(SumiCurrentSitePermissionsStrings.rowTitle)"))
+        XCTAssertTrue(source.contains("URLHubPermissionInlineRow("))
+        XCTAssertTrue(source.contains("permissionsInlineSection"))
+        XCTAssertTrue(source.contains("currentSitePermissionsModel.rows"))
+        XCTAssertFalse(source.contains("case permissions"))
+        XCTAssertFalse(source.contains("SumiCurrentSitePermissionsView("))
+        XCTAssertFalse(source.contains("kind: .permissions"))
 
         let cookiesRange = try XCTUnwrap(source.range(of: "id: \"cookies\""))
-        let permissionsRange = try XCTUnwrap(source.range(of: "rows.append(permissionsRow)"))
+        let permissionsRange = try XCTUnwrap(source.range(of: "permissionsInlineSection"))
         XCTAssertLessThan(cookiesRange.lowerBound, permissionsRange.lowerBound)
     }
 
@@ -25,21 +28,20 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
         XCTAssertFalse(source.contains("kind: .tracking("))
         XCTAssertFalse(source.contains("kind: .adBlocking("))
         XCTAssertTrue(source.contains("setMode(.siteDataDetails, direction: .forward)"))
-        XCTAssertTrue(source.contains("setMode(.permissions, direction: .forward)"))
+        XCTAssertFalse(source.contains("setMode(.permissions"))
     }
 
-    func testURLHubPermissionsSubmenuUsesNonLiveSystemSnapshotModeAndIdentifiers() throws {
+    func testURLHubInlinePermissionsUseNonLiveSystemSnapshotModeAndIdentifiers() throws {
         let urlBar = try [
             sourceFile("Sumi/Components/Sidebar/URLBarTrailingActions.swift"),
             sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift"),
         ].joined(separator: "\n")
-        let permissionsView = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionsView.swift")
 
         XCTAssertTrue(urlBar.contains(".accessibilityIdentifier(\"urlbar-site-controls-button\")"))
         XCTAssertTrue(urlBar.contains(".accessibilityIdentifier(\"urlhub-setting-row-\\(model.id)\")"))
-        XCTAssertTrue(permissionsView.contains("systemSnapshotMode: .none"))
-        XCTAssertTrue(permissionsView.contains(".accessibilityIdentifier(\"urlhub-permissions-submenu\")"))
-        XCTAssertTrue(permissionsView.contains(".accessibilityIdentifier(\"urlhub-permission-row-\\(row.id)\")"))
+        XCTAssertTrue(urlBar.contains("systemSnapshotMode: .none"))
+        XCTAssertTrue(urlBar.contains(".accessibilityIdentifier(\"urlhub-permission-row-\\(row.id)\")"))
+        XCTAssertTrue(urlBar.contains(".accessibilityIdentifier(\"urlhub-site-settings-button\")"))
     }
 
     func testCollapsedURLBarChromeActionsUseAppKitPrimaryRouting() throws {
@@ -53,20 +55,84 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
         XCTAssertTrue(zoomActions.contains(".sidebarAppKitPrimaryAction(action: action)"))
     }
 
-    func testURLHubPermissionsRowUsesHandIcon() throws {
-        let urlBar = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
-        let iconCatalog = try sourceFile("Sumi/Permissions/UI/SumiPermissionIconCatalog.swift")
+    func testURLHubUsesNativeAdaptivePopoverHostAndTheming() throws {
+        let trailingActions = try sourceFile("Sumi/Components/Sidebar/URLBarTrailingActions.swift")
+        let popover = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
+        let presenter = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopoverPresenter.swift")
+        let material = try sourceFile("Sumi/Theme/NativeChromeMaterialBackground.swift")
 
-        XCTAssertTrue(urlBar.contains("fallbackSystemName: \"hand.raised\""))
-        XCTAssertTrue(iconCatalog.contains("fallbackSystemName: \"hand.raised\""))
+        XCTAssertTrue(trailingActions.contains("URLBarHubPopoverAnchorView("))
+        XCTAssertFalse(trailingActions.contains(".popover(isPresented: $isHubPresented"))
+        XCTAssertTrue(presenter.contains("NSPopover()"))
+        XCTAssertTrue(presenter.contains("popover.appearance = popoverAppearance(for: registration)"))
+        XCTAssertTrue(presenter.contains("registration.themeContext.nativeSurfaceColorScheme"))
+        XCTAssertTrue(popover.contains("NativeChromeMaterialBackground(role: .popover)"))
+        XCTAssertTrue(material.contains("case popover"))
+        XCTAssertTrue(material.contains("return .popover"))
+        XCTAssertFalse(presenter.contains("Timer"))
+        XCTAssertFalse(presenter.contains("NotificationCenter.default.addObserver"))
     }
 
-    func testURLHubFooterDoesNotExposeRedundantSiteSettingsMenu() throws {
+    func testURLHubPermissionRowsUseClickCycleAndContextMenu() throws {
+        let urlBar = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
+
+        XCTAssertTrue(urlBar.contains("cyclePermission(row)"))
+        XCTAssertTrue(urlBar.contains("nextInlineOption("))
+        XCTAssertTrue(urlBar.contains(".contextMenu"))
+        XCTAssertTrue(urlBar.contains("onSelect(option)"))
+        XCTAssertTrue(urlBar.contains("filledIconVisual"))
+        XCTAssertTrue(urlBar.contains("blockedIconVisual"))
+        XCTAssertTrue(urlBar.contains("showsSlash"))
+        XCTAssertFalse(urlBar.contains("inlineStateTitle"))
+        XCTAssertFalse(urlBar.contains("proposed = .default"))
+        XCTAssertFalse(urlBar.contains("proposed = .ask"))
+    }
+
+    func testURLHubPermissionIconsUseSingleSlashAndStableLocationGlyph() throws {
+        let urlBar = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
+
+        XCTAssertTrue(urlBar.contains("return IconVisual(iconName: \"autoplay-media\", fallbackSystemName: \"play.rectangle\", showsSlash: true)"))
+        XCTAssertFalse(urlBar.contains("IconVisual(iconName: \"autoplay-media-blocked\", fallbackSystemName: \"play.rectangle\", showsSlash: true)"))
+        XCTAssertTrue(urlBar.contains("return IconVisual(iconName: \"location\", fallbackSystemName: \"location.fill\", showsSlash: false)"))
+        XCTAssertTrue(urlBar.contains("return IconVisual(iconName: \"location\", fallbackSystemName: \"location.fill\", showsSlash: true)"))
+        XCTAssertFalse(urlBar.contains("location-solid"))
+    }
+
+    func testURLHubFooterUsesGearMenuForSiteActions() throws {
         let source = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
 
-        XCTAssertFalse(source.contains("Button(\"Site Settings\")"))
+        XCTAssertFalse(source.contains("actionTitle: \"More\""))
         XCTAssertFalse(source.contains("fallbackSystemName: \"ellipsis\""))
         XCTAssertFalse(source.contains("iconName: \"menu\""))
+        XCTAssertTrue(source.contains("Image(systemName: \"gearshape\")"))
+        XCTAssertTrue(source.contains(".lineLimit(1)"))
+        XCTAssertTrue(source.contains(".minimumScaleFactor(0.86)"))
+        XCTAssertTrue(source.contains("openSiteSettings"))
+        XCTAssertTrue(source.contains("openSiteDataDetails"))
+        XCTAssertTrue(source.contains("resetPermissionsToDefault"))
+        XCTAssertTrue(source.contains("Button(\"Site Settings\", action: siteSettingsAction)"))
+        XCTAssertTrue(source.contains("Button(\"Clear Site Data\", action: clearSiteDataAction)"))
+        XCTAssertTrue(source.contains("Button(\"Reset Permissions to Default\", action: resetPermissionsAction)"))
+    }
+
+    func testURLHubPermissionRowsUseCompactPolicySubtitles() throws {
+        let viewModel = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionsViewModel.swift")
+
+        XCTAssertTrue(viewModel.contains("compactPolicySubtitle("))
+        XCTAssertTrue(viewModel.contains("SumiCurrentSitePermissionsStrings.policyOn"))
+        XCTAssertTrue(viewModel.contains("SumiCurrentSitePermissionsStrings.policyOff"))
+        XCTAssertFalse(viewModel.contains("Used by this site"))
+        XCTAssertFalse(viewModel.contains("Requested by this site"))
+        XCTAssertFalse(viewModel.contains("Saved setting on this site"))
+    }
+
+    func testPermissionIndicatorIsHiddenWhileURLHubIsPresented() throws {
+        let permissionActions = try sourceFile("Sumi/Components/Sidebar/URLBarPermissionViews.swift")
+        let presenter = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopoverPresenter.swift")
+
+        XCTAssertTrue(presenter.contains("func isPresented(in windowState: BrowserWindowState) -> Bool"))
+        XCTAssertTrue(permissionActions.contains("urlBarHubPopoverPresenter.isPresented(in: windowState)"))
+        XCTAssertTrue(permissionActions.contains("return .hidden"))
     }
 
     func testTopLevelAutoplayControlWasMovedOutOfSiteControlsRows() throws {
@@ -76,24 +142,37 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
         XCTAssertFalse(source.contains("id: \"autoplay\",\n                        chromeIconName"))
     }
 
-    func testPermissionsSubmenuDoesNotUseForbiddenAPIs() throws {
-        let view = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionsView.swift")
+    func testInlinePermissionsDoNotUseForbiddenAPIs() throws {
+        let hub = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
         let viewModel = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionsViewModel.swift")
 
-        XCTAssertFalse(view.contains("SwiftData"))
-        XCTAssertFalse(view.contains("requestAuthorization"))
+        XCTAssertFalse(hub.contains("SwiftData"))
+        XCTAssertFalse(hub.contains("requestAuthorization"))
         XCTAssertFalse(viewModel.contains("requestAuthorization"))
-        XCTAssertFalse(view.contains("WKPermissionDecision"))
+        XCTAssertFalse(hub.contains("WKPermissionDecision"))
         XCTAssertFalse(viewModel.contains("WKPermissionDecision"))
         XCTAssertFalse(viewModel.contains("UserDefaults"))
     }
 
-    func testPermissionsSubmenuCoalescesStoreDrivenReloads() throws {
-        let view = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionsView.swift")
+    func testURLHubInlinePermissionsCoalesceStoreDrivenReloads() throws {
+        let view = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
 
-        XCTAssertTrue(view.contains("@State private var scheduledReloadTask"))
-        XCTAssertTrue(view.contains("scheduleReloadAfterStoreChange()"))
-        XCTAssertTrue(view.contains("scheduledReloadTask?.cancel()"))
+        XCTAssertTrue(view.contains("@State private var scheduledPermissionsReloadTask"))
+        XCTAssertTrue(view.contains("schedulePermissionsReloadAfterStoreChange()"))
+        XCTAssertTrue(view.contains("scheduledPermissionsReloadTask?.cancel()"))
+    }
+
+    func testURLHubUsesDynamicHeightAndFilteredRows() throws {
+        let view = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
+        let viewModel = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionsViewModel.swift")
+
+        XCTAssertTrue(view.contains("URLBarHubPopoverContentSizePreferenceKey"))
+        XCTAssertTrue(view.contains("onContentSizeChange(size)"))
+        XCTAssertTrue(view.contains("!snapshot.settingsRows.isEmpty || !currentSitePermissionsModel.rows.isEmpty"))
+        XCTAssertTrue(viewModel.contains("appendSitePermissionRowIfRelevant("))
+        XCTAssertTrue(viewModel.contains("shouldShowSitePermissionRow("))
+        XCTAssertTrue(viewModel.contains("recentEventCount > 0 || runtimeStatus != nil || siteActivity != nil"))
+        XCTAssertTrue(viewModel.contains("hasResolvedDecision(for: key)"))
     }
 
     @MainActor

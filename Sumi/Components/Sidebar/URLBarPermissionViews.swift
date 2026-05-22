@@ -12,7 +12,7 @@ import WebKit
 
 extension URLBarView {
     func permissionIndicatorButton(
-        for _: Tab,
+        for currentTab: Tab,
         state: SumiPermissionIndicatorState
     ) -> some View {
         let action = { handlePermissionIndicatorClick() }
@@ -27,6 +27,20 @@ extension URLBarView {
             } else {
                 EmptyView()
             }
+        }
+        .popover(isPresented: $isPermissionIndicatorPopoverPresented, arrowEdge: .bottom) {
+            SumiPermissionIndicatorActionPopover(
+                state: state,
+                runtimeModel: permissionRuntimeControlsModel,
+                onRuntimeAction: { actionKind in
+                    await performPermissionRuntimeAction(actionKind)
+                },
+                onOpenSiteSettings: {
+                    openPermissionIndicatorSiteSettings(focusing: currentTab)
+                }
+            )
+            .environmentObject(browserManager)
+            .environment(windowState)
         }
     }
 
@@ -69,17 +83,106 @@ extension URLBarView {
     func handlePermissionIndicatorClick() {
         closeZoomPopover()
         if permissionPromptPresenter.presentFromIndicatorClick() {
-            isHubPresented = false
+            browserManager.closeURLBarHubPopover(in: windowState)
+            closePermissionIndicatorPopover()
             return
         }
 
-        if permissionIndicatorViewModel.state.prefersRuntimeControlsSurface {
-            hubInitialMode = .permissions
+        browserManager.closeURLBarHubPopover(in: windowState)
+        if isPermissionIndicatorPopoverPresented {
+            closePermissionIndicatorPopover()
         } else {
-            hubInitialMode = .controls
+            configurePermissionIndicatorPopover()
+            isPermissionIndicatorPopoverPresented = true
         }
-        hubModeRequestNonce += 1
-        isHubPresented = true
+    }
+
+    func closePermissionIndicatorPopover() {
+        isPermissionIndicatorPopoverPresented = false
+        permissionRuntimeControlsModel.clear()
+    }
+
+    func configurePermissionIndicatorPopover() {
+        guard let currentTab else {
+            permissionRuntimeControlsModel.clear()
+            return
+        }
+
+        permissionRuntimeControlsModel.load(
+            pageContext: permissionRuntimeControlsPageContext(for: currentTab),
+            runtimeController: browserManager.runtimePermissionController,
+            reloadRequired: currentTab.isAutoplayReloadRequired,
+            onRuntimeStateChanged: {
+                refreshPermissionIndicator(for: currentTab)
+            }
+        )
+    }
+
+    func performPermissionRuntimeAction(
+        _ actionKind: SumiPermissionRuntimeControl.Action.Kind
+    ) async {
+        _ = await permissionRuntimeControlsModel.perform(actionKind)
+        if let currentTab {
+            refreshPermissionIndicator(for: currentTab)
+        }
+    }
+
+    func openPermissionIndicatorSiteSettings(focusing tab: Tab) {
+        closePermissionIndicatorPopover()
+        browserManager.openSiteSettingsTab(
+            focusing: tab,
+            in: windowState
+        )
+    }
+
+    func permissionRuntimeControlsPageContext(
+        for tab: Tab
+    ) -> SumiPermissionRuntimeControlsViewModel.PageContext? {
+        guard let context = SumiCurrentSitePermissionsViewModel.context(
+            tab: tab,
+            profile: effectiveProfile
+        ),
+              context.isSupportedWebOrigin
+        else { return nil }
+
+        return SumiPermissionRuntimeControlsViewModel.PageContext(
+            tabId: context.tabId,
+            pageId: context.pageId,
+            navigationOrPageGeneration: context.navigationOrPageGeneration,
+            displayDomain: context.displayDomain,
+            currentWebView: { [weak tab] in
+                tab?.existingWebView
+            },
+            isCurrentPage: { [weak tab] tabId, pageId, navigationOrPageGeneration in
+                guard let tab else { return false }
+                return tab.id.uuidString.lowercased() == tabId
+                    && tab.currentPermissionPageId() == pageId
+                    && String(tab.extensionRuntimeDocumentSequence) == navigationOrPageGeneration
+            },
+            reloadPage: { [weak tab] in
+                guard let tab,
+                      tab.existingWebView != nil
+                else { return false }
+                tab.refresh()
+                tab.updateAutoplayReloadRequirementForCurrentSite()
+                return true
+            },
+            isGeolocationStillAllowed: {
+                let decision = await browserManager.permissionCoordinator.queryPermissionState(
+                    context.securityContext(for: .geolocation)
+                )
+                return decision.outcome == .granted || decision.state == .allow
+            },
+            clearGeolocationGrantForVisit: {
+                await browserManager.permissionCoordinator.resetTransientDecisions(
+                    profilePartitionId: context.profilePartitionId,
+                    pageId: context.pageId,
+                    requestingOrigin: context.origin,
+                    topOrigin: context.origin,
+                    reason: "runtime-stop-geolocation-from-indicator"
+                )
+            }
+        )
     }
 
     func permissionIndicatorTaskKey(for tab: Tab) -> String {
@@ -92,6 +195,10 @@ extension URLBarView {
     }
 
     func permissionIndicatorDisplayState(for currentTab: Tab) -> SumiPermissionIndicatorState {
+        if browserManager.urlBarHubPopoverPresenter.isPresented(in: windowState) {
+            return .hidden
+        }
+
         let state = permissionIndicatorViewModel.state
         guard !state.isVisible,
               let promptViewModel = permissionPromptPresenter.viewModel
@@ -144,6 +251,122 @@ extension URLBarView {
         )
     }
 
+}
+
+private struct SumiPermissionIndicatorActionPopover: View {
+    let state: SumiPermissionIndicatorState
+    @ObservedObject var runtimeModel: SumiPermissionRuntimeControlsViewModel
+    let onRuntimeAction: (SumiPermissionRuntimeControl.Action.Kind) async -> Void
+    let onOpenSiteSettings: () -> Void
+
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+
+            if runtimeModel.hasVisibleContent {
+                SumiPermissionRuntimeControlsView(
+                    model: runtimeModel,
+                    onAction: onRuntimeAction
+                )
+            } else {
+                Text("Manage this permission from site settings.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(tokens.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Divider()
+
+            Button(action: onOpenSiteSettings) {
+                Label("Site Settings", systemImage: "gearshape")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(SumiPermissionIndicatorFooterButtonStyle())
+            .accessibilityIdentifier("urlbar-permission-indicator-site-settings")
+        }
+        .padding(10)
+        .frame(width: 286)
+        .background(NativeChromeMaterialBackground(role: .popover))
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(tokens.fieldBackground)
+                SumiZenChromeIcon(
+                    iconName: state.icon.chromeIconName,
+                    fallbackSystemName: state.icon.fallbackSystemName,
+                    size: 16,
+                    tint: tokens.primaryText
+                )
+            }
+            .frame(width: 34, height: 34)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(headerTitle)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(tokens.primaryText)
+                    .lineLimit(1)
+
+                Text(state.displayDomain)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(tokens.secondaryText)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private var headerTitle: String {
+        if state.category == .mixed {
+            return "Site permissions"
+        }
+        return state.primaryPermissionType?.indicatorDisplayName ?? "Permissions"
+    }
+}
+
+private struct SumiPermissionIndicatorFooterButtonStyle: ButtonStyle {
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovered = false
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
+    }
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12.5, weight: .medium))
+            .foregroundStyle(tokens.primaryText)
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(backgroundColor(isPressed: configuration.isPressed))
+            )
+            .opacity(isEnabled ? 1 : 0.45)
+            .onHover { hovering in
+                isHovered = hovering
+            }
+    }
+
+    private func backgroundColor(isPressed: Bool) -> Color {
+        ThemeChromeRecipeBuilder.urlBarPillFieldBackground(
+            tokens: tokens,
+            isPressed: isPressed,
+            isHovering: isHovered,
+            isEnabled: isEnabled
+        )
+    }
 }
 
 private struct SumiPermissionIndicatorButton: View {

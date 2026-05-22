@@ -13,6 +13,7 @@ final class SumiPermissionURLHubIntegrationTests: XCTestCase {
         let blockedStore = SumiBlockedPopupStore()
         let externalStore = SumiExternalSchemeSessionStore()
         let indicatorStore = SumiPermissionIndicatorEventStore()
+        let siteActivityStore = makeSiteActivityStore()
         let runtime = FakeSumiRuntimePermissionController(
             cameraRuntimeState: .active,
             microphoneRuntimeState: .none,
@@ -35,7 +36,8 @@ final class SumiPermissionURLHubIntegrationTests: XCTestCase {
             autoplay: harness.autoplayStore,
             blockedPopupStore: blockedStore,
             externalStore: externalStore,
-            indicatorStore: indicatorStore
+            indicatorStore: indicatorStore,
+            siteActivityStore: siteActivityStore
         )
 
         await viewModel.load(
@@ -76,13 +78,15 @@ final class SumiPermissionURLHubIntegrationTests: XCTestCase {
         let blockedStore = SumiBlockedPopupStore()
         let externalStore = SumiExternalSchemeSessionStore()
         let indicatorStore = SumiPermissionIndicatorEventStore()
+        let siteActivityStore = makeSiteActivityStore()
         let dependencies = dependencies(
             coordinator: harness.coordinator,
             runtime: nil,
             autoplay: harness.autoplayStore,
             blockedPopupStore: blockedStore,
             externalStore: externalStore,
-            indicatorStore: indicatorStore
+            indicatorStore: indicatorStore,
+            siteActivityStore: siteActivityStore
         )
 
         try await harness.coordinator.setSiteDecision(
@@ -127,6 +131,11 @@ final class SumiPermissionURLHubIntegrationTests: XCTestCase {
         XCTAssertTrue(blockedStore.records(forPageId: context.pageId!).isEmpty)
         XCTAssertTrue(externalStore.records(forPageId: context.pageId!).isEmpty)
         XCTAssertTrue(indicatorStore.recordsSnapshot(forPageId: context.pageId!).isEmpty)
+        XCTAssertTrue(siteActivityStore.records(
+            forSiteOf: context.origin,
+            profilePartitionId: context.profilePartitionId,
+            isEphemeralProfile: context.isEphemeralProfile
+        ).isEmpty)
 
         let settingsSource = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionsViewModel.swift")
         XCTAssertFalse(settingsSource.contains("removeWebsiteData"))
@@ -137,8 +146,11 @@ final class SumiPermissionURLHubIntegrationTests: XCTestCase {
     func testUnsupportedContentSettingsRemainAbsentFromURLHubSource() throws {
         let source = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionsViewModel.swift")
 
-        XCTAssertTrue(source.contains("sitePermissionRow(\n                permissionType: .camera"))
-        XCTAssertTrue(source.contains("sitePermissionRow(\n                permissionType: .storageAccess"))
+        XCTAssertTrue(source.contains("appendSitePermissionRowIfRelevant(\n            .camera"))
+        XCTAssertTrue(source.contains("appendSitePermissionRowIfRelevant(\n            .storageAccess"))
+        XCTAssertTrue(source.contains("shouldShowSitePermissionRow("))
+        XCTAssertTrue(source.contains("recentEventCount > 0 || runtimeStatus != nil || siteActivity != nil"))
+        XCTAssertTrue(source.contains("hasResolvedDecision(for: key)"))
         XCTAssertFalse(source.contains("javascript"))
         XCTAssertFalse(source.contains("background-sync"))
         XCTAssertFalse(source.contains("automatic downloads"))
@@ -190,7 +202,10 @@ final class SumiPermissionURLHubIntegrationTests: XCTestCase {
         autoplay: SumiPermissionIntegrationAutoplayStore,
         blockedPopupStore: SumiBlockedPopupStore,
         externalStore: SumiExternalSchemeSessionStore,
-        indicatorStore: SumiPermissionIndicatorEventStore
+        indicatorStore: SumiPermissionIndicatorEventStore,
+        siteActivityStore: SumiPermissionSiteActivityStore = SumiPermissionSiteActivityStore(
+            userDefaults: UserDefaults(suiteName: "SumiPermissionURLHub-\(UUID().uuidString)")!
+        )
     ) -> SumiCurrentSitePermissionsViewModel.LoadDependencies {
         SumiCurrentSitePermissionsViewModel.LoadDependencies(
             coordinator: coordinator,
@@ -201,7 +216,14 @@ final class SumiPermissionURLHubIntegrationTests: XCTestCase {
             autoplayStore: autoplay,
             blockedPopupStore: blockedPopupStore,
             externalSchemeSessionStore: externalStore,
-            indicatorEventStore: indicatorStore
+            indicatorEventStore: indicatorStore,
+            siteActivityStore: siteActivityStore
+        )
+    }
+
+    private func makeSiteActivityStore() -> SumiPermissionSiteActivityStore {
+        SumiPermissionSiteActivityStore(
+            userDefaults: UserDefaults(suiteName: "SumiPermissionURLHub-\(UUID().uuidString)")!
         )
     }
 

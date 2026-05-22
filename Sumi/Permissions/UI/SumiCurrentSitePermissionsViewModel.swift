@@ -93,6 +93,7 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
         let blockedPopupStore: SumiBlockedPopupStore
         let externalSchemeSessionStore: SumiExternalSchemeSessionStore
         let indicatorEventStore: SumiPermissionIndicatorEventStore
+        let siteActivityStore: SumiPermissionSiteActivityStore
     }
 
     @Published private(set) var context: Context?
@@ -117,6 +118,7 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
             webView: tab?.existingWebView,
             profile: profile,
             reloadRequired: tab?.isAutoplayReloadRequired == true,
+            autoplayInUse: tab?.audioState.isPlayingAudio == true,
             dependencies: dependencies,
             systemSnapshotMode: systemSnapshotMode
         )
@@ -127,6 +129,7 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
         webView: WKWebView?,
         profile: Profile?,
         reloadRequired: Bool,
+        autoplayInUse: Bool = false,
         dependencies: LoadDependencies,
         systemSnapshotMode: SumiCurrentSiteSystemSnapshotMode = .none
     ) async {
@@ -158,6 +161,14 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
             } else {
                 transientRecords = []
             }
+            dependencies.siteActivityStore.recordStoredRecords(storedRecords)
+            dependencies.siteActivityStore.recordStoredRecords(transientRecords)
+            recordAutoplayActivityIfNeeded(
+                context: context,
+                reloadRequired: reloadRequired,
+                autoplayInUse: autoplayInUse,
+                dependencies: dependencies
+            )
             let runtimeState = webView.map {
                 dependencies.runtimeController?.currentRuntimeState(for: $0, pageId: context.pageId)
             } ?? nil
@@ -169,6 +180,7 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
                 context: context,
                 profile: profile,
                 reloadRequired: reloadRequired,
+                autoplayInUse: autoplayInUse,
                 runtimeState: runtimeState,
                 systemSnapshots: systemSnapshots,
                 dependencies: dependencies
@@ -232,6 +244,12 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
             case .externalApps, .filePicker:
                 return
             }
+            recordSelectionActivity(
+                option,
+                for: row,
+                context: context,
+                dependencies: dependencies
+            )
             statusMessage = SumiCurrentSitePermissionsStrings.permissionsChanged
             errorMessage = nil
         } catch {
@@ -259,6 +277,11 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
                 dependencies.externalSchemeSessionStore.clear(pageId: pageId)
                 dependencies.indicatorEventStore.clear(pageId: pageId)
             }
+            dependencies.siteActivityStore.clearSite(
+                origin: context.origin,
+                profilePartitionId: context.profilePartitionId,
+                isEphemeralProfile: context.isEphemeralProfile
+            )
             await dependencies.coordinator.resetTransientDecisions(
                 profilePartitionId: context.profilePartitionId,
                 pageId: context.pageId,
@@ -320,72 +343,73 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
         context: Context,
         profile: Profile?,
         reloadRequired: Bool,
+        autoplayInUse: Bool,
         runtimeState: SumiRuntimePermissionState?,
         systemSnapshots: [SumiSystemPermissionKind: SumiSystemPermissionSnapshot],
         dependencies: LoadDependencies
     ) -> [SumiCurrentSitePermissionRow] {
         var result: [SumiCurrentSitePermissionRow] = []
 
-        result.append(
-            sitePermissionRow(
-                permissionType: .camera,
-                context: context,
-                systemSnapshot: systemSnapshots[.camera],
-                runtimeStatus: runtimeStatus(for: runtimeState?.camera),
-                recentEventCount: recentEventCount(for: .camera, context: context, dependencies: dependencies)
-            )
+        appendSitePermissionRowIfRelevant(
+            .camera,
+            to: &result,
+            context: context,
+            systemSnapshot: systemSnapshots[.camera],
+            runtimeStatus: runtimeStatus(for: runtimeState?.camera),
+            dependencies: dependencies
         )
-        result.append(
-            sitePermissionRow(
-                permissionType: .microphone,
-                context: context,
-                systemSnapshot: systemSnapshots[.microphone],
-                runtimeStatus: runtimeStatus(for: runtimeState?.microphone),
-                recentEventCount: recentEventCount(for: .microphone, context: context, dependencies: dependencies)
-            )
+        appendSitePermissionRowIfRelevant(
+            .microphone,
+            to: &result,
+            context: context,
+            systemSnapshot: systemSnapshots[.microphone],
+            runtimeStatus: runtimeStatus(for: runtimeState?.microphone),
+            dependencies: dependencies
         )
-        result.append(
-            sitePermissionRow(
-                permissionType: .screenCapture,
-                context: context,
-                systemSnapshot: systemSnapshots[.screenCapture],
-                runtimeStatus: runtimeStatus(for: runtimeState?.screenCapture),
-                recentEventCount: recentEventCount(for: .screenCapture, context: context, dependencies: dependencies)
-            )
+        appendSitePermissionRowIfRelevant(
+            .screenCapture,
+            to: &result,
+            context: context,
+            systemSnapshot: systemSnapshots[.screenCapture],
+            runtimeStatus: runtimeStatus(for: runtimeState?.screenCapture),
+            dependencies: dependencies
         )
-        result.append(
-            sitePermissionRow(
-                permissionType: .geolocation,
-                context: context,
-                systemSnapshot: systemSnapshots[.geolocation],
-                runtimeStatus: runtimeStatus(for: runtimeState?.geolocation),
-                recentEventCount: recentEventCount(for: .geolocation, context: context, dependencies: dependencies)
-            )
+        appendSitePermissionRowIfRelevant(
+            .geolocation,
+            to: &result,
+            context: context,
+            systemSnapshot: systemSnapshots[.geolocation],
+            runtimeStatus: runtimeStatus(for: runtimeState?.geolocation),
+            dependencies: dependencies
         )
-        result.append(
-            sitePermissionRow(
-                permissionType: .notifications,
-                context: context,
-                systemSnapshot: systemSnapshots[.notifications],
-                runtimeStatus: nil,
-                recentEventCount: recentEventCount(for: .notifications, context: context, dependencies: dependencies)
-            )
+        appendSitePermissionRowIfRelevant(
+            .notifications,
+            to: &result,
+            context: context,
+            systemSnapshot: systemSnapshots[.notifications],
+            runtimeStatus: nil,
+            dependencies: dependencies
         )
-        result.append(popupsRow(context: context, dependencies: dependencies))
+        appendPopupsRowIfRelevant(to: &result, context: context, dependencies: dependencies)
         result.append(contentsOf: externalAppRows(context: context, dependencies: dependencies))
-        result.append(autoplayRow(context: context, profile: profile, reloadRequired: reloadRequired, autoplayStore: dependencies.autoplayStore))
-        result.append(
-            sitePermissionRow(
-                permissionType: .storageAccess,
-                context: context,
-                systemSnapshot: nil,
-                runtimeStatus: nil,
-                recentEventCount: recentEventCount(for: .storageAccess, context: context, dependencies: dependencies),
-                titleOverride: SumiCurrentSitePermissionsStrings.storageAccessTitle,
-                subtitleOverride: "Embedded content / saved information access"
-            )
+        appendAutoplayRowIfRelevant(
+            to: &result,
+            context: context,
+            profile: profile,
+            reloadRequired: reloadRequired,
+            autoplayInUse: autoplayInUse,
+            dependencies: dependencies
         )
-        result.append(filePickerRow(context: context, dependencies: dependencies))
+        appendSitePermissionRowIfRelevant(
+            .storageAccess,
+            to: &result,
+            context: context,
+            systemSnapshot: nil,
+            runtimeStatus: nil,
+            dependencies: dependencies,
+            titleOverride: SumiCurrentSitePermissionsStrings.storageAccessTitle
+        )
+        appendFilePickerRowIfRelevant(to: &result, context: context, dependencies: dependencies)
 
         return result
     }
@@ -403,12 +427,76 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
         return snapshots
     }
 
+    private func appendSitePermissionRowIfRelevant(
+        _ permissionType: SumiPermissionType,
+        to result: inout [SumiCurrentSitePermissionRow],
+        context: Context,
+        systemSnapshot: SumiSystemPermissionSnapshot?,
+        runtimeStatus: String?,
+        dependencies: LoadDependencies,
+        titleOverride: String? = nil,
+        subtitleOverride: String? = nil
+    ) {
+        let recentCount = recentEventCount(
+            for: permissionType,
+            context: context,
+            dependencies: dependencies
+        )
+        let siteActivity = siteActivity(
+            for: permissionType,
+            context: context,
+            dependencies: dependencies
+        )
+        guard shouldShowSitePermissionRow(
+            permissionType,
+            context: context,
+            systemSnapshot: systemSnapshot,
+            runtimeStatus: runtimeStatus,
+            recentEventCount: recentCount,
+            siteActivity: siteActivity
+        ) else { return }
+
+        result.append(
+            sitePermissionRow(
+                permissionType: permissionType,
+                context: context,
+                systemSnapshot: systemSnapshot,
+                runtimeStatus: runtimeStatus,
+                recentEventCount: recentCount,
+                siteActivity: siteActivity,
+                titleOverride: titleOverride,
+                subtitleOverride: subtitleOverride
+            )
+        )
+    }
+
+    private func shouldShowSitePermissionRow(
+        _ permissionType: SumiPermissionType,
+        context: Context,
+        systemSnapshot: SumiSystemPermissionSnapshot?,
+        runtimeStatus: String?,
+        recentEventCount: Int,
+        siteActivity: SumiPermissionSiteActivityRecord?
+    ) -> Bool {
+        if recentEventCount > 0 || runtimeStatus != nil || siteActivity != nil {
+            return true
+        }
+
+        let key = context.key(for: permissionType)
+        if hasResolvedDecision(for: key) || activeOneTimeRecord(for: key, context: context) != nil {
+            return true
+        }
+
+        return systemStatus(from: systemSnapshot).text != nil
+    }
+
     private func sitePermissionRow(
         permissionType: SumiPermissionType,
         context: Context,
         systemSnapshot: SumiSystemPermissionSnapshot?,
         runtimeStatus: String?,
         recentEventCount: Int,
+        siteActivity: SumiPermissionSiteActivityRecord?,
         titleOverride: String? = nil,
         subtitleOverride: String? = nil
     ) -> SumiCurrentSitePermissionRow {
@@ -426,7 +514,8 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
                 option: option,
                 recentEventCount: recentEventCount,
                 isEphemeralProfile: context.isEphemeralProfile,
-                hasActiveOneTimeGrant: oneTimeRecord != nil
+                hasActiveOneTimeGrant: oneTimeRecord != nil,
+                siteActivity: siteActivity
             )
 
         return SumiCurrentSitePermissionRow(
@@ -477,29 +566,41 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
         )
     }
 
+    private func appendPopupsRowIfRelevant(
+        to result: inout [SumiCurrentSitePermissionRow],
+        context: Context,
+        dependencies: LoadDependencies
+    ) {
+        let key = context.key(for: .popups)
+        let option = option(for: record(for: key), defaultOption: .default)
+        let count = context.pageId.map {
+            dependencies.blockedPopupStore.records(forPageId: $0)
+                .reduce(0) { $0 + $1.attemptCount }
+        } ?? 0
+        let siteActivity = siteActivity(for: .popups, context: context, dependencies: dependencies)
+        guard count > 0 || option == .allow || option == .block || siteActivity != nil else { return }
+        result.append(popupsRow(context: context, dependencies: dependencies))
+    }
+
     private func externalAppRows(
         context: Context,
         dependencies: LoadDependencies
     ) -> [SumiCurrentSitePermissionRow] {
         let descriptor = SumiPermissionIconCatalog.icon(for: .externalScheme(""))
-        var rows: [SumiCurrentSitePermissionRow] = [
-            SumiCurrentSitePermissionRow(
-                id: "external-apps",
-                kind: .externalApps,
-                title: SumiCurrentSitePermissionsStrings.externalAppsTitle,
-                subtitle: SumiCurrentSitePermissionsStrings.externalAppsDefault,
-                iconName: descriptor.chromeIconName,
-                fallbackSystemName: descriptor.fallbackSystemName,
-                currentOption: .ask,
-                availableOptions: [],
-                isEditable: false,
-                accessibilityLabel: "External app links, ask before opening external apps, \(context.displayDomain)"
-            ),
-        ]
+        var rows: [SumiCurrentSitePermissionRow] = []
 
         var schemes = Set<String>()
         for record in storedRecords where isCurrentSite(record.key, context: context) {
             if case .externalScheme(let scheme) = record.key.permissionType {
+                schemes.insert(SumiPermissionType.normalizedExternalScheme(scheme))
+            }
+        }
+        for activity in dependencies.siteActivityStore.records(
+            forSiteOf: context.origin,
+            profilePartitionId: context.profilePartitionId,
+            isEphemeralProfile: context.isEphemeralProfile
+        ) {
+            if case .externalScheme(let scheme) = activity.permissionType {
                 schemes.insert(SumiPermissionType.normalizedExternalScheme(scheme))
             }
         }
@@ -521,6 +622,7 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
             let recentCount = recentRecords
                 .filter { SumiPermissionType.normalizedExternalScheme($0.scheme) == scheme }
                 .reduce(0) { $0 + $1.attemptCount }
+            let siteActivity = siteActivity(for: permissionType, context: context, dependencies: dependencies)
             rows.append(
                 SumiCurrentSitePermissionRow(
                     id: "external-scheme-\(scheme)",
@@ -528,7 +630,12 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
                     title: "\(scheme) links",
                     subtitle: recentCount > 0
                         ? "\(recentCount) recent attempt\(recentCount == 1 ? "" : "s")"
-                        : subtitle(option: option, recentEventCount: 0, isEphemeralProfile: context.isEphemeralProfile),
+                        : subtitle(
+                            option: option,
+                            recentEventCount: 0,
+                            isEphemeralProfile: context.isEphemeralProfile,
+                            siteActivity: siteActivity
+                        ),
                     iconName: descriptor.chromeIconName,
                     fallbackSystemName: descriptor.fallbackSystemName,
                     currentOption: option,
@@ -547,23 +654,32 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
         context: Context,
         profile: Profile?,
         reloadRequired: Bool,
-        autoplayStore: any SumiCurrentSiteAutoplayPolicyManaging
+        autoplayInUse _: Bool,
+        autoplayStore: any SumiCurrentSiteAutoplayPolicyManaging,
+        siteActivity _: SumiPermissionSiteActivityRecord?
     ) -> SumiCurrentSitePermissionRow {
-        let policy = autoplayStore.explicitPolicy(
+        let explicitPolicy = autoplayStore.explicitPolicy(
             for: context.mainFrameURL ?? context.visibleURL ?? context.committedURL,
             profile: profile
-        ) ?? .default
+        )
+        let policy = explicitPolicy ?? .default
         let option = option(for: policy)
         let descriptor = SumiPermissionIconCatalog.icon(
             for: .autoplay,
             visualStyle: reloadRequired ? .reloadRequired : .neutral
         )
+        let subtitle: String
+        if reloadRequired {
+            subtitle = "Reload required"
+        } else {
+            subtitle = compactPolicySubtitle(for: option)
+        }
 
         return SumiCurrentSitePermissionRow(
             id: "autoplay",
             kind: .autoplay,
             title: SumiPermissionType.autoplay.displayLabel,
-            subtitle: reloadRequired ? "Reload required" : option.title,
+            subtitle: subtitle,
             iconName: descriptor.chromeIconName,
             fallbackSystemName: descriptor.fallbackSystemName,
             currentOption: option,
@@ -572,6 +688,37 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
             runtimeStatus: reloadRequired ? "Reload required" : nil,
             reloadRequired: reloadRequired,
             accessibilityLabel: "Autoplay, \(option.title), \(context.displayDomain)"
+        )
+    }
+
+    private func appendAutoplayRowIfRelevant(
+        to result: inout [SumiCurrentSitePermissionRow],
+        context: Context,
+        profile: Profile?,
+        reloadRequired: Bool,
+        autoplayInUse: Bool,
+        dependencies: LoadDependencies
+    ) {
+        let explicitPolicy = dependencies.autoplayStore.explicitPolicy(
+            for: context.mainFrameURL ?? context.visibleURL ?? context.committedURL,
+            profile: profile
+        )
+        let recentCount = recentEventCount(
+            for: .autoplay,
+            context: context,
+            dependencies: dependencies
+        )
+        let siteActivity = siteActivity(for: .autoplay, context: context, dependencies: dependencies)
+        guard explicitPolicy != nil || reloadRequired || autoplayInUse || recentCount > 0 || siteActivity != nil else { return }
+        result.append(
+            autoplayRow(
+                context: context,
+                profile: profile,
+                reloadRequired: reloadRequired,
+                autoplayInUse: autoplayInUse,
+                autoplayStore: dependencies.autoplayStore,
+                siteActivity: siteActivity
+            )
         )
     }
 
@@ -597,6 +744,34 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
             runtimeStatus: SumiCurrentSitePermissionsStrings.fileChooserExplanation,
             recentEventCount: count,
             accessibilityLabel: "File chooser, always asks, \(context.displayDomain)"
+        )
+    }
+
+    private func appendFilePickerRowIfRelevant(
+        to result: inout [SumiCurrentSitePermissionRow],
+        context: Context,
+        dependencies: LoadDependencies
+    ) {
+        let count = recentEventCount(for: .filePicker, context: context, dependencies: dependencies)
+        guard count > 0 else { return }
+        result.append(filePickerRow(context: context, dependencies: dependencies))
+    }
+
+    private func recordAutoplayActivityIfNeeded(
+        context: Context,
+        reloadRequired: Bool,
+        autoplayInUse: Bool,
+        dependencies: LoadDependencies
+    ) {
+        guard reloadRequired || autoplayInUse else { return }
+
+        let reason = reloadRequired
+            ? "autoplay-reload-required"
+            : "autoplay-media-playing"
+        dependencies.siteActivityStore.recordAutoplayActivity(
+            displayDomain: context.displayDomain,
+            key: context.key(for: .autoplay),
+            reason: reason
         )
     }
 
@@ -650,6 +825,83 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
         }
     }
 
+    private func recordSelectionActivity(
+        _ option: SumiCurrentSitePermissionOption,
+        for row: SumiCurrentSitePermissionRow,
+        context: Context,
+        dependencies: LoadDependencies
+    ) {
+        let permissionType: SumiPermissionType
+        let state: SumiPermissionState?
+        let selectedAutoplayPolicy: SumiAutoplayPolicy?
+
+        switch row.kind {
+        case .sitePermission(let type):
+            permissionType = type
+            state = permissionState(for: option)
+            selectedAutoplayPolicy = nil
+        case .popups:
+            permissionType = .popups
+            state = permissionState(for: option)
+            selectedAutoplayPolicy = nil
+        case .externalScheme(let scheme):
+            permissionType = .externalScheme(scheme)
+            state = permissionState(for: option)
+            selectedAutoplayPolicy = nil
+        case .autoplay:
+            permissionType = .autoplay
+            selectedAutoplayPolicy = autoplayPolicy(for: option)
+            switch selectedAutoplayPolicy {
+            case .allowAll:
+                state = .allow
+            case .blockAudible, .blockAll:
+                state = .deny
+            case .default, nil:
+                state = nil
+            }
+        case .externalApps, .filePicker:
+            return
+        }
+
+        dependencies.siteActivityStore.recordSettingsChange(
+            displayDomain: context.displayDomain,
+            key: context.key(for: permissionType),
+            state: state,
+            autoplayPolicy: selectedAutoplayPolicy,
+            reason: "url-hub-permission-setting"
+        )
+    }
+
+    private func permissionState(
+        for option: SumiCurrentSitePermissionOption
+    ) -> SumiPermissionState? {
+        switch option {
+        case .ask, .default:
+            return nil
+        case .allow, .allowAll:
+            return .allow
+        case .block, .blockAudible, .blockAll:
+            return .deny
+        }
+    }
+
+    private func autoplayPolicy(
+        for option: SumiCurrentSitePermissionOption
+    ) -> SumiAutoplayPolicy? {
+        switch option {
+        case .default:
+            return .default
+        case .allowAll:
+            return .allowAll
+        case .blockAudible:
+            return .blockAudible
+        case .blockAll:
+            return .blockAll
+        case .ask, .allow, .block:
+            return nil
+        }
+    }
+
     private func resettableKeys(context: Context) -> [SumiPermissionKey] {
         var permissionTypes: [SumiPermissionType] = [
             .camera,
@@ -678,6 +930,11 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
                 && $0.key.isEphemeralProfile == key.isEphemeralProfile
                 && $0.decision.persistence != .oneTime
         }
+    }
+
+    private func hasResolvedDecision(for key: SumiPermissionKey) -> Bool {
+        guard let state = record(for: key)?.decision.state else { return false }
+        return state == .allow || state == .deny
     }
 
     private func activeOneTimeRecord(
@@ -733,33 +990,34 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
 
     private func subtitle(
         option: SumiCurrentSitePermissionOption,
-        recentEventCount: Int,
-        isEphemeralProfile: Bool,
-        hasActiveOneTimeGrant: Bool = false
+        recentEventCount _: Int,
+        isEphemeralProfile _: Bool,
+        hasActiveOneTimeGrant: Bool = false,
+        siteActivity _: SumiPermissionSiteActivityRecord? = nil
     ) -> String {
         if hasActiveOneTimeGrant {
-            return "Allowed this time"
+            return SumiCurrentSitePermissionsStrings.policyOn
         }
-        if recentEventCount > 0 {
-            return "\(recentEventCount) recent event\(recentEventCount == 1 ? "" : "s")"
-        }
-        if isEphemeralProfile, option == .allow || option == .block {
-            return "\(option.title) for this session"
-        }
-        return option.title
+        return compactPolicySubtitle(for: option)
     }
 
     private func popupSubtitle(
         for option: SumiCurrentSitePermissionOption,
-        isEphemeralProfile: Bool
+        isEphemeralProfile _: Bool
+    ) -> String {
+        return compactPolicySubtitle(for: option)
+    }
+
+    private func compactPolicySubtitle(
+        for option: SumiCurrentSitePermissionOption
     ) -> String {
         switch option {
-        case .default:
-            return "Block background pop-ups"
-        case .allow, .block:
-            return isEphemeralProfile ? "\(option.title) for this session" : option.title
-        default:
-            return option.title
+        case .allow, .allowAll:
+            return SumiCurrentSitePermissionsStrings.policyOn
+        case .block, .blockAudible, .blockAll:
+            return SumiCurrentSitePermissionsStrings.policyOff
+        case .ask, .default:
+            return SumiCurrentSitePermissionsStrings.defaultOption
         }
     }
 
@@ -820,12 +1078,39 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
         context: Context,
         dependencies: LoadDependencies
     ) -> Int {
-        guard let pageId = context.pageId else { return 0 }
-        return dependencies.indicatorEventStore.recordsSnapshot(forPageId: pageId)
+        recentEventRecords(context: context, dependencies: dependencies)
             .filter { record in
                 record.permissionTypes.contains { $0.identity == permissionType.identity }
             }
             .reduce(0) { $0 + $1.attemptCount }
+    }
+
+    private func recentEventRecords(
+        context: Context,
+        dependencies: LoadDependencies
+    ) -> [SumiPermissionIndicatorEventRecord] {
+        var records: [SumiPermissionIndicatorEventRecord] = []
+        var seenIds = Set<String>()
+        if let pageId = context.pageId {
+            for record in dependencies.indicatorEventStore.recordsSnapshot(forPageId: pageId)
+                where seenIds.insert(record.id).inserted {
+                records.append(record)
+            }
+        }
+        return records
+    }
+
+    private func siteActivity(
+        for permissionType: SumiPermissionType,
+        context: Context,
+        dependencies: LoadDependencies
+    ) -> SumiPermissionSiteActivityRecord? {
+        dependencies.siteActivityStore.records(
+            forSiteOf: context.origin,
+            profilePartitionId: context.profilePartitionId,
+            isEphemeralProfile: context.isEphemeralProfile
+        )
+        .first { $0.permissionType.identity == permissionType.identity }
     }
 
     private func systemKind(

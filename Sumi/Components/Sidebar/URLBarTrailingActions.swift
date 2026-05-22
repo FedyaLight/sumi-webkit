@@ -71,9 +71,8 @@ extension URLBarView {
 
     var hubButton: some View {
         let action = {
-            hubInitialMode = .controls
-            hubModeRequestNonce += 1
-            isHubPresented.toggle()
+            closeZoomPopover()
+            browserManager.toggleURLBarHubPopover(in: windowState, initialMode: .controls)
         }
 
         return Button(action: action) {
@@ -93,21 +92,19 @@ extension URLBarView {
         .buttonStyle(URLBarButtonStyle())
         .help("Site Controls")
         .accessibilityIdentifier("urlbar-site-controls-button")
-        .sidebarAppKitPrimaryAction(action: action)
-        .popover(isPresented: $isHubPresented, arrowEdge: .bottom) {
-            URLBarHubPopover(
-                bookmarkManager: browserManager.bookmarkManager,
-                bookmarkPresentationRequest: browserManager.bookmarkEditorPresentationRequest,
+        .background(
+            URLBarHubPopoverAnchorView(
+                browserManager: browserManager,
+                windowState: windowState,
+                settings: sumiSettings,
+                themeContext: themeContext,
                 currentTab: currentTab,
                 profile: effectiveProfile,
-                profileId: effectiveProfileId,
-                initialMode: hubInitialMode,
-                modeRequestNonce: hubModeRequestNonce,
-                onClose: { isHubPresented = false }
+                profileId: effectiveProfileId
             )
-            .environmentObject(browserManager)
-            .environment(windowState)
-        }
+            .allowsHitTesting(false)
+        )
+        .sidebarAppKitPrimaryAction(action: action)
     }
 
     func copyURLToClipboard(_ urlString: String) {

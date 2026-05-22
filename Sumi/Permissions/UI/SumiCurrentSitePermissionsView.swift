@@ -1,7 +1,17 @@
+import Combine
 import SwiftUI
 
 struct SumiCurrentSitePermissionsView: View {
     @ObservedObject var model: SumiCurrentSitePermissionsViewModel
+
+    private enum Metrics {
+        static let contentHeight: CGFloat = 356
+        static let contentVerticalPadding: CGFloat = 14
+
+        static var contentBodyMinHeight: CGFloat {
+            contentHeight - (contentVerticalPadding * 2)
+        }
+    }
 
     let currentTab: Tab?
     let profile: Profile?
@@ -11,6 +21,7 @@ struct SumiCurrentSitePermissionsView: View {
     let blockedPopupStore: SumiBlockedPopupStore
     let externalSchemeSessionStore: SumiExternalSchemeSessionStore
     let permissionIndicatorEventStore: SumiPermissionIndicatorEventStore
+    let siteActivityStore: SumiPermissionSiteActivityStore
     let onBack: () -> Void
     let onClose: () -> Void
     let onOpenSiteSettings: () -> Void
@@ -33,7 +44,8 @@ struct SumiCurrentSitePermissionsView: View {
             autoplayStore: SumiAutoplayPolicyStoreAdapter.shared,
             blockedPopupStore: blockedPopupStore,
             externalSchemeSessionStore: externalSchemeSessionStore,
-            indicatorEventStore: permissionIndicatorEventStore
+            indicatorEventStore: permissionIndicatorEventStore,
+            siteActivityStore: siteActivityStore
         )
     }
 
@@ -49,7 +61,18 @@ struct SumiCurrentSitePermissionsView: View {
             currentTab?.currentPermissionPageId() ?? "none",
             currentTab?.url.absoluteString ?? "none",
             currentTab?.isAutoplayReloadRequired == true ? "autoplay-reload" : "autoplay-ready",
+            currentTab?.audioState.isPlayingAudio == true ? "audio-playing" : "audio-idle",
         ].joined(separator: "|")
+    }
+
+    private var audioStatePublisher: AnyPublisher<SumiWebViewAudioState, Never> {
+        guard let currentTab else {
+            return Empty<SumiWebViewAudioState, Never>().eraseToAnyPublisher()
+        }
+        return currentTab.$audioState
+            .removeDuplicates()
+            .dropFirst()
+            .eraseToAnyPublisher()
     }
 
     var body: some View {
@@ -88,6 +111,9 @@ struct SumiCurrentSitePermissionsView: View {
             scheduleReloadAfterStoreChange()
         }
         .onReceive(permissionIndicatorEventStore.objectWillChange) { _ in
+            scheduleReloadAfterStoreChange()
+        }
+        .onReceive(audioStatePublisher) { _ in
             scheduleReloadAfterStoreChange()
         }
         .onDisappear {
@@ -131,6 +157,7 @@ struct SumiCurrentSitePermissionsView: View {
             unavailableState
                 .padding(.horizontal, 16)
                 .padding(.vertical, 18)
+                .frame(height: Metrics.contentHeight, alignment: .topLeading)
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
@@ -149,7 +176,7 @@ struct SumiCurrentSitePermissionsView: View {
                                 .font(.system(size: 12.5))
                                 .foregroundStyle(tokens.secondaryText)
                         }
-                        .frame(maxWidth: .infinity, minHeight: 72)
+                        .frame(maxWidth: .infinity, minHeight: Metrics.contentBodyMinHeight)
                     } else {
                         if runtimeControlsModel.hasVisibleContent {
                             VStack(alignment: .leading, spacing: 7) {
@@ -168,23 +195,29 @@ struct SumiCurrentSitePermissionsView: View {
                             }
                         }
 
-                        VStack(spacing: 6) {
-                            ForEach(model.rows) { row in
-                                SumiCurrentSitePermissionRowView(
-                                    row: row,
-                                    onSelect: { option in
-                                        Task { await select(option, for: row) }
-                                    },
-                                    onOpenSystemSettings: {
-                                        Task {
-                                            await model.openSystemSettings(
-                                                for: row,
-                                                systemPermissionService: systemPermissionService
-                                            )
+                        if model.rows.isEmpty && !runtimeControlsModel.hasVisibleContent {
+                            emptyState
+                                .frame(maxWidth: .infinity, minHeight: Metrics.contentBodyMinHeight, alignment: .center)
+                        } else {
+                            VStack(spacing: 6) {
+                                ForEach(model.rows) { row in
+                                    SumiCurrentSitePermissionRowView(
+                                        row: row,
+                                        onSelect: { option in
+                                            Task { await select(option, for: row) }
+                                        },
+                                        onOpenSystemSettings: {
+                                            Task {
+                                                await model.openSystemSettings(
+                                                    for: row,
+                                                    systemPermissionService: systemPermissionService
+                                                )
+                                            }
                                         }
-                                    }
-                                )
+                                    )
+                                }
                             }
+                            .frame(maxWidth: .infinity, alignment: .top)
                         }
                     }
 
@@ -201,9 +234,10 @@ struct SumiCurrentSitePermissionsView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 14)
+                .padding(.vertical, Metrics.contentVerticalPadding)
+                .frame(minHeight: Metrics.contentBodyMinHeight, alignment: .top)
             }
-            .frame(maxHeight: 520)
+            .frame(height: Metrics.contentHeight)
         }
     }
 
@@ -218,6 +252,27 @@ struct SumiCurrentSitePermissionsView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, minHeight: 86, alignment: .leading)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 7) {
+            Image(systemName: "hand.raised")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(tokens.secondaryText)
+                .frame(width: 30, height: 30)
+
+            Text(SumiCurrentSitePermissionsStrings.noActivityTitle)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(tokens.primaryText)
+                .multilineTextAlignment(.center)
+
+            Text(SumiCurrentSitePermissionsStrings.noActivitySubtitle)
+                .font(.system(size: 12))
+                .foregroundStyle(tokens.secondaryText)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 270)
+        }
     }
 
     private var footer: some View {

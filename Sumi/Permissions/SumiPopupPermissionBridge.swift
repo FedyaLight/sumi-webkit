@@ -17,6 +17,7 @@ final class SumiPopupPermissionBridge {
 
     private let coordinator: any SumiPermissionCoordinating
     let blockedPopupStore: SumiBlockedPopupStore
+    private let siteActivityStore: SumiPermissionSiteActivityStore?
     private let pendingStrategy: SumiPopupPendingStrategy
     private let now: @Sendable () -> Date
     private let eventSink: EventSink?
@@ -24,12 +25,14 @@ final class SumiPopupPermissionBridge {
     init(
         coordinator: any SumiPermissionCoordinating,
         blockedPopupStore: SumiBlockedPopupStore? = nil,
+        siteActivityStore: SumiPermissionSiteActivityStore? = nil,
         pendingStrategy: SumiPopupPendingStrategy = .backgroundPromptUnavailableBlock,
         now: @escaping @Sendable () -> Date = { Date() },
         eventSink: EventSink? = nil
     ) {
         self.coordinator = coordinator
         self.blockedPopupStore = blockedPopupStore ?? SumiBlockedPopupStore()
+        self.siteActivityStore = siteActivityStore
         self.pendingStrategy = pendingStrategy
         self.now = now
         self.eventSink = eventSink
@@ -91,6 +94,13 @@ final class SumiPopupPermissionBridge {
 
         switch coordinatorDecision.outcome {
         case .granted:
+            recordPopupActivity(
+                request,
+                tabContext: tabContext,
+                state: .allow,
+                source: coordinatorDecision.source,
+                reason: coordinatorDecision.reason
+            )
             emit(.allowedByStoredOrSessionPolicy(
                 requestId: request.id,
                 pageId: tabContext.pageId,
@@ -265,6 +275,13 @@ final class SumiPopupPermissionBridge {
                 attemptCount: 1
             )
         )
+        recordPopupActivity(
+            request,
+            tabContext: tabContext,
+            state: .deny,
+            source: .defaultSetting,
+            reason: reason
+        )
 
         switch blockedReason {
         case .blockedByStoredDeny:
@@ -294,6 +311,30 @@ final class SumiPopupPermissionBridge {
 
     private func topOrigin(for tabContext: SumiPopupPermissionTabContext) -> SumiPermissionOrigin {
         SumiPermissionOrigin(url: tabContext.committedURL ?? tabContext.mainFrameURL ?? tabContext.visibleURL)
+    }
+
+    private func recordPopupActivity(
+        _ request: SumiPopupPermissionRequest,
+        tabContext: SumiPopupPermissionTabContext,
+        state: SumiPermissionState,
+        source: SumiPermissionDecisionSource,
+        reason: String
+    ) {
+        let key = SumiPermissionKey(
+            requestingOrigin: request.requestingOrigin,
+            topOrigin: topOrigin(for: tabContext),
+            permissionType: .popups,
+            profilePartitionId: tabContext.profilePartitionId,
+            isEphemeralProfile: tabContext.isEphemeralProfile
+        )
+        siteActivityStore?.recordResolvedPolicy(
+            displayDomain: tabContext.displayDomain ?? request.requestingOrigin.displayDomain,
+            key: key,
+            state: state,
+            source: source,
+            reason: reason,
+            now: now()
+        )
     }
 
     private func emit(_ event: SumiPopupPermissionEvent) {
