@@ -2062,6 +2062,149 @@ final class SumiNavigationResponderTests: XCTestCase {
         )
     }
 
+    func testPopupCreateWebViewFocusesCleanClickNewTab() {
+        let harness = makePopupFocusHarness()
+        let responder = SumiPopupHandlingNavigationResponder(tab: harness.sourceTab)
+        let action = popupNavigationAction(
+            sourceURL: harness.sourceTab.url,
+            targetURL: URL(string: "https://destination.example/page")!,
+            webView: harness.sourceWebView
+        )
+
+        let childWebView = responder.createWebView(
+            from: harness.sourceWebView,
+            with: WKWebViewConfiguration(),
+            for: action,
+            windowFeatures: WKWindowFeatures()
+        )
+
+        XCTAssertNotNil(childWebView)
+        XCTAssertNotEqual(harness.windowState.currentTabId, harness.sourceTab.id)
+        XCTAssertEqual(
+            harness.windowState.currentTabId,
+            harness.browserManager.tabManager.tabs.last?.id
+        )
+    }
+
+    func testPopupCreateWebViewLeavesCommandClickNewTabInBackground() {
+        let harness = makePopupFocusHarness()
+        harness.sourceTab.recordWebViewInteraction(
+            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.command])
+        )
+        let responder = SumiPopupHandlingNavigationResponder(tab: harness.sourceTab)
+        let action = popupNavigationAction(
+            sourceURL: harness.sourceTab.url,
+            targetURL: URL(string: "https://destination.example/page")!,
+            webView: harness.sourceWebView,
+            modifierFlags: [.command]
+        )
+
+        let childWebView = responder.createWebView(
+            from: harness.sourceWebView,
+            with: WKWebViewConfiguration(),
+            for: action,
+            windowFeatures: WKWindowFeatures()
+        )
+
+        XCTAssertNotNil(childWebView)
+        XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
+    }
+
+    func testPolicyGeneratedCleanNewTabSelectsButCommandNewTabStaysBackground() {
+        XCTAssertEqual(
+            SumiLinkOpenBehavior(
+                buttonIsMiddle: false,
+                modifierFlags: [],
+                switchToNewTabWhenOpenedPreference: false,
+                canOpenLinkInCurrentTab: false,
+                shouldSelectNewTab: true
+            ),
+            .newTab(selected: true)
+        )
+        XCTAssertEqual(
+            SumiLinkOpenBehavior(
+                buttonIsMiddle: false,
+                modifierFlags: [.command],
+                switchToNewTabWhenOpenedPreference: false,
+                canOpenLinkInCurrentTab: false,
+                shouldSelectNewTab: true
+            ),
+            .newTab(selected: false)
+        )
+    }
+
+    private struct PopupFocusHarness {
+        let browserManager: BrowserManager
+        let windowRegistry: WindowRegistry
+        let windowState: BrowserWindowState
+        let sourceTab: Tab
+        let sourceWebView: WKWebView
+    }
+
+    private func makePopupFocusHarness() -> PopupFocusHarness {
+        let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
+        let browserManager = BrowserManager()
+        let windowRegistry = WindowRegistry()
+        let profile = Profile(name: "Primary")
+        let space = Space(name: "Primary", profileId: profile.id)
+        let windowState = BrowserWindowState()
+
+        browserManager.sumiSettings = settings
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+        browserManager.windowRegistry = windowRegistry
+        browserManager.tabManager.spaces = [space]
+        browserManager.tabManager.currentSpace = space
+
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentSpaceId = space.id
+        windowState.currentProfileId = profile.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+
+        let sourceTab = browserManager.tabManager.createNewTab(
+            url: "https://source.example/page",
+            in: space,
+            activate: true
+        )
+        browserManager.selectTab(sourceTab, in: windowState)
+
+        let sourceWebView = WKWebView(frame: .zero)
+        sourceTab.assignWebViewToWindow(sourceWebView, windowId: windowState.id)
+        sourceTab.noteCommittedMainDocumentNavigation(to: sourceTab.url)
+
+        return PopupFocusHarness(
+            browserManager: browserManager,
+            windowRegistry: windowRegistry,
+            windowState: windowState,
+            sourceTab: sourceTab,
+            sourceWebView: sourceWebView
+        )
+    }
+
+    private func popupNavigationAction(
+        sourceURL: URL,
+        targetURL: URL,
+        webView: WKWebView,
+        modifierFlags: NSEvent.ModifierFlags = []
+    ) -> WKNavigationAction {
+        let sourceFrame = SumiWKFrameInfoMock(
+            isMainFrame: true,
+            request: URLRequest(url: sourceURL),
+            securityOrigin: SumiWKSecurityOriginMock.new(url: sourceURL),
+            webView: webView
+        ).frameInfo
+        let mock = SumiWKNavigationActionMock(
+            sourceFrame: sourceFrame,
+            targetFrame: nil,
+            navigationType: .linkActivated,
+            request: URLRequest(url: targetURL)
+        )
+        mock.isUserInitiated = true
+        mock.modifierFlags = modifierFlags
+        return mock.navigationAction
+    }
+
     private func navigationAction(
         url: URL,
         navigationType: NavigationType,

@@ -140,7 +140,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             windowFeatures,
             linkOpenBehavior: behavior,
             preferTabsToWindows: true
-        ).preferringSelectedTabs(true)
+        )
 
         guard let tabContext = tab.popupPermissionTabContext(for: webView) else { return nil }
         let activationState = tab.popupUserActivationTracker.activationState(
@@ -240,7 +240,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             windowFeatures,
             linkOpenBehavior: behavior,
             preferTabsToWindows: true
-        ).preferringSelectedTabs(true)
+        )
 
         guard let tabContext = tab.popupPermissionTabContext(for: webView) else { return nil }
         let activationState = tab.popupUserActivationTracker.activationState(
@@ -342,7 +342,8 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             buttonIsMiddle: navigationAction.navigationType.isMiddleButtonClick,
             modifierFlags: modifierFlags,
             switchToNewTabWhenOpenedPreference: false,
-            canOpenLinkInCurrentTab: canOpenLinkInCurrentTab
+            canOpenLinkInCurrentTab: canOpenLinkInCurrentTab,
+            shouldSelectNewTab: true
         )
 
         switch behavior {
@@ -512,6 +513,10 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             isExtensionOriginated: isExtensionOriginated,
             reason: "SumiPopupHandlingNavigationResponder.createChildWebView"
         )
+        if policy.shouldActivateTab,
+           let windowState = browserManager.windowState(containing: tab) {
+            browserManager.selectTab(childTab, in: windowState)
+        }
         resetLinkGestureModifierState(for: tab)
         return childWebView
     }
