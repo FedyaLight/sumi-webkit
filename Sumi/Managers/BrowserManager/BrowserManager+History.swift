@@ -173,7 +173,7 @@ extension BrowserManager {
         }
     }
 
-    func openHistoryURLsInNewTabs(_ urls: [URL], in windowState: BrowserWindowState) {
+    func openURLsInNewTabs(_ urls: [URL], in windowState: BrowserWindowState) {
         let uniqueURLs = Array(NSOrderedSet(array: urls)).compactMap { $0 as? URL }
         guard !uniqueURLs.isEmpty else { return }
 
@@ -192,7 +192,11 @@ extension BrowserManager {
         }
     }
 
-    func openHistoryURLsInNewWindow(_ urls: [URL]) {
+    func openHistoryURLsInNewTabs(_ urls: [URL], in windowState: BrowserWindowState) {
+        openURLsInNewTabs(urls, in: windowState)
+    }
+
+    func openURLsInNewWindow(_ urls: [URL]) {
         let uniqueURLs = Array(NSOrderedSet(array: urls)).compactMap { $0 as? URL }
         guard !uniqueURLs.isEmpty else { return }
 
@@ -206,8 +210,12 @@ extension BrowserManager {
             else {
                 return
             }
-            self.openHistoryURLsInNewTabs(uniqueURLs, in: targetWindow)
+            self.openURLsInNewTabs(uniqueURLs, in: targetWindow)
         }
+    }
+
+    func openHistoryURLsInNewWindow(_ urls: [URL]) {
+        openURLsInNewWindow(urls)
     }
 
     func reopenLastClosedItem() {

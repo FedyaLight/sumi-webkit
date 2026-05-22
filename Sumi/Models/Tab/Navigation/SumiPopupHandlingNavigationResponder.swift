@@ -40,12 +40,14 @@ final class SumiGlanceNavigationResponder: SumiNavigationActionWebViewResponding
 
 @MainActor
 final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewResponding, SumiNavigationStartResponding {
-    private struct PendingNewWindow {
-        let policy: SumiNewWindowPolicy
+    private enum PendingNewWindow {
+        case child(SumiNewWindowPolicy)
+        case consumed
     }
 
     private weak var tab: Tab?
     private var onNewWindow: ((WKNavigationAction) -> PendingNewWindow?)?
+    private var contextMenuRouteToken: UInt64?
 
     init(tab: Tab) {
         self.tab = tab
@@ -100,11 +102,15 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
         }
 
         if let pendingNewWindow = newWindowPolicy(for: navigationAction) {
+            guard case .child(let policy) = pendingNewWindow else {
+                resetLinkGestureModifierState(for: tab)
+                return nil
+            }
             return createChildWebView(
                 from: webView,
                 with: configuration,
                 for: navigationAction,
-                policy: pendingNewWindow.policy,
+                policy: policy,
                 isExtensionOriginated: isExtensionOriginated
             )
         }
@@ -196,11 +202,15 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
         }
 
         if let pendingNewWindow = newWindowPolicy(for: navigationAction) {
+            guard case .child(let policy) = pendingNewWindow else {
+                resetLinkGestureModifierState(for: tab)
+                return nil
+            }
             return createChildWebView(
                 from: webView,
                 with: configuration,
                 for: navigationAction,
-                policy: pendingNewWindow.policy,
+                policy: policy,
                 isExtensionOriginated: isExtensionOriginated
             )
         }
@@ -260,6 +270,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
 
     func navigationWillStart(_: SumiNavigationContext) {
         onNewWindow = nil
+        contextMenuRouteToken = nil
     }
 
     func decidePolicy(
@@ -361,11 +372,12 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
                 return .cancel
             }
             tab.popupUserActivationTracker.consumeIfUserActivated(request.userActivation)
+            contextMenuRouteToken = nil
             onNewWindow = { newWindowNavigationAction in
                 guard newWindowNavigationAction.request.url?.matches(url) ?? false else {
                     return nil
                 }
-                return PendingNewWindow(policy: policy)
+                return .child(policy)
             }
             resetLinkGestureModifierState(for: tab)
             targetWebView.sumiLoadInNewWindow(url)
@@ -384,9 +396,45 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
     private func newWindowPolicy(for navigationAction: WKNavigationAction) -> PendingNewWindow? {
         if let decision = onNewWindow?(navigationAction) {
             onNewWindow = nil
+            contextMenuRouteToken = nil
             return decision
         }
         return nil
+    }
+
+    /// Native WebKit context items already know the exact URL under the pointer.
+    /// Sumi consumes that one request and performs the browser command itself.
+    @discardableResult
+    func consumeNativeContextMenuRequest(
+        from item: NSMenuItem,
+        perform handler: @escaping @MainActor (WKNavigationAction) -> Void
+    ) -> Bool {
+        guard let action = item.action else { return false }
+
+        let token = (contextMenuRouteToken ?? 0) &+ 1
+        contextMenuRouteToken = token
+        onNewWindow = { [weak self] navigationAction in
+            self?.contextMenuRouteToken = nil
+            handler(navigationAction)
+            return .consumed
+        }
+
+        let didSendAction = NSApp.sendAction(action, to: item.target, from: item)
+        guard didSendAction else {
+            clearContextMenuRoute(token)
+            return false
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            self?.clearContextMenuRoute(token)
+        }
+        return true
+    }
+
+    private func clearContextMenuRoute(_ token: UInt64) {
+        guard contextMenuRouteToken == token else { return }
+        onNewWindow = nil
+        contextMenuRouteToken = nil
     }
 
     private func routeExplicitGlanceIfNeeded(

@@ -444,6 +444,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     // MARK: - Link Hover Callback
     var onLinkHover: ((String?) -> Void)? = nil
     var lastHoveredLinkURL: URL? = nil
+    var lastWebPageContextMenuTarget: SumiWebPageContextMenuTargetSnapshot?
     var lastGlanceMouseDownOrigin: SumiGlanceOriginSnapshot?
 
     private var navigationStateController: TabNavigationStateController {

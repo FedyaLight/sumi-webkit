@@ -88,6 +88,9 @@ extension BrowserManager {
                     .environment(\.sumiProtectionCoordinator, self.protectionCoordinator)
                     .environment(\.sumiExtensionsModule, self.extensionsModule)
                     .environment(\.sumiUserscriptsModule, self.userscriptsModule)
+                    .environment(
+                        self.keyboardShortcutManager ?? KeyboardShortcutManager(installEventMonitor: false)
+                    )
 
                 return NSHostingView(rootView: contentView)
             },

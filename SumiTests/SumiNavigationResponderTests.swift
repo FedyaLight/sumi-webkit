@@ -1908,6 +1908,49 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertTrue(source.contains("resetLinkGestureModifierState(for: tab)\n            targetWebView.sumiLoadInNewWindow(url)"))
     }
 
+    func testNativeContextMenuProbeConsumesChildWebViewRequest() {
+        let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
+        let browserManager = BrowserManager()
+        browserManager.sumiSettings = settings
+        let tab = Tab(url: URL(string: "https://source.example/page")!)
+        tab.browserManager = browserManager
+        tab.sumiSettings = settings
+        let responder = SumiPopupHandlingNavigationResponder(tab: tab)
+        let sourceWebView = WKWebView(frame: .zero)
+        let destinationURL = URL(string: "https://destination.example/image.png")!
+        let navigationAction = SumiWKNavigationActionMock(
+            sourceFrame: nil,
+            targetFrame: nil,
+            navigationType: .other,
+            request: URLRequest(url: destinationURL)
+        ).navigationAction
+        let probe = SumiNativeContextMenuProbe()
+        var childWebView: WKWebView?
+        var capturedURL: URL?
+        probe.onAction = {
+            childWebView = responder.createWebView(
+                from: sourceWebView,
+                with: WKWebViewConfiguration(),
+                for: navigationAction,
+                windowFeatures: WKWindowFeatures()
+            )
+        }
+        let item = NSMenuItem(
+            title: "Open Image in New Window",
+            action: #selector(SumiNativeContextMenuProbe.performAction(_:)),
+            keyEquivalent: ""
+        )
+        item.target = probe
+
+        let didConsume = responder.consumeNativeContextMenuRequest(from: item) { action in
+            capturedURL = action.request.url
+        }
+
+        XCTAssertTrue(didConsume)
+        XCTAssertEqual(capturedURL, destinationURL)
+        XCTAssertNil(childWebView)
+    }
+
     func testPopupResponderOptionClickRoutesToGlance() async {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
         let browserManager = BrowserManager()
@@ -2330,6 +2373,15 @@ private final class WeakTestReference<Value: AnyObject> {
 
     init(_ value: Value?) {
         self.value = value
+    }
+}
+
+@MainActor
+private final class SumiNativeContextMenuProbe: NSObject {
+    var onAction: (() -> Void)?
+
+    @objc func performAction(_: Any?) {
+        onAction?()
     }
 }
 

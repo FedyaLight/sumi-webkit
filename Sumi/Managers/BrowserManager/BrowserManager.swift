@@ -228,6 +228,7 @@ class BrowserManager: ObservableObject {
             scheduleAutomaticBrowsingDataCleanup(reason: "settings-attached")
         }
     }
+    weak var keyboardShortcutManager: KeyboardShortcutManager?
     let sumiProfileRouter = SumiProfileRouter()
     let profileMaintenanceService = SumiProfileMaintenanceService()
     let windowShellService = BrowserWindowShellService()
