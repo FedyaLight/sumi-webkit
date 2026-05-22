@@ -32,7 +32,7 @@ The browser exposes only three product levels:
 - `Protection`: `trackingNetwork` only.
 - `Adblock`: `trackingNetwork` plus `adblockAdsPrivacyNetwork`, backed by the prepared `adguardAdsPrivacy` profile.
 
-Native CSS is not a normal product mode. It remains validated only so prepared bundles can be rejected safely if their manifest does not meet the accepted native-CSS safety policy.
+Native CSS is not a normal product mode. Release bundles omit native-CSS shards by default, and the browser compiles and attaches network shards only. Native-CSS validation remains as a developer-only safety path so prepared bundles can be rejected safely if their manifest does not meet the accepted native-CSS safety policy.
 
 ## Development bundle import
 

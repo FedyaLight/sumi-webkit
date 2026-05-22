@@ -213,11 +213,8 @@ final class AdblockWebKitRuleListStore {
     func contentRuleListDefinitions(for protectionGroups: Set<SumiProtectionGroupKind>) throws -> [SumiContentRuleListDefinition] {
         guard let manifest = activeManifest else { return [] }
         let loader = AdblockManifestRuleListProvider.diskBackedDefinitionLoader(storageRoot: manifestStore.storageRoot)
-        return try manifest.allNativeShards
-            .filter { shard in
-                guard shard.kind == .network else { return false }
-                return shard.protectionGroup.map { protectionGroups.contains($0) } ?? false
-            }
+        return try manifest.networkShards
+            .filter { shard in shard.protectionGroup.map { protectionGroups.contains($0) } ?? false }
             .sorted { lhs, rhs in
                 if lhs.protectionGroup == rhs.protectionGroup {
                     return lhs.id < rhs.id
@@ -462,7 +459,7 @@ final class AdblockWebKitRuleListStore {
     private static func metadataOnlyDefinitions(
         for manifest: AdblockCompiledGenerationManifest
     ) -> [SumiContentRuleListDefinition] {
-        manifest.allNativeShards
+        manifest.networkShards
             .sorted { lhs, rhs in
                 lhs.kind == rhs.kind
                     ? lhs.id < rhs.id

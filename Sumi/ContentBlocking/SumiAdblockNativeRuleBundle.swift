@@ -191,9 +191,11 @@ struct SumiAdblockNativeRuleBundle: Sendable {
     }
 
     func contentRuleListDefinitions(
+        includingRuleKinds ruleKinds: Set<AdblockCompiledRuleGroupKind> = [.network],
         fileManager: FileManager = .default
     ) throws -> [SumiContentRuleListDefinition] {
         try manifest.shards
+            .filter { ruleKinds.contains($0.ruleGroupKind) }
             .sorted(by: shardSort)
             .map { shard in
                 let data = try shardData(for: shard, fileManager: fileManager)
