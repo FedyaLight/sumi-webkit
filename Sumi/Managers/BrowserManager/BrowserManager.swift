@@ -163,9 +163,6 @@ class BrowserManager: ObservableObject {
     // Indicates an in-progress animated profile transition for coordinating UI
     @Published var isTransitioningProfile: Bool = false
 
-    // Tab closure undo notification
-    @Published var showTabClosureToast: Bool = false
-    @Published var tabClosureToastCount: Int = 0
     @Published var workspaceThemePickerSession: WorkspaceThemePickerSession?
     @Published var tabStructuralRevision: UInt = 0
 
@@ -650,11 +647,6 @@ class BrowserManager: ObservableObject {
 
     func canMaterializeNormalTabWebViewDuringStartup(_ tab: Tab) -> Bool {
         !tab.requiresPrimaryWebView || !shouldDeferNormalTabMaterializationDuringStartup
-    }
-
-    // MARK: - Profile Switching
-    struct ProfileSwitchToast: Equatable {
-        let toProfile: Profile
     }
 
     enum ProfileSwitchContext {

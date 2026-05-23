@@ -25,4 +25,28 @@ final class KeyboardShortcutStoreTests: XCTestCase {
         XCTAssertNil(store.loadOverrides())
         XCTAssertNil(defaults.data(forKey: "keyboard.shortcuts"))
     }
+
+    @MainActor
+    func testToastShortcutPresentationUsesCurrentShortcutManagerValue() {
+        let suiteName = "KeyboardShortcutStoreTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let shortcutManager = KeyboardShortcutManager(
+            userDefaults: defaults,
+            installEventMonitor: false
+        )
+
+        XCTAssertEqual(shortcutManager.shortcutDisplayString(for: .undoCloseTab), "⇧⌘T")
+
+        let validation = shortcutManager.setShortcut(
+            action: .undoCloseTab,
+            keyCombination: KeyCombination(key: "z", modifiers: [.command, .option])
+        )
+        XCTAssertEqual(validation, .valid)
+        XCTAssertEqual(shortcutManager.shortcutDisplayString(for: .undoCloseTab), "⌥⌘Z")
+
+        let toast = BrowserToast(kind: .tabClosure(count: 1))
+        XCTAssertEqual(toast.subtitle(shortcutManager: shortcutManager), "Press ⌥⌘Z to reopen")
+    }
 }

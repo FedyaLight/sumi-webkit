@@ -111,18 +111,8 @@ extension BrowserManager {
 
     // MARK: - Tab Closure Undo Notification
 
-    func showTabClosureToast(tabCount: Int) {
-        tabClosureToastCount = tabCount
-        showTabClosureToast = true
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
-            self?.hideTabClosureToast()
-        }
-    }
-
-    func hideTabClosureToast() {
-        showTabClosureToast = false
-        tabClosureToastCount = 0
+    func presentTabClosureToast(tabCount: Int) {
+        windowRegistry?.activeWindow?.presentToast(.init(kind: .tabClosure(count: tabCount)))
     }
 
     func undoCloseTab() {

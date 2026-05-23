@@ -2,6 +2,10 @@ import AppKit
 import SwiftUI
 
 enum KeyboardShortcutPresentation {
+    static func displayString(for keyCombination: KeyCombination) -> String {
+        keyCombination.modifiers.menuGlyphs + displayKey(for: keyCombination.key)
+    }
+
     static func keyEquivalent(for keyCombination: KeyCombination) -> KeyEquivalent? {
         switch keyCombination.key.lowercased() {
         case "return", "enter":
@@ -50,9 +54,43 @@ enum KeyboardShortcutPresentation {
         return result
     }
 
+    private static func displayKey(for key: String) -> String {
+        switch key.lowercased() {
+        case "return", "enter":
+            return "↩"
+        case "escape", "esc":
+            return "Esc"
+        case "delete", "backspace":
+            return "⌫"
+        case "tab":
+            return "⇥"
+        case "space":
+            return "Space"
+        case "up", "uparrow":
+            return "↑"
+        case "down", "downarrow":
+            return "↓"
+        case "left", "leftarrow":
+            return "←"
+        case "right", "rightarrow":
+            return "→"
+        default:
+            return key.uppercased()
+        }
+    }
+
 }
 
 extension Modifiers {
+    var menuGlyphs: String {
+        var glyphs = ""
+        if contains(.control) { glyphs += "⌃" }
+        if contains(.option) { glyphs += "⌥" }
+        if contains(.shift) { glyphs += "⇧" }
+        if contains(.command) { glyphs += "⌘" }
+        return glyphs
+    }
+
     var nsEventModifierFlags: NSEvent.ModifierFlags {
         var flags: NSEvent.ModifierFlags = []
         if contains(.command) { flags.insert(.command) }
