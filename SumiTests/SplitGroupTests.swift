@@ -507,6 +507,77 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(harness.tabManager.essentialPins(for: profileId).map(\.id), [essentialPin.id])
     }
 
+    func testRestoringInactiveShortcutSplitMemberDissolvesToRestoredTab() throws {
+        let harness = try makeHarness()
+        let profileId = UUID()
+        let space = harness.tabManager.createSpace(name: "Work", profileId: profileId)
+        harness.windowState.currentSpaceId = space.id
+        harness.windowState.currentProfileId = profileId
+
+        let essentialPin = makeEssentialPin(profileId: profileId, index: 0, title: "Essential")
+        harness.tabManager.setPinnedTabs([essentialPin], for: profileId)
+        let liveEssential = harness.tabManager.activateShortcutPin(
+            essentialPin,
+            in: harness.windowState.id,
+            currentSpaceId: space.id
+        )
+        let regular = harness.tabManager.createNewTab(url: "https://regular.example", in: space, activate: false)
+        harness.browserManager.selectTab(regular, in: harness.windowState)
+
+        let group = try XCTUnwrap(SplitGroup.make(
+            tabIds: [liveEssential.id, regular.id],
+            layoutKind: .vertical,
+            activeTabId: regular.id,
+            host: .regular(spaceId: space.id),
+            members: [
+                SplitGroupMember(
+                    tabId: liveEssential.id,
+                    pinId: essentialPin.id,
+                    origin: .essential(profileId: profileId, index: 0)
+                ),
+                SplitGroupMember(
+                    tabId: regular.id,
+                    pinId: nil,
+                    origin: .regular(spaceId: space.id, index: regular.index)
+                )
+            ]
+        ))
+        harness.tabManager.upsertSplitGroup(group)
+
+        harness.browserManager.restoreShortcutSplitMember(
+            liveEssential.id,
+            from: group,
+            in: harness.windowState
+        )
+
+        XCTAssertNil(harness.tabManager.splitGroup(containing: regular.id))
+        XCTAssertEqual(harness.windowState.currentTabId, liveEssential.id)
+        XCTAssertEqual(harness.windowState.currentShortcutPinId, essentialPin.id)
+    }
+
+    func testUnsplitActiveGroupKeepsFocusedTabSelected() throws {
+        let harness = try makeHarness()
+        let space = harness.tabManager.createSpace(name: "Work")
+        harness.windowState.currentSpaceId = space.id
+
+        let first = harness.tabManager.createNewTab(url: "https://one.example", in: space, activate: false)
+        let second = harness.tabManager.createNewTab(url: "https://two.example", in: space, activate: false)
+        harness.browserManager.selectTab(second, in: harness.windowState)
+        let group = try XCTUnwrap(SplitGroup.make(
+            tabIds: [first.id, second.id],
+            layoutKind: .vertical,
+            activeTabId: second.id,
+            host: .regular(spaceId: space.id)
+        ))
+        harness.tabManager.upsertSplitGroup(group)
+
+        harness.browserManager.splitManager.unsplitActiveGroup(for: harness.windowState.id)
+
+        XCTAssertNil(harness.tabManager.splitGroup(with: group.id))
+        XCTAssertEqual(harness.windowState.currentTabId, second.id)
+        XCTAssertFalse(harness.windowState.isShowingEmptyState)
+    }
+
     func testClosingShortcutSplitMemberStillUnloadsLiveInstance() throws {
         let harness = try makeHarness()
         let profileId = UUID()

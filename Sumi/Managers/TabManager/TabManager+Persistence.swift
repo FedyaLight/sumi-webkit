@@ -137,12 +137,12 @@ struct TabManagerSnapshotCache {
 
         for profileId in profileIdsToRefresh {
             let orderedPins = Array(tabManager.pinnedByProfile[profileId] ?? []).sorted { $0.index < $1.index }
-            pinnedTabsByProfile[profileId] = orderedPins.enumerated().map { index, pin in
+            pinnedTabsByProfile[profileId] = orderedPins.map { pin in
                 SnapshotTab(
                     id: pin.id,
                     urlString: pin.launchURL.absoluteString,
                     name: pin.title,
-                    index: index,
+                    index: pin.index,
                     spaceId: nil,
                     isPinned: true,
                     isSpacePinned: false,
@@ -174,12 +174,12 @@ struct TabManagerSnapshotCache {
                 continue
             }
             let shortcutPins = Array(tabManager.spacePinnedShortcuts[spaceId] ?? []).sorted { $0.index < $1.index }
-            spacePinnedTabsBySpace[spaceId] = shortcutPins.enumerated().map { index, pin in
+            spacePinnedTabsBySpace[spaceId] = shortcutPins.map { pin in
                 SnapshotTab(
                     id: pin.id,
                     urlString: pin.launchURL.absoluteString,
                     name: pin.title,
-                    index: index,
+                    index: pin.index,
                     spaceId: spaceId,
                     isPinned: false,
                     isSpacePinned: true,
@@ -211,12 +211,12 @@ struct TabManagerSnapshotCache {
                 continue
             }
             let regularTabs = Array(tabManager.tabsBySpace[spaceId] ?? [])
-            regularTabsBySpace[spaceId] = regularTabs.enumerated().map { index, tab in
+            regularTabsBySpace[spaceId] = regularTabs.map { tab in
                 SnapshotTab(
                     id: tab.id,
                     urlString: tab.url.absoluteString,
                     name: tab.name,
-                    index: index,
+                    index: tab.index,
                     spaceId: spaceId,
                     isPinned: false,
                     isSpacePinned: false,
@@ -248,7 +248,7 @@ struct TabManagerSnapshotCache {
                 continue
             }
             let orderedFolders = (tabManager.foldersBySpace[spaceId] ?? []).sorted { $0.index < $1.index }
-            folderSnapshotsBySpace[spaceId] = orderedFolders.enumerated().map { index, folder in
+            folderSnapshotsBySpace[spaceId] = orderedFolders.map { folder in
                 SnapshotFolder(
                     id: folder.id,
                     name: folder.name,
@@ -256,7 +256,7 @@ struct TabManagerSnapshotCache {
                     color: folder.color.toHexString() ?? "#000000",
                     spaceId: spaceId,
                     isOpen: folder.isOpen,
-                    index: index
+                    index: folder.index
                 )
             }
         }
@@ -590,13 +590,13 @@ extension TabManager {
 
         for profileId in pinnedByProfile.keys.sorted(by: { $0.uuidString < $1.uuidString }) {
             let orderedPins = Array(pinnedByProfile[profileId] ?? []).sorted { $0.index < $1.index }
-            for (index, pin) in orderedPins.enumerated() where ids.contains(pin.id) {
+            for pin in orderedPins where ids.contains(pin.id) {
                 snapshots.append(
                     TabSnapshotRepository.SnapshotTab(
                         id: pin.id,
                         urlString: pin.launchURL.absoluteString,
                         name: pin.title,
-                        index: index,
+                        index: pin.index,
                         spaceId: nil,
                         isPinned: true,
                         isSpacePinned: false,
@@ -614,13 +614,13 @@ extension TabManager {
 
         for space in spaces {
             let shortcutPins = Array(spacePinnedShortcuts[space.id] ?? []).sorted { $0.index < $1.index }
-            for (index, pin) in shortcutPins.enumerated() where ids.contains(pin.id) {
+            for pin in shortcutPins where ids.contains(pin.id) {
                 snapshots.append(
                     TabSnapshotRepository.SnapshotTab(
                         id: pin.id,
                         urlString: pin.launchURL.absoluteString,
                         name: pin.title,
-                        index: index,
+                        index: pin.index,
                         spaceId: space.id,
                         isPinned: false,
                         isSpacePinned: true,
@@ -636,13 +636,13 @@ extension TabManager {
             }
 
             let regularTabs = Array(tabsBySpace[space.id] ?? [])
-            for (index, tab) in regularTabs.enumerated() where ids.contains(tab.id) {
+            for tab in regularTabs where ids.contains(tab.id) {
                 snapshots.append(
                     TabSnapshotRepository.SnapshotTab(
                         id: tab.id,
                         urlString: tab.url.absoluteString,
                         name: tab.name,
-                        index: index,
+                        index: tab.index,
                         spaceId: space.id,
                         isPinned: false,
                         isSpacePinned: false,
@@ -666,7 +666,7 @@ extension TabManager {
         var snapshots: [TabSnapshotRepository.SnapshotFolder] = []
         for space in spaces {
             let orderedFolders = (foldersBySpace[space.id] ?? []).sorted { $0.index < $1.index }
-            for (index, folder) in orderedFolders.enumerated() where ids.contains(folder.id) {
+            for folder in orderedFolders where ids.contains(folder.id) {
                 snapshots.append(
                     TabSnapshotRepository.SnapshotFolder(
                         id: folder.id,
@@ -675,7 +675,7 @@ extension TabManager {
                         color: folder.color.toHexString() ?? "#000000",
                         spaceId: space.id,
                         isOpen: folder.isOpen,
-                        index: index
+                        index: folder.index
                     )
                 )
             }

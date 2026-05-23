@@ -69,6 +69,34 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         XCTAssertTrue(harness.browserManager.canOfferStartupLastSessionRestoreShortcut)
     }
 
+    func testCleanStartupDismissesGlanceAndReleasesPreviewWebView() throws {
+        let harness = try makeHarness(startupMode: .nothing)
+        defer { harness.defaults.reset() }
+
+        let previousTab = harness.browserManager.tabManager.createNewTab(
+            url: "https://previous.example",
+            in: harness.space,
+            activate: false
+        )
+        harness.windowState.currentTabId = previousTab.id
+
+        harness.browserManager.glanceManager.presentExternalURL(
+            URL(string: "https://glance.example/page")!,
+            from: previousTab
+        )
+        let session = try XCTUnwrap(harness.browserManager.glanceManager.currentSession)
+        let previewTab = session.previewTab
+        XCTAssertNotNil(previewTab.ensureWebView())
+
+        harness.browserManager.applyStartupPolicy(.nothing)
+
+        XCTAssertNil(harness.browserManager.glanceManager.currentSession)
+        XCTAssertEqual(harness.browserManager.glanceManager.phase, .idle)
+        XCTAssertFalse(harness.browserManager.glanceManager.isActive)
+        XCTAssertNil(previewTab.existingWebView)
+        XCTAssertNil(previewTab.primaryWindowId)
+    }
+
     func testRestorePreviousSessionPolicyDoesNotClearRegularTabsOrLauncherLiveInstances() throws {
         let harness = try makeHarness(startupMode: .restorePreviousSession)
         defer { harness.defaults.reset() }

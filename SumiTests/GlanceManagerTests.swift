@@ -348,6 +348,78 @@ final class GlanceManagerTests: XCTestCase {
         withExtendedLifetime(windowRegistry) {}
     }
 
+    func testGlanceSessionSnapshotRestoresPreviewForWindow() throws {
+        let browserManager = BrowserManager()
+        let sourceTab = makeSourceTab(in: browserManager)
+        let (_, windowState) = makeRegisteredWindow(in: browserManager, selecting: sourceTab)
+        let targetURL = URL(string: "https://destination.example/page")!
+        let snapshot = GlanceSessionSnapshot(
+            targetURL: targetURL,
+            currentURL: targetURL,
+            title: "Destination",
+            sourceTabId: sourceTab.id,
+            originRectInWindow: GlanceSessionRectSnapshot(
+                CGRect(x: 12, y: 18, width: 44, height: 44)
+            )
+        )
+
+        browserManager.glanceManager.restoreSession(snapshot, in: windowState)
+
+        let session = try XCTUnwrap(browserManager.glanceManager.currentSession)
+        XCTAssertEqual(session.windowId, windowState.id)
+        XCTAssertEqual(session.currentURL, targetURL)
+        XCTAssertEqual(session.title, "Destination")
+        XCTAssertTrue(session.sourceTab === sourceTab)
+        XCTAssertTrue(browserManager.glanceManager.presentedSession(for: windowState) === session)
+    }
+
+    func testGlanceSessionRestoreRebindsToSourceTabSelection() throws {
+        let browserManager = BrowserManager()
+        let sourceTab = makeSourceTab(in: browserManager)
+        let otherTab = browserManager.tabManager.createNewTab(
+            url: "https://other.example/page",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let (_, windowState) = makeRegisteredWindow(in: browserManager, selecting: otherTab)
+        let targetURL = URL(string: "https://destination.example/page")!
+        let snapshot = GlanceSessionSnapshot(
+            targetURL: targetURL,
+            currentURL: targetURL,
+            title: "Destination",
+            sourceTabId: sourceTab.id,
+            originRectInWindow: nil
+        )
+
+        browserManager.glanceManager.restoreSession(snapshot, in: windowState)
+
+        let session = try XCTUnwrap(browserManager.glanceManager.currentSession)
+        XCTAssertEqual(windowState.currentTabId, sourceTab.id)
+        XCTAssertTrue(session.sourceTab === sourceTab)
+        XCTAssertTrue(browserManager.glanceManager.presentedSession(for: windowState) === session)
+    }
+
+    func testGlanceSessionRestoreDoesNotPresentWhenSourceTabIsMissing() throws {
+        let browserManager = BrowserManager()
+        browserManager.tabManager.markInitialDataLoadFinished()
+        let selectedTab = makeSourceTab(in: browserManager)
+        let (_, windowState) = makeRegisteredWindow(in: browserManager, selecting: selectedTab)
+        let targetURL = URL(string: "https://destination.example/page")!
+        let snapshot = GlanceSessionSnapshot(
+            targetURL: targetURL,
+            currentURL: targetURL,
+            title: "Destination",
+            sourceTabId: UUID(),
+            originRectInWindow: nil
+        )
+
+        browserManager.glanceManager.restoreSession(snapshot, in: windowState)
+
+        XCTAssertNil(browserManager.glanceManager.currentSession)
+        XCTAssertNil(browserManager.glanceManager.presentedSession(for: windowState))
+        XCTAssertEqual(windowState.currentTabId, selectedTab.id)
+    }
+
     @discardableResult
     private func makeRegisteredWindow(
         in browserManager: BrowserManager,

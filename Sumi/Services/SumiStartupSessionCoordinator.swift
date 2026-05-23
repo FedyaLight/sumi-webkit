@@ -150,6 +150,7 @@ extension BrowserManager {
             windowState.recentRegularTabIdsBySpace.removeAll()
             windowState.selectedShortcutPinForSpace.removeAll()
             windowState.recentSelectionItemsBySpace.removeAll()
+            windowState.pendingSessionSplitGroupId = nil
             windowState.isShowingEmptyState = windowState.id == selectedWindow.id
             windowState.floatingBarPresentationReason =
                 windowState.id == selectedWindow.id ? .emptySpace : .none
@@ -158,6 +159,7 @@ extension BrowserManager {
                 ?? currentProfile?.id
             windowState.isAwaitingInitialSessionResolution = false
             splitManager.restoreSession(nil, for: windowState.id)
+            glanceManager.restoreSession(nil, in: windowState)
             windowState.refreshCompositor()
         }
     }

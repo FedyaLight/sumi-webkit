@@ -84,7 +84,9 @@ extension BrowserManager {
             tabManager.deactivateShortcutLiveTab(pinId: pinId, in: windowState.id)
         }
 
-        if wasSelected {
+        if remainingGroup == nil, preserveLiveInstance, let restoredLiveTab {
+            selectTab(restoredLiveTab, in: windowState)
+        } else if wasSelected {
             if preserveLiveInstance, let restoredLiveTab {
                 selectTab(restoredLiveTab, in: windowState)
             } else if let remainingGroup {

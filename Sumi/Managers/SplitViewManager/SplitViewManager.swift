@@ -133,7 +133,12 @@ final class SplitViewManager: ObservableObject {
 
     func exitSplit(for windowId: UUID) {
         guard let group = splitGroup(for: windowId) else { return }
+        let windowState = windowRegistry?.windows[windowId]
+        let focusTab = windowState.flatMap { preferredFocusTabAfterUnsplit(group, in: $0) }
         browserManager?.tabManager.removeSplitGroup(id: group.id)
+        if let focusTab, let windowState {
+            browserManager?.selectTab(focusTab, in: windowState)
+        }
         notifyChanged(for: windowId)
     }
 
@@ -1864,6 +1869,31 @@ final class SplitViewManager: ObservableObject {
         if let current, group.contains(current) { return current }
         if let active = group.activeTabId, group.contains(active) { return active }
         return group.tabIds.first
+    }
+
+    private func preferredFocusTabAfterUnsplit(
+        _ group: SplitGroup,
+        in windowState: BrowserWindowState
+    ) -> Tab? {
+        let candidateIds = [
+            windowState.currentTabId,
+            group.activeTabId
+        ] + group.tabIds.map(Optional.some)
+
+        for candidateId in candidateIds {
+            guard let candidateId else { continue }
+            if let tab = browserManager?.tabManager.tab(for: candidateId) {
+                return tab
+            }
+            if let pinId = group.member(for: candidateId)?.pinId,
+               let tab = browserManager?.tabManager.shortcutLiveTab(for: pinId, in: windowState.id) {
+                return tab
+            }
+            if let tab = browserManager?.tabManager.shortcutLiveTab(for: candidateId, in: windowState.id) {
+                return tab
+            }
+        }
+        return nil
     }
 
     private func transientState(for windowId: UUID) -> TransientWindowSplitState {

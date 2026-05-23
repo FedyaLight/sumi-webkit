@@ -208,6 +208,52 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertFalse(windowState.isAwaitingInitialSessionResolution)
     }
 
+    func testActiveSplitGroupSnapshotRestoresGroupFocus() throws {
+        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let space = tabManager.createSpace(name: "Split", profileId: UUID())
+        let first = tabManager.createNewTab(url: "https://one.example", in: space, activate: true)
+        let second = tabManager.createNewTab(url: "https://two.example", in: space, activate: false)
+        let group = try XCTUnwrap(
+            SplitGroup.make(
+                tabIds: [first.id, second.id],
+                layoutKind: .vertical,
+                activeTabId: second.id,
+                host: .regular(spaceId: space.id)
+            )
+        )
+        tabManager.upsertSplitGroup(group, schedulePersistence: false)
+
+        let snapshot = WindowSessionSnapshot(
+            currentTabId: nil,
+            currentSpaceId: space.id,
+            currentProfileId: nil,
+            activeShortcutPinId: nil,
+            activeShortcutPinRole: nil,
+            isShowingEmptyState: false,
+            floatingBarReason: nil,
+            activeTabsBySpace: [],
+            activeShortcutsBySpace: [],
+            sidebarWidth: Double(BrowserWindowState.sidebarDefaultWidth),
+            savedSidebarWidth: Double(BrowserWindowState.sidebarDefaultWidth),
+            sidebarContentWidth: Double(BrowserWindowState.sidebarContentWidth(
+                for: BrowserWindowState.sidebarDefaultWidth
+            )),
+            isSidebarVisible: true,
+            floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false),
+            activeSplitGroupId: group.id,
+            splitSession: nil
+        )
+        let service = WindowSessionService(lastWindowSessionKey: "SumiTests.windowSession.\(UUID().uuidString)")
+        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        let windowState = BrowserWindowState()
+
+        service.applyWindowSessionSnapshot(snapshot, to: windowState, delegate: delegate)
+
+        XCTAssertEqual(delegate.focusedSplitGroupIds, [group.id])
+        XCTAssertEqual(windowState.currentTabId, second.id)
+        XCTAssertNil(windowState.pendingSessionSplitGroupId)
+    }
+
     func testSetupWindowStateFallsBackToDefaultWhenLoadedSpaceIsMissing() async throws {
         let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
         await tabManager.loadFromStoreAwaitingResult()
@@ -293,18 +339,20 @@ final class WindowSessionServiceTests: XCTestCase {
 private final class TestWindowSessionDelegate: WindowSessionServiceDelegate {
     let tabManager: TabManager
     let splitManager = SplitViewManager()
+    let glanceManager = GlanceManager()
     let shellSelectionService = ShellSelectionService(splitTabsForWindow: { _ in [] })
     var currentProfile: Profile?
     var windowRegistry: WindowRegistry?
     private let themeCoordinator = WorkspaceThemeCoordinator()
     private(set) var committedThemes: [WorkspaceTheme] = []
+    private(set) var focusedSplitGroupIds: [UUID] = []
 
     init(tabManager: TabManager) {
         self.tabManager = tabManager
     }
 
     func hasValidCurrentSelection(in windowState: BrowserWindowState) -> Bool {
-        false
+        windowState.currentTabId.map { tabManager.tab(for: $0) != nil } ?? false
     }
 
     func applyTabSelection(
@@ -340,4 +388,20 @@ private final class TestWindowSessionDelegate: WindowSessionServiceDelegate {
     }
 
     func syncBrowserManagerSidebarCachesFromWindow(_ windowState: BrowserWindowState) {}
+
+    func focusSplitGroup(_ group: SplitGroup, in windowState: BrowserWindowState) {
+        focusedSplitGroupIds.append(group.id)
+        let targetTabId = group.activeTabId.flatMap { group.contains($0) ? $0 : nil }
+            ?? group.tabIds.first
+        if let tab = targetTabId.flatMap({ tabManager.tab(for: $0) }) {
+            applyTabSelection(
+                tab,
+                in: windowState,
+                updateSpaceFromTab: true,
+                updateTheme: false,
+                rememberSelection: false,
+                persistSelection: false
+            )
+        }
+    }
 }

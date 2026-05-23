@@ -80,6 +80,7 @@ protocol WindowSessionServiceDelegate: AnyObject {
     var tabManager: TabManager { get }
     var windowRegistry: WindowRegistry? { get }
     var splitManager: SplitViewManager { get }
+    var glanceManager: GlanceManager { get }
     var shellSelectionService: ShellSelectionService { get }
 
     func hasValidCurrentSelection(in windowState: BrowserWindowState) -> Bool
@@ -97,6 +98,7 @@ protocol WindowSessionServiceDelegate: AnyObject {
     func commitWorkspaceTheme(_ theme: WorkspaceTheme, for windowState: BrowserWindowState)
     func space(for spaceId: UUID?) -> Space?
     func syncBrowserManagerSidebarCachesFromWindow(_ windowState: BrowserWindowState)
+    func focusSplitGroup(_ group: SplitGroup, in windowState: BrowserWindowState)
 }
 
 @MainActor
@@ -168,6 +170,8 @@ final class WindowSessionService {
             }
 
             delegate.syncShortcutSelectionState(for: windowState)
+            restorePendingSplitGroupSelectionIfNeeded(in: windowState, delegate: delegate)
+            delegate.glanceManager.restorePendingSessionIfPossible(in: windowState)
 
             syncWorkspaceThemeAfterSessionRestore(
                 windowState,
@@ -229,6 +233,8 @@ final class WindowSessionService {
         source: String
     ) {
         materializeShortcutSelectionIfNeeded(in: windowState, delegate: delegate)
+        restorePendingSplitGroupSelectionIfNeeded(in: windowState, delegate: delegate)
+        delegate.glanceManager.restorePendingSessionIfPossible(in: windowState)
 
         if !windowState.isShowingEmptyState,
            !delegate.hasValidCurrentSelection(in: windowState)
@@ -291,6 +297,7 @@ final class WindowSessionService {
 
         delegate.sanitizeFloatingBarState(in: windowState)
         delegate.syncShortcutSelectionState(for: windowState)
+        restorePendingSplitGroupSelectionIfNeeded(in: windowState, delegate: delegate)
 
         syncWorkspaceThemeAfterSessionRestore(
             windowState,
@@ -475,8 +482,26 @@ final class WindowSessionService {
         windowState.isDownloadsPopoverPresented = false
         windowState.floatingBarDraftText = snapshot.floatingBarDraft.text
         windowState.floatingBarDraftNavigatesCurrentTab = snapshot.floatingBarDraft.navigateCurrentTab
+        windowState.pendingSessionSplitGroupId = snapshot.activeSplitGroupId
         delegate.splitManager.restoreSession(snapshot.splitSession, for: windowState.id)
+        delegate.glanceManager.restoreSession(snapshot.glanceSession, in: windowState)
         delegate.sanitizeFloatingBarState(in: windowState)
+    }
+
+    private func restorePendingSplitGroupSelectionIfNeeded(
+        in windowState: BrowserWindowState,
+        delegate: WindowSessionServiceDelegate
+    ) {
+        guard let groupId = windowState.pendingSessionSplitGroupId else { return }
+        guard let group = delegate.tabManager.splitGroup(with: groupId) else {
+            if delegate.tabManager.hasLoadedInitialData {
+                windowState.pendingSessionSplitGroupId = nil
+            }
+            return
+        }
+
+        windowState.pendingSessionSplitGroupId = nil
+        delegate.focusSplitGroup(group, in: windowState)
     }
 
     func makeWindowSessionSnapshot(
@@ -505,6 +530,8 @@ final class WindowSessionService {
                 text: windowState.floatingBarDraftText,
                 navigateCurrentTab: windowState.floatingBarDraftNavigatesCurrentTab
             ),
+            activeSplitGroupId: delegate.splitManager.splitGroup(for: windowState.id)?.id,
+            glanceSession: delegate.glanceManager.makeSessionSnapshot(for: windowState),
             splitSession: nil
         )
     }
