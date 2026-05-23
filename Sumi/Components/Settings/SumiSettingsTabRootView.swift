@@ -19,12 +19,12 @@ struct SumiSettingsTabRootView: View {
     @State private var searchText = ""
 
     private enum Layout {
-        static let sidebarMinWidth: CGFloat = 224
-        static let sidebarMaxWidth: CGFloat = 292
+        static let sidebarMinWidth: CGFloat = 260
+        static let sidebarMaxWidth: CGFloat = 300
         static let compactBreakpoint: CGFloat = 760
-        static let contentMaxWidth: CGFloat = 740
-        static let horizontalPadding: CGFloat = 24
-        static let verticalPadding: CGFloat = 22
+        static let contentMaxWidth: CGFloat = 860
+        static let horizontalPadding: CGFloat = 34
+        static let verticalPadding: CGFloat = 26
     }
 
     private var filteredDescriptors: [SettingsPaneDescriptor] {
@@ -50,11 +50,10 @@ struct SumiSettingsTabRootView: View {
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
-            .background(tokens.windowBackground)
+            .background(Color(nsColor: .windowBackgroundColor))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .environment(\.resolvedThemeContext, surfaceThemeContext)
-        .environment(\.colorScheme, surfaceThemeContext.chromeColorScheme)
         .onChange(of: sumiSettings.currentSettingsTab) { _, _ in
             syncSettingsURLToActiveTab(sumiSettings: sumiSettings)
         }
@@ -77,14 +76,6 @@ struct SumiSettingsTabRootView: View {
         themeContext.nativeSurfaceThemeContext
     }
 
-    private var tokens: ChromeThemeTokens {
-        surfaceThemeContext.tokens(settings: sumiSettingsModel)
-    }
-
-    private var selectionBackground: Color {
-        surfaceThemeContext.nativeSurfaceSelectionBackground
-    }
-
     private func sidebarWidth(for availableWidth: CGFloat) -> CGFloat {
         min(
             Layout.sidebarMaxWidth,
@@ -96,7 +87,7 @@ struct SumiSettingsTabRootView: View {
         HStack(spacing: 0) {
             sidebar(sumiSettings: sumiSettings, width: sidebarWidth)
             Divider()
-                .overlay(tokens.separator)
+                .opacity(0.45)
             detail(sumiSettings: sumiSettings)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .layoutPriority(1)
@@ -107,7 +98,6 @@ struct SumiSettingsTabRootView: View {
         VStack(spacing: 0) {
             compactNavigation(sumiSettings: sumiSettings)
             Divider()
-                .overlay(tokens.separator)
             detail(sumiSettings: sumiSettings)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .layoutPriority(1)
@@ -115,13 +105,13 @@ struct SumiSettingsTabRootView: View {
     }
 
     private func sidebar(sumiSettings: SumiSettingsService, width: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 14) {
             settingsSearchField
-                .padding(.horizontal, 10)
-                .padding(.top, 12)
+                .padding(.horizontal, 18)
+                .padding(.top, 18)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 16) {
                     if filteredDescriptors.isEmpty {
                         sidebarEmptyState
                     } else {
@@ -137,30 +127,34 @@ struct SumiSettingsTabRootView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 8)
-                .padding(.bottom, 12)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 18)
             }
         }
-        .frame(width: width, alignment: .leading)
-        .background(tokens.windowBackground)
+        .frame(width: width, alignment: .topLeading)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var settingsSearchField: some View {
         HStack(spacing: 7) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(tokens.secondaryText)
-            TextField("Search Settings", text: $searchText)
+                .foregroundStyle(.secondary)
+                .font(.system(size: 15, weight: .medium))
+            TextField("Search", text: $searchText)
                 .textFieldStyle(.plain)
+                .font(.system(size: 14))
         }
-        .padding(.vertical, 7)
-        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .frame(height: 30)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(tokens.fieldBackground)
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.95))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(tokens.separator.opacity(0.55), lineWidth: 1)
+                .strokeBorder(Color.secondary.opacity(0.16), lineWidth: 1)
         )
     }
 
@@ -170,7 +164,7 @@ struct SumiSettingsTabRootView: View {
                 .font(.headline)
             Text("Try a different settings search.")
                 .font(.caption)
-                .foregroundStyle(tokens.secondaryText)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
@@ -181,17 +175,55 @@ struct SumiSettingsTabRootView: View {
         descriptors: [SettingsPaneDescriptor],
         sumiSettings: SumiSettingsService
     ) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 5) {
             Text(group.rawValue)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(tokens.secondaryText)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
                 .textCase(.uppercase)
                 .padding(.horizontal, 10)
 
-            ForEach(descriptors) { descriptor in
-                sidebarRow(descriptor, sumiSettings: sumiSettings)
+            VStack(spacing: 2) {
+                ForEach(descriptors) { descriptor in
+                    sidebarRow(descriptor, sumiSettings: sumiSettings)
+                }
             }
         }
+    }
+
+    private func sidebarRow(
+        _ descriptor: SettingsPaneDescriptor,
+        sumiSettings: SumiSettingsService
+    ) -> some View {
+        let selected = sumiSettings.currentSettingsTab == descriptor.tab
+
+        return Button {
+            sumiSettings.currentSettingsTab = descriptor.tab
+            if descriptor.tab == .privacy {
+                sumiSettings.privacySettingsRoute = .overview
+            }
+        } label: {
+            HStack(spacing: 10) {
+                SettingsPaneIcon(
+                    systemImage: descriptor.icon,
+                    color: descriptor.iconColor
+                )
+
+                Text(descriptor.title)
+                    .font(.system(size: 14, weight: selected ? .semibold : .regular))
+                    .lineLimit(1)
+                    .foregroundStyle(selected ? Color.white : Color.primary)
+
+                Spacer(minLength: 0)
+            }
+            .frame(height: 34)
+            .padding(.horizontal, 8)
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(selected ? Color.accentColor : Color.clear)
+        )
     }
 
     private func compactNavigation(sumiSettings: SumiSettingsService) -> some View {
@@ -211,38 +243,7 @@ struct SumiSettingsTabRootView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tokens.windowBackground)
-    }
-
-    private func sidebarRow(_ descriptor: SettingsPaneDescriptor, sumiSettings: SumiSettingsService) -> some View {
-        let selected = sumiSettings.currentSettingsTab == descriptor.tab
-        return Button {
-            sumiSettings.currentSettingsTab = descriptor.tab
-            if descriptor.tab == .privacy {
-                sumiSettings.privacySettingsRoute = .overview
-            }
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: descriptor.icon)
-                    .foregroundStyle(selected ? tokens.primaryText : tokens.secondaryText)
-                    .frame(width: 18, alignment: .center)
-
-                Text(descriptor.title)
-                    .font(.body)
-                    .lineLimit(1)
-
-                Spacer(minLength: 0)
-            }
-            .padding(.vertical, 7)
-            .padding(.horizontal, 10)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(selected ? selectionBackground : Color.clear)
-        )
-        .foregroundStyle(tokens.primaryText)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private func compactNavigationRow(
@@ -269,9 +270,9 @@ struct SumiSettingsTabRootView: View {
         .buttonStyle(.plain)
         .background(
             Capsule(style: .continuous)
-                .fill(selected ? selectionBackground : tokens.fieldBackground)
+                .fill(selected ? Color.accentColor.opacity(0.16) : Color(nsColor: .controlBackgroundColor))
         )
-        .foregroundStyle(tokens.primaryText)
+        .foregroundStyle(.primary)
     }
 
     private func detail(sumiSettings: SumiSettingsService) -> some View {
@@ -280,7 +281,7 @@ struct SumiSettingsTabRootView: View {
 
         return ScrollView {
             HStack(alignment: .top, spacing: 0) {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 18) {
                     settingsHeader(descriptor)
 
                     if filteredDescriptors.isEmpty && isSearching {
@@ -301,27 +302,21 @@ struct SumiSettingsTabRootView: View {
             .padding(.horizontal, Layout.horizontalPadding)
             .padding(.vertical, Layout.verticalPadding)
         }
-        .background(tokens.windowBackground)
+        .background(Color(nsColor: .windowBackgroundColor))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func settingsHeader(_ descriptor: SettingsPaneDescriptor) -> some View {
-        HStack(alignment: .center, spacing: 12) {
-            Image(systemName: descriptor.icon)
-                .font(.title3)
-                .foregroundStyle(tokens.secondaryText)
-                .frame(width: 28, height: 28)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(descriptor.title)
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(tokens.primaryText)
-                Text(descriptor.subtitle)
-                    .font(.callout)
-                    .foregroundStyle(tokens.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        VStack(alignment: .leading, spacing: 4) {
+            Text(descriptor.title)
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(.primary)
+            Text(descriptor.subtitle)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .padding(.bottom, 4)
     }
 
     @ViewBuilder
@@ -359,5 +354,25 @@ struct SumiSettingsTabRootView: View {
         guard tab.url != newURL else { return }
         tab.url = newURL
         browserManager.tabManager.scheduleRuntimeStatePersistence(for: tab)
+    }
+
+}
+
+private struct SettingsPaneIcon: View {
+    let systemImage: String
+    let color: Color
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(color.gradient)
+
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+                .symbolRenderingMode(.hierarchical)
+        }
+        .frame(width: 24, height: 24)
+        .shadow(color: .black.opacity(0.12), radius: 1, x: 0, y: 1)
     }
 }
