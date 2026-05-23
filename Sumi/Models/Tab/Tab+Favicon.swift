@@ -58,12 +58,26 @@ extension Tab {
         return true
     }
 
+    @MainActor
     func fetchFaviconForVisiblePresentation() async {
         guard faviconIsTemplateGlobePlaceholder else { return }
-        _ = applyCachedFaviconOrPlaceholder(for: url)
-        await MainActor.run {
-            faviconsTabExtension?.loadCachedFavicon(previousURL: nil, error: nil)
+
+        let requestedURL = url
+        if applyCachedFaviconOrPlaceholder(for: requestedURL) {
+            return
         }
+
+        if let image = await TabFaviconStore.loadCachedDisplayImage(forDocumentURL: requestedURL),
+           !Task.isCancelled,
+           url == requestedURL {
+            favicon = SwiftUI.Image(nsImage: image)
+            faviconIsTemplateGlobePlaceholder = false
+            resolvedFaviconCacheKey = Self.faviconLookupIdentifier(for: requestedURL)
+                ?? SumiFaviconResolver.cacheKey(for: requestedURL)
+            return
+        }
+
+        faviconsTabExtension?.loadCachedFavicon(previousURL: nil, error: nil)
     }
 
     @MainActor

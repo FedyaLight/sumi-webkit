@@ -278,7 +278,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         return _webView == nil
     }
 
-    /// True when the tab row should show the “web content unloaded” affordance (dimmed favicon + badge).
+    /// True when the tab row should show the web-content-unloaded favicon affordance.
     /// Sumi-native tabs (settings UI, empty new-tab surface) never host a primary-frame WKWebView for that UI, so they must not look “unloaded”.
     var showsWebViewUnloadedIndicator: Bool {
         requiresPrimaryWebView && isUnloaded

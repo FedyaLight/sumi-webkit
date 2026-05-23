@@ -32,19 +32,7 @@ struct SpaceTab: View {
     var body: some View {
         ZStack {
             HStack(spacing: 8) {
-                ZStack {
-                    SidebarTabFaviconView(tab: tab, size: SidebarRowLayout.faviconSize, cornerRadius: 6)
-                        .opacity(tab.showsWebViewUnloadedIndicator ? 0.5 : 1.0)
-                    
-                    if tab.showsWebViewUnloadedIndicator {
-                        Image(systemName: "arrow.down.circle.fill")
-                            .font(.system(size: 8))
-                            .foregroundColor(.secondary)
-                            .background(Color.gray)
-                            .clipShape(Circle())
-                            .offset(x: 6, y: -6)
-                    }
-                }
+                favicon
                 if tab.audioState.showsTabAudioButton {
                     Button(action: {
                         onMute()
@@ -220,6 +208,20 @@ struct SpaceTab: View {
     }
     private var textTab: Color {
         return tokens.primaryText
+    }
+
+    @ViewBuilder
+    private var favicon: some View {
+        if tab.showsWebViewUnloadedIndicator {
+            SidebarUnloadedRegularTabFaviconFrame(
+                size: SidebarRowLayout.faviconSize,
+                cornerRadius: 6
+            ) {
+                SidebarTabFaviconView(tab: tab, size: SidebarRowLayout.faviconSize, cornerRadius: 6)
+            }
+        } else {
+            SidebarTabFaviconView(tab: tab, size: SidebarRowLayout.faviconSize, cornerRadius: 6)
+        }
     }
 
     private var tokens: ChromeThemeTokens {
