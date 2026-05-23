@@ -1093,24 +1093,7 @@ private struct SpaceSnapshotRegularTabRowView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            ZStack {
-                SpaceSnapshotIconView(
-                    icon: tab.icon,
-                    size: SidebarRowLayout.faviconSize,
-                    cornerRadius: 6,
-                    foregroundColor: tokens.primaryText
-                )
-                .opacity(tab.showsUnloadedIndicator ? 0.5 : 1.0)
-
-                if tab.showsUnloadedIndicator {
-                    Image(systemName: "arrow.down.circle.fill")
-                        .font(.system(size: 8))
-                        .foregroundColor(.secondary)
-                        .background(Color.gray)
-                        .clipShape(Circle())
-                        .offset(x: 6, y: -6)
-                }
-            }
+            favicon
 
             if tab.showsAudioButton {
                 Image(systemName: tab.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
@@ -1137,6 +1120,30 @@ private struct SpaceSnapshotRegularTabRowView: View {
             radius: tab.isSelected ? 2 : 0,
             y: tab.isSelected ? 1.5 : 0
         )
+    }
+
+    @ViewBuilder
+    private var favicon: some View {
+        if tab.showsUnloadedIndicator {
+            SidebarUnloadedRegularTabFaviconFrame(
+                size: SidebarRowLayout.faviconSize,
+                cornerRadius: 6
+            ) {
+                SpaceSnapshotIconView(
+                    icon: tab.icon,
+                    size: SidebarRowLayout.faviconSize,
+                    cornerRadius: 6,
+                    foregroundColor: tokens.primaryText
+                )
+            }
+        } else {
+            SpaceSnapshotIconView(
+                icon: tab.icon,
+                size: SidebarRowLayout.faviconSize,
+                cornerRadius: 6,
+                foregroundColor: tokens.primaryText
+            )
+        }
     }
 }
 
