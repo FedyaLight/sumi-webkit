@@ -51,6 +51,9 @@
 				"FloatingBar Accessories/GenericSuggestionItem.swift",
 				"FloatingBar Accessories/HistorySuggestionItem.swift",
 				"FloatingBar Accessories/TabSuggestionItem.swift",
+				FloatingBarLayoutPolicy.swift,
+				FloatingBarMotionPolicy.swift,
+				FloatingBarResultsPanelView.swift,
 				FloatingBarView.swift,
 			);
 			target = 7F8340FB2E37F39400674A5D /* Sumi */;

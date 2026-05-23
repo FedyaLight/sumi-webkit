@@ -43,23 +43,44 @@ final class SidebarDDGHoverTests: XCTestCase {
     }
 
     func testFloatingBarInputAffordancesMatchZenFloatingUrlbar() throws {
-        let source = try Self.source(named: "FloatingBar/FloatingBarView.swift")
+        let viewSource = try Self.source(named: "FloatingBar/FloatingBarView.swift")
+        let layoutSource = try Self.source(named: "FloatingBar/FloatingBarLayoutPolicy.swift")
+        let motionSource = try Self.source(named: "FloatingBar/FloatingBarMotionPolicy.swift")
+        let resultsSource = try Self.source(named: "FloatingBar/FloatingBarResultsPanelView.swift")
+        let floatingBarSource = [
+            viewSource,
+            layoutSource,
+            motionSource,
+            resultsSource
+        ].joined(separator: "\n")
 
-        XCTAssertTrue(source.contains(".tint(tokens.primaryText)"))
-        XCTAssertTrue(source.contains(".lineLimit(1)"))
-        XCTAssertTrue(source.contains("focusSearchField(selectAll: false)"))
-        XCTAssertTrue(source.contains("triggerSearchModeAnimation"))
-        XCTAssertTrue(source.contains("FloatingBarSearchModeGlowView"))
-        XCTAssertTrue(source.contains("ScrollView(.vertical)"))
-        XCTAssertTrue(source.contains(".scrollIndicators(shouldScroll ? .visible : .hidden)"))
-        XCTAssertTrue(source.contains("suggestionsMaxHeight"))
-        XCTAssertTrue(source.contains("suggestionsVisibleRowLimit = 5"))
-        XCTAssertTrue(source.contains("selectedBackground = tokens.accent.opacity"))
-        XCTAssertTrue(source.contains("deleteHistoryEntry"))
-        XCTAssertFalse(source.contains("NSAlert"))
+        XCTAssertTrue(viewSource.contains(".tint(tokens.primaryText)"))
+        XCTAssertTrue(viewSource.contains(".lineLimit(1)"))
+        XCTAssertTrue(viewSource.contains("focusSearchField(selectAll: false)"))
+        XCTAssertTrue(viewSource.contains("FloatingBarResultsPanelView"))
+        XCTAssertTrue(viewSource.contains("chromeContentAnimation"))
+        XCTAssertTrue(viewSource.contains("microAffordanceAnimation"))
+        XCTAssertTrue(viewSource.contains("setWaitingForSearchDebounce"))
+        XCTAssertTrue(viewSource.contains("visibleSuggestionLayoutCount"))
+        XCTAssertTrue(viewSource.contains("triggerSearchModeConfirmation"))
+        XCTAssertTrue(viewSource.contains("updateWithoutMotion"))
+        XCTAssertTrue(layoutSource.contains("suggestionsVisibleRowLimit = 5"))
+        XCTAssertTrue(layoutSource.contains("shouldWaitForSuggestionLayout"))
+        XCTAssertTrue(motionSource.contains("FloatingBarMotionPolicy"))
+        XCTAssertTrue(motionSource.contains("FloatingBarSearchModeConfirmationView"))
+        XCTAssertTrue(resultsSource.contains("resultsPanelHeight"))
+        XCTAssertTrue(resultsSource.contains("ScrollView(.vertical)"))
+        XCTAssertTrue(resultsSource.contains(".scrollIndicators(shouldScroll ? .visible : .hidden)"))
+        XCTAssertTrue(resultsSource.contains("selectedBackground = tokens.accent.opacity"))
+        XCTAssertTrue(floatingBarSource.contains("deleteHistoryEntry"))
+        XCTAssertFalse(floatingBarSource.contains("pendingSuggestionLayoutCount"))
+        XCTAssertFalse(floatingBarSource.contains(".transition(.blur"))
+        XCTAssertFalse(floatingBarSource.contains("FloatingBarSearchModeGlowView"))
+        XCTAssertFalse(floatingBarSource.contains("NSAlert"))
 
         let searchManagerSource = try Self.source(named: "Sumi/Managers/SearchManager/SearchManager.swift")
         XCTAssertTrue(searchManagerSource.contains("maxVisibleSuggestions = 10"))
+        XCTAssertFalse(searchManagerSource.contains("withAnimation"))
         let suggestionEngineSource = try Self.source(named: "Sumi/Managers/SearchManager/SumiSuggestionEngine.swift")
         XCTAssertTrue(suggestionEngineSource.contains("maximumNumberOfSuggestions = 12"))
         XCTAssertTrue(suggestionEngineSource.contains("duckDuckGoSuggestions(from: apiSuggestions"))
@@ -75,25 +96,37 @@ final class SidebarDDGHoverTests: XCTestCase {
         XCTAssertTrue(historyRowSource.contains("FloatingBarFaviconContainer"))
     }
 
-    func testFloatingBarSuggestionHeightAdaptsBeforeZenScrollLimit() {
+    func testFloatingBarSuggestionHeightAdaptsBeforeZenScrollLimit() throws {
+        let viewSource = try Self.source(named: "FloatingBar/FloatingBarView.swift")
+        let layoutSource = try Self.source(named: "FloatingBar/FloatingBarLayoutPolicy.swift")
+
         XCTAssertEqual(FloatingBarLayoutPolicy.suggestionsVisibleRowLimit, 5)
         XCTAssertEqual(FloatingBarLayoutPolicy.suggestionsHeight(for: 0), 0)
         XCTAssertEqual(FloatingBarLayoutPolicy.suggestionsHeight(for: 2), 104)
-        XCTAssertEqual(
-            FloatingBarLayoutPolicy.suggestionLayoutCount(
-                visibleCount: 5,
-                committedCount: 2,
-                isWaitingForSuggestions: true
-            ),
-            2
+        XCTAssertEqual(FloatingBarLayoutPolicy.resultsPanelHeight(for: 0), 0)
+        XCTAssertEqual(FloatingBarLayoutPolicy.resultsPanelHeight(for: 2), 116.5)
+        XCTAssertEqual(FloatingBarLayoutPolicy.layoutCount(forVisibleCount: 0), 0)
+        XCTAssertEqual(FloatingBarLayoutPolicy.layoutCount(forVisibleCount: 2), 2)
+        XCTAssertEqual(FloatingBarLayoutPolicy.layoutCount(forVisibleCount: 6), 5)
+        XCTAssertFalse(layoutSource.contains("suggestionLayoutCount("))
+        let layoutCountStart = try XCTUnwrap(viewSource.range(of: "private var suggestionLayoutCount: Int"))
+        let layoutCountEnd = try XCTUnwrap(viewSource[layoutCountStart.lowerBound...].range(of: "private var shouldShowEmptyStateSuggestions"))
+        let layoutCountBody = String(viewSource[layoutCountStart.lowerBound..<layoutCountEnd.lowerBound])
+        XCTAssertTrue(layoutCountBody.contains("committedSuggestionLayoutCount"))
+        XCTAssertFalse(layoutCountBody.contains("visibleSuggestions.count"))
+        XCTAssertTrue(
+            FloatingBarLayoutPolicy.shouldWaitForSuggestionLayout(
+                isDebouncing: false,
+                isLoading: true,
+                visibleLayoutCount: 4
+            )
         )
-        XCTAssertEqual(
-            FloatingBarLayoutPolicy.suggestionLayoutCount(
-                visibleCount: 5,
-                committedCount: 2,
-                isWaitingForSuggestions: false
-            ),
-            5
+        XCTAssertFalse(
+            FloatingBarLayoutPolicy.shouldWaitForSuggestionLayout(
+                isDebouncing: false,
+                isLoading: true,
+                visibleLayoutCount: 5
+            )
         )
         XCTAssertEqual(
             FloatingBarLayoutPolicy.suggestionsHeight(for: 6),

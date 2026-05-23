@@ -254,13 +254,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let alert = NSAlert()
         alert.messageText = "Are you sure you want to quit Sumi?"
         alert.informativeText = "You may lose unsaved work in your tabs."
-        alert.alertStyle = .warning
+        alert.alertStyle = .informational
+        alert.icon = quitConfirmationIcon()
         alert.addButton(withTitle: "Quit")
         alert.addButton(withTitle: "Cancel")
         alert.buttons[safe: 1]?.keyEquivalent = "\u{1b}"
         alert.showsSuppressionButton = true
         alert.suppressionButton?.title = "Don't show it again"
         return alert
+    }
+
+    private func quitConfirmationIcon() -> NSImage {
+        if let assetIcon = NSImage(named: "sumi-logo-1024") {
+            return assetIcon
+        }
+
+        return NSApp.applicationIconImage
     }
 
     private func presentQuitConfirmationSheet(for application: NSApplication, window: NSWindow) {

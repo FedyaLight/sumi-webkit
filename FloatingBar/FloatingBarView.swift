@@ -8,60 +8,6 @@
 import AppKit
 import SwiftUI
 
-enum FloatingBarLayoutPolicy {
-    static let idealWidth: CGFloat = 765
-    static let horizontalPadding: CGFloat = 10
-    static let minimumWidth: CGFloat = 200
-    static let horizontalVignetteOutset: CGFloat = 56
-    static let verticalVignetteOutset: CGFloat = 72
-    static let contentHeight: CGFloat = 328
-    static let inputRowHeight: CGFloat = 22
-    static let inputRowVerticalPadding: CGFloat = 5
-    static let suggestionsMaxHeight: CGFloat = 260
-    static let suggestionsVisibleRowLimit = 5
-    static let suggestionRowMinHeight: CGFloat = 32
-    static let suggestionRowHorizontalPadding: CGFloat = 8
-    static let suggestionRowVerticalPadding: CGFloat = 10
-    static let suggestionRowSpacing: CGFloat = 0
-    static let suggestionHeightAnimation = Animation.easeInOut(duration: 0.15)
-
-    static var suggestionRowHeight: CGFloat {
-        suggestionRowMinHeight + suggestionRowVerticalPadding * 2
-    }
-
-    static func suggestionsHeight(for count: Int) -> CGFloat {
-        guard count > 0 else { return 0 }
-        guard count <= suggestionsVisibleRowLimit else { return suggestionsMaxHeight }
-        let visibleCount = count
-        let rowHeights = CGFloat(visibleCount) * suggestionRowHeight
-        let spacings = CGFloat(max(visibleCount - 1, 0)) * suggestionRowSpacing
-        return min(suggestionsMaxHeight, rowHeights + spacings)
-    }
-
-    static func suggestionLayoutCount(
-        visibleCount: Int,
-        committedCount: Int,
-        isWaitingForSuggestions: Bool
-    ) -> Int {
-        isWaitingForSuggestions ? committedCount : visibleCount
-    }
-
-    static var panelHeight: CGFloat {
-        contentHeight + verticalVignetteOutset * 2
-    }
-
-    static func effectiveWidth(availableWindowWidth: CGFloat) -> CGFloat {
-        min(
-            idealWidth,
-            max(minimumWidth, availableWindowWidth - (horizontalPadding * 2))
-        )
-    }
-
-    static func panelWidth(availableWindowWidth: CGFloat) -> CGFloat {
-        effectiveWidth(availableWindowWidth: availableWindowWidth) + horizontalVignetteOutset * 2
-    }
-}
-
 struct FloatingBarView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
@@ -69,15 +15,15 @@ struct FloatingBarView: View {
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
     @FocusState private var isSearchFocused: Bool
     @State private var text: String = ""
     @State private var selectedSuggestionIndex: Int = -1
     @State private var hoveredSuggestionIndex: Int? = nil
     @State private var activeSiteSearch: SiteSearchEntry? = nil
-    @State private var searchModeScale: CGFloat = 1
-    @State private var searchModeGlow: FloatingBarSearchModeGlow?
-    @State private var searchModeGlowProgress: CGFloat = 1
+    @State private var searchModeConfirmation: FloatingBarSearchModeConfirmation?
+    @State private var searchModeConfirmationProgress: CGFloat = 1
     @State private var floatingBarCardView: NSView?
     @State private var outsideClickMonitor = ChromeLocalEventMonitor()
     @State private var searchDebouncer = MainActorDebouncedTask()
@@ -111,38 +57,20 @@ struct FloatingBarView: View {
         return "Search..."
     }
 
-    private var isShowingEmptyTopLinks: Bool {
-        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && activeSiteSearch == nil
-            && shouldShowEmptyStateSuggestions
-            && !visibleSuggestions.isEmpty
-    }
-
     private var isWaitingForSuggestions: Bool {
-        isWaitingForSearchDebounce || searchManager.isLoadingSuggestions
-    }
-
-    private var shouldReserveSuggestionsHeight: Bool {
-        isWaitingForSuggestions
-    }
-
-    private var suggestionLayoutCount: Int {
-        FloatingBarLayoutPolicy.suggestionLayoutCount(
-            visibleCount: visibleSuggestions.count,
-            committedCount: committedSuggestionLayoutCount,
-            isWaitingForSuggestions: shouldReserveSuggestionsHeight
+        FloatingBarLayoutPolicy.shouldWaitForSuggestionLayout(
+            isDebouncing: isWaitingForSearchDebounce,
+            isLoading: searchManager.isLoadingSuggestions,
+            visibleLayoutCount: visibleSuggestionLayoutCount
         )
     }
 
-    private var shouldShowSuggestionsPanel: Bool {
-        suggestionLayoutCount > 0 || (!shouldReserveSuggestionsHeight && !visibleSuggestions.isEmpty)
+    private var visibleSuggestionLayoutCount: Int {
+        FloatingBarLayoutPolicy.layoutCount(forVisibleCount: visibleSuggestions.count)
     }
 
-    private var isTopLinksEmptyStateVisible: Bool {
-        windowState.isFloatingBarVisible
-            && activeSiteSearch == nil
-            && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && shouldShowEmptyStateSuggestions
+    private var suggestionLayoutCount: Int {
+        committedSuggestionLayoutCount
     }
 
     private var shouldShowEmptyStateSuggestions: Bool {
@@ -150,8 +78,16 @@ struct FloatingBarView: View {
             || sumiSettings.floatingBarEmptyStateMode == .topLinks
     }
 
-    private var suggestionHeightAnimation: Animation? {
-        isTopLinksEmptyStateVisible ? nil : FloatingBarLayoutPolicy.suggestionHeightAnimation
+    private var chromeContentAnimation: Animation? {
+        FloatingBarMotionPolicy.chromeContentAnimation(for: motionMode)
+    }
+
+    private var microAffordanceAnimation: Animation? {
+        FloatingBarMotionPolicy.microAffordanceAnimation(for: motionMode)
+    }
+
+    private var motionMode: FloatingBarMotionPolicy.Mode {
+        FloatingBarMotionPolicy.mode(reduceMotion: accessibilityReduceMotion)
     }
 
     var body: some View {
@@ -170,6 +106,7 @@ struct FloatingBarView: View {
         let tokens = self.tokens
         let urlBarPlaceholder = urlBarPlaceholderString
         let textFieldFont = Font.system(size: 13, weight: .semibold)
+        let siteSearchMatchID = siteSearchMatch?.id
 
         ZStack {
             VStack {
@@ -177,7 +114,7 @@ struct FloatingBarView: View {
                 HStack {
                     Spacer()
                     VStack {
-                        VStack(alignment: .center,spacing: 6) {
+                        VStack(alignment: .center, spacing: 0) {
                             HStack(spacing: 15) {
                                 Image(
                                     systemName: activeSiteSearch != nil
@@ -186,7 +123,7 @@ struct FloatingBarView: View {
                                             ? "globe" : "magnifyingglass"
                                 )
                                 .id(activeSiteSearch != nil ? "magnifyingglass" : isLikelyURL(text) ? "globe" : "magnifyingglass")
-                                .transition(.blur(intensity: 2, scale: 0.6).animation(.smooth(duration: 0.3)))
+                                .transition(FloatingBarMotionPolicy.chromeElementTransition(for: motionMode))
                                 .font(.system(size: 13, weight: .regular))
                                 .foregroundStyle(tokens.secondaryText)
                                 .frame(width: 15)
@@ -208,8 +145,7 @@ struct FloatingBarView: View {
                                         .background(site.color)
                                         .clipShape(Capsule())
                                         .transition(
-                                            .blur(intensity: 8, scale: 0.6)
-                                            .animation(.spring(response: 0.35, dampingFraction: 0.75))
+                                            FloatingBarMotionPolicy.chromeElementTransition(for: motionMode)
                                         )
                                 }
 
@@ -252,7 +188,7 @@ struct FloatingBarView: View {
                                             },
                                             onEscape: {
                                                 if activeSiteSearch != nil {
-                                                    withAnimation(.smooth(duration: 0.25)) {
+                                                    updateWithMotion(chromeContentAnimation) {
                                                         activeSiteSearch = nil
                                                     }
                                                 } else {
@@ -261,7 +197,7 @@ struct FloatingBarView: View {
                                             },
                                             onDeleteAtEmptySiteSearch: {
                                                 guard activeSiteSearch != nil && text.isEmpty else { return false }
-                                                withAnimation(.smooth(duration: 0.25)) {
+                                                updateWithMotion(chromeContentAnimation) {
                                                     activeSiteSearch = nil
                                                 }
                                                 return true
@@ -309,14 +245,13 @@ struct FloatingBarView: View {
                                         }
                                         .allowsHitTesting(false)
                                         .transition(
-                                            .blur(intensity: 4, scale: 0.92)
-                                            .animation(.smooth(duration: 0.3))
+                                            FloatingBarMotionPolicy.chromeElementTransition(for: motionMode)
                                         )
                                     }
                                 }
                                 .frame(maxWidth: .infinity, minHeight: 20, maxHeight: 20)
+                                .animation(microAffordanceAnimation, value: siteSearchMatchID)
                             }
-                            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: activeSiteSearch != nil)
                             .frame(height: FloatingBarLayoutPolicy.inputRowHeight)
                             .padding(.vertical, FloatingBarLayoutPolicy.inputRowVerticalPadding)
                             .padding(.horizontal, 8)
@@ -325,34 +260,23 @@ struct FloatingBarView: View {
                                 focusSearchField(selectAll: false)
                             }
 
-                            if shouldShowSuggestionsPanel {
-                                RoundedRectangle(cornerRadius: 100)
-                                    .fill(tokens.separator.opacity(0.9))
-                                    .frame(height: 0.5)
-                                    .frame(maxWidth: .infinity)
-                            }
-
-                            if shouldShowSuggestionsPanel {
-                                FloatingBarSuggestionsListView(
-                                    tokens: tokens,
-                                    suggestions: visibleSuggestions,
-                                    layoutSuggestionCount: suggestionLayoutCount,
-                                    heightAnimation: suggestionHeightAnimation,
-                                    selectedIndex: $selectedSuggestionIndex,
-                                    hoveredIndex: $hoveredSuggestionIndex,
-                                    onSelect: { suggestion in
-                                        selectSuggestion(suggestion)
-                                    },
-                                    onDeleteHistoryEntry: { entry in
-                                        deleteHistoryEntry(entry)
-                                    }
-                                )
-                            }
+                            FloatingBarResultsPanelView(
+                                tokens: tokens,
+                                suggestions: visibleSuggestions,
+                                layoutSuggestionCount: suggestionLayoutCount,
+                                selectedIndex: $selectedSuggestionIndex,
+                                hoveredIndex: $hoveredSuggestionIndex,
+                                onSelect: { suggestion in
+                                    selectSuggestion(suggestion)
+                                },
+                                onDeleteHistoryEntry: { entry in
+                                    deleteHistoryEntry(entry)
+                                }
+                            )
                         }
                         .padding(10)
                         .frame(maxWidth: .infinity)
                         .frame(width: effectiveFloatingBarWidth)
-                        .scaleEffect(searchModeScale)
                         .background {
                             if isVisible {
                                 MouseEventShieldView(
@@ -373,10 +297,10 @@ struct FloatingBarView: View {
                                 )
                         }
                         .overlay {
-                            if let glow = searchModeGlow {
-                                FloatingBarSearchModeGlowView(
-                                    glow: glow,
-                                    progress: searchModeGlowProgress
+                            if let confirmation = searchModeConfirmation {
+                                FloatingBarSearchModeConfirmationView(
+                                    confirmation: confirmation,
+                                    progress: searchModeConfirmationProgress
                                 )
                                     .allowsHitTesting(false)
                             }
@@ -396,14 +320,6 @@ struct FloatingBarView: View {
                         )
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("floating-bar")
-                        .animation(
-                            suggestionHeightAnimation,
-                            value: suggestionLayoutCount
-                        )
-                        .animation(
-                            suggestionHeightAnimation,
-                            value: searchManager.suggestions.count
-                        )
                         .padding(.horizontal, FloatingBarLayoutPolicy.horizontalVignetteOutset)
                         .padding(.vertical, FloatingBarLayoutPolicy.verticalVignetteOutset)
                         Spacer()
@@ -458,7 +374,6 @@ struct FloatingBarView: View {
         .onChange(of: activeSiteSearch != nil) { _, _ in
             commitSuggestionLayoutCountIfReady()
         }
-        .animation(.easeInOut(duration: 0.15), value: selectedSuggestionIndex)
         .onChange(of: windowState.floatingBarDraftText) { _, newValue in
             if isVisible, newValue != text {
                 text = newValue
@@ -493,14 +408,14 @@ struct FloatingBarView: View {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
             searchDebouncer.cancel()
-            isWaitingForSearchDebounce = false
+            setWaitingForSearchDebounce(false)
             refreshEmptyStateSuggestionsIfNeeded()
             return
         }
 
-        isWaitingForSearchDebounce = true
+        setWaitingForSearchDebounce(true)
         searchDebouncer.schedule(delayNanoseconds: 160_000_000) {
-            isWaitingForSearchDebounce = false
+            setWaitingForSearchDebounce(false)
             searchManager.searchSuggestions(for: trimmedQuery)
         }
     }
@@ -527,9 +442,8 @@ struct FloatingBarView: View {
             searchManager.clearSuggestions()
             text = ""
             activeSiteSearch = nil
-            searchModeScale = 1
-            searchModeGlow = nil
-            searchModeGlowProgress = 1
+            searchModeConfirmation = nil
+            searchModeConfirmationProgress = 1
             selectedSuggestionIndex = -1
             committedSuggestionLayoutCount = 0
             isSuggestionPreviewActive = false
@@ -545,7 +459,7 @@ struct FloatingBarView: View {
         else { return }
 
         searchDebouncer.cancel()
-        isWaitingForSearchDebounce = false
+        setWaitingForSearchDebounce(false)
         if windowState.floatingBarPresentationReason == .splitTabPicker {
             setCommittedSuggestionLayoutCount(
                 FloatingBarLayoutPolicy.suggestionsVisibleRowLimit,
@@ -566,31 +480,29 @@ struct FloatingBarView: View {
         }
     }
 
+    private func setWaitingForSearchDebounce(_ isWaiting: Bool) {
+        updateWithoutMotion {
+            isWaitingForSearchDebounce = isWaiting
+        }
+    }
+
     private func commitSuggestionLayoutCountIfReady() {
         guard !isWaitingForSuggestions else { return }
         commitSuggestionLayoutCount()
     }
 
     private func commitSuggestionLayoutCount() {
-        let nextCount = visibleSuggestions.count
+        let nextCount = visibleSuggestionLayoutCount
         guard committedSuggestionLayoutCount != nextCount else { return }
         setCommittedSuggestionLayoutCount(
             nextCount,
-            animated: suggestionHeightAnimation != nil
+            animated: chromeContentAnimation != nil
         )
     }
 
     private func setCommittedSuggestionLayoutCount(_ count: Int, animated: Bool) {
-        if animated, let suggestionHeightAnimation {
-            withAnimation(suggestionHeightAnimation) {
-                committedSuggestionLayoutCount = count
-            }
-        } else {
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                committedSuggestionLayoutCount = count
-            }
+        updateWithMotion(animated ? chromeContentAnimation : nil) {
+            committedSuggestionLayoutCount = count
         }
     }
 
@@ -601,179 +513,53 @@ struct FloatingBarView: View {
     }
 
     private func enterSiteSearch(_ site: SiteSearchEntry) {
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+        updateWithMotion(chromeContentAnimation) {
             activeSiteSearch = site
+            text = ""
         }
-        text = ""
-        triggerSearchModeAnimation(color: site.color)
+        triggerSearchModeConfirmation(color: site.color)
     }
 
-    private func triggerSearchModeAnimation(color: Color) {
-        let glow = FloatingBarSearchModeGlow(color: color)
-        searchModeGlow = glow
-        searchModeGlowProgress = 0
-        searchModeScale = 1
+    private func triggerSearchModeConfirmation(color: Color) {
+        guard let animation = FloatingBarMotionPolicy.searchModeConfirmationAnimation(for: motionMode),
+              let lifetimeNanoseconds = FloatingBarMotionPolicy.searchModeConfirmationLifetimeNanoseconds(for: motionMode)
+        else { return }
 
-        withAnimation(.easeOut(duration: 0.125)) {
-            searchModeScale = 0.98
-        }
-        withAnimation(.easeOut(duration: 1)) {
-            searchModeGlowProgress = 1
+        let confirmation = FloatingBarSearchModeConfirmation(color: color)
+        searchModeConfirmation = confirmation
+        searchModeConfirmationProgress = 0
+
+        withAnimation(animation) {
+            searchModeConfirmationProgress = 1
         }
 
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 125_000_000)
-            withAnimation(.easeOut(duration: 0.125)) {
-                searchModeScale = 1
-            }
-
-            try? await Task.sleep(nanoseconds: 875_000_000)
-            if searchModeGlow?.id == glow.id {
-                searchModeGlow = nil
+            try? await Task.sleep(nanoseconds: lifetimeNanoseconds)
+            if searchModeConfirmation?.id == confirmation.id {
+                searchModeConfirmation = nil
             }
         }
     }
 
-    // MARK: - Suggestions List Subview
-    private struct FloatingBarSuggestionsListView: View {
-        let tokens: ChromeThemeTokens
-        let suggestions: [SearchManager.SearchSuggestion]
-        let layoutSuggestionCount: Int
-        let heightAnimation: Animation?
-        @Binding var selectedIndex: Int
-        @Binding var hoveredIndex: Int?
-        let onSelect: (SearchManager.SearchSuggestion) -> Void
-        let onDeleteHistoryEntry: (HistoryListItem) -> Void
-
-        var body: some View {
-            let selectedBackground = tokens.accent.opacity(0.58)
-            let selectedForeground = ThemeContrastResolver.preferredForeground(on: tokens.accent)
-            let selectedChipBackground = selectedForeground.opacity(0.88)
-            let selectedChipForeground = ThemeContrastResolver.preferredForeground(on: selectedForeground)
-            let shouldScroll = suggestions.count > FloatingBarLayoutPolicy.suggestionsVisibleRowLimit
-
-            ScrollViewReader { proxy in
-                ScrollView(.vertical) {
-                    LazyVStack(spacing: FloatingBarLayoutPolicy.suggestionRowSpacing) {
-                        ForEach(suggestions.indices, id: \.self) { index in
-                            let suggestion = suggestions[index]
-                            let isSelected = selectedIndex == index
-                            let isHovered = hoveredIndex == index
-                            row(
-                                for: suggestion,
-                                isSelected: isSelected,
-                                isHovered: isHovered,
-                                selectedForeground: selectedForeground,
-                                selectedChipBackground: selectedChipBackground,
-                                selectedChipForeground: selectedChipForeground
-                            )
-                                .frame(minHeight: FloatingBarLayoutPolicy.suggestionRowMinHeight)
-                                .padding(.horizontal, FloatingBarLayoutPolicy.suggestionRowHorizontalPadding)
-                                .padding(.vertical, FloatingBarLayoutPolicy.suggestionRowVerticalPadding)
-                                .background(
-                                    isSelected
-                                            ? selectedBackground
-                                            : isHovered
-                                            ? tokens.floatingBarRowHover
-                                            : .clear
-                                )
-                                .clipShape(
-                                    RoundedRectangle(cornerRadius: 6)
-                                )
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(
-                                    selectedIndex == index
-                                        ? tokens.primaryText
-                                        : tokens.secondaryText
-                                )
-                                .contentShape(RoundedRectangle(cornerRadius: 6))
-                                .id(index)
-                                .onHover { hovering in
-                                    if hovering {
-                                        hoveredIndex = index
-                                    } else {
-                                        hoveredIndex = nil
-                                    }
-                                }
-                                .onTapGesture { onSelect(suggestion) }
-                        }
-                    }
-                }
-                .scrollIndicators(shouldScroll ? .visible : .hidden)
-                .frame(
-                    height: FloatingBarLayoutPolicy.suggestionsHeight(for: layoutSuggestionCount)
-                )
-                .animation(
-                    heightAnimation,
-                    value: layoutSuggestionCount
-                )
-                .onChange(of: selectedIndex) { _, newIndex in
-                    guard newIndex >= 0 else { return }
-                    withAnimation(.easeInOut(duration: 0.12)) {
-                        proxy.scrollTo(newIndex, anchor: .center)
-                    }
-                }
-            }
+    private func updateWithMotion(
+        _ animation: Animation?,
+        _ updates: () -> Void
+    ) {
+        guard let animation else {
+            updateWithoutMotion(updates)
+            return
         }
 
-        @ViewBuilder
-        private func row(
-            for suggestion: SearchManager.SearchSuggestion,
-            isSelected: Bool,
-            isHovered: Bool,
-            selectedForeground: Color,
-            selectedChipBackground: Color,
-            selectedChipForeground: Color
-        ) -> some View {
-            switch suggestion.type {
-            case .tab(let tab):
-                TabSuggestionItem(
-                    tab: tab,
-                    isSelected: isSelected,
-                    selectedForeground: selectedForeground,
-                    selectedChipBackground: selectedChipBackground,
-                    selectedChipForeground: selectedChipForeground
-                )
-            case .history(let entry):
-                HistorySuggestionItem(
-                    entry: entry,
-                    isSelected: isSelected,
-                    isHovered: isHovered,
-                    selectedForeground: selectedForeground,
-                    onDelete: {
-                        onDeleteHistoryEntry(entry)
-                    }
-                )
-            case .bookmark(let bookmark):
-                GenericSuggestionItem(
-                    icon: Image(systemName: "bookmark.fill"),
-                    text: bookmark.title,
-                    actionLabel: "Open Bookmark",
-                    isSelected: isSelected,
-                    selectedForeground: selectedForeground,
-                    selectedChipBackground: selectedChipBackground,
-                    selectedChipForeground: selectedChipForeground
-                )
-            case .url:
-                GenericSuggestionItem(
-                    icon: Image(systemName: "link"),
-                    text: suggestion.text,
-                    actionLabel: "Open URL",
-                    isSelected: isSelected,
-                    selectedForeground: selectedForeground,
-                    selectedChipBackground: selectedChipBackground,
-                    selectedChipForeground: selectedChipForeground
-                )
-            case .search:
-                GenericSuggestionItem(
-                    icon: Image(systemName: "magnifyingglass"),
-                    text: suggestion.text,
-                    isSelected: isSelected,
-                    selectedForeground: selectedForeground,
-                    selectedChipBackground: selectedChipBackground,
-                    selectedChipForeground: selectedChipForeground
-                )
-            }
+        withAnimation(animation) {
+            updates()
+        }
+    }
+
+    private func updateWithoutMotion(_ updates: () -> Void) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            updates()
         }
     }
 
@@ -1322,58 +1108,6 @@ private struct FloatingBarCardBoundsReader: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {
         DispatchQueue.main.async {
             onResolve(nsView)
-        }
-    }
-}
-
-private struct FloatingBarSearchModeGlow: Identifiable {
-    let id = UUID()
-    let color: Color
-}
-
-private struct FloatingBarSearchModeGlowView: View {
-    let glow: FloatingBarSearchModeGlow
-    let progress: CGFloat
-
-    var body: some View {
-        let remainingOpacity = max(0, min(1, Double(1 - progress)))
-        RoundedRectangle(cornerRadius: 26, style: .continuous)
-            .stroke(glow.color.opacity(0.34 * remainingOpacity), lineWidth: 1)
-            .shadow(
-                color: glow.color.opacity(0.58 * remainingOpacity),
-                radius: 18 + 92 * progress
-            )
-            .padding(-1)
-            .id(glow.id)
-    }
-}
-
-// MARK: - Local vignette (Zen-like, not full-page dim)
-
-/// Soft shadows only in a band around the card; page corners stay bright (no window-wide scrim).
-private struct FloatingBarLocalVignetteModifier: ViewModifier {
-    let chromeScheme: ColorScheme
-    let reduceTransparency: Bool
-
-    func body(content: Content) -> some View {
-        if reduceTransparency {
-            content
-                .shadow(color: Color.black.opacity(0.165), radius: 16, x: 0, y: 8)
-        } else {
-            switch chromeScheme {
-            case .light:
-                content
-                    .shadow(color: Color.black.opacity(0.145), radius: 34, x: 0, y: 14)
-                    .shadow(color: Color.black.opacity(0.09), radius: 18, x: 0, y: 7)
-                    .shadow(color: Color.black.opacity(0.045), radius: 8, x: 0, y: 3)
-            case .dark:
-                content
-                    .shadow(color: Color.black.opacity(0.36), radius: 32, x: 0, y: 14)
-                    .shadow(color: Color.black.opacity(0.18), radius: 16, x: 0, y: 7)
-            @unknown default:
-                content
-                    .shadow(color: Color.black.opacity(0.145), radius: 34, x: 0, y: 14)
-            }
         }
     }
 }
