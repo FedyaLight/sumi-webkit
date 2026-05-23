@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 enum LegacySplitOrientation: String, Codable, Hashable {
@@ -27,6 +28,34 @@ struct SpaceShortcutSelectionSnapshot: Codable, Equatable, Hashable {
     var shortcutPinId: UUID
 }
 
+struct GlanceSessionRectSnapshot: Codable, Equatable, Hashable {
+    var x: Double
+    var y: Double
+    var width: Double
+    var height: Double
+
+    init(_ rect: CGRect) {
+        x = Double(rect.origin.x)
+        y = Double(rect.origin.y)
+        width = Double(rect.size.width)
+        height = Double(rect.size.height)
+    }
+
+    var cgRect: CGRect {
+        CGRect(x: x, y: y, width: width, height: height)
+    }
+}
+
+struct GlanceSessionSnapshot: Codable, Equatable, Hashable {
+    var targetURL: URL
+    var currentURL: URL?
+    var title: String?
+    var sourceTabId: UUID?
+    var sourceShortcutPinId: UUID? = nil
+    var sourceShortcutPinRole: ShortcutPinRole? = nil
+    var originRectInWindow: GlanceSessionRectSnapshot?
+}
+
 // Legacy decoder only. New split groups are persisted with tab snapshots.
 struct LegacySplitSessionSnapshot: Codable, Equatable, Hashable {
     var leftTabId: UUID
@@ -51,5 +80,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
     var sidebarContentWidth: Double
     var isSidebarVisible: Bool
     var floatingBarDraft: FloatingBarDraftState
+    var activeSplitGroupId: UUID? = nil
+    var glanceSession: GlanceSessionSnapshot? = nil
     var splitSession: LegacySplitSessionSnapshot?
 }

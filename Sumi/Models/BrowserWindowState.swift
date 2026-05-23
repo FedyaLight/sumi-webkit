@@ -108,6 +108,10 @@ class BrowserWindowState {
     /// Deferred split focus request used when a sidebar placeholder targets a split in another space.
     var pendingSplitGroupFocusRequest: SplitGroupFocusRequest?
 
+    /// Split group from the persisted window session, resolved after tab data finishes loading.
+    @ObservationIgnored
+    var pendingSessionSplitGroupId: UUID?
+
     /// Window-scoped AppKit coordinator for sidebar context menus.
     @ObservationIgnored
     let sidebarContextMenuController: SidebarContextMenuController

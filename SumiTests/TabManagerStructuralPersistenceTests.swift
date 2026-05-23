@@ -94,6 +94,61 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         }
     }
 
+    func testTopLevelFolderPositionPersistsAfterSpacePinnedShortcuts() async throws {
+        let container = try makeInMemoryContainer()
+        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let space = tabManager.createSpace(name: "Pinned", profileId: UUID())
+        let firstTab = tabManager.createNewTab(url: "https://example.com/first", in: space, activate: true)
+        let secondTab = tabManager.createNewTab(url: "https://example.com/second", in: space, activate: false)
+        let firstPin = try XCTUnwrap(
+            tabManager.convertTabToShortcutPin(
+                firstTab,
+                role: .spacePinned,
+                profileId: nil,
+                spaceId: space.id,
+                folderId: nil,
+                at: 0
+            )
+        )
+        let secondPin = try XCTUnwrap(
+            tabManager.convertTabToShortcutPin(
+                secondTab,
+                role: .spacePinned,
+                profileId: nil,
+                spaceId: space.id,
+                folderId: nil,
+                at: 1
+            )
+        )
+        let folder = tabManager.createFolder(for: space.id, name: "Bottom")
+
+        XCTAssertEqual(
+            tabManager.topLevelSpacePinnedItems(for: space.id).map(\.id),
+            [firstPin.id, secondPin.id, folder.id]
+        )
+
+        try await waitForStore(in: container) { context in
+            guard let storedFolder = try fetchFolder(folder.id, in: context),
+                  let storedFirstPin = try fetchTab(firstPin.id, in: context),
+                  let storedSecondPin = try fetchTab(secondPin.id, in: context)
+            else {
+                return false
+            }
+            return storedFirstPin.index == 0
+                && storedSecondPin.index == 1
+                && storedFolder.index == 2
+        }
+
+        let restoredManager = TabManager(context: ModelContext(container), loadPersistedState: false)
+        let didLoad = await restoredManager.loadFromStoreAwaitingResult()
+
+        XCTAssertTrue(didLoad)
+        XCTAssertEqual(
+            restoredManager.topLevelSpacePinnedItems(for: space.id).map(\.id),
+            [firstPin.id, secondPin.id, folder.id]
+        )
+    }
+
     func testIncrementalSpaceMembershipAndOrderPersistence() async throws {
         let container = try makeInMemoryContainer()
         let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
@@ -283,6 +338,70 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         XCTAssertEqual(restoredGroup.layoutKind, resizedGroup.layoutKind)
         XCTAssertEqual(restoredGroup.layoutTree, resizedGroup.layoutTree)
         XCTAssertEqual(restoredGroup.activeTabId, resizedGroup.activeTabId)
+    }
+
+    func testShortcutBackedSplitGroupPersistsThroughStoreReload() async throws {
+        let container = try makeInMemoryContainer()
+        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let space = tabManager.createSpace(name: "Split", profileId: UUID())
+        let regular = tabManager.createNewTab(url: "https://example.com/regular", in: space, activate: true)
+        let pinnedSource = tabManager.createNewTab(
+            url: "https://example.com/pinned",
+            in: space,
+            activate: false
+        )
+        let pin = try XCTUnwrap(
+            tabManager.convertTabToShortcutPin(
+                pinnedSource,
+                role: .spacePinned,
+                profileId: nil,
+                spaceId: space.id,
+                folderId: nil,
+                at: 0
+            )
+        )
+        let windowId = UUID()
+        let livePinnedTab = tabManager.activateShortcutPin(pin, in: windowId, currentSpaceId: space.id)
+        let group = try XCTUnwrap(
+            SplitGroup.make(
+                tabIds: [regular.id, livePinnedTab.id],
+                layoutKind: .vertical,
+                activeTabId: livePinnedTab.id,
+                host: .regular(spaceId: space.id),
+                members: [
+                    SplitGroupMember(
+                        tabId: regular.id,
+                        pinId: nil,
+                        origin: .regular(spaceId: space.id, index: regular.index)
+                    ),
+                    SplitGroupMember(
+                        tabId: livePinnedTab.id,
+                        pinId: pin.id,
+                        origin: .spacePinned(spaceId: space.id, folderId: nil, index: pin.index)
+                    )
+                ]
+            )
+        )
+        tabManager.upsertSplitGroup(group)
+
+        try await waitForPersistedState(in: container) { state in
+            guard let data = state.splitGroupsData,
+                  let decoded = try? JSONDecoder().decode([SplitGroup].self, from: data)
+            else {
+                return false
+            }
+            return decoded.contains { $0.id == group.id && $0.contains(livePinnedTab.id) }
+        }
+
+        let restoredManager = TabManager(context: ModelContext(container), loadPersistedState: false)
+        let didLoad = await restoredManager.loadFromStoreAwaitingResult()
+
+        XCTAssertTrue(didLoad)
+        let restoredGroup = try XCTUnwrap(restoredManager.splitGroup(containingPinId: pin.id))
+        XCTAssertEqual(restoredGroup.id, group.id)
+        XCTAssertTrue(restoredGroup.contains(regular.id))
+        XCTAssertTrue(restoredGroup.containsPin(pin.id))
+        XCTAssertFalse(restoredGroup.contains(livePinnedTab.id))
     }
 
     func testFullReconcileDeletesStaleEntitiesAndPreservesFolders() async throws {

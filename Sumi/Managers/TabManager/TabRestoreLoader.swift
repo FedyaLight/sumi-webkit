@@ -221,7 +221,12 @@ actor TabRestoreLoader {
         )
         let splitGroups = restoreSplitGroups(
             from: raw.states.first?.splitGroupsData,
-            validTabIds: Set(categorizedTabs.regularTabsBySpace.values.flatMap { $0.map(\.id) }),
+            validTabIds: Set(
+                categorizedTabs.regularTabsBySpace.values.flatMap { $0.map(\.id) }
+                    + categorizedTabs.pinnedShortcutsByProfile.values.flatMap { $0.map(\.id) }
+                    + categorizedTabs.pendingPinnedShortcuts.map(\.id)
+                    + categorizedTabs.spacePinnedShortcutsBySpace.values.flatMap { $0.map(\.id) }
+            ),
             repairReasons: &repairReasons
         )
 
@@ -540,27 +545,27 @@ actor TabRestoreLoader {
         var snapshotTabs: [TabSnapshotRepository.SnapshotTab] = []
         for profileId in pinnedShortcutsByProfile.keys.sorted(by: uuidLessThan) {
             let shortcuts = pinnedShortcutsByProfile[profileId] ?? []
-            snapshotTabs.append(contentsOf: shortcuts.enumerated().map { index, shortcut in
-                makeSnapshotTab(from: shortcut, index: index)
+            snapshotTabs.append(contentsOf: shortcuts.map { shortcut in
+                makeSnapshotTab(from: shortcut)
             })
         }
-        snapshotTabs.append(contentsOf: pendingPinnedShortcuts.enumerated().map { index, shortcut in
-            makeSnapshotTab(from: shortcut, index: index)
+        snapshotTabs.append(contentsOf: pendingPinnedShortcuts.map { shortcut in
+            makeSnapshotTab(from: shortcut)
         })
 
         for space in spaces {
             let shortcuts = spacePinnedShortcutsBySpace[space.id] ?? []
-            snapshotTabs.append(contentsOf: shortcuts.enumerated().map { index, shortcut in
-                makeSnapshotTab(from: shortcut, index: index)
+            snapshotTabs.append(contentsOf: shortcuts.map { shortcut in
+                makeSnapshotTab(from: shortcut)
             })
 
             let tabs = regularTabsBySpace[space.id] ?? []
-            snapshotTabs.append(contentsOf: tabs.enumerated().map { index, tab in
+            snapshotTabs.append(contentsOf: tabs.map { tab in
                 TabSnapshotRepository.SnapshotTab(
                     id: tab.id,
                     urlString: tab.url.absoluteString,
                     name: tab.name,
-                    index: index,
+                    index: tab.index,
                     spaceId: tab.spaceId,
                     isPinned: false,
                     isSpacePinned: false,
@@ -577,7 +582,7 @@ actor TabRestoreLoader {
 
         var snapshotFolders: [TabSnapshotRepository.SnapshotFolder] = []
         for space in spaces {
-            snapshotFolders.append(contentsOf: (foldersBySpace[space.id] ?? []).enumerated().map { index, folder in
+            snapshotFolders.append(contentsOf: (foldersBySpace[space.id] ?? []).map { folder in
                 TabSnapshotRepository.SnapshotFolder(
                     id: folder.id,
                     name: folder.name,
@@ -585,7 +590,7 @@ actor TabRestoreLoader {
                     color: folder.color,
                     spaceId: folder.spaceId,
                     isOpen: folder.isOpen,
-                    index: index
+                    index: folder.index
                 )
             })
         }
@@ -664,14 +669,13 @@ actor TabRestoreLoader {
     }
 
     private func makeSnapshotTab(
-        from shortcut: TabRestoreShortcutDTO,
-        index: Int
+        from shortcut: TabRestoreShortcutDTO
     ) -> TabSnapshotRepository.SnapshotTab {
         TabSnapshotRepository.SnapshotTab(
             id: shortcut.id,
             urlString: shortcut.launchURL.absoluteString,
             name: shortcut.title,
-            index: index,
+            index: shortcut.index,
             spaceId: shortcut.spaceId,
             isPinned: shortcut.role == .essential,
             isSpacePinned: shortcut.role == .spacePinned,
