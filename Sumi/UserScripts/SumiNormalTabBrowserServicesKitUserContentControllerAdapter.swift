@@ -202,6 +202,9 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
 
         if let initialContent = assetSource.initialContent {
             installContentBlockingUpdate(initialContent.contentBlockingUpdate)
+            messageHandlerRegistry.installInitialUserScripts(
+                with: initialContent.sourceProvider
+            )
         }
 
         assetsPublisherCancellable = assetSource.assetsPublisher.sink { [weak self] content in
@@ -251,6 +254,14 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
             ruleListLookupDuration: contentBlockingAssets.ruleListLookupDuration,
             tabAttachmentDuration: contentBlockingAssets.tabAttachmentDuration
         )
+    }
+
+    var hasInstalledInitialUserContent: Bool {
+        guard contentBlockingAssets != nil,
+              let provider = normalTabUserScriptsProvider
+        else { return false }
+
+        return messageHandlerRegistry.hasInstalledUserScripts(for: provider)
     }
 
 #if DEBUG

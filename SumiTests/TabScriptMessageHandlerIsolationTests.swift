@@ -107,7 +107,8 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
                 params: []
             });
             """,
-            in: webView
+            in: webView,
+            contentWorld: .defaultClient
         )
 
         await fulfillment(of: [malformedDidNotFire], timeout: 0.5)
@@ -132,7 +133,8 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
                 params: {}
             });
             """,
-            in: webView
+            in: webView,
+            contentWorld: .defaultClient
         )
 
         await fulfillment(of: [unknownDidNotFire], timeout: 0.5)
@@ -282,7 +284,8 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
                 });
             }
             """,
-            in: webView
+            in: webView,
+            contentWorld: .defaultClient
         )
     }
 
@@ -346,7 +349,11 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         webView.navigationDelegate = nil
     }
 
-    private func evaluate(_ script: String, in webView: WKWebView) async throws {
+    private func evaluate(
+        _ script: String,
+        in webView: WKWebView,
+        contentWorld: WKContentWorld = .page
+    ) async throws {
         let wrappedScript = """
         (() => {
         \(script)
@@ -354,16 +361,11 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         })();
         """
 
-        try await withCheckedThrowingContinuation {
-            (continuation: CheckedContinuation<Void, Error>) in
-            webView.evaluateJavaScript(wrappedScript) { _, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume(returning: ())
-                }
-            }
-        }
+        _ = try await webView.evaluateJavaScript(
+            wrappedScript,
+            in: nil,
+            contentWorld: contentWorld
+        )
     }
 
 }

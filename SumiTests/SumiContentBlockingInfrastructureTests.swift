@@ -516,23 +516,31 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         XCTAssertTrue(controller.sumiNormalTabUserScriptsProvider === provider)
     }
 
-    func testWebViewCoordinatorAwaitsContentBlockingAssetsBeforeInitialLoad() throws {
+    func testWebViewCoordinatorUsesFastInitialLoadWhenUserContentIsPreinstalled() throws {
         let source = try Self.source(named: "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift")
 
-        let waitRange = try XCTUnwrap(source.range(of: "await controller.waitForInitialUserContentInstallation()"))
-        let loadRange = try XCTUnwrap(source.range(of: "performLoad()", range: waitRange.upperBound..<source.endIndex))
+        let fastPathRange = try XCTUnwrap(source.range(of: "controller.hasInstalledInitialUserContent"))
+        let fastLoadRange = try XCTUnwrap(source.range(of: "performLoad()", range: fastPathRange.upperBound..<source.endIndex))
+        let waitRange = try XCTUnwrap(source.range(of: "await controller.waitForInitialUserContentInstallation()", range: fastLoadRange.upperBound..<source.endIndex))
+        let fallbackLoadRange = try XCTUnwrap(source.range(of: "performLoad()", range: waitRange.upperBound..<source.endIndex))
 
-        XCTAssertLessThan(waitRange.lowerBound, loadRange.lowerBound)
+        XCTAssertLessThan(fastPathRange.lowerBound, fastLoadRange.lowerBound)
+        XCTAssertLessThan(fastLoadRange.lowerBound, waitRange.lowerBound)
+        XCTAssertLessThan(waitRange.lowerBound, fallbackLoadRange.lowerBound)
     }
 
-    func testInitialNormalTabLoadAwaitsCoreUserScriptsBeforePageLoad() throws {
+    func testInitialNormalTabLoadUsesPreinstalledUserContentFastPath() throws {
         let tabRuntime = try Self.source(named: "Sumi/Models/Tab/Tab+WebViewRuntime.swift")
         let navigationState = try Self.source(named: "Sumi/Models/Tab/Tab+NavigationState.swift")
 
-        let waitRange = try XCTUnwrap(tabRuntime.range(of: "await controller.waitForInitialUserContentInstallation()"))
-        let loadRange = try XCTUnwrap(tabRuntime.range(of: "self.loadURL(self.url)", range: waitRange.upperBound..<tabRuntime.endIndex))
+        let fastPathRange = try XCTUnwrap(tabRuntime.range(of: "controller.hasInstalledInitialUserContent"))
+        let fastLoadRange = try XCTUnwrap(tabRuntime.range(of: "loadURL(url)", range: fastPathRange.upperBound..<tabRuntime.endIndex))
+        let waitRange = try XCTUnwrap(tabRuntime.range(of: "await controller.waitForInitialUserContentInstallation()", range: fastLoadRange.upperBound..<tabRuntime.endIndex))
+        let fallbackLoadRange = try XCTUnwrap(tabRuntime.range(of: "self.loadURL(self.url)", range: waitRange.upperBound..<tabRuntime.endIndex))
 
-        XCTAssertLessThan(waitRange.lowerBound, loadRange.lowerBound)
+        XCTAssertLessThan(fastPathRange.lowerBound, fastLoadRange.lowerBound)
+        XCTAssertLessThan(fastLoadRange.lowerBound, waitRange.lowerBound)
+        XCTAssertLessThan(waitRange.lowerBound, fallbackLoadRange.lowerBound)
         XCTAssertFalse(tabRuntime.contains("if controller.contentBlockingAssetSummary.isInstalled {\n                    loadURL(url)"))
         XCTAssertFalse(navigationState.contains("guard !controller.contentBlockingAssetSummary.isInstalled else"))
     }

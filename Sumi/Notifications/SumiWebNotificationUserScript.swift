@@ -36,6 +36,8 @@ final class SumiWebNotificationUserScript: NSObject, SumiUserScript, @MainActor 
                 ? originalPermissions.query.bind(originalPermissions)
                 : null;
             let permissionCache = "default";
+            let permissionCacheIsHydrated = false;
+            let permissionRefreshPromise = null;
             const activeNotifications = new Map();
 
             function makeId(prefix) {
@@ -55,6 +57,12 @@ final class SumiWebNotificationUserScript: NSObject, SumiUserScript, @MainActor 
             function permissionsAPIState(value) {
                 value = normalizePermission(value);
                 return value === "default" ? "prompt" : value;
+            }
+
+            function setPermissionCache(value) {
+                permissionCache = normalizePermission(value);
+                permissionCacheIsHydrated = true;
+                return permissionCache;
             }
 
             function post(method, params) {
@@ -92,13 +100,19 @@ final class SumiWebNotificationUserScript: NSObject, SumiUserScript, @MainActor 
             }
 
             function refreshPermission() {
-                return post("getPermission", { id: makeId("permission") }).then(function(result) {
-                    permissionCache = normalizePermission(result && result.permission);
-                    return permissionCache;
+                if (permissionRefreshPromise) {
+                    return permissionRefreshPromise;
+                }
+
+                permissionRefreshPromise = post("getPermission", { id: makeId("permission") }).then(function(result) {
+                    return setPermissionCache(result && result.permission);
                 }, function() {
-                    permissionCache = "default";
-                    return permissionCache;
+                    return setPermissionCache("default");
                 });
+                permissionRefreshPromise.then(function() {
+                    permissionRefreshPromise = null;
+                });
+                return permissionRefreshPromise;
             }
 
             function SumiNotification(title, options) {
@@ -124,7 +138,7 @@ final class SumiWebNotificationUserScript: NSObject, SumiUserScript, @MainActor 
                     title: notification.title,
                     options: normalizeOptions(options)
                 }).then(function(result) {
-                    permissionCache = normalizePermission(result && result.permission);
+                    setPermissionCache(result && result.permission);
                     if (result && result.delivered) {
                         notification.__sumiIdentifier = result.identifier || "";
                         fire(notification, "show");
@@ -162,18 +176,23 @@ final class SumiWebNotificationUserScript: NSObject, SumiUserScript, @MainActor 
             Object.defineProperty(SumiNotification, "permission", {
                 configurable: true,
                 enumerable: true,
-                get: function() { return permissionCache; }
+                get: function() {
+                    if (!permissionCacheIsHydrated) {
+                        refreshPermission();
+                    }
+                    return permissionCache;
+                }
             });
 
             SumiNotification.requestPermission = function(callback) {
                 return post("requestPermission", { id: makeId("request") }).then(function(result) {
-                    permissionCache = normalizePermission(result && result.permission);
+                    setPermissionCache(result && result.permission);
                     if (typeof callback === "function") {
                         callback(permissionCache);
                     }
                     return permissionCache;
                 }, function() {
-                    permissionCache = "denied";
+                    setPermissionCache("denied");
                     if (typeof callback === "function") {
                         callback(permissionCache);
                     }
@@ -231,7 +250,6 @@ final class SumiWebNotificationUserScript: NSObject, SumiUserScript, @MainActor 
                 }
             }
 
-            refreshPermission();
         })();
         """
     }

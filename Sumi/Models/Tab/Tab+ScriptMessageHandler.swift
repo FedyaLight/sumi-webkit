@@ -191,9 +191,9 @@ private final class SumiLinkInteractionUserScript: NSObject, SumiUserScript, @Ma
     private let context: String
     let broker: SumiUserScriptMessageBroker
     let source: String
-    let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
+    let injectionTime: WKUserScriptInjectionTime = .atDocumentEnd
     let forMainFrameOnly = true
-    let requiresRunInPageContentWorld = true
+    let requiresRunInPageContentWorld = false
     let messageNames: [String]
 
     init(tab: Tab) {

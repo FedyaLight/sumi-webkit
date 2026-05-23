@@ -20,6 +20,8 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         )
         let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
 
+        XCTAssertTrue(normalTabController.hasInstalledInitialUserContent)
+        XCTAssertEqual(controller.userScripts.count, provider.userScripts.count)
         await normalTabController.waitForContentBlockingAssetsInstalled()
 
         XCTAssertTrue(controller.sumiUsesNormalTabSumiUserContentController)
@@ -32,6 +34,25 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         XCTAssertEqual(installedScriptCount(containing: "__sumiParityContentBlocking", in: controller), 1)
         XCTAssertEqual(installedScriptCount(containing: "__sumiParityManaged", in: controller), 1)
         XCTAssertEqual(installedScriptCount(containing: "__sumiDDGFaviconTransportInstalled", in: controller), 1)
+    }
+
+    func testFactoryPreinstallsDisabledUserContentWithoutAsyncWait() throws {
+        let provider = SumiNormalTabUserScripts(
+            managedUserScripts: [
+                ParityUserScript(context: "sumiParityFastPath", sourceMarker: "__sumiParityFastPath")
+            ]
+        )
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            scriptsProvider: provider
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+
+        XCTAssertTrue(normalTabController.hasInstalledInitialUserContent)
+        XCTAssertTrue(normalTabController.contentBlockingAssetSummary.isInstalled)
+        XCTAssertEqual(normalTabController.contentBlockingAssetSummary.globalRuleListCount, 0)
+        XCTAssertEqual(controller.userScripts.count, provider.userScripts.count)
+        XCTAssertEqual(installedScriptCount(containing: "__sumiParityFastPath", in: controller), 1)
+        XCTAssertFalse(controller.userScripts.contains { $0.source.contains("_duckduckgoloader_") })
     }
 
     func testReplacingManagedScriptsUpdatesVisibleInstalledSetAndKeepsProviderBoundary() async throws {

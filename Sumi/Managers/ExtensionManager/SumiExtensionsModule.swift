@@ -99,14 +99,14 @@ final class SumiExtensionsModule {
     }
 
     func normalTabUserScripts() -> [SumiUserScript] {
-        managerIfEnabled()?.normalTabUserScripts() ?? []
+        managerIfNeededForNormalTabRuntime()?.normalTabUserScripts() ?? []
     }
 
     func prepareWebViewConfigurationForExtensionRuntime(
         _ configuration: WKWebViewConfiguration,
         reason: String
     ) {
-        managerIfEnabled()?.prepareWebViewConfigurationForExtensionRuntime(
+        managerIfNeededForNormalTabRuntime()?.prepareWebViewConfigurationForExtensionRuntime(
             configuration,
             reason: reason
         )
@@ -117,7 +117,7 @@ final class SumiExtensionsModule {
         currentURL: URL?,
         reason: String
     ) {
-        managerIfEnabled()?.prepareWebViewForExtensionRuntime(
+        managerIfNeededForNormalTabRuntime()?.prepareWebViewForExtensionRuntime(
             webView,
             currentURL: currentURL,
             reason: reason
@@ -286,6 +286,27 @@ final class SumiExtensionsModule {
 
     func closeAllOptionsWindowsIfLoaded() {
         cachedManager?.closeAllOptionsWindows()
+    }
+
+    private func managerIfNeededForNormalTabRuntime() -> ExtensionManager? {
+        guard isEnabled else { return nil }
+
+        if let cachedManager {
+            return cachedManager.hasEnabledInstalledExtensions ? cachedManager : nil
+        }
+
+        guard hasEnabledPersistedExtensions() else { return nil }
+        return managerIfEnabled()
+    }
+
+    private func hasEnabledPersistedExtensions() -> Bool {
+        guard let context else { return false }
+        do {
+            return try context.fetch(FetchDescriptor<ExtensionEntity>())
+                .contains { $0.isEnabled }
+        } catch {
+            return false
+        }
     }
 
     private func tearDownLoadedRuntime(reason: String) {

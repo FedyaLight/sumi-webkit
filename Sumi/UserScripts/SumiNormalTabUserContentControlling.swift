@@ -45,6 +45,7 @@ protocol SumiNormalTabUserContentControlling: AnyObject {
     var wkUserContentController: WKUserContentController { get }
     var normalTabUserScriptsProvider: SumiNormalTabUserScripts? { get }
     var contentBlockingAssetSummary: SumiNormalTabContentBlockingAssetSummary { get }
+    var hasInstalledInitialUserContent: Bool { get }
 #if DEBUG
     var contentBlockingAssetSummaryPublisher: AnyPublisher<SumiNormalTabContentBlockingAssetSummary, Never> { get }
 #endif

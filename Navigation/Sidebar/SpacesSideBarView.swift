@@ -1311,23 +1311,35 @@ struct SpacesSideBarView: View {
                 .environmentObject(browserManager)
                 .environment(windowState)
 
-            spacesPageView(spaces: spaces)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            VStack(spacing: 8) {
-                MediaControlsView()
-                    .environmentObject(browserManager)
-                    .environment(windowState)
-
-                SidebarBottomBar(
-                    visualSelectedSpaceId: visualSpaceId,
-                    onNewSpaceTap: showSpaceCreationDialog,
-                    onSelectSpace: { switchSpace(to: $0, spaces: spaces) }
+            if let creationSession = windowState.activeSpaceCreationSession {
+                SidebarSpaceCreationView(
+                    session: creationSession,
+                    onCreate: { commitSpaceCreationSession(creationSession) },
+                    onCancel: { cancelSpaceCreationSession(creationSession) }
                 )
                 .environmentObject(browserManager)
                 .environment(windowState)
+                .transition(spaceCreationTransition)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                spacesPageView(spaces: spaces)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                VStack(spacing: 8) {
+                    MediaControlsView()
+                        .environmentObject(browserManager)
+                        .environment(windowState)
+
+                    SidebarBottomBar(
+                        visualSelectedSpaceId: visualSpaceId,
+                        onNewSpaceTap: beginSpaceCreationMode,
+                        onSelectSpace: { switchSpace(to: $0, spaces: spaces) }
+                    )
+                    .environmentObject(browserManager)
+                    .environment(windowState)
+                }
+                .padding(.bottom, 8)
             }
-            .padding(.bottom, 8)
         }
         .padding(.top, SidebarChromeMetrics.topControlInset)
         .environment(sidebarInteractionState)
@@ -2010,7 +2022,7 @@ struct SpacesSideBarView: View {
                     .font(.body)
                     .foregroundColor(.secondary)
             }
-            Button(action: showSpaceCreationDialog) {
+            Button(action: beginSpaceCreationMode) {
                 Label("Create Space", systemImage: "plus")
             }
             .buttonStyle(.borderedProminent)
@@ -2170,33 +2182,74 @@ struct SpacesSideBarView: View {
         space?.profileId ?? windowState.currentProfileId ?? browserManager.currentProfile?.id
     }
 
-    // MARK: - Dialogs
+    // MARK: - Space Creation
 
-    private func showSpaceCreationDialog() {
-        let source = windowState.resolveSidebarPresentationSource()
-        browserManager.showDialog(
-            SpaceCreationDialog(
-                onCreate: { name, icon, profileId in
-                    let finalName = name.isEmpty ? "New Space" : name
-                    let finalIcon = icon.isEmpty ? "✨" : icon
-                    DispatchQueue.main.async {
-                        let newSpace = browserManager.tabManager.createSpace(
-                            name: finalName,
-                            icon: finalIcon,
-                            profileId: profileId
-                        )
-                        guard let resolvedSpace = browserManager.tabManager.spaces.first(where: { $0.id == newSpace.id })
-                        else { return }
-                        browserManager.setActiveSpace(resolvedSpace, in: windowState)
-                    }
-                    browserManager.closeDialog()
-                },
-                onCancel: {
-                    browserManager.closeDialog()
-                }
-            ),
-            source: source
+    private var spaceCreationTransition: AnyTransition {
+        if reduceMotion {
+            return .opacity
+        }
+        return .asymmetric(
+            insertion: .opacity.combined(with: .move(edge: .bottom)),
+            removal: .opacity
         )
+    }
+
+    private func beginSpaceCreationMode() {
+        let source = windowState.resolveSidebarPresentationSource()
+        let defaultProfileID = windowState.currentProfileId
+            ?? browserManager.currentProfile?.id
+            ?? browserManager.profileManager.profiles.first?.id
+
+        windowState.beginSpaceCreationSession(
+            source: source,
+            defaultProfileID: defaultProfileID
+        )
+    }
+
+    private func commitSpaceCreationSession(_ session: SpaceCreationSession) {
+        guard session.canCommit else { return }
+
+        let profileId: UUID?
+        if session.createsNewProfile {
+            guard isNewProfileNameAvailable(for: session) else { return }
+            let createdProfile = browserManager.profileManager.createProfile(
+                name: session.trimmedNewProfileName,
+                icon: session.resolvedNewProfileIcon
+            )
+            profileId = createdProfile.id
+        } else {
+            profileId = session.profileID
+        }
+
+        let newSpace = browserManager.tabManager.createSpace(
+            name: session.trimmedName,
+            icon: session.resolvedIcon,
+            profileId: profileId
+        )
+        if let resolvedSpace = browserManager.tabManager.spaces.first(where: { $0.id == newSpace.id }) {
+            browserManager.setActiveSpace(resolvedSpace, in: windowState)
+        }
+
+        windowState.finishSpaceCreationSession(
+            session,
+            reason: "SpacesSideBarView.commitSpaceCreationSession"
+        )
+    }
+
+    private func cancelSpaceCreationSession(_ session: SpaceCreationSession) {
+        session.cancelsOnDismiss = true
+        windowState.finishSpaceCreationSession(
+            session,
+            reason: "SpacesSideBarView.cancelSpaceCreationSession"
+        )
+    }
+
+    private func isNewProfileNameAvailable(for session: SpaceCreationSession) -> Bool {
+        let trimmed = session.trimmedNewProfileName
+        guard !trimmed.isEmpty else { return false }
+        return !browserManager.profileManager.profiles.contains {
+            $0.name.caseInsensitiveCompare(trimmed) == .orderedSame
+        }
     }
 
     private func resolveCurrentSpace() -> Space? {
