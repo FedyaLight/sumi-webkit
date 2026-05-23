@@ -71,8 +71,14 @@ struct URLBarView: View {
 
         VStack(alignment: .leading, spacing: presentationMode == .sidebar ? 6 : 0) {
             HStack(spacing: 8) {
-                leadingContent
-                Spacer(minLength: 8)
+                HStack(spacing: 8) {
+                    leadingContent
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture(perform: focusFloatingBarFromURLBar)
+                .sidebarAppKitPrimaryAction(action: focusFloatingBarFromURLBar)
 
                 if let currentTab = currentTab {
                     trailingActions(for: currentTab)
@@ -105,15 +111,6 @@ struct URLBarView: View {
                 withAnimation(.easeInOut(duration: 0.1)) {
                     isHovering = hovering
                 }
-            }
-            .onTapGesture {
-                guard !isZoomButtonHovering else { return }
-                let currentURL = activePageURL?.absoluteString ?? ""
-                browserManager.focusFloatingBar(
-                    in: windowState,
-                    prefill: currentURL,
-                    navigateCurrentTab: true
-                )
             }
         }
         .onChange(of: browserManager.zoomPopoverRequest) { _, request in
@@ -161,6 +158,15 @@ struct URLBarView: View {
     var activePageURL: URL? {
         glanceManager.activeSession(for: windowState)?.currentURL
             ?? currentTab?.url
+    }
+
+    func focusFloatingBarFromURLBar() {
+        let currentURL = activePageURL?.absoluteString ?? ""
+        browserManager.focusFloatingBar(
+            in: windowState,
+            prefill: currentURL,
+            navigateCurrentTab: true
+        )
     }
 
     var effectiveProfileId: UUID? {

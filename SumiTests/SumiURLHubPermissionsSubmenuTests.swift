@@ -53,14 +53,28 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
     }
 
     func testCollapsedURLBarChromeActionsUseAppKitPrimaryRouting() throws {
+        let urlBar = try sourceFile("Sumi/Components/Sidebar/URLBarView.swift")
         let trailingActions = try sourceFile("Sumi/Components/Sidebar/URLBarTrailingActions.swift")
         let permissionActions = try sourceFile("Sumi/Components/Sidebar/URLBarPermissionViews.swift")
         let zoomActions = try sourceFile("Sumi/Components/Sidebar/URLBarZoomPopover.swift")
 
+        XCTAssertTrue(urlBar.contains(".sidebarAppKitPrimaryAction(action: focusFloatingBarFromURLBar)"))
         XCTAssertTrue(trailingActions.contains(".sidebarAppKitPrimaryAction(isEnabled: isAvailable, action: action)"))
         XCTAssertTrue(trailingActions.contains(".sidebarAppKitPrimaryAction(action: action)"))
         XCTAssertTrue(permissionActions.contains(".sidebarAppKitPrimaryAction(action: action)"))
         XCTAssertTrue(zoomActions.contains(".sidebarAppKitPrimaryAction(action: action)"))
+    }
+
+    func testURLBarFocusTapTargetExcludesTrailingHubButton() throws {
+        let urlBar = try sourceFile("Sumi/Components/Sidebar/URLBarView.swift")
+        let leadingContentRange = try XCTUnwrap(urlBar.range(of: "leadingContent"))
+        let focusTapRange = try XCTUnwrap(urlBar.range(of: ".onTapGesture(perform: focusFloatingBarFromURLBar)"))
+        let trailingActionsRange = try XCTUnwrap(urlBar.range(of: "trailingActions(for: currentTab)"))
+
+        XCTAssertLessThan(leadingContentRange.lowerBound, focusTapRange.lowerBound)
+        XCTAssertLessThan(focusTapRange.lowerBound, trailingActionsRange.lowerBound)
+        XCTAssertTrue(urlBar.contains("func focusFloatingBarFromURLBar()"))
+        XCTAssertFalse(urlBar.contains("guard !isZoomButtonHovering else { return }"))
     }
 
     func testURLHubUsesNativeAdaptivePopoverHostAndTheming() throws {
