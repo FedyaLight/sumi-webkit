@@ -991,9 +991,13 @@ class WebViewCoordinator {
             }
 
             if let controller = webView.configuration.userContentController.sumiNormalTabUserContentController {
-                Task { @MainActor in
-                    await controller.waitForInitialUserContentInstallation()
+                if controller.hasInstalledInitialUserContent {
                     performLoad()
+                } else {
+                    Task { @MainActor in
+                        await controller.waitForInitialUserContentInstallation()
+                        performLoad()
+                    }
                 }
             } else {
                 performLoad()

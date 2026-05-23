@@ -312,17 +312,21 @@ extension Tab {
 
         if !isPopupHost && _existingWebView == nil {
             if let controller = _webView?.configuration.userContentController.sumiNormalTabUserContentController {
-                let initialWebView = _webView
-                Task { @MainActor [weak self, weak initialWebView] in
-                    await controller.waitForInitialUserContentInstallation()
-                    guard let self,
-                          let initialWebView,
-                          self._existingWebView == nil,
-                          self._webView === initialWebView
-                    else {
-                        return
+                if controller.hasInstalledInitialUserContent {
+                    loadURL(url)
+                } else {
+                    let initialWebView = _webView
+                    Task { @MainActor [weak self, weak initialWebView] in
+                        await controller.waitForInitialUserContentInstallation()
+                        guard let self,
+                              let initialWebView,
+                              self._existingWebView == nil,
+                              self._webView === initialWebView
+                        else {
+                            return
+                        }
+                        self.loadURL(self.url)
                     }
-                    self.loadURL(self.url)
                 }
             } else {
                 loadURL(url)

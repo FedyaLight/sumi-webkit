@@ -39,6 +39,8 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertTrue(configuration.websiteDataStore === profile.dataStore)
         XCTAssertTrue(controller.wkUserContentController === configuration.userContentController)
         XCTAssertNotNil(controller.normalTabUserScriptsProvider)
+        XCTAssertTrue(controller.hasInstalledInitialUserContent)
+        XCTAssertFalse(configuration.userContentController.userScripts.isEmpty)
         XCTAssertEqual(
             configuration.applicationNameForUserAgent,
             "Version/26.0 Safari/605.1.15"
@@ -984,6 +986,28 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertTrue(sources.contains("sumiIdentity_\(tab.id.uuidString)"))
         XCTAssertTrue(sources.contains("sumiTabSuspension_\(tab.id.uuidString)"))
         XCTAssertTrue(sources.contains("__sumiTabSuspension"))
+
+        let linkInteractionScript = try XCTUnwrap(
+            provider.userScripts.first { $0.source.contains("sumiLinkInteraction_\(tab.id.uuidString)") }
+        )
+        let contextMenuScript = try XCTUnwrap(
+            provider.userScripts.first { $0.source.contains("sumiWebPageContextMenu_\(tab.id.uuidString)") }
+        )
+        let notificationScript = try XCTUnwrap(
+            provider.userScripts.first { $0.source.contains("sumiWebNotifications_\(tab.id.uuidString)") }
+        )
+
+        XCTAssertFalse(linkInteractionScript.requiresRunInPageContentWorld)
+        XCTAssertFalse(contextMenuScript.requiresRunInPageContentWorld)
+        XCTAssertEqual(linkInteractionScript.injectionTime, .atDocumentEnd)
+        XCTAssertEqual(contextMenuScript.injectionTime, .atDocumentEnd)
+        XCTAssertTrue(notificationScript.requiresRunInPageContentWorld)
+        XCTAssertFalse(
+            notificationScript.source.contains("\n            refreshPermission();\n        })();")
+        )
+        XCTAssertFalse(configuration.userContentController.userScripts.contains { script in
+            script.source.contains("_duckduckgoloader_")
+        })
     }
 
     func testTabSuspensionBridgeScriptIsMainFrameOnly() throws {

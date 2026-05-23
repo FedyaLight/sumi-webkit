@@ -161,26 +161,10 @@ struct SpacesListItem: View {
     // MARK: - Helper Methods
 
     private func showDeleteConfirmation() {
-        let tabsCount = browserManager.tabManager.userVisibleTabCount(for: space.id)
-        let source = windowState.resolveSidebarPresentationSource()
-
-        browserManager.showDialog(
-            SpaceDeleteConfirmationDialog(
-                spaceName: space.name,
-                spaceIcon: space.icon,
-                tabsCount: tabsCount,
-                isLastSpace: browserManager.tabManager.spaces.count <= 1,
-                onDelete: {
-                    browserManager.closeDialog()
-                    DispatchQueue.main.async {
-                        browserManager.tabManager.removeSpace(space.id)
-                    }
-                },
-                onCancel: {
-                    browserManager.closeDialog()
-                }
-            ),
-            source: source
+        SpaceDeletionConfirmationPresenter.confirmDelete(
+            space: space,
+            browserManager: browserManager,
+            window: windowState.window
         )
     }
 

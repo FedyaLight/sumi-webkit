@@ -180,14 +180,10 @@ struct SpaceTitle: View {
         nameFieldFocused = false
     }
 
-    private func deleteSpace() {
-        browserManager.tabManager.removeSpace(space.id)
-    }
-
     private func spaceContextMenuEntries() -> [SidebarContextMenuEntry] {
         let deleteSpaceAction: (() -> Void)?
         if canDeleteSpace {
-            deleteSpaceAction = { showDeleteConfirmation(source: windowState.resolveSidebarPresentationSource()) }
+            deleteSpaceAction = { showDeleteConfirmation() }
         } else {
             deleteSpaceAction = nil
         }
@@ -213,47 +209,11 @@ struct SpaceTitle: View {
         )
     }
 
-    private func showDeleteConfirmation(source: SidebarTransientPresentationSource? = nil) {
-        let tabsCount = browserManager.tabManager.userVisibleTabCount(for: space.id)
-
-        if let source {
-            browserManager.showDialog(
-                SpaceDeleteConfirmationDialog(
-                    spaceName: space.name,
-                    spaceIcon: space.icon,
-                    tabsCount: tabsCount,
-                    isLastSpace: browserManager.tabManager.spaces.count <= 1,
-                    onDelete: {
-                        browserManager.closeDialog()
-                        DispatchQueue.main.async {
-                            deleteSpace()
-                        }
-                    },
-                    onCancel: {
-                        browserManager.closeDialog()
-                    }
-                ),
-                source: source
-            )
-            return
-        }
-
-        browserManager.showDialog(
-            SpaceDeleteConfirmationDialog(
-                spaceName: space.name,
-                spaceIcon: space.icon,
-                tabsCount: tabsCount,
-                isLastSpace: browserManager.tabManager.spaces.count <= 1,
-                onDelete: {
-                    browserManager.closeDialog()
-                    DispatchQueue.main.async {
-                        deleteSpace()
-                    }
-                },
-                onCancel: {
-                    browserManager.closeDialog()
-                }
-            )
+    private func showDeleteConfirmation() {
+        SpaceDeletionConfirmationPresenter.confirmDelete(
+            space: space,
+            browserManager: browserManager,
+            window: windowState.window
         )
     }
 

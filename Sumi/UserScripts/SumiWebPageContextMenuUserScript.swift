@@ -7,9 +7,9 @@ final class SumiWebPageContextMenuUserScript: NSObject, SumiUserScript {
     private let context: String
 
     let source: String
-    let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
+    let injectionTime: WKUserScriptInjectionTime = .atDocumentEnd
     let forMainFrameOnly = true
-    let requiresRunInPageContentWorld = true
+    let requiresRunInPageContentWorld = false
     let messageNames: [String]
 
     init(tab: Tab) {
