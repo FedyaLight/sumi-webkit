@@ -835,20 +835,23 @@ class BrowserManager: ObservableObject {
 
     func focusFloatingBarForActiveWindow(
         prefill: String = "",
-        navigateCurrentTab: Bool = false
+        navigateCurrentTab: Bool = false,
+        presentationReason: FloatingBarPresentationReason = .keyboard
     ) {
         guard let activeWindow = windowRegistry?.activeWindow else { return }
         focusFloatingBar(
             in: activeWindow,
             prefill: prefill,
-            navigateCurrentTab: navigateCurrentTab
+            navigateCurrentTab: navigateCurrentTab,
+            presentationReason: presentationReason
         )
     }
 
     func focusFloatingBar(
         in windowState: BrowserWindowState,
         prefill: String = "",
-        navigateCurrentTab: Bool = false
+        navigateCurrentTab: Bool = false,
+        presentationReason: FloatingBarPresentationReason = .keyboard
     ) {
         let shouldOverrideDraft = !prefill.isEmpty
             || windowState.floatingBarDraftText.isEmpty
@@ -857,10 +860,23 @@ class BrowserManager: ObservableObject {
             windowState.floatingBarDraftText = prefill
             windowState.floatingBarDraftNavigatesCurrentTab = navigateCurrentTab
         }
-        windowState.floatingBarPresentationReason = .keyboard
+        windowState.floatingBarPresentationReason = presentationReason
         windowState.isFloatingBarVisible = true
         dismissWorkspaceThemePickerIfNeededDiscarding()
         persistWindowSession(for: windowState)
+    }
+
+    func focusFloatingBar(
+        in windowState: BrowserWindowState,
+        prefill: String,
+        navigateCurrentTab: Bool
+    ) {
+        focusFloatingBar(
+            in: windowState,
+            prefill: prefill,
+            navigateCurrentTab: navigateCurrentTab,
+            presentationReason: .keyboard
+        )
     }
 
     func showNewTabFloatingBar(in windowState: BrowserWindowState) {
@@ -894,9 +910,12 @@ class BrowserManager: ObservableObject {
 
     func dismissFloatingBar(
         in windowState: BrowserWindowState,
-        preserveDraft: Bool
+        preserveDraft: Bool,
+        cancelEmptySplitPlaceholder: Bool = true
     ) {
-        splitManager.cancelEmptySplitPlaceholder(in: windowState)
+        if cancelEmptySplitPlaceholder {
+            splitManager.cancelEmptySplitPlaceholder(in: windowState)
+        }
         windowState.floatingBarPresentationReason = .none
         windowState.isFloatingBarVisible = false
         if !preserveDraft {
@@ -925,6 +944,48 @@ class BrowserManager: ObservableObject {
 
         dismissFloatingBar(in: windowState, preserveDraft: preserveDraft)
         return true
+    }
+
+    func commitFloatingBarSuggestion(
+        _ suggestion: SearchManager.SearchSuggestion,
+        in windowState: BrowserWindowState,
+        navigatesCurrentTab: Bool
+    ) {
+        dismissFloatingBar(
+            in: windowState,
+            preserveDraft: false,
+            cancelEmptySplitPlaceholder: false
+        )
+        openFloatingBarSuggestion(
+            suggestion,
+            in: windowState,
+            navigatesCurrentTab: navigatesCurrentTab
+        )
+    }
+
+    func commitFloatingBarNavigation(
+        to urlString: String,
+        in windowState: BrowserWindowState,
+        navigatesCurrentTab: Bool
+    ) {
+        let navigationTargetTab = activePageTab(for: windowState)
+        dismissFloatingBar(
+            in: windowState,
+            preserveDraft: false,
+            cancelEmptySplitPlaceholder: false
+        )
+
+        if navigatesCurrentTab,
+           let navigationTargetTab
+        {
+            splitManager.commitEmptySplitPlaceholder(tabId: navigationTargetTab.id, in: windowState)
+            navigationTargetTab.loadURL(urlString)
+        } else {
+            createNewTabAfterSidebarInsertion(
+                in: windowState,
+                url: urlString
+            )
+        }
     }
 
     func openFloatingBarSuggestion(
@@ -1020,7 +1081,13 @@ class BrowserManager: ObservableObject {
         guard windowState.isFloatingBarVisible || windowState.floatingBarPresentationReason != .none else {
             return
         }
-        let preserveDraft = windowState.floatingBarPresentationReason != .emptySpace
+        let preserveDraft: Bool
+        switch windowState.floatingBarPresentationReason {
+        case .emptySpace, .splitTabPicker:
+            preserveDraft = false
+        case .keyboard, .none:
+            preserveDraft = true
+        }
         dismissFloatingBar(in: windowState, preserveDraft: preserveDraft)
     }
 
