@@ -8,11 +8,12 @@ extension GlanceManager {
 
         transition(to: .promoting)
         let newTab = promotePreviewTab(for: session, browserManager: browserManager, windowState: windowState)
-        if let sourceTab = session.sourceTab {
-            windowState.currentSpaceId = sourceTab.spaceId ?? windowState.currentSpaceId
-            windowState.currentTabId = sourceTab.id
-        }
-        browserManager.splitManager.enterSplit(with: newTab, placeOn: .right, in: windowState)
+        browserManager.selectTab(newTab, in: windowState)
+        browserManager.splitManager.createEmptySplit(
+            side: .right,
+            in: windowState,
+            floatingBarPresentationReason: .splitTabPicker
+        )
         finishPromotedSession()
     }
 

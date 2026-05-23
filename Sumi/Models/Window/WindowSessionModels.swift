@@ -9,6 +9,7 @@ enum FloatingBarPresentationReason: String, Codable, Equatable, Hashable {
     case none
     case emptySpace
     case keyboard
+    case splitTabPicker
 }
 
 struct FloatingBarDraftState: Codable, Equatable, Hashable {

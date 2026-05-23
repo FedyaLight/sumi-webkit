@@ -113,6 +113,21 @@ class SearchManager {
         }
     }
 
+    func showActiveTabSuggestions(for windowState: BrowserWindowState) {
+        webSuggestionTask?.cancel()
+        historySuggestionTask?.cancel()
+        webSuggestionRequestGeneration &+= 1
+        activeWebSuggestionGeneration = webSuggestionRequestGeneration
+        isLoadingSuggestions = false
+
+        let activeTabs = activeTabSuggestions(for: windowState)
+        if activeTabs.isEmpty {
+            clearSuggestions()
+        } else {
+            updateSuggestionsIfNeeded(activeTabs)
+        }
+    }
+
     @MainActor func updateProfileContext() {
         let pid = tabManager?.browserManager?.currentProfile?.id
         currentProfileId = pid
@@ -459,6 +474,112 @@ class SearchManager {
         }
 
         return suggestions
+    }
+
+    private func activeTabSuggestions(for windowState: BrowserWindowState) -> [SearchSuggestion] {
+        guard let tabManager else { return [] }
+
+        let visibleSplitTabIds = Set(tabManager.browserManager?.splitManager.visibleTabIds(for: windowState.id) ?? [])
+        let rankByTabId = activeTabRankById(for: windowState, tabManager: tabManager)
+        let currentSpaceId = windowState.currentSpaceId
+        var seenTabIds = Set<UUID>()
+
+        return activeTabCandidates(for: windowState, tabManager: tabManager)
+            .filter { tab in
+                guard seenTabIds.insert(tab.id).inserted else { return false }
+                guard visibleSplitTabIds.contains(tab.id) == false else { return false }
+                return tab.representsSumiNativeSurface == false
+            }
+            .sorted { lhs, rhs in
+                let lhsRank = rankByTabId[lhs.id]
+                let rhsRank = rankByTabId[rhs.id]
+                if lhsRank != rhsRank {
+                    return (lhsRank ?? Int.max) < (rhsRank ?? Int.max)
+                }
+
+                let lhsSelected = lhs.lastSelectedAt ?? .distantPast
+                let rhsSelected = rhs.lastSelectedAt ?? .distantPast
+                if lhsSelected != rhsSelected {
+                    return lhsSelected > rhsSelected
+                }
+
+                if lhs.spaceId == currentSpaceId, rhs.spaceId != currentSpaceId {
+                    return true
+                }
+                if lhs.spaceId != currentSpaceId, rhs.spaceId == currentSpaceId {
+                    return false
+                }
+
+                if lhs.index != rhs.index {
+                    return lhs.index < rhs.index
+                }
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
+            .map { tab in
+                SearchSuggestion(text: tab.name, type: .tab(tab))
+            }
+    }
+
+    private func activeTabCandidates(
+        for windowState: BrowserWindowState,
+        tabManager: TabManager
+    ) -> [Tab] {
+        if windowState.isIncognito {
+            return windowState.ephemeralTabs
+        }
+
+        var candidates: [Tab] = []
+        var seenTabIds = Set<UUID>()
+        func append(_ tab: Tab) {
+            guard seenTabIds.insert(tab.id).inserted else { return }
+            candidates.append(tab)
+        }
+
+        tabManager.allTabsForCurrentProfile()
+            .filter { $0.isShortcutLiveInstance == false }
+            .forEach(append)
+        tabManager.liveShortcutTabs(in: windowState.id)
+            .forEach(append)
+
+        return candidates
+    }
+
+    private func activeTabRankById(
+        for windowState: BrowserWindowState,
+        tabManager: TabManager
+    ) -> [UUID: Int] {
+        var orderedIds: [UUID] = []
+        var seenIds = Set<UUID>()
+
+        func append(_ tabId: UUID?) {
+            guard let tabId, seenIds.insert(tabId).inserted else { return }
+            orderedIds.append(tabId)
+        }
+
+        func appendSelectionHistory(_ items: [BrowserWindowSelectionHistoryItem]) {
+            for item in items {
+                switch item {
+                case .regularTab(let tabId):
+                    append(tabId)
+                case .shortcutPin(let pinId):
+                    append(tabManager.shortcutLiveTab(for: pinId, in: windowState.id)?.id)
+                }
+            }
+        }
+
+        if let currentSpaceId = windowState.currentSpaceId {
+            appendSelectionHistory(windowState.recentSelectionItemsBySpace[currentSpaceId] ?? [])
+            (windowState.recentRegularTabIdsBySpace[currentSpaceId] ?? []).forEach(append)
+        }
+
+        for spaceId in windowState.recentSelectionItemsBySpace.keys.sorted(by: { $0.uuidString < $1.uuidString })
+            where spaceId != windowState.currentSpaceId {
+            appendSelectionHistory(windowState.recentSelectionItemsBySpace[spaceId] ?? [])
+        }
+
+        windowState.activeTabForSpace.values.forEach(append)
+
+        return Dictionary(uniqueKeysWithValues: orderedIds.enumerated().map { ($0.element, $0.offset) })
     }
 
     private func topLinkDeduplicationKey(for url: URL) -> String {

@@ -114,7 +114,7 @@ struct FloatingBarView: View {
     private var isShowingEmptyTopLinks: Bool {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && activeSiteSearch == nil
-            && sumiSettings.floatingBarEmptyStateMode == .topLinks
+            && shouldShowEmptyStateSuggestions
             && !visibleSuggestions.isEmpty
     }
 
@@ -142,7 +142,12 @@ struct FloatingBarView: View {
         windowState.isFloatingBarVisible
             && activeSiteSearch == nil
             && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && sumiSettings.floatingBarEmptyStateMode == .topLinks
+            && shouldShowEmptyStateSuggestions
+    }
+
+    private var shouldShowEmptyStateSuggestions: Bool {
+        windowState.floatingBarPresentationReason == .splitTabPicker
+            || sumiSettings.floatingBarEmptyStateMode == .topLinks
     }
 
     private var suggestionHeightAnimation: Animation? {
@@ -463,6 +468,9 @@ struct FloatingBarView: View {
         .onChange(of: sumiSettings.floatingBarEmptyStateMode) { _, _ in
             refreshEmptyStateSuggestionsIfNeeded()
         }
+        .onChange(of: windowState.floatingBarPresentationReason) { _, _ in
+            refreshEmptyStateSuggestionsIfNeeded()
+        }
     }
 
     private func availableWindowWidth(from layoutWidth: CGFloat) -> CGFloat {
@@ -538,7 +546,13 @@ struct FloatingBarView: View {
 
         searchDebouncer.cancel()
         isWaitingForSearchDebounce = false
-        if sumiSettings.floatingBarEmptyStateMode == .topLinks {
+        if windowState.floatingBarPresentationReason == .splitTabPicker {
+            setCommittedSuggestionLayoutCount(
+                FloatingBarLayoutPolicy.suggestionsVisibleRowLimit,
+                animated: false
+            )
+            searchManager.showActiveTabSuggestions(for: windowState)
+        } else if sumiSettings.floatingBarEmptyStateMode == .topLinks {
             setCommittedSuggestionLayoutCount(
                 FloatingBarLayoutPolicy.suggestionsVisibleRowLimit,
                 animated: false
@@ -814,17 +828,12 @@ struct FloatingBarView: View {
             text = ""
             activeSiteSearch = nil
             selectedSuggestionIndex = -1
-            browserManager.dismissFloatingBar(in: windowState, preserveDraft: false)
             DispatchQueue.main.async {
-                if navigatesCurrentTab,
-                   let currentTab = browserManager.activePageTab(for: windowState) {
-                    currentTab.loadURL(navigateURL)
-                } else {
-                    browserManager.createNewTabAfterSidebarInsertion(
-                        in: windowState,
-                        url: navigateURL
-                    )
-                }
+                browserManager.commitFloatingBarNavigation(
+                    to: navigateURL,
+                    in: windowState,
+                    navigatesCurrentTab: navigatesCurrentTab
+                )
             }
             return
         }
@@ -853,9 +862,8 @@ struct FloatingBarView: View {
         text = ""
         activeSiteSearch = nil
         selectedSuggestionIndex = -1
-        browserManager.dismissFloatingBar(in: windowState, preserveDraft: false)
         DispatchQueue.main.async {
-            browserManager.openFloatingBarSuggestion(
+            browserManager.commitFloatingBarSuggestion(
                 suggestion,
                 in: windowState,
                 navigatesCurrentTab: navigatesCurrentTab

@@ -147,7 +147,11 @@ final class SplitViewManager: ObservableObject {
         notifyChanged(for: windowId)
     }
 
-    func createEmptySplit(side: SplitDropSide = .right, in windowState: BrowserWindowState) {
+    func createEmptySplit(
+        side: SplitDropSide = .right,
+        in windowState: BrowserWindowState,
+        floatingBarPresentationReason: FloatingBarPresentationReason = .keyboard
+    ) {
         guard let bm = browserManager,
               let current = bm.currentTab(for: windowState),
               current.representsSumiNativeSurface == false
@@ -164,7 +168,12 @@ final class SplitViewManager: ObservableObject {
         if bm.tabManager.splitGroup(containing: tab.id) != nil {
             emptySplitPlaceholderTabIdsByWindow[windowState.id] = tab.id
         }
-        bm.focusFloatingBarForActiveWindow(prefill: "", navigateCurrentTab: true)
+        bm.focusFloatingBar(
+            in: windowState,
+            prefill: "",
+            navigateCurrentTab: true,
+            presentationReason: floatingBarPresentationReason
+        )
     }
 
     func expandSplitPane(tabId: UUID, in windowState: BrowserWindowState) {

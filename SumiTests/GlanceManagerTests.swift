@@ -223,7 +223,17 @@ final class GlanceManagerTests: XCTestCase {
     func testMoveToSplitViewPromotesPreviewIntoSourceWindowSplit() async throws {
         let browserManager = BrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
+        let sourceSpace = try XCTUnwrap(sourceTab.spaceId.flatMap { spaceId in
+            browserManager.tabManager.spaces.first { $0.id == spaceId }
+        })
+        let olderTab = browserManager.tabManager.createNewTab(
+            url: "https://older.example/page",
+            in: sourceSpace,
+            activate: false
+        )
         let (windowRegistry, sourceWindow) = makeRegisteredWindow(in: browserManager, selecting: sourceTab)
+        browserManager.selectTab(olderTab, in: sourceWindow)
+        browserManager.selectTab(sourceTab, in: sourceWindow)
         let url = URL(string: "https://destination.example/page")!
 
         browserManager.glanceManager.presentExternalURL(url, from: sourceTab)
@@ -234,13 +244,45 @@ final class GlanceManagerTests: XCTestCase {
         browserManager.glanceManager.moveToSplitView()
 
         let splitGroup = try XCTUnwrap(browserManager.tabManager.splitGroup(containing: previewTab.id))
+        let placeholderId = try XCTUnwrap(splitGroup.tabIds.last)
+        let placeholderTab = try XCTUnwrap(browserManager.tabManager.tab(for: placeholderId))
         XCTAssertNil(browserManager.glanceManager.currentSession)
         XCTAssertEqual(browserManager.glanceManager.phase, .idle)
-        XCTAssertEqual(splitGroup.tabIds, [sourceTab.id, previewTab.id])
-        XCTAssertEqual(splitGroup.activeTabId, previewTab.id)
+        XCTAssertEqual(splitGroup.tabIds, [previewTab.id, placeholderId])
+        XCTAssertEqual(splitGroup.activeTabId, placeholderId)
+        XCTAssertFalse(splitGroup.contains(sourceTab.id))
+        XCTAssertTrue(placeholderTab.representsSumiEmptySurface)
         XCTAssertEqual(windowRegistry.activeWindow?.id, sourceWindow.id)
-        XCTAssertEqual(sourceWindow.currentTabId, previewTab.id)
+        XCTAssertEqual(sourceWindow.currentTabId, placeholderId)
+        XCTAssertTrue(sourceWindow.isFloatingBarVisible)
+        XCTAssertEqual(sourceWindow.floatingBarPresentationReason, .splitTabPicker)
+        XCTAssertTrue(sourceWindow.floatingBarDraftNavigatesCurrentTab)
         XCTAssertTrue(previewTab.existingWebView === webView)
+
+        let searchManager = SearchManager()
+        searchManager.setTabManager(browserManager.tabManager)
+        searchManager.showActiveTabSuggestions(for: sourceWindow)
+        let suggestedTabs = searchManager.suggestions.compactMap { suggestion -> Tab? in
+            guard case .tab(let tab) = suggestion.type else { return nil }
+            return tab
+        }
+        XCTAssertEqual(suggestedTabs.prefix(2).map(\.id), [sourceTab.id, olderTab.id])
+        XCTAssertFalse(suggestedTabs.contains { $0.id == previewTab.id })
+        XCTAssertFalse(suggestedTabs.contains { $0.id == placeholderId })
+
+        browserManager.commitFloatingBarSuggestion(
+            SearchManager.SearchSuggestion(text: sourceTab.name, type: .tab(sourceTab)),
+            in: sourceWindow,
+            navigatesCurrentTab: true
+        )
+
+        let filledGroup = try XCTUnwrap(browserManager.tabManager.splitGroup(containing: previewTab.id))
+        XCTAssertEqual(filledGroup.tabIds, [previewTab.id, sourceTab.id])
+        XCTAssertEqual(filledGroup.activeTabId, sourceTab.id)
+        XCTAssertEqual(sourceWindow.currentTabId, sourceTab.id)
+        XCTAssertNil(browserManager.tabManager.tab(for: placeholderId))
+        XCTAssertFalse(sourceWindow.isFloatingBarVisible)
+        XCTAssertEqual(sourceWindow.floatingBarPresentationReason, .none)
     }
 
     func testGlancePresentationStaysPinnedToSourceTabSelection() throws {
