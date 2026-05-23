@@ -115,16 +115,12 @@ extension URLBarView {
             showCheckmark = true
         }
 
-        windowState.isShowingCopyURLToast = true
+        windowState.presentToast(.init(kind: .copyURL))
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             withAnimation(.easeInOut(duration: 0.2)) {
                 showCheckmark = false
             }
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            windowState.isShowingCopyURLToast = false
         }
     }
 

@@ -250,11 +250,7 @@ extension BrowserManager {
             }
 
             if let windowState = windowRegistry?.activeWindow {
-                windowState.isShowingCopyURLToast = true
-
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                    windowState.isShowingCopyURLToast = false
-                }
+                windowState.presentToast(.init(kind: .copyURL))
             }
         } else {
             RuntimeDiagnostics.emit("No URL found to copy")
@@ -282,20 +278,7 @@ extension BrowserManager {
 
     func showProfileSwitchToast(to: Profile, in windowState: BrowserWindowState?) {
         guard let targetWindow = windowState ?? windowRegistry?.activeWindow else { return }
-        let toast = ProfileSwitchToast(toProfile: to)
-        let windowId = targetWindow.id
-        targetWindow.profileSwitchToast = toast
-        withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
-            targetWindow.isShowingProfileSwitchToast = true
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
-            self?.hideProfileSwitchToast(forWindowId: windowId)
-        }
-    }
-
-    func hideProfileSwitchToast(for windowState: BrowserWindowState? = nil) {
-        guard let window = windowState ?? windowRegistry?.activeWindow else { return }
-        hideProfileSwitchToast(forWindowId: window.id)
+        targetWindow.presentToast(.init(kind: .profileSwitch(profileName: to.name)))
     }
 
     // MARK: - External URL Routing
@@ -400,16 +383,4 @@ extension BrowserManager {
         alert.runModal()
     }
 
-    private func hideProfileSwitchToast(forWindowId windowId: UUID) {
-        guard
-            let window = windowRegistry?.windows[windowId]
-                ?? (windowRegistry?.activeWindow?.id == windowId ? windowRegistry?.activeWindow : nil)
-        else { return }
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
-            window.isShowingProfileSwitchToast = false
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak window] in
-            window?.profileSwitchToast = nil
-        }
-    }
 }

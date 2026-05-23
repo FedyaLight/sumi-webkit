@@ -139,41 +139,9 @@ struct WindowView: View {
 
             }
         }
-        // System notification toasts - top trailing corner
+        // System feedback toast - top trailing corner
         .overlay(alignment: .topTrailing) {
-            VStack(spacing: 8) {
-                // Profile switch toast
-                if windowState.isShowingProfileSwitchToast,
-                   let toast = windowState.profileSwitchToast
-                {
-                    chromeThemeScope {
-                        ProfileSwitchToastView(toast: toast)
-                            .environment(windowState)
-                            .environmentObject(browserManager)
-                    }
-                }
-
-                // Tab closure toast
-                if browserManager.showTabClosureToast && browserManager.tabClosureToastCount > 0 {
-                    chromeThemeScope {
-                        TabClosureToast()
-                            .environmentObject(browserManager)
-                    }
-                }
-
-                // Copy URL toast
-                if windowState.isShowingCopyURLToast {
-                    chromeThemeScope {
-                        CopyURLToast()
-                            .environment(windowState)
-                    }
-                }
-            }
-            .padding(10)
-            // Animate toast insertions/removals
-            .animation(.smooth(duration: 0.25), value: windowState.isShowingProfileSwitchToast)
-            .animation(.smooth(duration: 0.25), value: browserManager.showTabClosureToast)
-            .animation(.smooth(duration: 0.25), value: windowState.isShowingCopyURLToast)
+            toastOverlay
         }
         // Lifecycle management
         .onAppear {
@@ -456,6 +424,24 @@ struct WindowView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    @ViewBuilder
+    private var toastOverlay: some View {
+        if let toast = windowState.toast {
+            chromeThemeScope {
+                BrowserToastView(toast: toast)
+                    .onTapGesture {
+                        windowState.dismissToast(id: toast.id)
+                    }
+            }
+            .padding(10)
+            .animation(toastAnimation, value: toast.id)
+        }
+    }
+
+    private var toastAnimation: Animation {
+        reduceMotion ? .easeOut(duration: 0.08) : .smooth(duration: 0.18)
+    }
+
     private var glanceWebContentIsDimmed: Bool {
         guard presentedGlanceSession != nil else { return false }
         return glanceManager.phase == .opening || glanceManager.phase == .open || glanceManager.phase == .closing
@@ -526,28 +512,5 @@ private extension ColorScheme {
     init(effectiveAppearance appearance: NSAppearance) {
         let best = appearance.bestMatch(from: [.darkAqua, .aqua])
         self = best == .darkAqua ? .dark : .light
-    }
-}
-
-// MARK: - Profile Switch Toast View
-private struct ProfileSwitchToastView: View {
-    let toast: BrowserManager.ProfileSwitchToast
-    @Environment(BrowserWindowState.self) private var windowState
-    @EnvironmentObject var browserManager: BrowserManager
-
-    var body: some View {
-        ToastView {
-            ToastContent(icon: "person.crop.circle", text: "Switched to \(toast.toProfile.name)")
-        }
-        .transition(.toast)
-        .onAppear {
-            // Auto-dismiss after 2 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                browserManager.hideProfileSwitchToast(for: windowState)
-            }
-        }
-        .onTapGesture {
-            browserManager.hideProfileSwitchToast(for: windowState)
-        }
     }
 }

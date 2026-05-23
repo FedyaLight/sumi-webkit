@@ -246,7 +246,7 @@ extension TabManager {
         )
 
         if shouldShowToast {
-            browserManager?.showTabClosureToast(tabCount: 1)
+            browserManager?.presentTabClosureToast(tabCount: 1)
         }
     }
 
@@ -264,7 +264,7 @@ extension TabManager {
             )
         }
 
-        browserManager?.showTabClosureToast(tabCount: count)
+        browserManager?.presentTabClosureToast(tabCount: count)
     }
 
     private func shouldShowTabClosureToast(now: Date) -> Bool {

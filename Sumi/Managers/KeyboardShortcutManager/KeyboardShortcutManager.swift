@@ -101,6 +101,10 @@ class KeyboardShortcutManager {
         return shortcut
     }
 
+    func shortcutDisplayString(for action: ShortcutAction) -> String? {
+        shortcut(for: action)?.keyCombination.map(KeyboardShortcutPresentation.displayString(for:))
+    }
+
     func setShortcut(action: ShortcutAction, keyCombination: KeyCombination) -> ShortcutValidationResult {
         let validation = validate(keyCombination, excludingAction: action)
         guard validation.allowsCommit, shortcutsByAction[action] != nil else {

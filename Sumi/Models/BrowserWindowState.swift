@@ -158,14 +158,8 @@ class BrowserWindowState {
     /// Frame of the URL bar within this window
     var urlBarFrame: CGRect = .zero
 
-    /// Profile switch toast payload for this window
-    var profileSwitchToast: BrowserManager.ProfileSwitchToast?
-
-    /// Presentation flag for the profile switch toast
-    var isShowingProfileSwitchToast: Bool = false
-    
-    /// Presentation flag for the copy URL toast
-    var isShowingCopyURLToast: Bool = false
+    /// Lightweight, per-window chrome feedback. Only one toast is mounted at a time.
+    var toast: BrowserToast?
     
     /// Compositor version counter for this window (incremented when tab ownership changes)
     var compositorVersion: Int = 0
@@ -178,6 +172,7 @@ class BrowserWindowState {
     @ObservationIgnored private var pendingSidebarInputRecoveryReasons: [SidebarInputRecoveryReason] = []
     @ObservationIgnored private var isSidebarFolderProjectionFlushScheduled: Bool = false
     @ObservationIgnored private var pendingSidebarFolderProjectionUpdates: [UUID: SidebarFolderProjectionState] = [:]
+    @ObservationIgnored private var toastDismissTask: Task<Void, Never>?
 
     /// Reference to the actual NSWindow for this window state
     var window: NSWindow?
@@ -363,6 +358,27 @@ class BrowserWindowState {
 
     func invalidateNativeSurfaceRouting() {
         nativeSurfaceRoutingRevision &+= 1
+    }
+
+    func presentToast(_ nextToast: BrowserToast) {
+        toastDismissTask?.cancel()
+        toast = nextToast
+
+        toastDismissTask = Task { [weak self, id = nextToast.id, duration = nextToast.duration] in
+            let nanoseconds = UInt64(duration * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self?.dismissToast(id: id)
+            }
+        }
+    }
+
+    func dismissToast(id: BrowserToast.ID? = nil) {
+        if let id, toast?.id != id { return }
+        toastDismissTask?.cancel()
+        toastDismissTask = nil
+        toast = nil
     }
 
     func recordRegularTabSelection(_ tabId: UUID, in spaceId: UUID) {
