@@ -27,18 +27,10 @@ struct ShortcutRecorderView: View {
                     Text(isRecording ? "Recording..." : (keyCombination?.displayString ?? "Not Set"))
                         .font(.system(.body, design: .monospaced))
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(isRecording ? Color.red.opacity(0.2) : Color(.controlBackgroundColor))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(validationResult == .valid ? Color.clear : Color.red, lineWidth: 1)
-                )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .tint(isRecording ? .red : nil)
             .onHover { isHovered in
                 if isHovered {
                     NSCursor.pointingHand.push()
@@ -57,6 +49,7 @@ struct ShortcutRecorderView: View {
                 clearShortcut()
             }
             .buttonStyle(.borderless)
+            .controlSize(.small)
             .foregroundColor(.secondary)
             .disabled(keyCombination == nil)
         }

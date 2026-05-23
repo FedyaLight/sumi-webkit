@@ -119,17 +119,16 @@ private struct AdblockProtectionSettingsView: View {
 
     private var protectionSettingsSection: some View {
         SettingsSection(title: "Adblock & Protection") {
-            VStack(alignment: .leading, spacing: 12) {
-                levelControls
+            levelControls
 
-                if settings.browserRestartRequired {
-                    restartRequiredWarning
-                }
-
+            if settings.browserRestartRequired {
                 SettingsDivider()
-
-                lastUpdateRow
+                restartRequiredWarning
             }
+
+            SettingsDivider()
+
+            lastUpdateRow
         }
     }
 
@@ -143,20 +142,18 @@ private struct AdblockProtectionSettingsView: View {
     }
 
     private var levelControls: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        SettingsRow(
+            title: "Protection level",
+            subtitle: coordinator.applyNeeded ? "Apply changes to use the selected level." : nil
+        ) {
             HStack(spacing: 8) {
-                ForEach(SumiProtectionLevel.allCases) { level in
-                    levelOptionButton(for: level)
+                Picker("", selection: levelBinding) {
+                    ForEach(SumiProtectionLevel.allCases) { level in
+                        Text(level.displayTitle).tag(level)
+                    }
                 }
-            }
-
-            HStack(alignment: .center, spacing: 10) {
-                Text(applyHelperText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                Spacer(minLength: 12)
+                .labelsHidden()
+                .settingsTrailingControl(width: 150)
 
                 Button {
                     applySelectedLevel()
@@ -164,95 +161,25 @@ private struct AdblockProtectionSettingsView: View {
                     if isApplying {
                         ProgressView()
                             .controlSize(.small)
-                            .frame(minWidth: 44)
+                            .frame(width: 44)
                     } else {
                         Text("Apply")
-                            .frame(minWidth: 44)
+                            .frame(width: 44)
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                .controlSize(.regular)
                 .disabled(isApplying || !coordinator.applyNeeded)
             }
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func levelOptionButton(for level: SumiProtectionLevel) -> some View {
-        let isSelected = settings.level == level
-        return Button {
-            levelBinding.wrappedValue = level
-        } label: {
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(alignment: .center, spacing: 6) {
-                    Text(level.displayTitle)
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
-                        .lineLimit(1)
-
-                    Spacer(minLength: 4)
-
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary.opacity(0.45))
-                        .accessibilityHidden(true)
-                }
-
-                Text(levelSubtitle(for: level))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.vertical, 9)
-            .padding(.horizontal, 10)
-            .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(
-                        isSelected
-                            ? Color.accentColor.opacity(0.12)
-                            : Color(nsColor: .controlBackgroundColor).opacity(0.72)
-                    )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(
-                        isSelected
-                            ? Color.accentColor.opacity(0.58)
-                            : Color.secondary.opacity(0.18),
-                        lineWidth: 1
-                    )
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(level.displayTitle), \(levelSubtitle(for: level))")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var lastUpdateRow: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Last update")
-                    .font(.body)
-
-                Text(lastUpdateText)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-
-                if let lastUpdateErrorText {
-                    Text(lastUpdateErrorText)
-                        .font(.caption)
-                        .foregroundStyle(Color.red)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            Spacer(minLength: 16)
-
+        SettingsRow(
+            title: "Last update",
+            subtitle: lastUpdateErrorText ?? lastUpdateText
+        ) {
             Button {
                 updatePreparedBundles()
             } label: {
@@ -270,7 +197,6 @@ private struct AdblockProtectionSettingsView: View {
             .controlSize(.small)
             .disabled(isUpdatingBundles)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var restartRequiredWarning: some View {
@@ -313,27 +239,6 @@ private struct AdblockProtectionSettingsView: View {
     private var lastUpdateErrorText: String? {
         guard let reason = bundleUpdateStatus.lastFailureReason else { return nil }
         return "Update failed: \(Self.compactUpdateError(reason))"
-    }
-
-    private var applyHelperText: String {
-        if isApplying {
-            return "Applying..."
-        }
-        if coordinator.applyNeeded {
-            return "Apply to use this level."
-        }
-        return "Applied."
-    }
-
-    private func levelSubtitle(for level: SumiProtectionLevel) -> String {
-        switch level {
-        case .off:
-            return "No blocking"
-        case .protection:
-            return "Blocks known trackers"
-        case .adblock:
-            return "Blocks trackers and ads"
-        }
     }
 
     private func applySelectedLevel() {

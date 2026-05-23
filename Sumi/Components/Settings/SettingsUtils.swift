@@ -5,6 +5,7 @@
 //  Created by Maciek Bagiński on 03/08/2025.
 //
 import Foundation
+import SwiftUI
 
 enum SettingsPaneGroup: String, CaseIterable, Hashable {
     case browser = "Browser"
@@ -23,6 +24,10 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
     let keywords: [String]
 
     var id: SettingsTabs { tab }
+
+    var iconColor: Color {
+        tab.iconColor
+    }
 
     static let all: [SettingsPaneDescriptor] = SettingsTabs.ordered.map(Self.descriptor)
 
@@ -298,6 +303,22 @@ enum SettingsTabs: Hashable, CaseIterable {
         case .extensions: return "puzzlepiece.extension"
         case .advanced: return "internaldrive"
         case .about: return "info.circle"
+        }
+    }
+
+    var iconColor: Color {
+        switch self {
+        case .general: return .gray
+        case .startup: return .green
+        case .appearance: return .purple
+        case .performance: return .orange
+        case .privacy: return .blue
+        case .profiles: return .cyan
+        case .shortcuts: return .indigo
+        case .userScripts: return .mint
+        case .extensions: return .teal
+        case .advanced: return .brown
+        case .about: return .gray
         }
     }
 

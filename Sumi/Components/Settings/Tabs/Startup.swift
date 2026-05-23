@@ -16,11 +16,17 @@ struct SettingsStartupTab: View {
                 title: "On Startup",
                 subtitle: "Choose what Sumi opens when the app starts."
             ) {
-                VStack(alignment: .leading, spacing: 12) {
+                Picker("Open", selection: $settings.startupMode) {
                     ForEach(SumiStartupMode.allCases) { mode in
-                        startupModeRow(mode, selection: $settings.startupMode)
+                        Text(mode.title).tag(mode)
                     }
                 }
+                .pickerStyle(.radioGroup)
+
+                Text(settings.startupMode.subtitle)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if settings.startupMode == .specificPage {
@@ -47,36 +53,5 @@ struct SettingsStartupTab: View {
                 }
             }
         }
-    }
-
-    private func startupModeRow(
-        _ mode: SumiStartupMode,
-        selection: Binding<SumiStartupMode>
-    ) -> some View {
-        Button {
-            selection.wrappedValue = mode
-        } label: {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: selection.wrappedValue == mode ? "largecircle.fill.circle" : "circle")
-                    .font(.system(size: 15, weight: .medium))
-                    .frame(width: 18, height: 18)
-                    .foregroundStyle(selection.wrappedValue == mode ? Color.accentColor : Color.secondary)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(mode.title)
-                        .font(.body)
-                    Text(mode.subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 0)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
     }
 }

@@ -21,27 +21,69 @@ struct ShortcutsSettingsView: View {
         Dictionary(grouping: filteredShortcuts, by: \.action.category)
     }
 
+    private var selectedCategoryBinding: Binding<String> {
+        Binding(
+            get: { selectedCategory?.rawValue ?? "all" },
+            set: { newValue in
+                selectedCategory = newValue == "all" ? nil : ShortcutCategory(rawValue: newValue)
+            }
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             SettingsSection(
-                title: "Shortcut Filters",
-                subtitle: "Search and narrow commands before editing their key combinations."
+                title: "Filters",
+                subtitle: "Find commands before editing their key combinations."
             ) {
-                filters
+                SettingsRow(title: "Search") {
+                    searchField
+                }
+
+                SettingsDivider()
+
+                SettingsRow(title: "Category") {
+                    Picker("", selection: selectedCategoryBinding) {
+                        Text("All").tag("all")
+                        ForEach(ShortcutCategory.allCases, id: \.self) { category in
+                            Text(category.displayName).tag(category.rawValue)
+                        }
+                    }
+                    .labelsHidden()
+                    .settingsTrailingControl(width: 180)
+                }
+
+                SettingsDivider()
+
+                SettingsActionRow(
+                    title: "Defaults",
+                    subtitle: "Restore the built-in keyboard shortcuts.",
+                    buttonTitle: "Reset"
+                ) {
+                    shortcutManager.resetToDefaults()
+                }
             }
 
             SettingsSection(
                 title: "Shortcuts",
                 subtitle: "Customizable shortcuts can be disabled or recorded again."
             ) {
-                LazyVStack(spacing: 12) {
-                    ForEach(ShortcutCategory.allCases, id: \.self) { category in
-                        if let categoryShortcuts = shortcutsByCategory[category], !categoryShortcuts.isEmpty {
-                            ShortcutCategorySection(
-                                category: category,
-                                shortcuts: categoryShortcuts,
-                                shortcutManager: shortcutManager
-                            )
+                if filteredShortcuts.isEmpty {
+                    SettingsEmptyState(
+                        systemImage: "keyboard",
+                        title: "No Shortcuts",
+                        detail: "No keyboard shortcuts match the current filters."
+                    )
+                } else {
+                    LazyVStack(alignment: .leading, spacing: 18) {
+                        ForEach(ShortcutCategory.allCases, id: \.self) { category in
+                            if let categoryShortcuts = shortcutsByCategory[category], !categoryShortcuts.isEmpty {
+                                ShortcutCategorySection(
+                                    category: category,
+                                    shortcuts: categoryShortcuts,
+                                    shortcutManager: shortcutManager
+                                )
+                            }
                         }
                     }
                 }
@@ -49,59 +91,10 @@ struct ShortcutsSettingsView: View {
         }
     }
 
-    private var filters: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) {
-                searchField
-                categoryScroller
-                Spacer(minLength: 0)
-                resetButton
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 12) {
-                    searchField
-                    resetButton
-                }
-                categoryScroller
-            }
-        }
-    }
-
     private var searchField: some View {
         TextField("Search shortcuts...", text: $searchText)
             .textFieldStyle(.roundedBorder)
-            .frame(minWidth: 180, idealWidth: 240, maxWidth: 280)
-    }
-
-    private var categoryScroller: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ShortcutCategoryFilterChip(
-                    title: "All",
-                    icon: nil,
-                    isSelected: selectedCategory == nil,
-                    onTap: { selectedCategory = nil }
-                )
-                ForEach(ShortcutCategory.allCases, id: \.self) { category in
-                    ShortcutCategoryFilterChip(
-                        title: category.displayName,
-                        icon: category.icon,
-                        isSelected: selectedCategory == category,
-                        onTap: { selectedCategory = category }
-                    )
-                }
-            }
-            .padding(.horizontal, 4)
-        }
-    }
-
-    private var resetButton: some View {
-        Button("Reset to Defaults") {
-            shortcutManager.resetToDefaults()
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
+            .frame(width: 220)
     }
 }
 
@@ -111,17 +104,21 @@ private struct ShortcutCategorySection: View {
     let shortcutManager: KeyboardShortcutManager
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             Label(category.displayName, systemImage: category.icon)
-                .font(.headline)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
 
-            VStack(spacing: 8) {
-                ForEach(shortcuts, id: \.action) { shortcut in
+            VStack(spacing: 0) {
+                ForEach(Array(shortcuts.enumerated()), id: \.element.action) { index, shortcut in
                     ShortcutRowView(shortcut: shortcut, shortcutManager: shortcutManager)
+
+                    if index < shortcuts.count - 1 {
+                        SettingsDivider()
+                    }
                 }
             }
         }
-        .padding(.horizontal, 4)
     }
 }
 
@@ -132,8 +129,8 @@ private struct ShortcutRowView: View {
     var body: some View {
         HStack(spacing: 12) {
             Text(shortcut.action.displayName)
-                .font(.subheadline)
-                .fontWeight(.medium)
+                .font(.body)
+                .foregroundStyle(.primary)
 
             Spacer(minLength: 12)
 
@@ -144,9 +141,7 @@ private struct ShortcutRowView: View {
                 onClear: clear
             )
         }
-        .padding(12)
-        .background(Color(.controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(.vertical, 8)
     }
 
     private func validate(_ combination: KeyCombination) -> ShortcutValidationResult {
@@ -159,34 +154,5 @@ private struct ShortcutRowView: View {
 
     private func clear() -> Bool {
         shortcutManager.clearShortcut(action: shortcut.action)
-    }
-}
-
-private struct ShortcutCategoryFilterChip: View {
-    let title: String
-    let icon: String?
-    let isSelected: Bool
-    let onTap: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 4) {
-                if let icon {
-                    Image(systemName: icon)
-                        .font(.caption)
-                }
-                Text(title)
-                    .font(.caption)
-                    .fontWeight(.medium)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(isSelected ? Color.accentColor : Color(.controlBackgroundColor))
-            )
-            .foregroundColor(isSelected ? .white : .primary)
-        }
-        .buttonStyle(.plain)
     }
 }

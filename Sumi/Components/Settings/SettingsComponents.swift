@@ -6,17 +6,15 @@
 import AppKit
 import SwiftUI
 
+private enum SettingsLayout {
+    static let sectionCornerRadius: CGFloat = 14
+    static let rowControlWidth: CGFloat = 220
+}
+
 struct SettingsSection<Content: View>: View {
     let title: String
     var subtitle: String? = nil
     @ViewBuilder var content: Content
-
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
 
     init(
         title: String,
@@ -29,16 +27,16 @@ struct SettingsSection<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.headline)
-                    .foregroundStyle(tokens.primaryText)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
 
                 if let subtitle {
                     Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(tokens.secondaryText)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -46,14 +44,15 @@ struct SettingsSection<Content: View>: View {
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+        .padding(.vertical, 14)
+        .padding(.horizontal, 18)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(tokens.fieldBackground.opacity(0.78))
+            RoundedRectangle(cornerRadius: SettingsLayout.sectionCornerRadius, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.96))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(tokens.separator.opacity(0.62), lineWidth: 1)
+            RoundedRectangle(cornerRadius: SettingsLayout.sectionCornerRadius, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.10), lineWidth: 1)
         )
     }
 }
@@ -77,16 +76,18 @@ struct SettingsRow<Control: View>: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: 14) {
             if let systemImage {
                 Image(systemName: systemImage)
                     .foregroundStyle(.secondary)
-                    .frame(width: 18, alignment: .center)
+                    .frame(width: 20, alignment: .center)
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.body)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let subtitle {
                     Text(subtitle)
                         .font(.caption)
@@ -94,13 +95,17 @@ struct SettingsRow<Control: View>: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer(minLength: 16)
-
-            control
+            HStack {
+                Spacer(minLength: 0)
+                control
+                    .controlSize(.regular)
+            }
+            .frame(width: SettingsLayout.rowControlWidth, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 2)
+        .padding(.vertical, 6)
     }
 }
 
@@ -116,6 +121,7 @@ struct SettingsActionRow: View {
         SettingsRow(title: title, subtitle: subtitle, systemImage: systemImage) {
             Button(buttonTitle, role: role, action: action)
                 .buttonStyle(.bordered)
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 }
@@ -123,7 +129,7 @@ struct SettingsActionRow: View {
 struct SettingsDivider: View {
     var body: some View {
         Divider()
-            .opacity(0.55)
+            .opacity(0.45)
     }
 }
 
@@ -148,5 +154,12 @@ struct SettingsEmptyState: View {
         }
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.vertical, 24)
+    }
+}
+
+extension View {
+    func settingsTrailingControl(width: CGFloat) -> some View {
+        fixedSize(horizontal: true, vertical: false)
+            .frame(width: width, alignment: .trailing)
     }
 }

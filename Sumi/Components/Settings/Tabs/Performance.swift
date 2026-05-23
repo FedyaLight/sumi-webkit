@@ -49,11 +49,6 @@ struct SumiMemoryModeSettingsDescriptor: Identifiable, Equatable {
 
 struct SettingsPerformanceTab: View {
     @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
 
     var body: some View {
         @Bindable var settings = sumiSettings
@@ -63,72 +58,35 @@ struct SettingsPerformanceTab: View {
                 title: "Memory Saver",
                 subtitle: "Choose one inactive-tab policy. Pinned tabs and Essentials keep their launcher identity."
             ) {
-                VStack(alignment: .leading, spacing: 8) {
+                Picker("Mode", selection: $settings.memoryMode) {
                     ForEach(SumiMemoryModeSettingsDescriptor.all) { descriptor in
-                        memoryModeRow(
-                            descriptor,
-                            settings: settings,
-                            isSelected: descriptor.mode == settings.memoryMode
-                        )
+                        Text(descriptor.title).tag(descriptor.mode)
                     }
+                }
+                .pickerStyle(.radioGroup)
+
+                if let selectedDescriptor {
+                    Text(selectedDescriptor.detail)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if settings.memoryMode == .custom {
+                    SettingsDivider()
+                    customDelayControl(settings: settings)
                 }
 
                 Text(SumiMemoryModeSettingsDescriptor.launcherPreservationCopy)
                     .font(.caption)
-                    .foregroundStyle(tokens.secondaryText)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
-    private func memoryModeRow(
-        _ descriptor: SumiMemoryModeSettingsDescriptor,
-        settings: SumiSettingsService,
-        isSelected: Bool
-    ) -> some View {
-        Button {
-            settings.memoryMode = descriptor.mode
-        } label: {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .center, spacing: 10) {
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(isSelected ? Color.accentColor : tokens.secondaryText)
-                        .frame(width: 18, height: 18, alignment: .center)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(descriptor.title)
-                            .font(.headline)
-                            .foregroundStyle(isSelected ? Color.accentColor : tokens.primaryText)
-                        Text(descriptor.detail)
-                            .font(.caption)
-                            .foregroundStyle(isSelected ? tokens.primaryText : tokens.secondaryText)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer(minLength: 0)
-                }
-
-                if settings.memoryMode == .custom && descriptor.mode == .custom {
-                    customDelayControl(settings: settings)
-                        .padding(.leading, 28)
-                }
-            }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isSelected ? Color.accentColor.opacity(0.13) : Color.clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(
-                        isSelected ? Color.accentColor.opacity(0.7) : tokens.separator.opacity(0.45),
-                        lineWidth: 1
-                    )
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(.plain)
+    private var selectedDescriptor: SumiMemoryModeSettingsDescriptor? {
+        SumiMemoryModeSettingsDescriptor.all.first { $0.mode == sumiSettings.memoryMode }
     }
 
     private func customDelayControl(settings: SumiSettingsService) -> some View {
@@ -141,10 +99,10 @@ struct SettingsPerformanceTab: View {
             }
         )
 
-        return HStack(spacing: 12) {
-            Text("Deactivate inactive tabs after:")
-                .font(.caption)
-                .foregroundStyle(tokens.secondaryText)
+        return SettingsRow(
+            title: "Deactivate inactive tabs after",
+            subtitle: nil
+        ) {
             Stepper(value: delayHours, in: 0.25...24, step: 0.25) {
                 Text(formattedDelay(settings.memorySaverCustomDeactivationDelay))
                     .monospacedDigit()

@@ -35,7 +35,7 @@ struct SettingsAppearanceTab: View {
                         }
                     }
                     .labelsHidden()
-                    .frame(width: 120)
+                    .settingsTrailingControl(width: 120)
                 }
 
                 SettingsRow(
@@ -88,7 +88,7 @@ struct SettingsAppearanceTab: View {
                         }
                     }
                     .labelsHidden()
-                    .frame(width: 150)
+                    .settingsTrailingControl(width: 150)
                     .disabled(!settings.showNewTabButtonInTabList)
                 }
             }
