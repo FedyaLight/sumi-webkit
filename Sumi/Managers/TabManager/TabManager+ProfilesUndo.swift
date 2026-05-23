@@ -234,9 +234,6 @@ extension TabManager {
 // MARK: - Tab Closure Undo
 extension TabManager {
     func captureRecentlyClosedTab(_ tab: Tab, spaceId: UUID?) {
-        let now = Date()
-        let shouldShowToast = shouldShowTabClosureToast(now: now)
-        lastTabClosureTime = now
         browserManager?.recentlyClosedManager.captureClosedTab(
             tab,
             sourceSpaceId: spaceId,
@@ -245,15 +242,10 @@ extension TabManager {
             canGoForward: tab.canGoForward
         )
 
-        if shouldShowToast {
-            browserManager?.presentTabClosureToast(tabCount: 1)
-        }
+        browserManager?.presentTabClosureToast(tabCount: 1)
     }
 
     private func captureRecentlyClosedTabs(_ tabs: [(tab: Tab, spaceId: UUID?)], count: Int) {
-        let now = Date()
-        lastTabClosureTime = now
-
         for (tab, spaceId) in tabs {
             browserManager?.recentlyClosedManager.captureClosedTab(
                 tab,
@@ -265,11 +257,6 @@ extension TabManager {
         }
 
         browserManager?.presentTabClosureToast(tabCount: count)
-    }
-
-    private func shouldShowTabClosureToast(now: Date) -> Bool {
-        guard let lastClosure = lastTabClosureTime else { return true }
-        return now.timeIntervalSince(lastClosure) >= toastCooldown
     }
 
     func undoCloseTab() {

@@ -58,6 +58,15 @@ struct SettingsAppearanceTab: View {
                         .toggleStyle(.switch)
                 }
 
+                SettingsRow(
+                    title: "Browser notifications",
+                    subtitle: "Show brief feedback banners for actions like copying URLs, switching profiles, and closing tabs."
+                ) {
+                    Toggle("", isOn: $settings.showBrowserToasts)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+
                 SettingsDivider()
 
                 SettingsRow(

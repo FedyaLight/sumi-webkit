@@ -79,6 +79,5 @@ struct BrowserToastView: View {
                 }
             }
         }
-        .transition(reduceMotion ? .opacity : .toast)
     }
 }

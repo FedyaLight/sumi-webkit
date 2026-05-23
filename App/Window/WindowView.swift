@@ -199,6 +199,11 @@ struct WindowView: View {
                 effectiveAppearanceRevision &+= 1
             }
         }
+        .onChange(of: sumiSettings.showBrowserToasts) { _, isEnabled in
+            if !isEnabled {
+                windowState.dismissToast()
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .sumiApplicationDidChangeEffectiveAppearance)) { _ in
             Task { @MainActor in
                 effectiveAppearanceRevision &+= 1
@@ -426,16 +431,19 @@ struct WindowView: View {
 
     @ViewBuilder
     private var toastOverlay: some View {
-        if let toast = windowState.toast {
-            chromeThemeScope {
-                BrowserToastView(toast: toast)
-                    .onTapGesture {
-                        windowState.dismissToast(id: toast.id)
-                    }
+        ZStack(alignment: .topTrailing) {
+            if sumiSettings.showBrowserToasts, let toast = windowState.toast {
+                chromeThemeScope {
+                    BrowserToastView(toast: toast)
+                        .onTapGesture {
+                            windowState.dismissToast(id: toast.id)
+                        }
+                }
+                .transition(reduceMotion ? .opacity : .toast)
             }
-            .padding(10)
-            .animation(toastAnimation, value: toast.id)
         }
+        .padding(10)
+        .animation(toastAnimation, value: windowState.toast?.id)
     }
 
     private var toastAnimation: Animation {

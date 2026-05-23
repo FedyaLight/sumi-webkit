@@ -28,10 +28,6 @@ class TabManager: ObservableObject {
     lazy var runtimeStore = DefaultTabRuntimeStore(tabManager: self)
     lazy var folderService = TabFolderService(tabManager: self)
 
-    // Toast notification cooldown
-    var lastTabClosureTime: Date?
-    let toastCooldown: TimeInterval = 2 * 60 * 60 // 2 hours in seconds
-
     // Spaces
     @Published var spaces: [Space] = []
     @Published var currentSpace: Space?

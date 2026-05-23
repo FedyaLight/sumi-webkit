@@ -250,7 +250,7 @@ extension BrowserManager {
             }
 
             if let windowState = windowRegistry?.activeWindow {
-                windowState.presentToast(.init(kind: .copyURL))
+                presentToast(.init(kind: .copyURL), in: windowState)
             }
         } else {
             RuntimeDiagnostics.emit("No URL found to copy")
@@ -278,7 +278,13 @@ extension BrowserManager {
 
     func showProfileSwitchToast(to: Profile, in windowState: BrowserWindowState?) {
         guard let targetWindow = windowState ?? windowRegistry?.activeWindow else { return }
-        targetWindow.presentToast(.init(kind: .profileSwitch(profileName: to.name)))
+        presentToast(.init(kind: .profileSwitch(profileName: to.name)), in: targetWindow)
+    }
+
+    func presentToast(_ toast: BrowserToast, in windowState: BrowserWindowState? = nil) {
+        guard sumiSettings?.showBrowserToasts != false else { return }
+        guard let targetWindow = windowState ?? windowRegistry?.activeWindow else { return }
+        targetWindow.presentToast(toast)
     }
 
     // MARK: - External URL Routing
