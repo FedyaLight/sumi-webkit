@@ -7,7 +7,6 @@
 
 import Foundation
 import Observation
-import SwiftUI
 
 @MainActor
 protocol SearchSuggestionDataProviding {
@@ -150,11 +149,7 @@ class SearchManager {
         // Clear suggestions if query is empty
         guard !normalizedQuery.isEmpty else {
             isLoadingSuggestions = false
-            if !suggestions.isEmpty {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    suggestions = []
-                }
-            }
+            clearSuggestionResults()
             return
         }
         
@@ -645,52 +640,21 @@ class SearchManager {
     }
     
     private func updateSuggestionsIfNeeded(_ newSuggestions: [SearchSuggestion]) {
-        let shouldAnimate = shouldAnimateChange(from: suggestions, to: newSuggestions)
-        
-        if shouldAnimate {
-            withAnimation(.easeInOut(duration: 0.25)) {
-                suggestions = newSuggestions
-            }
-        } else {
-            suggestions = newSuggestions
-        }
+        guard suggestions != newSuggestions else { return }
+        suggestions = newSuggestions
     }
-    
-    private func shouldAnimateChange(from oldSuggestions: [SearchSuggestion], to newSuggestions: [SearchSuggestion]) -> Bool {
-        if oldSuggestions.isEmpty != newSuggestions.isEmpty {
-            return true
-        }
-        
-        // Always animate if count changes significantly
-        if abs(oldSuggestions.count - newSuggestions.count) > 2 {
-            return true
-        }
-        
-        // Compare suggestion texts to see if there are significant changes
-        let oldTexts = Set(oldSuggestions.map { $0.text })
-        let newTexts = Set(newSuggestions.map { $0.text })
-        
-        // Calculate how many suggestions are different
-        let intersection = oldTexts.intersection(newTexts)
-        let totalUnique = oldTexts.union(newTexts).count
-        let similarityRatio = Double(intersection.count) / Double(max(totalUnique, 1))
-        
-        // Only animate if less than 60% of suggestions are the same
-        return similarityRatio < 0.6
+
+    private func clearSuggestionResults() {
+        guard !suggestions.isEmpty else { return }
+        suggestions = []
     }
-    
-    
-    
+
     func clearSuggestions() {
         webSuggestionTask?.cancel()
         historySuggestionTask?.cancel()
         isLoadingSuggestions = false
         webSuggestionRequestGeneration &+= 1
         activeWebSuggestionGeneration = webSuggestionRequestGeneration
-        if !suggestions.isEmpty {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                suggestions = []
-            }
-        }
+        clearSuggestionResults()
     }
 }
