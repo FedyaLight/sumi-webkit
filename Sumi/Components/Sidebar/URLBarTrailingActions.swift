@@ -115,7 +115,7 @@ extension URLBarView {
             showCheckmark = true
         }
 
-        windowState.presentToast(.init(kind: .copyURL))
+        browserManager.presentToast(.init(kind: .copyURL), in: windowState)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             withAnimation(.easeInOut(duration: 0.2)) {

@@ -47,4 +47,19 @@ final class ThemeSettingsDefaultsTests: XCTestCase {
 
         XCTAssertEqual(settings.sidebarPosition, .left)
     }
+
+    func testBrowserToastsDefaultEnabledAndPersist() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+
+        XCTAssertTrue(settings.showBrowserToasts)
+
+        settings.showBrowserToasts = false
+        let recreatedSettings = SumiSettingsService(userDefaults: harness.defaults)
+
+        XCTAssertFalse(recreatedSettings.showBrowserToasts)
+        XCTAssertFalse(harness.defaults.bool(forKey: "settings.showBrowserToasts"))
+    }
 }

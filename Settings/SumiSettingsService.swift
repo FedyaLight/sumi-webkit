@@ -28,6 +28,7 @@ class SumiSettingsService {
     private let showNewTabButtonInTabListKey = "settings.showNewTabButtonInTabList"
     private let tabListNewTabButtonPositionKey = "settings.tabListNewTabButtonPosition"
     private let showLinkStatusBarKey = "settings.showLinkStatusBar"
+    private let showBrowserToastsKey = "settings.showBrowserToasts"
     private let siteSearchEntriesKey = "settings.siteSearchEntries"
     private let floatingBarEmptyStateModeKey = "settings.floatingBar.emptyStateMode"
     private let didFinishOnboardingKey = "settings.didFinishOnboarding"
@@ -155,6 +156,12 @@ class SumiSettingsService {
         }
     }
 
+    var showBrowserToasts: Bool {
+        didSet {
+            userDefaults.set(showBrowserToasts, forKey: showBrowserToastsKey)
+        }
+    }
+
     var siteSearchEntries: [SiteSearchEntry] {
         didSet {
             if let data = try? JSONEncoder().encode(siteSearchEntries) {
@@ -243,6 +250,7 @@ class SumiSettingsService {
             showNewTabButtonInTabListKey: true,
             tabListNewTabButtonPositionKey: TabListNewTabButtonPosition.bottom.rawValue,
             showLinkStatusBarKey: true,
+            showBrowserToastsKey: true,
             floatingBarEmptyStateModeKey: FloatingBarEmptyStateMode.compact.rawValue,
             didFinishOnboardingKey: true,
             memoryModeKey: SumiMemoryMode.balanced.rawValue,
@@ -298,6 +306,7 @@ class SumiSettingsService {
             rawValue: userDefaults.string(forKey: tabListNewTabButtonPositionKey) ?? TabListNewTabButtonPosition.bottom.rawValue
         ) ?? .bottom
         self.showLinkStatusBar = userDefaults.bool(forKey: showLinkStatusBarKey)
+        self.showBrowserToasts = userDefaults.bool(forKey: showBrowserToastsKey)
         self.didFinishOnboarding = userDefaults.bool(forKey: didFinishOnboardingKey)
         let storedMemoryMode = userDefaults.string(forKey: memoryModeKey)
         let resolvedMemoryMode = SumiMemoryMode.persistedValue(storedMemoryMode)
