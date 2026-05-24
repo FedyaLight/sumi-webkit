@@ -70,43 +70,8 @@ struct ExtensionUtils {
     }
 
     static func validateManifest(at url: URL) throws -> [String: Any] {
+        _ = try ChromeMV3ManifestValidator.validateManifestFile(at: url)
         let manifest = try loadJSONObject(at: url)
-
-        guard let manifestVersion = manifest["manifest_version"] as? Int else {
-            throw ExtensionError.invalidManifest("Missing manifest_version")
-        }
-
-        guard manifestVersion == 3 else {
-            throw ExtensionError.unsupportedManifest(
-                "Sumi supports manifest_version 3 only"
-            )
-        }
-
-        if let background = manifest["background"] as? [String: Any] {
-            if background["page"] != nil {
-                throw ExtensionError.unsupportedManifest(
-                    "Background pages are not supported"
-                )
-            }
-
-            if (background["scripts"] as? [String])?.isEmpty == false {
-                throw ExtensionError.unsupportedManifest(
-                    "Background scripts are not supported"
-                )
-            }
-        }
-
-        guard let name = manifest["name"] as? String, name.isEmpty == false else {
-            throw ExtensionError.invalidManifest("Missing name")
-        }
-
-        guard
-            let version = manifest["version"] as? String,
-            version.isEmpty == false
-        else {
-            throw ExtensionError.invalidManifest("Missing version")
-        }
-
         return manifest
     }
 
