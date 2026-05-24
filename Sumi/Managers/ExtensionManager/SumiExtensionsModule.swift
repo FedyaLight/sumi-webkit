@@ -27,6 +27,10 @@ final class SumiExtensionsModule {
     private var cachedManager: ExtensionManager?
     private var cachedChromeMV3EmptyControllerOwner:
         ChromeMV3EmptyControllerOwner?
+    #if DEBUG
+        private var cachedChromeMV3ExtensionObjectProbeOwner:
+            ChromeMV3ExtensionObjectProbeOwner?
+    #endif
     weak var browserManager: BrowserManager?
     #if DEBUG
         private var lastChromeMV3LiveNormalTabAttachmentSnapshot:
@@ -102,6 +106,11 @@ final class SumiExtensionsModule {
     func setEnabled(_ isEnabled: Bool) {
         moduleRegistry.setEnabled(isEnabled, for: .extensions)
         if isEnabled == false {
+            #if DEBUG
+                if #available(macOS 15.5, *) {
+                    tearDownChromeMV3ExtensionObjectProbeOwner()
+                }
+            #endif
             tearDownChromeMV3EmptyControllerOwner()
             tearDownLoadedRuntime(reason: "SumiExtensionsModule.setEnabled(false)")
         }
@@ -152,9 +161,23 @@ final class SumiExtensionsModule {
         let inventory = ChromeMV3CandidateInventoryReader()
             .readInventory(rootURL: rootURL)
         let candidates = inventory.candidates.map(\.profileHostCandidate)
+        let probeDiagnostics: ChromeMV3ExtensionObjectProbeDiagnostics?
+        #if DEBUG
+            if #available(macOS 15.5, *) {
+                probeDiagnostics =
+                    cachedChromeMV3ExtensionObjectProbeOwner?.diagnostics()
+            } else {
+                probeDiagnostics = nil
+            }
+        #else
+            probeDiagnostics = nil
+        #endif
         return chromeMV3ProfileHostIfEnabled(
             candidateRewrittenVariants: candidates
-        )?.diagnostics(candidateInventory: inventory)
+        )?.diagnostics(
+            candidateInventory: inventory,
+            extensionObjectProbeDiagnostics: probeDiagnostics
+        )
     }
 
     func chromeMV3ControllerCreationGateDecisionIfEnabled(
@@ -357,6 +380,131 @@ final class SumiExtensionsModule {
             cachedChromeMV3EmptyControllerOwner?
                 .liveNormalTabAttachmentDiagnostics()
                 ?? lastChromeMV3LiveNormalTabAttachmentSnapshot
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3ExtensionObjectProbeGateDecisionIfEnabled(
+            explicitInternalExtensionObjectProbeAllowed: Bool,
+            candidate: ChromeMV3RewrittenVariantCandidate,
+            runtimeLoadabilityReport: ChromeMV3RuntimeLoadabilityReport?,
+            requestedContextCreation: Bool = false,
+            requestedContextLoading: Bool = false,
+            requestedControllerLoad: Bool = false,
+            requestedExtensionCodeExecution: Bool = false,
+            requestedUserScriptRegistration: Bool = false,
+            requestedNativeMessagingLaunch: Bool = false
+        ) -> ChromeMV3ExtensionObjectProbeGateDecision? {
+            guard isEnabled else { return nil }
+
+            let profileHost = makeChromeMV3ProfileHost(
+                candidateRewrittenVariants: [candidate]
+            ).host
+            return ChromeMV3ExtensionObjectProbeGate.evaluate(
+                input: chromeMV3ExtensionObjectProbeGateInput(
+                    profileHost: profileHost,
+                    explicitInternalExtensionObjectProbeAllowed:
+                        explicitInternalExtensionObjectProbeAllowed,
+                    candidate: candidate,
+                    runtimeLoadabilityReport: runtimeLoadabilityReport,
+                    requestedContextCreation: requestedContextCreation,
+                    requestedContextLoading: requestedContextLoading,
+                    requestedControllerLoad: requestedControllerLoad,
+                    requestedExtensionCodeExecution:
+                        requestedExtensionCodeExecution,
+                    requestedUserScriptRegistration:
+                        requestedUserScriptRegistration,
+                    requestedNativeMessagingLaunch:
+                        requestedNativeMessagingLaunch
+                )
+            )
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3ExtensionObjectProbeDiagnosticsIfEnabled(
+            explicitInternalExtensionObjectProbeAllowed: Bool,
+            candidate: ChromeMV3RewrittenVariantCandidate,
+            runtimeLoadabilityReport: ChromeMV3RuntimeLoadabilityReport?
+        ) -> ChromeMV3ExtensionObjectProbeDiagnostics? {
+            guard isEnabled else { return nil }
+
+            if let cachedChromeMV3ExtensionObjectProbeOwner {
+                return cachedChromeMV3ExtensionObjectProbeOwner.diagnostics()
+            }
+
+            guard
+                let decision =
+                    chromeMV3ExtensionObjectProbeGateDecisionIfEnabled(
+                        explicitInternalExtensionObjectProbeAllowed:
+                            explicitInternalExtensionObjectProbeAllowed,
+                        candidate: candidate,
+                        runtimeLoadabilityReport: runtimeLoadabilityReport
+                    )
+            else {
+                return nil
+            }
+
+            return decision.canCreateExtensionObjectNow
+                ? ChromeMV3ExtensionObjectProbeDiagnostics.notAttempted(
+                    gateDecision: decision
+                )
+                : ChromeMV3ExtensionObjectProbeDiagnostics.blocked(
+                    gateDecision: decision
+                )
+        }
+
+        @available(macOS 15.5, *)
+        @discardableResult
+        func runChromeMV3ExtensionObjectProbeIfEnabled(
+            explicitInternalExtensionObjectProbeAllowed: Bool,
+            candidate: ChromeMV3RewrittenVariantCandidate,
+            runtimeLoadabilityReport: ChromeMV3RuntimeLoadabilityReport?
+        ) async -> ChromeMV3ExtensionObjectProbeDiagnostics? {
+            guard isEnabled else { return nil }
+            guard
+                let decision =
+                    chromeMV3ExtensionObjectProbeGateDecisionIfEnabled(
+                        explicitInternalExtensionObjectProbeAllowed:
+                            explicitInternalExtensionObjectProbeAllowed,
+                        candidate: candidate,
+                        runtimeLoadabilityReport: runtimeLoadabilityReport
+                    )
+            else {
+                return nil
+            }
+
+            guard decision.canCreateExtensionObjectNow else {
+                return ChromeMV3ExtensionObjectProbeDiagnostics.blocked(
+                    gateDecision: decision
+                )
+            }
+
+            if let cachedChromeMV3ExtensionObjectProbeOwner,
+               cachedChromeMV3ExtensionObjectProbeOwner
+                .diagnostics()
+                .resourceBaseURLPath == decision.input.resourceBaseURLPath
+            {
+                return await cachedChromeMV3ExtensionObjectProbeOwner
+                    .runProbeIfAllowed()
+            }
+
+            cachedChromeMV3ExtensionObjectProbeOwner?.tearDown()
+            let owner = ChromeMV3ExtensionObjectProbeOwner(
+                gateDecision: decision
+            )
+            cachedChromeMV3ExtensionObjectProbeOwner = owner
+            return await owner.runProbeIfAllowed()
+        }
+
+        @available(macOS 15.5, *)
+        @discardableResult
+        func tearDownChromeMV3ExtensionObjectProbeIfEnabled()
+            -> ChromeMV3ExtensionObjectProbeDiagnostics?
+        {
+            guard isEnabled else { return nil }
+            let diagnostics =
+                cachedChromeMV3ExtensionObjectProbeOwner?.tearDown()
+            cachedChromeMV3ExtensionObjectProbeOwner = nil
+            return diagnostics
         }
     #endif
 
@@ -608,6 +756,103 @@ final class SumiExtensionsModule {
         #endif
         cachedChromeMV3EmptyControllerOwner = nil
     }
+
+    #if DEBUG
+        @available(macOS 15.5, *)
+        private func tearDownChromeMV3ExtensionObjectProbeOwner() {
+            cachedChromeMV3ExtensionObjectProbeOwner?.tearDown()
+            cachedChromeMV3ExtensionObjectProbeOwner = nil
+        }
+
+        @available(macOS 15.5, *)
+        private func chromeMV3ExtensionObjectProbeGateInput(
+            profileHost: ChromeMV3ProfileHost,
+            explicitInternalExtensionObjectProbeAllowed: Bool,
+            candidate: ChromeMV3RewrittenVariantCandidate,
+            runtimeLoadabilityReport: ChromeMV3RuntimeLoadabilityReport?,
+            requestedContextCreation: Bool,
+            requestedContextLoading: Bool,
+            requestedControllerLoad: Bool,
+            requestedExtensionCodeExecution: Bool,
+            requestedUserScriptRegistration: Bool,
+            requestedNativeMessagingLaunch: Bool
+        ) -> ChromeMV3ExtensionObjectProbeGateInput {
+            let resourceBaseURL = URL(
+                fileURLWithPath: candidate.rewrittenVariantRootPath,
+                isDirectory: true
+            ).standardizedFileURL
+            let runtimeReportFileExists =
+                candidate.runtimeLoadabilityReportPath.map {
+                    FileManager.default.fileExists(atPath: $0)
+                }
+                ?? (runtimeLoadabilityReport != nil)
+
+            return ChromeMV3ExtensionObjectProbeGateInput(
+                extensionsModuleEnabled: true,
+                profileHostModuleState: profileHost.moduleState,
+                explicitInternalExtensionObjectProbeAllowed:
+                    explicitInternalExtensionObjectProbeAllowed,
+                resourceBaseURLPath: candidate.rewrittenVariantRootPath
+                    .isEmpty
+                    ? nil
+                    : resourceBaseURL.path,
+                generatedBundleID: candidate.id,
+                generatedBundleHash: candidate.rewrittenManifestSHA256
+                    ?? runtimeLoadabilityReport?.rewrittenManifestHash?.sha256,
+                generatedRewrittenBundleExists:
+                    candidate.rewrittenVariantExists
+                    && directoryExists(resourceBaseURL),
+                runtimeLoadabilityReportExists:
+                    runtimeLoadabilityReport != nil && runtimeReportFileExists,
+                runtimeLoadabilityReportID: runtimeLoadabilityReport?.id,
+                runtimeLoadabilityReportPath:
+                    candidate.runtimeLoadabilityReportPath,
+                runtimeLoadabilityReportSHA256:
+                    candidate.runtimeLoadabilityReportSHA256,
+                manifestVersion: candidate.manifestVersion
+                    ?? inferredManifestVersion(
+                        from: runtimeLoadabilityReport
+                    ),
+                runtimeLoadable: runtimeLoadabilityReport?.runtimeLoadable,
+                staticRuntimeBlockers:
+                    runtimeLoadabilityReport?.blockers ?? [],
+                requestedContextCreation: requestedContextCreation,
+                requestedContextLoading: requestedContextLoading,
+                requestedControllerLoad: requestedControllerLoad,
+                requestedExtensionCodeExecution:
+                    requestedExtensionCodeExecution,
+                requestedUserScriptRegistration:
+                    requestedUserScriptRegistration,
+                requestedNativeMessagingLaunch:
+                    requestedNativeMessagingLaunch,
+                staleAttachedWebViewCount:
+                    cachedChromeMV3EmptyControllerOwner?
+                    .liveNormalTabAttachmentDiagnostics()
+                    .staleOrNeedsRecreationCount
+                    ?? lastChromeMV3LiveNormalTabAttachmentSnapshot?
+                    .staleOrNeedsRecreationCount
+                    ?? 0
+            )
+        }
+
+        private func directoryExists(_ url: URL) -> Bool {
+            var isDirectory: ObjCBool = false
+            return FileManager.default.fileExists(
+                atPath: url.path,
+                isDirectory: &isDirectory
+            ) && isDirectory.boolValue
+        }
+
+        private func inferredManifestVersion(
+            from report: ChromeMV3RuntimeLoadabilityReport?
+        ) -> Int? {
+            guard let report else { return nil }
+            if report.passedChecks.contains(.manifestShape) {
+                return 3
+            }
+            return nil
+        }
+    #endif
 
     private func makeChromeMV3ProfileHost(
         candidateRewrittenVariants: [ChromeMV3RewrittenVariantCandidate]

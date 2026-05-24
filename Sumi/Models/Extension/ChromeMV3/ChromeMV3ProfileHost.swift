@@ -30,6 +30,8 @@ struct ChromeMV3RewrittenVariantCandidate: Codable, Equatable, Sendable {
     var generatedVariantRootPath: String?
     var rewrittenVariantRootPath: String
     var runtimeLoadabilityReportPath: String?
+    var rewrittenManifestSHA256: String? = nil
+    var runtimeLoadabilityReportSHA256: String? = nil
     var manifestVersion: Int?
     var rewrittenVariantExists: Bool
 }
@@ -78,6 +80,8 @@ struct ChromeMV3ProfileHostDiagnostics: Codable, Equatable, Sendable {
     var profileDataStoreIdentity: ChromeMV3ProfileDataStoreIdentity
     var controllerState: ChromeMV3ProfileHostControllerState
     var candidateInventory: ChromeMV3CandidateInventory?
+    var extensionObjectProbeDiagnostics:
+        ChromeMV3ExtensionObjectProbeDiagnostics?
     var preflightResults: [ChromeMV3RuntimePreflightResult]
     var webViewSurfaceMappings: [ChromeMV3WebViewSurfaceMappingDiagnostic]
     var disabledRuntimeInvariantStatus: ChromeMV3DisabledRuntimeInvariantStatus
@@ -222,6 +226,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
 
     func diagnostics(
         candidateInventory: ChromeMV3CandidateInventory? = nil,
+        extensionObjectProbeDiagnostics:
+            ChromeMV3ExtensionObjectProbeDiagnostics? = nil,
         surfaceMappings: [ChromeMV3WebViewSurfaceMapping] =
             ChromeMV3WebViewSurfaceInventory.currentSumiMappings
     ) -> ChromeMV3ProfileHostDiagnostics {
@@ -277,6 +283,7 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
             profileDataStoreIdentity: profileDataStoreIdentity,
             controllerState: controllerState,
             candidateInventory: candidateInventory,
+            extensionObjectProbeDiagnostics: extensionObjectProbeDiagnostics,
             preflightResults: preflightResults.sorted {
                 ($0.candidateID ?? "") < ($1.candidateID ?? "")
             },

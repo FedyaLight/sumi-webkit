@@ -83,6 +83,8 @@ struct ChromeMV3CandidateInventoryEntry: Codable, Equatable, Sendable {
             generatedVariantRootPath: generatedRootPath,
             rewrittenVariantRootPath: rewrittenRootPath,
             runtimeLoadabilityReportPath: artifacts.runtimeLoadabilityReportPath,
+            rewrittenManifestSHA256: manifestHash,
+            runtimeLoadabilityReportSHA256: reportHash,
             manifestVersion: manifestVersion,
             rewrittenVariantExists: true
         )
