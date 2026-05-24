@@ -302,6 +302,7 @@ final class ChromeMV3EmptyControllerOwnerTests: XCTestCase {
         XCTAssertEqual(
             assignmentFiles,
             [
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3NormalTabConfigurationAttachmentBridge.swift",
                 "Sumi/Models/Extension/ChromeMV3/ChromeMV3SyntheticConfigurationAttachmentHarness.swift",
             ]
         )
