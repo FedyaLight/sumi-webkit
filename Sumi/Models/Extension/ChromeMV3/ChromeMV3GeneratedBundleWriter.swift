@@ -82,6 +82,8 @@ struct ChromeMV3GeneratedBundleRecord: Codable, Equatable {
     var generatedManifestPath: String
     var generatedMetadataPath: String
     var runtimeResourcePlanPath: String
+    var manifestRewritePreviewPath: String
+    var manifestRewritePreviewSHA256: String
     var generatorVersion: String
     var originalBundleRecordID: String
     var originalBundleContentSHA256: String
@@ -111,6 +113,7 @@ struct ChromeMV3GeneratedBundleWriteResult: Equatable {
     var generatedBundleRootURL: URL
     var generatedManifestURL: URL
     var generatedMetadataURL: URL
+    var manifestRewritePreviewURL: URL
 }
 
 struct ChromeMV3GeneratedBundleWriter {
@@ -119,6 +122,7 @@ struct ChromeMV3GeneratedBundleWriter {
     static let temporaryGeneratedBundleDirectoryName = "generated.tmp"
     static let metadataFileName = "generated-bundle-metadata.json"
     static let runtimeResourcePlanFileName = "runtime-resource-plan.json"
+    static let manifestRewritePreviewFileName = "manifest-rewrite-preview.json"
 
     var rootURL: URL
 
@@ -172,11 +176,14 @@ struct ChromeMV3GeneratedBundleWriter {
             .appendingPathComponent(Self.metadataFileName)
         let runtimeResourcePlanURL = generatedBundleRootURL
             .appendingPathComponent(Self.runtimeResourcePlanFileName)
+        let manifestRewritePreviewURL = generatedBundleRootURL
+            .appendingPathComponent(Self.manifestRewritePreviewFileName)
 
         let manifestObject = try manifestJSONObject(
             from: manifestSnapshot.canonicalManifestJSON
         )
         let generatedManifestData = try canonicalJSONData(manifestObject)
+        let generatedManifestSHA256 = sha256Hex(generatedManifestData)
         let resources = try manifestReferencedResources(in: manifestObject)
 
         if fileManager.fileExists(atPath: temporaryBundleRootURL.path) {
@@ -206,21 +213,40 @@ struct ChromeMV3GeneratedBundleWriter {
             to: temporaryBundleRootURL
                 .appendingPathComponent(Self.runtimeResourcePlanFileName)
         )
+        let manifestRewritePreview = ChromeMV3ManifestRewritePreviewPlanner.preview(
+            originalManifestSHA256: manifestSnapshot.manifestSHA256,
+            generatedManifestSHA256BeforeRewrite: generatedManifestSHA256,
+            manifest: manifestSnapshot.normalizedManifest,
+            manifestJSONObject: manifestObject,
+            installReport: manifestSnapshot.installReport,
+            runtimeResourcePlan: runtimeResourcePlan
+        )
+        let manifestRewritePreviewData = try ChromeMV3DeterministicJSON
+            .encodedData(manifestRewritePreview)
+        try manifestRewritePreviewData.write(
+            to: temporaryBundleRootURL
+                .appendingPathComponent(Self.manifestRewritePreviewFileName),
+            options: [.atomic]
+        )
 
         let record = ChromeMV3GeneratedBundleRecord(
-            schemaVersion: 2,
+            schemaVersion: 3,
             id: "generated-\(originalBundleRecord.sourceMetadata.contentSHA256.prefix(32))",
             createdAt: planningRecord.createdAt,
             generatedBundleRootPath: generatedBundleRootURL.standardizedFileURL.path,
             generatedManifestPath: generatedManifestURL.standardizedFileURL.path,
             generatedMetadataPath: generatedMetadataURL.standardizedFileURL.path,
             runtimeResourcePlanPath: runtimeResourcePlanURL.standardizedFileURL.path,
+            manifestRewritePreviewPath: manifestRewritePreviewURL
+                .standardizedFileURL
+                .path,
+            manifestRewritePreviewSHA256: sha256Hex(manifestRewritePreviewData),
             generatorVersion: planningRecord.generatorVersion,
             originalBundleRecordID: originalBundleRecord.id,
             originalBundleContentSHA256: originalBundleRecord.sourceMetadata.contentSHA256,
             originalBundleRootPath: originalRootURL.path,
             manifestSHA256: manifestSnapshot.manifestSHA256,
-            generatedManifestSHA256: sha256Hex(generatedManifestData),
+            generatedManifestSHA256: generatedManifestSHA256,
             installReportSummary: ChromeMV3GeneratedBundleInstallReportSummary(
                 manifestSummary: manifestSnapshot.installReport.manifestSummary,
                 capabilitySummary: ChromeMV3CapabilityClassificationSummary(
@@ -276,7 +302,8 @@ struct ChromeMV3GeneratedBundleWriter {
             record: record,
             generatedBundleRootURL: generatedBundleRootURL,
             generatedManifestURL: generatedManifestURL,
-            generatedMetadataURL: generatedMetadataURL
+            generatedMetadataURL: generatedMetadataURL,
+            manifestRewritePreviewURL: manifestRewritePreviewURL
         )
     }
 
