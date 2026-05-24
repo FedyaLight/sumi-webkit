@@ -384,11 +384,22 @@ final class ChromeMV3ControllerStorageTeardownAttachmentTests: XCTestCase {
         )
 
         let source = sourceFiles.map(\.contents).joined(separator: "\n")
+        let assignmentFiles = sourceFiles
+            .filter { $0.contents.contains("webExtensionController" + " =") }
+            .map(\.relativePath)
+            .sorted()
+
+        XCTAssertEqual(
+            assignmentFiles,
+            [
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3SyntheticConfigurationAttachmentHarness.swift",
+            ]
+        )
+
         for forbidden in [
             "WKWebExtension" + "(",
             "WKWebExtension" + "Context(",
             "load" + "ExtensionContext",
-            "webExtensionController" + " =",
             "add" + "UserScript",
             "connect" + "Native",
             "DispatchSource" + "Ti" + "mer",
