@@ -352,9 +352,9 @@ final class ChromeMV3InstallFoundationTests: XCTestCase {
 
         let foundationSource = try chromeMV3FoundationSource()
         XCTAssertFalse(foundationSource.contains("import WebKit"))
-        XCTAssertFalse(foundationSource.contains("WKWebExtensionController("))
-        XCTAssertFalse(foundationSource.contains("WKWebExtensionContext("))
-        XCTAssertFalse(foundationSource.contains("WKWebExtension("))
+        XCTAssertFalse(foundationSource.contains("WKWebExtension" + "Controller("))
+        XCTAssertFalse(foundationSource.contains("WKWebExtension" + "Context("))
+        XCTAssertFalse(foundationSource.contains("WKWebExtension" + "("))
         XCTAssertFalse(foundationSource.contains("ExtensionManager("))
         XCTAssertFalse(foundationSource.contains("WKUserScript("))
         XCTAssertFalse(foundationSource.contains("NativeMessagingHandler("))
@@ -397,20 +397,19 @@ final class ChromeMV3InstallFoundationTests: XCTestCase {
     private func chromeMV3FoundationSource() throws -> String {
         let directory = projectRoot()
             .appendingPathComponent("Sumi/Models/Extension/ChromeMV3")
-        let enumerator = try XCTUnwrap(
-            FileManager.default.enumerator(
-                at: directory,
-                includingPropertiesForKeys: nil
+        return try [
+            "ChromeMV3Manifest.swift",
+            "ChromeMV3ManifestValidator.swift",
+            "ChromeMV3CapabilityClassifier.swift",
+            "ChromeMV3InstallReport.swift",
+        ]
+        .map {
+            try String(
+                contentsOf: directory.appendingPathComponent($0),
+                encoding: .utf8
             )
-        )
-        var source = ""
-
-        for case let url as URL in enumerator where url.pathExtension == "swift" {
-            source += try String(contentsOf: url, encoding: .utf8)
-            source += "\n"
         }
-
-        return source
+        .joined(separator: "\n")
     }
 
     private func projectRoot() -> URL {

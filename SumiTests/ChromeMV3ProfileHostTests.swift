@@ -30,14 +30,25 @@ final class ChromeMV3ProfileHostTests: XCTestCase {
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
         let probe = ChromeMV3HostExtensionsRuntimeProbe()
-        let module = try makeExtensionsModule(registry: registry, probe: probe)
+        let controllerProbe = ChromeMV3HostControllerOwnerProbe()
+        let module = try makeExtensionsModule(
+            registry: registry,
+            probe: probe,
+            controllerProbe: controllerProbe
+        )
 
         let host = module.chromeMV3ProfileHostIfEnabled(
             candidateRewrittenVariants: [makeCandidate()]
         )
+        let owner = module.createChromeMV3EmptyControllerOwnerIfEnabled(
+            explicitControllerCreationAllowed: true,
+            candidateRewrittenVariants: [makeCandidate()]
+        )
 
         XCTAssertNil(host)
+        XCTAssertNil(owner)
         XCTAssertEqual(probe.managerCount, 0)
+        XCTAssertEqual(controllerProbe.ownerFactoryCount, 0)
         XCTAssertFalse(module.hasLoadedRuntime)
     }
 
@@ -397,7 +408,8 @@ final class ChromeMV3ProfileHostTests: XCTestCase {
     @MainActor
     private func makeExtensionsModule(
         registry: SumiModuleRegistry,
-        probe: ChromeMV3HostExtensionsRuntimeProbe
+        probe: ChromeMV3HostExtensionsRuntimeProbe,
+        controllerProbe: ChromeMV3HostControllerOwnerProbe? = nil
     ) throws -> SumiExtensionsModule {
         let container = try ModelContainer(
             for: Schema([ExtensionEntity.self]),
@@ -415,6 +427,14 @@ final class ChromeMV3ProfileHostTests: XCTestCase {
                     context: context,
                     initialProfile: initialProfile,
                     browserConfiguration: browserConfiguration
+                )
+            },
+            chromeMV3EmptyControllerOwnerFactory: { decision, dataStore, identifier in
+                controllerProbe?.ownerFactoryCount += 1
+                return ChromeMV3EmptyControllerFactory.makeOwner(
+                    gateDecision: decision,
+                    defaultWebsiteDataStore: dataStore,
+                    controllerIdentifier: identifier
                 )
             }
         )
@@ -434,4 +454,8 @@ final class ChromeMV3ProfileHostTests: XCTestCase {
 
 private final class ChromeMV3HostExtensionsRuntimeProbe {
     var managerCount = 0
+}
+
+private final class ChromeMV3HostControllerOwnerProbe {
+    var ownerFactoryCount = 0
 }
