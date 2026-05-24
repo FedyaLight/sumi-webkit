@@ -530,6 +530,9 @@ struct ChromeMV3GeneratedRewriteVariantWriter {
         }
         try fileManager.moveItem(at: temporaryVariantRootURL, to: variantRootURL)
 
+        try ChromeMV3RuntimeLoadabilityVerifier()
+            .writeReport(forRewrittenVariantAt: variantRootURL)
+
         let reportURL = variantRootURL
             .appendingPathComponent(Self.applicationReportFileName)
         let report = try decodeApplicationReport(at: reportURL)
