@@ -240,6 +240,9 @@ final class ChromeMV3NormalTabConfigurationAttachmentTests: XCTestCase {
         XCTAssertEqual(fixture.probe.profileProviderCount, 0)
         XCTAssertEqual(fixture.probe.ownerFactoryCount, 0)
         XCTAssertEqual(fixture.probe.managerCount, 0)
+        XCTAssertNil(
+            fixture.module.chromeMV3LiveNormalTabAttachmentDiagnosticsSnapshot()
+        )
         XCTAssertFalse(fixture.module.hasLoadedRuntime)
     }
 
@@ -318,6 +321,156 @@ final class ChromeMV3NormalTabConfigurationAttachmentTests: XCTestCase {
     }
 
     @MainActor
+    func testLiveNormalTabAttachmentRecorderCapturesDecisionMetadata()
+        throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Chrome MV3 WebKit attachment APIs require macOS 15.5.")
+        }
+
+        let fixture = try makeLiveTabFixture(extensionsEnabled: true)
+        defer { fixture.tearDown() }
+        fixture.module.chromeMV3InternalNormalTabConfigurationAttachmentAllowed = true
+        let owner = try XCTUnwrap(
+            fixture.module.createChromeMV3EmptyControllerOwnerIfEnabled(
+                explicitControllerCreationAllowed: true
+            )
+        )
+        let controllerIdentity = try XCTUnwrap(
+            owner.diagnostics().dataStoreIdentityPolicy
+                .controllerConfigurationIdentityString
+        )
+        let windowID = UUID()
+        let tab = fixture.makeTab()
+        tab.primaryWindowId = windowID
+
+        let webView = try XCTUnwrap(
+            tab.makeNormalTabWebView(reason: "test.recorder.live")
+        )
+        let snapshot = try XCTUnwrap(
+            fixture.module.chromeMV3LiveNormalTabAttachmentDiagnosticsSnapshot()
+        )
+        let record = try XCTUnwrap(snapshot.recentDecisions.last)
+
+        XCTAssertNotNil(webView.configuration.webExtensionController)
+        XCTAssertEqual(snapshot.recentDecisions.count, 1)
+        XCTAssertEqual(snapshot.attachedConfigurationCount, 1)
+        XCTAssertEqual(snapshot.createdAttachedWebViewCount, 1)
+        XCTAssertEqual(snapshot.staleOrNeedsRecreationCount, 0)
+        XCTAssertEqual(snapshot.attachedTabDiagnosticIdentifiers, [
+            tab.id.uuidString,
+        ])
+        XCTAssertFalse(snapshot.accidentallyAttachedAuxiliarySurface)
+        XCTAssertFalse(snapshot.runtimeLoadable)
+        XCTAssertFalse(snapshot.canLoadContextNow)
+        XCTAssertEqual(snapshot.contextCount, 0)
+        XCTAssertFalse(snapshot.contextLoadCalled)
+        XCTAssertFalse(snapshot.webExtensionCreated)
+        XCTAssertFalse(snapshot.webExtensionContextCreated)
+        XCTAssertFalse(snapshot.generatedExtensionBundleLoaded)
+        XCTAssertFalse(snapshot.nativeMessagingLaunched)
+
+        XCTAssertEqual(record.sequenceNumber, 1)
+        XCTAssertEqual(record.tabIdentifier, tab.id.uuidString)
+        XCTAssertEqual(record.tabDiagnosticIdentifier, tab.id.uuidString)
+        XCTAssertEqual(record.windowIdentifier, windowID.uuidString)
+        XCTAssertEqual(record.profileIdentifier, fixture.profile.id.uuidString)
+        XCTAssertEqual(record.creationReason, "test.recorder.live")
+        XCTAssertEqual(record.surface, .normalTab)
+        XCTAssertTrue(record.extensionsModuleEnabled)
+        XCTAssertTrue(record.profileHostEnabled)
+        XCTAssertEqual(record.emptyControllerState, .createdEmpty)
+        XCTAssertTrue(record.emptyControllerOwnerPresent)
+        XCTAssertTrue(record.emptyControllerExists)
+        XCTAssertTrue(record.explicitInternalNormalTabAttachmentAllowed)
+        XCTAssertTrue(record.gateDecision.canAttachNormalTabConfigurationNow)
+        XCTAssertTrue(record.normalTabConfigurationAttached)
+        XCTAssertFalse(record.auxiliaryConfigurationAttached)
+        XCTAssertTrue(record.attachedControllerMatchesOwner)
+        XCTAssertEqual(record.attachedControllerIdentity, controllerIdentity)
+        XCTAssertEqual(record.lifecycleState, .attached)
+        XCTAssertFalse(record.recreationPlan.recreationRequired)
+        XCTAssertFalse(record.runtimeLoadable)
+        XCTAssertFalse(record.canLoadContextNow)
+        XCTAssertEqual(record.contextCount, 0)
+        XCTAssertFalse(record.contextLoadCalled)
+        XCTAssertFalse(record.webExtensionCreated)
+        XCTAssertFalse(record.webExtensionContextCreated)
+        XCTAssertFalse(record.generatedExtensionBundleLoaded)
+        XCTAssertFalse(record.nativeMessagingLaunched)
+        XCTAssertEqual(record.nativeMessagingPortCount, 0)
+    }
+
+    @MainActor
+    func testGateOffMarksExistingAttachedWebViewStaleAndFutureTabsUnattached()
+        throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Chrome MV3 WebKit attachment APIs require macOS 15.5.")
+        }
+
+        let fixture = try makeLiveTabFixture(extensionsEnabled: true)
+        defer { fixture.tearDown() }
+        fixture.module.chromeMV3InternalNormalTabConfigurationAttachmentAllowed = true
+        _ = try XCTUnwrap(
+            fixture.module.createChromeMV3EmptyControllerOwnerIfEnabled(
+                explicitControllerCreationAllowed: true
+            )
+        )
+        let attachedTab = fixture.makeTab(url: URL(string: "https://one.example")!)
+        let attachedWebView = try XCTUnwrap(
+            attachedTab.makeNormalTabWebView(reason: "test.gateOff.before")
+        )
+
+        XCTAssertNotNil(attachedWebView.configuration.webExtensionController)
+
+        fixture.module.chromeMV3InternalNormalTabConfigurationAttachmentAllowed = false
+        let staleSnapshot = try XCTUnwrap(
+            fixture.module.chromeMV3LiveNormalTabAttachmentDiagnosticsSnapshot()
+        )
+        let staleRecord = try XCTUnwrap(staleSnapshot.recentDecisions.first)
+
+        XCTAssertNotNil(
+            attachedWebView.configuration.webExtensionController,
+            "Existing WKWebViews are not claimed detached when the gate turns off."
+        )
+        XCTAssertEqual(staleSnapshot.createdAttachedWebViewCount, 0)
+        XCTAssertEqual(staleSnapshot.staleOrNeedsRecreationCount, 1)
+        XCTAssertEqual(
+            staleSnapshot.staleOrNeedsRecreationTabDiagnosticIdentifiers,
+            [attachedTab.id.uuidString]
+        )
+        XCTAssertEqual(staleRecord.lifecycleState, .staleNeedsRecreation)
+        XCTAssertTrue(staleRecord.recreationPlan.recreationRequired)
+        XCTAssertEqual(
+            staleRecord.teardownTrigger,
+            .normalTabAttachmentGateOff
+        )
+
+        let laterTab = fixture.makeTab(url: URL(string: "https://two.example")!)
+        let laterWebView = try XCTUnwrap(
+            laterTab.makeNormalTabWebView(reason: "test.gateOff.after")
+        )
+        let finalSnapshot = try XCTUnwrap(
+            fixture.module.chromeMV3LiveNormalTabAttachmentDiagnosticsSnapshot()
+        )
+        let laterRecord = try XCTUnwrap(finalSnapshot.recentDecisions.last)
+
+        XCTAssertNil(laterWebView.configuration.webExtensionController)
+        XCTAssertFalse(
+            laterWebView.configuration.sumiHasChromeMV3NormalTabConfigurationAttachment
+        )
+        XCTAssertEqual(finalSnapshot.recentDecisions.count, 2)
+        XCTAssertFalse(laterRecord.normalTabConfigurationAttached)
+        XCTAssertEqual(laterRecord.lifecycleState, .unaffected)
+        XCTAssertTrue(
+            laterRecord.gateDecision.blockers.contains(
+                .explicitInternalNormalTabAttachmentNotAllowed
+            )
+        )
+    }
+
+    @MainActor
     func testLivePinnedEssentialsTabFollowsNormalTabAttachmentGate()
         throws
     {
@@ -342,6 +495,11 @@ final class ChromeMV3NormalTabConfigurationAttachmentTests: XCTestCase {
             launchURL: URL(string: "https://pinned.example")!,
             title: "Pinned"
         )
+        let originalPinId = pin.id
+        let originalPinRole = pin.role
+        let originalPinIndex = pin.index
+        let originalLaunchURL = pin.launchURL
+        let originalTitle = pin.title
 
         let tab = fixture.makeTab(url: pin.launchURL)
         tab.bindToShortcutPin(pin)
@@ -363,6 +521,18 @@ final class ChromeMV3NormalTabConfigurationAttachmentTests: XCTestCase {
         XCTAssertEqual(owner.diagnostics().contextCount, 0)
         XCTAssertFalse(owner.diagnostics().runtimeLoadable)
         XCTAssertFalse(owner.diagnostics().canLoadContextNow)
+
+        fixture.module.chromeMV3InternalNormalTabConfigurationAttachmentAllowed = false
+        let snapshot = try XCTUnwrap(
+            fixture.module.chromeMV3LiveNormalTabAttachmentDiagnosticsSnapshot()
+        )
+
+        XCTAssertEqual(snapshot.staleOrNeedsRecreationCount, 1)
+        XCTAssertEqual(pin.id, originalPinId)
+        XCTAssertEqual(pin.role, originalPinRole)
+        XCTAssertEqual(pin.index, originalPinIndex)
+        XCTAssertEqual(pin.launchURL, originalLaunchURL)
+        XCTAssertEqual(pin.title, originalTitle)
     }
 
     @MainActor
@@ -427,18 +597,44 @@ final class ChromeMV3NormalTabConfigurationAttachmentTests: XCTestCase {
         )
         XCTAssertNotNil(attachedWebView.configuration.webExtensionController)
 
-        _ = fixture.module.tearDownChromeMV3EmptyControllerOwnerIfEnabled(
-            trigger: .explicitReset
+        let teardown = try XCTUnwrap(
+            fixture.module.tearDownChromeMV3EmptyControllerOwnerIfEnabled(
+                trigger: .explicitReset
+            )
+        )
+        let teardownPolicy = try XCTUnwrap(teardown.teardownPolicy)
+        let staleSnapshot = try XCTUnwrap(
+            fixture.module.chromeMV3LiveNormalTabAttachmentDiagnosticsSnapshot()
         )
         let laterTab = fixture.makeTab(url: URL(string: "https://two.example")!)
         let laterWebView = try XCTUnwrap(
             laterTab.makeNormalTabWebView(reason: "test.teardown.after")
         )
 
+        XCTAssertNotNil(
+            attachedWebView.configuration.webExtensionController,
+            "Teardown does not prove an already-created WKWebView detached."
+        )
         XCTAssertNil(laterWebView.configuration.webExtensionController)
         XCTAssertFalse(
             laterWebView.configuration.sumiHasChromeMV3NormalTabConfigurationAttachment
         )
+        XCTAssertEqual(staleSnapshot.staleOrNeedsRecreationCount, 1)
+        XCTAssertEqual(
+            staleSnapshot.staleOrNeedsRecreationTabDiagnosticIdentifiers,
+            [attachedTab.id.uuidString]
+        )
+        XCTAssertTrue(
+            teardownPolicy.futureConfigurationsBecomeUnattachedImmediately
+        )
+        XCTAssertTrue(teardownPolicy.marksExistingDebugAttachedWebViewsStale)
+        XCTAssertFalse(teardownPolicy.claimsExistingWebViewsDetached)
+        XCTAssertTrue(
+            teardownPolicy
+                .requiresWebViewRecreationForExistingDebugAttachedInstances
+        )
+        XCTAssertFalse(teardownPolicy.shouldDeleteGeneratedArtifacts)
+        XCTAssertFalse(teardownPolicy.shouldClearWebsiteData)
         XCTAssertEqual(fixture.probe.managerCount, 0)
         XCTAssertFalse(fixture.module.hasLoadedRuntime)
     }
@@ -601,6 +797,12 @@ final class ChromeMV3NormalTabConfigurationAttachmentTests: XCTestCase {
             XCTAssertEqual(diagnostics.contextCount, 0, surface.rawValue)
             XCTAssertEqual(diagnostics.loadedExtensionCount, 0, surface.rawValue)
         }
+
+        let snapshot = try XCTUnwrap(
+            fixture.module.chromeMV3LiveNormalTabAttachmentDiagnosticsSnapshot()
+        )
+        XCTAssertFalse(snapshot.accidentallyAttachedAuxiliarySurface)
+        XCTAssertTrue(snapshot.auxiliaryAttachmentSequenceNumbers.isEmpty)
     }
 
     @MainActor
@@ -632,6 +834,9 @@ final class ChromeMV3NormalTabConfigurationAttachmentTests: XCTestCase {
                 from: attachedNormal.configuration,
                 surface: .extensionOptions
             )
+        let snapshot = try XCTUnwrap(
+            fixture.module.chromeMV3LiveNormalTabAttachmentDiagnosticsSnapshot()
+        )
 
         XCTAssertNotNil(attachedNormal.configuration.webExtensionController)
         XCTAssertTrue(
@@ -643,10 +848,13 @@ final class ChromeMV3NormalTabConfigurationAttachmentTests: XCTestCase {
             optionsConfiguration.sumiHasChromeMV3NormalTabConfigurationAttachment
         )
         XCTAssertFalse(optionsConfiguration.sumiIsNormalTabWebViewConfiguration)
+        XCTAssertEqual(snapshot.recentDecisions.count, 1)
+        XCTAssertEqual(snapshot.attachedConfigurationCount, 1)
+        XCTAssertFalse(snapshot.accidentallyAttachedAuxiliarySurface)
     }
 
     @MainActor
-    func testTeardownDetachesTrackedNormalTabConfigurationAndFutureDiagnosticsBlock()
+    func testTeardownResetsTrackedNormalTabConfigurationAndFutureDiagnosticsBlock()
         throws
     {
         let fixture = try makeModuleFixture(extensionsEnabled: true)

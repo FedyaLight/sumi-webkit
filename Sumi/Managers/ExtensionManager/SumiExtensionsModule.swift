@@ -29,7 +29,19 @@ final class SumiExtensionsModule {
         ChromeMV3EmptyControllerOwner?
     weak var browserManager: BrowserManager?
     #if DEBUG
-        var chromeMV3InternalNormalTabConfigurationAttachmentAllowed = false
+        private var lastChromeMV3LiveNormalTabAttachmentSnapshot:
+            ChromeMV3LiveNormalTabAttachmentRecorderSnapshot?
+        var chromeMV3InternalNormalTabConfigurationAttachmentAllowed = false {
+            didSet {
+                guard oldValue,
+                      chromeMV3InternalNormalTabConfigurationAttachmentAllowed == false
+                else { return }
+                cachedChromeMV3EmptyControllerOwner?
+                    .markNormalTabAttachmentGateClosed(
+                        trigger: .normalTabAttachmentGateOff
+                    )
+            }
+        }
     #endif
 
     init(
@@ -287,6 +299,9 @@ final class SumiExtensionsModule {
             requestedContextLoading: Bool = false,
             canLoadContextNow: Bool = false,
             runtimeLoadable: Bool = false,
+            attemptMetadata:
+                ChromeMV3NormalTabConfigurationAttachmentAttemptMetadata =
+                    ChromeMV3NormalTabConfigurationAttachmentAttemptMetadata(),
             candidateRewrittenVariants: [ChromeMV3RewrittenVariantCandidate] = []
         ) -> ChromeMV3NormalTabConfigurationAttachmentRequest? {
             guard isEnabled else { return nil }
@@ -303,19 +318,45 @@ final class SumiExtensionsModule {
                 surface: surface,
                 requestedContextLoading: requestedContextLoading,
                 canLoadContextNow: canLoadContextNow,
-                runtimeLoadable: runtimeLoadable
+                runtimeLoadable: runtimeLoadable,
+                attemptMetadata: attemptMetadata
             )
         }
 
         @available(macOS 15.5, *)
         func chromeMV3NormalTabConfigurationAttachmentRequestForLiveNormalTabIfEnabled(
-            surface: ChromeMV3WebViewSurface
+            surface: ChromeMV3WebViewSurface,
+            attemptMetadata:
+                ChromeMV3NormalTabConfigurationAttachmentAttemptMetadata
         ) -> ChromeMV3NormalTabConfigurationAttachmentRequest? {
             chromeMV3NormalTabConfigurationAttachmentRequestIfEnabled(
                 explicitInternalNormalTabAttachmentAllowed:
                     chromeMV3InternalNormalTabConfigurationAttachmentAllowed,
-                surface: surface
+                surface: surface,
+                attemptMetadata: attemptMetadata
             )
+        }
+
+        @available(macOS 15.5, *)
+        func markChromeMV3LiveNormalTabWebViewCreatedIfTracked(
+            configuration: WKWebViewConfiguration,
+            reason: String
+        ) {
+            cachedChromeMV3EmptyControllerOwner?
+                .markNormalTabWebViewCreated(configuration: configuration)
+            lastChromeMV3LiveNormalTabAttachmentSnapshot =
+                cachedChromeMV3EmptyControllerOwner?
+                .liveNormalTabAttachmentDiagnostics()
+                ?? lastChromeMV3LiveNormalTabAttachmentSnapshot
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3LiveNormalTabAttachmentDiagnosticsSnapshot()
+            -> ChromeMV3LiveNormalTabAttachmentRecorderSnapshot?
+        {
+            cachedChromeMV3EmptyControllerOwner?
+                .liveNormalTabAttachmentDiagnostics()
+                ?? lastChromeMV3LiveNormalTabAttachmentSnapshot
         }
     #endif
 
@@ -340,6 +381,12 @@ final class SumiExtensionsModule {
         let diagnostics = cachedChromeMV3EmptyControllerOwner.tearDown(
             trigger: trigger
         )
+        #if DEBUG
+            if #available(macOS 15.5, *) {
+                lastChromeMV3LiveNormalTabAttachmentSnapshot =
+                    diagnostics.liveNormalTabAttachmentSnapshot
+            }
+        #endif
         self.cachedChromeMV3EmptyControllerOwner = nil
         return diagnostics
     }
@@ -551,7 +598,14 @@ final class SumiExtensionsModule {
     }
 
     private func tearDownChromeMV3EmptyControllerOwner() {
-        cachedChromeMV3EmptyControllerOwner?.tearDown(trigger: .moduleDisable)
+        let diagnostics = cachedChromeMV3EmptyControllerOwner?
+            .tearDown(trigger: .moduleDisable)
+        #if DEBUG
+            if #available(macOS 15.5, *) {
+                lastChromeMV3LiveNormalTabAttachmentSnapshot =
+                    diagnostics?.liveNormalTabAttachmentSnapshot
+            }
+        #endif
         cachedChromeMV3EmptyControllerOwner = nil
     }
 

@@ -40,6 +40,8 @@ struct ChromeMV3EmptyControllerDiagnostics: Codable, Equatable, Sendable {
     var canAttachToNormalTabsNow: Bool
     var runtimeLoadable: Bool
     var blockingReasons: [String]
+    var liveNormalTabAttachmentSnapshot:
+        ChromeMV3LiveNormalTabAttachmentRecorderSnapshot
 
     static func notCreated(
         gateDecision: ChromeMV3ControllerCreationGateDecision
@@ -71,7 +73,8 @@ struct ChromeMV3EmptyControllerDiagnostics: Codable, Equatable, Sendable {
             canLoadContextNow: false,
             canAttachToNormalTabsNow: false,
             runtimeLoadable: false,
-            blockingReasons: gateDecision.blockingReasons
+            blockingReasons: gateDecision.blockingReasons,
+            liveNormalTabAttachmentSnapshot: .empty
         )
     }
 }
@@ -84,6 +87,8 @@ final class ChromeMV3EmptyControllerOwner {
     private var controllerStorage: WKWebExtensionController?
     private var normalTabConfigurationAttachmentRecords:
         [ChromeMV3NormalTabConfigurationAttachmentRecord] = []
+    private var liveNormalTabAttachmentRecorder =
+        ChromeMV3LiveNormalTabAttachmentRecorder()
     private var lastTeardownPolicy: ChromeMV3EmptyControllerTeardownPolicy?
     private(set) var state: ChromeMV3EmptyControllerOwnerState = .notCreated
 
@@ -133,8 +138,9 @@ final class ChromeMV3EmptyControllerOwner {
                 trigger: trigger,
                 controllerCreated: controllerStorage != nil
             )
+        liveNormalTabAttachmentRecorder.markGateClosed(trigger: trigger)
         ChromeMV3NormalTabConfigurationAttachmentBridge
-            .detachTrackedConfigurations(
+            .resetTrackedConfigurationsForFutureUse(
                 records: &normalTabConfigurationAttachmentRecords,
                 controller: controllerStorage
             )
@@ -145,13 +151,47 @@ final class ChromeMV3EmptyControllerOwner {
     }
 
     @MainActor
-    func recordNormalTabConfigurationAttachment(
-        _ configuration: WKWebViewConfiguration
+    func recordNormalTabConfigurationAttachmentDecision(
+        _ configuration: WKWebViewConfiguration,
+        diagnostics: ChromeMV3NormalTabConfigurationAttachmentDiagnostics
     ) {
-        ChromeMV3NormalTabConfigurationAttachmentBridge.record(
-            configuration: configuration,
-            records: &normalTabConfigurationAttachmentRecords
+        let sequenceNumber = liveNormalTabAttachmentRecorder.recordDecision(
+            diagnostics: diagnostics,
+            emptyControllerState: state
         )
+        if diagnostics.normalTabConfigurationAttached {
+            ChromeMV3NormalTabConfigurationAttachmentBridge.record(
+                configuration: configuration,
+                sequenceNumber: sequenceNumber,
+                records: &normalTabConfigurationAttachmentRecords
+            )
+        }
+    }
+
+    @MainActor
+    func markNormalTabWebViewCreated(
+        configuration: WKWebViewConfiguration
+    ) {
+        ChromeMV3NormalTabConfigurationAttachmentBridge
+            .markTrackedWebViewCreated(
+                configuration: configuration,
+                records: &normalTabConfigurationAttachmentRecords,
+                recorder: &liveNormalTabAttachmentRecorder
+            )
+    }
+
+    @MainActor
+    func markNormalTabAttachmentGateClosed(
+        trigger: ChromeMV3EmptyControllerTeardownTrigger
+    ) {
+        liveNormalTabAttachmentRecorder.markGateClosed(trigger: trigger)
+    }
+
+    @MainActor
+    func liveNormalTabAttachmentDiagnostics()
+        -> ChromeMV3LiveNormalTabAttachmentRecorderSnapshot
+    {
+        liveNormalTabAttachmentRecorder.snapshot()
     }
 
     @MainActor
@@ -181,7 +221,9 @@ final class ChromeMV3EmptyControllerOwner {
                 canLoadContextNow: false,
                 canAttachToNormalTabsNow: false,
                 runtimeLoadable: false,
-                blockingReasons: gateDecision.blockingReasons
+                blockingReasons: gateDecision.blockingReasons,
+                liveNormalTabAttachmentSnapshot:
+                    liveNormalTabAttachmentRecorder.snapshot()
             )
         }
 
@@ -214,7 +256,9 @@ final class ChromeMV3EmptyControllerOwner {
             canLoadContextNow: false,
             canAttachToNormalTabsNow: false,
             runtimeLoadable: false,
-            blockingReasons: gateDecision.blockingReasons
+            blockingReasons: gateDecision.blockingReasons,
+            liveNormalTabAttachmentSnapshot:
+                liveNormalTabAttachmentRecorder.snapshot()
         )
     }
 
