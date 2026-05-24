@@ -219,6 +219,88 @@ final class SumiExtensionsModule {
         )
     }
 
+    func chromeMV3ControllerDataStoreIdentityDiagnosticsIfEnabled(
+        explicitControllerCreationAllowed: Bool,
+        candidateRewrittenVariants: [ChromeMV3RewrittenVariantCandidate] = []
+    ) -> ChromeMV3ControllerDataStoreIdentityDiagnostics? {
+        guard isEnabled else { return nil }
+
+        if let cachedChromeMV3EmptyControllerOwner {
+            return cachedChromeMV3EmptyControllerOwner.diagnostics()
+                .dataStoreIdentityPolicy
+        }
+
+        guard let decision = chromeMV3ControllerCreationGateDecisionIfEnabled(
+            explicitControllerCreationAllowed: explicitControllerCreationAllowed,
+            candidateRewrittenVariants: candidateRewrittenVariants
+        ) else {
+            return nil
+        }
+
+        return ChromeMV3ControllerDataStoreIdentityPolicy.evaluate(
+            profileIdentifier: decision.input.profileIdentifier,
+            dataStoreIdentity: decision.input.profileDataStoreIdentity,
+            controllerCreated: false
+        )
+    }
+
+    func chromeMV3ControllerAttachmentPreflightIfEnabled(
+        surface: ChromeMV3WebViewSurface,
+        runtimePreflight: ChromeMV3RuntimePreflightResult? = nil,
+        explicitControllerCreationAllowed: Bool = false,
+        candidateRewrittenVariants: [ChromeMV3RewrittenVariantCandidate] = []
+    ) -> ChromeMV3ControllerAttachmentPreflight? {
+        guard isEnabled else { return nil }
+
+        let profileHost = makeChromeMV3ProfileHost(
+            candidateRewrittenVariants: candidateRewrittenVariants
+        ).host
+        let eligibility = ChromeMV3WebViewEligibilityPolicy.evaluate(
+            surface: surface,
+            extensionModuleEnabled: profileHost.isActive,
+            profileHostActive: profileHost.isActive
+        )
+        let controllerDiagnostics =
+            chromeMV3EmptyControllerDiagnosticsIfEnabled(
+                explicitControllerCreationAllowed:
+                    explicitControllerCreationAllowed,
+                candidateRewrittenVariants: candidateRewrittenVariants
+            )
+
+        return ChromeMV3ControllerAttachmentPreflightEvaluator.evaluate(
+            surface: surface,
+            eligibility: eligibility,
+            controllerDiagnostics: controllerDiagnostics,
+            runtimePreflight: runtimePreflight,
+            moduleState: profileHost.moduleState
+        )
+    }
+
+    @discardableResult
+    func tearDownChromeMV3EmptyControllerOwnerIfEnabled(
+        trigger: ChromeMV3EmptyControllerTeardownTrigger
+    ) -> ChromeMV3EmptyControllerDiagnostics? {
+        guard isEnabled else { return nil }
+        guard let cachedChromeMV3EmptyControllerOwner else {
+            guard let decision =
+                chromeMV3ControllerCreationGateDecisionIfEnabled(
+                    explicitControllerCreationAllowed: false
+                )
+            else {
+                return nil
+            }
+            return ChromeMV3EmptyControllerDiagnostics.notCreated(
+                gateDecision: decision
+            )
+        }
+
+        let diagnostics = cachedChromeMV3EmptyControllerOwner.tearDown(
+            trigger: trigger
+        )
+        self.cachedChromeMV3EmptyControllerOwner = nil
+        return diagnostics
+    }
+
     func normalTabUserScripts() -> [SumiUserScript] {
         managerIfNeededForNormalTabRuntime()?.normalTabUserScripts() ?? []
     }
@@ -426,7 +508,7 @@ final class SumiExtensionsModule {
     }
 
     private func tearDownChromeMV3EmptyControllerOwner() {
-        cachedChromeMV3EmptyControllerOwner?.tearDown()
+        cachedChromeMV3EmptyControllerOwner?.tearDown(trigger: .moduleDisable)
         cachedChromeMV3EmptyControllerOwner = nil
     }
 

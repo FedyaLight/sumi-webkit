@@ -19,13 +19,18 @@ enum ChromeMV3EmptyControllerOwnerState: String, Codable, Sendable {
 struct ChromeMV3EmptyControllerDiagnostics: Codable, Equatable, Sendable {
     var profileIdentifier: String
     var profileDataStoreIdentity: ChromeMV3ProfileDataStoreIdentity
+    var dataStoreIdentityPolicy:
+        ChromeMV3ControllerDataStoreIdentityDiagnostics
     var controllerState: ChromeMV3EmptyControllerOwnerState
     var controllerCreated: Bool
     var gateDecision: ChromeMV3ControllerCreationGateDecision
+    var teardownPolicy: ChromeMV3EmptyControllerTeardownPolicy?
     var contextCount: Int
     var loadedExtensionCount: Int
     var attachedWebViewCount: Int
     var nativeMessagingPortCount: Int
+    var pendingContextLoads: Int
+    var pendingAttachments: Int
     var configurationWebViewHasControllerAttachment: Bool
     var configurationWebViewUserScriptCount: Int
     var registersUserScriptsNow: Bool
@@ -42,13 +47,22 @@ struct ChromeMV3EmptyControllerDiagnostics: Codable, Equatable, Sendable {
         ChromeMV3EmptyControllerDiagnostics(
             profileIdentifier: gateDecision.input.profileIdentifier,
             profileDataStoreIdentity: gateDecision.input.profileDataStoreIdentity,
+            dataStoreIdentityPolicy:
+                ChromeMV3ControllerDataStoreIdentityPolicy.evaluate(
+                    profileIdentifier: gateDecision.input.profileIdentifier,
+                    dataStoreIdentity: gateDecision.input.profileDataStoreIdentity,
+                    controllerCreated: false
+                ),
             controllerState: .notCreated,
             controllerCreated: false,
             gateDecision: gateDecision,
+            teardownPolicy: nil,
             contextCount: 0,
             loadedExtensionCount: 0,
             attachedWebViewCount: 0,
             nativeMessagingPortCount: 0,
+            pendingContextLoads: 0,
+            pendingAttachments: 0,
             configurationWebViewHasControllerAttachment: false,
             configurationWebViewUserScriptCount: 0,
             registersUserScriptsNow: false,
@@ -68,6 +82,7 @@ final class ChromeMV3EmptyControllerOwner {
     private let defaultWebsiteDataStore: WKWebsiteDataStore
     private let controllerIdentifier: UUID
     private var controllerStorage: WKWebExtensionController?
+    private var lastTeardownPolicy: ChromeMV3EmptyControllerTeardownPolicy?
     private(set) var state: ChromeMV3EmptyControllerOwnerState = .notCreated
 
     @MainActor
@@ -102,14 +117,24 @@ final class ChromeMV3EmptyControllerOwner {
         let controller = WKWebExtensionController(configuration: configuration)
         controllerStorage = controller
         state = .createdEmpty
+        lastTeardownPolicy = nil
         return controller
     }
 
     @MainActor
-    func tearDown() {
+    @discardableResult
+    func tearDown(
+        trigger: ChromeMV3EmptyControllerTeardownTrigger = .explicitReset
+    ) -> ChromeMV3EmptyControllerDiagnostics {
+        lastTeardownPolicy =
+            ChromeMV3EmptyControllerTeardownPolicyEvaluator.evaluate(
+                trigger: trigger,
+                controllerCreated: controllerStorage != nil
+            )
         controllerStorage?.delegate = nil
         controllerStorage = nil
         state = .tornDown
+        return diagnostics()
     }
 
     @MainActor
@@ -118,13 +143,19 @@ final class ChromeMV3EmptyControllerOwner {
             return ChromeMV3EmptyControllerDiagnostics(
                 profileIdentifier: gateDecision.input.profileIdentifier,
                 profileDataStoreIdentity: gateDecision.input.profileDataStoreIdentity,
+                dataStoreIdentityPolicy: dataStoreIdentityPolicy(
+                    controllerCreated: false
+                ),
                 controllerState: state,
                 controllerCreated: false,
                 gateDecision: gateDecision,
+                teardownPolicy: lastTeardownPolicy,
                 contextCount: 0,
                 loadedExtensionCount: 0,
                 attachedWebViewCount: 0,
                 nativeMessagingPortCount: 0,
+                pendingContextLoads: 0,
+                pendingAttachments: 0,
                 configurationWebViewHasControllerAttachment: false,
                 configurationWebViewUserScriptCount: 0,
                 registersUserScriptsNow: false,
@@ -143,13 +174,19 @@ final class ChromeMV3EmptyControllerOwner {
         return ChromeMV3EmptyControllerDiagnostics(
             profileIdentifier: gateDecision.input.profileIdentifier,
             profileDataStoreIdentity: gateDecision.input.profileDataStoreIdentity,
+            dataStoreIdentityPolicy: dataStoreIdentityPolicy(
+                controllerCreated: true
+            ),
             controllerState: state,
             controllerCreated: true,
             gateDecision: gateDecision,
+            teardownPolicy: lastTeardownPolicy,
             contextCount: controllerStorage.extensionContexts.count,
             loadedExtensionCount: controllerStorage.extensions.count,
             attachedWebViewCount: 0,
             nativeMessagingPortCount: 0,
+            pendingContextLoads: 0,
+            pendingAttachments: 0,
             configurationWebViewHasControllerAttachment: configurationWebView?
                 .webExtensionController != nil,
             configurationWebViewUserScriptCount: configurationWebView?
@@ -161,6 +198,17 @@ final class ChromeMV3EmptyControllerOwner {
             canAttachToNormalTabsNow: false,
             runtimeLoadable: false,
             blockingReasons: gateDecision.blockingReasons
+        )
+    }
+
+    private func dataStoreIdentityPolicy(
+        controllerCreated: Bool
+    ) -> ChromeMV3ControllerDataStoreIdentityDiagnostics {
+        ChromeMV3ControllerDataStoreIdentityPolicy.evaluate(
+            profileIdentifier: gateDecision.input.profileIdentifier,
+            dataStoreIdentity: gateDecision.input.profileDataStoreIdentity,
+            controllerConfigurationIdentifier: controllerIdentifier.uuidString,
+            controllerCreated: controllerCreated
         )
     }
 
