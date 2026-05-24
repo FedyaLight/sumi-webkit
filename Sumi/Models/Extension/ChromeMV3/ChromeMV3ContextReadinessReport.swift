@@ -583,6 +583,215 @@ enum ChromeMV3ContextReadinessReportWriter {
     }
 }
 
+enum ChromeMV3ContextReadinessReportConsumptionState:
+    String,
+    Codable,
+    CaseIterable,
+    Sendable
+{
+    case ready
+    case missingReport
+    case unreadableReport
+    case corruptReport
+    case missingNextRequiredPromptCategory
+    case unsupportedNextRequiredPromptCategory
+}
+
+struct ChromeMV3ContextReadinessReportConsumptionDiagnostic:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var schemaVersion: Int
+    var reportFileName: String
+    var reportPath: String
+    var state: ChromeMV3ContextReadinessReportConsumptionState
+    var canImplementRecommendedBranch: Bool
+    var nextRequiredPromptCategory:
+        ChromeMV3ContextReadinessNextPromptCategory?
+    var rawNextRequiredPromptCategory: String?
+    var allowedNextRequiredPromptCategories: [String]
+    var blockingReasons: [String]
+    var warnings: [String]
+    var requiredActions: [String]
+}
+
+enum ChromeMV3ContextReadinessReportConsumer {
+    static func diagnostic(
+        fromRewrittenBundleRoot rootURL: URL,
+        fileManager: FileManager = .default
+    ) -> ChromeMV3ContextReadinessReportConsumptionDiagnostic {
+        diagnostic(
+            fromReportURL: rootURL.standardizedFileURL
+                .appendingPathComponent(
+                    ChromeMV3ContextReadinessReportWriter.reportFileName
+                ),
+            fileManager: fileManager
+        )
+    }
+
+    static func diagnostic(
+        fromReportURL reportURL: URL,
+        fileManager: FileManager = .default
+    ) -> ChromeMV3ContextReadinessReportConsumptionDiagnostic {
+        let reportURL = reportURL.standardizedFileURL
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(
+            atPath: reportURL.path,
+            isDirectory: &isDirectory
+        ) else {
+            return makeDiagnostic(
+                reportURL: reportURL,
+                state: .missingReport,
+                blockingReasons: [
+                    "Missing generated Chrome MV3 context-readiness report: \(reportURL.path)",
+                ],
+                requiredActions: [
+                    "Generate \(ChromeMV3ContextReadinessReportWriter.reportFileName) and rerun branch selection before implementing a Chrome MV3 prompt branch.",
+                ]
+            )
+        }
+
+        guard isDirectory.boolValue == false else {
+            return makeDiagnostic(
+                reportURL: reportURL,
+                state: .unreadableReport,
+                blockingReasons: [
+                    "Chrome MV3 context-readiness report path is a directory, not a JSON file: \(reportURL.path)",
+                ],
+                requiredActions: [
+                    "Replace the directory with a generated \(ChromeMV3ContextReadinessReportWriter.reportFileName) file before branch selection.",
+                ]
+            )
+        }
+
+        let data: Data
+        do {
+            data = try Data(contentsOf: reportURL)
+        } catch {
+            return makeDiagnostic(
+                reportURL: reportURL,
+                state: .unreadableReport,
+                blockingReasons: [
+                    "Unable to read Chrome MV3 context-readiness report: \(error.localizedDescription)",
+                ],
+                requiredActions: [
+                    "Regenerate a readable \(ChromeMV3ContextReadinessReportWriter.reportFileName) file before branch selection.",
+                ]
+            )
+        }
+
+        let object: Any
+        do {
+            object = try JSONSerialization.jsonObject(with: data)
+        } catch {
+            return makeDiagnostic(
+                reportURL: reportURL,
+                state: .corruptReport,
+                blockingReasons: [
+                    "Chrome MV3 context-readiness report is not valid JSON: \(error.localizedDescription)",
+                ],
+                requiredActions: [
+                    "Regenerate \(ChromeMV3ContextReadinessReportWriter.reportFileName) before branch selection.",
+                ]
+            )
+        }
+
+        guard let dictionary = object as? [String: Any] else {
+            return makeDiagnostic(
+                reportURL: reportURL,
+                state: .corruptReport,
+                blockingReasons: [
+                    "Chrome MV3 context-readiness report root must be a JSON object.",
+                ],
+                requiredActions: [
+                    "Regenerate \(ChromeMV3ContextReadinessReportWriter.reportFileName) with the expected object schema.",
+                ]
+            )
+        }
+
+        guard
+            let rawCategory =
+                dictionary["nextRequiredPromptCategory"] as? String,
+            rawCategory.isEmpty == false
+        else {
+            return makeDiagnostic(
+                reportURL: reportURL,
+                state: .missingNextRequiredPromptCategory,
+                blockingReasons: [
+                    "Chrome MV3 context-readiness report is missing nextRequiredPromptCategory.",
+                ],
+                requiredActions: [
+                    "Regenerate \(ChromeMV3ContextReadinessReportWriter.reportFileName) with a valid nextRequiredPromptCategory before selecting a branch.",
+                ]
+            )
+        }
+
+        guard
+            let category =
+                ChromeMV3ContextReadinessNextPromptCategory(
+                    rawValue: rawCategory
+                )
+        else {
+            return makeDiagnostic(
+                reportURL: reportURL,
+                state: .unsupportedNextRequiredPromptCategory,
+                rawNextRequiredPromptCategory: rawCategory,
+                blockingReasons: [
+                    "Unsupported Chrome MV3 nextRequiredPromptCategory: \(rawCategory)",
+                ],
+                requiredActions: [
+                    "Use one of the allowed nextRequiredPromptCategory values before implementing a branch.",
+                ]
+            )
+        }
+
+        return makeDiagnostic(
+            reportURL: reportURL,
+            state: .ready,
+            nextRequiredPromptCategory: category,
+            rawNextRequiredPromptCategory: rawCategory,
+            canImplementRecommendedBranch: true,
+            requiredActions: [
+                "Implement only the \(rawCategory) branch recommended by \(ChromeMV3ContextReadinessReportWriter.reportFileName).",
+            ]
+        )
+    }
+
+    private static func makeDiagnostic(
+        reportURL: URL,
+        state: ChromeMV3ContextReadinessReportConsumptionState,
+        nextRequiredPromptCategory:
+            ChromeMV3ContextReadinessNextPromptCategory? = nil,
+        rawNextRequiredPromptCategory: String? = nil,
+        canImplementRecommendedBranch: Bool = false,
+        blockingReasons: [String] = [],
+        warnings: [String] = [],
+        requiredActions: [String] = []
+    ) -> ChromeMV3ContextReadinessReportConsumptionDiagnostic {
+        ChromeMV3ContextReadinessReportConsumptionDiagnostic(
+            schemaVersion: 1,
+            reportFileName:
+                ChromeMV3ContextReadinessReportWriter.reportFileName,
+            reportPath: reportURL.standardizedFileURL.path,
+            state: state,
+            canImplementRecommendedBranch: canImplementRecommendedBranch,
+            nextRequiredPromptCategory: nextRequiredPromptCategory,
+            rawNextRequiredPromptCategory: rawNextRequiredPromptCategory,
+            allowedNextRequiredPromptCategories:
+                ChromeMV3ContextReadinessNextPromptCategory.allCases
+                .map(\.rawValue),
+            blockingReasons: uniqueSorted(blockingReasons),
+            warnings: uniqueSorted(warnings),
+            requiredActions: uniqueSorted(requiredActions)
+        )
+    }
+
+    private static func uniqueSorted(_ values: [String]) -> [String] {
+        Array(Set(values.filter { $0.isEmpty == false })).sorted()
+    }
+}
+
 enum ChromeMV3ContextReadinessReportGenerator {
     struct ObjectAcceptanceReportLoadResult {
         var report: ChromeMV3WebKitObjectAcceptanceReport

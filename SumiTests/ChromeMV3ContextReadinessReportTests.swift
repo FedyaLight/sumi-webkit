@@ -441,6 +441,160 @@ final class ChromeMV3ContextReadinessReportTests: XCTestCase {
         XCTAssertTrue(first.futureContextEligible)
     }
 
+    func testReportConsumerBlocksMissingGeneratedContextReadinessReport()
+        throws
+    {
+        let root = try makeTemporaryDirectory()
+        let diagnostic =
+            ChromeMV3ContextReadinessReportConsumer.diagnostic(
+                fromRewrittenBundleRoot: root
+            )
+
+        XCTAssertEqual(diagnostic.state, .missingReport)
+        XCTAssertFalse(diagnostic.canImplementRecommendedBranch)
+        XCTAssertNil(diagnostic.nextRequiredPromptCategory)
+        XCTAssertNil(diagnostic.rawNextRequiredPromptCategory)
+        XCTAssertEqual(
+            diagnostic.reportFileName,
+            ChromeMV3ContextReadinessReportWriter.reportFileName
+        )
+        XCTAssertEqual(
+            diagnostic.allowedNextRequiredPromptCategories,
+            ChromeMV3ContextReadinessNextPromptCategory.allCases
+                .map(\.rawValue)
+        )
+        XCTAssertTrue(
+            diagnostic.blockingReasons.contains {
+                $0.contains(
+                    "Missing generated Chrome MV3 context-readiness report"
+                )
+                    && $0.contains(
+                        ChromeMV3ContextReadinessReportWriter.reportFileName
+                    )
+            }
+        )
+        XCTAssertTrue(
+            diagnostic.requiredActions.contains {
+                $0.contains("Generate")
+                    && $0.contains(
+                        ChromeMV3ContextReadinessReportWriter.reportFileName
+                    )
+            }
+        )
+    }
+
+    func testReportConsumerBlocksCorruptContextReadinessReport()
+        throws
+    {
+        let reportURL = try makeContextReadinessReportURL()
+        try Data("{".utf8).write(to: reportURL)
+
+        let diagnostic =
+            ChromeMV3ContextReadinessReportConsumer.diagnostic(
+                fromReportURL: reportURL
+            )
+
+        XCTAssertEqual(diagnostic.state, .corruptReport)
+        XCTAssertFalse(diagnostic.canImplementRecommendedBranch)
+        XCTAssertNil(diagnostic.nextRequiredPromptCategory)
+        XCTAssertTrue(
+            diagnostic.blockingReasons.contains {
+                $0.contains("not valid JSON")
+            }
+        )
+    }
+
+    func testReportConsumerBlocksMissingNextRequiredPromptCategory()
+        throws
+    {
+        let reportURL = try makeContextReadinessReportURL()
+        try writeJSONObject(["schemaVersion": 1], to: reportURL)
+
+        let diagnostic =
+            ChromeMV3ContextReadinessReportConsumer.diagnostic(
+                fromReportURL: reportURL
+            )
+
+        XCTAssertEqual(
+            diagnostic.state,
+            .missingNextRequiredPromptCategory
+        )
+        XCTAssertFalse(diagnostic.canImplementRecommendedBranch)
+        XCTAssertNil(diagnostic.nextRequiredPromptCategory)
+        XCTAssertTrue(
+            diagnostic.blockingReasons.contains {
+                $0.contains("missing nextRequiredPromptCategory")
+            }
+        )
+    }
+
+    func testReportConsumerBlocksUnsupportedNextRequiredPromptCategory()
+        throws
+    {
+        let reportURL = try makeContextReadinessReportURL()
+        try writeJSONObject(
+            [
+                "schemaVersion": 1,
+                "nextRequiredPromptCategory": "createContextNow",
+            ],
+            to: reportURL
+        )
+
+        let diagnostic =
+            ChromeMV3ContextReadinessReportConsumer.diagnostic(
+                fromReportURL: reportURL
+            )
+
+        XCTAssertEqual(
+            diagnostic.state,
+            .unsupportedNextRequiredPromptCategory
+        )
+        XCTAssertFalse(diagnostic.canImplementRecommendedBranch)
+        XCTAssertNil(diagnostic.nextRequiredPromptCategory)
+        XCTAssertEqual(
+            diagnostic.rawNextRequiredPromptCategory,
+            "createContextNow"
+        )
+        XCTAssertTrue(
+            diagnostic.blockingReasons.contains {
+                $0.contains("Unsupported Chrome MV3 nextRequiredPromptCategory")
+            }
+        )
+    }
+
+    func testReportConsumerReadsAllowedNextRequiredPromptCategory()
+        throws
+    {
+        let reportURL = try makeContextReadinessReportURL()
+        try writeJSONObject(
+            [
+                "schemaVersion": 1,
+                "nextRequiredPromptCategory":
+                    ChromeMV3ContextReadinessNextPromptCategory
+                    .fixObjectAcceptance.rawValue,
+            ],
+            to: reportURL
+        )
+
+        let diagnostic =
+            ChromeMV3ContextReadinessReportConsumer.diagnostic(
+                fromReportURL: reportURL
+            )
+
+        XCTAssertEqual(diagnostic.state, .ready)
+        XCTAssertTrue(diagnostic.canImplementRecommendedBranch)
+        XCTAssertEqual(
+            diagnostic.nextRequiredPromptCategory,
+            .fixObjectAcceptance
+        )
+        XCTAssertEqual(
+            diagnostic.rawNextRequiredPromptCategory,
+            ChromeMV3ContextReadinessNextPromptCategory
+                .fixObjectAcceptance.rawValue
+        )
+        XCTAssertTrue(diagnostic.blockingReasons.isEmpty)
+    }
+
     func testSourceGuardsKeepContextReadinessPreflightNonRuntime()
         throws
     {
@@ -487,6 +641,24 @@ final class ChromeMV3ContextReadinessReportTests: XCTestCase {
                 forbiddenRegex
             )
         }
+    }
+
+    private func makeContextReadinessReportURL() throws -> URL {
+        try makeTemporaryDirectory()
+            .appendingPathComponent(
+                ChromeMV3ContextReadinessReportWriter.reportFileName
+            )
+    }
+
+    private func writeJSONObject(
+        _ object: [String: Any],
+        to url: URL
+    ) throws {
+        let data = try JSONSerialization.data(
+            withJSONObject: object,
+            options: [.sortedKeys]
+        )
+        try data.write(to: url, options: [.atomic])
     }
 
     private func makeObjectAcceptanceReport(
