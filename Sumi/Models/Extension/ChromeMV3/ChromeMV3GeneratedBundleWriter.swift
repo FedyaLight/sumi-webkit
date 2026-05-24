@@ -65,6 +65,15 @@ struct ChromeMV3GeneratedBundleResourceWarning: Codable, Equatable {
     var message: String
 }
 
+struct ChromeMV3WrittenRuntimeTemplateResource: Codable, Equatable {
+    var moduleName: ChromeMV3RuntimeTemplateModuleName
+    var outputRelativePath: String
+    var sha256: String
+    var byteCount: Int
+    var inert: Bool
+    var runtimeLoadable: Bool
+}
+
 struct ChromeMV3GeneratedBundleRecord: Codable, Equatable {
     var schemaVersion: Int
     var id: String
@@ -72,6 +81,7 @@ struct ChromeMV3GeneratedBundleRecord: Codable, Equatable {
     var generatedBundleRootPath: String
     var generatedManifestPath: String
     var generatedMetadataPath: String
+    var runtimeResourcePlanPath: String
     var generatorVersion: String
     var originalBundleRecordID: String
     var originalBundleContentSHA256: String
@@ -82,12 +92,16 @@ struct ChromeMV3GeneratedBundleRecord: Codable, Equatable {
     var plannedManifestRewriteNeeded: Bool
     var plannedServiceWorkerWrapperNeeded: Bool
     var plannedShimModules: [String]
+    var plannedRuntimeTemplateModules: [ChromeMV3RuntimeTemplateModuleName]
     var plannedNativeHostAPIs: [ChromeMV3API]
     var deferredAPIs: [ChromeMV3API]
     var unsupportedAPIs: [ChromeMV3API]
     var needsVerificationAPIs: [ChromeMV3API]
     var copiedResourcePaths: [String]
     var resourceWarnings: [ChromeMV3GeneratedBundleResourceWarning]
+    var writtenInertRuntimeTemplateResources: [ChromeMV3WrittenRuntimeTemplateResource]
+    var inertRuntimeTemplatesWritten: Bool
+    var executableRuntimeFilesWritten: Bool
     var generatedRuntimeFilesWritten: Bool
     var runtimeLoadable: Bool
 }
@@ -104,6 +118,7 @@ struct ChromeMV3GeneratedBundleWriter {
     static let generatedBundleDirectoryName = "generated"
     static let temporaryGeneratedBundleDirectoryName = "generated.tmp"
     static let metadataFileName = "generated-bundle-metadata.json"
+    static let runtimeResourcePlanFileName = "runtime-resource-plan.json"
 
     var rootURL: URL
 
@@ -155,6 +170,8 @@ struct ChromeMV3GeneratedBundleWriter {
             .appendingPathComponent("manifest.json")
         let generatedMetadataURL = generatedBundleRootURL
             .appendingPathComponent(Self.metadataFileName)
+        let runtimeResourcePlanURL = generatedBundleRootURL
+            .appendingPathComponent(Self.runtimeResourcePlanFileName)
 
         let manifestObject = try manifestJSONObject(
             from: manifestSnapshot.canonicalManifestJSON
@@ -179,14 +196,25 @@ struct ChromeMV3GeneratedBundleWriter {
             from: originalRootURL,
             to: temporaryBundleRootURL
         )
+        let runtimeResourcePlan = planningRecord.runtimeResourcePlan
+        let writtenRuntimeTemplateResources = try writeInertRuntimeTemplates(
+            for: runtimeResourcePlan,
+            to: temporaryBundleRootURL
+        )
+        try ChromeMV3DeterministicJSON.write(
+            runtimeResourcePlan,
+            to: temporaryBundleRootURL
+                .appendingPathComponent(Self.runtimeResourcePlanFileName)
+        )
 
         let record = ChromeMV3GeneratedBundleRecord(
-            schemaVersion: 1,
+            schemaVersion: 2,
             id: "generated-\(originalBundleRecord.sourceMetadata.contentSHA256.prefix(32))",
             createdAt: planningRecord.createdAt,
             generatedBundleRootPath: generatedBundleRootURL.standardizedFileURL.path,
             generatedManifestPath: generatedManifestURL.standardizedFileURL.path,
             generatedMetadataPath: generatedMetadataURL.standardizedFileURL.path,
+            runtimeResourcePlanPath: runtimeResourcePlanURL.standardizedFileURL.path,
             generatorVersion: planningRecord.generatorVersion,
             originalBundleRecordID: originalBundleRecord.id,
             originalBundleContentSHA256: originalBundleRecord.sourceMetadata.contentSHA256,
@@ -210,12 +238,19 @@ struct ChromeMV3GeneratedBundleWriter {
             plannedServiceWorkerWrapperNeeded: planningRecord
                 .plannedServiceWorkerWrapperNeeded,
             plannedShimModules: planningRecord.plannedJSShimModules.sorted(),
+            plannedRuntimeTemplateModules: runtimeResourcePlan
+                .requiredTemplateModuleNames
+                .sorted(),
             plannedNativeHostAPIs: planningRecord.plannedNativeHostAPIs.sorted(),
             deferredAPIs: planningRecord.deferredAPIs.sorted(),
             unsupportedAPIs: planningRecord.unsupportedAPIs.sorted(),
             needsVerificationAPIs: planningRecord.needsVerificationAPIs.sorted(),
             copiedResourcePaths: copyResult.copiedRelativePaths.sorted(),
             resourceWarnings: copyResult.warnings.sorted(by: resourceWarningSort),
+            writtenInertRuntimeTemplateResources: writtenRuntimeTemplateResources,
+            inertRuntimeTemplatesWritten: writtenRuntimeTemplateResources
+                .isEmpty == false,
+            executableRuntimeFilesWritten: false,
             generatedRuntimeFilesWritten: false,
             runtimeLoadable: false
         )
@@ -621,6 +656,55 @@ struct ChromeMV3GeneratedBundleWriter {
             copiedRelativePaths: copiedPaths.sorted(),
             warnings: warnings
         )
+    }
+
+    private func writeInertRuntimeTemplates(
+        for runtimeResourcePlan: ChromeMV3RuntimeResourcePlan,
+        to generatedBundleRootURL: URL
+    ) throws -> [ChromeMV3WrittenRuntimeTemplateResource] {
+        guard runtimeResourcePlan.requiredTemplateModuleNames.isEmpty == false else {
+            return []
+        }
+
+        let runtimeDirectoryURL = generatedBundleRootURL
+            .appendingPathComponent(
+                ChromeMV3RuntimeResourceTemplateCatalog.runtimeDirectoryName,
+                isDirectory: true
+            )
+        try FileManager.default.createDirectory(
+            at: runtimeDirectoryURL,
+            withIntermediateDirectories: true
+        )
+
+        var written: [ChromeMV3WrittenRuntimeTemplateResource] = []
+        for moduleName in runtimeResourcePlan.requiredTemplateModuleNames.sorted() {
+            let template = ChromeMV3RuntimeResourceTemplateCatalog.template(
+                named: moduleName
+            )
+            let data = Data(template.contents.utf8)
+            let destinationURL = generatedBundleRootURL
+                .appendingPathComponent(template.outputRelativePath)
+            try FileManager.default.createDirectory(
+                at: destinationURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: destinationURL, options: [.atomic])
+
+            written.append(
+                ChromeMV3WrittenRuntimeTemplateResource(
+                    moduleName: moduleName,
+                    outputRelativePath: template.outputRelativePath,
+                    sha256: sha256Hex(data),
+                    byteCount: data.count,
+                    inert: template.inert,
+                    runtimeLoadable: template.runtimeLoadable
+                )
+            )
+        }
+
+        return written.sorted { lhs, rhs in
+            lhs.outputRelativePath < rhs.outputRelativePath
+        }
     }
 
     private func copyExactResource(

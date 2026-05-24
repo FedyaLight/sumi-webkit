@@ -124,10 +124,13 @@ struct ChromeMV3GeneratedBundlePlanningRecord: Codable, Equatable {
     var plannedManifestRewriteNeeded: Bool
     var plannedServiceWorkerWrapperNeeded: Bool
     var plannedJSShimModules: [String]
+    var runtimeResourcePlan: ChromeMV3RuntimeResourcePlan
     var plannedNativeHostAPIs: [ChromeMV3API]
     var unsupportedAPIs: [ChromeMV3API]
     var deferredAPIs: [ChromeMV3API]
     var needsVerificationAPIs: [ChromeMV3API]
+    var inertRuntimeTemplatesWritten: Bool
+    var executableRuntimeFilesWritten: Bool
     var generatedRuntimeFilesWritten: Bool
 }
 
@@ -138,7 +141,7 @@ struct ChromeMV3OriginalBundleStageResult: Equatable {
 }
 
 struct ChromeMV3OriginalBundleStore {
-    static let currentGeneratorVersion = "sumi-chrome-mv3-generated-bundle-plan-v1"
+    static let currentGeneratorVersion = "sumi-chrome-mv3-generated-bundle-plan-v2"
 
     var rootURL: URL
     var now: () -> Date
@@ -336,17 +339,23 @@ enum ChromeMV3GeneratedBundlePlanner {
         createdAt: Date,
         generatorVersion: String
     ) -> ChromeMV3GeneratedBundlePlanningRecord {
+        let runtimeResourcePlan = ChromeMV3RuntimeResourcePlanner.plan(
+            manifest: manifest,
+            installReport: report
+        )
         let plannedJSShimModules = report.shimmedAPIs
             .map { "chrome.\($0.rawValue)" }
             .sorted()
-        let serviceWorkerWrapperNeeded = manifest.background?.serviceWorker != nil
-            && plannedJSShimModules.isEmpty == false
-        let manifestRewriteNeeded = serviceWorkerWrapperNeeded
+        let serviceWorkerWrapperNeeded = runtimeResourcePlan
+            .requires(.serviceWorkerWrapperClassic)
+            || runtimeResourcePlan.requires(.serviceWorkerWrapperModule)
+        let manifestRewriteNeeded = runtimeResourcePlan
+            .manifestRewriteRequiredLater
             || plannedJSShimModules.isEmpty == false
             || report.nativeHostAPIs.isEmpty == false
 
         return ChromeMV3GeneratedBundlePlanningRecord(
-            schemaVersion: 1,
+            schemaVersion: 2,
             id: "generated-plan-\(record.sourceMetadata.contentSHA256.prefix(32))",
             createdAt: createdAt,
             generatorVersion: generatorVersion,
@@ -358,10 +367,13 @@ enum ChromeMV3GeneratedBundlePlanner {
             plannedManifestRewriteNeeded: manifestRewriteNeeded,
             plannedServiceWorkerWrapperNeeded: serviceWorkerWrapperNeeded,
             plannedJSShimModules: plannedJSShimModules,
+            runtimeResourcePlan: runtimeResourcePlan,
             plannedNativeHostAPIs: report.nativeHostAPIs,
             unsupportedAPIs: report.unsupportedAPIs,
             deferredAPIs: report.deferredAPIs,
             needsVerificationAPIs: report.needsVerificationAPIs,
+            inertRuntimeTemplatesWritten: false,
+            executableRuntimeFilesWritten: false,
             generatedRuntimeFilesWritten: false
         )
     }
