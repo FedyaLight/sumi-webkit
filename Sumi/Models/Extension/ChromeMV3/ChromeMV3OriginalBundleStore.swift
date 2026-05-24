@@ -555,7 +555,7 @@ enum ChromeMV3DeterministicJSON {
         return String(data: canonicalData, encoding: .utf8) ?? ""
     }
 
-    private static func encodedData<T: Encodable>(_ value: T) throws -> Data {
+    static func encodedData<T: Encodable>(_ value: T) throws -> Data {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

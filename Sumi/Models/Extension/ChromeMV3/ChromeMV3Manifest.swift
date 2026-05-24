@@ -105,6 +105,7 @@ struct ChromeMV3ContentScript: Codable, Equatable {
     var matchAboutBlank: Bool
     var matchOriginAsFallback: Bool
     var runAt: String?
+    var world: String?
 }
 
 struct ChromeMV3Action: Codable, Equatable {

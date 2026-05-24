@@ -396,7 +396,8 @@ enum ChromeMV3ManifestValidator {
                 allFrames: boolValue(script["all_frames"]) ?? false,
                 matchAboutBlank: boolValue(script["match_about_blank"]) ?? false,
                 matchOriginAsFallback: boolValue(script["match_origin_as_fallback"]) ?? false,
-                runAt: stringValue(script["run_at"])
+                runAt: stringValue(script["run_at"]),
+                world: stringValue(script["world"])
             )
         }
     }
