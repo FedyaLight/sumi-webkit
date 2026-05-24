@@ -987,9 +987,20 @@ final class ChromeMV3NormalTabConfigurationAttachmentTests: XCTestCase {
         let chromeMV3Source = try Self.sourceFiles(in: [
             "Sumi/Models/Extension/ChromeMV3",
         ])
+        let extensionObjectInitializerFiles = chromeMV3Source
+            .filter { $0.contents.contains("WKWebExtension" + "(") }
+            .map(\.relativePath)
+            .sorted()
+
+        XCTAssertEqual(
+            extensionObjectInitializerFiles,
+            [
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionObjectProbeRunner.swift",
+            ]
+        )
+
         let source = chromeMV3Source.map(\.contents).joined(separator: "\n")
         for forbidden in [
-            "WKWebExtension" + "(",
             "WKWebExtension" + "Context(",
             "load" + "ExtensionContext",
             "add" + "UserScript",

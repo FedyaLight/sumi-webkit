@@ -396,9 +396,20 @@ final class ChromeMV3SyntheticConfigurationAttachmentTests: XCTestCase {
             ]
         )
 
+        let extensionObjectInitializerFiles = sourceFiles
+            .filter { $0.contents.contains("WKWebExtension" + "(") }
+            .map(\.relativePath)
+            .sorted()
+
+        XCTAssertEqual(
+            extensionObjectInitializerFiles,
+            [
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionObjectProbeRunner.swift",
+            ]
+        )
+
         let source = sourceFiles.map(\.contents).joined(separator: "\n")
         for forbidden in [
-            "WKWebExtension" + "(",
             "WKWebExtension" + "Context(",
             "load" + "ExtensionContext",
             "add" + "UserScript",
