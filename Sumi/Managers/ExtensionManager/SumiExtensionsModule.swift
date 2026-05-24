@@ -123,6 +123,19 @@ final class SumiExtensionsModule {
         )
     }
 
+    func chromeMV3InventoryDiagnosticsIfEnabled(
+        rootURL: URL
+    ) -> ChromeMV3ProfileHostDiagnostics? {
+        guard isEnabled else { return nil }
+
+        let inventory = ChromeMV3CandidateInventoryReader()
+            .readInventory(rootURL: rootURL)
+        let candidates = inventory.candidates.map(\.profileHostCandidate)
+        return chromeMV3ProfileHostIfEnabled(
+            candidateRewrittenVariants: candidates
+        )?.diagnostics(candidateInventory: inventory)
+    }
+
     func normalTabUserScripts() -> [SumiUserScript] {
         managerIfNeededForNormalTabRuntime()?.normalTabUserScripts() ?? []
     }
