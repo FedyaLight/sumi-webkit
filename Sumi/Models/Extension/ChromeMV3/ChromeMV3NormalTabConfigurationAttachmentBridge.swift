@@ -22,6 +22,8 @@ struct ChromeMV3NormalTabConfigurationAttachmentRequest {
     var requestedContextLoading: Bool
     var canLoadContextNow: Bool
     var runtimeLoadable: Bool
+    var attemptMetadata:
+        ChromeMV3NormalTabConfigurationAttachmentAttemptMetadata
 
     var emptyControllerOwnerPresent: Bool {
         owner != nil
@@ -56,7 +58,10 @@ struct ChromeMV3NormalTabConfigurationAttachmentRequest {
         surface: ChromeMV3WebViewSurface = .normalTab,
         requestedContextLoading: Bool = false,
         canLoadContextNow: Bool = false,
-        runtimeLoadable: Bool = false
+        runtimeLoadable: Bool = false,
+        attemptMetadata:
+            ChromeMV3NormalTabConfigurationAttachmentAttemptMetadata =
+                ChromeMV3NormalTabConfigurationAttachmentAttemptMetadata()
     ) {
         self.owner = owner
         self.extensionsModuleEnabled = extensionsModuleEnabled
@@ -67,6 +72,7 @@ struct ChromeMV3NormalTabConfigurationAttachmentRequest {
         self.requestedContextLoading = requestedContextLoading
         self.canLoadContextNow = canLoadContextNow
         self.runtimeLoadable = runtimeLoadable
+        self.attemptMetadata = attemptMetadata
     }
 }
 
@@ -78,6 +84,11 @@ struct ChromeMV3NormalTabConfigurationAttachmentDiagnostics:
 {
     var gateDecision: ChromeMV3NormalTabConfigurationAttachmentGateDecision
     var attachmentRequested: Bool
+    var tabIdentifier: String?
+    var tabDiagnosticIdentifier: String?
+    var windowIdentifier: String?
+    var profileIdentifier: String?
+    var creationReason: String
     var targetSurface: ChromeMV3WebViewSurface
     var emptyControllerOwnerPresent: Bool
     var explicitInternalNormalTabAttachmentAllowed: Bool
@@ -112,9 +123,14 @@ struct ChromeMV3NormalTabConfigurationAttachmentResult {
 @available(macOS 15.5, *)
 final class ChromeMV3NormalTabConfigurationAttachmentRecord {
     weak var configuration: WKWebViewConfiguration?
+    let sequenceNumber: Int
 
-    init(configuration: WKWebViewConfiguration) {
+    init(
+        configuration: WKWebViewConfiguration,
+        sequenceNumber: Int
+    ) {
         self.configuration = configuration
+        self.sequenceNumber = sequenceNumber
     }
 }
 
@@ -137,17 +153,19 @@ enum ChromeMV3NormalTabConfigurationAttachmentBridge {
         {
             configuration.webExtensionController = controller
             configuration.sumiHasChromeMV3NormalTabConfigurationAttachment = true
-            request?.owner?.recordNormalTabConfigurationAttachment(
-                configuration
-            )
         }
 
-        return diagnostics(
+        let diagnostics = diagnostics(
             configuration: configuration,
             request: request,
             controller: controller,
             gateDecision: gateDecision
         )
+        request?.owner?.recordNormalTabConfigurationAttachmentDecision(
+            configuration,
+            diagnostics: diagnostics
+        )
+        return diagnostics
     }
 
     @MainActor
@@ -172,6 +190,7 @@ enum ChromeMV3NormalTabConfigurationAttachmentBridge {
     @MainActor
     static func record(
         configuration: WKWebViewConfiguration,
+        sequenceNumber: Int,
         records: inout [ChromeMV3NormalTabConfigurationAttachmentRecord]
     ) {
         prune(records: &records)
@@ -180,13 +199,14 @@ enum ChromeMV3NormalTabConfigurationAttachmentBridge {
         }
         records.append(
             ChromeMV3NormalTabConfigurationAttachmentRecord(
-                configuration: configuration
+                configuration: configuration,
+                sequenceNumber: sequenceNumber
             )
         )
     }
 
     @MainActor
-    static func detachTrackedConfigurations(
+    static func resetTrackedConfigurationsForFutureUse(
         records: inout [ChromeMV3NormalTabConfigurationAttachmentRecord],
         controller: WKWebExtensionController?
     ) {
@@ -200,7 +220,19 @@ enum ChromeMV3NormalTabConfigurationAttachmentBridge {
             configuration.sumiHasChromeMV3NormalTabConfigurationAttachment =
                 false
         }
-        records.removeAll()
+    }
+
+    @MainActor
+    static func markTrackedWebViewCreated(
+        configuration: WKWebViewConfiguration,
+        records: inout [ChromeMV3NormalTabConfigurationAttachmentRecord],
+        recorder: inout ChromeMV3LiveNormalTabAttachmentRecorder
+    ) {
+        prune(records: &records)
+        guard let record = records.first(where: {
+            $0.configuration === configuration
+        }) else { return }
+        recorder.markCreatedWebView(sequenceNumber: record.sequenceNumber)
     }
 
     @MainActor
@@ -279,6 +311,13 @@ enum ChromeMV3NormalTabConfigurationAttachmentBridge {
         return ChromeMV3NormalTabConfigurationAttachmentDiagnostics(
             gateDecision: gateDecision,
             attachmentRequested: request != nil,
+            tabIdentifier: request?.attemptMetadata.tabIdentifier,
+            tabDiagnosticIdentifier:
+                request?.attemptMetadata.tabDiagnosticIdentifier,
+            windowIdentifier: request?.attemptMetadata.windowIdentifier,
+            profileIdentifier: request?.attemptMetadata.profileIdentifier,
+            creationReason:
+                request?.attemptMetadata.creationReason ?? "unspecified",
             targetSurface: request?.targetSurface ?? .normalTab,
             emptyControllerOwnerPresent:
                 request?.emptyControllerOwnerPresent ?? false,

@@ -118,6 +118,7 @@ Searches used `rg` over the repository for Safari/WebExtension terms, WebKit ext
 
 - `Sumi/Models/BrowserConfig/BrowserConfig.swift` centralizes normal and auxiliary `WKWebViewConfiguration` creation.
 - `Sumi/Models/BrowserConfig/BrowserConfig.swift` only copies `webExtensionController` for `.extensionOptions` auxiliary configurations today.
+- Chrome MV3 DEBUG normal-tab attachment diagnostics must not count that legacy `.extensionOptions` copy as normal-tab attachment. TODO: isolate or replace the extension-options copy when a future extension-owned UI host is designed.
 - `Sumi/Models/Tab/Tab+WebViewRuntime.swift` creates normal tab web views and calls `extensionsModule.prepareWebViewConfigurationForExtensionRuntime(...)`.
 - `Sumi/Models/Tab/Tab+WebViewRuntime.swift` calls `prepareWebViewForExtensionRuntime(...)` after normal tab web view creation.
 - `Sumi/Models/Tab/Tab+UIDelegate.swift` and `Sumi/Managers/BrowserManager/SumiPopupHandlingNavigationResponder.swift` create new web views/popups from WebKit UI delegate flows.

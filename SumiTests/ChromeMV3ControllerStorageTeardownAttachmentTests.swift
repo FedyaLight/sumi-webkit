@@ -154,8 +154,18 @@ final class ChromeMV3ControllerStorageTeardownAttachmentTests: XCTestCase {
         XCTAssertFalse(teardownPolicy.shouldClearWebsiteData)
         XCTAssertFalse(teardownPolicy.shouldDeleteGeneratedArtifacts)
         XCTAssertFalse(teardownPolicy.shouldCancelNativeMessagingPorts)
+        XCTAssertTrue(teardownPolicy.futureConfigurationsBecomeUnattachedImmediately)
+        XCTAssertTrue(teardownPolicy.marksExistingDebugAttachedWebViewsStale)
+        XCTAssertFalse(teardownPolicy.claimsExistingWebViewsDetached)
+        XCTAssertTrue(
+            teardownPolicy
+                .requiresWebViewRecreationForExistingDebugAttachedInstances
+        )
         XCTAssertEqual(teardownPolicy.pendingContextLoadsAfterTeardown, 0)
         XCTAssertEqual(teardownPolicy.pendingAttachmentsAfterTeardown, 0)
+        XCTAssertTrue(
+            diagnostics.liveNormalTabAttachmentSnapshot.recentDecisions.isEmpty
+        )
     }
 
     func testTeardownPoliciesDoNotDeleteGeneratedArtifacts() {
@@ -168,6 +178,13 @@ final class ChromeMV3ControllerStorageTeardownAttachmentTests: XCTestCase {
             XCTAssertFalse(policy.shouldClearWebsiteData)
             XCTAssertFalse(policy.shouldDeleteGeneratedArtifacts)
             XCTAssertFalse(policy.shouldCancelNativeMessagingPorts)
+            XCTAssertTrue(policy.futureConfigurationsBecomeUnattachedImmediately)
+            XCTAssertTrue(policy.marksExistingDebugAttachedWebViewsStale)
+            XCTAssertFalse(policy.claimsExistingWebViewsDetached)
+            XCTAssertTrue(
+                policy.requiresWebViewRecreationForExistingDebugAttachedInstances
+            )
+            XCTAssertEqual(policy.userVisibleReloadOrRecreatePolicy, "deferred")
             XCTAssertEqual(policy.pendingContextLoadsAfterTeardown, 0)
             XCTAssertEqual(policy.pendingAttachmentsAfterTeardown, 0)
         }

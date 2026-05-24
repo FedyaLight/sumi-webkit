@@ -166,6 +166,7 @@ enum ChromeMV3EmptyControllerTeardownTrigger:
     case profileClose
     case explicitReset
     case failedFuturePreflight
+    case normalTabAttachmentGateOff
 }
 
 struct ChromeMV3EmptyControllerTeardownPolicy:
@@ -178,6 +179,11 @@ struct ChromeMV3EmptyControllerTeardownPolicy:
     var shouldClearWebsiteData: Bool
     var shouldDeleteGeneratedArtifacts: Bool
     var shouldCancelNativeMessagingPorts: Bool
+    var futureConfigurationsBecomeUnattachedImmediately: Bool
+    var marksExistingDebugAttachedWebViewsStale: Bool
+    var claimsExistingWebViewsDetached: Bool
+    var requiresWebViewRecreationForExistingDebugAttachedInstances: Bool
+    var userVisibleReloadOrRecreatePolicy: String
     var pendingContextLoadsAfterTeardown: Int
     var pendingAttachmentsAfterTeardown: Int
     var notes: [String]
@@ -194,6 +200,12 @@ enum ChromeMV3EmptyControllerTeardownPolicyEvaluator {
             shouldClearWebsiteData: false,
             shouldDeleteGeneratedArtifacts: false,
             shouldCancelNativeMessagingPorts: false,
+            futureConfigurationsBecomeUnattachedImmediately: true,
+            marksExistingDebugAttachedWebViewsStale: controllerCreated,
+            claimsExistingWebViewsDetached: false,
+            requiresWebViewRecreationForExistingDebugAttachedInstances:
+                controllerCreated,
+            userVisibleReloadOrRecreatePolicy: "deferred",
             pendingContextLoadsAfterTeardown: 0,
             pendingAttachmentsAfterTeardown: 0,
             notes: notes(trigger: trigger, controllerCreated: controllerCreated)
@@ -208,6 +220,9 @@ enum ChromeMV3EmptyControllerTeardownPolicyEvaluator {
             "Teardown leaves generated Chrome MV3 artifacts intact.",
             "Teardown does not clear website data or extension storage.",
             "No contexts, attachments, native message ports, or pending loads are created by this policy.",
+            "Future normal-tab configurations must be created without the DEBUG empty controller after teardown.",
+            "Already-created DEBUG-attached WKWebViews are marked stale and require deferred recreation before they can be considered unattached.",
+            "Teardown does not claim an existing WKWebView is detached by mutating its original configuration object.",
         ]
 
         switch trigger {
@@ -219,6 +234,8 @@ enum ChromeMV3EmptyControllerTeardownPolicyEvaluator {
             notes.append("Explicit reset releases the empty controller if it exists.")
         case .failedFuturePreflight:
             notes.append("A failed future attachment preflight releases the empty controller if it exists.")
+        case .normalTabAttachmentGateOff:
+            notes.append("Turning off the DEBUG normal-tab attachment flag keeps future configurations unattached and marks existing DEBUG-attached WKWebViews stale.")
         }
 
         if controllerCreated == false {
