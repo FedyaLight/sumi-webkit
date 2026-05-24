@@ -46,8 +46,24 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
             )
         )
         XCTAssertEqual(result.record.generatedRuntimeFilesWritten, false)
+        XCTAssertTrue(result.record.inertRuntimeTemplatesWritten)
+        XCTAssertFalse(result.record.executableRuntimeFilesWritten)
         XCTAssertEqual(result.record.runtimeLoadable, false)
         XCTAssertEqual(result.record.copiedResourcePaths, ["background.js"])
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: result.generatedBundleRootURL
+                    .appendingPathComponent("_sumi_runtime")
+                    .path
+            )
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: result.generatedBundleRootURL
+                    .appendingPathComponent("runtime-resource-plan.json")
+                    .path
+            )
+        )
         XCTAssertTrue(
             result.record.generatedBundleRootPath.hasSuffix(
                 "/generated/\(stage.result.originalBundleRecord.id)/generated"
@@ -116,11 +132,43 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
         )
         XCTAssertEqual(metadata, result.record)
         XCTAssertFalse(metadata.generatedRuntimeFilesWritten)
+        XCTAssertTrue(metadata.inertRuntimeTemplatesWritten)
+        XCTAssertFalse(metadata.executableRuntimeFilesWritten)
         XCTAssertFalse(metadata.runtimeLoadable)
         XCTAssertTrue(metadata.plannedServiceWorkerWrapperNeeded)
         XCTAssertTrue(metadata.plannedShimModules.contains("chrome.runtime"))
+        XCTAssertTrue(
+            metadata.plannedRuntimeTemplateModules.contains(
+                .serviceWorkerWrapperClassic
+            )
+        )
+        XCTAssertTrue(
+            metadata.plannedRuntimeTemplateModules.contains(
+                .chromeShimContentScript
+            )
+        )
+        XCTAssertTrue(
+            metadata.plannedRuntimeTemplateModules.contains(
+                .chromeShimExtensionPage
+            )
+        )
+        XCTAssertTrue(
+            metadata.plannedRuntimeTemplateModules.contains(.hostBridgeStub)
+        )
         XCTAssertTrue(metadata.plannedNativeHostAPIs.contains(.nativeMessaging))
         XCTAssertTrue(metadata.deferredAPIs.contains(.nativeMessaging))
+        XCTAssertEqual(
+            metadata.writtenInertRuntimeTemplateResources.map(\.moduleName),
+            metadata.plannedRuntimeTemplateModules
+        )
+        XCTAssertTrue(
+            metadata.writtenInertRuntimeTemplateResources.allSatisfy(\.inert)
+        )
+        XCTAssertTrue(
+            metadata.writtenInertRuntimeTemplateResources.allSatisfy {
+                $0.runtimeLoadable == false
+            }
+        )
         XCTAssertEqual(
             metadata.originalBundleContentSHA256,
             stage.result.originalBundleRecord.sourceMetadata.contentSHA256
@@ -133,6 +181,15 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
             metadata.installReportSummary.capabilitySummary.deferredAPIs,
             stage.result.manifestSnapshot.capabilitySummary.deferredAPIs
         )
+
+        let runtimePlan = try JSONDecoder().decode(
+            ChromeMV3RuntimeResourcePlan.self,
+            from: Data(contentsOf: result.generatedBundleRootURL
+                .appendingPathComponent("runtime-resource-plan.json"))
+        )
+        XCTAssertEqual(runtimePlan, stage.result.generatedBundlePlan.runtimeResourcePlan)
+        XCTAssertFalse(runtimePlan.runtimeLoadable)
+        XCTAssertFalse(runtimePlan.executableRuntimeFilesWritten)
     }
 
     func testPreservesServiceWorkerAndContentScriptsWithoutRuntimeInjection() throws {
@@ -173,19 +230,92 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
         XCTAssertEqual(background["service_worker"] as? String, "background.js")
         XCTAssertEqual(contentScripts.first?["js"] as? [String], ["content.js"])
         XCTAssertFalse(
+            try canonicalJSONString(manifest)
+                .contains("_sumi_runtime")
+        )
+        XCTAssertFalse(
             result.record.copiedResourcePaths.contains { path in
                 path.localizedCaseInsensitiveContains("shim")
                     || path.localizedCaseInsensitiveContains("wrapper")
             }
         )
-        XCTAssertFalse(
-            try generatedFileContents(rootURL: result.generatedBundleRootURL)
-                .keys
-                .contains { path in
-                    path.localizedCaseInsensitiveContains("shim")
-                        || path.localizedCaseInsensitiveContains("wrapper")
-                }
+        let generatedFiles = try generatedFileContents(
+            rootURL: result.generatedBundleRootURL
         )
+        XCTAssertTrue(
+            generatedFiles.keys.contains("_sumi_runtime/chrome-shim.content-script.js"),
+            generatedFiles.keys.sorted().joined(separator: ",")
+        )
+        XCTAssertTrue(
+            generatedFiles.keys.contains("_sumi_runtime/service-worker-wrapper.classic.js"),
+            generatedFiles.keys.sorted().joined(separator: ",")
+        )
+        XCTAssertFalse(result.record.generatedRuntimeFilesWritten)
+        XCTAssertTrue(result.record.inertRuntimeTemplatesWritten)
+        XCTAssertFalse(result.record.executableRuntimeFilesWritten)
+        XCTAssertFalse(result.record.runtimeLoadable)
+    }
+
+    func testGeneratedRuntimeTemplatesAreInertAndNotReferencedByManifest() throws {
+        let stage = try stageBundle(
+            named: "runtime-template-output",
+            manifest: passwordManagerManifest(),
+            files: passwordManagerFiles()
+        )
+
+        let result = try makeWriter(rootURL: stage.storeRoot)
+            .writeGeneratedBundle(
+                originalBundleRecord: stage.result.originalBundleRecord,
+                manifestSnapshot: stage.result.manifestSnapshot,
+                planningRecord: stage.result.generatedBundlePlan
+            )
+
+        let generatedManifest = try readJSONObject(at: result.generatedManifestURL)
+        XCTAssertFalse(
+            try canonicalJSONString(generatedManifest).contains("_sumi_runtime")
+        )
+        let background = try XCTUnwrap(
+            generatedManifest["background"] as? [String: Any]
+        )
+        XCTAssertEqual(background["service_worker"] as? String, "background.js")
+        let contentScripts = try XCTUnwrap(
+            generatedManifest["content_scripts"] as? [[String: Any]]
+        )
+        XCTAssertEqual(contentScripts.first?["js"] as? [String], ["content.js"])
+
+        let generatedFiles = try generatedFileContents(
+            rootURL: result.generatedBundleRootURL
+        )
+        let runtimeFiles = generatedFiles.filter { key, _ in
+            key.hasPrefix("_sumi_runtime/")
+        }
+        XCTAssertEqual(
+            Set(runtimeFiles.keys),
+            Set(result.record.writtenInertRuntimeTemplateResources.map(\.outputRelativePath))
+        )
+        XCTAssertTrue(result.record.inertRuntimeTemplatesWritten)
+        XCTAssertFalse(result.record.executableRuntimeFilesWritten)
+        XCTAssertFalse(result.record.generatedRuntimeFilesWritten)
+        XCTAssertFalse(result.record.runtimeLoadable)
+
+        let forbiddenFragments = [
+            "set" + "Timeout",
+            "set" + "Interval",
+            "connect" + "Native",
+            "send" + "NativeMessage",
+            "add" + "EventListener(",
+            "chrome.runtime." + "onMessage",
+            "browser.runtime." + "onMessage",
+            "document.create" + "Element(",
+            "append" + "Child(",
+        ]
+        for (path, contents) in runtimeFiles {
+            XCTAssertTrue(contents.contains("notWired: true"), path)
+            XCTAssertTrue(contents.contains("runtimeLoadable: false"), path)
+            for forbidden in forbiddenFragments {
+                XCTAssertFalse(contents.contains(forbidden), "\(path): \(forbidden)")
+            }
+        }
     }
 
     func testCopiesSafeManifestReferencedResourcesOnly() throws {
@@ -520,19 +650,24 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
     }
 
     private func generatedFileContents(rootURL: URL) throws -> [String: String] {
+        let resolvedRootURL = rootURL.resolvingSymlinksInPath()
         let enumerator = try XCTUnwrap(
             FileManager.default.enumerator(
-                at: rootURL,
+                at: resolvedRootURL,
                 includingPropertiesForKeys: [.isRegularFileKey]
             )
         )
-        let rootPath = rootURL.path.hasSuffix("/") ? rootURL.path : rootURL.path + "/"
+        let rootPath = resolvedRootURL.path.hasSuffix("/")
+            ? resolvedRootURL.path
+            : resolvedRootURL.path + "/"
         var contents: [String: String] = [:]
 
         for case let url as URL in enumerator {
             let values = try url.resourceValues(forKeys: [.isRegularFileKey])
             guard values.isRegularFile == true else { continue }
-            let relativePath = String(url.path.dropFirst(rootPath.count))
+            let relativePath = String(
+                url.resolvingSymlinksInPath().path.dropFirst(rootPath.count)
+            )
             contents[relativePath] = try String(contentsOf: url, encoding: .utf8)
         }
 

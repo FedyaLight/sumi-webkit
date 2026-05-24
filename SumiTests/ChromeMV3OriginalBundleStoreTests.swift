@@ -271,6 +271,18 @@ final class ChromeMV3OriginalBundleStoreTests: XCTestCase {
         XCTAssertTrue(plan.plannedManifestRewriteNeeded)
         XCTAssertTrue(plan.plannedServiceWorkerWrapperNeeded)
         XCTAssertTrue(plan.plannedJSShimModules.contains("chrome.runtime"))
+        XCTAssertTrue(
+            plan.runtimeResourcePlan.requires(.serviceWorkerWrapperClassic)
+        )
+        XCTAssertTrue(plan.runtimeResourcePlan.requires(.chromeShimCommon))
+        XCTAssertTrue(
+            plan.runtimeResourcePlan.requires(.chromeShimServiceWorker)
+        )
+        XCTAssertTrue(plan.runtimeResourcePlan.templatesAreInert)
+        XCTAssertFalse(plan.runtimeResourcePlan.runtimeLoadable)
+        XCTAssertFalse(plan.runtimeResourcePlan.executableRuntimeFilesWritten)
+        XCTAssertFalse(plan.inertRuntimeTemplatesWritten)
+        XCTAssertFalse(plan.executableRuntimeFilesWritten)
         XCTAssertFalse(plan.generatedRuntimeFilesWritten)
         XCTAssertFalse(
             FileManager.default.fileExists(
@@ -313,6 +325,19 @@ final class ChromeMV3OriginalBundleStoreTests: XCTestCase {
             result.generatedBundlePlan.plannedNativeHostAPIs.contains(.nativeMessaging)
         )
         XCTAssertTrue(result.generatedBundlePlan.deferredAPIs.contains(.nativeMessaging))
+        XCTAssertTrue(
+            result.generatedBundlePlan.runtimeResourcePlan.requires(.hostBridgeStub)
+        )
+        XCTAssertTrue(
+            result.generatedBundlePlan.runtimeResourcePlan.requires(
+                .chromeShimContentScript
+            )
+        )
+        XCTAssertTrue(
+            result.generatedBundlePlan.runtimeResourcePlan.requires(
+                .chromeShimExtensionPage
+            )
+        )
     }
 
     func testUnsafeManifestPathsAreRejectedBeforeStaging() throws {
