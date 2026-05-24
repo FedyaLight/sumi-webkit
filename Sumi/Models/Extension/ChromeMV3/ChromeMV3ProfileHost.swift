@@ -27,6 +27,7 @@ enum ChromeMV3ProfileDataStoreIdentity: Codable, Equatable, Sendable {
 
 struct ChromeMV3RewrittenVariantCandidate: Codable, Equatable, Sendable {
     var id: String
+    var generatedVariantRootPath: String?
     var rewrittenVariantRootPath: String
     var runtimeLoadabilityReportPath: String?
     var manifestVersion: Int?
@@ -57,6 +58,39 @@ struct ChromeMV3ProfileHostDiagnosticsSummary: Codable, Equatable, Sendable {
     var startsBackgroundWorkNow: Bool
     var blockingReasons: [String]
     var futureRequirements: [String]
+}
+
+struct ChromeMV3DisabledRuntimeInvariantStatus: Codable, Equatable, Sendable {
+    var noWebKitExtensionObjectCreated: Bool
+    var noControllerObjectCreated: Bool
+    var noContextObjectCreated: Bool
+    var noControllerAttachedToConfigurations: Bool
+    var noExtensionJavaScriptRegistered: Bool
+    var noServiceWorkerWakeups: Bool
+    var noNativeMessagingRuntime: Bool
+    var noHiddenRuntimeCost: Bool
+    var accidentalAttachmentWhileDisabledDetected: Bool
+}
+
+struct ChromeMV3ProfileHostDiagnostics: Codable, Equatable, Sendable {
+    var profileIdentifier: String
+    var moduleState: ChromeMV3ProfileHostModuleState
+    var profileDataStoreIdentity: ChromeMV3ProfileDataStoreIdentity
+    var controllerState: ChromeMV3ProfileHostControllerState
+    var candidateInventory: ChromeMV3CandidateInventory?
+    var preflightResults: [ChromeMV3RuntimePreflightResult]
+    var webViewSurfaceMappings: [ChromeMV3WebViewSurfaceMappingDiagnostic]
+    var disabledRuntimeInvariantStatus: ChromeMV3DisabledRuntimeInvariantStatus
+    var canCreateControllerNow: Bool
+    var canLoadContextNow: Bool
+    var canAttachToNormalTabsNow: Bool
+    var attachableSurfacesNow: Array<ChromeMV3WebViewSurface>
+    var futureEligibleSurfaces: [ChromeMV3WebViewSurface]
+    var futureExtensionUIHostOnlySurfaces: [ChromeMV3WebViewSurface]
+    var requiresPromotionOrReclassificationSurfaces: [ChromeMV3WebViewSurface]
+    var ineligibleSurfaces: [ChromeMV3WebViewSurface]
+    var blockingReasons: [String]
+    var diagnosticsWarnings: [String]
 }
 
 struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
@@ -186,7 +220,152 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
         )
     }
 
+    func diagnostics(
+        candidateInventory: ChromeMV3CandidateInventory? = nil,
+        surfaceMappings: [ChromeMV3WebViewSurfaceMapping] =
+            ChromeMV3WebViewSurfaceInventory.currentSumiMappings
+    ) -> ChromeMV3ProfileHostDiagnostics {
+        let inventoryCandidates = candidateInventory?.candidates ?? []
+        let candidatesForPreflight = inventoryCandidates.isEmpty
+            ? candidateRewrittenVariants.map {
+                ChromeMV3InventoryPreflightCandidate(
+                    candidate: $0,
+                    report: nil
+                )
+            }
+            : inventoryCandidates.map {
+                ChromeMV3InventoryPreflightCandidate(
+                    candidate: $0.profileHostCandidate,
+                    report: $0.runtimeLoadabilityReport
+                )
+            }
+
+        let surfaceDiagnostics = ChromeMV3WebViewSurfaceInventory
+            .diagnostics(
+                extensionModuleEnabled: isActive,
+                profileHostActive: isActive,
+                mappings: surfaceMappings
+            )
+
+        let normalTabEligibility = ChromeMV3WebViewEligibilityPolicy.evaluate(
+            surface: .normalTab,
+            extensionModuleEnabled: isActive,
+            profileHostActive: isActive
+        )
+        let preflightResults = candidatesForPreflight.map {
+            ChromeMV3RuntimePreflight.evaluate(
+                profileHost: self,
+                candidate: $0.candidate,
+                report: $0.report,
+                webViewEligibility: normalTabEligibility
+            )
+        }
+
+        let mappingWarnings = surfaceDiagnostics.flatMap(\.warnings)
+        let inventoryWarnings = candidateInventory?.warnings ?? []
+        let missingArtifactWarnings = inventoryCandidates
+            .flatMap(\.missingArtifactWarnings)
+        let preflightBlockingReasons = preflightResults.flatMap(\.blockingReasons)
+        let inventoryBlockingReasons = inventoryCandidates.flatMap(\.blockers)
+        let surfaceBlockingReasons = surfaceDiagnostics
+            .filter { $0.currentEligibility.canAttachControllerNow == false }
+            .map { "\($0.siteID): controller attachment is not allowed now." }
+
+        return ChromeMV3ProfileHostDiagnostics(
+            profileIdentifier: profileIdentifier,
+            moduleState: moduleState,
+            profileDataStoreIdentity: profileDataStoreIdentity,
+            controllerState: controllerState,
+            candidateInventory: candidateInventory,
+            preflightResults: preflightResults.sorted {
+                ($0.candidateID ?? "") < ($1.candidateID ?? "")
+            },
+            webViewSurfaceMappings: surfaceDiagnostics.sorted {
+                $0.siteID < $1.siteID
+            },
+            disabledRuntimeInvariantStatus: disabledRuntimeInvariantStatus(
+                surfaceDiagnostics: surfaceDiagnostics
+            ),
+            canCreateControllerNow: false,
+            canLoadContextNow: false,
+            canAttachToNormalTabsNow: false,
+            attachableSurfacesNow: Array<ChromeMV3WebViewSurface>(),
+            futureEligibleSurfaces: uniqueSortedSurfaces(
+                surfaceMappings
+                    .filter { $0.futureEligibility == .futureEligible }
+                    .map(\.surface)
+            ),
+            futureExtensionUIHostOnlySurfaces: uniqueSortedSurfaces(
+                surfaceMappings
+                    .filter {
+                        $0.futureEligibility ==
+                            .futureEligibleThroughExtensionUIHostOnly
+                    }
+                    .map(\.surface)
+            ),
+            requiresPromotionOrReclassificationSurfaces: uniqueSortedSurfaces(
+                surfaceMappings
+                    .filter {
+                        $0.futureEligibility ==
+                            .eligibleAfterPromotionAndReevaluation
+                            || $0.futureAttachmentRequiresNormalBrowsingPromotion
+                    }
+                    .map(\.surface)
+            ),
+            ineligibleSurfaces: uniqueSortedSurfaces(
+                surfaceMappings
+                    .filter {
+                        $0.futureEligibility == .notEligible
+                            || $0.futureEligibility == .neverEligible
+                    }
+                    .map(\.surface)
+            ),
+            blockingReasons: uniqueSorted(
+                [profileRuntimeAllowance().reason]
+                    + preflightBlockingReasons
+                    + inventoryBlockingReasons
+                    + surfaceBlockingReasons
+            ),
+            diagnosticsWarnings: uniqueSorted(
+                inventoryWarnings + missingArtifactWarnings + mappingWarnings
+            )
+        )
+    }
+
+    private func disabledRuntimeInvariantStatus(
+        surfaceDiagnostics: [ChromeMV3WebViewSurfaceMappingDiagnostic]
+    )
+        -> ChromeMV3DisabledRuntimeInvariantStatus
+    {
+        let accidentalAttachmentDetected = surfaceDiagnostics.contains {
+            $0.controllerAttachmentAllowedNow
+                || $0.currentEligibility.canAttachControllerNow
+        }
+        return ChromeMV3DisabledRuntimeInvariantStatus(
+            noWebKitExtensionObjectCreated: true,
+            noControllerObjectCreated: true,
+            noContextObjectCreated: true,
+            noControllerAttachedToConfigurations: accidentalAttachmentDetected == false,
+            noExtensionJavaScriptRegistered: true,
+            noServiceWorkerWakeups: true,
+            noNativeMessagingRuntime: true,
+            noHiddenRuntimeCost: true,
+            accidentalAttachmentWhileDisabledDetected: accidentalAttachmentDetected
+        )
+    }
+
     private func uniqueSorted(_ values: [String]) -> [String] {
         Array(Set(values.filter { $0.isEmpty == false })).sorted()
     }
+
+    private func uniqueSortedSurfaces(
+        _ values: [ChromeMV3WebViewSurface]
+    ) -> [ChromeMV3WebViewSurface] {
+        Array(Set(values)).sorted { $0.rawValue < $1.rawValue }
+    }
+}
+
+private struct ChromeMV3InventoryPreflightCandidate {
+    var candidate: ChromeMV3RewrittenVariantCandidate
+    var report: ChromeMV3RuntimeLoadabilityReport?
 }
