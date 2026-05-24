@@ -2,7 +2,7 @@
 //  ExtensionBridge.swift
 //  Sumi
 //
-//  WebKit bridge adapters that expose Sumi windows and tabs to Safari extensions.
+//  WebKit bridge adapters that expose Sumi windows and tabs to WebExtensions.
 //
 
 import AppKit

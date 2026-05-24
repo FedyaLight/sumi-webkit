@@ -90,10 +90,6 @@ struct SumiCommands: Commands {
         SumiBookmarksCommands(browserManager: browserManager)
 
         CommandMenu("Extensions") {
-            Button("Install Extension...") {
-                browserManager.showExtensionInstallDialog()
-            }
-
             Button("Manage Extensions...") {
                 browserManager.openSettingsTab(selecting: .extensions)
             }

@@ -64,3 +64,6 @@ docs/
 !docs/
 docs/*
 !docs/adblock-native-rule-bundle-v1.md
+!docs/extensions/
+docs/extensions/*
+!docs/extensions/chrome-mv3-runtime-spec.md

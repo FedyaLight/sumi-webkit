@@ -133,12 +133,12 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
             return SettingsPaneDescriptor(
                 tab: tab,
                 title: "Extensions",
-                subtitle: "Safari extensions and userscripts for Sumi.",
+                subtitle: "Extension runtime status and userscripts for Sumi.",
                 icon: tab.icon,
                 group: .system,
                 keywords: [
-                    "extensions", "safari", "webextension", "appex",
-                    "manifest", "userscripts", "install", "uninstall"
+                    "extensions", "webextension", "manifest",
+                    "userscripts", "uninstall"
                 ]
             )
         case .advanced:
@@ -230,12 +230,12 @@ enum SumiPrivacySettingsRoute: Equatable, Hashable {
 
 /// Which detail is shown inside Settings → Extensions (segmented control).
 enum SumiExtensionsSettingsSubPane: String, CaseIterable, Hashable {
-    case safariExtensions
+    case extensions
     case userScripts
 
     var segmentTitle: String {
         switch self {
-        case .safariExtensions: return "Extensions"
+        case .extensions: return "Extensions"
         case .userScripts: return "Userscripts"
         }
     }

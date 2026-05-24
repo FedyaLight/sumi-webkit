@@ -141,10 +141,6 @@ extension BrowserManager {
         bridge?.scheduleFallbackFinish()
     }
 
-    func showExtensionInstallDialog() {
-        extensionsModule.showExtensionInstallDialog()
-    }
-
     func cleanupAllTabs() {
         RuntimeDiagnostics.emit("🔄 [BrowserManager] Cleaning up all tabs")
         extensionsModule.cancelNativeMessagingSessionsIfLoaded(

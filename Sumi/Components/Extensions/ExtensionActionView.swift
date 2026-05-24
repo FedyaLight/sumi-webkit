@@ -2,7 +2,7 @@
 //  ExtensionActionView.swift
 //  Sumi
 //
-//  Compatibility-only browser extension action strip.
+//  Browser extension action strip.
 //
 
 import AppKit
@@ -126,10 +126,6 @@ struct ExtensionActionView: View {
                         .environmentObject(browserManager)
                 }
 
-                if browserManager.extensionsModule.isEnabled {
-                    InstallExtensionTileButton()
-                        .environmentObject(browserManager)
-                }
             }
         }
     }
@@ -155,7 +151,7 @@ private struct CompactExtensionActionStrip: View {
                 case .sumiScriptsManager:
                     SumiScriptsToolbarControl(layout: .compactStrip)
                         .environmentObject(browserManager)
-                case .safariWebExtension(let ext):
+                case .webExtension(let ext):
                     ExtensionActionButton(ext: ext, layout: .compactStrip)
                         .environmentObject(browserManager)
                 }
@@ -522,60 +518,6 @@ struct ExtensionActionButton: View {
                 )
             ),
         ]
-    }
-}
-
-@available(macOS 15.5, *)
-private struct InstallExtensionTileButton: View {
-    @EnvironmentObject private var browserManager: BrowserManager
-    @State private var isHovering = false
-    @State private var isPressed = false
-
-    var body: some View {
-        Button {
-            browserManager.showExtensionInstallDialog()
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(URLBarHubNativeStyle.primaryText)
-                .frame(maxWidth: .infinity)
-                .frame(height: 36)
-                .background(backgroundFill)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(URLBarHubNativeStyle.separator, lineWidth: 0.5)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .scaleEffect(buttonScale)
-        }
-        .buttonStyle(.plain)
-        .help("Install Extension")
-        .onHover { hovering in
-            isHovering = hovering
-        }
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    isPressed = true
-                }
-                .onEnded { _ in
-                    isPressed = false
-                }
-        )
-    }
-
-    private var backgroundFill: Color {
-        isHovering ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubNativeStyle.controlBackground
-    }
-
-    private var buttonScale: CGFloat {
-        if isPressed && isHovering {
-            return 0.97
-        }
-        if isHovering {
-            return 1.03
-        }
-        return 1
     }
 }
 
