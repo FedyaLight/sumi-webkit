@@ -32,6 +32,8 @@ final class SumiExtensionsModule {
             ChromeMV3ExtensionObjectProbeOwner?
         private var lastChromeMV3WebKitObjectAcceptanceReport:
             ChromeMV3WebKitObjectAcceptanceReport?
+        private var lastChromeMV3ContextReadinessReport:
+            ChromeMV3ContextReadinessReport?
     #endif
     weak var browserManager: BrowserManager?
     #if DEBUG
@@ -112,6 +114,7 @@ final class SumiExtensionsModule {
                 if #available(macOS 15.5, *) {
                     tearDownChromeMV3ExtensionObjectProbeOwner()
                     lastChromeMV3WebKitObjectAcceptanceReport = nil
+                    lastChromeMV3ContextReadinessReport = nil
                 }
             #endif
             tearDownChromeMV3EmptyControllerOwner()
@@ -166,26 +169,32 @@ final class SumiExtensionsModule {
         let candidates = inventory.candidates.map(\.profileHostCandidate)
         let probeDiagnostics: ChromeMV3ExtensionObjectProbeDiagnostics?
         let objectAcceptanceReport: ChromeMV3WebKitObjectAcceptanceReport?
+        let contextReadinessReport: ChromeMV3ContextReadinessReport?
         #if DEBUG
             if #available(macOS 15.5, *) {
                 probeDiagnostics =
                     cachedChromeMV3ExtensionObjectProbeOwner?.diagnostics()
                 objectAcceptanceReport =
                     lastChromeMV3WebKitObjectAcceptanceReport
+                contextReadinessReport =
+                    lastChromeMV3ContextReadinessReport
             } else {
                 probeDiagnostics = nil
                 objectAcceptanceReport = nil
+                contextReadinessReport = nil
             }
         #else
             probeDiagnostics = nil
             objectAcceptanceReport = nil
+            contextReadinessReport = nil
         #endif
         return chromeMV3ProfileHostIfEnabled(
             candidateRewrittenVariants: candidates
         )?.diagnostics(
             candidateInventory: inventory,
             extensionObjectProbeDiagnostics: probeDiagnostics,
-            extensionObjectAcceptanceReport: objectAcceptanceReport
+            extensionObjectAcceptanceReport: objectAcceptanceReport,
+            contextReadinessReport: contextReadinessReport
         )
     }
 
@@ -499,6 +508,77 @@ final class SumiExtensionsModule {
                 isDirectory: true
             )
             return (try? ChromeMV3WebKitObjectAcceptanceReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3ContextReadinessReportIfEnabled(
+            explicitControllerCreationAllowed: Bool,
+            candidate: ChromeMV3RewrittenVariantCandidate,
+            runtimeLoadabilityReport: ChromeMV3RuntimeLoadabilityReport?,
+            objectAcceptanceReport:
+                ChromeMV3WebKitObjectAcceptanceReport? = nil,
+            probeDiagnostics:
+                ChromeMV3ExtensionObjectProbeDiagnostics? = nil,
+            writeReport: Bool = false
+        ) -> ChromeMV3ContextReadinessReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = URL(
+                fileURLWithPath: candidate.rewrittenVariantRootPath,
+                isDirectory: true
+            ).standardizedFileURL
+            let loadedObjectAcceptanceReport =
+                objectAcceptanceReport == nil
+                    ? ChromeMV3ContextReadinessReportGenerator
+                        .loadObjectAcceptanceReport(
+                            fromRewrittenBundleRoot: rootURL
+                        )
+                    : nil
+            let resolvedObjectAcceptanceReport =
+                objectAcceptanceReport
+                    ?? loadedObjectAcceptanceReport?.report
+                    ?? lastChromeMV3WebKitObjectAcceptanceReport
+            let resolvedObjectAcceptanceReportPath =
+                loadedObjectAcceptanceReport?.path
+                    ?? resolvedObjectAcceptanceReport.map { _ in
+                        rootURL
+                            .appendingPathComponent(
+                                ChromeMV3WebKitObjectAcceptanceReportWriter
+                                    .reportFileName
+                            )
+                            .path
+                    }
+            let resolvedObjectAcceptanceReportHash =
+                loadedObjectAcceptanceReport?.sha256
+            let emptyControllerDiagnostics =
+                chromeMV3EmptyControllerDiagnosticsIfEnabled(
+                    explicitControllerCreationAllowed:
+                        explicitControllerCreationAllowed,
+                    candidateRewrittenVariants: [candidate]
+                )
+            let liveSnapshot =
+                chromeMV3LiveNormalTabAttachmentDiagnosticsSnapshot()
+            let report = ChromeMV3ContextReadinessReportGenerator.makeReport(
+                candidate: candidate,
+                objectAcceptanceReport: resolvedObjectAcceptanceReport,
+                objectAcceptanceReportPath:
+                    resolvedObjectAcceptanceReportPath,
+                objectAcceptanceReportSHA256:
+                    resolvedObjectAcceptanceReportHash,
+                objectProbeDiagnostics: probeDiagnostics
+                    ?? cachedChromeMV3ExtensionObjectProbeOwner?
+                    .diagnostics(),
+                emptyControllerDiagnostics: emptyControllerDiagnostics,
+                liveNormalTabAttachmentSnapshot: liveSnapshot,
+                runtimeLoadabilityReport: runtimeLoadabilityReport
+            )
+            lastChromeMV3ContextReadinessReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3ContextReadinessReportWriter.write(
                 report,
                 toRewrittenBundleRoot: rootURL
             )) ?? report
