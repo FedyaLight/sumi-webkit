@@ -355,6 +355,7 @@ final class GlanceManager: ObservableObject {
         )
         tab.sumiSettings = browserManager?.sumiSettings
         tab.profileId = sourceProfile?.id ?? targetSpace?.profileId ?? browserManager?.currentProfile?.id
+        tab.chromeMV3AttachmentSurfaceOverride = .peekGlancePreview
         return tab
     }
 

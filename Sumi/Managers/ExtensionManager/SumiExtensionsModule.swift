@@ -28,6 +28,9 @@ final class SumiExtensionsModule {
     private var cachedChromeMV3EmptyControllerOwner:
         ChromeMV3EmptyControllerOwner?
     weak var browserManager: BrowserManager?
+    #if DEBUG
+        var chromeMV3InternalNormalTabConfigurationAttachmentAllowed = false
+    #endif
 
     init(
         moduleRegistry: SumiModuleRegistry = .shared,
@@ -301,6 +304,17 @@ final class SumiExtensionsModule {
                 requestedContextLoading: requestedContextLoading,
                 canLoadContextNow: canLoadContextNow,
                 runtimeLoadable: runtimeLoadable
+            )
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3NormalTabConfigurationAttachmentRequestForLiveNormalTabIfEnabled(
+            surface: ChromeMV3WebViewSurface
+        ) -> ChromeMV3NormalTabConfigurationAttachmentRequest? {
+            chromeMV3NormalTabConfigurationAttachmentRequestIfEnabled(
+                explicitInternalNormalTabAttachmentAllowed:
+                    chromeMV3InternalNormalTabConfigurationAttachmentAllowed,
+                surface: surface
             )
         }
     #endif

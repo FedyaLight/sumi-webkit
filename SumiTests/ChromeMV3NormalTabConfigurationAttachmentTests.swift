@@ -30,6 +30,12 @@ final class ChromeMV3NormalTabConfigurationAttachmentTests: XCTestCase {
         )
         XCTAssertFalse(result.diagnostics.runtimeLoadable)
         XCTAssertFalse(result.diagnostics.canLoadContextNow)
+        XCTAssertFalse(result.diagnostics.attachmentRequested)
+        XCTAssertEqual(result.diagnostics.targetSurface, .normalTab)
+        XCTAssertFalse(result.diagnostics.emptyControllerOwnerPresent)
+        XCTAssertFalse(
+            result.diagnostics.explicitInternalNormalTabAttachmentAllowed
+        )
     }
 
     @MainActor
@@ -95,6 +101,8 @@ final class ChromeMV3NormalTabConfigurationAttachmentTests: XCTestCase {
         XCTAssertEqual(result.diagnostics.contextCount, 0)
         XCTAssertEqual(result.diagnostics.loadedExtensionCount, 0)
         XCTAssertEqual(result.diagnostics.nativeMessagingPortCount, 0)
+        XCTAssertTrue(result.diagnostics.attachmentRequested)
+        XCTAssertEqual(result.diagnostics.targetSurface, .normalTab)
         XCTAssertFalse(fixture.module.hasLoadedRuntime)
         XCTAssertEqual(fixture.probe.managerCount, 0)
     }
@@ -158,8 +166,281 @@ final class ChromeMV3NormalTabConfigurationAttachmentTests: XCTestCase {
         XCTAssertEqual(result.diagnostics.nativeMessagingPortCount, 0)
         XCTAssertFalse(result.diagnostics.runtimeLoadable)
         XCTAssertFalse(result.diagnostics.canLoadContextNow)
+        XCTAssertTrue(result.diagnostics.attachmentRequested)
+        XCTAssertEqual(result.diagnostics.targetSurface, .normalTab)
+        XCTAssertTrue(result.diagnostics.emptyControllerOwnerPresent)
+        XCTAssertTrue(
+            result.diagnostics.explicitInternalNormalTabAttachmentAllowed
+        )
+        XCTAssertEqual(result.diagnostics.userScriptRegistrationCount, 0)
+        XCTAssertNotNil(result.diagnostics.attachedControllerIdentity)
         XCTAssertFalse(fixture.module.hasLoadedRuntime)
         XCTAssertEqual(fixture.probe.managerCount, 0)
+    }
+
+    @MainActor
+    func testRequestModelClassifiesNormalTabAndAuxiliaryTargets() throws {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Chrome MV3 WebKit attachment APIs require macOS 15.5.")
+        }
+
+        let liveRequest = ChromeMV3NormalTabConfigurationAttachmentRequest(
+            owner: nil,
+            extensionsModuleEnabled: true,
+            profileHostEnabled: true,
+            explicitInternalNormalTabAttachmentAllowed: true,
+            surface: .pinnedEssentialsLiveNormalBrowsing
+        )
+        let previewRequest = ChromeMV3NormalTabConfigurationAttachmentRequest(
+            owner: nil,
+            extensionsModuleEnabled: true,
+            profileHostEnabled: true,
+            explicitInternalNormalTabAttachmentAllowed: true,
+            surface: .peekGlancePreview
+        )
+
+        XCTAssertFalse(liveRequest.emptyControllerOwnerPresent)
+        XCTAssertFalse(liveRequest.targetIsLiveNormalTab)
+        XCTAssertTrue(liveRequest.targetIsPinnedEssentialsLiveNormalBrowsing)
+        XCTAssertFalse(liveRequest.targetIsLauncherMetadata)
+        XCTAssertFalse(liveRequest.targetIsPreviewHelperMiniFaviconDownloadAuxiliary)
+        XCTAssertFalse(liveRequest.runtimeLoadable)
+        XCTAssertFalse(liveRequest.canLoadContextNow)
+
+        XCTAssertEqual(previewRequest.targetSurface, .peekGlancePreview)
+        XCTAssertFalse(previewRequest.targetIsLiveNormalTab)
+        XCTAssertFalse(previewRequest.targetIsPinnedEssentialsLiveNormalBrowsing)
+        XCTAssertTrue(previewRequest.targetIsPreviewHelperMiniFaviconDownloadAuxiliary)
+        XCTAssertFalse(previewRequest.runtimeLoadable)
+        XCTAssertFalse(previewRequest.canLoadContextNow)
+    }
+
+    @MainActor
+    func testLiveNormalTabDisabledModuleRemainsUnattachedAndCreatesNoRuntime()
+        throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Chrome MV3 WebKit attachment APIs require macOS 15.5.")
+        }
+
+        let fixture = try makeLiveTabFixture(extensionsEnabled: false)
+        defer { fixture.tearDown() }
+        fixture.module.chromeMV3InternalNormalTabConfigurationAttachmentAllowed = true
+
+        let tab = fixture.makeTab()
+        let webView = try XCTUnwrap(
+            tab.makeNormalTabWebView(reason: "test.disabled.live")
+        )
+
+        XCTAssertEqual(tab.chromeMV3NormalTabAttachmentSurface, .normalTab)
+        XCTAssertNil(webView.configuration.webExtensionController)
+        XCTAssertFalse(
+            webView.configuration.sumiHasChromeMV3NormalTabConfigurationAttachment
+        )
+        XCTAssertEqual(fixture.probe.profileProviderCount, 0)
+        XCTAssertEqual(fixture.probe.ownerFactoryCount, 0)
+        XCTAssertEqual(fixture.probe.managerCount, 0)
+        XCTAssertFalse(fixture.module.hasLoadedRuntime)
+    }
+
+    @MainActor
+    func testLiveNormalTabEnabledInternalGateOffRemainsUnattached()
+        throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Chrome MV3 WebKit attachment APIs require macOS 15.5.")
+        }
+
+        let fixture = try makeLiveTabFixture(extensionsEnabled: true)
+        defer { fixture.tearDown() }
+        let owner = try XCTUnwrap(
+            fixture.module.createChromeMV3EmptyControllerOwnerIfEnabled(
+                explicitControllerCreationAllowed: true
+            )
+        )
+
+        let tab = fixture.makeTab()
+        let webView = try XCTUnwrap(
+            tab.makeNormalTabWebView(reason: "test.enabled.gateOff.live")
+        )
+
+        XCTAssertNotNil(owner.controller)
+        XCTAssertNil(webView.configuration.webExtensionController)
+        XCTAssertFalse(
+            webView.configuration.sumiHasChromeMV3NormalTabConfigurationAttachment
+        )
+        XCTAssertEqual(owner.diagnostics().contextCount, 0)
+        XCTAssertEqual(owner.diagnostics().loadedExtensionCount, 0)
+        XCTAssertEqual(owner.diagnostics().nativeMessagingPortCount, 0)
+        XCTAssertEqual(fixture.probe.ownerFactoryCount, 1)
+        XCTAssertEqual(fixture.probe.managerCount, 0)
+        XCTAssertFalse(fixture.module.hasLoadedRuntime)
+    }
+
+    @MainActor
+    func testLiveNormalTabEnabledInternalGateAttachesSameEmptyController()
+        throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Chrome MV3 WebKit attachment APIs require macOS 15.5.")
+        }
+
+        let fixture = try makeLiveTabFixture(extensionsEnabled: true)
+        defer { fixture.tearDown() }
+        fixture.module.chromeMV3InternalNormalTabConfigurationAttachmentAllowed = true
+        let owner = try XCTUnwrap(
+            fixture.module.createChromeMV3EmptyControllerOwnerIfEnabled(
+                explicitControllerCreationAllowed: true
+            )
+        )
+        let controller = try XCTUnwrap(owner.controller)
+
+        let tab = fixture.makeTab()
+        let webView = try XCTUnwrap(
+            tab.makeNormalTabWebView(reason: "test.enabled.gateOn.live")
+        )
+        let attachedController = try XCTUnwrap(
+            webView.configuration.webExtensionController
+        )
+
+        XCTAssertEqual(
+            ObjectIdentifier(attachedController),
+            ObjectIdentifier(controller)
+        )
+        XCTAssertEqual(tab.chromeMV3NormalTabAttachmentSurface, .normalTab)
+        XCTAssertEqual(owner.diagnostics().contextCount, 0)
+        XCTAssertEqual(owner.diagnostics().loadedExtensionCount, 0)
+        XCTAssertEqual(owner.diagnostics().nativeMessagingPortCount, 0)
+        XCTAssertFalse(owner.diagnostics().runtimeLoadable)
+        XCTAssertFalse(owner.diagnostics().canLoadContextNow)
+        XCTAssertEqual(fixture.probe.managerCount, 0)
+        XCTAssertFalse(fixture.module.hasLoadedRuntime)
+    }
+
+    @MainActor
+    func testLivePinnedEssentialsTabFollowsNormalTabAttachmentGate()
+        throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Chrome MV3 WebKit attachment APIs require macOS 15.5.")
+        }
+
+        let fixture = try makeLiveTabFixture(extensionsEnabled: true)
+        defer { fixture.tearDown() }
+        fixture.module.chromeMV3InternalNormalTabConfigurationAttachmentAllowed = true
+        let owner = try XCTUnwrap(
+            fixture.module.createChromeMV3EmptyControllerOwnerIfEnabled(
+                explicitControllerCreationAllowed: true
+            )
+        )
+        let controller = try XCTUnwrap(owner.controller)
+        let pin = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: fixture.profile.id,
+            index: 0,
+            launchURL: URL(string: "https://pinned.example")!,
+            title: "Pinned"
+        )
+
+        let tab = fixture.makeTab(url: pin.launchURL)
+        tab.bindToShortcutPin(pin)
+        let webView = try XCTUnwrap(
+            tab.makeNormalTabWebView(reason: "test.pinned.live")
+        )
+        let attachedController = try XCTUnwrap(
+            webView.configuration.webExtensionController
+        )
+
+        XCTAssertEqual(
+            tab.chromeMV3NormalTabAttachmentSurface,
+            .pinnedEssentialsLiveNormalBrowsing
+        )
+        XCTAssertEqual(
+            ObjectIdentifier(attachedController),
+            ObjectIdentifier(controller)
+        )
+        XCTAssertEqual(owner.diagnostics().contextCount, 0)
+        XCTAssertFalse(owner.diagnostics().runtimeLoadable)
+        XCTAssertFalse(owner.diagnostics().canLoadContextNow)
+    }
+
+    @MainActor
+    func testGlancePreviewLivePathRemainsUnattachedDespiteInternalGate()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Chrome MV3 WebKit attachment APIs require macOS 15.5.")
+        }
+
+        let fixture = try makeLiveTabFixture(extensionsEnabled: true)
+        defer { fixture.tearDown() }
+        fixture.module.chromeMV3InternalNormalTabConfigurationAttachmentAllowed = true
+        _ = try XCTUnwrap(
+            fixture.module.createChromeMV3EmptyControllerOwnerIfEnabled(
+                explicitControllerCreationAllowed: true
+            )
+        )
+        let sourceTab = fixture.makeTab(url: URL(string: "https://source.example")!)
+
+        fixture.browserManager.glanceManager.presentExternalURL(
+            URL(string: "https://preview.example")!,
+            from: sourceTab
+        )
+        let session = try XCTUnwrap(
+            fixture.browserManager.glanceManager.currentSession
+        )
+        let webView = try await waitForPreviewWebView(in: session)
+
+        XCTAssertEqual(
+            session.previewTab.chromeMV3AttachmentSurfaceOverride,
+            .peekGlancePreview
+        )
+        XCTAssertNil(webView.configuration.webExtensionController)
+        XCTAssertFalse(
+            webView.configuration.sumiHasChromeMV3NormalTabConfigurationAttachment
+        )
+        XCTAssertEqual(fixture.probe.managerCount, 0)
+        XCTAssertFalse(fixture.module.hasLoadedRuntime)
+    }
+
+    @MainActor
+    func testLiveNormalTabAfterTeardownReturnsToUnattachedBehavior()
+        throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Chrome MV3 WebKit attachment APIs require macOS 15.5.")
+        }
+
+        let fixture = try makeLiveTabFixture(extensionsEnabled: true)
+        defer { fixture.tearDown() }
+        fixture.module.chromeMV3InternalNormalTabConfigurationAttachmentAllowed = true
+        _ = try XCTUnwrap(
+            fixture.module.createChromeMV3EmptyControllerOwnerIfEnabled(
+                explicitControllerCreationAllowed: true
+            )
+        )
+
+        let attachedTab = fixture.makeTab(url: URL(string: "https://one.example")!)
+        let attachedWebView = try XCTUnwrap(
+            attachedTab.makeNormalTabWebView(reason: "test.teardown.before")
+        )
+        XCTAssertNotNil(attachedWebView.configuration.webExtensionController)
+
+        _ = fixture.module.tearDownChromeMV3EmptyControllerOwnerIfEnabled(
+            trigger: .explicitReset
+        )
+        let laterTab = fixture.makeTab(url: URL(string: "https://two.example")!)
+        let laterWebView = try XCTUnwrap(
+            laterTab.makeNormalTabWebView(reason: "test.teardown.after")
+        )
+
+        XCTAssertNil(laterWebView.configuration.webExtensionController)
+        XCTAssertFalse(
+            laterWebView.configuration.sumiHasChromeMV3NormalTabConfigurationAttachment
+        )
+        XCTAssertEqual(fixture.probe.managerCount, 0)
+        XCTAssertFalse(fixture.module.hasLoadedRuntime)
     }
 
     @MainActor
@@ -601,6 +882,83 @@ final class ChromeMV3NormalTabConfigurationAttachmentTests: XCTestCase {
         )
     }
 
+    @MainActor
+    private func makeLiveTabFixture(
+        extensionsEnabled: Bool
+    ) throws -> ChromeMV3LiveNormalTabAttachmentFixture {
+        let harness = TestDefaultsHarness()
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        if extensionsEnabled {
+            registry.enable(.extensions)
+        }
+        let container = try ModelContainer(
+            for: Schema([ExtensionEntity.self]),
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        let browserConfiguration = BrowserConfiguration()
+        let profile = Profile(name: "Chrome MV3 Live Normal Attachment Test")
+        let probe = ChromeMV3NormalTabAttachmentModuleProbe()
+        let module = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: container.mainContext,
+            browserConfiguration: browserConfiguration,
+            initialProfileProvider: {
+                probe.profileProviderCount += 1
+                return profile
+            },
+            managerFactory: { context, initialProfile, browserConfiguration in
+                probe.managerCount += 1
+                return ExtensionManager(
+                    context: context,
+                    initialProfile: initialProfile,
+                    browserConfiguration: browserConfiguration
+                )
+            },
+            chromeMV3EmptyControllerOwnerFactory: { decision, dataStore, identifier in
+                probe.ownerFactoryCount += 1
+                return ChromeMV3EmptyControllerFactory.makeOwner(
+                    gateDecision: decision,
+                    defaultWebsiteDataStore: dataStore,
+                    controllerIdentifier: identifier
+                )
+            }
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            extensionsModule: module
+        )
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+
+        return ChromeMV3LiveNormalTabAttachmentFixture(
+            defaultsHarness: harness,
+            container: container,
+            browserConfiguration: browserConfiguration,
+            profile: profile,
+            module: module,
+            browserManager: browserManager,
+            probe: probe
+        )
+    }
+
+    @MainActor
+    private func waitForPreviewWebView(
+        in session: GlanceSession
+    ) async throws -> WKWebView {
+        for _ in 0..<100 {
+            if let webView = session.previewTab.existingWebView {
+                return webView
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return try XCTUnwrap(
+            session.previewTab.existingWebView,
+            "Timed out waiting for Glance preview WebView."
+        )
+    }
+
     private static func sourceFiles(
         in directories: [String]
     ) throws -> [(relativePath: String, contents: String)] {
@@ -648,6 +1006,39 @@ private struct ChromeMV3NormalTabAttachmentModuleFixture {
     let probe: ChromeMV3NormalTabAttachmentModuleProbe
 
     func tearDown() {
+        defaultsHarness.reset()
+    }
+}
+
+@MainActor
+private struct ChromeMV3LiveNormalTabAttachmentFixture {
+    let defaultsHarness: TestDefaultsHarness
+    let container: ModelContainer
+    let browserConfiguration: BrowserConfiguration
+    let profile: Profile
+    let module: SumiExtensionsModule
+    let browserManager: BrowserManager
+    let probe: ChromeMV3NormalTabAttachmentModuleProbe
+
+    func makeTab(
+        url: URL = URL(string: "https://example.com")!
+    ) -> Tab {
+        let tab = Tab(
+            url: url,
+            name: url.host ?? "Chrome MV3 Live Normal",
+            favicon: "globe",
+            index: 0,
+            browserManager: browserManager
+        )
+        tab.profileId = profile.id
+        return tab
+    }
+
+    func tearDown() {
+        _ = module.tearDownChromeMV3EmptyControllerOwnerIfEnabled(
+            trigger: .explicitReset
+        )
+        module.setEnabled(false)
         defaultsHarness.reset()
     }
 }

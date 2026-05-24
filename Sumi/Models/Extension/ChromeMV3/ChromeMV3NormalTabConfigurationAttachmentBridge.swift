@@ -23,6 +23,31 @@ struct ChromeMV3NormalTabConfigurationAttachmentRequest {
     var canLoadContextNow: Bool
     var runtimeLoadable: Bool
 
+    var emptyControllerOwnerPresent: Bool {
+        owner != nil
+    }
+
+    var targetSurface: ChromeMV3WebViewSurface {
+        surface
+    }
+
+    var targetIsLiveNormalTab: Bool {
+        surface == .normalTab
+    }
+
+    var targetIsPinnedEssentialsLiveNormalBrowsing: Bool {
+        surface == .pinnedEssentialsLiveNormalBrowsing
+    }
+
+    var targetIsLauncherMetadata: Bool {
+        surface == .pinnedEssentialsLauncherMetadata
+    }
+
+    var targetIsPreviewHelperMiniFaviconDownloadAuxiliary: Bool {
+        surface.isAuxiliaryOrHelperSurfaceForChromeMV3Attachment
+            || surface.isExtensionOwnedProductionSurfaceForChromeMV3Attachment
+    }
+
     init(
         owner: ChromeMV3EmptyControllerOwner?,
         extensionsModuleEnabled: Bool,
@@ -52,14 +77,20 @@ struct ChromeMV3NormalTabConfigurationAttachmentDiagnostics:
     Sendable
 {
     var gateDecision: ChromeMV3NormalTabConfigurationAttachmentGateDecision
+    var attachmentRequested: Bool
+    var targetSurface: ChromeMV3WebViewSurface
+    var emptyControllerOwnerPresent: Bool
+    var explicitInternalNormalTabAttachmentAllowed: Bool
     var normalTabConfigurationCreated: Bool
     var normalTabConfigurationAttached: Bool
     var auxiliaryConfigurationAttached: Bool
     var attachedControllerMatchesOwner: Bool
+    var attachedControllerIdentity: String?
     var contextCount: Int
     var loadedExtensionCount: Int
     var attachedWebViewCount: Int
     var userScriptCount: Int
+    var userScriptRegistrationCount: Int
     var webExtensionCreated: Bool
     var webExtensionContextCreated: Bool
     var contextLoadCalled: Bool
@@ -240,8 +271,19 @@ enum ChromeMV3NormalTabConfigurationAttachmentBridge {
         gateDecision: ChromeMV3NormalTabConfigurationAttachmentGateDecision
     ) -> ChromeMV3NormalTabConfigurationAttachmentDiagnostics {
         let hasAttachment = configuration.webExtensionController != nil
+        let ownerDiagnostics = request?.owner?.diagnostics()
+        let attachmentMatchesOwner = configurationControllerMatches(
+            configuration,
+            controller: controller
+        )
         return ChromeMV3NormalTabConfigurationAttachmentDiagnostics(
             gateDecision: gateDecision,
+            attachmentRequested: request != nil,
+            targetSurface: request?.targetSurface ?? .normalTab,
+            emptyControllerOwnerPresent:
+                request?.emptyControllerOwnerPresent ?? false,
+            explicitInternalNormalTabAttachmentAllowed:
+                request?.explicitInternalNormalTabAttachmentAllowed ?? false,
             normalTabConfigurationCreated: true,
             normalTabConfigurationAttached:
                 configuration.sumiIsNormalTabWebViewConfiguration
@@ -249,22 +291,24 @@ enum ChromeMV3NormalTabConfigurationAttachmentBridge {
             auxiliaryConfigurationAttached:
                 configuration.sumiIsNormalTabWebViewConfiguration == false
                     && hasAttachment,
-            attachedControllerMatchesOwner: configurationControllerMatches(
-                configuration,
-                controller: controller
-            ),
+            attachedControllerMatchesOwner: attachmentMatchesOwner,
+            attachedControllerIdentity: attachmentMatchesOwner
+                ? ownerDiagnostics?.dataStoreIdentityPolicy
+                    .controllerConfigurationIdentityString
+                : nil,
             contextCount: controller?.extensionContexts.count ?? 0,
             loadedExtensionCount: controller?.extensions.count ?? 0,
             attachedWebViewCount: 0,
             userScriptCount:
                 configuration.userContentController.userScripts.count,
+            userScriptRegistrationCount: 0,
             webExtensionCreated: false,
             webExtensionContextCreated: false,
             contextLoadCalled: false,
             generatedExtensionBundleLoaded: false,
             nativeMessagingLaunched: false,
             nativeMessagingPortCount:
-                request?.owner?.diagnostics().nativeMessagingPortCount ?? 0,
+                ownerDiagnostics?.nativeMessagingPortCount ?? 0,
             runtimeLoadable: false,
             canLoadContextNow: false,
             canAttachNormalTabConfigurationNow:
