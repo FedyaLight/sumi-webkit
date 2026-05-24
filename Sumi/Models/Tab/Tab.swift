@@ -132,6 +132,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     var shortcutPinId: UUID?
     var shortcutPinRole: ShortcutPinRole?
     var isShortcutLiveInstance: Bool = false
+    var chromeMV3AttachmentSurfaceOverride: ChromeMV3WebViewSurface?
     
     // MARK: - Ephemeral State
     /// Whether this tab belongs to an ephemeral/incognito session
