@@ -82,6 +82,8 @@ struct ChromeMV3ProfileHostDiagnostics: Codable, Equatable, Sendable {
     var candidateInventory: ChromeMV3CandidateInventory?
     var extensionObjectProbeDiagnostics:
         ChromeMV3ExtensionObjectProbeDiagnostics?
+    var extensionObjectAcceptanceReport:
+        ChromeMV3WebKitObjectAcceptanceReport?
     var preflightResults: [ChromeMV3RuntimePreflightResult]
     var webViewSurfaceMappings: [ChromeMV3WebViewSurfaceMappingDiagnostic]
     var disabledRuntimeInvariantStatus: ChromeMV3DisabledRuntimeInvariantStatus
@@ -228,6 +230,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
         candidateInventory: ChromeMV3CandidateInventory? = nil,
         extensionObjectProbeDiagnostics:
             ChromeMV3ExtensionObjectProbeDiagnostics? = nil,
+        extensionObjectAcceptanceReport:
+            ChromeMV3WebKitObjectAcceptanceReport? = nil,
         surfaceMappings: [ChromeMV3WebViewSurfaceMapping] =
             ChromeMV3WebViewSurfaceInventory.currentSumiMappings
     ) -> ChromeMV3ProfileHostDiagnostics {
@@ -284,6 +288,7 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
             controllerState: controllerState,
             candidateInventory: candidateInventory,
             extensionObjectProbeDiagnostics: extensionObjectProbeDiagnostics,
+            extensionObjectAcceptanceReport: extensionObjectAcceptanceReport,
             preflightResults: preflightResults.sorted {
                 ($0.candidateID ?? "") < ($1.candidateID ?? "")
             },

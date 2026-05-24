@@ -30,6 +30,8 @@ final class SumiExtensionsModule {
     #if DEBUG
         private var cachedChromeMV3ExtensionObjectProbeOwner:
             ChromeMV3ExtensionObjectProbeOwner?
+        private var lastChromeMV3WebKitObjectAcceptanceReport:
+            ChromeMV3WebKitObjectAcceptanceReport?
     #endif
     weak var browserManager: BrowserManager?
     #if DEBUG
@@ -109,6 +111,7 @@ final class SumiExtensionsModule {
             #if DEBUG
                 if #available(macOS 15.5, *) {
                     tearDownChromeMV3ExtensionObjectProbeOwner()
+                    lastChromeMV3WebKitObjectAcceptanceReport = nil
                 }
             #endif
             tearDownChromeMV3EmptyControllerOwner()
@@ -162,21 +165,27 @@ final class SumiExtensionsModule {
             .readInventory(rootURL: rootURL)
         let candidates = inventory.candidates.map(\.profileHostCandidate)
         let probeDiagnostics: ChromeMV3ExtensionObjectProbeDiagnostics?
+        let objectAcceptanceReport: ChromeMV3WebKitObjectAcceptanceReport?
         #if DEBUG
             if #available(macOS 15.5, *) {
                 probeDiagnostics =
                     cachedChromeMV3ExtensionObjectProbeOwner?.diagnostics()
+                objectAcceptanceReport =
+                    lastChromeMV3WebKitObjectAcceptanceReport
             } else {
                 probeDiagnostics = nil
+                objectAcceptanceReport = nil
             }
         #else
             probeDiagnostics = nil
+            objectAcceptanceReport = nil
         #endif
         return chromeMV3ProfileHostIfEnabled(
             candidateRewrittenVariants: candidates
         )?.diagnostics(
             candidateInventory: inventory,
-            extensionObjectProbeDiagnostics: probeDiagnostics
+            extensionObjectProbeDiagnostics: probeDiagnostics,
+            extensionObjectAcceptanceReport: objectAcceptanceReport
         )
     }
 
@@ -453,6 +462,49 @@ final class SumiExtensionsModule {
         }
 
         @available(macOS 15.5, *)
+        func chromeMV3WebKitObjectAcceptanceReportIfEnabled(
+            explicitInternalExtensionObjectProbeAllowed: Bool,
+            candidate: ChromeMV3RewrittenVariantCandidate,
+            runtimeLoadabilityReport: ChromeMV3RuntimeLoadabilityReport?,
+            probeDiagnostics: ChromeMV3ExtensionObjectProbeDiagnostics? = nil,
+            writeReport: Bool = false
+        ) -> ChromeMV3WebKitObjectAcceptanceReport? {
+            guard isEnabled else { return nil }
+            guard
+                let decision =
+                    chromeMV3ExtensionObjectProbeGateDecisionIfEnabled(
+                        explicitInternalExtensionObjectProbeAllowed:
+                            explicitInternalExtensionObjectProbeAllowed,
+                        candidate: candidate,
+                        runtimeLoadabilityReport: runtimeLoadabilityReport
+                    )
+            else {
+                return nil
+            }
+
+            let diagnostics = probeDiagnostics
+                ?? cachedChromeMV3ExtensionObjectProbeOwner?.diagnostics()
+            let report = ChromeMV3WebKitObjectAcceptanceReportGenerator
+                .makeReport(
+                    candidate: candidate,
+                    gateDecision: decision,
+                    probeDiagnostics: diagnostics,
+                    runtimeLoadabilityReport: runtimeLoadabilityReport
+                )
+            lastChromeMV3WebKitObjectAcceptanceReport = report
+
+            guard writeReport else { return report }
+            let rootURL = URL(
+                fileURLWithPath: report.rewrittenBundleRootPath,
+                isDirectory: true
+            )
+            return (try? ChromeMV3WebKitObjectAcceptanceReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
         @discardableResult
         func runChromeMV3ExtensionObjectProbeIfEnabled(
             explicitInternalExtensionObjectProbeAllowed: Bool,
@@ -473,9 +525,18 @@ final class SumiExtensionsModule {
             }
 
             guard decision.canCreateExtensionObjectNow else {
-                return ChromeMV3ExtensionObjectProbeDiagnostics.blocked(
+                let diagnostics = ChromeMV3ExtensionObjectProbeDiagnostics.blocked(
                     gateDecision: decision
                 )
+                _ = chromeMV3WebKitObjectAcceptanceReportIfEnabled(
+                    explicitInternalExtensionObjectProbeAllowed:
+                        explicitInternalExtensionObjectProbeAllowed,
+                    candidate: candidate,
+                    runtimeLoadabilityReport: runtimeLoadabilityReport,
+                    probeDiagnostics: diagnostics,
+                    writeReport: true
+                )
+                return diagnostics
             }
 
             if let cachedChromeMV3ExtensionObjectProbeOwner,
@@ -483,8 +544,17 @@ final class SumiExtensionsModule {
                 .diagnostics()
                 .resourceBaseURLPath == decision.input.resourceBaseURLPath
             {
-                return await cachedChromeMV3ExtensionObjectProbeOwner
+                let diagnostics = await cachedChromeMV3ExtensionObjectProbeOwner
                     .runProbeIfAllowed()
+                _ = chromeMV3WebKitObjectAcceptanceReportIfEnabled(
+                    explicitInternalExtensionObjectProbeAllowed:
+                        explicitInternalExtensionObjectProbeAllowed,
+                    candidate: candidate,
+                    runtimeLoadabilityReport: runtimeLoadabilityReport,
+                    probeDiagnostics: diagnostics,
+                    writeReport: true
+                )
+                return diagnostics
             }
 
             cachedChromeMV3ExtensionObjectProbeOwner?.tearDown()
@@ -492,7 +562,16 @@ final class SumiExtensionsModule {
                 gateDecision: decision
             )
             cachedChromeMV3ExtensionObjectProbeOwner = owner
-            return await owner.runProbeIfAllowed()
+            let diagnostics = await owner.runProbeIfAllowed()
+            _ = chromeMV3WebKitObjectAcceptanceReportIfEnabled(
+                explicitInternalExtensionObjectProbeAllowed:
+                    explicitInternalExtensionObjectProbeAllowed,
+                candidate: candidate,
+                runtimeLoadabilityReport: runtimeLoadabilityReport,
+                probeDiagnostics: diagnostics,
+                writeReport: true
+            )
+            return diagnostics
         }
 
         @available(macOS 15.5, *)

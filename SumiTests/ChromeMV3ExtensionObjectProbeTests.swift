@@ -148,6 +148,13 @@ final class ChromeMV3ExtensionObjectProbeTests: XCTestCase {
                 candidate: fixture.candidate,
                 runtimeLoadabilityReport: fixture.report
             )
+        let acceptanceReport =
+            module.chromeMV3WebKitObjectAcceptanceReportIfEnabled(
+                explicitInternalExtensionObjectProbeAllowed: true,
+                candidate: fixture.candidate,
+                runtimeLoadabilityReport: fixture.report,
+                writeReport: true
+            )
         let result = await module.runChromeMV3ExtensionObjectProbeIfEnabled(
             explicitInternalExtensionObjectProbeAllowed: true,
             candidate: fixture.candidate,
@@ -155,9 +162,20 @@ final class ChromeMV3ExtensionObjectProbeTests: XCTestCase {
         )
 
         XCTAssertNil(diagnostics)
+        XCTAssertNil(acceptanceReport)
         XCTAssertNil(result)
         XCTAssertEqual(probe.managerCount, 0)
         XCTAssertFalse(module.hasLoadedRuntime)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: fixture.variantRootURL
+                    .appendingPathComponent(
+                        ChromeMV3WebKitObjectAcceptanceReportWriter
+                            .reportFileName
+                    )
+                    .path
+            )
+        )
     }
 
     @MainActor
@@ -276,6 +294,29 @@ final class ChromeMV3ExtensionObjectProbeTests: XCTestCase {
         default:
             XCTFail("Expected created or failed object probe state.")
         }
+
+        let report = ChromeMV3WebKitObjectAcceptanceReportGenerator
+            .makeReport(
+                candidate: fixture.candidate,
+                gateDecision: decision,
+                probeDiagnostics: diagnostics,
+                runtimeLoadabilityReport: fixture.report
+            )
+        XCTAssertTrue(report.probeAttempted)
+        XCTAssertEqual(report.objectAcceptedByWebKit, diagnostics.extensionObjectCreated)
+        XCTAssertFalse(report.canCreateContextNow)
+        XCTAssertFalse(report.canLoadContextNow)
+        XCTAssertFalse(report.runtimeLoadable)
+        if diagnostics.extensionObjectCreated {
+            XCTAssertTrue(report.classificationCategories.contains(.objectCreated))
+        } else {
+            XCTAssertTrue(
+                report.classificationFindings.contains {
+                    $0.severity == .objectBlocking
+                        || $0.category == .unknownWebKitError
+                }
+            )
+        }
     }
 
     @MainActor
@@ -322,6 +363,250 @@ final class ChromeMV3ExtensionObjectProbeTests: XCTestCase {
         XCTAssertEqual(diagnostics.controllerLoadCount, 0)
         XCTAssertFalse(diagnostics.generatedBundleLoadedIntoController)
         XCTAssertFalse(diagnostics.runtimeLoadable)
+    }
+
+    func testObjectAcceptanceReportClassifiesMissingGeneratedBundle() throws {
+        let root = try makeTemporaryDirectory()
+            .appendingPathComponent("missing-generated-rewritten", isDirectory: true)
+        let candidate = makeCandidate(rootURL: root)
+        let decision = ChromeMV3ExtensionObjectProbeGate.evaluate(
+            input: gateInput(
+                resourceBaseURLPath: root.path,
+                generatedRewrittenBundleExists: false,
+                staticRuntimeBlockers: ["WebKit runtime loading is not yet wired."]
+            )
+        )
+
+        let report = ChromeMV3WebKitObjectAcceptanceReportGenerator
+            .makeReport(
+                candidate: candidate,
+                gateDecision: decision,
+                probeDiagnostics: nil,
+                runtimeLoadabilityReport: nil
+            )
+
+        XCTAssertFalse(report.probeAttempted)
+        XCTAssertTrue(report.classificationCategories.contains(.blockedByGate))
+        XCTAssertTrue(report.classificationCategories.contains(.missingGeneratedBundle))
+        XCTAssertTrue(report.objectAcceptanceLikelyFixableByGenerator)
+        XCTAssertFalse(report.canCreateContextNow)
+        XCTAssertFalse(report.canLoadContextNow)
+        XCTAssertFalse(report.runtimeLoadable)
+    }
+
+    func testObjectAcceptanceReportClassifiesMissingManifest() throws {
+        let root = try makeTemporaryDirectory()
+            .appendingPathComponent("missing-manifest", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        let candidate = makeCandidate(rootURL: root)
+        let decision = ChromeMV3ExtensionObjectProbeGate.evaluate(
+            input: gateInput(resourceBaseURLPath: root.path)
+        )
+
+        let report = ChromeMV3WebKitObjectAcceptanceReportGenerator
+            .makeReport(
+                candidate: candidate,
+                gateDecision: decision,
+                probeDiagnostics: nil,
+                runtimeLoadabilityReport: nil
+            )
+
+        XCTAssertTrue(report.classificationCategories.contains(.missingManifest))
+        XCTAssertTrue(report.staticInspection.missingResourcePaths.isEmpty)
+        XCTAssertTrue(report.objectAcceptanceLikelyFixableByGenerator)
+        XCTAssertFalse(report.objectAcceptedByWebKit)
+    }
+
+    func testObjectAcceptanceReportClassifiesInvalidManifestJSON() throws {
+        let root = try makeTemporaryDirectory()
+            .appendingPathComponent("invalid-manifest", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        try "{".write(
+            to: root.appendingPathComponent("manifest.json"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let candidate = makeCandidate(rootURL: root)
+        let decision = ChromeMV3ExtensionObjectProbeGate.evaluate(
+            input: gateInput(resourceBaseURLPath: root.path)
+        )
+
+        let report = ChromeMV3WebKitObjectAcceptanceReportGenerator
+            .makeReport(
+                candidate: candidate,
+                gateDecision: decision,
+                probeDiagnostics: nil,
+                runtimeLoadabilityReport: nil
+            )
+
+        XCTAssertTrue(report.classificationCategories.contains(.manifestJSONInvalid))
+        XCTAssertFalse(report.staticInspection.manifestJSONValid)
+        XCTAssertTrue(report.objectAcceptanceLikelyFixableByGenerator)
+    }
+
+    func testObjectAcceptanceReportClassifiesMissingWrapperPath() throws {
+        let root = try makeSimpleRewrittenRoot(
+            named: "missing-wrapper",
+            manifest: [
+                "manifest_version": 3,
+                "name": "Missing Wrapper",
+                "version": "1.0.0",
+                "background": [
+                    "service_worker": "_sumi_runtime/service-worker-wrapper.classic.js",
+                ],
+            ],
+            files: [:]
+        )
+        let report = reportForStaticRoot(root)
+
+        XCTAssertTrue(
+            report.classificationCategories.contains(.serviceWorkerWrapperRejected)
+        )
+        XCTAssertTrue(report.objectAcceptanceLikelyFixableByGenerator)
+        XCTAssertTrue(
+            report.staticInspection.missingResourcePaths.contains(
+                "_sumi_runtime/service-worker-wrapper.classic.js"
+            )
+        )
+    }
+
+    func testObjectAcceptanceReportClassifiesMissingContentScriptResource()
+        throws
+    {
+        let root = try makeSimpleRewrittenRoot(
+            named: "missing-content-script",
+            manifest: [
+                "manifest_version": 3,
+                "name": "Missing Content Script",
+                "version": "1.0.0",
+                "content_scripts": [
+                    [
+                        "matches": ["https://example.com/*"],
+                        "js": ["missing-content.js"],
+                    ],
+                ],
+            ],
+            files: [:]
+        )
+        let report = reportForStaticRoot(root)
+
+        XCTAssertTrue(
+            report.classificationCategories.contains(.contentScriptResourceRejected)
+        )
+        XCTAssertTrue(
+            report.staticInspection.missingResourcePaths.contains(
+                "missing-content.js"
+            )
+        )
+        XCTAssertTrue(report.objectAcceptanceLikelyFixableByGenerator)
+    }
+
+    func testUnsupportedDeferredAPIsRemainRuntimeContextBlockers()
+        throws
+    {
+        let root = try makeSimpleRewrittenRoot(
+            named: "deferred-api-manifest",
+            manifest: [
+                "manifest_version": 3,
+                "name": "Deferred APIs",
+                "version": "1.0.0",
+                "permissions": ["nativeMessaging", "sidePanel"],
+                "side_panel": [
+                    "default_path": "side.html",
+                ],
+            ],
+            files: [
+                "side.html": "<!doctype html><title>Side</title>",
+            ]
+        )
+        let runtimeReport = makeRuntimeLoadabilityReport(
+            rootPath: root.path,
+            id: "deferred-api-runtime-report"
+        )
+        let report = reportForStaticRoot(root, runtimeReport: runtimeReport)
+
+        XCTAssertTrue(
+            report.classificationCategories.contains(.runtimeContextStillBlocked)
+        )
+        XCTAssertFalse(
+            report.classificationFindings.contains {
+                $0.severity == .objectBlocking
+            }
+        )
+        XCTAssertTrue(
+            report.remainingRuntimeContextBlockers.contains {
+                $0.contains("nativeMessaging")
+                    || $0.contains("side_panel")
+                    || $0.contains("runtime")
+            }
+        )
+        XCTAssertFalse(report.canCreateContextNow)
+        XCTAssertFalse(report.canLoadContextNow)
+        XCTAssertFalse(report.runtimeLoadable)
+    }
+
+    func testPasswordManagerLikeFixtureReportsRuntimeAndNativeBlockers()
+        throws
+    {
+        let written = try writeBundle(
+            named: "object-acceptance-password-manager",
+            manifest: [
+                "manifest_version": 3,
+                "name": "Password Manager Like",
+                "version": "1.0.0",
+                "permissions": ["nativeMessaging", "storage"],
+                "host_permissions": ["https://example.com/*"],
+                "background": [
+                    "service_worker": "background.js",
+                ],
+                "content_scripts": [
+                    [
+                        "matches": ["https://example.com/*"],
+                        "js": ["content.js"],
+                        "all_frames": true,
+                        "match_about_blank": true,
+                    ],
+                ],
+                "action": [
+                    "default_popup": "popup.html",
+                ],
+            ],
+            files: [
+                "background.js": "chrome.runtime.onInstalled.addListener(() => {});\n",
+                "content.js": "chrome.runtime.sendMessage({type: 'probe'});\n",
+                "popup.html": "<!doctype html><html><head></head><body>Popup</body></html>",
+            ]
+        )
+        let variant = try writeVariant(for: written)
+        let runtimeReport = try readReport(from: variant.variantRootURL)
+        let inventory = ChromeMV3CandidateInventoryReader()
+            .readInventory(rootURL: written.storeRootURL)
+        let candidate = try XCTUnwrap(inventory.candidates.first)
+            .profileHostCandidate
+
+        let report = reportForCandidate(
+            candidate,
+            runtimeReport: runtimeReport
+        )
+
+        XCTAssertTrue(report.staticInspection.installReportDeferredAPIs.contains(.nativeMessaging))
+        XCTAssertTrue(
+            report.classificationCategories.contains(.runtimeContextStillBlocked)
+        )
+        XCTAssertTrue(
+            report.remainingRuntimeContextBlockers.contains {
+                $0.localizedCaseInsensitiveContains("native")
+            }
+        )
+        XCTAssertFalse(report.canCreateContextNow)
+        XCTAssertFalse(report.canLoadContextNow)
+        XCTAssertFalse(report.runtimeLoadable)
     }
 
     @MainActor
@@ -424,6 +709,24 @@ final class ChromeMV3ExtensionObjectProbeTests: XCTestCase {
         XCTAssertEqual(
             hostDiagnostics.extensionObjectProbeDiagnostics?.runtimeLoadable,
             false
+        )
+        XCTAssertEqual(
+            hostDiagnostics.extensionObjectAcceptanceReport?.probeResult,
+            probeDiagnostics.state
+        )
+        XCTAssertEqual(
+            hostDiagnostics.extensionObjectAcceptanceReport?.runtimeLoadable,
+            false
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: fixture.variantRootURL
+                    .appendingPathComponent(
+                        ChromeMV3WebKitObjectAcceptanceReportWriter
+                            .reportFileName
+                    )
+                    .path
+            )
         )
     }
 
@@ -773,6 +1076,72 @@ final class ChromeMV3ExtensionObjectProbeTests: XCTestCase {
         }
 
         return directory
+    }
+
+    private func makeSimpleRewrittenRoot(
+        named name: String,
+        manifest: [String: Any],
+        files: [String: String]
+    ) throws -> URL {
+        try makeFixture(named: name, manifest: manifest, files: files)
+    }
+
+    private func makeCandidate(
+        rootURL: URL,
+        id: String = "static-object-acceptance-candidate"
+    ) -> ChromeMV3RewrittenVariantCandidate {
+        ChromeMV3RewrittenVariantCandidate(
+            id: id,
+            generatedVariantRootPath: nil,
+            rewrittenVariantRootPath: rootURL.standardizedFileURL.path,
+            runtimeLoadabilityReportPath: nil,
+            rewrittenManifestSHA256: nil,
+            runtimeLoadabilityReportSHA256: nil,
+            manifestVersion: 3,
+            rewrittenVariantExists: FileManager.default.fileExists(
+                atPath: rootURL.path
+            )
+        )
+    }
+
+    private func reportForStaticRoot(
+        _ rootURL: URL,
+        runtimeReport: ChromeMV3RuntimeLoadabilityReport? = nil
+    ) -> ChromeMV3WebKitObjectAcceptanceReport {
+        reportForCandidate(
+            makeCandidate(rootURL: rootURL),
+            runtimeReport: runtimeReport
+        )
+    }
+
+    private func reportForCandidate(
+        _ candidate: ChromeMV3RewrittenVariantCandidate,
+        runtimeReport: ChromeMV3RuntimeLoadabilityReport?
+    ) -> ChromeMV3WebKitObjectAcceptanceReport {
+        let decision = ChromeMV3ExtensionObjectProbeGate.evaluate(
+            input: gateInput(
+                resourceBaseURLPath: candidate.rewrittenVariantRootPath,
+                generatedBundleID: candidate.id,
+                generatedBundleHash: candidate.rewrittenManifestSHA256,
+                generatedRewrittenBundleExists: candidate.rewrittenVariantExists,
+                runtimeLoadabilityReportExists: runtimeReport != nil,
+                runtimeLoadabilityReportID: runtimeReport?.id,
+                runtimeLoadabilityReportPath:
+                    candidate.runtimeLoadabilityReportPath,
+                runtimeLoadabilityReportSHA256:
+                    candidate.runtimeLoadabilityReportSHA256,
+                manifestVersion: candidate.manifestVersion,
+                runtimeLoadable: runtimeReport?.runtimeLoadable ?? false,
+                staticRuntimeBlockers: runtimeReport?.blockers ?? []
+            )
+        )
+        return ChromeMV3WebKitObjectAcceptanceReportGenerator
+            .makeReport(
+                candidate: candidate,
+                gateDecision: decision,
+                probeDiagnostics: nil,
+                runtimeLoadabilityReport: runtimeReport
+            )
     }
 
     private func makeTemporaryDirectory() throws -> URL {
