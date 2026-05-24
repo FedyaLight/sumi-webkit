@@ -44,7 +44,7 @@ extension ExtensionManager {
     }
 
     struct WebExtensionStoreCapabilitySnapshot: Equatable {
-        let usesSafariCompatibilityPrelude: Bool
+        let usesWebKitCompatibilityPrelude: Bool
         let mayTouchDynamicContentScriptStore: Bool
         let mayTouchSyncStorageStore: Bool
         let declaredPermissions: [String]
@@ -104,90 +104,6 @@ extension ExtensionManager {
     struct WebExtensionCleanupErrorClassification: Equatable {
         let benignOptionalStoreDiagnostics: [WebExtensionCleanupErrorDiagnostic]
         let actionableDiagnostics: [WebExtensionCleanupErrorDiagnostic]
-    }
-
-    func discoverSafariExtensions() async -> [SafariExtensionInfo] {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let fileManager = FileManager.default
-                let searchDirectories: [URL] = [
-                    URL(fileURLWithPath: "/Applications", isDirectory: true),
-                    fileManager.homeDirectoryForCurrentUser
-                        .appendingPathComponent("Applications", isDirectory: true),
-                ]
-
-                var results: [SafariExtensionInfo] = []
-
-                for directory in searchDirectories {
-                    guard let appURLs = try? fileManager.contentsOfDirectory(
-                        at: directory,
-                        includingPropertiesForKeys: nil,
-                        options: [.skipsHiddenFiles]
-                    ) else {
-                        continue
-                    }
-
-                    for appURL in appURLs where appURL.pathExtension.lowercased() == "app" {
-                        let pluginsDirectory = appURL.appendingPathComponent("Contents/PlugIns", isDirectory: true)
-                        guard let appexURLs = try? fileManager.contentsOfDirectory(
-                            at: pluginsDirectory,
-                            includingPropertiesForKeys: nil,
-                            options: [.skipsHiddenFiles]
-                        ) else {
-                            continue
-                        }
-
-                        for appexURL in appexURLs where appexURL.pathExtension.lowercased() == "appex" {
-                            guard
-                                Self.isSafariWebExtensionBundle(appexURL),
-                                let resourcesURL = try? Self.resolveSafariResources(in: appexURL)
-                            else {
-                                continue
-                            }
-
-                            let manifestURL = resourcesURL.appendingPathComponent("manifest.json")
-                            guard
-                                let manifest = try? ExtensionUtils.validateManifest(at: manifestURL)
-                            else {
-                                continue
-                            }
-
-                            let bundleID = Bundle(url: appexURL)?.bundleIdentifier
-                                ?? appexURL.deletingPathExtension().lastPathComponent
-                            let displayName = ExtensionUtils.localizedString(
-                                manifest["name"] as? String,
-                                in: resourcesURL
-                            ) ?? (manifest["name"] as? String) ?? appURL.deletingPathExtension().lastPathComponent
-
-                            results.append(
-                                SafariExtensionInfo(
-                                    id: bundleID,
-                                    name: displayName,
-                                    appPath: appURL,
-                                    appexPath: appexURL
-                                )
-                            )
-                        }
-                    }
-                }
-
-                let deduplicated = Dictionary(
-                    results.map { ($0.appexPath.path, $0) },
-                    uniquingKeysWith: { lhs, _ in lhs }
-                ).values.sorted { lhs, rhs in
-                    lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-                }
-
-                continuation.resume(returning: Array(deduplicated))
-            }
-        }
-    }
-
-    func installSafariExtension(
-        _ info: SafariExtensionInfo,
-        completionHandler: @escaping (Result<InstalledExtension, ExtensionError>) -> Void
-    ) {
-        installExtension(from: info.appexPath, completionHandler: completionHandler)
     }
 
     /// Delivers install results on the next main runloop turn so SwiftUI does not emit
@@ -284,9 +200,6 @@ extension ExtensionManager {
                 sourcePathFingerprint: current.sourcePathFingerprint,
                 manifestRootFingerprint: current.manifestRootFingerprint,
                 sourceBundlePath: current.sourceBundlePath,
-                teamID: current.teamID,
-                appBundleID: current.appBundleID,
-                appexBundleID: current.appexBundleID,
                 optionsPagePath: current.optionsPagePath,
                 defaultPopupPath: current.defaultPopupPath,
                 hasBackground: current.hasBackground,
@@ -294,7 +207,6 @@ extension ExtensionManager {
                 hasOptionsPage: current.hasOptionsPage,
                 hasContentScripts: current.hasContentScripts,
                 hasExtensionPages: current.hasExtensionPages,
-                trustSummary: current.trustSummary,
                 activationSummary: current.activationSummary,
                 manifest: current.manifest
             )
@@ -729,14 +641,6 @@ extension ExtensionManager {
             let allEntities = try context.fetch(FetchDescriptor<ExtensionEntity>())
             if let existingEntity = allEntities.first(where: { $0.sourceBundlePath == resolvedSource.sourceBundlePath.path }) {
                 extensionId = existingEntity.id
-            } else if let appexId = resolvedSource.appexBundleID {
-                extensionId = appexId
-            } else if let appBundleID = resolvedSource.appBundleID {
-                extensionId = appBundleID
-            } else if let browserSpecificSettings = manifest["browser_specific_settings"] as? [String: Any],
-                      let safari = browserSpecificSettings["safari"] as? [String: Any],
-                      let safariId = safari["id"] as? String {
-                extensionId = safariId
             } else if let browserSpecificSettings = manifest["browser_specific_settings"] as? [String: Any],
                       let gecko = browserSpecificSettings["gecko"] as? [String: Any],
                       let geckoId = gecko["id"] as? String {
@@ -828,8 +732,6 @@ extension ExtensionManager {
                 sourceKind: resolvedSource.sourceKind,
                 sourceBundlePath: resolvedSource.sourceBundlePath.path,
                 sourceFingerprintURL: resolvedSource.sourceFingerprintURL,
-                appBundleID: resolvedSource.appBundleID,
-                appexBundleID: resolvedSource.appexBundleID,
                 existingEntity: existingEntitySnapshot
             )
 
@@ -1182,10 +1084,10 @@ extension ExtensionManager {
         let permissions = Set((manifest["permissions"] as? [String] ?? []).map {
             $0.lowercased()
         })
-        let unsupportedAPIs = Self.safariOnlyRuntimeUnsupportedAPIs(for: manifest).sorted()
+        let unsupportedAPIs = Self.webKitRuntimeUnsupportedAPIs(for: manifest).sorted()
 
         return WebExtensionStoreCapabilitySnapshot(
-            usesSafariCompatibilityPrelude: Self.shouldInstallWebKitRuntimeCompatibilityPrelude(
+            usesWebKitCompatibilityPrelude: Self.shouldInstallWebKitRuntimeCompatibilityPrelude(
                 for: manifest
             ),
             mayTouchDynamicContentScriptStore: permissions.contains("scripting"),
@@ -1240,7 +1142,7 @@ extension ExtensionManager {
         if let manifest {
             let capabilities = webExtensionStoreCapabilitySnapshot(for: manifest)
             message +=
-                " safariCompat=\(capabilities.usesSafariCompatibilityPrelude) mayTouchDynamicContentScripts=\(capabilities.mayTouchDynamicContentScriptStore) mayTouchSyncStorage=\(capabilities.mayTouchSyncStorageStore) permissions=\(capabilities.declaredPermissions.joined(separator: ",")) unsupportedAPIs=\(capabilities.unsupportedAPIs.joined(separator: ","))"
+                " webKitCompat=\(capabilities.usesWebKitCompatibilityPrelude) mayTouchDynamicContentScripts=\(capabilities.mayTouchDynamicContentScriptStore) mayTouchSyncStorage=\(capabilities.mayTouchSyncStorageStore) permissions=\(capabilities.declaredPermissions.joined(separator: ",")) unsupportedAPIs=\(capabilities.unsupportedAPIs.joined(separator: ","))"
         }
 
         extensionRuntimeTrace(message)
@@ -1316,7 +1218,7 @@ extension ExtensionManager {
         for permission in webExtension.requestedPermissions.union(
             webExtension.optionalPermissions
         ) {
-            if shouldDenyAutoGrantForSafariOnlyRuntime(permission, manifest: manifest) {
+            if shouldDenyAutoGrantForWebKitRuntime(permission, manifest: manifest) {
                 extensionContext.setPermissionStatus(.deniedExplicitly, for: permission)
                 continue
             }
@@ -1324,7 +1226,7 @@ extension ExtensionManager {
         }
     }
 
-    func shouldDenyAutoGrantForSafariOnlyRuntime(
+    func shouldDenyAutoGrantForWebKitRuntime(
         _ permission: WKWebExtension.Permission,
         manifest: [String: Any]
     ) -> Bool {
@@ -1335,7 +1237,7 @@ extension ExtensionManager {
         return permission.rawValue == "scripting"
     }
 
-    static func safariOnlyRuntimeUnsupportedAPIs(
+    static func webKitRuntimeUnsupportedAPIs(
         for manifest: [String: Any]
     ) -> Set<String> {
         guard shouldInstallWebKitRuntimeCompatibilityPrelude(for: manifest) else {

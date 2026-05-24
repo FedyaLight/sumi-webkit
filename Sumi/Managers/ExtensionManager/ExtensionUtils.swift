@@ -2,7 +2,7 @@
 //  ExtensionUtils.swift
 //  Sumi
 //
-//  Shared Safari/WebExtension helpers used by Sumi's native WebKit runtime.
+//  Shared WebExtension helpers used by Sumi's native WebKit runtime.
 //
 
 import CryptoKit
@@ -76,10 +76,24 @@ struct ExtensionUtils {
             throw ExtensionError.invalidManifest("Missing manifest_version")
         }
 
-        guard manifestVersion == 2 || manifestVersion == 3 else {
+        guard manifestVersion == 3 else {
             throw ExtensionError.unsupportedManifest(
-                "Sumi supports manifest_version 2 and 3 only"
+                "Sumi supports manifest_version 3 only"
             )
+        }
+
+        if let background = manifest["background"] as? [String: Any] {
+            if background["page"] != nil {
+                throw ExtensionError.unsupportedManifest(
+                    "Background pages are not supported"
+                )
+            }
+
+            if (background["scripts"] as? [String])?.isEmpty == false {
+                throw ExtensionError.unsupportedManifest(
+                    "Background scripts are not supported"
+                )
+            }
         }
 
         guard let name = manifest["name"] as? String, name.isEmpty == false else {
@@ -450,23 +464,13 @@ struct ExtensionUtils {
         (manifest["content_scripts"] as? [[String: Any]])?.isEmpty == false
     }
 
-    static func backgroundModel(from manifest: [String: Any]) -> SafariExtensionBackgroundModel {
+    static func backgroundModel(from manifest: [String: Any]) -> WebExtensionBackgroundModel {
         guard let background = manifest["background"] as? [String: Any] else {
             return .none
         }
 
         if background["service_worker"] as? String != nil {
             return .serviceWorker
-        }
-
-        if background["page"] as? String != nil {
-            let persistent = background["persistent"] as? Bool ?? true
-            return persistent ? .backgroundPage : .eventPage
-        }
-
-        if (background["scripts"] as? [String])?.isEmpty == false {
-            let persistent = background["persistent"] as? Bool ?? true
-            return persistent ? .backgroundPage : .eventPage
         }
 
         return .none

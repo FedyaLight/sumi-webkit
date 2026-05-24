@@ -268,7 +268,7 @@ extension ExtensionManager {
             manifest
             ?? loadedExtensionManifests[extensionId]
             ?? extensionContext.webExtension.manifest
-        extensionContext.unsupportedAPIs = Self.safariOnlyRuntimeUnsupportedAPIs(
+        extensionContext.unsupportedAPIs = Self.webKitRuntimeUnsupportedAPIs(
             for: resolvedManifest
         )
 

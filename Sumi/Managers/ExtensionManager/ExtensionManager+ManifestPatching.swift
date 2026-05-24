@@ -22,12 +22,10 @@ import WebKit
 @available(macOS 15.5, *)
 extension ExtensionManager {
     struct ResolvedInstallSource {
-        let sourceKind: SafariExtensionSourceKind
+        let sourceKind: WebExtensionSourceKind
         let resourcesURL: URL
         let sourceBundlePath: URL
         let sourceFingerprintURL: URL
-        let appBundleID: String?
-        let appexBundleID: String?
     }
 
     private struct ManifestPatchCacheEntry: Codable {
@@ -66,86 +64,13 @@ extension ExtensionManager {
         }
     }
 
-    nonisolated static func isSafariWebExtensionBundle(_ appexURL: URL) -> Bool {
-        let infoPlistURL = appexURL.appendingPathComponent("Contents/Info.plist")
-        guard
-            let data = try? Data(contentsOf: infoPlistURL),
-            let plist = try? PropertyListSerialization.propertyList(from: data, format: nil)
-                as? [String: Any],
-            let extensionDictionary = plist["NSExtension"] as? [String: Any],
-            let pointIdentifier = extensionDictionary["NSExtensionPointIdentifier"] as? String
-        else {
-            return false
-        }
-
-        return pointIdentifier == "com.apple.Safari.web-extension"
-    }
-
-    nonisolated static func resolveSafariResources(in appexURL: URL) throws -> URL {
-        let resourcesURL = appexURL.appendingPathComponent("Contents/Resources", isDirectory: true)
-        let manifestURL = resourcesURL.appendingPathComponent("manifest.json")
-        guard FileManager.default.fileExists(atPath: manifestURL.path) else {
-            throw ExtensionError.installationFailed(
-                "No manifest.json was found in \(appexURL.lastPathComponent)"
-            )
-        }
-        return resourcesURL
-    }
-
     static func resolveInstallSource(at url: URL) throws -> ResolvedInstallSource {
         let fileManager = FileManager.default
-        let pathExtension = url.pathExtension.lowercased()
-
-        if pathExtension == "app" {
-            let pluginsDirectory = url.appendingPathComponent("Contents/PlugIns", isDirectory: true)
-            guard let appexURLs = try? fileManager.contentsOfDirectory(
-                at: pluginsDirectory,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles]
-            ) else {
-                throw ExtensionError.installationFailed(
-                    "No Safari extension plug-ins were found inside \(url.lastPathComponent)"
-                )
-            }
-
-            for appexURL in appexURLs.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) where appexURL.pathExtension.lowercased() == "appex" {
-                guard isSafariWebExtensionBundle(appexURL) else { continue }
-                let resourcesURL = try resolveSafariResources(in: appexURL)
-                return ResolvedInstallSource(
-                    sourceKind: .app,
-                    resourcesURL: resourcesURL,
-                    sourceBundlePath: url,
-                    sourceFingerprintURL: url,
-                    appBundleID: Bundle(url: url)?.bundleIdentifier,
-                    appexBundleID: Bundle(url: appexURL)?.bundleIdentifier
-                )
-            }
-
-            throw ExtensionError.installationFailed(
-                "Sumi could not find a Safari Web Extension inside \(url.lastPathComponent)"
-            )
-        }
-
-        if pathExtension == "appex" {
-            guard isSafariWebExtensionBundle(url) else {
-                throw ExtensionError.installationFailed(
-                    "\(url.lastPathComponent) is not a Safari Web Extension"
-                )
-            }
-            return ResolvedInstallSource(
-                sourceKind: .appex,
-                resourcesURL: try resolveSafariResources(in: url),
-                sourceBundlePath: url,
-                sourceFingerprintURL: url,
-                appBundleID: Bundle(url: url.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent())?.bundleIdentifier,
-                appexBundleID: Bundle(url: url)?.bundleIdentifier
-            )
-        }
 
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
             throw ExtensionError.installationFailed(
-                "Sumi installs Safari extensions from .app, .appex, or unpacked directories only"
+                "Sumi currently accepts unpacked extension directories only"
             )
         }
 
@@ -160,9 +85,7 @@ extension ExtensionManager {
             sourceKind: .directory,
             resourcesURL: url,
             sourceBundlePath: url,
-            sourceFingerprintURL: url,
-            appBundleID: nil,
-            appexBundleID: nil
+            sourceFingerprintURL: url
         )
     }
 
@@ -175,16 +98,6 @@ extension ExtensionManager {
         }
 
         var changed = false
-        let helperFilename = externallyConnectableBackgroundHelperFilename
-
-        if var scripts = background["scripts"] as? [String], scripts.isEmpty == false {
-            if scripts.contains(helperFilename) == false {
-                scripts.insert(helperFilename, at: 0)
-                background["scripts"] = scripts
-                changed = true
-            }
-        }
-
         if let configuredServiceWorker = background["service_worker"] as? String,
            configuredServiceWorker.isEmpty == false
         {
@@ -221,29 +134,6 @@ extension ExtensionManager {
             }
         }
 
-        if let backgroundPagePath = background["page"] as? String,
-           backgroundPagePath.isEmpty == false,
-           let backgroundPageURL = ExtensionUtils.url(
-               extensionRoot,
-               appendingManifestRelativePath: backgroundPagePath
-           )
-        {
-            if let existingHTML = try? String(contentsOf: backgroundPageURL, encoding: .utf8) {
-                let injectedHTML = injectExternallyConnectableHelper(
-                    intoBackgroundPageHTML: existingHTML,
-                    helperFilename: helperFilename
-                )
-                if injectedHTML != existingHTML {
-                    try? injectedHTML.write(
-                        to: backgroundPageURL,
-                        atomically: true,
-                        encoding: .utf8
-                    )
-                    changed = true
-                }
-            }
-        }
-
         if changed {
             manifest["background"] = background
         }
@@ -274,39 +164,6 @@ extension ExtensionManager {
         if existingPreludeSource != preludeSource {
             try? preludeSource.write(to: preludeURL, atomically: true, encoding: .utf8)
             changed = true
-        }
-
-        if var scripts = background["scripts"] as? [String], scripts.isEmpty == false {
-            if scripts.first != preludeFilename {
-                scripts.removeAll { $0 == preludeFilename }
-                scripts.insert(preludeFilename, at: 0)
-                background["scripts"] = scripts
-                manifest["background"] = background
-                changed = true
-            }
-        }
-
-        if let backgroundPagePath = background["page"] as? String,
-           backgroundPagePath.isEmpty == false,
-           let backgroundPageURL = ExtensionUtils.url(
-               extensionRoot,
-               appendingManifestRelativePath: backgroundPagePath
-           )
-        {
-            if let existingHTML = try? String(contentsOf: backgroundPageURL, encoding: .utf8) {
-                let injectedHTML = injectScriptsIntoBackgroundPageHTML(
-                    existingHTML,
-                    scriptFilenames: [preludeFilename]
-                )
-                if injectedHTML != existingHTML {
-                    try? injectedHTML.write(
-                        to: backgroundPageURL,
-                        atomically: true,
-                        encoding: .utf8
-                    )
-                    changed = true
-                }
-            }
         }
 
         if let configuredServiceWorker = background["service_worker"] as? String,
@@ -405,76 +262,6 @@ extension ExtensionManager {
         }
 
         return line.dropFirst(marker.count).trimmingCharacters(in: .whitespaces)
-    }
-
-    private nonisolated static func injectExternallyConnectableHelper(
-        intoBackgroundPageHTML html: String,
-        helperFilename: String
-    ) -> String {
-        let scriptTag = #"<script src="\#(helperFilename)"></script>"#
-        guard html.contains(helperFilename) == false else {
-            return html
-        }
-
-        if let headRange = html.range(
-            of: "<head[^>]*>",
-            options: [.regularExpression, .caseInsensitive]
-        ) {
-            return html.replacingCharacters(
-                in: headRange,
-                with: "\(html[headRange])\n\(scriptTag)"
-            )
-        }
-
-        if let bodyRange = html.range(
-            of: "<body[^>]*>",
-            options: [.regularExpression, .caseInsensitive]
-        ) {
-            return html.replacingCharacters(
-                in: bodyRange,
-                with: "\(html[bodyRange])\n\(scriptTag)"
-            )
-        }
-
-        return "\(scriptTag)\n\(html)"
-    }
-
-    private nonisolated static func injectScriptsIntoBackgroundPageHTML(
-        _ html: String,
-        scriptFilenames: [String]
-    ) -> String {
-        let uniqueFilenames = scriptFilenames.reduce(into: [String]()) { partialResult, filename in
-            guard partialResult.contains(filename) == false else { return }
-            partialResult.append(filename)
-        }
-        let missingFilenames = uniqueFilenames.filter { html.contains($0) == false }
-        guard missingFilenames.isEmpty == false else { return html }
-
-        let scriptTags = missingFilenames
-            .map { #"<script src="\#($0)"></script>"# }
-            .joined(separator: "\n")
-
-        if let headRange = html.range(
-            of: "<head[^>]*>",
-            options: [.regularExpression, .caseInsensitive]
-        ) {
-            return html.replacingCharacters(
-                in: headRange,
-                with: "\(html[headRange])\n\(scriptTags)"
-            )
-        }
-
-        if let bodyRange = html.range(
-            of: "<body[^>]*>",
-            options: [.regularExpression, .caseInsensitive]
-        ) {
-            return html.replacingCharacters(
-                in: bodyRange,
-                with: "\(html[bodyRange])\n\(scriptTags)"
-            )
-        }
-
-        return "\(scriptTags)\n\(html)"
     }
 
     private nonisolated static func selectiveContentScriptGuardTargets() -> Set<String> {

@@ -1362,7 +1362,7 @@ class BrowserManager: ObservableObject {
             sumiSettings?.currentSettingsTab = .extensions
             targetURL = SumiSurface.settingsSurfaceURL(paneQuery: SettingsTabs.userScripts.paneQueryValue)
         case .extensions:
-            sumiSettings?.extensionsSettingsSubPane = .safariExtensions
+            sumiSettings?.extensionsSettingsSubPane = .extensions
             sumiSettings?.currentSettingsTab = .extensions
             targetURL = pane.settingsSurfaceURL
         default:

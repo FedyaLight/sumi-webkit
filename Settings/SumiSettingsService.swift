@@ -43,8 +43,8 @@ class SumiSettingsService {
 
     var privacySettingsRoute: SumiPrivacySettingsRoute = .overview
 
-    /// Safari extensions vs SumiScripts, when `currentSettingsTab == .extensions`.
-    var extensionsSettingsSubPane: SumiExtensionsSettingsSubPane = .safariExtensions
+    /// Extensions vs SumiScripts, when `currentSettingsTab == .extensions`.
+    var extensionsSettingsSubPane: SumiExtensionsSettingsSubPane = .extensions
 
     var windowSchemeMode: WindowSchemeMode {
         didSet {
@@ -371,7 +371,7 @@ class SumiSettingsService {
             extensionsSettingsSubPane = .userScripts
         case "extensions":
             currentSettingsTab = .extensions
-            extensionsSettingsSubPane = .safariExtensions
+            extensionsSettingsSubPane = .extensions
         default:
             if let tab = SettingsTabs(paneQueryValue: raw) {
                 currentSettingsTab = tab
@@ -388,7 +388,7 @@ class SumiSettingsService {
             switch extensionsSettingsSubPane {
             case .userScripts:
                 return SumiSurface.settingsSurfaceURL(paneQuery: SettingsTabs.userScripts.paneQueryValue)
-            case .safariExtensions:
+            case .extensions:
                 return SumiSurface.settingsSurfaceURL(paneQuery: SettingsTabs.extensions.paneQueryValue)
             }
         }

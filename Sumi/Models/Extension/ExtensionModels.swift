@@ -2,7 +2,7 @@
 //  ExtensionModels.swift
 //  Sumi
 //
-//  Persistence and DTO models for Sumi's Safari/WebExtension runtime.
+//  Persistence and DTO models for Sumi's WebExtension runtime.
 //
 
 import Foundation
@@ -35,33 +35,13 @@ enum IncognitoExtensionMode: String, Codable, CaseIterable {
     }
 }
 
-enum SafariExtensionSourceKind: String, Codable, CaseIterable {
-    case archive
-    case app
-    case appex
+enum WebExtensionSourceKind: String, Codable, CaseIterable {
     case directory
 }
 
-enum SafariExtensionBackgroundModel: String, Codable, CaseIterable {
+enum WebExtensionBackgroundModel: String, Codable, CaseIterable {
     case serviceWorker = "service_worker"
-    case backgroundPage = "background_page"
-    case eventPage = "event_page"
     case none
-}
-
-enum SafariExtensionTrustState: String, Codable, CaseIterable {
-    case signed
-    case developmentDirectory = "development_directory"
-}
-
-struct SafariExtensionTrustSummary: Codable, Equatable {
-    let state: SafariExtensionTrustState
-    let teamID: String?
-    let appBundleID: String?
-    let appexBundleID: String?
-    let signingIdentifier: String?
-    let sourcePath: String
-    let importedAt: Date
 }
 
 struct ExtensionActivationSummary: Codable, Equatable {
@@ -71,13 +51,6 @@ struct ExtensionActivationSummary: Codable, Equatable {
     let hasAction: Bool
     let hasOptionsPage: Bool
     let hasExtensionPages: Bool
-}
-
-struct SafariExtensionInfo: Identifiable, Equatable {
-    let id: String
-    let name: String
-    let appPath: URL
-    let appexPath: URL
 }
 
 @Model
@@ -100,9 +73,6 @@ final class ExtensionEntity {
     var sourcePathFingerprint: String
     var manifestRootFingerprint: String
     var sourceBundlePath: String
-    var teamID: String?
-    var appBundleID: String?
-    var appexBundleID: String?
     var optionsPagePath: String?
     var defaultPopupPath: String?
 
@@ -113,7 +83,6 @@ final class ExtensionEntity {
     var hasExtensionPages: Bool
     var broadScope: Bool
 
-    var trustSummaryJSON: String
     var activationSummaryJSON: String
     var manifestSnapshotJSON: String
 
@@ -134,9 +103,6 @@ final class ExtensionEntity {
         self.sourcePathFingerprint = record.sourcePathFingerprint
         self.manifestRootFingerprint = record.manifestRootFingerprint
         self.sourceBundlePath = record.sourceBundlePath
-        self.teamID = record.teamID
-        self.appBundleID = record.appBundleID
-        self.appexBundleID = record.appexBundleID
         self.optionsPagePath = record.optionsPagePath
         self.defaultPopupPath = record.defaultPopupPath
         self.hasBackground = record.hasBackground
@@ -145,7 +111,6 @@ final class ExtensionEntity {
         self.hasContentScripts = record.hasContentScripts
         self.hasExtensionPages = record.hasExtensionPages
         self.broadScope = record.activationSummary.broadScope
-        self.trustSummaryJSON = record.encodedTrustSummary
         self.activationSummaryJSON = record.encodedActivationSummary
         self.manifestSnapshotJSON = record.encodedManifestSnapshot
     }
@@ -163,16 +128,13 @@ struct InstalledExtensionRecord {
     let packagePath: String
     let iconPath: String?
 
-    let sourceKind: SafariExtensionSourceKind
-    let backgroundModel: SafariExtensionBackgroundModel
+    let sourceKind: WebExtensionSourceKind
+    let backgroundModel: WebExtensionBackgroundModel
     let incognitoMode: IncognitoExtensionMode
 
     let sourcePathFingerprint: String
     let manifestRootFingerprint: String
     let sourceBundlePath: String
-    let teamID: String?
-    let appBundleID: String?
-    let appexBundleID: String?
     let optionsPagePath: String?
     let defaultPopupPath: String?
 
@@ -182,7 +144,6 @@ struct InstalledExtensionRecord {
     let hasContentScripts: Bool
     let hasExtensionPages: Bool
 
-    let trustSummary: SafariExtensionTrustSummary
     let activationSummary: ExtensionActivationSummary
     let manifest: [String: Any]
 
@@ -197,15 +158,12 @@ struct InstalledExtensionRecord {
         lastUpdateDate: Date,
         packagePath: String,
         iconPath: String?,
-        sourceKind: SafariExtensionSourceKind,
-        backgroundModel: SafariExtensionBackgroundModel,
+        sourceKind: WebExtensionSourceKind,
+        backgroundModel: WebExtensionBackgroundModel,
         incognitoMode: IncognitoExtensionMode,
         sourcePathFingerprint: String,
         manifestRootFingerprint: String,
         sourceBundlePath: String,
-        teamID: String?,
-        appBundleID: String?,
-        appexBundleID: String?,
         optionsPagePath: String?,
         defaultPopupPath: String?,
         hasBackground: Bool,
@@ -213,7 +171,6 @@ struct InstalledExtensionRecord {
         hasOptionsPage: Bool,
         hasContentScripts: Bool,
         hasExtensionPages: Bool,
-        trustSummary: SafariExtensionTrustSummary,
         activationSummary: ExtensionActivationSummary,
         manifest: [String: Any]
     ) {
@@ -233,9 +190,6 @@ struct InstalledExtensionRecord {
         self.sourcePathFingerprint = sourcePathFingerprint
         self.manifestRootFingerprint = manifestRootFingerprint
         self.sourceBundlePath = sourceBundlePath
-        self.teamID = teamID
-        self.appBundleID = appBundleID
-        self.appexBundleID = appexBundleID
         self.optionsPagePath = optionsPagePath
         self.defaultPopupPath = defaultPopupPath
         self.hasBackground = hasBackground
@@ -243,25 +197,20 @@ struct InstalledExtensionRecord {
         self.hasOptionsPage = hasOptionsPage
         self.hasContentScripts = hasContentScripts
         self.hasExtensionPages = hasExtensionPages
-        self.trustSummary = trustSummary
         self.activationSummary = activationSummary
         self.manifest = manifest
     }
 
     init?(from entity: ExtensionEntity) {
         guard
-            let sourceKind = SafariExtensionSourceKind(
+            let sourceKind = WebExtensionSourceKind(
                 rawValue: entity.sourceKindRawValue
             ),
-            let backgroundModel = SafariExtensionBackgroundModel(
+            let backgroundModel = WebExtensionBackgroundModel(
                 rawValue: entity.backgroundModelRawValue
             ),
             let incognitoMode = IncognitoExtensionMode(
                 rawValue: entity.incognitoModeRawValue
-            ),
-            let trustSummary = Self.decode(
-                SafariExtensionTrustSummary.self,
-                from: entity.trustSummaryJSON
             ),
             let activationSummary = Self.decode(
                 ExtensionActivationSummary.self,
@@ -289,9 +238,6 @@ struct InstalledExtensionRecord {
             sourcePathFingerprint: entity.sourcePathFingerprint,
             manifestRootFingerprint: entity.manifestRootFingerprint,
             sourceBundlePath: entity.sourceBundlePath,
-            teamID: entity.teamID,
-            appBundleID: entity.appBundleID,
-            appexBundleID: entity.appexBundleID,
             optionsPagePath: entity.optionsPagePath,
             defaultPopupPath: entity.defaultPopupPath,
             hasBackground: entity.hasBackground,
@@ -299,14 +245,9 @@ struct InstalledExtensionRecord {
             hasOptionsPage: entity.hasOptionsPage,
             hasContentScripts: entity.hasContentScripts,
             hasExtensionPages: entity.hasExtensionPages,
-            trustSummary: trustSummary,
             activationSummary: activationSummary,
             manifest: manifest
         )
-    }
-
-    var encodedTrustSummary: String {
-        Self.encode(trustSummary)
     }
 
     var encodedActivationSummary: String {

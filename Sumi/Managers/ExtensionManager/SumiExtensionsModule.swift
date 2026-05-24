@@ -197,22 +197,6 @@ final class SumiExtensionsModule {
         ) ?? false
     }
 
-    func discoverSafariExtensions() async -> [SafariExtensionInfo] {
-        guard let manager = managerIfEnabled() else { return [] }
-        return await manager.discoverSafariExtensions()
-    }
-
-    func installSafariExtension(
-        _ info: SafariExtensionInfo,
-        completionHandler: @escaping (Result<InstalledExtension, ExtensionError>) -> Void
-    ) {
-        guard let manager = managerIfEnabled() else {
-            completionHandler(.failure(.unsupportedOS))
-            return
-        }
-        manager.installSafariExtension(info, completionHandler: completionHandler)
-    }
-
     func enableExtension(_ extensionId: String) async throws -> InstalledExtension {
         guard let manager = managerIfEnabled() else {
             throw ExtensionError.unsupportedOS
@@ -228,10 +212,6 @@ final class SumiExtensionsModule {
     func uninstallExtension(_ extensionId: String) async throws {
         guard let manager = managerIfEnabled() else { return }
         try await manager.uninstallExtension(extensionId)
-    }
-
-    func showExtensionInstallDialog() {
-        managerIfEnabled()?.showExtensionInstallDialog()
     }
 
     func orderedPinnedToolbarSlots(

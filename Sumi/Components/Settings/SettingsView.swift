@@ -63,12 +63,9 @@ struct SumiExtensionsSettingsPane: View {
     @Environment(\.sumiSettings) private var sumiSettingsModel
     @EnvironmentObject private var browserManager: BrowserManager
     @EnvironmentObject private var extensionSurfaceStore: BrowserExtensionSurfaceStore
-    @State private var discoveredSafariExtensions: [SafariExtensionInfo] = []
-    @State private var isDiscoveringSafariExtensions = false
     @State private var busyExtensionIDs: Set<String> = []
     @State private var statusMessage: String?
     @State private var extensionPendingRemoval: InstalledExtension?
-    @State private var discoveryTask: Task<Void, Never>?
     @State private var extensionOperationTasks: [String: Task<Void, Never>] = [:]
 
     var body: some View {
@@ -84,18 +81,13 @@ struct SumiExtensionsSettingsPane: View {
             .accessibilityLabel("Extensions and userscripts")
 
             switch sumiSettings.extensionsSettingsSubPane {
-            case .safariExtensions:
+            case .extensions:
                 SumiSettingsModuleToggleGate(descriptor: .extensions) {
                     if let extensionManager = browserManager.extensionsModule.managerIfEnabled() {
-                        safariExtensionsBody(
+                        extensionsBody(
                             extensionManager: extensionManager,
                             installedExtensions: extensionSurfaceStore.installedExtensions
                         )
-                        .task {
-                            if discoveredSafariExtensions.isEmpty {
-                                discoverSafariExtensions()
-                            }
-                        }
                         .onDisappear {
                             cancelExtensionPaneTasks()
                         }
@@ -113,7 +105,7 @@ struct SumiExtensionsSettingsPane: View {
             cancelExtensionPaneTasks()
         }
         .onChange(of: sumiSettings.extensionsSettingsSubPane) { _, subPane in
-            if subPane != .safariExtensions {
+            if subPane != .extensions {
                 cancelExtensionPaneTasks()
             }
         }
@@ -145,7 +137,7 @@ struct SumiExtensionsSettingsPane: View {
     }
 
     @ViewBuilder
-    private func safariExtensionsBody(
+    private func extensionsBody(
         extensionManager: ExtensionManager,
         installedExtensions: [InstalledExtension]
     ) -> some View {
@@ -153,30 +145,13 @@ struct SumiExtensionsSettingsPane: View {
             SettingsSectionCard(
                 title: "Extensions",
                 subtitle: extensionManager.extensionsLoaded
-                    ? "Sumi is using the rebuilt Safari/WebExtension backend"
-                    : "Sumi is loading installed Safari extensions"
+                    ? "Sumi is using the WebKit WebExtension backend"
+                    : "The WebKit extension runtime is idle"
             ) {
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 12) {
-                        Button("Install Extension…") {
-                            browserManager.showExtensionInstallDialog()
-                        }
-                        .buttonStyle(.borderedProminent)
-
-                        Button(
-                            isDiscoveringSafariExtensions
-                                ? "Discovering…"
-                                : "Discover Safari Extensions"
-                        ) {
-                            discoverSafariExtensions()
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(isDiscoveringSafariExtensions)
-                    }
-
                     Text(extensionManager.isExtensionSupportAvailable
-                         ? "Safari extensions can be installed from `.app`, `.appex`, or unpacked directories with a `manifest.json`. Chromium and Mozilla direct runtimes remain intentionally disabled."
-                         : "Safari Web Extensions require macOS 15.5 or newer in this Sumi build.")
+                         ? "Extension installation is disabled while Sumi’s future Chrome MV3 runtime is being designed."
+                         : "WebKit extensions require macOS 15.5 or newer in this Sumi build.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -191,11 +166,11 @@ struct SumiExtensionsSettingsPane: View {
             SettingsSectionCard(
                 title: "Installed Extensions",
                 subtitle: installedExtensions.isEmpty
-                    ? "No Safari extensions are installed yet"
-                    : "Manage enabled state and uninstall installed Safari extensions"
+                    ? "No extensions are installed"
+                    : "Manage enabled state and uninstall installed extensions"
             ) {
                 if installedExtensions.isEmpty {
-                    Text("Sumi did not find any installed Safari extensions in its local runtime store.")
+                    Text("Sumi did not find any installed extensions in its local runtime store.")
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
@@ -213,63 +188,6 @@ struct SumiExtensionsSettingsPane: View {
                             )
                         }
                     }
-                }
-            }
-
-            if discoveredSafariExtensions.isEmpty == false {
-                SettingsSectionCard(
-                    title: "Safari Extensions Found On This Mac",
-                    subtitle: "Discovered in `/Applications` and `~/Applications`"
-                ) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        ForEach(discoveredSafariExtensions, id: \.appexPath.path) { info in
-                            SafariDiscoveryRow(
-                                info: info,
-                                isInstalled: installedExtensions.contains(where: {
-                                    $0.appexBundleID == info.id || $0.sourceBundlePath == info.appPath.path || $0.sourceBundlePath == info.appexPath.path
-                                }),
-                                onInstall: {
-                                    installDiscoveredSafariExtension(info)
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func discoverSafariExtensions() {
-        discoveryTask?.cancel()
-        statusMessage = nil
-        isDiscoveringSafariExtensions = true
-
-        discoveryTask = Task { @MainActor in
-            let results = await browserManager.extensionsModule.discoverSafariExtensions()
-            guard !Task.isCancelled else { return }
-            discoveredSafariExtensions = results
-            isDiscoveringSafariExtensions = false
-            discoveryTask = nil
-            if results.isEmpty {
-                statusMessage = "Sumi did not find any Safari Web Extensions in the scanned Applications folders."
-            }
-        }
-    }
-
-    private func installDiscoveredSafariExtension(_ info: SafariExtensionInfo) {
-        SettingsViewStateDeferral.schedule {
-            statusMessage = nil
-            busyExtensionIDs.insert(info.id)
-        }
-        browserManager.extensionsModule.installSafariExtension(info) { result in
-            SettingsViewStateDeferral.schedule {
-                guard busyExtensionIDs.contains(info.id) else { return }
-                busyExtensionIDs.remove(info.id)
-                switch result {
-                case .success(let installed):
-                    statusMessage = "Installed \(installed.name)."
-                case .failure(let error):
-                    statusMessage = error.localizedDescription
                 }
             }
         }
@@ -323,11 +241,8 @@ struct SumiExtensionsSettingsPane: View {
     }
 
     private func cancelExtensionPaneTasks() {
-        discoveryTask?.cancel()
-        discoveryTask = nil
         extensionOperationTasks.values.forEach { $0.cancel() }
         extensionOperationTasks.removeAll()
-        isDiscoveringSafariExtensions = false
         busyExtensionIDs.removeAll()
     }
 }
@@ -361,7 +276,7 @@ private struct ExtensionCatalogRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Text(extensionRecord.isEnabled ? "Enabled in Sumi’s Safari runtime" : "Installed but currently disabled")
+                Text(extensionRecord.isEnabled ? "Enabled in Sumi’s extension runtime" : "Installed but currently disabled")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -399,60 +314,6 @@ private struct ExtensionCatalogRow: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(isBusy)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 4)
-    }
-}
-
-private struct SafariDiscoveryRow: View {
-    let info: SafariExtensionInfo
-    let isInstalled: Bool
-    let onInstall: () -> Void
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "safari")
-                .foregroundStyle(.secondary)
-                .frame(width: 24, height: 24)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(info.name)
-                    .font(.headline)
-
-                Text(info.appPath.lastPathComponent)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Text(info.appexPath.path)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-            }
-
-            Spacer()
-
-            HStack(spacing: 8) {
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(info.appexPath.path, forType: .string)
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                }
-                .buttonStyle(.bordered)
-                .help("Copy extension path")
-
-                if isInstalled {
-                    Text("Installed")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Button("Install") {
-                        onInstall()
-                    }
-                    .buttonStyle(.bordered)
-                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

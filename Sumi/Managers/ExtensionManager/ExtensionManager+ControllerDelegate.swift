@@ -5,79 +5,6 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
-private enum SafariNativeMessageRouter {
-    private static var sleepDelay: TimeInterval {
-        RuntimeDiagnostics.isRunningTests ? 0.05 : 30
-    }
-
-    private static var missingHostDelay: TimeInterval {
-        RuntimeDiagnostics.isRunningTests ? 0.05 : 5
-    }
-
-    static func route(
-        message: Any,
-        for extensionContext: WKWebExtensionContext,
-        manager: ExtensionManager,
-        replyHandler: @escaping (Any?, (any Error)?) -> Void
-    ) -> Bool {
-        guard let message = message as? [String: Any],
-              let command = message["command"] as? String else {
-            return false
-        }
-
-        if command == "showPopover" {
-            let currentTab = manager.browserManager?.windowRegistry?.activeWindow.flatMap {
-                manager.browserManager?.currentTab(for: $0)
-            }
-            let adapter = currentTab.flatMap { manager.stableAdapter(for: $0) }
-            extensionContext.performAction(for: adapter)
-            replyHandler(["success": true], nil)
-            return true
-        }
-
-        switch command {
-        case "sleep":
-            delayedReply(after: sleepDelay, value: NSNull(), replyHandler: replyHandler)
-        case "copyToClipboard":
-            if let value = message["data"] as? String {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(value, forType: .string)
-            }
-            replyHandler(true, nil)
-        case "readFromClipboard":
-            replyHandler(NSPasteboard.general.string(forType: .string) ?? "", nil)
-        default:
-            return false
-        }
-
-        return true
-    }
-
-    static func replyForMissingNativeHost(
-        applicationId: String,
-        replyHandler: @escaping (Any?, (any Error)?) -> Void
-    ) {
-        RuntimeDiagnostics.debug(
-            "Native messaging host \(applicationId) is not registered for Sumi; returning delayed null response",
-            category: "Extensions"
-        )
-        delayedReply(after: missingHostDelay, value: NSNull(), replyHandler: replyHandler)
-    }
-
-    private static func delayedReply(
-        after delay: TimeInterval,
-        value: Any,
-        replyHandler: @escaping (Any?, (any Error)?) -> Void
-    ) {
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            replyHandler(value, nil)
-        }
-    }
-}
-
-@available(macOS 15.5, *)
-@MainActor
 extension ExtensionManager: WKWebExtensionControllerDelegate {
     private nonisolated static func recentExtensionTabOpenRequestKey(
         for url: URL?
@@ -340,7 +267,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             .flatMap { loadedExtensionManifests[$0] } ?? [:]
         let policyDeniedPermissions = permissions
             .union(extensionContext.webExtension.optionalPermissions)
-            .filter { shouldDenyAutoGrantForSafariOnlyRuntime($0, manifest: manifest) }
+            .filter { shouldDenyAutoGrantForWebKitRuntime($0, manifest: manifest) }
         for permission in policyDeniedPermissions {
             extensionContext.setPermissionStatus(.deniedExplicitly, for: permission)
         }
@@ -465,15 +392,6 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
     ) {
         let applicationId = applicationIdentifier ?? ""
 
-        if SafariNativeMessageRouter.route(
-            message: message,
-            for: extensionContext,
-            manager: self,
-            replyHandler: replyHandler
-        ) {
-            return
-        }
-
         let browserSupportDirectory = ExtensionUtils.applicationSupportRoot()
         let appBundleURL = Bundle.main.bundleURL
         guard NativeMessagingHandler.resolveManifestURL(
@@ -481,9 +399,13 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             browserSupportDirectory: browserSupportDirectory,
             appBundleURL: appBundleURL
         ) != nil else {
-            SafariNativeMessageRouter.replyForMissingNativeHost(
-                applicationId: applicationId,
-                replyHandler: replyHandler
+            replyHandler(
+                nil,
+                NSError(
+                    domain: "ExtensionManager.NativeMessaging",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Native messaging host \(applicationId) is not registered"]
+                )
             )
             return
         }

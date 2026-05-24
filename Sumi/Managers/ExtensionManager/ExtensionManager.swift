@@ -2,7 +2,7 @@
 //  ExtensionManager.swift
 //  Sumi
 //
-//  Safari/WebExtension runtime rebuilt on top of native WebKit APIs.
+//  WebExtension runtime rebuilt on top of native WebKit APIs.
 //
 
 import AppKit

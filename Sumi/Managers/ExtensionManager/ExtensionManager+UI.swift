@@ -1,7 +1,6 @@
 import AppKit
 import Foundation
 import SwiftUI
-import UniformTypeIdentifiers
 import WebKit
 
 @available(macOS 15.5, *)
@@ -65,33 +64,6 @@ extension ExtensionManager: NSPopoverDelegate {
             configuration.webExtensionController = requestedController
         }
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-    }
-
-    func showExtensionInstallDialog() {
-        guard isExtensionSupportAvailable else {
-            showErrorAlert(.unsupportedOS)
-            return
-        }
-
-        let openPanel = NSOpenPanel()
-        openPanel.title = "Install Safari Extension"
-        openPanel.message = "Select a Safari extension bundle (.app, .appex) or an unpacked extension directory with a manifest.json."
-        openPanel.canChooseFiles = true
-        openPanel.canChooseDirectories = true
-        openPanel.allowsMultipleSelection = false
-        openPanel.allowedContentTypes = [
-            .application,
-            .applicationExtension,
-            .directory,
-        ]
-
-        if openPanel.runModal() == .OK, let url = openPanel.url {
-            installExtension(from: url) { [weak self] result in
-                if case .failure(let error) = result {
-                    self?.showErrorAlert(error)
-                }
-            }
-        }
     }
 
     func setActionAnchor(for extensionId: String, anchorView: NSView) {

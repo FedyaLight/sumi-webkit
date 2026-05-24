@@ -12,13 +12,13 @@ import WebKit
 @available(macOS 15.5, *)
 enum PinnedToolbarSlot: Identifiable {
     case sumiScriptsManager
-    case safariWebExtension(InstalledExtension)
+    case webExtension(InstalledExtension)
 
     var id: String {
         switch self {
         case .sumiScriptsManager:
             return SumiScriptsToolbarConstants.nativeToolbarItemID
-        case .safariWebExtension(let ext):
+        case .webExtension(let ext):
             return ext.id
         }
     }
@@ -101,7 +101,7 @@ extension ExtensionManager {
         }
     }
 
-    /// Ordered toolbar buttons: built-in SumiScripts slot (when enabled) + pinned Safari extensions.
+    /// Ordered toolbar buttons: built-in SumiScripts slot (when enabled) + pinned extensions.
     func orderedPinnedToolbarSlots(
         enabledExtensions: [InstalledExtension],
         sumiScriptsManagerEnabled: Bool
@@ -117,7 +117,7 @@ extension ExtensionManager {
                 return sumiScriptsManagerEnabled ? .sumiScriptsManager : nil
             }
             guard let ext = enabledByID[id] else { return nil }
-            return .safariWebExtension(ext)
+            return .webExtension(ext)
         }
     }
 
@@ -198,9 +198,6 @@ extension ExtensionManager {
         entity.sourcePathFingerprint = record.sourcePathFingerprint
         entity.manifestRootFingerprint = record.manifestRootFingerprint
         entity.sourceBundlePath = record.sourceBundlePath
-        entity.teamID = record.teamID
-        entity.appBundleID = record.appBundleID
-        entity.appexBundleID = record.appexBundleID
         entity.optionsPagePath = record.optionsPagePath
         entity.defaultPopupPath = record.defaultPopupPath
         entity.hasBackground = record.hasBackground
@@ -209,7 +206,6 @@ extension ExtensionManager {
         entity.hasContentScripts = record.hasContentScripts
         entity.hasExtensionPages = record.hasExtensionPages
         entity.broadScope = record.activationSummary.broadScope
-        entity.trustSummaryJSON = record.encodedTrustSummary
         entity.activationSummaryJSON = record.encodedActivationSummary
         entity.manifestSnapshotJSON = record.encodedManifestSnapshot
     }
@@ -218,7 +214,7 @@ extension ExtensionManager {
         for entity: ExtensionEntity,
         manifest: [String: Any]
     ) throws -> InstalledExtension {
-        let sourceKind = SafariExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
+        let sourceKind = WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
         return try makeInstalledRecord(
             extensionId: entity.id,
             manifest: manifest,
@@ -227,8 +223,6 @@ extension ExtensionManager {
             sourceKind: sourceKind,
             sourceBundlePath: entity.sourceBundlePath,
             sourceFingerprintURL: URL(fileURLWithPath: entity.sourceBundlePath),
-            appBundleID: entity.appBundleID,
-            appexBundleID: entity.appexBundleID,
             existingEntity: entity
         )
     }
@@ -238,11 +232,9 @@ extension ExtensionManager {
         manifest: [String: Any],
         extensionRoot: URL,
         isEnabled: Bool,
-        sourceKind: SafariExtensionSourceKind,
+        sourceKind: WebExtensionSourceKind,
         sourceBundlePath: String,
         sourceFingerprintURL: URL,
-        appBundleID: String?,
-        appexBundleID: String?,
         existingEntity: ExtensionEntity?
     ) throws -> InstalledExtension {
         let installDate = existingEntity?.installDate ?? Date()
@@ -263,15 +255,6 @@ extension ExtensionManager {
             hasExtensionPages: optionsPagePath != nil || defaultPopupPath != nil
         )
         let incognitoMode = try IncognitoExtensionMode.fromManifest(manifest)
-        let trustSummary = SafariExtensionTrustSummary(
-            state: sourceKind == .directory ? .developmentDirectory : .signed,
-            teamID: existingEntity?.teamID,
-            appBundleID: appBundleID,
-            appexBundleID: appexBundleID,
-            signingIdentifier: appBundleID ?? appexBundleID,
-            sourcePath: sourceBundlePath,
-            importedAt: installDate
-        )
 
         let localizedName = ExtensionUtils.localizedString(
             manifest["name"] as? String,
@@ -301,9 +284,6 @@ extension ExtensionManager {
                 fileAt: extensionRoot.appendingPathComponent("manifest.json")
             ),
             sourceBundlePath: sourceBundlePath,
-            teamID: existingEntity?.teamID,
-            appBundleID: appBundleID,
-            appexBundleID: appexBundleID,
             optionsPagePath: optionsPagePath,
             defaultPopupPath: defaultPopupPath,
             hasBackground: backgroundModel != .none,
@@ -311,7 +291,6 @@ extension ExtensionManager {
             hasOptionsPage: activationSummary.hasOptionsPage,
             hasContentScripts: activationSummary.hasContentScripts,
             hasExtensionPages: activationSummary.hasExtensionPages,
-            trustSummary: trustSummary,
             activationSummary: activationSummary,
             manifest: manifest
         )
