@@ -84,6 +84,9 @@ struct ChromeMV3GeneratedBundleRecord: Codable, Equatable {
     var runtimeResourcePlanPath: String
     var manifestRewritePreviewPath: String
     var manifestRewritePreviewSHA256: String
+    var manifestRewriteDryRunDirectoryPath: String?
+    var manifestRewriteDryRunReportPath: String?
+    var manifestRewriteDryRunReportSHA256: String?
     var generatorVersion: String
     var originalBundleRecordID: String
     var originalBundleContentSHA256: String
@@ -114,6 +117,7 @@ struct ChromeMV3GeneratedBundleWriteResult: Equatable {
     var generatedManifestURL: URL
     var generatedMetadataURL: URL
     var manifestRewritePreviewURL: URL
+    var manifestRewriteDryRunReportURL: URL
 }
 
 struct ChromeMV3GeneratedBundleWriter {
@@ -229,8 +233,8 @@ struct ChromeMV3GeneratedBundleWriter {
             options: [.atomic]
         )
 
-        let record = ChromeMV3GeneratedBundleRecord(
-            schemaVersion: 3,
+        var record = ChromeMV3GeneratedBundleRecord(
+            schemaVersion: 4,
             id: "generated-\(originalBundleRecord.sourceMetadata.contentSHA256.prefix(32))",
             createdAt: planningRecord.createdAt,
             generatedBundleRootPath: generatedBundleRootURL.standardizedFileURL.path,
@@ -241,6 +245,9 @@ struct ChromeMV3GeneratedBundleWriter {
                 .standardizedFileURL
                 .path,
             manifestRewritePreviewSHA256: sha256Hex(manifestRewritePreviewData),
+            manifestRewriteDryRunDirectoryPath: nil,
+            manifestRewriteDryRunReportPath: nil,
+            manifestRewriteDryRunReportSHA256: nil,
             generatorVersion: planningRecord.generatorVersion,
             originalBundleRecordID: originalBundleRecord.id,
             originalBundleContentSHA256: originalBundleRecord.sourceMetadata.contentSHA256,
@@ -281,6 +288,35 @@ struct ChromeMV3GeneratedBundleWriter {
             runtimeLoadable: false
         )
 
+        let dryRunResult = try ChromeMV3ManifestRewriteDryRunRenderer()
+            .renderDryRun(
+                generatedBundleRecord: record,
+                generatedBundleRootURL: temporaryBundleRootURL,
+                manifestRewritePreview: manifestRewritePreview,
+                manifestRewritePreviewData: manifestRewritePreviewData,
+                runtimeResourcePlan: runtimeResourcePlan,
+                currentGeneratedManifestURL: temporaryManifestURL
+            )
+        record.manifestRewriteDryRunDirectoryPath = generatedBundleRootURL
+            .appendingPathComponent(
+                ChromeMV3ManifestRewriteDryRunRenderer.dryRunDirectoryName,
+                isDirectory: true
+            )
+            .standardizedFileURL
+            .path
+        record.manifestRewriteDryRunReportPath = generatedBundleRootURL
+            .appendingPathComponent(
+                ChromeMV3ManifestRewriteDryRunRenderer.dryRunDirectoryName,
+                isDirectory: true
+            )
+            .appendingPathComponent(
+                ChromeMV3ManifestRewriteDryRunRenderer.verificationReportFileName
+            )
+            .standardizedFileURL
+            .path
+        record.manifestRewriteDryRunReportSHA256 = dryRunResult
+            .verificationReportSHA256
+
         try ChromeMV3DeterministicJSON.write(
             record,
             to: temporaryBundleRootURL.appendingPathComponent(Self.metadataFileName)
@@ -303,7 +339,16 @@ struct ChromeMV3GeneratedBundleWriter {
             generatedBundleRootURL: generatedBundleRootURL,
             generatedManifestURL: generatedManifestURL,
             generatedMetadataURL: generatedMetadataURL,
-            manifestRewritePreviewURL: manifestRewritePreviewURL
+            manifestRewritePreviewURL: manifestRewritePreviewURL,
+            manifestRewriteDryRunReportURL: generatedBundleRootURL
+                .appendingPathComponent(
+                    ChromeMV3ManifestRewriteDryRunRenderer.dryRunDirectoryName,
+                    isDirectory: true
+                )
+                .appendingPathComponent(
+                    ChromeMV3ManifestRewriteDryRunRenderer
+                        .verificationReportFileName
+                )
         )
     }
 
