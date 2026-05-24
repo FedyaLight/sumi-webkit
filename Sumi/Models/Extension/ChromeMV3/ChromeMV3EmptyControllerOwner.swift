@@ -82,6 +82,8 @@ final class ChromeMV3EmptyControllerOwner {
     private let defaultWebsiteDataStore: WKWebsiteDataStore
     private let controllerIdentifier: UUID
     private var controllerStorage: WKWebExtensionController?
+    private var normalTabConfigurationAttachmentRecords:
+        [ChromeMV3NormalTabConfigurationAttachmentRecord] = []
     private var lastTeardownPolicy: ChromeMV3EmptyControllerTeardownPolicy?
     private(set) var state: ChromeMV3EmptyControllerOwnerState = .notCreated
 
@@ -131,10 +133,25 @@ final class ChromeMV3EmptyControllerOwner {
                 trigger: trigger,
                 controllerCreated: controllerStorage != nil
             )
+        ChromeMV3NormalTabConfigurationAttachmentBridge
+            .detachTrackedConfigurations(
+                records: &normalTabConfigurationAttachmentRecords,
+                controller: controllerStorage
+            )
         controllerStorage?.delegate = nil
         controllerStorage = nil
         state = .tornDown
         return diagnostics()
+    }
+
+    @MainActor
+    func recordNormalTabConfigurationAttachment(
+        _ configuration: WKWebViewConfiguration
+    ) {
+        ChromeMV3NormalTabConfigurationAttachmentBridge.record(
+            configuration: configuration,
+            records: &normalTabConfigurationAttachmentRecords
+        )
     }
 
     @MainActor

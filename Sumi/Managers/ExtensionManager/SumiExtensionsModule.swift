@@ -276,6 +276,35 @@ final class SumiExtensionsModule {
         )
     }
 
+    #if DEBUG
+        @available(macOS 15.5, *)
+        func chromeMV3NormalTabConfigurationAttachmentRequestIfEnabled(
+            explicitInternalNormalTabAttachmentAllowed: Bool,
+            surface: ChromeMV3WebViewSurface = .normalTab,
+            requestedContextLoading: Bool = false,
+            canLoadContextNow: Bool = false,
+            runtimeLoadable: Bool = false,
+            candidateRewrittenVariants: [ChromeMV3RewrittenVariantCandidate] = []
+        ) -> ChromeMV3NormalTabConfigurationAttachmentRequest? {
+            guard isEnabled else { return nil }
+
+            let profileHost = makeChromeMV3ProfileHost(
+                candidateRewrittenVariants: candidateRewrittenVariants
+            ).host
+            return ChromeMV3NormalTabConfigurationAttachmentRequest(
+                owner: cachedChromeMV3EmptyControllerOwner,
+                extensionsModuleEnabled: true,
+                profileHostEnabled: profileHost.isActive,
+                explicitInternalNormalTabAttachmentAllowed:
+                    explicitInternalNormalTabAttachmentAllowed,
+                surface: surface,
+                requestedContextLoading: requestedContextLoading,
+                canLoadContextNow: canLoadContextNow,
+                runtimeLoadable: runtimeLoadable
+            )
+        }
+    #endif
+
     @discardableResult
     func tearDownChromeMV3EmptyControllerOwnerIfEnabled(
         trigger: ChromeMV3EmptyControllerTeardownTrigger
