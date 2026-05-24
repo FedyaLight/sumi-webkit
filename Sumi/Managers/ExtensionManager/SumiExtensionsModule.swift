@@ -98,6 +98,31 @@ final class SumiExtensionsModule {
         return manager
     }
 
+    func chromeMV3ProfileHostIfEnabled(
+        candidateRewrittenVariants: [ChromeMV3RewrittenVariantCandidate] = []
+    ) -> ChromeMV3ProfileHost? {
+        guard isEnabled else { return nil }
+
+        let profile = browserManager?.currentProfile ?? initialProfileProvider()
+        let profileIdentifier = profile?.id.uuidString
+            ?? ChromeMV3ProfileHost.unresolvedProfileIdentifier
+        let dataStoreIdentity: ChromeMV3ProfileDataStoreIdentity
+        if let profile {
+            dataStoreIdentity = profile.isEphemeral
+                ? .ephemeralProfileIdentifier(profile.id.uuidString)
+                : .profileIdentifier(profile.id.uuidString)
+        } else {
+            dataStoreIdentity = .unresolved
+        }
+
+        return ChromeMV3ProfileHost(
+            profileIdentifier: profileIdentifier,
+            extensionsEnabled: true,
+            profileDataStoreIdentity: dataStoreIdentity,
+            candidateRewrittenVariants: candidateRewrittenVariants
+        )
+    }
+
     func normalTabUserScripts() -> [SumiUserScript] {
         managerIfNeededForNormalTabRuntime()?.normalTabUserScripts() ?? []
     }
