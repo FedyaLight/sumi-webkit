@@ -423,7 +423,7 @@ final class ChromeMV3OriginalBundleStoreTests: XCTestCase {
             "import " + "WebKit",
             "WKWebExtension" + "Controller(",
             "WKWebExtension" + "Context(",
-            "WKWebExtension(",
+            "WKWebExtension" + "(",
             "webExtension" + "Controller =",
             "add" + "UserScript",
             "connect" + "Native",
