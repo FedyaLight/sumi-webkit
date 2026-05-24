@@ -9,6 +9,7 @@
 import Foundation
 
 enum ChromeMV3WebViewSurface: String, Codable, CaseIterable, Sendable {
+    case syntheticTestConfiguration
     case normalTab
     case pinnedEssentialsLauncherMetadata
     case pinnedEssentialsLiveNormalBrowsing
@@ -49,6 +50,14 @@ enum ChromeMV3WebViewEligibilityPolicy {
         profileHostActive: Bool
     ) -> ChromeMV3WebViewEligibility {
         switch surface {
+        case .syntheticTestConfiguration:
+            return eligibility(
+                surface: surface,
+                status: .neverEligible,
+                reason: "Synthetic test configurations are not real browsing surfaces and must use the dedicated synthetic attachment gate.",
+                requiredFuturePreconditions: []
+            )
+
         case .normalTab:
             return normalBrowsingEligibility(
                 surface: surface,

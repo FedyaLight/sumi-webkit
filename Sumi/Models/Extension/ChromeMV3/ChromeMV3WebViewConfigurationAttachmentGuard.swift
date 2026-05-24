@@ -69,6 +69,8 @@ enum ChromeMV3WebViewConfigurationAttachmentGuard {
         }
 
         switch surface {
+        case .syntheticTestConfiguration:
+            notes.append("Synthetic configurations must use the dedicated test-only attachment harness.")
         case .normalTab, .pinnedEssentialsLiveNormalBrowsing:
             notes.append("Normal browsing surfaces remain unattached in this prompt.")
         case .extensionOwnedPopup, .extensionOwnedOptionsPage:
