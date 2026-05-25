@@ -372,7 +372,7 @@ final class ChromeMV3SyntheticConfigurationAttachmentTests: XCTestCase {
     func testSourceGuardForSyntheticAttachmentBoundary() throws {
         let sourceFiles = try Self.chromeMV3SourceFiles()
         let assignmentFiles = sourceFiles
-            .filter { $0.contents.contains("webExtensionController" + " =") }
+            .filter { Self.containsWebViewControllerAssignment($0.contents) }
             .map(\.relativePath)
             .sorted()
 
@@ -421,6 +421,16 @@ final class ChromeMV3SyntheticConfigurationAttachmentTests: XCTestCase {
         ] {
             XCTAssertFalse(source.contains(forbidden), forbidden)
         }
+    }
+
+    private static func containsWebViewControllerAssignment(
+        _ contents: String
+    ) -> Bool {
+        [
+            "configuration.webExtensionController" + " =",
+            "config.webExtensionController" + " =",
+            "result.configuration?.webExtensionController" + " =",
+        ].contains { contents.contains($0) }
     }
 
     private func gateInput(
