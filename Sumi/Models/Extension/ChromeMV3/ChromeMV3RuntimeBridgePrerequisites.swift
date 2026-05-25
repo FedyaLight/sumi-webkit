@@ -1750,6 +1750,8 @@ struct ChromeMV3RuntimeBridgeReadinessReport:
         ChromeMV3ContentScriptSmokeReportSummary? = nil
     var contentScriptLocalFixtureRunnerSummary:
         ChromeMV3ContentScriptLocalFixtureRunnerReportSummary? = nil
+    var extensionPageHostSummary:
+        ChromeMV3ExtensionPageHostReportSummary? = nil
     var permissionBrokerReadinessReportSummary:
         ChromeMV3PermissionBrokerReadinessReportSummary? = nil
     var permissionLifecycleReportSummary:

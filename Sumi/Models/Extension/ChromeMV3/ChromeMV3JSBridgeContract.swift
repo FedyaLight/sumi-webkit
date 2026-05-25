@@ -2660,6 +2660,8 @@ struct ChromeMV3JSBridgeContractReportSummary:
     var runtimeLoadable: Bool
     var passwordManagerJSBridgeModelReady: Bool
     var passwordManagerRuntimeBridgeReady: Bool
+    var extensionPageHostSummary:
+        ChromeMV3ExtensionPageHostReportSummary? = nil
 }
 
 struct ChromeMV3JSBridgeContractReport:
@@ -2690,6 +2692,8 @@ struct ChromeMV3JSBridgeContractReport:
     var canCreateContextNow: Bool
     var canLoadContextNow: Bool
     var runtimeLoadable: Bool
+    var extensionPageHostSummary:
+        ChromeMV3ExtensionPageHostReportSummary? = nil
     var documentationSources: [ChromeMV3ManifestRewritePreviewSource]
     var diagnostics: [String]
     var blockers: [String]
@@ -2709,7 +2713,8 @@ struct ChromeMV3JSBridgeContractReport:
             passwordManagerJSBridgeModelReady:
                 passwordManagerJSBridgeSummary
                 .passwordManagerJSBridgeModelReady,
-            passwordManagerRuntimeBridgeReady: false
+            passwordManagerRuntimeBridgeReady: false,
+            extensionPageHostSummary: extensionPageHostSummary
         )
     }
 }
