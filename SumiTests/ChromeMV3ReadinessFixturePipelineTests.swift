@@ -117,6 +117,7 @@ final class ChromeMV3ReadinessFixturePipelineTests: XCTestCase {
         XCTAssertTrue(result.disabledByModule)
         XCTAssertNil(result.objectAcceptanceReportURL)
         XCTAssertNil(result.contextReadinessReportURL)
+        XCTAssertNil(result.runtimeBridgePrerequisitesReportURL)
         XCTAssertNil(result.consumerDiagnostic)
         XCTAssertFalse(
             FileManager.default.fileExists(
@@ -126,6 +127,19 @@ final class ChromeMV3ReadinessFixturePipelineTests: XCTestCase {
                     .appendingPathComponent("generated-rewritten")
                     .appendingPathComponent(
                         ChromeMV3ContextReadinessReportWriter.reportFileName
+                    )
+                    .path
+            )
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: pipelineRoot
+                    .appendingPathComponent("ChromeMV3ReadinessPipeline")
+                    .appendingPathComponent("disabled-module")
+                    .appendingPathComponent("generated-rewritten")
+                    .appendingPathComponent(
+                        ChromeMV3RuntimeBridgePrerequisitesReportWriter
+                            .reportFileName
                     )
                     .path
             )
@@ -250,6 +264,199 @@ final class ChromeMV3ReadinessFixturePipelineTests: XCTestCase {
         XCTAssertFalse(plan.canLoadContextNow)
     }
 
+    @MainActor
+    func testPipelineWritesRuntimeBridgePrerequisitesReportUnderExplicitTempRoot()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Readiness fixture pipeline requires macOS 15.5.")
+        }
+
+        let pipelineRoot = try makeTemporaryDirectory()
+        let result = try await makePipeline().run(
+            candidateID: "runtime-bridge-report",
+            rootURL: pipelineRoot
+        )
+        let reportURL = try XCTUnwrap(
+            result.runtimeBridgePrerequisitesReportURL
+        )
+        let report = try XCTUnwrap(
+            result.runtimeBridgePrerequisitesReport
+        )
+
+        XCTAssertTrue(reportURL.path.hasPrefix(pipelineRoot.path))
+        XCTAssertTrue(
+            reportURL.path.hasSuffix(
+                "/generated-rewritten/runtime-bridge-prerequisites-report.json"
+            )
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: reportURL.path))
+        XCTAssertEqual(
+            report.reportFileName,
+            ChromeMV3RuntimeBridgePrerequisitesReportWriter.reportFileName
+        )
+        XCTAssertEqual(report.candidateID, result.contextReadinessReport?.candidateID)
+        XCTAssertEqual(report.contextReadinessReportHash.count, 64)
+        XCTAssertEqual(
+            report.nextRequiredCategoryAfterThisReport,
+            .implementRuntimeBridgeComponents
+        )
+        XCTAssertFalse(report.canCreateContextNow)
+        XCTAssertFalse(report.canLoadContextNow)
+        XCTAssertFalse(report.runtimeLoadable)
+    }
+
+    @MainActor
+    func testRuntimeBridgePrerequisitesReportModelsContractsWithoutRuntime()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Readiness fixture pipeline requires macOS 15.5.")
+        }
+
+        let result = try await makePipeline().run(
+            candidateID: "runtime-bridge-contracts",
+            rootURL: try makeTemporaryDirectory()
+        )
+        let report = try XCTUnwrap(
+            result.runtimeBridgePrerequisitesReport
+        )
+
+        XCTAssertFalse(report.runtimeMessagingPrerequisites.implementedNow)
+        XCTAssertFalse(report.runtimeMessagingPrerequisites.dispatchImplemented)
+        XCTAssertFalse(
+            report.runtimeMessagingPrerequisites.listenerDeliveryImplemented
+        )
+        XCTAssertTrue(
+            report.runtimeMessagingPrerequisites
+                .requiredBeforePasswordManagerSupport
+        )
+        XCTAssertTrue(
+            report.runtimeMessagingPrerequisites
+                .requiredBeforeRuntimeLoadability
+        )
+        XCTAssertTrue(
+            report.runtimeMessagingPrerequisites.routes.contains {
+                $0.requiredAPI == "runtime.sendMessage"
+            }
+        )
+
+        XCTAssertTrue(
+            report.nativeMessagingPrerequisites.nativeMessagingDetected
+        )
+        XCTAssertTrue(
+            report.nativeMessagingPrerequisites.nativeMessagingBlocked
+        )
+        XCTAssertFalse(
+            report.nativeMessagingPrerequisites.hostValidationImplemented
+        )
+        XCTAssertFalse(
+            report.nativeMessagingPrerequisites.processLaunchImplemented
+        )
+        XCTAssertTrue(
+            report.nativeMessagingPrerequisites
+                .requiredBeforePasswordManagerSupport
+        )
+
+        let storageAreas = Dictionary(
+            uniqueKeysWithValues: report.storagePrerequisites.areas.map {
+                ($0.area, $0)
+            }
+        )
+        XCTAssertEqual(storageAreas[.local]?.required, true)
+        XCTAssertEqual(storageAreas[.session]?.required, true)
+        XCTAssertEqual(storageAreas[.sync]?.required, true)
+        XCTAssertFalse(report.storagePrerequisites.implementedNow)
+        XCTAssertTrue(
+            report.storagePrerequisites.hostBackedLayerDecisionRequired
+        )
+
+        XCTAssertFalse(
+            report.permissionsActiveTabPrerequisites
+                .permissionBrokerImplemented
+        )
+        XCTAssertFalse(
+            report.permissionsActiveTabPrerequisites.activeTabImplemented
+        )
+        XCTAssertFalse(
+            report.permissionsActiveTabPrerequisites
+                .hostPermissionEvaluationImplemented
+        )
+        XCTAssertTrue(
+            report.permissionsActiveTabPrerequisites
+                .requiredBeforeContentScriptExecution
+        )
+
+        XCTAssertFalse(
+            report.serviceWorkerLifecyclePrerequisites
+                .lifecycleCoordinatorImplemented
+        )
+        XCTAssertFalse(
+            report.serviceWorkerLifecyclePrerequisites
+                .serviceWorkerWakeImplemented
+        )
+        XCTAssertTrue(
+            report.serviceWorkerLifecyclePrerequisites
+                .idleUnloadPolicyModeled
+        )
+        XCTAssertTrue(
+            report.serviceWorkerLifecyclePrerequisites
+                .permanentBackgroundForbidden
+        )
+        XCTAssertTrue(
+            report.serviceWorkerLifecyclePrerequisites
+                .requiredBeforeContextLoad
+        )
+        XCTAssertTrue(
+            report.serviceWorkerLifecyclePrerequisites
+                .requiredBeforeRuntimeLoadability
+        )
+
+        let password = report.passwordManagerPrerequisiteSummary
+        XCTAssertTrue(password.contentScriptsPresent)
+        XCTAssertTrue(password.actionPopupPresent)
+        XCTAssertTrue(password.hostPermissionsPresent)
+        XCTAssertTrue(password.storagePermissionPresent)
+        XCTAssertTrue(password.nativeMessagingPermissionPresent)
+        XCTAssertTrue(password.runtimeMessagingMissing)
+        XCTAssertTrue(password.permissionActiveTabMissing)
+        XCTAssertTrue(password.storageBackendMissingOrDeferred)
+        XCTAssertTrue(password.nativeMessagingMissing)
+        XCTAssertTrue(password.controlledInputPageWorldBehaviorNotVerified)
+        XCTAssertTrue(password.serviceWorkerLifecycleNotVerified)
+        XCTAssertFalse(password.passwordManagerSupportReady)
+        XCTAssertFalse(report.canCreateContextNow)
+        XCTAssertFalse(report.canLoadContextNow)
+        XCTAssertFalse(report.runtimeLoadable)
+    }
+
+    @MainActor
+    func testRuntimeBridgePrerequisitesReportIsDeterministic()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Readiness fixture pipeline requires macOS 15.5.")
+        }
+
+        let result = try await makePipeline().run(
+            candidateID: "runtime-bridge-deterministic",
+            rootURL: try makeTemporaryDirectory()
+        )
+        let root = try XCTUnwrap(result.generatedRewrittenRootURL)
+        let firstURL = try XCTUnwrap(result.runtimeBridgePrerequisitesReportURL)
+        let firstData = try Data(contentsOf: firstURL)
+        let second = try ChromeMV3RuntimeBridgePrerequisitesReportGenerator
+            .makeReport(loadingContextReadinessReportFrom: root)
+        try ChromeMV3RuntimeBridgePrerequisitesReportWriter.write(
+            second,
+            toRewrittenBundleRoot: root
+        )
+        let secondData = try Data(contentsOf: firstURL)
+
+        XCTAssertEqual(firstData, secondData)
+        XCTAssertEqual(second, result.runtimeBridgePrerequisitesReport)
+    }
+
     func testSourceGuardsForReadinessFixturePipelineAndRuntimeBridgeBranch()
         throws
     {
@@ -294,7 +501,9 @@ final class ChromeMV3ReadinessFixturePipelineTests: XCTestCase {
             "load" + "ExtensionContext",
             "add" + "UserScript",
             "connect" + "Native",
+            "Pro" + "cess(",
             "DispatchSource" + "Ti" + "mer",
+            "Ti" + "mer",
             "scheduled" + "Ti" + "mer",
         ] {
             XCTAssertFalse(source.contains(forbidden), forbidden)
@@ -302,7 +511,9 @@ final class ChromeMV3ReadinessFixturePipelineTests: XCTestCase {
 
         for forbiddenRegex in [
             "runtime" + "Loadable\\s*[:=].*" + "tr" + "ue",
+            "canCreate" + "ContextNow\\s*[:=].*" + "tr" + "ue",
             "canLoad" + "ContextNow\\s*[:=].*" + "tr" + "ue",
+            "password" + "ManagerSupportReady\\s*[:=].*" + "tr" + "ue",
         ] {
             XCTAssertNil(
                 source.range(
@@ -395,10 +606,13 @@ private struct ChromeMV3ReadinessFixturePipelineResult {
     var generatedRewrittenRootURL: URL?
     var objectAcceptanceReportURL: URL?
     var contextReadinessReportURL: URL?
+    var runtimeBridgePrerequisitesReportURL: URL?
     var runtimeLoadabilityReport: ChromeMV3RuntimeLoadabilityReport?
     var candidate: ChromeMV3RewrittenVariantCandidate?
     var objectAcceptanceReport: ChromeMV3WebKitObjectAcceptanceReport?
     var contextReadinessReport: ChromeMV3ContextReadinessReport?
+    var runtimeBridgePrerequisitesReport:
+        ChromeMV3RuntimeBridgePrerequisitesReport?
     var consumerDiagnostic:
         ChromeMV3ContextReadinessReportConsumptionDiagnostic?
 }
@@ -444,10 +658,12 @@ private final class ChromeMV3ReadinessFixturePipeline {
                 generatedRewrittenRootURL: nil,
                 objectAcceptanceReportURL: nil,
                 contextReadinessReportURL: nil,
+                runtimeBridgePrerequisitesReportURL: nil,
                 runtimeLoadabilityReport: nil,
                 candidate: nil,
                 objectAcceptanceReport: nil,
                 contextReadinessReport: nil,
+                runtimeBridgePrerequisitesReport: nil,
                 consumerDiagnostic: nil
             )
         }
@@ -548,8 +764,25 @@ private final class ChromeMV3ReadinessFixturePipeline {
             contextReport,
             toRewrittenBundleRoot: variant.variantRootURL
         )
+        let contextReportURL = variant.variantRootURL
+            .appendingPathComponent(
+                ChromeMV3ContextReadinessReportWriter.reportFileName
+            )
         let consumer = ChromeMV3ContextReadinessReportConsumer.diagnostic(
             fromRewrittenBundleRoot: variant.variantRootURL
+        )
+        let contextReportData = try Data(contentsOf: contextReportURL)
+        let runtimeBridgePrerequisitesReport =
+            ChromeMV3RuntimeBridgePrerequisitesReportGenerator.makeReport(
+                contextReadinessReport: contextReport,
+                contextReadinessReportPath: contextReportURL.path,
+                contextReadinessReportHash:
+                    sha256Hex(contextReportData),
+                consumptionDiagnostic: consumer
+            )
+        try ChromeMV3RuntimeBridgePrerequisitesReportWriter.write(
+            runtimeBridgePrerequisitesReport,
+            toRewrittenBundleRoot: variant.variantRootURL
         )
 
         return ChromeMV3ReadinessFixturePipelineResult(
@@ -562,14 +795,18 @@ private final class ChromeMV3ReadinessFixturePipeline {
                 .appendingPathComponent(
                     ChromeMV3WebKitObjectAcceptanceReportWriter.reportFileName
                 ),
-            contextReadinessReportURL: variant.variantRootURL
+            contextReadinessReportURL: contextReportURL,
+            runtimeBridgePrerequisitesReportURL: variant.variantRootURL
                 .appendingPathComponent(
-                    ChromeMV3ContextReadinessReportWriter.reportFileName
+                    ChromeMV3RuntimeBridgePrerequisitesReportWriter
+                        .reportFileName
                 ),
             runtimeLoadabilityReport: runtimeReport,
             candidate: candidate,
             objectAcceptanceReport: objectReport,
             contextReadinessReport: contextReport,
+            runtimeBridgePrerequisitesReport:
+                runtimeBridgePrerequisitesReport,
             consumerDiagnostic: consumer
         )
     }

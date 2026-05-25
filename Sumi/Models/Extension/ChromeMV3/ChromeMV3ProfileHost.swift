@@ -3,7 +3,7 @@
 //  Sumi
 //
 //  Profile-scoped Chrome MV3 host skeleton. It evaluates policy and preflight
-//  only; it does not create, load, attach, register, poll, or execute runtime
+//  only; it does not create, load, attach, register, repeat, or execute runtime
 //  resources.
 //
 
@@ -86,6 +86,8 @@ struct ChromeMV3ProfileHostDiagnostics: Codable, Equatable, Sendable {
         ChromeMV3WebKitObjectAcceptanceReport?
     var contextReadinessReport:
         ChromeMV3ContextReadinessReport?
+    var runtimeBridgePrerequisitesReport:
+        ChromeMV3RuntimeBridgePrerequisitesReport?
     var preflightResults: [ChromeMV3RuntimePreflightResult]
     var webViewSurfaceMappings: [ChromeMV3WebViewSurfaceMappingDiagnostic]
     var disabledRuntimeInvariantStatus: ChromeMV3DisabledRuntimeInvariantStatus
@@ -236,6 +238,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
             ChromeMV3WebKitObjectAcceptanceReport? = nil,
         contextReadinessReport:
             ChromeMV3ContextReadinessReport? = nil,
+        runtimeBridgePrerequisitesReport:
+            ChromeMV3RuntimeBridgePrerequisitesReport? = nil,
         surfaceMappings: [ChromeMV3WebViewSurfaceMapping] =
             ChromeMV3WebViewSurfaceInventory.currentSumiMappings
     ) -> ChromeMV3ProfileHostDiagnostics {
@@ -294,6 +298,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
             extensionObjectProbeDiagnostics: extensionObjectProbeDiagnostics,
             extensionObjectAcceptanceReport: extensionObjectAcceptanceReport,
             contextReadinessReport: contextReadinessReport,
+            runtimeBridgePrerequisitesReport:
+                runtimeBridgePrerequisitesReport,
             preflightResults: preflightResults.sorted {
                 ($0.candidateID ?? "") < ($1.candidateID ?? "")
             },
