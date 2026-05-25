@@ -446,6 +446,9 @@ final class ChromeMV3ReadinessFixturePipelineTests: XCTestCase {
         let messagingReport = try XCTUnwrap(
             result.runtimeMessagingContractReport
         )
+        let listenerReport = try XCTUnwrap(
+            result.runtimeListenerContractReport
+        )
         XCTAssertEqual(
             Set(messagingReport.routeContractCoverage.map(\.routeKind)),
             Set(ChromeMV3RuntimeMessagingRouteKind.allCases)
@@ -460,6 +463,22 @@ final class ChromeMV3ReadinessFixturePipelineTests: XCTestCase {
         XCTAssertFalse(
             messagingReport.passwordManagerMessagingSummary
                 .passwordManagerMessagingReady
+        )
+
+        XCTAssertEqual(
+            Set(listenerReport.listenerSurfaceCoverage.map(\.surface)),
+            Set(ChromeMV3RuntimeListenerSurfaceKind.allCases)
+        )
+        XCTAssertFalse(listenerReport.canRegisterListenersNow)
+        XCTAssertFalse(listenerReport.canResolveReceivingListenersNow)
+        XCTAssertFalse(listenerReport.canDispatchMessagesNow)
+        XCTAssertFalse(listenerReport.canWakeServiceWorkerNow)
+        XCTAssertFalse(listenerReport.canCreateContextNow)
+        XCTAssertFalse(listenerReport.canLoadContextNow)
+        XCTAssertFalse(listenerReport.runtimeLoadable)
+        XCTAssertFalse(
+            listenerReport.passwordManagerListenerSummary
+                .passwordManagerListenerReady
         )
     }
 
@@ -507,10 +526,18 @@ final class ChromeMV3ReadinessFixturePipelineTests: XCTestCase {
             report.runtimeMessagingContractReportSummary.reportFileName,
             ChromeMV3RuntimeMessagingContractReportWriter.reportFileName
         )
+        XCTAssertEqual(
+            report.runtimeListenerContractReportSummary?.reportFileName,
+            ChromeMV3RuntimeListenerContractReportWriter.reportFileName
+        )
+        let listenerSummary = try XCTUnwrap(
+            report.runtimeListenerContractReportSummary
+        )
         XCTAssertFalse(
             report.runtimeMessagingContractReportSummary
                 .canDispatchMessagesNow
         )
+        XCTAssertFalse(listenerSummary.canRegisterListenersNow)
         XCTAssertFalse(
             report.runtimeMessagingContractReportSummary
                 .passwordManagerMessagingReady
@@ -674,6 +701,33 @@ final class ChromeMV3ReadinessFixturePipelineTests: XCTestCase {
 
         XCTAssertEqual(firstData, secondData)
         XCTAssertEqual(second, result.runtimeBridgePrerequisitesReport)
+    }
+
+    @MainActor
+    func testRuntimeListenerContractReportIsDeterministic()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Readiness fixture pipeline requires macOS 15.5.")
+        }
+
+        let result = try await makePipeline().run(
+            candidateID: "runtime-listener-deterministic",
+            rootURL: try makeTemporaryDirectory()
+        )
+        let root = try XCTUnwrap(result.generatedRewrittenRootURL)
+        let firstURL = try XCTUnwrap(result.runtimeListenerContractReportURL)
+        let firstData = try Data(contentsOf: firstURL)
+        let second = try ChromeMV3RuntimeListenerContractReportGenerator
+            .makeReport(loadingPrerequisitesReportFrom: root)
+        try ChromeMV3RuntimeListenerContractReportWriter.write(
+            second,
+            toRewrittenBundleRoot: root
+        )
+        let secondData = try Data(contentsOf: firstURL)
+
+        XCTAssertEqual(firstData, secondData)
+        XCTAssertEqual(second, result.runtimeListenerContractReport)
     }
 
     @MainActor
@@ -854,6 +908,7 @@ private struct ChromeMV3ReadinessFixturePipelineResult {
     var contextReadinessReportURL: URL?
     var runtimeBridgePrerequisitesReportURL: URL?
     var runtimeMessagingContractReportURL: URL?
+    var runtimeListenerContractReportURL: URL?
     var runtimeBridgeReadinessReportURL: URL?
     var runtimeLoadabilityReport: ChromeMV3RuntimeLoadabilityReport?
     var candidate: ChromeMV3RewrittenVariantCandidate?
@@ -863,6 +918,8 @@ private struct ChromeMV3ReadinessFixturePipelineResult {
         ChromeMV3RuntimeBridgePrerequisitesReport?
     var runtimeMessagingContractReport:
         ChromeMV3RuntimeMessagingContractReport?
+    var runtimeListenerContractReport:
+        ChromeMV3RuntimeListenerContractReport?
     var runtimeBridgeReadinessReport:
         ChromeMV3RuntimeBridgeReadinessReport?
     var consumerDiagnostic:
@@ -912,6 +969,7 @@ private final class ChromeMV3ReadinessFixturePipeline {
                 contextReadinessReportURL: nil,
                 runtimeBridgePrerequisitesReportURL: nil,
                 runtimeMessagingContractReportURL: nil,
+                runtimeListenerContractReportURL: nil,
                 runtimeBridgeReadinessReportURL: nil,
                 runtimeLoadabilityReport: nil,
                 candidate: nil,
@@ -919,6 +977,7 @@ private final class ChromeMV3ReadinessFixturePipeline {
                 contextReadinessReport: nil,
                 runtimeBridgePrerequisitesReport: nil,
                 runtimeMessagingContractReport: nil,
+                runtimeListenerContractReport: nil,
                 runtimeBridgeReadinessReport: nil,
                 consumerDiagnostic: nil
             )
@@ -1048,6 +1107,15 @@ private final class ChromeMV3ReadinessFixturePipeline {
             runtimeMessagingContractReport,
             toRewrittenBundleRoot: variant.variantRootURL
         )
+        let runtimeListenerContractReport =
+            ChromeMV3RuntimeListenerContractReportGenerator.makeReport(
+                prerequisitesReport: runtimeBridgePrerequisitesReport,
+                contextReadinessReport: contextReport
+            )
+        try ChromeMV3RuntimeListenerContractReportWriter.write(
+            runtimeListenerContractReport,
+            toRewrittenBundleRoot: variant.variantRootURL
+        )
         let runtimeBridgeReadinessReport =
             ChromeMV3RuntimeBridgeReadinessReportGenerator.makeReport(
                 prerequisitesReport: runtimeBridgePrerequisitesReport,
@@ -1085,6 +1153,11 @@ private final class ChromeMV3ReadinessFixturePipeline {
                     ChromeMV3RuntimeMessagingContractReportWriter
                         .reportFileName
                 ),
+            runtimeListenerContractReportURL: variant.variantRootURL
+                .appendingPathComponent(
+                    ChromeMV3RuntimeListenerContractReportWriter
+                        .reportFileName
+                ),
             runtimeBridgeReadinessReportURL: variant.variantRootURL
                 .appendingPathComponent(
                     ChromeMV3RuntimeBridgeReadinessReportWriter
@@ -1098,6 +1171,8 @@ private final class ChromeMV3ReadinessFixturePipeline {
                 runtimeBridgePrerequisitesReport,
             runtimeMessagingContractReport:
                 runtimeMessagingContractReport,
+            runtimeListenerContractReport:
+                runtimeListenerContractReport,
             runtimeBridgeReadinessReport:
                 runtimeBridgeReadinessReport,
             consumerDiagnostic: consumer

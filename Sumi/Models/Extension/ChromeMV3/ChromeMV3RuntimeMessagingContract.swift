@@ -1269,6 +1269,8 @@ struct ChromeMV3RuntimeMessagingContractReportSummary:
     var canLoadContextNow: Bool
     var runtimeLoadable: Bool
     var passwordManagerMessagingReady: Bool
+    var listenerContractReportSummary:
+        ChromeMV3RuntimeListenerContractReportSummary? = nil
 }
 
 struct ChromeMV3RuntimeMessagingContractReport:
@@ -1289,6 +1291,8 @@ struct ChromeMV3RuntimeMessagingContractReport:
     var portLifecycleCoverage: [ChromeMV3RuntimePortDisconnectReason]
     var passwordManagerMessagingSummary:
         ChromeMV3PasswordManagerMessagingSummary
+    var listenerContractReportSummary:
+        ChromeMV3RuntimeListenerContractReportSummary? = nil
     var canDispatchMessagesNow: Bool
     var canRegisterListenersNow: Bool
     var canWakeServiceWorkerNow: Bool
@@ -1311,7 +1315,8 @@ struct ChromeMV3RuntimeMessagingContractReport:
             canCreateContextNow: false,
             canLoadContextNow: false,
             runtimeLoadable: false,
-            passwordManagerMessagingReady: false
+            passwordManagerMessagingReady: false,
+            listenerContractReportSummary: listenerContractReportSummary
         )
     }
 }
@@ -1371,6 +1376,12 @@ enum ChromeMV3RuntimeMessagingContractReportGenerator {
         let passwordSummary = passwordManagerSummary(
             prerequisites: prerequisites
         )
+        let listenerSummary = ChromeMV3RuntimeListenerContractReportGenerator
+            .makeReport(
+                prerequisitesReport: prerequisites,
+                profileID: profileID
+            )
+            .summary
 
         return ChromeMV3RuntimeMessagingContractReport(
             schemaVersion: 1,
@@ -1415,6 +1426,7 @@ enum ChromeMV3RuntimeMessagingContractReportGenerator {
             portLifecycleCoverage:
                 ChromeMV3RuntimePortDisconnectReason.allCases.sorted(),
             passwordManagerMessagingSummary: passwordSummary,
+            listenerContractReportSummary: listenerSummary,
             canDispatchMessagesNow: false,
             canRegisterListenersNow: false,
             canWakeServiceWorkerNow: false,

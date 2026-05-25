@@ -1732,6 +1732,8 @@ struct ChromeMV3RuntimeBridgeReadinessReport:
     var passwordManagerGate: ChromeMV3PasswordManagerReadinessGate
     var runtimeMessagingContractReportSummary:
         ChromeMV3RuntimeMessagingContractReportSummary
+    var runtimeListenerContractReportSummary:
+        ChromeMV3RuntimeListenerContractReportSummary? = nil
     var canCreateContextNow: Bool
     var canLoadContextNow: Bool
     var runtimeLoadable: Bool
@@ -1919,9 +1921,15 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
             ChromeMV3RuntimeMessagingContractReportGenerator.makeReport(
                 prerequisitesReport: prerequisites
             )
+        let listenerContractReport =
+            ChromeMV3RuntimeListenerContractReportGenerator.makeReport(
+                prerequisitesReport: prerequisites,
+                contextReadinessReport: contextReport
+            )
         let blockingReasons = uniqueSorted(
             prerequisites.contextReadinessConsumerDiagnostic.blockingReasons
                 + messaging.blockers
+                + listenerContractReport.diagnostics
                 + storage.blockers
                 + permissions.blockers
                 + native.blockers
@@ -1974,6 +1982,8 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
             passwordManagerGate: password,
             runtimeMessagingContractReportSummary:
                 messagingContractReport.summary,
+            runtimeListenerContractReportSummary:
+                listenerContractReport.summary,
             canCreateContextNow: false,
             canLoadContextNow: false,
             runtimeLoadable: false,
