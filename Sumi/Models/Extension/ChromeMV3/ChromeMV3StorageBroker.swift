@@ -140,13 +140,23 @@ enum ChromeMV3StorageErrorCode:
     Comparable,
     Sendable
 {
+    case areaDeferred
+    case areaUnsupported
+    case contextNotLoaded
+    case extensionDisabled
+    case invalidKey
     case invalidValue
     case maxItemsExceeded
+    case operationNotImplementedForJSRuntime
     case quotaBytesExceeded
     case quotaBytesPerItemExceeded
+    case readNotAllowed
     case readOnlyOrUnsupportedArea
     case snapshotNamespaceMismatch
+    case storageBackendUnavailable
     case storageRuntimeNotImplemented
+    case syncUnavailable
+    case writeNotAllowed
 
     static func < (
         lhs: ChromeMV3StorageErrorCode,
@@ -1281,6 +1291,1707 @@ enum ChromeMV3StorageBrokerFailure: Error, Equatable {
     case snapshotNamespaceMismatch
 }
 
+enum ChromeMV3StorageAPIInvocationMode:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case callback
+    case promise
+
+    static func < (
+        lhs: ChromeMV3StorageAPIInvocationMode,
+        rhs: ChromeMV3StorageAPIInvocationMode
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3StorageAPISourceContext:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case actionPopup
+    case contentScript
+    case extensionPage
+    case optionsPage
+    case serviceWorker
+    case testFixture
+
+    static func < (
+        lhs: ChromeMV3StorageAPISourceContext,
+        rhs: ChromeMV3StorageAPISourceContext
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3StorageAPIKeySelectorKind:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case allKeys
+    case defaultsObject
+    case invalidType
+    case omitted
+    case singleString
+    case stringArray
+
+    static func < (
+        lhs: ChromeMV3StorageAPIKeySelectorKind,
+        rhs: ChromeMV3StorageAPIKeySelectorKind
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3StorageAPIKeySelector:
+    Codable,
+    Equatable,
+    Sendable
+{
+    case allKeys
+    case defaults([String: ChromeMV3StorageValue])
+    case invalidType(String)
+    case omitted
+    case singleString(String)
+    case stringArray([String])
+
+    var stableDescription: String {
+        switch self {
+        case .allKeys:
+            return "allKeys"
+        case .defaults(let defaults):
+            let values = defaults.keys.sorted().map { key in
+                let json = defaults[key].flatMap {
+                    try? $0.canonicalJSONString()
+                } ?? "invalid"
+                return "\(key)=\(json)"
+            }.joined(separator: ",")
+            return "defaults:\(values)"
+        case .invalidType(let type):
+            return "invalidType:\(type)"
+        case .omitted:
+            return "omitted"
+        case .singleString(let key):
+            return "singleString:\(key)"
+        case .stringArray(let keys):
+            return "stringArray:\(keys.joined(separator: ","))"
+        }
+    }
+}
+
+struct ChromeMV3StorageAPIKeySelectorNormalization:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var selectorKind: ChromeMV3StorageAPIKeySelectorKind
+    var requestedKeys: [String]?
+    var defaultValues: [String: ChromeMV3StorageValue]
+    var duplicateKeysDropped: [String]
+    var stableOrdering: [String]
+    var errorDiagnostics: [ChromeMV3StorageErrorDiagnostic]
+    var diagnostics: [String]
+
+    var isValid: Bool {
+        errorDiagnostics.isEmpty
+    }
+
+    var selectsAllKeys: Bool {
+        requestedKeys == nil
+            && selectorKind != .invalidType
+    }
+}
+
+enum ChromeMV3StorageAPIKeySelectorNormalizer {
+    static func normalize(
+        _ selector: ChromeMV3StorageAPIKeySelector?,
+        operation: ChromeMV3StorageOperationKind,
+        area: ChromeMV3StorageAreaKind
+    ) -> ChromeMV3StorageAPIKeySelectorNormalization {
+        let selector = selector ?? .omitted
+        switch selector {
+        case .allKeys:
+            guard operation != .remove else {
+                return invalid(
+                    kind: .allKeys,
+                    area: area,
+                    message:
+                        "chrome.storage.remove requires a string key or string array; null/all keys are not valid."
+                )
+            }
+            return ChromeMV3StorageAPIKeySelectorNormalization(
+                selectorKind: .allKeys,
+                requestedKeys: nil,
+                defaultValues: [:],
+                duplicateKeysDropped: [],
+                stableOrdering: [],
+                errorDiagnostics: [],
+                diagnostics: [
+                    "Null/all-key selector normalized to the complete storage area.",
+                ]
+            )
+        case .omitted:
+            guard operation == .get || operation == .getBytesInUse else {
+                return invalid(
+                    kind: .omitted,
+                    area: area,
+                    message:
+                        "Omitted keys are modeled only for get and getBytesInUse."
+                )
+            }
+            return ChromeMV3StorageAPIKeySelectorNormalization(
+                selectorKind: .omitted,
+                requestedKeys: nil,
+                defaultValues: [:],
+                duplicateKeysDropped: [],
+                stableOrdering: [],
+                errorDiagnostics: [],
+                diagnostics: [
+                    "Omitted key selector normalized to all keys for the host-side model.",
+                ]
+            )
+        case .singleString(let key):
+            return ChromeMV3StorageAPIKeySelectorNormalization(
+                selectorKind: .singleString,
+                requestedKeys: [key],
+                defaultValues: [:],
+                duplicateKeysDropped: [],
+                stableOrdering: [key],
+                errorDiagnostics: [],
+                diagnostics: [
+                    "Single string key normalized to a one-key selector.",
+                ]
+            )
+        case .stringArray(let keys):
+            let duplicates = duplicateKeys(in: keys)
+            let normalized = Array(Set(keys)).sorted()
+            return ChromeMV3StorageAPIKeySelectorNormalization(
+                selectorKind: .stringArray,
+                requestedKeys: normalized,
+                defaultValues: [:],
+                duplicateKeysDropped: duplicates,
+                stableOrdering: normalized,
+                errorDiagnostics: [],
+                diagnostics: [
+                    "String array key selector normalized by dropping duplicates and sorting keys.",
+                ] + (duplicates.isEmpty
+                    ? []
+                    : [
+                        "Duplicate keys dropped: \(duplicates.joined(separator: ",")).",
+                    ])
+            )
+        case .defaults(let defaults):
+            guard operation == .get else {
+                return invalid(
+                    kind: .defaultsObject,
+                    area: area,
+                    message:
+                        "Object default key selectors are modeled only for chrome.storage.get."
+                )
+            }
+            let normalized = Dictionary(
+                uniqueKeysWithValues: defaults.keys.sorted().map {
+                    ($0, defaults[$0] ?? .null)
+                }
+            )
+            return ChromeMV3StorageAPIKeySelectorNormalization(
+                selectorKind: .defaultsObject,
+                requestedKeys: normalized.keys.sorted(),
+                defaultValues: normalized,
+                duplicateKeysDropped: [],
+                stableOrdering: normalized.keys.sorted(),
+                errorDiagnostics: [],
+                diagnostics: [
+                    "Object selector normalized as get() defaults for missing keys.",
+                ]
+            )
+        case .invalidType(let type):
+            return invalid(
+                kind: .invalidType,
+                area: area,
+                message:
+                    "Invalid chrome.storage key selector type: \(type)."
+            )
+        }
+    }
+
+    private static func invalid(
+        kind: ChromeMV3StorageAPIKeySelectorKind,
+        area: ChromeMV3StorageAreaKind,
+        message: String
+    ) -> ChromeMV3StorageAPIKeySelectorNormalization {
+        ChromeMV3StorageAPIKeySelectorNormalization(
+            selectorKind: kind,
+            requestedKeys: [],
+            defaultValues: [:],
+            duplicateKeysDropped: [],
+            stableOrdering: [],
+            errorDiagnostics: [
+                ChromeMV3StorageErrorDiagnostic(
+                    code: .invalidKey,
+                    area: area,
+                    key: nil,
+                    message: message,
+                    wouldSetRuntimeLastError: true,
+                    wouldRejectPromise: true,
+                    runtimeImplementedNow: false
+                ),
+            ],
+            diagnostics: [
+                message,
+            ]
+        )
+    }
+
+    private static func duplicateKeys(in keys: [String]) -> [String] {
+        var counts: [String: Int] = [:]
+        for key in keys {
+            counts[key, default: 0] += 1
+        }
+        return counts.keys.filter { (counts[$0] ?? 0) > 1 }.sorted()
+    }
+}
+
+struct ChromeMV3StorageAPIOperationInput:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var operationID: String
+    var extensionID: String
+    var profileID: String
+    var area: ChromeMV3StorageAreaKind
+    var operation: ChromeMV3StorageOperationKind
+    var invocationMode: ChromeMV3StorageAPIInvocationMode
+    var keySelector: ChromeMV3StorageAPIKeySelector?
+    var values: [String: ChromeMV3StorageValue]
+    var sourceContext: ChromeMV3StorageAPISourceContext
+    var diagnostics: [String]
+
+    init(
+        operationID: String? = nil,
+        extensionID: String,
+        profileID: String,
+        area: ChromeMV3StorageAreaKind,
+        operation: ChromeMV3StorageOperationKind,
+        invocationMode: ChromeMV3StorageAPIInvocationMode,
+        keySelector: ChromeMV3StorageAPIKeySelector? = nil,
+        values: [String: ChromeMV3StorageValue] = [:],
+        sourceContext: ChromeMV3StorageAPISourceContext,
+        diagnostics: [String] = []
+    ) {
+        let normalizedExtensionID = extensionID.isEmpty
+            ? "unknown-extension"
+            : extensionID
+        let normalizedProfileID = profileID.isEmpty
+            ? "unknown-profile"
+            : profileID
+        let normalizedValues = Dictionary(
+            uniqueKeysWithValues: values.keys.sorted().map {
+                ($0, values[$0] ?? .null)
+            }
+        )
+        self.operationID = operationID ?? Self.makeOperationID(
+            extensionID: normalizedExtensionID,
+            profileID: normalizedProfileID,
+            area: area,
+            operation: operation,
+            invocationMode: invocationMode,
+            keySelector: keySelector,
+            values: normalizedValues,
+            sourceContext: sourceContext
+        )
+        self.extensionID = normalizedExtensionID
+        self.profileID = normalizedProfileID
+        self.area = area
+        self.operation = operation
+        self.invocationMode = invocationMode
+        self.keySelector = keySelector
+        self.values = normalizedValues
+        self.sourceContext = sourceContext
+        self.diagnostics = diagnostics.sorted()
+    }
+
+    static func makeOperationID(
+        extensionID: String,
+        profileID: String,
+        area: ChromeMV3StorageAreaKind,
+        operation: ChromeMV3StorageOperationKind,
+        invocationMode: ChromeMV3StorageAPIInvocationMode,
+        keySelector: ChromeMV3StorageAPIKeySelector?,
+        values: [String: ChromeMV3StorageValue],
+        sourceContext: ChromeMV3StorageAPISourceContext
+    ) -> String {
+        ChromeMV3StorageStableID.make(
+            prefix: "storage-api-operation",
+            components: [
+                profileID,
+                extensionID,
+                area.rawValue,
+                operation.rawValue,
+                invocationMode.rawValue,
+                keySelector?.stableDescription ?? "nil",
+                stableValuesDescription(values),
+                sourceContext.rawValue,
+            ]
+        )
+    }
+
+    private static func stableValuesDescription(
+        _ values: [String: ChromeMV3StorageValue]
+    ) -> String {
+        values.keys.sorted().map { key in
+            let json = values[key].flatMap {
+                try? $0.canonicalJSONString()
+            } ?? "invalid"
+            return "\(key)=\(json)"
+        }.joined(separator: ",")
+    }
+}
+
+enum ChromeMV3StorageAPIErrorRetryability:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case notRetryable
+    case retryAfterBackendAvailable
+    case retryAfterContextLoad
+    case retryAfterPolicyChange
+    case retryAfterQuotaCleanup
+
+    static func < (
+        lhs: ChromeMV3StorageAPIErrorRetryability,
+        rhs: ChromeMV3StorageAPIErrorRetryability
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3StorageAPIErrorPolicyClassification:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case areaPolicy
+    case backend
+    case inputValidation
+    case permissionPolicy
+    case quota
+    case runtimeBlocked
+
+    static func < (
+        lhs: ChromeMV3StorageAPIErrorPolicyClassification,
+        rhs: ChromeMV3StorageAPIErrorPolicyClassification
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3StorageAPILastErrorContract:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var code: ChromeMV3StorageErrorCode
+    var area: ChromeMV3StorageAreaKind
+    var key: String?
+    var futureRuntimeLastErrorMessage: String
+    var wouldSetRuntimeLastError: Bool
+    var promiseWouldReject: Bool
+    var callbackWouldInvoke: Bool
+    var callbackPayloadOmittedOnFailure: Bool
+    var retryability: ChromeMV3StorageAPIErrorRetryability
+    var policyClassification:
+        ChromeMV3StorageAPIErrorPolicyClassification
+    var runtimeImplementedNow: Bool
+
+    static func make(
+        diagnostic: ChromeMV3StorageErrorDiagnostic,
+        invocationMode: ChromeMV3StorageAPIInvocationMode
+    ) -> ChromeMV3StorageAPILastErrorContract {
+        ChromeMV3StorageAPILastErrorContract(
+            code: diagnostic.code,
+            area: diagnostic.area,
+            key: diagnostic.key,
+            futureRuntimeLastErrorMessage: diagnostic.message,
+            wouldSetRuntimeLastError: invocationMode == .callback,
+            promiseWouldReject: invocationMode == .promise,
+            callbackWouldInvoke: invocationMode == .callback,
+            callbackPayloadOmittedOnFailure: true,
+            retryability: retryability(for: diagnostic.code),
+            policyClassification:
+                policyClassification(for: diagnostic.code),
+            runtimeImplementedNow: false
+        )
+    }
+
+    static func coverage(
+        area: ChromeMV3StorageAreaKind = .local
+    ) -> [ChromeMV3StorageAPILastErrorContract] {
+        [
+            (.extensionDisabled, "The extensions module is disabled."),
+            (.contextNotLoaded, "No extension context is loaded."),
+            (.areaUnsupported, "This storage area is unsupported."),
+            (.areaDeferred, "This storage area is deferred."),
+            (.invalidKey, "Invalid chrome.storage key selector."),
+            (.invalidValue, "Invalid JSON-compatible storage value."),
+            (.quotaBytesExceeded, "Storage quota would be exceeded."),
+            (.quotaBytesPerItemExceeded, "Storage per-item quota would be exceeded."),
+            (.maxItemsExceeded, "Storage item count quota would be exceeded."),
+            (.writeNotAllowed, "Write is not allowed by storage policy."),
+            (.readNotAllowed, "Read is not allowed by storage policy."),
+            (.storageBackendUnavailable, "Storage backend is unavailable."),
+            (.syncUnavailable, "storage.sync is unavailable in Sumi's current policy."),
+            (
+                .operationNotImplementedForJSRuntime,
+                "chrome.storage JavaScript runtime exposure is not implemented."
+            ),
+        ].map { code, message in
+            make(
+                diagnostic: ChromeMV3StorageErrorDiagnostic(
+                    code: code,
+                    area: area,
+                    key: nil,
+                    message: message,
+                    wouldSetRuntimeLastError: true,
+                    wouldRejectPromise: true,
+                    runtimeImplementedNow: false
+                ),
+                invocationMode: .callback
+            )
+        }.sorted {
+            if $0.code != $1.code {
+                return $0.code < $1.code
+            }
+            return $0.futureRuntimeLastErrorMessage
+                < $1.futureRuntimeLastErrorMessage
+        }
+    }
+
+    private static func retryability(
+        for code: ChromeMV3StorageErrorCode
+    ) -> ChromeMV3StorageAPIErrorRetryability {
+        switch code {
+        case .quotaBytesExceeded, .quotaBytesPerItemExceeded,
+             .maxItemsExceeded:
+            return .retryAfterQuotaCleanup
+        case .storageBackendUnavailable, .storageRuntimeNotImplemented:
+            return .retryAfterBackendAvailable
+        case .contextNotLoaded:
+            return .retryAfterContextLoad
+        case .areaDeferred, .syncUnavailable:
+            return .retryAfterPolicyChange
+        case .areaUnsupported, .extensionDisabled, .invalidKey,
+             .invalidValue, .operationNotImplementedForJSRuntime,
+             .readNotAllowed, .readOnlyOrUnsupportedArea,
+             .snapshotNamespaceMismatch, .writeNotAllowed:
+            return .notRetryable
+        }
+    }
+
+    private static func policyClassification(
+        for code: ChromeMV3StorageErrorCode
+    ) -> ChromeMV3StorageAPIErrorPolicyClassification {
+        switch code {
+        case .extensionDisabled, .contextNotLoaded,
+             .operationNotImplementedForJSRuntime:
+            return .runtimeBlocked
+        case .invalidKey, .invalidValue, .snapshotNamespaceMismatch:
+            return .inputValidation
+        case .quotaBytesExceeded, .quotaBytesPerItemExceeded,
+             .maxItemsExceeded:
+            return .quota
+        case .readNotAllowed, .writeNotAllowed:
+            return .permissionPolicy
+        case .areaDeferred, .areaUnsupported,
+             .readOnlyOrUnsupportedArea, .syncUnavailable:
+            return .areaPolicy
+        case .storageBackendUnavailable, .storageRuntimeNotImplemented:
+            return .backend
+        }
+    }
+}
+
+struct ChromeMV3StorageAPIPromiseBehavior:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var promiseModeRequested: Bool
+    var wouldResolve: Bool
+    var wouldReject: Bool
+    var rejectionMessage: String?
+}
+
+struct ChromeMV3StorageAPICallbackPayload:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var values: [String: ChromeMV3StorageValue]
+    var bytesInUse: Int?
+    var voidResult: Bool
+}
+
+struct ChromeMV3StorageAPICallbackBehavior:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var callbackModeRequested: Bool
+    var wouldInvokeCallback: Bool
+    var callbackPayload: ChromeMV3StorageAPICallbackPayload?
+    var wouldSetRuntimeLastError: Bool
+    var lastErrorMessage: String?
+}
+
+struct ChromeMV3StorageAPIResultPayload:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var values: [String: ChromeMV3StorageValue]
+    var bytesInUse: Int?
+    var voidResult: Bool
+}
+
+struct ChromeMV3StorageAPIOperationResultEnvelope:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var operationID: String
+    var extensionID: String
+    var profileID: String
+    var area: ChromeMV3StorageAreaKind
+    var operation: ChromeMV3StorageOperationKind
+    var sourceContext: ChromeMV3StorageAPISourceContext
+    var invocationMode: ChromeMV3StorageAPIInvocationMode
+    var normalizedKeySelector:
+        ChromeMV3StorageAPIKeySelectorNormalization?
+    var succeeded: Bool
+    var resultPayload: ChromeMV3StorageAPIResultPayload
+    var changedKeys: [String]
+    var generatedOnChangedPayload:
+        ChromeMV3StorageOnChangedEventPayload?
+    var futureLastErrorContract:
+        ChromeMV3StorageAPILastErrorContract?
+    var promiseBehavior: ChromeMV3StorageAPIPromiseBehavior
+    var callbackBehavior: ChromeMV3StorageAPICallbackBehavior
+    var runtimeImplementedNow: Bool
+    var jsRuntimeStorageExposureNow: Bool
+    var brokerOperationExecutedInModel: Bool
+    var brokerModelOperationsAvailable: Bool
+    var canDispatchStorageChangeEventNow: Bool
+    var canWakeServiceWorkerNow: Bool
+    var canLoadContextNow: Bool
+    var runtimeLoadable: Bool
+    var diagnostics: [String]
+}
+
+struct ChromeMV3StorageAPIOperationHandlerState:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var extensionsModuleEnabled: Bool
+    var storagePermissionDetected: Bool
+    var modelContextAllowsBrokerExecution: Bool
+    var requestedJSRuntimeExecution: Bool
+    var storageBackendAvailable: Bool
+    var sessionContentScriptAccessAllowed: Bool
+    var runtimeMessagingStillBlocked: Bool
+    var nativeMessagingStillBlocked: Bool
+    var diagnostics: [String]
+
+    static let enabledModelTestFixture =
+        ChromeMV3StorageAPIOperationHandlerState(
+            extensionsModuleEnabled: true,
+            storagePermissionDetected: true,
+            modelContextAllowsBrokerExecution: true,
+            requestedJSRuntimeExecution: false,
+            storageBackendAvailable: true,
+            sessionContentScriptAccessAllowed: false,
+            runtimeMessagingStillBlocked: true,
+            nativeMessagingStillBlocked: true,
+            diagnostics: [
+                "Host-side model/test fixture may execute broker operations.",
+                "JavaScript runtime storage exposure remains blocked.",
+            ]
+        )
+
+    static let disabledModule =
+        ChromeMV3StorageAPIOperationHandlerState(
+            extensionsModuleEnabled: false,
+            storagePermissionDetected: true,
+            modelContextAllowsBrokerExecution: false,
+            requestedJSRuntimeExecution: false,
+            storageBackendAvailable: true,
+            sessionContentScriptAccessAllowed: false,
+            runtimeMessagingStillBlocked: true,
+            nativeMessagingStillBlocked: true,
+            diagnostics: [
+                "Extensions module is disabled; no broker operation may run.",
+            ]
+        )
+}
+
+struct ChromeMV3StorageAPIOperationHandler: Sendable {
+    var state: ChromeMV3StorageAPIOperationHandlerState
+
+    init(
+        state: ChromeMV3StorageAPIOperationHandlerState =
+            .enabledModelTestFixture
+    ) {
+        self.state = state
+    }
+
+    func handle(
+        _ input: ChromeMV3StorageAPIOperationInput,
+        broker: inout ChromeMV3StorageBroker,
+        fileManager: FileManager = .default
+    ) -> ChromeMV3StorageAPIOperationResultEnvelope {
+        guard state.extensionsModuleEnabled else {
+            return failure(
+                input: input,
+                code: .extensionDisabled,
+                message:
+                    "The extensions module is disabled; chrome.storage model operation handling is blocked.",
+                brokerExecuted: false,
+                normalizedSelector: nil
+            )
+        }
+        guard state.requestedJSRuntimeExecution == false else {
+            return failure(
+                input: input,
+                code: .operationNotImplementedForJSRuntime,
+                message:
+                    "chrome.storage JavaScript runtime exposure is not implemented; operation handler accepts future bridge input only.",
+                brokerExecuted: false,
+                normalizedSelector: nil
+            )
+        }
+        guard state.modelContextAllowsBrokerExecution else {
+            return failure(
+                input: input,
+                code: .contextNotLoaded,
+                message:
+                    "No extension context is loaded; model execution was not explicitly allowed.",
+                brokerExecuted: false,
+                normalizedSelector: nil
+            )
+        }
+        guard state.storageBackendAvailable else {
+            return failure(
+                input: input,
+                code: .storageBackendUnavailable,
+                message:
+                    "The host storage backend is unavailable for this modeled operation.",
+                brokerExecuted: false,
+                normalizedSelector: nil
+            )
+        }
+        guard broker.namespace.extensionID == input.extensionID,
+              broker.namespace.profileID == input.profileID,
+              broker.namespace.area == input.area
+        else {
+            return failure(
+                input: input,
+                code: .storageBackendUnavailable,
+                message:
+                    "Operation namespace does not match the supplied storage broker namespace.",
+                brokerExecuted: false,
+                normalizedSelector: nil
+            )
+        }
+        guard state.storagePermissionDetected else {
+            return failure(
+                input: input,
+                code: isWrite(input.operation) ? .writeNotAllowed : .readNotAllowed,
+                message:
+                    "The storage permission is not present in the modeled manifest prerequisites.",
+                brokerExecuted: false,
+                normalizedSelector: nil
+            )
+        }
+        if input.area == .session,
+           input.sourceContext == .contentScript,
+           state.sessionContentScriptAccessAllowed == false
+        {
+            return failure(
+                input: input,
+                code: isWrite(input.operation) ? .writeNotAllowed : .readNotAllowed,
+                message:
+                    "storage.session is not exposed to content scripts by default in this model.",
+                brokerExecuted: false,
+                normalizedSelector: nil
+            )
+        }
+        if input.area == .sync {
+            return failure(
+                input: input,
+                code: .syncUnavailable,
+                message:
+                    "storage.sync is deferred as a local-only future-emulation policy decision; no broker operation executed.",
+                brokerExecuted: false,
+                normalizedSelector: nil
+            )
+        }
+        if input.area == .managed {
+            return failure(
+                input: input,
+                code: .areaUnsupported,
+                message:
+                    "storage.managed is unsupported in Sumi's current Chrome MV3 storage model.",
+                brokerExecuted: false,
+                normalizedSelector: nil
+            )
+        }
+
+        switch input.operation {
+        case .get:
+            let selector = ChromeMV3StorageAPIKeySelectorNormalizer
+                .normalize(
+                    input.keySelector,
+                    operation: .get,
+                    area: input.area
+                )
+            guard selector.isValid else {
+                return failure(
+                    input: input,
+                    diagnostics: selector.errorDiagnostics,
+                    brokerExecuted: false,
+                    normalizedSelector: selector
+                )
+            }
+            let brokerResult: ChromeMV3StorageOperationResult
+            if let keys = selector.requestedKeys {
+                brokerResult = broker.get(keys: keys)
+            } else {
+                brokerResult = broker.getAll()
+            }
+            var returned = brokerResult.returnedValues
+            for key in selector.defaultValues.keys.sorted()
+            where returned[key] == nil {
+                returned[key] = selector.defaultValues[key]
+            }
+            return envelope(
+                input: input,
+                brokerResult: brokerResult,
+                resultPayload: ChromeMV3StorageAPIResultPayload(
+                    values: returned,
+                    bytesInUse: nil,
+                    voidResult: false
+                ),
+                brokerExecuted: true,
+                normalizedSelector: selector
+            )
+        case .set:
+            let brokerResult = broker.set(
+                input.values,
+                fileManager: fileManager
+            )
+            return envelope(
+                input: input,
+                brokerResult: brokerResult,
+                resultPayload: ChromeMV3StorageAPIResultPayload(
+                    values: [:],
+                    bytesInUse: nil,
+                    voidResult: brokerResult.succeeded
+                ),
+                brokerExecuted: true,
+                normalizedSelector: nil
+            )
+        case .remove:
+            let selector = ChromeMV3StorageAPIKeySelectorNormalizer
+                .normalize(
+                    input.keySelector,
+                    operation: .remove,
+                    area: input.area
+                )
+            guard selector.isValid, let keys = selector.requestedKeys else {
+                return failure(
+                    input: input,
+                    diagnostics: selector.errorDiagnostics,
+                    brokerExecuted: false,
+                    normalizedSelector: selector
+                )
+            }
+            let brokerResult = broker.remove(
+                keys: keys,
+                fileManager: fileManager
+            )
+            return envelope(
+                input: input,
+                brokerResult: brokerResult,
+                resultPayload: ChromeMV3StorageAPIResultPayload(
+                    values: [:],
+                    bytesInUse: nil,
+                    voidResult: brokerResult.succeeded
+                ),
+                brokerExecuted: true,
+                normalizedSelector: selector
+            )
+        case .clear:
+            let brokerResult = broker.clear(fileManager: fileManager)
+            return envelope(
+                input: input,
+                brokerResult: brokerResult,
+                resultPayload: ChromeMV3StorageAPIResultPayload(
+                    values: [:],
+                    bytesInUse: nil,
+                    voidResult: brokerResult.succeeded
+                ),
+                brokerExecuted: true,
+                normalizedSelector: nil
+            )
+        case .getBytesInUse:
+            let selector = ChromeMV3StorageAPIKeySelectorNormalizer
+                .normalize(
+                    input.keySelector,
+                    operation: .getBytesInUse,
+                    area: input.area
+                )
+            guard selector.isValid else {
+                return failure(
+                    input: input,
+                    diagnostics: selector.errorDiagnostics,
+                    brokerExecuted: false,
+                    normalizedSelector: selector
+                )
+            }
+            let brokerResult = broker.getBytesInUse(
+                keys: selector.requestedKeys
+            )
+            return envelope(
+                input: input,
+                brokerResult: brokerResult,
+                resultPayload: ChromeMV3StorageAPIResultPayload(
+                    values: [:],
+                    bytesInUse: brokerResult.bytesInUse,
+                    voidResult: false
+                ),
+                brokerExecuted: true,
+                normalizedSelector: selector
+            )
+        case .exportSnapshot, .getAll, .importSnapshot:
+            return failure(
+                input: input,
+                code: .operationNotImplementedForJSRuntime,
+                message:
+                    "\(input.operation.rawValue) is not a modeled chrome.storage JavaScript API operation in this handler.",
+                brokerExecuted: false,
+                normalizedSelector: nil
+            )
+        }
+    }
+
+    private func envelope(
+        input: ChromeMV3StorageAPIOperationInput,
+        brokerResult: ChromeMV3StorageOperationResult,
+        resultPayload: ChromeMV3StorageAPIResultPayload,
+        brokerExecuted: Bool,
+        normalizedSelector: ChromeMV3StorageAPIKeySelectorNormalization?
+    ) -> ChromeMV3StorageAPIOperationResultEnvelope {
+        let firstError = brokerResult.errorDiagnostics.first
+        let lastError = firstError.map {
+            ChromeMV3StorageAPILastErrorContract.make(
+                diagnostic: $0,
+                invocationMode: input.invocationMode
+            )
+        }
+        let generatedEvent = isWrite(input.operation)
+            ? brokerResult.changeSet.futureOnChangedPayload
+            : nil
+        return makeEnvelope(
+            input: input,
+            normalizedSelector: normalizedSelector,
+            succeeded: brokerResult.succeeded,
+            resultPayload: resultPayload,
+            changedKeys: brokerResult.changeSet.changedKeys,
+            generatedOnChangedPayload: generatedEvent,
+            lastError: lastError,
+            brokerExecuted: brokerExecuted,
+            brokerModelOperationsAvailable:
+                brokerResult.brokerModelOperationsAvailable,
+            diagnostics: uniqueSorted(
+                input.diagnostics
+                    + state.diagnostics
+                    + brokerResult.diagnostics
+                    + (firstError.map { [$0.message] } ?? [])
+            )
+        )
+    }
+
+    private func failure(
+        input: ChromeMV3StorageAPIOperationInput,
+        code: ChromeMV3StorageErrorCode,
+        message: String,
+        brokerExecuted: Bool,
+        normalizedSelector:
+            ChromeMV3StorageAPIKeySelectorNormalization?
+    ) -> ChromeMV3StorageAPIOperationResultEnvelope {
+        failure(
+            input: input,
+            diagnostics: [
+                ChromeMV3StorageErrorDiagnostic(
+                    code: code,
+                    area: input.area,
+                    key: nil,
+                    message: message,
+                    wouldSetRuntimeLastError: true,
+                    wouldRejectPromise: true,
+                    runtimeImplementedNow: false
+                ),
+            ],
+            brokerExecuted: brokerExecuted,
+            normalizedSelector: normalizedSelector
+        )
+    }
+
+    private func failure(
+        input: ChromeMV3StorageAPIOperationInput,
+        diagnostics: [ChromeMV3StorageErrorDiagnostic],
+        brokerExecuted: Bool,
+        normalizedSelector:
+            ChromeMV3StorageAPIKeySelectorNormalization?
+    ) -> ChromeMV3StorageAPIOperationResultEnvelope {
+        let firstError = diagnostics.sorted {
+            if $0.code != $1.code {
+                return $0.code < $1.code
+            }
+            return ($0.key ?? "") < ($1.key ?? "")
+        }.first
+        let lastError = firstError.map {
+            ChromeMV3StorageAPILastErrorContract.make(
+                diagnostic: $0,
+                invocationMode: input.invocationMode
+            )
+        }
+        return makeEnvelope(
+            input: input,
+            normalizedSelector: normalizedSelector,
+            succeeded: false,
+            resultPayload: ChromeMV3StorageAPIResultPayload(
+                values: [:],
+                bytesInUse: nil,
+                voidResult: false
+            ),
+            changedKeys: [],
+            generatedOnChangedPayload: nil,
+            lastError: lastError,
+            brokerExecuted: brokerExecuted,
+            brokerModelOperationsAvailable: false,
+            diagnostics: uniqueSorted(
+                input.diagnostics
+                    + state.diagnostics
+                    + diagnostics.map(\.message)
+                    + [
+                        "No JavaScript was called.",
+                        "No storage.onChanged event was dispatched.",
+                    ]
+            )
+        )
+    }
+
+    private func makeEnvelope(
+        input: ChromeMV3StorageAPIOperationInput,
+        normalizedSelector:
+            ChromeMV3StorageAPIKeySelectorNormalization?,
+        succeeded: Bool,
+        resultPayload: ChromeMV3StorageAPIResultPayload,
+        changedKeys: [String],
+        generatedOnChangedPayload:
+            ChromeMV3StorageOnChangedEventPayload?,
+        lastError: ChromeMV3StorageAPILastErrorContract?,
+        brokerExecuted: Bool,
+        brokerModelOperationsAvailable: Bool,
+        diagnostics: [String]
+    ) -> ChromeMV3StorageAPIOperationResultEnvelope {
+        let promiseRequested = input.invocationMode == .promise
+        let callbackRequested = input.invocationMode == .callback
+        let callbackPayload = succeeded
+            ? ChromeMV3StorageAPICallbackPayload(
+                values: resultPayload.values,
+                bytesInUse: resultPayload.bytesInUse,
+                voidResult: resultPayload.voidResult
+            )
+            : nil
+        return ChromeMV3StorageAPIOperationResultEnvelope(
+            operationID: input.operationID,
+            extensionID: input.extensionID,
+            profileID: input.profileID,
+            area: input.area,
+            operation: input.operation,
+            sourceContext: input.sourceContext,
+            invocationMode: input.invocationMode,
+            normalizedKeySelector: normalizedSelector,
+            succeeded: succeeded,
+            resultPayload: ChromeMV3StorageAPIResultPayload(
+                values: Dictionary(
+                    uniqueKeysWithValues: resultPayload.values.keys.sorted()
+                        .map { ($0, resultPayload.values[$0] ?? .null) }
+                ),
+                bytesInUse: resultPayload.bytesInUse,
+                voidResult: resultPayload.voidResult
+            ),
+            changedKeys: changedKeys.sorted(),
+            generatedOnChangedPayload: generatedOnChangedPayload,
+            futureLastErrorContract: lastError,
+            promiseBehavior: ChromeMV3StorageAPIPromiseBehavior(
+                promiseModeRequested: promiseRequested,
+                wouldResolve: promiseRequested && succeeded,
+                wouldReject: promiseRequested && succeeded == false,
+                rejectionMessage: promiseRequested
+                    ? lastError?.futureRuntimeLastErrorMessage
+                    : nil
+            ),
+            callbackBehavior: ChromeMV3StorageAPICallbackBehavior(
+                callbackModeRequested: callbackRequested,
+                wouldInvokeCallback: callbackRequested,
+                callbackPayload: callbackRequested ? callbackPayload : nil,
+                wouldSetRuntimeLastError:
+                    callbackRequested && succeeded == false,
+                lastErrorMessage: callbackRequested
+                    ? lastError?.futureRuntimeLastErrorMessage
+                    : nil
+            ),
+            runtimeImplementedNow: false,
+            jsRuntimeStorageExposureNow: false,
+            brokerOperationExecutedInModel: brokerExecuted,
+            brokerModelOperationsAvailable: brokerModelOperationsAvailable,
+            canDispatchStorageChangeEventNow: false,
+            canWakeServiceWorkerNow: false,
+            canLoadContextNow: false,
+            runtimeLoadable: false,
+            diagnostics: uniqueSorted(
+                diagnostics + [
+                    "Operation handler is host-side only.",
+                    "runtimeImplementedNow remains false for chrome.storage JavaScript exposure.",
+                    "storage.onChanged payloads are generated for write operations but not dispatched.",
+                    "No extension context is created or loaded.",
+                    "No service worker is woken.",
+                ]
+            )
+        )
+    }
+
+    private func isWrite(
+        _ operation: ChromeMV3StorageOperationKind
+    ) -> Bool {
+        switch operation {
+        case .clear, .importSnapshot, .remove, .set:
+            return true
+        case .exportSnapshot, .get, .getAll, .getBytesInUse:
+            return false
+        }
+    }
+
+    private func uniqueSorted(_ values: [String]) -> [String] {
+        Array(Set(values.filter { $0.isEmpty == false })).sorted()
+    }
+}
+
+enum ChromeMV3StorageAPIAreaPolicyStatus:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case deferred
+    case modelExecutable
+    case unsupported
+
+    static func < (
+        lhs: ChromeMV3StorageAPIAreaPolicyStatus,
+        rhs: ChromeMV3StorageAPIAreaPolicyStatus
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3StorageAPIOperationCoverage:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var area: ChromeMV3StorageAreaKind
+    var operation: ChromeMV3StorageOperationKind
+    var handlerModeled: Bool
+    var brokerOperationCanExecuteInModel: Bool
+    var areaPolicyStatus: ChromeMV3StorageAPIAreaPolicyStatus
+    var runtimeImplementedNow: Bool
+    var jsRuntimeStorageExposureNow: Bool
+    var diagnostics: [String]
+}
+
+struct ChromeMV3StorageAPIKeySelectorCoverage:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var selectorKind: ChromeMV3StorageAPIKeySelectorKind
+    var supportedForGet: Bool
+    var supportedForRemove: Bool
+    var supportedForGetBytesInUse: Bool
+    var stableOrdering: Bool
+    var diagnostics: [String]
+}
+
+struct ChromeMV3StorageAPIOperationExample:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var name: String
+    var input: ChromeMV3StorageAPIOperationInput
+    var result: ChromeMV3StorageAPIOperationResultEnvelope
+}
+
+struct ChromeMV3PasswordManagerStorageAPISummary:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var storageLocalOperationHandlerAvailableInModel: Bool
+    var storageSessionOperationHandlerAvailableInModel: Bool
+    var storageSyncPolicy: ChromeMV3StorageSyncSupportPolicy
+    var storageOnChangedDispatchable: Bool
+    var serviceWorkerWakeMissing: Bool
+    var runtimeMessagingMissing: Bool
+    var nativeMessagingMissing: Bool
+    var jsRuntimeExposureMissing: Bool
+    var passwordManagerStorageAPIReady: Bool
+    var blockers: [String]
+}
+
+struct ChromeMV3StorageAPIOperationsReportSummary:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var reportID: String
+    var reportFileName: String
+    var operationKindsModeled: [ChromeMV3StorageOperationKind]
+    var keySelectorKindsModeled: [ChromeMV3StorageAPIKeySelectorKind]
+    var brokerModelOperationsAvailable: Bool
+    var operationHandlerAvailableInModel: Bool
+    var jsRuntimeStorageExposureNow: Bool
+    var canDispatchStorageChangeEventNow: Bool
+    var canWakeServiceWorkerNow: Bool
+    var canLoadContextNow: Bool
+    var runtimeLoadable: Bool
+    var passwordManagerStorageAPIReady: Bool
+}
+
+struct ChromeMV3StorageAPIOperationsReport:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var schemaVersion: Int
+    var id: String
+    var reportFileName: String
+    var extensionID: String
+    var profileID: String
+    var operationHandlerCoverage:
+        [ChromeMV3StorageAPIOperationCoverage]
+    var keySelectorCoverage:
+        [ChromeMV3StorageAPIKeySelectorCoverage]
+    var areaPolicies: [ChromeMV3StorageAreaRecord]
+    var errorLastErrorCoverage:
+        [ChromeMV3StorageAPILastErrorContract]
+    var operationExamples: [ChromeMV3StorageAPIOperationExample]
+    var onChangedGenerationCoverage:
+        [ChromeMV3StorageOnChangedEventPayload]
+    var passwordManagerStorageAPISummary:
+        ChromeMV3PasswordManagerStorageAPISummary
+    var brokerModelOperationsAvailable: Bool
+    var jsRuntimeStorageExposureNow: Bool
+    var canDispatchStorageChangeEventNow: Bool
+    var canWakeServiceWorkerNow: Bool
+    var canLoadContextNow: Bool
+    var runtimeLoadable: Bool
+    var documentationSources: [ChromeMV3ManifestRewritePreviewSource]
+    var diagnostics: [String]
+    var blockers: [String]
+
+    var summary: ChromeMV3StorageAPIOperationsReportSummary {
+        ChromeMV3StorageAPIOperationsReportSummary(
+            reportID: id,
+            reportFileName: reportFileName,
+            operationKindsModeled:
+                operationHandlerCoverage.map(\.operation)
+                    .uniqueSorted(),
+            keySelectorKindsModeled:
+                keySelectorCoverage.map(\.selectorKind).sorted(),
+            brokerModelOperationsAvailable: brokerModelOperationsAvailable,
+            operationHandlerAvailableInModel: true,
+            jsRuntimeStorageExposureNow: false,
+            canDispatchStorageChangeEventNow: false,
+            canWakeServiceWorkerNow: false,
+            canLoadContextNow: false,
+            runtimeLoadable: false,
+            passwordManagerStorageAPIReady:
+                passwordManagerStorageAPISummary
+                .passwordManagerStorageAPIReady
+        )
+    }
+}
+
+enum ChromeMV3StorageAPIOperationsReportWriter {
+    static let reportFileName = "runtime-storage-api-operations-report.json"
+
+    @discardableResult
+    static func write(
+        _ report: ChromeMV3StorageAPIOperationsReport,
+        toRewrittenBundleRoot rootURL: URL
+    ) throws -> ChromeMV3StorageAPIOperationsReport {
+        guard directoryExists(rootURL.standardizedFileURL) else {
+            return report
+        }
+        try ChromeMV3DeterministicJSON.write(
+            report,
+            to: rootURL.standardizedFileURL
+                .appendingPathComponent(Self.reportFileName)
+        )
+        return report
+    }
+
+    private static func directoryExists(_ url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(
+            atPath: url.path,
+            isDirectory: &isDirectory
+        ) && isDirectory.boolValue
+    }
+}
+
+enum ChromeMV3StorageAPIOperationsReportGenerator {
+    static func makeReport(
+        prerequisitesReport prerequisites:
+            ChromeMV3RuntimeBridgePrerequisitesReport,
+        profileID: String = "diagnostic-profile"
+    ) -> ChromeMV3StorageAPIOperationsReport {
+        makeReport(
+            extensionID: prerequisites.candidateID,
+            profileID: profileID,
+            storagePermissionDetected:
+                prerequisites.manifestFacts.storagePermissionPresent
+                    || prerequisites.passwordManagerPrerequisiteSummary
+                    .storagePermissionPresent,
+            passwordManagerLikeFixtureDetected:
+                prerequisites.passwordManagerPrerequisiteSummary
+                .contentScriptsPresent
+                    || prerequisites.passwordManagerPrerequisiteSummary
+                    .actionPopupPresent
+                    || prerequisites.passwordManagerPrerequisiteSummary
+                    .nativeMessagingPermissionPresent,
+            runtimeMessagingStillBlocked: true,
+            nativeMessagingStillBlocked:
+                prerequisites.nativeMessagingPrerequisites
+                .nativeMessagingBlocked
+        )
+    }
+
+    static func makeReport(
+        extensionID: String,
+        profileID: String,
+        storagePermissionDetected: Bool,
+        passwordManagerLikeFixtureDetected: Bool = false,
+        runtimeMessagingStillBlocked: Bool = true,
+        nativeMessagingStillBlocked: Bool = true
+    ) -> ChromeMV3StorageAPIOperationsReport {
+        let records = ChromeMV3StorageAreaKind.allCases.sorted().map {
+            ChromeMV3StorageAreaRecord.make(
+                area: $0,
+                extensionID: extensionID,
+                profileID: profileID
+            )
+        }
+        let examples = operationExamples(
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        let onChanged = examples
+            .compactMap(\.result.generatedOnChangedPayload)
+            .sorted {
+                if $0.areaName != $1.areaName {
+                    return $0.areaName < $1.areaName
+                }
+                return $0.changedKeys.lexicographicallyPrecedes(
+                    $1.changedKeys
+                )
+            }
+        let password = passwordManagerSummary(
+            passwordManagerLikeFixtureDetected:
+                passwordManagerLikeFixtureDetected,
+            runtimeMessagingStillBlocked: runtimeMessagingStillBlocked,
+            nativeMessagingStillBlocked: nativeMessagingStillBlocked
+        )
+        let blockers = uniqueSorted(
+            [
+                "chrome.storage remains unexposed to JavaScript.",
+                "storage.onChanged payloads are generated but not dispatched.",
+                "Service-worker wake remains blocked.",
+                "Context loading remains blocked.",
+                "Runtime messaging remains blocked.",
+                "runtimeLoadable remains false.",
+            ] + password.blockers
+        )
+        let reportID = ChromeMV3StorageStableID.make(
+            prefix: "runtime-storage-api-operations",
+            components: [
+                profileID,
+                extensionID,
+                storagePermissionDetected.description,
+                passwordManagerLikeFixtureDetected.description,
+            ]
+        )
+
+        return ChromeMV3StorageAPIOperationsReport(
+            schemaVersion: 1,
+            id: reportID,
+            reportFileName:
+                ChromeMV3StorageAPIOperationsReportWriter.reportFileName,
+            extensionID: extensionID.isEmpty
+                ? "unknown-extension"
+                : extensionID,
+            profileID: profileID.isEmpty ? "unknown-profile" : profileID,
+            operationHandlerCoverage: operationCoverage(records: records),
+            keySelectorCoverage: keySelectorCoverage(),
+            areaPolicies: records,
+            errorLastErrorCoverage:
+                ChromeMV3StorageAPILastErrorContract.coverage(),
+            operationExamples: examples,
+            onChangedGenerationCoverage: onChanged,
+            passwordManagerStorageAPISummary: password,
+            brokerModelOperationsAvailable: true,
+            jsRuntimeStorageExposureNow: false,
+            canDispatchStorageChangeEventNow: false,
+            canWakeServiceWorkerNow: false,
+            canLoadContextNow: false,
+            runtimeLoadable: false,
+            documentationSources: documentationSources(),
+            diagnostics: [
+                "Host-side chrome.storage operation handler skeleton is modeled.",
+                "get, set, remove, clear, and getBytesInUse route to the broker for local/session model contexts.",
+                "sync remains deferred; managed remains unsupported.",
+                "Callback, Promise, and lastError behavior are represented in result envelopes.",
+                "No JavaScript runtime storage exposure is enabled.",
+            ],
+            blockers: blockers
+        )
+    }
+
+    static func makeReport(
+        loadingPrerequisitesReportFrom rootURL: URL,
+        fileManager: FileManager = .default
+    ) throws -> ChromeMV3StorageAPIOperationsReport {
+        let reportURL = rootURL.standardizedFileURL
+            .appendingPathComponent(
+                ChromeMV3RuntimeBridgePrerequisitesReportWriter
+                    .reportFileName
+            )
+        let data = try Data(contentsOf: reportURL)
+        let prerequisites = try JSONDecoder().decode(
+            ChromeMV3RuntimeBridgePrerequisitesReport.self,
+            from: data
+        )
+        _ = fileManager
+        return makeReport(prerequisitesReport: prerequisites)
+    }
+
+    private static func operationCoverage(
+        records: [ChromeMV3StorageAreaRecord]
+    ) -> [ChromeMV3StorageAPIOperationCoverage] {
+        let operations: [ChromeMV3StorageOperationKind] = [
+            .clear,
+            .get,
+            .getBytesInUse,
+            .remove,
+            .set,
+        ]
+        return records.flatMap { record in
+            operations.map { operation in
+                let executable =
+                    (record.area == .local || record.area == .session)
+                        && (isWrite(operation)
+                            ? record.writeAllowedByModel
+                            : record.readAllowedByModel)
+                return ChromeMV3StorageAPIOperationCoverage(
+                    area: record.area,
+                    operation: operation,
+                    handlerModeled: true,
+                    brokerOperationCanExecuteInModel: executable,
+                    areaPolicyStatus: areaPolicyStatus(record.area),
+                    runtimeImplementedNow: false,
+                    jsRuntimeStorageExposureNow: false,
+                    diagnostics: record.diagnostics
+                )
+            }
+        }.sorted {
+            if $0.area != $1.area {
+                return $0.area < $1.area
+            }
+            return $0.operation < $1.operation
+        }
+    }
+
+    private static func keySelectorCoverage()
+        -> [ChromeMV3StorageAPIKeySelectorCoverage]
+    {
+        ChromeMV3StorageAPIKeySelectorKind.allCases.sorted().map { kind in
+            ChromeMV3StorageAPIKeySelectorCoverage(
+                selectorKind: kind,
+                supportedForGet: kind != .invalidType,
+                supportedForRemove:
+                    kind == .singleString || kind == .stringArray,
+                supportedForGetBytesInUse:
+                    kind == .allKeys || kind == .omitted
+                        || kind == .singleString || kind == .stringArray,
+                stableOrdering: true,
+                diagnostics: [
+                    "Selector normalization is deterministic and does not deserialize arbitrary JavaScript objects.",
+                ]
+            )
+        }
+    }
+
+    private static func operationExamples(
+        extensionID: String,
+        profileID: String
+    ) -> [ChromeMV3StorageAPIOperationExample] {
+        let handler = ChromeMV3StorageAPIOperationHandler()
+        var getBroker = broker(
+            area: .local,
+            extensionID: extensionID,
+            profileID: profileID,
+            initialValues: [
+                "existing": .string("stored"),
+            ]
+        )
+        let getInput = ChromeMV3StorageAPIOperationInput(
+            extensionID: extensionID,
+            profileID: profileID,
+            area: .local,
+            operation: .get,
+            invocationMode: .promise,
+            keySelector: .defaults([
+                "existing": .string("default"),
+                "missing": .bool(true),
+            ]),
+            sourceContext: .testFixture
+        )
+        let getResult = handler.handle(getInput, broker: &getBroker)
+
+        var setBroker = broker(
+            area: .local,
+            extensionID: extensionID,
+            profileID: profileID,
+            initialValues: [
+                "example": .string("old"),
+            ]
+        )
+        let setInput = ChromeMV3StorageAPIOperationInput(
+            extensionID: extensionID,
+            profileID: profileID,
+            area: .local,
+            operation: .set,
+            invocationMode: .callback,
+            values: [
+                "example": .string("new"),
+            ],
+            sourceContext: .testFixture
+        )
+        let setResult = handler.handle(setInput, broker: &setBroker)
+
+        var removeBroker = broker(
+            area: .session,
+            extensionID: extensionID,
+            profileID: profileID,
+            initialValues: [
+                "sessionFlag": .bool(true),
+            ]
+        )
+        let removeInput = ChromeMV3StorageAPIOperationInput(
+            extensionID: extensionID,
+            profileID: profileID,
+            area: .session,
+            operation: .remove,
+            invocationMode: .promise,
+            keySelector: .singleString("sessionFlag"),
+            sourceContext: .serviceWorker
+        )
+        let removeResult = handler.handle(removeInput, broker: &removeBroker)
+
+        return [
+            ChromeMV3StorageAPIOperationExample(
+                name: "get-with-defaults",
+                input: getInput,
+                result: getResult
+            ),
+            ChromeMV3StorageAPIOperationExample(
+                name: "set-generates-onChanged-payload",
+                input: setInput,
+                result: setResult
+            ),
+            ChromeMV3StorageAPIOperationExample(
+                name: "session-remove-generates-onChanged-payload",
+                input: removeInput,
+                result: removeResult
+            ),
+        ].sorted { $0.name < $1.name }
+    }
+
+    private static func passwordManagerSummary(
+        passwordManagerLikeFixtureDetected: Bool,
+        runtimeMessagingStillBlocked: Bool,
+        nativeMessagingStillBlocked: Bool
+    ) -> ChromeMV3PasswordManagerStorageAPISummary {
+        let blockers = uniqueSorted(
+            [
+                "chrome.storage is not exposed to JavaScript.",
+                "storage.onChanged is not dispatchable.",
+                "Service-worker wake is missing.",
+                runtimeMessagingStillBlocked
+                    ? "Runtime messaging is missing."
+                    : nil,
+                nativeMessagingStillBlocked
+                    ? "Native messaging is missing."
+                    : nil,
+                "Password-manager storage API readiness remains false.",
+            ].compactMap { $0 }
+                + (passwordManagerLikeFixtureDetected
+                    ? []
+                    : [
+                        "No password-manager-like fixture was detected, but storage API remains non-executing.",
+                    ])
+        )
+        return ChromeMV3PasswordManagerStorageAPISummary(
+            storageLocalOperationHandlerAvailableInModel: true,
+            storageSessionOperationHandlerAvailableInModel: true,
+            storageSyncPolicy:
+                ChromeMV3StorageSyncPolicy.conservativeV1.status,
+            storageOnChangedDispatchable: false,
+            serviceWorkerWakeMissing: true,
+            runtimeMessagingMissing: runtimeMessagingStillBlocked,
+            nativeMessagingMissing: nativeMessagingStillBlocked,
+            jsRuntimeExposureMissing: true,
+            passwordManagerStorageAPIReady: false,
+            blockers: blockers
+        )
+    }
+
+    private static func broker(
+        area: ChromeMV3StorageAreaKind,
+        extensionID: String,
+        profileID: String,
+        initialValues: [String: ChromeMV3StorageValue]
+    ) -> ChromeMV3StorageBroker {
+        ChromeMV3StorageBroker(
+            namespace: ChromeMV3StorageNamespace(
+                profileID: profileID,
+                extensionID: extensionID,
+                area: area
+            ),
+            initialValues: initialValues
+        )
+    }
+
+    private static func areaPolicyStatus(
+        _ area: ChromeMV3StorageAreaKind
+    ) -> ChromeMV3StorageAPIAreaPolicyStatus {
+        switch area {
+        case .local, .session:
+            return .modelExecutable
+        case .sync:
+            return .deferred
+        case .managed:
+            return .unsupported
+        }
+    }
+
+    private static func isWrite(
+        _ operation: ChromeMV3StorageOperationKind
+    ) -> Bool {
+        switch operation {
+        case .clear, .importSnapshot, .remove, .set:
+            return true
+        case .exportSnapshot, .get, .getAll, .getBytesInUse:
+            return false
+        }
+    }
+
+    private static func documentationSources()
+        -> [ChromeMV3ManifestRewritePreviewSource]
+    {
+        [
+            ChromeMV3ManifestRewritePreviewSource(
+                kind: .chromeDocumentation,
+                title: "Chrome storage API",
+                url: "https://developer.chrome.com/docs/extensions/reference/api/storage",
+                note:
+                    "Defines storage areas, quotas, get, set, remove, clear, getBytesInUse, onChanged, callback, Promise, and runtime.lastError behavior."
+            ),
+            ChromeMV3ManifestRewritePreviewSource(
+                kind: .chromeDocumentation,
+                title: "Chrome StorageArea",
+                url: "https://developer.chrome.com/docs/extensions/reference/api/storage/StorageArea",
+                note:
+                    "Defines key selector forms, Promise return values, and area-specific onChanged listener shape."
+            ),
+            ChromeMV3ManifestRewritePreviewSource(
+                kind: .chromeDocumentation,
+                title: "Chrome runtime API",
+                url: "https://developer.chrome.com/docs/extensions/reference/api/runtime",
+                note:
+                    "Defines runtime.lastError callback scoping and Promise behavior for extension APIs."
+            ),
+            ChromeMV3ManifestRewritePreviewSource(
+                kind: .chromeDocumentation,
+                title: "Chrome extension service-worker lifecycle",
+                url: "https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle",
+                note:
+                    "Defines service-worker idle shutdown and guidance to persist state in chrome.storage."
+            ),
+            ChromeMV3ManifestRewritePreviewSource(
+                kind: .currentSumiCode,
+                title: "Sumi Chrome MV3 storage broker",
+                url: nil,
+                note:
+                    "Provides deterministic host-side broker operations while JavaScript runtime exposure remains blocked."
+            ),
+        ]
+    }
+
+    private static func uniqueSorted(_ values: [String]) -> [String] {
+        Array(Set(values.filter { $0.isEmpty == false })).sorted()
+    }
+}
+
+private extension Array where Element == ChromeMV3StorageOperationKind {
+    func uniqueSorted() -> [ChromeMV3StorageOperationKind] {
+        Array(Set(self)).sorted()
+    }
+}
+
 struct ChromeMV3StorageOperationContractCoverage:
     Codable,
     Equatable,
@@ -1365,6 +3076,8 @@ struct ChromeMV3StorageBrokerReadinessReportSummary:
     var canLoadContextNow: Bool
     var runtimeLoadable: Bool
     var passwordManagerStorageReady: Bool
+    var storageAPIOperationsReportSummary:
+        ChromeMV3StorageAPIOperationsReportSummary? = nil
 }
 
 struct ChromeMV3StorageBrokerReadinessReport:
@@ -1388,6 +3101,8 @@ struct ChromeMV3StorageBrokerReadinessReport:
     var changeEventContractCoverage: [ChromeMV3StorageOnChangedEventPayload]
     var passwordManagerStorageSummary:
         ChromeMV3PasswordManagerStorageReadinessSummary
+    var storageAPIOperationsReportSummary:
+        ChromeMV3StorageAPIOperationsReportSummary? = nil
     var canReadStorageNow: Bool
     var canWriteStorageNow: Bool
     var brokerModelOperationsAvailable: Bool
@@ -1420,7 +3135,9 @@ struct ChromeMV3StorageBrokerReadinessReport:
             canLoadContextNow: false,
             runtimeLoadable: false,
             passwordManagerStorageReady:
-                passwordManagerStorageSummary.passwordManagerStorageReady
+                passwordManagerStorageSummary.passwordManagerStorageReady,
+            storageAPIOperationsReportSummary:
+                storageAPIOperationsReportSummary
         )
     }
 }
@@ -1536,6 +3253,18 @@ enum ChromeMV3StorageBrokerReadinessReportGenerator {
             runtimeMessagingStillBlocked: runtimeMessagingStillBlocked,
             nativeMessagingStillBlocked: nativeMessagingStillBlocked
         )
+        let apiOperationsReport =
+            ChromeMV3StorageAPIOperationsReportGenerator.makeReport(
+                extensionID: extensionID,
+                profileID: profileID,
+                storagePermissionDetected: storagePermissionDetected,
+                passwordManagerLikeFixtureDetected:
+                    passwordManagerLikeFixtureDetected,
+                runtimeMessagingStillBlocked:
+                    runtimeMessagingStillBlocked,
+                nativeMessagingStillBlocked:
+                    nativeMessagingStillBlocked
+            )
         let blockers = uniqueSorted(
             [
                 "chrome.storage JavaScript API calls remain blocked.",
@@ -1574,6 +3303,8 @@ enum ChromeMV3StorageBrokerReadinessReportGenerator {
             quotaErrorDiagnostics: quotaDiagnostics,
             changeEventContractCoverage: eventCoverage,
             passwordManagerStorageSummary: password,
+            storageAPIOperationsReportSummary:
+                apiOperationsReport.summary,
             canReadStorageNow: false,
             canWriteStorageNow: false,
             brokerModelOperationsAvailable: true,
@@ -1588,6 +3319,7 @@ enum ChromeMV3StorageBrokerReadinessReportGenerator {
                 "storage.sync is deferred as a local-only future-emulation policy decision.",
                 "storage.managed is unsupported.",
                 "Broker namespaces include profile id, extension id, and storage area.",
+                "Host-side storage API operation handler skeleton is available for model tests.",
                 "No active extension storage runtime handle is opened.",
             ],
             blockers: blockers

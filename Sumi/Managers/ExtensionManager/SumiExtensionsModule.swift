@@ -40,6 +40,8 @@ final class SumiExtensionsModule {
             ChromeMV3RuntimeBridgeReadinessReport?
         private var lastChromeMV3StorageBrokerReadinessReport:
             ChromeMV3StorageBrokerReadinessReport?
+        private var lastChromeMV3StorageAPIOperationsReport:
+            ChromeMV3StorageAPIOperationsReport?
         private var lastChromeMV3RuntimeMessagingContractReport:
             ChromeMV3RuntimeMessagingContractReport?
         private var lastChromeMV3RuntimeListenerContractReport:
@@ -134,6 +136,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3RuntimeBridgePrerequisitesReport = nil
                     lastChromeMV3RuntimeBridgeReadinessReport = nil
                     lastChromeMV3StorageBrokerReadinessReport = nil
+                    lastChromeMV3StorageAPIOperationsReport = nil
                     lastChromeMV3RuntimeMessagingContractReport = nil
                     lastChromeMV3RuntimeListenerContractReport = nil
                     lastChromeMV3PermissionBrokerReadinessReport = nil
@@ -200,6 +203,8 @@ final class SumiExtensionsModule {
             ChromeMV3RuntimeBridgeReadinessReport?
         let storageBrokerReadinessReportSummary:
             ChromeMV3StorageBrokerReadinessReportSummary?
+        let storageAPIOperationsReportSummary:
+            ChromeMV3StorageAPIOperationsReportSummary?
         let runtimeMessagingContractReportSummary:
             ChromeMV3RuntimeMessagingContractReportSummary?
         let runtimeListenerContractReportSummary:
@@ -224,6 +229,8 @@ final class SumiExtensionsModule {
                     lastChromeMV3RuntimeBridgeReadinessReport
                 storageBrokerReadinessReportSummary =
                     lastChromeMV3StorageBrokerReadinessReport?.summary
+                storageAPIOperationsReportSummary =
+                    lastChromeMV3StorageAPIOperationsReport?.summary
                 runtimeMessagingContractReportSummary =
                     lastChromeMV3RuntimeMessagingContractReport?.summary
                 runtimeListenerContractReportSummary =
@@ -241,6 +248,7 @@ final class SumiExtensionsModule {
                 runtimeBridgePrerequisitesReport = nil
                 runtimeBridgeReadinessReport = nil
                 storageBrokerReadinessReportSummary = nil
+                storageAPIOperationsReportSummary = nil
                 runtimeMessagingContractReportSummary = nil
                 runtimeListenerContractReportSummary = nil
                 permissionBrokerReadinessReportSummary = nil
@@ -254,6 +262,7 @@ final class SumiExtensionsModule {
             runtimeBridgePrerequisitesReport = nil
             runtimeBridgeReadinessReport = nil
             storageBrokerReadinessReportSummary = nil
+            storageAPIOperationsReportSummary = nil
             runtimeMessagingContractReportSummary = nil
             runtimeListenerContractReportSummary = nil
             permissionBrokerReadinessReportSummary = nil
@@ -273,6 +282,8 @@ final class SumiExtensionsModule {
                 runtimeBridgeReadinessReport,
             storageBrokerReadinessReportSummary:
                 storageBrokerReadinessReportSummary,
+            storageAPIOperationsReportSummary:
+                storageAPIOperationsReportSummary,
             runtimeMessagingContractReportSummary:
                 runtimeMessagingContractReportSummary,
             runtimeListenerContractReportSummary:
@@ -745,6 +756,32 @@ final class SumiExtensionsModule {
 
             guard writeReport else { return report }
             return (try? ChromeMV3StorageBrokerReadinessReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3StorageAPIOperationsReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            writeReport: Bool = false
+        ) -> ChromeMV3StorageAPIOperationsReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let report: ChromeMV3StorageAPIOperationsReport
+            do {
+                report = try ChromeMV3StorageAPIOperationsReportGenerator
+                    .makeReport(
+                        loadingPrerequisitesReportFrom: rootURL
+                    )
+            } catch {
+                return nil
+            }
+            lastChromeMV3StorageAPIOperationsReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3StorageAPIOperationsReportWriter.write(
                 report,
                 toRewrittenBundleRoot: rootURL
             )) ?? report

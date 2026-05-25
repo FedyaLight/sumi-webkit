@@ -92,6 +92,8 @@ struct ChromeMV3ProfileHostDiagnostics: Codable, Equatable, Sendable {
         ChromeMV3RuntimeBridgeReadinessReport?
     var storageBrokerReadinessReportSummary:
         ChromeMV3StorageBrokerReadinessReportSummary? = nil
+    var storageAPIOperationsReportSummary:
+        ChromeMV3StorageAPIOperationsReportSummary? = nil
     var runtimeMessagingContractReportSummary:
         ChromeMV3RuntimeMessagingContractReportSummary?
     var runtimeListenerContractReportSummary:
@@ -258,6 +260,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
             ChromeMV3RuntimeBridgeReadinessReport? = nil,
         storageBrokerReadinessReportSummary:
             ChromeMV3StorageBrokerReadinessReportSummary? = nil,
+        storageAPIOperationsReportSummary:
+            ChromeMV3StorageAPIOperationsReportSummary? = nil,
         runtimeMessagingContractReportSummary:
             ChromeMV3RuntimeMessagingContractReportSummary? = nil,
         runtimeListenerContractReportSummary:
@@ -332,6 +336,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
                 runtimeBridgeReadinessReport,
             storageBrokerReadinessReportSummary:
                 storageBrokerReadinessReportSummary,
+            storageAPIOperationsReportSummary:
+                storageAPIOperationsReportSummary,
             runtimeMessagingContractReportSummary:
                 runtimeMessagingContractReportSummary,
             runtimeListenerContractReportSummary:
