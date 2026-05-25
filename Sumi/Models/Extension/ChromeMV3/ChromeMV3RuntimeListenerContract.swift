@@ -1163,6 +1163,8 @@ struct ChromeMV3RuntimeListenerContractReportSummary:
     var passwordManagerListenerReady: Bool
     var permissionBrokerReadinessReportSummary:
         ChromeMV3PermissionBrokerReadinessReportSummary? = nil
+    var permissionLifecycleReportSummary:
+        ChromeMV3PermissionLifecycleReportSummary? = nil
 }
 
 struct ChromeMV3RuntimeListenerContractReport:
@@ -1189,6 +1191,8 @@ struct ChromeMV3RuntimeListenerContractReport:
         ChromeMV3PasswordManagerListenerSummary
     var permissionBrokerReadinessReportSummary:
         ChromeMV3PermissionBrokerReadinessReportSummary? = nil
+    var permissionLifecycleReportSummary:
+        ChromeMV3PermissionLifecycleReportSummary? = nil
     var canRegisterListenersNow: Bool
     var canResolveReceivingListenersNow: Bool
     var canDispatchMessagesNow: Bool
@@ -1214,7 +1218,9 @@ struct ChromeMV3RuntimeListenerContractReport:
             runtimeLoadable: false,
             passwordManagerListenerReady: false,
             permissionBrokerReadinessReportSummary:
-                permissionBrokerReadinessReportSummary
+                permissionBrokerReadinessReportSummary,
+            permissionLifecycleReportSummary:
+                permissionLifecycleReportSummary
         )
     }
 }
@@ -1261,12 +1267,23 @@ enum ChromeMV3RuntimeListenerContractReportGenerator {
                 prerequisitesReport: prerequisites,
                 profileID: profileID
             )
-        let permissionBroker = ChromeMV3PermissionBroker(
-            state: ChromeMV3PermissionBrokerState.from(
-                manifestFacts: prerequisites.manifestFacts,
+        let lifecycleReport =
+            ChromeMV3PermissionLifecycleReportGenerator.makeReport(
+                prerequisitesReport: prerequisites,
+                profileID: profileID
+            )
+        let permissionStore = ChromeMV3PermissionLifecycleReportGenerator
+            .permissionStore(
+                prerequisites: prerequisites,
                 extensionID: extensionID,
                 profileID: profileID
             )
+        let activeTabStore = ChromeMV3ActiveTabGrantStore.empty(
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        let permissionBroker = permissionStore.permissionBroker(
+            activeTabStore: activeTabStore
         )
         let surfaces = ChromeMV3RuntimeListenerSurface.allModeledSurfaces(
             extensionID: extensionID,
@@ -1356,6 +1373,8 @@ enum ChromeMV3RuntimeListenerContractReportGenerator {
             passwordManagerListenerSummary: passwordSummary,
             permissionBrokerReadinessReportSummary:
                 permissionReport.summary,
+            permissionLifecycleReportSummary:
+                lifecycleReport.summary,
             canRegisterListenersNow: false,
             canResolveReceivingListenersNow: false,
             canDispatchMessagesNow: false,
