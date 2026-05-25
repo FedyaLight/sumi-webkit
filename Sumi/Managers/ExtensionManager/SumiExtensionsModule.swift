@@ -48,6 +48,8 @@ final class SumiExtensionsModule {
             ChromeMV3ContentScriptSmokeReport?
         private var lastChromeMV3RuntimeContentScriptLocalFixtureRunnerReport:
             ChromeMV3ContentScriptLocalFixtureRunnerReport?
+        private var lastChromeMV3RuntimeExtensionPageHostReport:
+            ChromeMV3ExtensionPageHostReport?
         private var lastChromeMV3RuntimeBridgePrerequisitesReport:
             ChromeMV3RuntimeBridgePrerequisitesReport?
         private var lastChromeMV3RuntimeBridgeReadinessReport:
@@ -162,6 +164,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3RuntimeMinimalSmokeReport = nil
                     lastChromeMV3RuntimeContentScriptSmokeReport = nil
                     lastChromeMV3RuntimeContentScriptLocalFixtureRunnerReport = nil
+                    lastChromeMV3RuntimeExtensionPageHostReport = nil
                     lastChromeMV3RuntimeBridgePrerequisitesReport = nil
                     lastChromeMV3RuntimeBridgeReadinessReport = nil
                     lastChromeMV3StorageBrokerReadinessReport = nil
@@ -238,6 +241,8 @@ final class SumiExtensionsModule {
             ChromeMV3ContentScriptSmokeReport?
         let runtimeContentScriptLocalFixtureRunnerReport:
             ChromeMV3ContentScriptLocalFixtureRunnerReport?
+        let runtimeExtensionPageHostReport:
+            ChromeMV3ExtensionPageHostReport?
         let runtimeBridgePrerequisitesReport:
             ChromeMV3RuntimeBridgePrerequisitesReport?
         let runtimeBridgeReadinessReport:
@@ -282,6 +287,8 @@ final class SumiExtensionsModule {
                     lastChromeMV3RuntimeContentScriptSmokeReport
                 runtimeContentScriptLocalFixtureRunnerReport =
                     lastChromeMV3RuntimeContentScriptLocalFixtureRunnerReport
+                runtimeExtensionPageHostReport =
+                    lastChromeMV3RuntimeExtensionPageHostReport
                 runtimeBridgePrerequisitesReport =
                     lastChromeMV3RuntimeBridgePrerequisitesReport
                 runtimeBridgeReadinessReport =
@@ -318,6 +325,7 @@ final class SumiExtensionsModule {
                 runtimeMinimalSmokeReport = nil
                 runtimeContentScriptSmokeReport = nil
                 runtimeContentScriptLocalFixtureRunnerReport = nil
+                runtimeExtensionPageHostReport = nil
                 runtimeBridgePrerequisitesReport = nil
                 runtimeBridgeReadinessReport = nil
                 storageBrokerReadinessReportSummary = nil
@@ -341,6 +349,7 @@ final class SumiExtensionsModule {
             runtimeMinimalSmokeReport = nil
             runtimeContentScriptSmokeReport = nil
             runtimeContentScriptLocalFixtureRunnerReport = nil
+            runtimeExtensionPageHostReport = nil
             runtimeBridgePrerequisitesReport = nil
             runtimeBridgeReadinessReport = nil
             storageBrokerReadinessReportSummary = nil
@@ -369,6 +378,8 @@ final class SumiExtensionsModule {
                 runtimeContentScriptSmokeReport,
             runtimeContentScriptLocalFixtureRunnerReport:
                 runtimeContentScriptLocalFixtureRunnerReport,
+            runtimeExtensionPageHostReport:
+                runtimeExtensionPageHostReport,
             runtimeBridgePrerequisitesReport:
                 runtimeBridgePrerequisitesReport,
             runtimeBridgeReadinessReport:
@@ -1652,6 +1663,99 @@ final class SumiExtensionsModule {
         }
 
         @available(macOS 15.5, *)
+        func chromeMV3RuntimeExtensionPageHostReportIfEnabled(
+            selectedKind: ChromeMV3ExtensionPageKind,
+            explicitInternalExtensionPageHostAllowed: Bool,
+            explicitSyntheticWebViewCreationAllowed: Bool,
+            explicitSyntheticNavigationAllowed: Bool,
+            explicitTestDOMInspectionAllowed: Bool,
+            candidate: ChromeMV3RewrittenVariantCandidate,
+            objectAcceptanceReport:
+                ChromeMV3WebKitObjectAcceptanceReport? = nil,
+            runtimeBridgeReadinessReport:
+                ChromeMV3RuntimeBridgeReadinessReport? = nil,
+            writeReport: Bool = false,
+            tearDownLoadedContextAndControllerAfterRun: Bool = false
+        ) async -> ChromeMV3ExtensionPageHostReport? {
+            guard isEnabled else { return nil }
+
+            let resolvedObjectAcceptanceReport =
+                objectAcceptanceReport
+                    ?? lastChromeMV3WebKitObjectAcceptanceReport
+                    ?? loadChromeMV3WebKitObjectAcceptanceReport(
+                        fromRewrittenBundleRootPath:
+                            candidate.rewrittenVariantRootPath
+                    )
+            let resolvedRuntimeBridgeReadinessReport =
+                runtimeBridgeReadinessReport
+                    ?? lastChromeMV3RuntimeBridgeReadinessReport
+                    ?? loadChromeMV3RuntimeBridgeReadinessReport(
+                        fromRewrittenBundleRootPath:
+                            candidate.rewrittenVariantRootPath
+                    )
+            let report =
+                await ChromeMV3ExtensionPageHostHarness.run(
+                    candidate: candidate,
+                    selectedKind: selectedKind,
+                    extensionsModuleEnabled: true,
+                    explicitInternalExtensionPageHostAllowed:
+                        explicitInternalExtensionPageHostAllowed,
+                    explicitSyntheticWebViewCreationAllowed:
+                        explicitSyntheticWebViewCreationAllowed,
+                    explicitSyntheticNavigationAllowed:
+                        explicitSyntheticNavigationAllowed,
+                    explicitTestDOMInspectionAllowed:
+                        explicitTestDOMInspectionAllowed,
+                    objectAcceptanceReport:
+                        resolvedObjectAcceptanceReport,
+                    runtimeBridgeReadinessReport:
+                        resolvedRuntimeBridgeReadinessReport,
+                    emptyControllerOwner:
+                        cachedChromeMV3EmptyControllerOwner,
+                    detachedContextOwner:
+                        cachedChromeMV3DetachedContextOwner,
+                    controllerLoadOwner:
+                        cachedChromeMV3ControllerLoadOwner,
+                    liveNormalTabAttachmentSnapshot:
+                        chromeMV3LiveNormalTabAttachmentDiagnosticsSnapshot(),
+                    tearDownLoadedContextAndControllerAfterRun:
+                        tearDownLoadedContextAndControllerAfterRun
+                )
+            lastChromeMV3RuntimeExtensionPageHostReport = report
+
+            if var linkedReadinessReport =
+                lastChromeMV3RuntimeBridgeReadinessReport
+                    ?? resolvedRuntimeBridgeReadinessReport {
+                linkedReadinessReport.extensionPageHostSummary =
+                    report.summary
+                lastChromeMV3RuntimeBridgeReadinessReport =
+                    linkedReadinessReport
+            }
+            if var linkedBridgeReport = lastChromeMV3JSBridgeContractReport {
+                linkedBridgeReport.extensionPageHostSummary = report.summary
+                lastChromeMV3JSBridgeContractReport = linkedBridgeReport
+            }
+
+            if tearDownLoadedContextAndControllerAfterRun {
+                cachedChromeMV3ControllerLoadOwner = nil
+                cachedChromeMV3DetachedContextOwner = nil
+                cachedChromeMV3EmptyControllerOwner = nil
+            }
+
+            if writeReport {
+                let rootURL = URL(
+                    fileURLWithPath: candidate.rewrittenVariantRootPath,
+                    isDirectory: true
+                ).standardizedFileURL
+                _ = try? ChromeMV3ExtensionPageHostReportWriter.write(
+                    report,
+                    toRewrittenBundleRoot: rootURL
+                )
+            }
+            return report
+        }
+
+        @available(macOS 15.5, *)
         @discardableResult
         func tearDownChromeMV3RuntimeContentScriptLocalFixtureRunnerIfEnabled()
             -> ChromeMV3RuntimeMinimalSmokeTeardownResult?
@@ -1659,6 +1763,16 @@ final class SumiExtensionsModule {
             guard isEnabled else { return nil }
             lastChromeMV3RuntimeContentScriptLocalFixtureRunnerReport = nil
             return tearDownChromeMV3RuntimeContentScriptSmokeIfEnabled()
+        }
+
+        @available(macOS 15.5, *)
+        @discardableResult
+        func tearDownChromeMV3RuntimeExtensionPageHostIfEnabled()
+            -> ChromeMV3RuntimeMinimalSmokeTeardownResult?
+        {
+            guard isEnabled else { return nil }
+            lastChromeMV3RuntimeExtensionPageHostReport = nil
+            return tearDownChromeMV3RuntimeMinimalSmokeHarnessIfEnabled()
         }
 
         @available(macOS 15.5, *)
