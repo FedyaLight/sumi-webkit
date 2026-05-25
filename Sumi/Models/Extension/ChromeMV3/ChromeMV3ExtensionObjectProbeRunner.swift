@@ -92,6 +92,29 @@ final class ChromeMV3ExtensionObjectProbeOwner {
     }
 
     @MainActor
+    func acceptedWebExtensionObjectForDetachedContext(
+        objectAcceptanceReport: ChromeMV3WebKitObjectAcceptanceReport?
+    ) -> WKWebExtension? {
+        guard objectAcceptanceReport?.objectAcceptedByWebKit == true,
+              state == .created,
+              webExtensionStorage != nil,
+              diagnostics().extensionObjectCreated
+        else {
+            return nil
+        }
+        return webExtensionStorage
+    }
+
+    @MainActor
+    func hasAcceptedWebExtensionObjectForDetachedContext(
+        objectAcceptanceReport: ChromeMV3WebKitObjectAcceptanceReport?
+    ) -> Bool {
+        acceptedWebExtensionObjectForDetachedContext(
+            objectAcceptanceReport: objectAcceptanceReport
+        ) != nil
+    }
+
+    @MainActor
     @discardableResult
     func runProbeIfAllowed() async -> ChromeMV3ExtensionObjectProbeDiagnostics {
         guard gateDecision.canCreateExtensionObjectNow else {
