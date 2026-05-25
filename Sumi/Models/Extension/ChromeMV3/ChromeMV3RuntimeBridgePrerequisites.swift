@@ -1512,3 +1512,992 @@ enum ChromeMV3RuntimeBridgePrerequisitePlanner {
         Array(Set(values.filter { $0.isEmpty == false })).sorted()
     }
 }
+
+enum ChromeMV3RuntimeBridgeReadinessGateStatus:
+    String,
+    Codable,
+    CaseIterable,
+    Sendable
+{
+    case blocked
+    case notRequired
+    case ready
+}
+
+enum ChromeMV3RuntimeBridgeReadinessNextRequiredCategory:
+    String,
+    Codable,
+    CaseIterable,
+    Sendable
+{
+    case blockedByPrerequisiteReport = "blocked-by-prerequisite-report"
+    case diagnosticRuntimePrerequisite = "diagnostic/runtime-prerequisite"
+    case contextCreationGate = "context-creation-gate"
+}
+
+struct ChromeMV3RuntimeBridgeReadinessInstallSummary:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var installReportAvailable: Bool
+    var installReportHash: String?
+    var detectedAPIs: [ChromeMV3API]
+    var deferredAPIs: [ChromeMV3API]
+    var unsupportedAPIs: [ChromeMV3API]
+    var needsVerificationAPIs: [ChromeMV3API]
+    var fatalValidationErrorCodes: [String]
+}
+
+struct ChromeMV3RuntimeBridgeReadinessContextSummary:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var contextReportAvailable: Bool
+    var contextReadinessReportID: String
+    var contextReadinessReportHash: String
+    var objectAcceptedByWebKit: Bool
+    var futureContextEligible: Bool
+    var nextRequiredPromptCategory:
+        ChromeMV3ContextReadinessNextPromptCategory?
+    var contextCanCreateNow: Bool
+    var contextCanLoadNow: Bool
+    var contextRuntimeLoadable: Bool
+}
+
+struct ChromeMV3RuntimeMessagingReadinessGate:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var status: ChromeMV3RuntimeBridgeReadinessGateStatus
+    var requiredForCandidate: Bool
+    var runtimeSendMessageContractDefined: Bool
+    var tabsSendMessageContractDefined: Bool
+    var runtimeConnectPortLifecycleContractDefined: Bool
+    var disconnectErrorTimeoutPolicyDefined: Bool
+    var callbackPromiseBridgingContractDefined: Bool
+    var lastErrorPolicyDefined: Bool
+    var contentScriptPopupServiceWorkerRouteContractsDefined: Bool
+    var dispatchImplemented: Bool
+    var listenerRegistrationImplemented: Bool
+    var serviceWorkerWakeImplemented: Bool
+    var messagingReadyForContextLoad: Bool
+    var blockers: [String]
+    var requiredBeforeContextLoad: [String]
+}
+
+struct ChromeMV3StorageAreaReadinessGate:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var area: ChromeMV3StorageAreaName
+    var status: ChromeMV3RuntimeBridgeReadinessGateStatus
+    var requiredForCandidate: Bool
+    var implementedNow: Bool
+    var readyForContextLoad: Bool
+    var blockers: [String]
+}
+
+struct ChromeMV3StorageReadinessGate:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var status: ChromeMV3RuntimeBridgeReadinessGateStatus
+    var extensionRequiresStorage: Bool
+    var storageRuntimeImplemented: Bool
+    var profileIsolationPolicyRequired: Bool
+    var persistencePolicyRequired: Bool
+    var workerUnloadReloadConsistencyRequired: Bool
+    var quotaErrorSemanticsRequiredOrDeferred: Bool
+    var storageReadyForContextLoad: Bool
+    var areas: [ChromeMV3StorageAreaReadinessGate]
+    var blockers: [String]
+}
+
+struct ChromeMV3PermissionsActiveTabReadinessGate:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var status: ChromeMV3RuntimeBridgeReadinessGateStatus
+    var requiredForCandidate: Bool
+    var hostPermissionEvaluationRequired: Bool
+    var optionalPermissionModelRequired: Bool
+    var activeTabGrantModelRequired: Bool
+    var userGesturePolicyRequired: Bool
+    var grantExpiryPolicyRequired: Bool
+    var permissionPromptPolicyRequired: Bool
+    var contentScriptAuthorizationPolicyRequired: Bool
+    var permissionBrokerImplemented: Bool
+    var activeTabImplemented: Bool
+    var hostPermissionEvaluationImplemented: Bool
+    var permissionsReadyForContextLoad: Bool
+    var blockers: [String]
+}
+
+struct ChromeMV3NativeMessagingReadinessGate:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var status: ChromeMV3RuntimeBridgeReadinessGateStatus
+    var nativeMessagingDetected: Bool
+    var nativeMessagingPermissionDetectionRequired: Bool
+    var hostManifestValidationPolicyRequired: Bool
+    var allowlistHostLookupPolicyRequired: Bool
+    var userConsentPolicyRequired: Bool
+    var stdioFramingPolicyRequired: Bool
+    var processLifecyclePolicyRequired: Bool
+    var hostExitErrorPolicyRequired: Bool
+    var disabledModuleNoLaunchGuaranteeRequired: Bool
+    var nativeMessagingRuntimeImplemented: Bool
+    var processLaunchImplemented: Bool
+    var nativeMessagingBlocked: Bool
+    var nativeMessagingSafelyBlockedOrImplemented: Bool
+    var nativeMessagingReadyForContextLoad: Bool
+    var blockers: [String]
+}
+
+struct ChromeMV3ServiceWorkerLifecycleReadinessGate:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var status: ChromeMV3RuntimeBridgeReadinessGateStatus
+    var requiredForCandidate: Bool
+    var wakeReasonModelRequired: Bool
+    var eventDispatchModelRequired: Bool
+    var idleReleasePolicyRequired: Bool
+    var hardTimeoutPolicyRequired: Bool
+    var longLivedPortPolicyRequired: Bool
+    var nativeMessagingPortPolicyRequired: Bool
+    var alarmWakePolicyRequired: Bool
+    var statePersistencePolicyRequired: Bool
+    var diagnosticsModelRequired: Bool
+    var permanentBackgroundForbidden: Bool
+    var lifecycleCoordinatorImplemented: Bool
+    var serviceWorkerWakeImplemented: Bool
+    var lifecycleReadyForContextLoad: Bool
+    var blockers: [String]
+}
+
+struct ChromeMV3PasswordManagerReadinessGate:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var status: ChromeMV3RuntimeBridgeReadinessGateStatus
+    var passwordManagerLikeFixtureDetected: Bool
+    var contentScriptsDetected: Bool
+    var actionPopupDetected: Bool
+    var hostPermissionsDetected: Bool
+    var storagePermissionDetected: Bool
+    var nativeMessagingDetected: Bool
+    var runtimeMessagingMissing: Bool
+    var permissionsActiveTabMissing: Bool
+    var storageBackendMissing: Bool
+    var nativeMessagingMissing: Bool
+    var serviceWorkerLifecycleMissing: Bool
+    var controlledInputPageWorldBehaviorUnverified: Bool
+    var passwordManagerSupportReady: Bool
+    var blockers: [String]
+}
+
+struct ChromeMV3RuntimeBridgeReadinessReport:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var schemaVersion: Int
+    var id: String
+    var reportFileName: String
+    var candidateID: String
+    var generatedRewrittenRootPath: String
+    var prerequisiteReportID: String
+    var prerequisiteReportPath: String
+    var prerequisiteReportHash: String
+    var contextSummary: ChromeMV3RuntimeBridgeReadinessContextSummary
+    var installSummary: ChromeMV3RuntimeBridgeReadinessInstallSummary
+    var messagingGate: ChromeMV3RuntimeMessagingReadinessGate
+    var storageGate: ChromeMV3StorageReadinessGate
+    var permissionsActiveTabGate:
+        ChromeMV3PermissionsActiveTabReadinessGate
+    var nativeMessagingGate: ChromeMV3NativeMessagingReadinessGate
+    var serviceWorkerLifecycleGate:
+        ChromeMV3ServiceWorkerLifecycleReadinessGate
+    var passwordManagerGate: ChromeMV3PasswordManagerReadinessGate
+    var canCreateContextNow: Bool
+    var canLoadContextNow: Bool
+    var runtimeLoadable: Bool
+    var shouldFutureContextCreationRemainBlocked: Bool
+    var nextRequiredCategory:
+        ChromeMV3RuntimeBridgeReadinessNextRequiredCategory
+    var blockingReasons: [String]
+    var documentationSources: [ChromeMV3ManifestRewritePreviewSource]
+    var warnings: [String]
+}
+
+enum ChromeMV3RuntimeBridgeReadinessReportError:
+    LocalizedError,
+    CustomStringConvertible,
+    Equatable
+{
+    case missingPrerequisiteReport(String)
+    case unreadablePrerequisiteReport(String)
+    case corruptPrerequisiteReport(String)
+    case missingContextReadinessReport(String)
+    case unreadableContextReadinessReport(String)
+    case corruptContextReadinessReport(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingPrerequisiteReport(let path):
+            return "Missing Chrome MV3 runtime bridge prerequisite report: \(path)"
+        case .unreadablePrerequisiteReport(let reason):
+            return "Unable to read Chrome MV3 runtime bridge prerequisite report: \(reason)"
+        case .corruptPrerequisiteReport(let reason):
+            return "Chrome MV3 runtime bridge prerequisite report is corrupt: \(reason)"
+        case .missingContextReadinessReport(let path):
+            return "Missing Chrome MV3 context-readiness report: \(path)"
+        case .unreadableContextReadinessReport(let reason):
+            return "Unable to read Chrome MV3 context-readiness report: \(reason)"
+        case .corruptContextReadinessReport(let reason):
+            return "Chrome MV3 context-readiness report is corrupt: \(reason)"
+        }
+    }
+
+    var description: String {
+        errorDescription ?? String(describing: self)
+    }
+}
+
+enum ChromeMV3RuntimeBridgeReadinessReportWriter {
+    static let reportFileName = "runtime-bridge-readiness-report.json"
+
+    @discardableResult
+    static func write(
+        _ report: ChromeMV3RuntimeBridgeReadinessReport,
+        toRewrittenBundleRoot rootURL: URL
+    ) throws -> ChromeMV3RuntimeBridgeReadinessReport {
+        guard directoryExists(rootURL.standardizedFileURL) else {
+            return report
+        }
+        try ChromeMV3DeterministicJSON.write(
+            report,
+            to: rootURL.standardizedFileURL
+                .appendingPathComponent(Self.reportFileName)
+        )
+        return report
+    }
+
+    private static func directoryExists(_ url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(
+            atPath: url.path,
+            isDirectory: &isDirectory
+        ) && isDirectory.boolValue
+    }
+}
+
+enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
+    static func makeReport(
+        loadingReportsFrom rootURL: URL,
+        installReport: ChromeMV3InstallReport? = nil,
+        fileManager: FileManager = .default
+    ) throws -> ChromeMV3RuntimeBridgeReadinessReport {
+        let rootURL = rootURL.standardizedFileURL
+        let prerequisiteURL = rootURL.appendingPathComponent(
+            ChromeMV3RuntimeBridgePrerequisitesReportWriter.reportFileName
+        )
+        let prerequisiteData = try readData(
+            at: prerequisiteURL,
+            fileManager: fileManager,
+            missing: .missingPrerequisiteReport(prerequisiteURL.path),
+            unreadable: {
+                .unreadablePrerequisiteReport($0.localizedDescription)
+            }
+        )
+        let prerequisites: ChromeMV3RuntimeBridgePrerequisitesReport
+        do {
+            prerequisites = try JSONDecoder().decode(
+                ChromeMV3RuntimeBridgePrerequisitesReport.self,
+                from: prerequisiteData
+            )
+        } catch {
+            throw ChromeMV3RuntimeBridgeReadinessReportError
+                .corruptPrerequisiteReport(error.localizedDescription)
+        }
+
+        let contextURL = URL(
+            fileURLWithPath: prerequisites.contextReadinessReportPath
+        ).standardizedFileURL
+        let contextData = try readData(
+            at: contextURL,
+            fileManager: fileManager,
+            missing: .missingContextReadinessReport(contextURL.path),
+            unreadable: {
+                .unreadableContextReadinessReport($0.localizedDescription)
+            }
+        )
+        let contextReport: ChromeMV3ContextReadinessReport
+        do {
+            contextReport = try JSONDecoder().decode(
+                ChromeMV3ContextReadinessReport.self,
+                from: contextData
+            )
+        } catch {
+            throw ChromeMV3RuntimeBridgeReadinessReportError
+                .corruptContextReadinessReport(error.localizedDescription)
+        }
+
+        return makeReport(
+            prerequisitesReport: prerequisites,
+            prerequisitesReportPath: prerequisiteURL.path,
+            prerequisitesReportHash: sha256Hex(prerequisiteData),
+            contextReadinessReport: contextReport,
+            installReport: installReport,
+            fileManager: fileManager
+        )
+    }
+
+    static func makeReport(
+        prerequisitesReport prerequisites:
+            ChromeMV3RuntimeBridgePrerequisitesReport,
+        prerequisitesReportPath: String,
+        prerequisitesReportHash: String? = nil,
+        contextReadinessReport contextReport:
+            ChromeMV3ContextReadinessReport? = nil,
+        installReport: ChromeMV3InstallReport? = nil,
+        fileManager: FileManager = .default
+    ) -> ChromeMV3RuntimeBridgeReadinessReport {
+        let prerequisiteHash = prerequisitesReportHash
+            ?? (try? ChromeMV3DeterministicJSON.encodedData(prerequisites))
+                .map(sha256Hex)
+            ?? "missing-prerequisite-report-hash"
+        let installSummary = installSummary(installReport)
+        let contextSummary = contextSummary(
+            prerequisites: prerequisites,
+            contextReport: contextReport
+        )
+        let messaging = messagingGate(
+            prerequisites.runtimeMessagingPrerequisites,
+            manifestFacts: prerequisites.manifestFacts
+        )
+        let storage = storageGate(
+            prerequisites.storagePrerequisites,
+            manifestFacts: prerequisites.manifestFacts,
+            installReport: installReport
+        )
+        let permissions = permissionsGate(
+            prerequisites.permissionsActiveTabPrerequisites,
+            manifestFacts: prerequisites.manifestFacts,
+            installReport: installReport
+        )
+        let native = nativeMessagingGate(
+            prerequisites.nativeMessagingPrerequisites,
+            installReport: installReport
+        )
+        let lifecycle = serviceWorkerLifecycleGate(
+            prerequisites.serviceWorkerLifecyclePrerequisites,
+            manifestFacts: prerequisites.manifestFacts
+        )
+        let password = passwordManagerGate(
+            prerequisites.passwordManagerPrerequisiteSummary,
+            messaging: messaging,
+            storage: storage,
+            permissions: permissions,
+            nativeMessaging: native,
+            lifecycle: lifecycle
+        )
+        let blockingReasons = uniqueSorted(
+            prerequisites.contextReadinessConsumerDiagnostic.blockingReasons
+                + messaging.blockers
+                + storage.blockers
+                + permissions.blockers
+                + native.blockers
+                + lifecycle.blockers
+                + password.blockers
+                + [
+                    "Runtime bridge readiness gates are diagnostic-only.",
+                    "Future context creation remains blocked.",
+                    "Controller loading remains blocked.",
+                    "Chrome MV3 runtime support is not claimed.",
+                ]
+        )
+        let nextCategory = nextRequiredCategory(
+            prerequisites: prerequisites,
+            messaging: messaging,
+            storage: storage,
+            permissions: permissions,
+            nativeMessaging: native,
+            lifecycle: lifecycle,
+            password: password
+        )
+
+        return ChromeMV3RuntimeBridgeReadinessReport(
+            schemaVersion: 1,
+            id: id(
+                candidateID: prerequisites.candidateID,
+                prerequisiteReportHash: prerequisiteHash,
+                contextReadinessReportHash:
+                    contextSummary.contextReadinessReportHash,
+                installReportHash: installSummary.installReportHash
+            ),
+            reportFileName:
+                ChromeMV3RuntimeBridgeReadinessReportWriter.reportFileName,
+            candidateID: prerequisites.candidateID,
+            generatedRewrittenRootPath:
+                prerequisites.generatedRewrittenRootPath,
+            prerequisiteReportID: prerequisites.id,
+            prerequisiteReportPath:
+                URL(fileURLWithPath: prerequisitesReportPath)
+                .standardizedFileURL
+                .path,
+            prerequisiteReportHash: prerequisiteHash,
+            contextSummary: contextSummary,
+            installSummary: installSummary,
+            messagingGate: messaging,
+            storageGate: storage,
+            permissionsActiveTabGate: permissions,
+            nativeMessagingGate: native,
+            serviceWorkerLifecycleGate: lifecycle,
+            passwordManagerGate: password,
+            canCreateContextNow: false,
+            canLoadContextNow: false,
+            runtimeLoadable: false,
+            shouldFutureContextCreationRemainBlocked: true,
+            nextRequiredCategory: nextCategory,
+            blockingReasons: blockingReasons,
+            documentationSources: documentationSources(),
+            warnings: uniqueSorted(
+                prerequisites.warnings
+                    + (contextReport == nil
+                        ? [
+                            "Context-readiness report object was not supplied; readiness used prerequisite report identity fields.",
+                        ]
+                        : [])
+                    + (installReport == nil
+                        ? [
+                            "Install/capability report was not supplied; readiness used prerequisite manifest facts.",
+                        ]
+                        : [])
+            )
+        )
+    }
+
+    private static func messagingGate(
+        _ contract: ChromeMV3RuntimeMessagingContract,
+        manifestFacts: ChromeMV3RuntimeBridgeManifestFacts
+    ) -> ChromeMV3RuntimeMessagingReadinessGate {
+        let routeAPIs = Set(contract.routes.map(\.requiredAPI))
+        let routeNames = Set(contract.routes.map(\.route))
+        let runtimeSendMessageDefined = routeAPIs
+            .contains("runtime.sendMessage")
+        let tabsSendMessageDefined = routeAPIs
+            .contains("tabs.sendMessage")
+        let portDefined = routeAPIs.contains("runtime.connect")
+            && contract.portLifecycleRequirements.isEmpty == false
+        let disconnectPolicyDefined =
+            contract.disconnectReasons.isEmpty == false
+            && contract.timeoutPolicyRequired
+            && contract.timeoutPolicy.isEmpty == false
+        let callbackPromiseDefined =
+            contract.callbackCompatibilityRequired
+            && contract.promiseCompatibilityRequired
+        let lastErrorDefined =
+            contract.lastErrorRequirement.isEmpty == false
+        let routesDefined = [
+            "contentScriptToServiceWorker",
+            "extensionPageOrPopupToServiceWorker",
+            "serviceWorkerToTabContentScript",
+        ].allSatisfy(routeNames.contains)
+        let dispatchImplemented = false
+        let listenerRegistrationImplemented = false
+        let serviceWorkerWakeImplemented = false
+        let required = manifestFacts.contentScriptsPresent
+            || manifestFacts.actionPopupPresent
+            || manifestFacts.backgroundServiceWorkerPresent
+            || contract.requiredBeforeRuntimeLoadability
+        let ready = runtimeSendMessageDefined
+            && tabsSendMessageDefined
+            && portDefined
+            && disconnectPolicyDefined
+            && callbackPromiseDefined
+            && lastErrorDefined
+            && routesDefined
+            && dispatchImplemented
+            && listenerRegistrationImplemented
+            && serviceWorkerWakeImplemented
+        let blockers = uniqueSorted(
+            contract.blockers
+                + [
+                    "Runtime dispatch is not implemented.",
+                    "Runtime listener registration is not implemented.",
+                    "Service-worker wake from runtime messages is not implemented.",
+                ]
+        )
+
+        return ChromeMV3RuntimeMessagingReadinessGate(
+            status: ready ? .ready : .blocked,
+            requiredForCandidate: required,
+            runtimeSendMessageContractDefined: runtimeSendMessageDefined,
+            tabsSendMessageContractDefined: tabsSendMessageDefined,
+            runtimeConnectPortLifecycleContractDefined: portDefined,
+            disconnectErrorTimeoutPolicyDefined: disconnectPolicyDefined,
+            callbackPromiseBridgingContractDefined: callbackPromiseDefined,
+            lastErrorPolicyDefined: lastErrorDefined,
+            contentScriptPopupServiceWorkerRouteContractsDefined:
+                routesDefined,
+            dispatchImplemented: dispatchImplemented,
+            listenerRegistrationImplemented: listenerRegistrationImplemented,
+            serviceWorkerWakeImplemented: serviceWorkerWakeImplemented,
+            messagingReadyForContextLoad: false,
+            blockers: blockers,
+            requiredBeforeContextLoad: [
+                "Define dispatch for runtime.sendMessage and tabs.sendMessage.",
+                "Define listener registration and delivery without executing extension code here.",
+                "Define Port lifecycle and disconnect diagnostics.",
+                "Define callback, Promise, and lastError compatibility.",
+                "Define content-script, popup, and service-worker route contracts.",
+            ]
+        )
+    }
+
+    private static func storageGate(
+        _ prerequisites: ChromeMV3StoragePrerequisites,
+        manifestFacts: ChromeMV3RuntimeBridgeManifestFacts,
+        installReport: ChromeMV3InstallReport?
+    ) -> ChromeMV3StorageReadinessGate {
+        let required = prerequisites.storagePermissionPresent
+            || manifestFacts.storagePermissionPresent
+            || (installReport?.passwordManagerFeatures.storage ?? false)
+        let areas = prerequisites.areas.map { area in
+            let areaRequired = required && area.required
+            return ChromeMV3StorageAreaReadinessGate(
+                area: area.area,
+                status: areaRequired ? .blocked : .notRequired,
+                requiredForCandidate: areaRequired,
+                implementedNow: false,
+                readyForContextLoad: false,
+                blockers: areaRequired ? uniqueSorted(area.blockers) : []
+            )
+        }.sorted { $0.area < $1.area }
+        let blockers = required
+            ? uniqueSorted(
+                prerequisites.blockers
+                    + [
+                        "Extension storage runtime is not implemented.",
+                        "Profile isolation policy is not verified for extension storage.",
+                        "Worker unload/reload consistency is not verified for extension storage.",
+                    ]
+            )
+            : []
+
+        return ChromeMV3StorageReadinessGate(
+            status: required ? .blocked : .notRequired,
+            extensionRequiresStorage: required,
+            storageRuntimeImplemented: false,
+            profileIsolationPolicyRequired: required,
+            persistencePolicyRequired: required,
+            workerUnloadReloadConsistencyRequired: required,
+            quotaErrorSemanticsRequiredOrDeferred: required,
+            storageReadyForContextLoad: false,
+            areas: areas,
+            blockers: blockers
+        )
+    }
+
+    private static func permissionsGate(
+        _ prerequisites: ChromeMV3PermissionsActiveTabPrerequisites,
+        manifestFacts: ChromeMV3RuntimeBridgeManifestFacts,
+        installReport: ChromeMV3InstallReport?
+    ) -> ChromeMV3PermissionsActiveTabReadinessGate {
+        let hostAccessRequired =
+            prerequisites.hostPermissions.isEmpty == false
+            || prerequisites.optionalHostPermissions.isEmpty == false
+            || manifestFacts.hostPermissions.isEmpty == false
+            || manifestFacts.optionalHostPermissions.isEmpty == false
+            || manifestFacts.contentScriptsPresent
+            || (installReport?.passwordManagerFeatures.hostPermissions
+                ?? false)
+        let optionalRequired =
+            prerequisites.optionalPermissions.isEmpty == false
+            || prerequisites.optionalHostPermissions.isEmpty == false
+        let activeTabRequired = prerequisites.activeTabDeclared
+            || manifestFacts.activeTabPermissionPresent
+            || hostAccessRequired
+        let required = hostAccessRequired
+            || optionalRequired
+            || activeTabRequired
+            || prerequisites.requiredPermissions.isEmpty == false
+        let blockers = required
+            ? uniqueSorted(
+                prerequisites.blockers
+                    + [
+                        "Permission broker is not implemented.",
+                        "activeTab grant model is not implemented.",
+                        "Host permission evaluation is not implemented.",
+                        "Content-script injection authorization policy is not implemented.",
+                    ]
+            )
+            : []
+
+        return ChromeMV3PermissionsActiveTabReadinessGate(
+            status: required ? .blocked : .notRequired,
+            requiredForCandidate: required,
+            hostPermissionEvaluationRequired: hostAccessRequired,
+            optionalPermissionModelRequired: optionalRequired,
+            activeTabGrantModelRequired: activeTabRequired,
+            userGesturePolicyRequired: required,
+            grantExpiryPolicyRequired: activeTabRequired || hostAccessRequired,
+            permissionPromptPolicyRequired: required,
+            contentScriptAuthorizationPolicyRequired:
+                manifestFacts.contentScriptsPresent || hostAccessRequired,
+            permissionBrokerImplemented: false,
+            activeTabImplemented: false,
+            hostPermissionEvaluationImplemented: false,
+            permissionsReadyForContextLoad: false,
+            blockers: blockers
+        )
+    }
+
+    private static func nativeMessagingGate(
+        _ prerequisites: ChromeMV3NativeMessagingPrerequisites,
+        installReport: ChromeMV3InstallReport?
+    ) -> ChromeMV3NativeMessagingReadinessGate {
+        let detected = prerequisites.nativeMessagingDetected
+            || (installReport?.passwordManagerFeatures.nativeMessaging
+                ?? false)
+            || (installReport?.detectedAPIs.contains(.nativeMessaging)
+                ?? false)
+        let blockers = detected
+            ? uniqueSorted(
+                prerequisites.blockers
+                    + [
+                        "Native messaging runtime is not implemented.",
+                        "Native host process launch is not implemented.",
+                        "Native messaging remains safely blocked.",
+                    ]
+            )
+            : []
+
+        return ChromeMV3NativeMessagingReadinessGate(
+            status: detected ? .blocked : .notRequired,
+            nativeMessagingDetected: detected,
+            nativeMessagingPermissionDetectionRequired: detected,
+            hostManifestValidationPolicyRequired: detected,
+            allowlistHostLookupPolicyRequired: detected,
+            userConsentPolicyRequired: detected,
+            stdioFramingPolicyRequired: detected,
+            processLifecyclePolicyRequired: detected,
+            hostExitErrorPolicyRequired: detected,
+            disabledModuleNoLaunchGuaranteeRequired: true,
+            nativeMessagingRuntimeImplemented: false,
+            processLaunchImplemented: false,
+            nativeMessagingBlocked: true,
+            nativeMessagingSafelyBlockedOrImplemented: true,
+            nativeMessagingReadyForContextLoad: false,
+            blockers: blockers
+        )
+    }
+
+    private static func serviceWorkerLifecycleGate(
+        _ prerequisites: ChromeMV3ServiceWorkerLifecycleReadiness,
+        manifestFacts: ChromeMV3RuntimeBridgeManifestFacts
+    ) -> ChromeMV3ServiceWorkerLifecycleReadinessGate {
+        let required = manifestFacts.backgroundServiceWorkerPresent
+            || prerequisites.requiredBeforeContextLoad
+            || prerequisites.requiredBeforeRuntimeLoadability
+        let blockers = required
+            ? uniqueSorted(
+                prerequisites.blockers
+                    + [
+                        "Service-worker lifecycle coordinator is not implemented.",
+                        "Service-worker wake is not implemented.",
+                        "Event dispatch and idle release policies are not implemented.",
+                    ]
+            )
+            : []
+
+        return ChromeMV3ServiceWorkerLifecycleReadinessGate(
+            status: required ? .blocked : .notRequired,
+            requiredForCandidate: required,
+            wakeReasonModelRequired: required,
+            eventDispatchModelRequired: required,
+            idleReleasePolicyRequired: required,
+            hardTimeoutPolicyRequired: required,
+            longLivedPortPolicyRequired: required,
+            nativeMessagingPortPolicyRequired: required,
+            alarmWakePolicyRequired: required,
+            statePersistencePolicyRequired: required,
+            diagnosticsModelRequired: required,
+            permanentBackgroundForbidden: true,
+            lifecycleCoordinatorImplemented: false,
+            serviceWorkerWakeImplemented: false,
+            lifecycleReadyForContextLoad: false,
+            blockers: blockers
+        )
+    }
+
+    private static func passwordManagerGate(
+        _ summary: ChromeMV3PasswordManagerPrerequisiteSummary,
+        messaging: ChromeMV3RuntimeMessagingReadinessGate,
+        storage: ChromeMV3StorageReadinessGate,
+        permissions: ChromeMV3PermissionsActiveTabReadinessGate,
+        nativeMessaging: ChromeMV3NativeMessagingReadinessGate,
+        lifecycle: ChromeMV3ServiceWorkerLifecycleReadinessGate
+    ) -> ChromeMV3PasswordManagerReadinessGate {
+        let detected = summary.contentScriptsPresent
+            || summary.actionPopupPresent
+            || summary.hostPermissionsPresent
+            || summary.storagePermissionPresent
+            || summary.nativeMessagingPermissionPresent
+        let blockers = detected
+            ? uniqueSorted(
+                summary.blockers
+                    + messaging.blockers
+                    + storage.blockers
+                    + permissions.blockers
+                    + nativeMessaging.blockers
+                    + lifecycle.blockers
+                    + [
+                        "Password-manager support remains blocked.",
+                        "Controlled input and page-world behavior are unverified.",
+                    ]
+            )
+            : []
+
+        return ChromeMV3PasswordManagerReadinessGate(
+            status: detected ? .blocked : .notRequired,
+            passwordManagerLikeFixtureDetected: detected,
+            contentScriptsDetected: summary.contentScriptsPresent,
+            actionPopupDetected: summary.actionPopupPresent,
+            hostPermissionsDetected: summary.hostPermissionsPresent,
+            storagePermissionDetected: summary.storagePermissionPresent,
+            nativeMessagingDetected:
+                summary.nativeMessagingPermissionPresent,
+            runtimeMessagingMissing: true,
+            permissionsActiveTabMissing: true,
+            storageBackendMissing: summary.storagePermissionPresent,
+            nativeMessagingMissing:
+                summary.nativeMessagingPermissionPresent
+                    || nativeMessaging.nativeMessagingDetected,
+            serviceWorkerLifecycleMissing: true,
+            controlledInputPageWorldBehaviorUnverified: true,
+            passwordManagerSupportReady: false,
+            blockers: blockers
+        )
+    }
+
+    private static func contextSummary(
+        prerequisites: ChromeMV3RuntimeBridgePrerequisitesReport,
+        contextReport: ChromeMV3ContextReadinessReport?
+    ) -> ChromeMV3RuntimeBridgeReadinessContextSummary {
+        ChromeMV3RuntimeBridgeReadinessContextSummary(
+            contextReportAvailable: contextReport != nil,
+            contextReadinessReportID:
+                contextReport?.id ?? prerequisites.contextReadinessReportID,
+            contextReadinessReportHash:
+                prerequisites.contextReadinessReportHash,
+            objectAcceptedByWebKit:
+                contextReport?.objectAcceptedByWebKit ?? false,
+            futureContextEligible:
+                contextReport?.futureContextEligible ?? false,
+            nextRequiredPromptCategory:
+                contextReport?.nextRequiredPromptCategory
+                    ?? prerequisites
+                    .contextReadinessConsumerDiagnostic
+                    .nextRequiredPromptCategory,
+            contextCanCreateNow:
+                contextReport?.canCreateContextNow ?? false,
+            contextCanLoadNow:
+                contextReport?.canLoadContextNow ?? false,
+            contextRuntimeLoadable:
+                contextReport?.runtimeLoadable ?? false
+        )
+    }
+
+    private static func installSummary(
+        _ report: ChromeMV3InstallReport?
+    ) -> ChromeMV3RuntimeBridgeReadinessInstallSummary {
+        let hash = (try? report.map(ChromeMV3DeterministicJSON.encodedData))
+            .map(sha256Hex)
+        return ChromeMV3RuntimeBridgeReadinessInstallSummary(
+            installReportAvailable: report != nil,
+            installReportHash: hash,
+            detectedAPIs: uniqueSortedAPIs(report?.detectedAPIs ?? []),
+            deferredAPIs: uniqueSortedAPIs(report?.deferredAPIs ?? []),
+            unsupportedAPIs: uniqueSortedAPIs(report?.unsupportedAPIs ?? []),
+            needsVerificationAPIs:
+                uniqueSortedAPIs(report?.needsVerificationAPIs ?? []),
+            fatalValidationErrorCodes:
+                uniqueSorted(report?.fatalValidationErrors.map(\.code) ?? [])
+        )
+    }
+
+    private static func nextRequiredCategory(
+        prerequisites: ChromeMV3RuntimeBridgePrerequisitesReport,
+        messaging: ChromeMV3RuntimeMessagingReadinessGate,
+        storage: ChromeMV3StorageReadinessGate,
+        permissions: ChromeMV3PermissionsActiveTabReadinessGate,
+        nativeMessaging: ChromeMV3NativeMessagingReadinessGate,
+        lifecycle: ChromeMV3ServiceWorkerLifecycleReadinessGate,
+        password: ChromeMV3PasswordManagerReadinessGate
+    ) -> ChromeMV3RuntimeBridgeReadinessNextRequiredCategory {
+        guard prerequisites.contextReadinessConsumerDiagnostic.state == .ready,
+              prerequisites.contextReadinessConsumerDiagnostic
+                .nextRequiredPromptCategory == .addRuntimeBridgePrerequisites
+        else {
+            return .blockedByPrerequisiteReport
+        }
+
+        let requiredGatesReady = [
+            messaging.status == .ready,
+            storage.status != .blocked,
+            permissions.status != .blocked,
+            nativeMessaging.status != .blocked,
+            lifecycle.status != .blocked,
+            password.status != .blocked,
+        ].allSatisfy { $0 }
+
+        return requiredGatesReady
+            ? .contextCreationGate
+            : .diagnosticRuntimePrerequisite
+    }
+
+    private static func documentationSources()
+        -> [ChromeMV3ManifestRewritePreviewSource]
+    {
+        [
+            source(
+                title: "Chrome runtime messaging",
+                url: "https://developer.chrome.com/docs/extensions/develop/concepts/messaging",
+                note: "Defines one-time messages, Port channels, tab-targeted messaging, error handling, and content script message boundaries."
+            ),
+            source(
+                title: "Chrome runtime API",
+                url: "https://developer.chrome.com/docs/extensions/reference/api/runtime",
+                note: "Defines message listeners, Port metadata, callbacks, Promise behavior, and lastError reporting."
+            ),
+            source(
+                title: "Chrome storage API",
+                url: "https://developer.chrome.com/docs/extensions/reference/api/storage",
+                note: "Defines local, session, and sync storage areas and content script exposure defaults."
+            ),
+            source(
+                title: "Chrome permissions API",
+                url: "https://developer.chrome.com/docs/extensions/reference/api/permissions",
+                note: "Defines optional permission requests, permission checks, and host access requests."
+            ),
+            source(
+                title: "Chrome activeTab",
+                url: "https://developer.chrome.com/docs/extensions/develop/concepts/activeTab",
+                note: "Defines user-gesture-bound temporary tab grants and navigation invalidation."
+            ),
+            source(
+                title: "Chrome native messaging",
+                url: "https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging",
+                note: "Defines nativeMessaging permission requirements, host manifests, native host framing, and content script restrictions."
+            ),
+            source(
+                title: "Chrome extension service-worker lifecycle",
+                url: "https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle",
+                note: "Defines event-driven lifetime behavior, idle release, long request limits, Port lifetime effects, native host effects, alarms, and persistence guidance."
+            ),
+            source(
+                title: "Chrome content scripts",
+                url: "https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts",
+                note: "Defines isolated content script execution and direct messaging API access boundaries."
+            ),
+            ChromeMV3ManifestRewritePreviewSource(
+                kind: .currentSumiCode,
+                title: "Sumi user-script broker",
+                url: nil,
+                note: "Existing user-script systems remain out of scope and are not used by readiness gates."
+            ),
+            ChromeMV3ManifestRewritePreviewSource(
+                kind: .currentSumiCode,
+                title: "Sumi native messaging remnants",
+                url: nil,
+                note: "Existing native messaging runtime code remains uncalled by readiness gates."
+            ),
+            ChromeMV3ManifestRewritePreviewSource(
+                kind: .currentSumiCode,
+                title: "Sumi module gates and profile storage",
+                url: nil,
+                note: "SumiExtensionsModule disabled paths return nil, and profile identity diagnostics remain prerequisites for future storage isolation."
+            ),
+        ]
+    }
+
+    private static func readData(
+        at url: URL,
+        fileManager: FileManager,
+        missing: ChromeMV3RuntimeBridgeReadinessReportError,
+        unreadable:
+            (Error) -> ChromeMV3RuntimeBridgeReadinessReportError
+    ) throws -> Data {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(
+            atPath: url.path,
+            isDirectory: &isDirectory
+        ), isDirectory.boolValue == false
+        else {
+            throw missing
+        }
+        do {
+            return try Data(contentsOf: url)
+        } catch {
+            throw unreadable(error)
+        }
+    }
+
+    private static func source(
+        title: String,
+        url: String,
+        note: String
+    ) -> ChromeMV3ManifestRewritePreviewSource {
+        ChromeMV3ManifestRewritePreviewSource(
+            kind: .chromeDocumentation,
+            title: title,
+            url: url,
+            note: note
+        )
+    }
+
+    private static func id(
+        candidateID: String,
+        prerequisiteReportHash: String,
+        contextReadinessReportHash: String,
+        installReportHash: String?
+    ) -> String {
+        let seed = [
+            "runtime-bridge-readiness",
+            candidateID,
+            prerequisiteReportHash,
+            contextReadinessReportHash,
+            installReportHash ?? "missing-install-report-hash",
+        ].joined(separator: "|")
+        return "runtime-bridge-readiness-\(sha256Hex(Data(seed.utf8)).prefix(32))"
+    }
+
+    private static func uniqueSorted(_ values: [String]) -> [String] {
+        Array(Set(values.filter { $0.isEmpty == false })).sorted()
+    }
+
+    private static func uniqueSortedAPIs(
+        _ apis: [ChromeMV3API]
+    ) -> [ChromeMV3API] {
+        Array(Set(apis)).sorted()
+    }
+
+    private static func sha256Hex(_ data: Data) -> String {
+        SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+}
