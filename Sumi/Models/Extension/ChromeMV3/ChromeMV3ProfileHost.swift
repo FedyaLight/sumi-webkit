@@ -98,6 +98,8 @@ struct ChromeMV3ProfileHostDiagnostics: Codable, Equatable, Sendable {
         ChromeMV3RuntimeMessagingContractReportSummary?
     var runtimeListenerContractReportSummary:
         ChromeMV3RuntimeListenerContractReportSummary? = nil
+    var serviceWorkerLifecycleReportSummary:
+        ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
     var permissionBrokerReadinessReportSummary:
         ChromeMV3PermissionBrokerReadinessReportSummary? = nil
     var permissionLifecycleReportSummary:
@@ -266,6 +268,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
             ChromeMV3RuntimeMessagingContractReportSummary? = nil,
         runtimeListenerContractReportSummary:
             ChromeMV3RuntimeListenerContractReportSummary? = nil,
+        serviceWorkerLifecycleReportSummary:
+            ChromeMV3ServiceWorkerLifecycleReportSummary? = nil,
         permissionBrokerReadinessReportSummary:
             ChromeMV3PermissionBrokerReadinessReportSummary? = nil,
         permissionLifecycleReportSummary:
@@ -342,6 +346,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
                 runtimeMessagingContractReportSummary,
             runtimeListenerContractReportSummary:
                 runtimeListenerContractReportSummary,
+            serviceWorkerLifecycleReportSummary:
+                serviceWorkerLifecycleReportSummary,
             permissionBrokerReadinessReportSummary:
                 permissionBrokerReadinessReportSummary,
             permissionLifecycleReportSummary:

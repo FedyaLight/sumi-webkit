@@ -682,6 +682,8 @@ struct ChromeMV3StorageOnChangedEventPayload:
     var listenerRegistrationRequired: Bool
     var serviceWorkerWakeRequired: Bool
     var blockers: [String]
+    var serviceWorkerWakePreflight:
+        ChromeMV3ServiceWorkerWakePreflight? = nil
 }
 
 struct ChromeMV3StorageChangeSet:
@@ -728,7 +730,19 @@ struct ChromeMV3StorageChangeSet:
                         "storage.onChanged listener registration is not implemented.",
                         "storage.onChanged event dispatch is not implemented.",
                         "Future service-worker wake may be required for registered storage listeners, but wake is blocked now.",
-                    ]
+                    ],
+                    serviceWorkerWakePreflight:
+                        ChromeMV3ServiceWorkerWakePreflight.evaluate(
+                            request:
+                                ChromeMV3ServiceWorkerWakeRequest
+                                .storageChanged(
+                                    extensionID: namespace.extensionID,
+                                    profileID: namespace.profileID,
+                                    areaName:
+                                        namespace.area.chromeAreaName,
+                                    changedKeys: changes.map(\.key)
+                                )
+                        )
                 )
         )
     }
@@ -2498,6 +2512,8 @@ struct ChromeMV3StorageAPIOperationsReportSummary:
     var canLoadContextNow: Bool
     var runtimeLoadable: Bool
     var passwordManagerStorageAPIReady: Bool
+    var serviceWorkerLifecycleReportSummary:
+        ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
 }
 
 struct ChromeMV3StorageAPIOperationsReport:
@@ -2531,6 +2547,8 @@ struct ChromeMV3StorageAPIOperationsReport:
     var documentationSources: [ChromeMV3ManifestRewritePreviewSource]
     var diagnostics: [String]
     var blockers: [String]
+    var serviceWorkerLifecycleReportSummary:
+        ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
 
     var summary: ChromeMV3StorageAPIOperationsReportSummary {
         ChromeMV3StorageAPIOperationsReportSummary(
@@ -2550,7 +2568,9 @@ struct ChromeMV3StorageAPIOperationsReport:
             runtimeLoadable: false,
             passwordManagerStorageAPIReady:
                 passwordManagerStorageAPISummary
-                .passwordManagerStorageAPIReady
+                .passwordManagerStorageAPIReady,
+            serviceWorkerLifecycleReportSummary:
+                serviceWorkerLifecycleReportSummary
         )
     }
 }
@@ -2589,7 +2609,12 @@ enum ChromeMV3StorageAPIOperationsReportGenerator {
             ChromeMV3RuntimeBridgePrerequisitesReport,
         profileID: String = "diagnostic-profile"
     ) -> ChromeMV3StorageAPIOperationsReport {
-        makeReport(
+        let lifecycleSummary =
+            ChromeMV3ServiceWorkerLifecycleReportGenerator.makeReport(
+                prerequisitesReport: prerequisites,
+                profileID: profileID
+            ).summary
+        return makeReport(
             extensionID: prerequisites.candidateID,
             profileID: profileID,
             storagePermissionDetected:
@@ -2606,7 +2631,9 @@ enum ChromeMV3StorageAPIOperationsReportGenerator {
             runtimeMessagingStillBlocked: true,
             nativeMessagingStillBlocked:
                 prerequisites.nativeMessagingPrerequisites
-                .nativeMessagingBlocked
+                .nativeMessagingBlocked,
+            serviceWorkerLifecycleReportSummary:
+                lifecycleSummary
         )
     }
 
@@ -2616,7 +2643,9 @@ enum ChromeMV3StorageAPIOperationsReportGenerator {
         storagePermissionDetected: Bool,
         passwordManagerLikeFixtureDetected: Bool = false,
         runtimeMessagingStillBlocked: Bool = true,
-        nativeMessagingStillBlocked: Bool = true
+        nativeMessagingStillBlocked: Bool = true,
+        serviceWorkerLifecycleReportSummary:
+            ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
     ) -> ChromeMV3StorageAPIOperationsReport {
         let records = ChromeMV3StorageAreaKind.allCases.sorted().map {
             ChromeMV3StorageAreaRecord.make(
@@ -2696,7 +2725,9 @@ enum ChromeMV3StorageAPIOperationsReportGenerator {
                 "Callback, Promise, and lastError behavior are represented in result envelopes.",
                 "No JavaScript runtime storage exposure is enabled.",
             ],
-            blockers: blockers
+            blockers: blockers,
+            serviceWorkerLifecycleReportSummary:
+                serviceWorkerLifecycleReportSummary
         )
     }
 
@@ -3078,6 +3109,8 @@ struct ChromeMV3StorageBrokerReadinessReportSummary:
     var passwordManagerStorageReady: Bool
     var storageAPIOperationsReportSummary:
         ChromeMV3StorageAPIOperationsReportSummary? = nil
+    var serviceWorkerLifecycleReportSummary:
+        ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
 }
 
 struct ChromeMV3StorageBrokerReadinessReport:
@@ -3113,6 +3146,8 @@ struct ChromeMV3StorageBrokerReadinessReport:
     var documentationSources: [ChromeMV3ManifestRewritePreviewSource]
     var diagnostics: [String]
     var blockers: [String]
+    var serviceWorkerLifecycleReportSummary:
+        ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
 
     var summary: ChromeMV3StorageBrokerReadinessReportSummary {
         ChromeMV3StorageBrokerReadinessReportSummary(
@@ -3137,7 +3172,9 @@ struct ChromeMV3StorageBrokerReadinessReport:
             passwordManagerStorageReady:
                 passwordManagerStorageSummary.passwordManagerStorageReady,
             storageAPIOperationsReportSummary:
-                storageAPIOperationsReportSummary
+                storageAPIOperationsReportSummary,
+            serviceWorkerLifecycleReportSummary:
+                serviceWorkerLifecycleReportSummary
         )
     }
 }
@@ -3176,7 +3213,12 @@ enum ChromeMV3StorageBrokerReadinessReportGenerator {
             ChromeMV3RuntimeBridgePrerequisitesReport,
         profileID: String = "diagnostic-profile"
     ) -> ChromeMV3StorageBrokerReadinessReport {
-        makeReport(
+        let lifecycleSummary =
+            ChromeMV3ServiceWorkerLifecycleReportGenerator.makeReport(
+                prerequisitesReport: prerequisites,
+                profileID: profileID
+            ).summary
+        return makeReport(
             extensionID: prerequisites.candidateID,
             profileID: profileID,
             storagePermissionDetected:
@@ -3193,7 +3235,9 @@ enum ChromeMV3StorageBrokerReadinessReportGenerator {
             runtimeMessagingStillBlocked: true,
             nativeMessagingStillBlocked:
                 prerequisites.nativeMessagingPrerequisites
-                .nativeMessagingBlocked
+                .nativeMessagingBlocked,
+            serviceWorkerLifecycleReportSummary:
+                lifecycleSummary
         )
     }
 
@@ -3203,7 +3247,9 @@ enum ChromeMV3StorageBrokerReadinessReportGenerator {
         storagePermissionDetected: Bool,
         passwordManagerLikeFixtureDetected: Bool = false,
         runtimeMessagingStillBlocked: Bool = true,
-        nativeMessagingStillBlocked: Bool = true
+        nativeMessagingStillBlocked: Bool = true,
+        serviceWorkerLifecycleReportSummary:
+            ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
     ) -> ChromeMV3StorageBrokerReadinessReport {
         let records = ChromeMV3StorageAreaKind.allCases.sorted().map {
             ChromeMV3StorageAreaRecord.make(
@@ -3263,7 +3309,9 @@ enum ChromeMV3StorageBrokerReadinessReportGenerator {
                 runtimeMessagingStillBlocked:
                     runtimeMessagingStillBlocked,
                 nativeMessagingStillBlocked:
-                    nativeMessagingStillBlocked
+                    nativeMessagingStillBlocked,
+                serviceWorkerLifecycleReportSummary:
+                    serviceWorkerLifecycleReportSummary
             )
         let blockers = uniqueSorted(
             [
@@ -3322,7 +3370,9 @@ enum ChromeMV3StorageBrokerReadinessReportGenerator {
                 "Host-side storage API operation handler skeleton is available for model tests.",
                 "No active extension storage runtime handle is opened.",
             ],
-            blockers: blockers
+            blockers: blockers,
+            serviceWorkerLifecycleReportSummary:
+                serviceWorkerLifecycleReportSummary
         )
     }
 

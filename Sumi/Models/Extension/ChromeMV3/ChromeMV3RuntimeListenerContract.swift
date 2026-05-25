@@ -934,6 +934,8 @@ struct ChromeMV3RuntimeListenerResolutionResult:
     var wouldNeedExtensionPageHost: Bool
     var errorContract: ChromeMV3RuntimeLastErrorContract?
     var diagnostics: [String]
+    var serviceWorkerWakePreflight:
+        ChromeMV3ServiceWorkerWakePreflight? = nil
 }
 
 enum ChromeMV3RuntimeListenerResolver {
@@ -964,6 +966,22 @@ enum ChromeMV3RuntimeListenerResolver {
             $0.requiresExtensionPageHost
         } || expected.contains(.actionPopupListener)
             || expected.contains(.optionsPageListener)
+        let wakePreflight = needsServiceWorker
+            ? ChromeMV3ServiceWorkerWakePreflight.evaluate(
+                request: ChromeMV3ServiceWorkerWakeRequest.forRoute(route),
+                lifecycleState:
+                    ChromeMV3ServiceWorkerLifecycleStateSnapshot.blocked(
+                        extensionID: route.extensionID,
+                        profileID: route.profileID,
+                        serviceWorkerScriptDeclared:
+                            serviceWorkerAvailability
+                            .serviceWorkerScriptDeclared,
+                        objectAcceptedByWebKit:
+                            serviceWorkerAvailability
+                            .serviceWorkerObjectAcceptedByWebKit
+                    )
+            )
+            : nil
         let error = firstBlockingError(
             route: route,
             receivingListenerModeled: receivingListenerModeled,
@@ -994,8 +1012,10 @@ enum ChromeMV3RuntimeListenerResolver {
                 receivingListenerModeled: receivingListenerModeled,
                 error: error,
                 registry: registry,
-                permissionDecision: permissionDecision
-            )
+                permissionDecision: permissionDecision,
+                wakePreflight: wakePreflight
+            ),
+            serviceWorkerWakePreflight: wakePreflight
         )
     }
 
@@ -1101,7 +1121,8 @@ enum ChromeMV3RuntimeListenerResolver {
         error: ChromeMV3RuntimeLastErrorCase?,
         registry: ChromeMV3RuntimeListenerRegistrySnapshot,
         permissionDecision:
-            ChromeMV3RuntimeMessagingPermissionDecision
+            ChromeMV3RuntimeMessagingPermissionDecision,
+        wakePreflight: ChromeMV3ServiceWorkerWakePreflight?
     ) -> [String] {
         var diagnostics = [
             "Route \(route.kind.rawValue) listener resolution is modeled only.",
@@ -1124,6 +1145,7 @@ enum ChromeMV3RuntimeListenerResolver {
         }
         diagnostics.append(contentsOf: registry.diagnostics)
         diagnostics.append(contentsOf: permissionDecision.brokerDiagnostics)
+        diagnostics.append(contentsOf: wakePreflight?.diagnostics ?? [])
         return Array(Set(diagnostics)).sorted()
     }
 }
@@ -1169,6 +1191,8 @@ struct ChromeMV3RuntimeListenerContractReportSummary:
         ChromeMV3PermissionLifecycleReportSummary? = nil
     var permissionsAPIContractReportSummary:
         ChromeMV3PermissionsAPIContractReportSummary? = nil
+    var serviceWorkerLifecycleReportSummary:
+        ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
 }
 
 struct ChromeMV3RuntimeListenerContractReport:
@@ -1201,6 +1225,8 @@ struct ChromeMV3RuntimeListenerContractReport:
         ChromeMV3PermissionLifecycleReportSummary? = nil
     var permissionsAPIContractReportSummary:
         ChromeMV3PermissionsAPIContractReportSummary? = nil
+    var serviceWorkerLifecycleReportSummary:
+        ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
     var canRegisterListenersNow: Bool
     var canResolveReceivingListenersNow: Bool
     var canDispatchMessagesNow: Bool
@@ -1232,7 +1258,9 @@ struct ChromeMV3RuntimeListenerContractReport:
             permissionLifecycleReportSummary:
                 permissionLifecycleReportSummary,
             permissionsAPIContractReportSummary:
-                permissionsAPIContractReportSummary
+                permissionsAPIContractReportSummary,
+            serviceWorkerLifecycleReportSummary:
+                serviceWorkerLifecycleReportSummary
         )
     }
 }
@@ -1294,6 +1322,19 @@ enum ChromeMV3RuntimeListenerContractReportGenerator {
                 prerequisitesReport: prerequisites,
                 profileID: profileID
             )
+        let serviceWorkerLifecycleSummary =
+            ChromeMV3ServiceWorkerLifecycleReportGenerator.makeReport(
+                prerequisitesReport: prerequisites,
+                profileID: profileID,
+                storageAPIOperationsReportSummary:
+                    storageAPIReport.summary,
+                permissionBrokerReadinessReportSummary:
+                    permissionReport.summary,
+                permissionLifecycleReportSummary:
+                    lifecycleReport.summary,
+                permissionsAPIContractReportSummary:
+                    permissionsAPIReport.summary
+            ).summary
         let permissionStore = ChromeMV3PermissionLifecycleReportGenerator
             .permissionStore(
                 prerequisites: prerequisites,
@@ -1401,6 +1442,8 @@ enum ChromeMV3RuntimeListenerContractReportGenerator {
                 lifecycleReport.summary,
             permissionsAPIContractReportSummary:
                 permissionsAPIReport.summary,
+            serviceWorkerLifecycleReportSummary:
+                serviceWorkerLifecycleSummary,
             canRegisterListenersNow: false,
             canResolveReceivingListenersNow: false,
             canDispatchMessagesNow: false,

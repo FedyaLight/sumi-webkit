@@ -1118,6 +1118,8 @@ struct ChromeMV3RuntimeMessagingRouteEvaluation:
         ChromeMV3RuntimeMessagingPermissionDecision
     var errorContract: ChromeMV3RuntimeLastErrorContract?
     var diagnostics: [String]
+    var serviceWorkerWakePreflight:
+        ChromeMV3ServiceWorkerWakePreflight? = nil
 }
 
 enum ChromeMV3RuntimeMessagingRouteEvaluator {
@@ -1191,6 +1193,16 @@ enum ChromeMV3RuntimeMessagingRouteEvaluator {
             ChromeMV3RuntimeMessagingPermissionDecision,
         readiness: ChromeMV3RuntimeMessagingReadinessSnapshot
     ) -> ChromeMV3RuntimeMessagingRouteEvaluation {
+        let wakePreflight = route.requiresServiceWorkerWake
+            ? ChromeMV3ServiceWorkerWakePreflight.evaluate(
+                request: ChromeMV3ServiceWorkerWakeRequest.forRoute(route),
+                lifecycleState:
+                    ChromeMV3ServiceWorkerLifecycleStateSnapshot.blocked(
+                        extensionID: route.extensionID,
+                        profileID: route.profileID
+                    )
+            )
+            : nil
         let error = firstBlockingError(
             route: route,
             permissionDecision: permissionDecision,
@@ -1221,8 +1233,10 @@ enum ChromeMV3RuntimeMessagingRouteEvaluator {
                 route: route,
                 permissionDecision: permissionDecision,
                 readiness: readiness,
-                error: error
-            )
+                error: error,
+                wakePreflight: wakePreflight
+            ),
+            serviceWorkerWakePreflight: wakePreflight
         )
     }
 
@@ -1284,7 +1298,8 @@ enum ChromeMV3RuntimeMessagingRouteEvaluator {
         permissionDecision:
             ChromeMV3RuntimeMessagingPermissionDecision,
         readiness: ChromeMV3RuntimeMessagingReadinessSnapshot,
-        error: ChromeMV3RuntimeLastErrorCase?
+        error: ChromeMV3RuntimeLastErrorCase?,
+        wakePreflight: ChromeMV3ServiceWorkerWakePreflight?
     ) -> [String] {
         var diagnostics = [
             "Route \(route.kind.rawValue) is modeled but not dispatched.",
@@ -1309,6 +1324,7 @@ enum ChromeMV3RuntimeMessagingRouteEvaluator {
             )
         }
         diagnostics.append(contentsOf: route.blockers)
+        diagnostics.append(contentsOf: wakePreflight?.diagnostics ?? [])
         return Array(Set(diagnostics)).sorted()
     }
 }
@@ -1366,6 +1382,8 @@ struct ChromeMV3RuntimePortContract:
     var serviceWorkerKeepaliveImplication: String
     var nativeMessagingPortBlockedSeparately: Bool
     var diagnostics: [String]
+    var keepaliveSource:
+        ChromeMV3ServiceWorkerKeepaliveSource? = nil
 
     static func model(
         route: ChromeMV3RuntimeMessagingRoute,
@@ -1388,6 +1406,16 @@ struct ChromeMV3RuntimePortContract:
             kind = .nativeMessaging
         default:
             kind = .runtimeConnect
+        }
+        let keepaliveKind:
+            ChromeMV3ServiceWorkerKeepaliveSourceKind
+        switch kind {
+        case .runtimeConnect:
+            keepaliveKind = .runtimePort
+        case .tabsConnect:
+            keepaliveKind = .tabsPort
+        case .nativeMessaging:
+            keepaliveKind = .nativeMessagingPort
         }
 
         return ChromeMV3RuntimePortContract(
@@ -1421,7 +1449,14 @@ struct ChromeMV3RuntimePortContract:
                         "Port lifecycle is deterministic and non-executing.",
                         "No Port object is opened.",
                     ]
-            )).sorted()
+            )).sorted(),
+            keepaliveSource:
+                ChromeMV3ServiceWorkerKeepaliveSource.make(
+                    kind: keepaliveKind,
+                    extensionID: route.extensionID,
+                    profileID: route.profileID,
+                    sourceSeed: envelope.messageID
+                )
         )
     }
 }
@@ -1486,6 +1521,8 @@ struct ChromeMV3RuntimeMessagingContractReportSummary:
         ChromeMV3PermissionLifecycleReportSummary? = nil
     var permissionsAPIContractReportSummary:
         ChromeMV3PermissionsAPIContractReportSummary? = nil
+    var serviceWorkerLifecycleReportSummary:
+        ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
 }
 
 struct ChromeMV3RuntimeMessagingContractReport:
@@ -1518,6 +1555,8 @@ struct ChromeMV3RuntimeMessagingContractReport:
         ChromeMV3PermissionLifecycleReportSummary? = nil
     var permissionsAPIContractReportSummary:
         ChromeMV3PermissionsAPIContractReportSummary? = nil
+    var serviceWorkerLifecycleReportSummary:
+        ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
     var permissionBrokerRouteDecisions:
         [ChromeMV3PermissionBrokerRouteScenario] = []
     var canDispatchMessagesNow: Bool
@@ -1553,7 +1592,9 @@ struct ChromeMV3RuntimeMessagingContractReport:
             permissionLifecycleReportSummary:
                 permissionLifecycleReportSummary,
             permissionsAPIContractReportSummary:
-                permissionsAPIContractReportSummary
+                permissionsAPIContractReportSummary,
+            serviceWorkerLifecycleReportSummary:
+                serviceWorkerLifecycleReportSummary
         )
     }
 }
@@ -1639,6 +1680,21 @@ enum ChromeMV3RuntimeMessagingContractReportGenerator {
                 prerequisitesReport: prerequisites,
                 profileID: profileID
             )
+        let serviceWorkerLifecycleSummary =
+            ChromeMV3ServiceWorkerLifecycleReportGenerator.makeReport(
+                prerequisitesReport: prerequisites,
+                profileID: profileID,
+                listenerReportSummary: listenerSummary,
+                storageBrokerReadinessReportSummary: storageSummary,
+                storageAPIOperationsReportSummary:
+                    storageSummary.storageAPIOperationsReportSummary,
+                permissionBrokerReadinessReportSummary:
+                    permissionReport.summary,
+                permissionLifecycleReportSummary:
+                    lifecycleReport.summary,
+                permissionsAPIContractReportSummary:
+                    permissionsAPISummary
+            ).summary
 
         return ChromeMV3RuntimeMessagingContractReport(
             schemaVersion: 1,
@@ -1695,6 +1751,8 @@ enum ChromeMV3RuntimeMessagingContractReportGenerator {
                 lifecycleReport.summary,
             permissionsAPIContractReportSummary:
                 permissionsAPISummary,
+            serviceWorkerLifecycleReportSummary:
+                serviceWorkerLifecycleSummary,
             permissionBrokerRouteDecisions:
                 permissionReport.permissionDecisionsForKeyRoutes,
             canDispatchMessagesNow: false,

@@ -401,7 +401,7 @@ final class ChromeMV3ReadinessFixturePipelineTests: XCTestCase {
                 .requiredBeforeContentScriptExecution
         )
 
-        XCTAssertFalse(
+        XCTAssertTrue(
             report.serviceWorkerLifecyclePrerequisites
                 .lifecycleCoordinatorImplemented
         )
@@ -644,7 +644,7 @@ final class ChromeMV3ReadinessFixturePipelineTests: XCTestCase {
         XCTAssertTrue(
             report.serviceWorkerLifecycleGate.permanentBackgroundForbidden
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             report.serviceWorkerLifecycleGate
                 .lifecycleCoordinatorImplemented
         )

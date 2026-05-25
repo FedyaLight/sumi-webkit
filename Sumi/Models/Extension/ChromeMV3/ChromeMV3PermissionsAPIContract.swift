@@ -463,6 +463,8 @@ struct ChromeMV3PermissionsAPIEventPayload:
     var canWakeServiceWorkerNow: Bool
     var runtimeImplementedNow: Bool
     var blockers: [String]
+    var serviceWorkerWakePreflight:
+        ChromeMV3ServiceWorkerWakePreflight? = nil
 }
 
 struct ChromeMV3PermissionsAPIContractSummary:
@@ -487,6 +489,8 @@ struct ChromeMV3PermissionsAPIContractSummary:
     var canDispatchMessagesNow: Bool
     var canLoadContextNow: Bool
     var runtimeLoadable: Bool
+    var serviceWorkerLifecycleReportSummary:
+        ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
 }
 
 struct ChromeMV3PasswordManagerPermissionAPIReadiness:
@@ -529,6 +533,8 @@ struct ChromeMV3PermissionsAPIContractReportSummary:
     var canLoadContextNow: Bool
     var runtimeLoadable: Bool
     var passwordManagerPermissionAPIReady: Bool
+    var serviceWorkerLifecycleReportSummary:
+        ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
 }
 
 struct ChromeMV3PermissionsAPIContractReport:
@@ -566,6 +572,8 @@ struct ChromeMV3PermissionsAPIContractReport:
     var canDispatchMessagesNow: Bool
     var canLoadContextNow: Bool
     var runtimeLoadable: Bool
+    var serviceWorkerLifecycleReportSummary:
+        ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
     var documentationSources: [ChromeMV3ManifestRewritePreviewSource]
     var diagnostics: [String]
 
@@ -586,7 +594,9 @@ struct ChromeMV3PermissionsAPIContractReport:
             canDispatchMessagesNow: false,
             canLoadContextNow: false,
             runtimeLoadable: false,
-            passwordManagerPermissionAPIReady: false
+            passwordManagerPermissionAPIReady: false,
+            serviceWorkerLifecycleReportSummary:
+                serviceWorkerLifecycleReportSummary
         )
     }
 }
@@ -992,7 +1002,17 @@ enum ChromeMV3PermissionsAPIContractEvaluator {
                 "No permission event is dispatched.",
                 "Service-worker wake is not implemented.",
                 "No extension context is created or loaded.",
-            ]
+            ],
+            serviceWorkerWakePreflight:
+                ChromeMV3ServiceWorkerWakePreflight.evaluate(
+                    request:
+                        ChromeMV3ServiceWorkerWakeRequest
+                        .permissionsChanged(
+                            extensionID: extensionID,
+                            profileID: profileID,
+                            eventKind: kind
+                        )
+                )
         )
     }
 
@@ -1649,6 +1669,11 @@ enum ChromeMV3PermissionsAPIContractReportGenerator {
             permissionStore: permissionStore,
             activeTabStore: activeTabStore
         )
+        let lifecycleSummary =
+            ChromeMV3ServiceWorkerLifecycleReportGenerator.makeReport(
+                prerequisitesReport: prerequisites,
+                profileID: profileID
+            ).summary
         let summary = ChromeMV3PermissionsAPIContractSummary(
             containsModeled: true,
             getAllModeled: true,
@@ -1668,7 +1693,9 @@ enum ChromeMV3PermissionsAPIContractReportGenerator {
             canWakeServiceWorkerNow: false,
             canDispatchMessagesNow: false,
             canLoadContextNow: false,
-            runtimeLoadable: false
+            runtimeLoadable: false,
+            serviceWorkerLifecycleReportSummary:
+                lifecycleSummary
         )
         let routeListenerImpact = [
             "Messaging route diagnostics can reference chrome.permissions.request when optional host grants are missing.",
@@ -1709,6 +1736,8 @@ enum ChromeMV3PermissionsAPIContractReportGenerator {
             canDispatchMessagesNow: false,
             canLoadContextNow: false,
             runtimeLoadable: false,
+            serviceWorkerLifecycleReportSummary:
+                lifecycleSummary,
             documentationSources: documentationSources(),
             diagnostics: [
                 "chrome.permissions API contract is deterministic and non-executing.",
