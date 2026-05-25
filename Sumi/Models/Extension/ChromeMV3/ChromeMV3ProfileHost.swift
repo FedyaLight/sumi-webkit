@@ -88,6 +88,8 @@ struct ChromeMV3ProfileHostDiagnostics: Codable, Equatable, Sendable {
         ChromeMV3ContextReadinessReport?
     var contextCreationGateReport:
         ChromeMV3ContextCreationGateReport?
+    var controllerLoadGateReport:
+        ChromeMV3ControllerLoadGateReport?
     var runtimeBridgePrerequisitesReport:
         ChromeMV3RuntimeBridgePrerequisitesReport?
     var runtimeBridgeReadinessReport:
@@ -266,6 +268,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
             ChromeMV3ContextReadinessReport? = nil,
         contextCreationGateReport:
             ChromeMV3ContextCreationGateReport? = nil,
+        controllerLoadGateReport:
+            ChromeMV3ControllerLoadGateReport? = nil,
         runtimeBridgePrerequisitesReport:
             ChromeMV3RuntimeBridgePrerequisitesReport? = nil,
         runtimeBridgeReadinessReport:
@@ -351,6 +355,7 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
             extensionObjectAcceptanceReport: extensionObjectAcceptanceReport,
             contextReadinessReport: contextReadinessReport,
             contextCreationGateReport: contextCreationGateReport,
+            controllerLoadGateReport: controllerLoadGateReport,
             runtimeBridgePrerequisitesReport:
                 runtimeBridgePrerequisitesReport,
             runtimeBridgeReadinessReport:

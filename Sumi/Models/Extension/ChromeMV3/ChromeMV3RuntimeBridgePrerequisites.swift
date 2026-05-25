@@ -1752,6 +1752,8 @@ struct ChromeMV3RuntimeBridgeReadinessReport:
         ChromeMV3PermissionLifecycleReportSummary? = nil
     var permissionsAPIContractReportSummary:
         ChromeMV3PermissionsAPIContractReportSummary? = nil
+    var controllerLoadGateReportSummary:
+        ChromeMV3ControllerLoadGateReportSummary? = nil
     var canCreateContextNow: Bool
     var canLoadContextNow: Bool
     var runtimeLoadable: Bool
@@ -2055,6 +2057,7 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
                 permissionLifecycleReport.summary,
             permissionsAPIContractReportSummary:
                 permissionsAPIReport.summary,
+            controllerLoadGateReportSummary: nil,
             canCreateContextNow: false,
             canLoadContextNow: false,
             runtimeLoadable: false,
