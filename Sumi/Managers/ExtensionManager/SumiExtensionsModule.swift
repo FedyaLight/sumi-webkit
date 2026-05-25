@@ -40,6 +40,8 @@ final class SumiExtensionsModule {
             ChromeMV3RuntimeBridgeReadinessReport?
         private var lastChromeMV3RuntimeMessagingContractReport:
             ChromeMV3RuntimeMessagingContractReport?
+        private var lastChromeMV3RuntimeListenerContractReport:
+            ChromeMV3RuntimeListenerContractReport?
     #endif
     weak var browserManager: BrowserManager?
     #if DEBUG
@@ -124,6 +126,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3RuntimeBridgePrerequisitesReport = nil
                     lastChromeMV3RuntimeBridgeReadinessReport = nil
                     lastChromeMV3RuntimeMessagingContractReport = nil
+                    lastChromeMV3RuntimeListenerContractReport = nil
                 }
             #endif
             tearDownChromeMV3EmptyControllerOwner()
@@ -185,6 +188,8 @@ final class SumiExtensionsModule {
             ChromeMV3RuntimeBridgeReadinessReport?
         let runtimeMessagingContractReportSummary:
             ChromeMV3RuntimeMessagingContractReportSummary?
+        let runtimeListenerContractReportSummary:
+            ChromeMV3RuntimeListenerContractReportSummary?
         #if DEBUG
             if #available(macOS 15.5, *) {
                 probeDiagnostics =
@@ -199,6 +204,8 @@ final class SumiExtensionsModule {
                     lastChromeMV3RuntimeBridgeReadinessReport
                 runtimeMessagingContractReportSummary =
                     lastChromeMV3RuntimeMessagingContractReport?.summary
+                runtimeListenerContractReportSummary =
+                    lastChromeMV3RuntimeListenerContractReport?.summary
             } else {
                 probeDiagnostics = nil
                 objectAcceptanceReport = nil
@@ -206,6 +213,7 @@ final class SumiExtensionsModule {
                 runtimeBridgePrerequisitesReport = nil
                 runtimeBridgeReadinessReport = nil
                 runtimeMessagingContractReportSummary = nil
+                runtimeListenerContractReportSummary = nil
             }
         #else
             probeDiagnostics = nil
@@ -214,6 +222,7 @@ final class SumiExtensionsModule {
             runtimeBridgePrerequisitesReport = nil
             runtimeBridgeReadinessReport = nil
             runtimeMessagingContractReportSummary = nil
+            runtimeListenerContractReportSummary = nil
         #endif
         return chromeMV3ProfileHostIfEnabled(
             candidateRewrittenVariants: candidates
@@ -227,7 +236,9 @@ final class SumiExtensionsModule {
             runtimeBridgeReadinessReport:
                 runtimeBridgeReadinessReport,
             runtimeMessagingContractReportSummary:
-                runtimeMessagingContractReportSummary
+                runtimeMessagingContractReportSummary,
+            runtimeListenerContractReportSummary:
+                runtimeListenerContractReportSummary
         )
     }
 
@@ -690,6 +701,32 @@ final class SumiExtensionsModule {
 
             guard writeReport else { return report }
             return (try? ChromeMV3RuntimeMessagingContractReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3RuntimeListenerContractReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            writeReport: Bool = false
+        ) -> ChromeMV3RuntimeListenerContractReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let report: ChromeMV3RuntimeListenerContractReport
+            do {
+                report = try ChromeMV3RuntimeListenerContractReportGenerator
+                    .makeReport(
+                        loadingPrerequisitesReportFrom: rootURL
+                    )
+            } catch {
+                return nil
+            }
+            lastChromeMV3RuntimeListenerContractReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3RuntimeListenerContractReportWriter.write(
                 report,
                 toRewrittenBundleRoot: rootURL
             )) ?? report
