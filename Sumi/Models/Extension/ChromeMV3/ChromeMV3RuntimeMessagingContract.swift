@@ -1303,6 +1303,11 @@ enum ChromeMV3RuntimeMessagingRouteEvaluator {
                 "Future error contract: \(error.rawValue)."
             )
         }
+        if permissionDecision.futurePromptRequired {
+            diagnostics.append(
+                "chrome.permissions.request contract would require product permission UI before a missing optional grant can be added."
+            )
+        }
         diagnostics.append(contentsOf: route.blockers)
         return Array(Set(diagnostics)).sorted()
     }
@@ -1475,6 +1480,8 @@ struct ChromeMV3RuntimeMessagingContractReportSummary:
         ChromeMV3PermissionBrokerReadinessReportSummary? = nil
     var permissionLifecycleReportSummary:
         ChromeMV3PermissionLifecycleReportSummary? = nil
+    var permissionsAPIContractReportSummary:
+        ChromeMV3PermissionsAPIContractReportSummary? = nil
 }
 
 struct ChromeMV3RuntimeMessagingContractReport:
@@ -1501,6 +1508,8 @@ struct ChromeMV3RuntimeMessagingContractReport:
         ChromeMV3PermissionBrokerReadinessReportSummary? = nil
     var permissionLifecycleReportSummary:
         ChromeMV3PermissionLifecycleReportSummary? = nil
+    var permissionsAPIContractReportSummary:
+        ChromeMV3PermissionsAPIContractReportSummary? = nil
     var permissionBrokerRouteDecisions:
         [ChromeMV3PermissionBrokerRouteScenario] = []
     var canDispatchMessagesNow: Bool
@@ -1530,7 +1539,9 @@ struct ChromeMV3RuntimeMessagingContractReport:
             permissionBrokerReadinessReportSummary:
                 permissionBrokerReadinessReportSummary,
             permissionLifecycleReportSummary:
-                permissionLifecycleReportSummary
+                permissionLifecycleReportSummary,
+            permissionsAPIContractReportSummary:
+                permissionsAPIContractReportSummary
         )
     }
 }
@@ -1606,6 +1617,11 @@ enum ChromeMV3RuntimeMessagingContractReportGenerator {
                 profileID: profileID
             )
             .summary
+        let permissionsAPISummary =
+            ChromeMV3PermissionsAPIContractReportGenerator.makeSummary(
+                prerequisitesReport: prerequisites,
+                profileID: profileID
+            )
 
         return ChromeMV3RuntimeMessagingContractReport(
             schemaVersion: 1,
@@ -1657,6 +1673,8 @@ enum ChromeMV3RuntimeMessagingContractReportGenerator {
                 permissionReport.summary,
             permissionLifecycleReportSummary:
                 lifecycleReport.summary,
+            permissionsAPIContractReportSummary:
+                permissionsAPISummary,
             permissionBrokerRouteDecisions:
                 permissionReport.permissionDecisionsForKeyRoutes,
             canDispatchMessagesNow: false,
@@ -1673,6 +1691,7 @@ enum ChromeMV3RuntimeMessagingContractReportGenerator {
                 "Service-worker wake remains disabled.",
                 "Port opening remains disabled.",
                 "Context creation and loading remain disabled.",
+                "Missing optional grants reference the chrome.permissions API contract; product permission UI remains unavailable.",
                 "Sumi does not claim Chrome MV3 runtime support.",
             ]
         )

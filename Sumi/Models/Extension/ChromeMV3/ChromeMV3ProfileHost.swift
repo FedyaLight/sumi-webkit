@@ -98,6 +98,8 @@ struct ChromeMV3ProfileHostDiagnostics: Codable, Equatable, Sendable {
         ChromeMV3PermissionBrokerReadinessReportSummary? = nil
     var permissionLifecycleReportSummary:
         ChromeMV3PermissionLifecycleReportSummary? = nil
+    var permissionsAPIContractReportSummary:
+        ChromeMV3PermissionsAPIContractReportSummary? = nil
     var preflightResults: [ChromeMV3RuntimePreflightResult]
     var webViewSurfaceMappings: [ChromeMV3WebViewSurfaceMappingDiagnostic]
     var disabledRuntimeInvariantStatus: ChromeMV3DisabledRuntimeInvariantStatus
@@ -260,6 +262,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
             ChromeMV3PermissionBrokerReadinessReportSummary? = nil,
         permissionLifecycleReportSummary:
             ChromeMV3PermissionLifecycleReportSummary? = nil,
+        permissionsAPIContractReportSummary:
+            ChromeMV3PermissionsAPIContractReportSummary? = nil,
         surfaceMappings: [ChromeMV3WebViewSurfaceMapping] =
             ChromeMV3WebViewSurfaceInventory.currentSumiMappings
     ) -> ChromeMV3ProfileHostDiagnostics {
@@ -330,6 +334,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
                 permissionBrokerReadinessReportSummary,
             permissionLifecycleReportSummary:
                 permissionLifecycleReportSummary,
+            permissionsAPIContractReportSummary:
+                permissionsAPIContractReportSummary,
             preflightResults: preflightResults.sorted {
                 ($0.candidateID ?? "") < ($1.candidateID ?? "")
             },

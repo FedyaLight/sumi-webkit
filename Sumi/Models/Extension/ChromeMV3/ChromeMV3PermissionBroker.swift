@@ -2750,6 +2750,8 @@ struct ChromeMV3PermissionLifecycleReportSummary:
     var canLoadContextNow: Bool
     var runtimeLoadable: Bool
     var passwordManagerPermissionReady: Bool
+    var permissionsAPIContractReportSummary:
+        ChromeMV3PermissionsAPIContractReportSummary? = nil
 }
 
 struct ChromeMV3PermissionLifecycleReport:
@@ -2781,6 +2783,8 @@ struct ChromeMV3PermissionLifecycleReport:
     var deferredPermissions: [String]
     var passwordManagerPermissionReadiness:
         ChromeMV3PasswordManagerPermissionReadiness
+    var permissionsAPIContractReportSummary:
+        ChromeMV3PermissionsAPIContractReportSummary? = nil
     var canPromptUserNow: Bool
     var canDispatchMessagesNow: Bool
     var canRegisterListenersNow: Bool
@@ -2807,7 +2811,9 @@ struct ChromeMV3PermissionLifecycleReport:
             canWakeServiceWorkerNow: false,
             canLoadContextNow: false,
             runtimeLoadable: false,
-            passwordManagerPermissionReady: false
+            passwordManagerPermissionReady: false,
+            permissionsAPIContractReportSummary:
+                permissionsAPIContractReportSummary
         )
     }
 }
@@ -2828,6 +2834,8 @@ struct ChromeMV3PermissionBrokerReadinessReportSummary:
     var canLoadContextNow: Bool
     var runtimeLoadable: Bool
     var passwordManagerPermissionReady: Bool
+    var permissionsAPIContractReportSummary:
+        ChromeMV3PermissionsAPIContractReportSummary? = nil
 }
 
 struct ChromeMV3PermissionBrokerReadinessReport:
@@ -2857,6 +2865,8 @@ struct ChromeMV3PermissionBrokerReadinessReport:
     var deferredPermissions: [String]
     var passwordManagerPermissionReadiness:
         ChromeMV3PasswordManagerPermissionReadiness
+    var permissionsAPIContractReportSummary:
+        ChromeMV3PermissionsAPIContractReportSummary? = nil
     var canGrantPermissionsNow: Bool
     var canPromptUserNow: Bool
     var canDispatchMessagesNow: Bool
@@ -2877,7 +2887,9 @@ struct ChromeMV3PermissionBrokerReadinessReport:
             canDispatchMessagesNow: false,
             canLoadContextNow: false,
             runtimeLoadable: false,
-            passwordManagerPermissionReady: false
+            passwordManagerPermissionReady: false,
+            permissionsAPIContractReportSummary:
+                permissionsAPIContractReportSummary
         )
     }
 }
@@ -2955,6 +2967,12 @@ enum ChromeMV3PermissionLifecycleReportGenerator {
         )
         let permissionSnapshot = adapter.permissionStore.exportSnapshot()
         let activeTabSnapshot = adapter.activeTabStore.exportSnapshot()
+        let permissionsAPISummary =
+            ChromeMV3PermissionsAPIContractReportGenerator.makeSummary(
+                prerequisitesReport: prerequisites,
+                profileID: profileID,
+                modeledActiveTabGrants: modeledActiveTabGrants
+            )
 
         return ChromeMV3PermissionLifecycleReport(
             schemaVersion: 1,
@@ -2988,6 +3006,7 @@ enum ChromeMV3PermissionLifecycleReportGenerator {
             unsupportedPermissions: permissionSnapshot.unsupportedPermissions,
             deferredPermissions: permissionSnapshot.deferredPermissions,
             passwordManagerPermissionReadiness: password,
+            permissionsAPIContractReportSummary: permissionsAPISummary,
             canPromptUserNow: false,
             canDispatchMessagesNow: false,
             canRegisterListenersNow: false,
@@ -3234,6 +3253,12 @@ enum ChromeMV3PermissionBrokerReadinessReportGenerator {
                 profileID: profileID,
                 broker: broker
             )
+        let permissionsAPISummary =
+            ChromeMV3PermissionsAPIContractReportGenerator.makeSummary(
+                prerequisitesReport: prerequisites,
+                profileID: profileID,
+                modeledActiveTabGrants: modeledActiveTabGrants
+            )
 
         return ChromeMV3PermissionBrokerReadinessReport(
             schemaVersion: 1,
@@ -3267,6 +3292,7 @@ enum ChromeMV3PermissionBrokerReadinessReportGenerator {
                     prerequisites: prerequisites,
                     broker: broker
                 ),
+            permissionsAPIContractReportSummary: permissionsAPISummary,
             canGrantPermissionsNow: false,
             canPromptUserNow: false,
             canDispatchMessagesNow: false,

@@ -46,6 +46,8 @@ final class SumiExtensionsModule {
             ChromeMV3PermissionBrokerReadinessReport?
         private var lastChromeMV3PermissionLifecycleReport:
             ChromeMV3PermissionLifecycleReport?
+        private var lastChromeMV3PermissionsAPIContractReport:
+            ChromeMV3PermissionsAPIContractReport?
     #endif
     weak var browserManager: BrowserManager?
     #if DEBUG
@@ -133,6 +135,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3RuntimeListenerContractReport = nil
                     lastChromeMV3PermissionBrokerReadinessReport = nil
                     lastChromeMV3PermissionLifecycleReport = nil
+                    lastChromeMV3PermissionsAPIContractReport = nil
                 }
             #endif
             tearDownChromeMV3EmptyControllerOwner()
@@ -200,6 +203,8 @@ final class SumiExtensionsModule {
             ChromeMV3PermissionBrokerReadinessReportSummary?
         let permissionLifecycleReportSummary:
             ChromeMV3PermissionLifecycleReportSummary?
+        let permissionsAPIContractReportSummary:
+            ChromeMV3PermissionsAPIContractReportSummary?
         #if DEBUG
             if #available(macOS 15.5, *) {
                 probeDiagnostics =
@@ -220,6 +225,8 @@ final class SumiExtensionsModule {
                     lastChromeMV3PermissionBrokerReadinessReport?.summary
                 permissionLifecycleReportSummary =
                     lastChromeMV3PermissionLifecycleReport?.summary
+                permissionsAPIContractReportSummary =
+                    lastChromeMV3PermissionsAPIContractReport?.summary
             } else {
                 probeDiagnostics = nil
                 objectAcceptanceReport = nil
@@ -230,6 +237,7 @@ final class SumiExtensionsModule {
                 runtimeListenerContractReportSummary = nil
                 permissionBrokerReadinessReportSummary = nil
                 permissionLifecycleReportSummary = nil
+                permissionsAPIContractReportSummary = nil
             }
         #else
             probeDiagnostics = nil
@@ -241,6 +249,7 @@ final class SumiExtensionsModule {
             runtimeListenerContractReportSummary = nil
             permissionBrokerReadinessReportSummary = nil
             permissionLifecycleReportSummary = nil
+            permissionsAPIContractReportSummary = nil
         #endif
         return chromeMV3ProfileHostIfEnabled(
             candidateRewrittenVariants: candidates
@@ -260,7 +269,9 @@ final class SumiExtensionsModule {
             permissionBrokerReadinessReportSummary:
                 permissionBrokerReadinessReportSummary,
             permissionLifecycleReportSummary:
-                permissionLifecycleReportSummary
+                permissionLifecycleReportSummary,
+            permissionsAPIContractReportSummary:
+                permissionsAPIContractReportSummary
         )
     }
 
@@ -801,6 +812,32 @@ final class SumiExtensionsModule {
 
             guard writeReport else { return report }
             return (try? ChromeMV3PermissionLifecycleReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3PermissionsAPIContractReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            writeReport: Bool = false
+        ) -> ChromeMV3PermissionsAPIContractReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let report: ChromeMV3PermissionsAPIContractReport
+            do {
+                report = try ChromeMV3PermissionsAPIContractReportGenerator
+                    .makeReport(
+                        loadingPrerequisitesReportFrom: rootURL
+                    )
+            } catch {
+                return nil
+            }
+            lastChromeMV3PermissionsAPIContractReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3PermissionsAPIContractReportWriter.write(
                 report,
                 toRewrittenBundleRoot: rootURL
             )) ?? report
