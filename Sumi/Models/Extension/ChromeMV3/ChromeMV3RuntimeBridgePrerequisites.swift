@@ -1724,6 +1724,8 @@ struct ChromeMV3RuntimeBridgeReadinessReport:
     var installSummary: ChromeMV3RuntimeBridgeReadinessInstallSummary
     var messagingGate: ChromeMV3RuntimeMessagingReadinessGate
     var storageGate: ChromeMV3StorageReadinessGate
+    var storageBrokerReadinessReportSummary:
+        ChromeMV3StorageBrokerReadinessReportSummary? = nil
     var permissionsActiveTabGate:
         ChromeMV3PermissionsActiveTabReadinessGate
     var nativeMessagingGate: ChromeMV3NativeMessagingReadinessGate
@@ -1902,6 +1904,10 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
             manifestFacts: prerequisites.manifestFacts,
             installReport: installReport
         )
+        let storageBrokerReport =
+            ChromeMV3StorageBrokerReadinessReportGenerator.makeReport(
+                prerequisitesReport: prerequisites
+            )
         let permissions = permissionsGate(
             prerequisites.permissionsActiveTabPrerequisites,
             manifestFacts: prerequisites.manifestFacts,
@@ -1949,6 +1955,7 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
                 + messaging.blockers
                 + listenerContractReport.diagnostics
                 + storage.blockers
+                + storageBrokerReport.blockers
                 + permissions.blockers
                 + native.blockers
                 + lifecycle.blockers
@@ -1994,6 +2001,8 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
             installSummary: installSummary,
             messagingGate: messaging,
             storageGate: storage,
+            storageBrokerReadinessReportSummary:
+                storageBrokerReport.summary,
             permissionsActiveTabGate: permissions,
             nativeMessagingGate: native,
             serviceWorkerLifecycleGate: lifecycle,

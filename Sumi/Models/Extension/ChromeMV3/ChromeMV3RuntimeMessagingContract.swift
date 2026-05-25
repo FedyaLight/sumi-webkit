@@ -1476,6 +1476,8 @@ struct ChromeMV3RuntimeMessagingContractReportSummary:
     var passwordManagerMessagingReady: Bool
     var listenerContractReportSummary:
         ChromeMV3RuntimeListenerContractReportSummary? = nil
+    var storageBrokerReadinessReportSummary:
+        ChromeMV3StorageBrokerReadinessReportSummary? = nil
     var permissionBrokerReadinessReportSummary:
         ChromeMV3PermissionBrokerReadinessReportSummary? = nil
     var permissionLifecycleReportSummary:
@@ -1504,6 +1506,8 @@ struct ChromeMV3RuntimeMessagingContractReport:
         ChromeMV3PasswordManagerMessagingSummary
     var listenerContractReportSummary:
         ChromeMV3RuntimeListenerContractReportSummary? = nil
+    var storageBrokerReadinessReportSummary:
+        ChromeMV3StorageBrokerReadinessReportSummary? = nil
     var permissionBrokerReadinessReportSummary:
         ChromeMV3PermissionBrokerReadinessReportSummary? = nil
     var permissionLifecycleReportSummary:
@@ -1536,6 +1540,8 @@ struct ChromeMV3RuntimeMessagingContractReport:
             runtimeLoadable: false,
             passwordManagerMessagingReady: false,
             listenerContractReportSummary: listenerContractReportSummary,
+            storageBrokerReadinessReportSummary:
+                storageBrokerReadinessReportSummary,
             permissionBrokerReadinessReportSummary:
                 permissionBrokerReadinessReportSummary,
             permissionLifecycleReportSummary:
@@ -1617,6 +1623,11 @@ enum ChromeMV3RuntimeMessagingContractReportGenerator {
                 profileID: profileID
             )
             .summary
+        let storageSummary =
+            ChromeMV3StorageBrokerReadinessReportGenerator.makeReport(
+                prerequisitesReport: prerequisites,
+                profileID: profileID
+            ).summary
         let permissionsAPISummary =
             ChromeMV3PermissionsAPIContractReportGenerator.makeSummary(
                 prerequisitesReport: prerequisites,
@@ -1669,6 +1680,7 @@ enum ChromeMV3RuntimeMessagingContractReportGenerator {
                 ChromeMV3RuntimePortDisconnectReason.allCases.sorted(),
             passwordManagerMessagingSummary: passwordSummary,
             listenerContractReportSummary: listenerSummary,
+            storageBrokerReadinessReportSummary: storageSummary,
             permissionBrokerReadinessReportSummary:
                 permissionReport.summary,
             permissionLifecycleReportSummary:
