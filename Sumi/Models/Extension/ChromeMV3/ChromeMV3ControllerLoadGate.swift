@@ -532,6 +532,7 @@ enum ChromeMV3ControllerLoadGateBlocker:
     case runtimeBridgeInvariantViolation
     case runtimeLoadabilityInvariantViolation
     case productRuntimeExposureRequested
+    case contentScriptSmokeFixturePolicyFailed
 
     var reason: String {
         switch self {
@@ -591,6 +592,8 @@ enum ChromeMV3ControllerLoadGateBlocker:
             return "runtimeLoadable and runtime availability must remain false."
         case .productRuntimeExposureRequested:
             return "Product runtime exposure, JS injection, native messaging, or extension execution was requested."
+        case .contentScriptSmokeFixturePolicyFailed:
+            return "The DEBUG/internal content-script smoke fixture policy did not pass."
         }
     }
 }
@@ -750,6 +753,8 @@ struct ChromeMV3ControllerLoadGateInput:
         ChromeMV3RuntimeBridgeReadinessReport?
     var minimalInertFixturePolicy:
         ChromeMV3MinimalInertFixturePolicyResult
+    var contentScriptSmokeFixturePolicy:
+        ChromeMV3ContentScriptSmokeFixturePolicyResult? = nil
     var sdkCompatibility: ChromeMV3ControllerLoadSDKCompatibility
     var requestedProductRuntimeExposure: Bool
     var requestedExtensionCodeExecution: Bool
@@ -785,6 +790,10 @@ enum ChromeMV3ControllerLoadGate {
     ) -> ChromeMV3ControllerLoadGateDecision {
         var blockers: [ChromeMV3ControllerLoadGateBlocker] = []
         var warnings = input.minimalInertFixturePolicy.warnings
+        if let contentScriptSmokeFixturePolicy =
+            input.contentScriptSmokeFixturePolicy {
+            warnings.append(contentsOf: contentScriptSmokeFixturePolicy.warnings)
+        }
         var diagnostics: [String] = []
 
         let objectBlockingFindings =
@@ -897,10 +906,18 @@ enum ChromeMV3ControllerLoadGate {
             blockers.append(.controllerDataStoreIdentityMismatch)
         }
 
+        let contentScriptSmokeFixtureSafe =
+            input.contentScriptSmokeFixturePolicy?
+            .loadSafeForContentScriptSmokeFixture == true
         if input.minimalInertFixturePolicy.loadSafeForMinimalInertFixture
-            == false
-        {
+            == false && contentScriptSmokeFixtureSafe == false {
             blockers.append(.minimalInertFixturePolicyFailed)
+        }
+        if let contentScriptSmokeFixturePolicy =
+            input.contentScriptSmokeFixturePolicy,
+           contentScriptSmokeFixturePolicy
+            .loadSafeForContentScriptSmokeFixture == false {
+            blockers.append(.contentScriptSmokeFixturePolicyFailed)
         }
         if let liveSnapshot {
             if liveSnapshot.staleOrNeedsRecreationCount > 0 {
@@ -980,6 +997,12 @@ enum ChromeMV3ControllerLoadGate {
         diagnostics.append(
             "Minimal inert fixture policy: \(input.minimalInertFixturePolicy.loadSafeForMinimalInertFixture ? "passed" : "blocked")."
         )
+        if let contentScriptSmokeFixturePolicy =
+            input.contentScriptSmokeFixturePolicy {
+            diagnostics.append(
+                "Content-script smoke fixture policy: \(contentScriptSmokeFixturePolicy.loadSafeForContentScriptSmokeFixture ? "passed" : "blocked")."
+            )
+        }
         diagnostics.append(
             "Controller load API: \(input.sdkCompatibility.swiftControllerLoadSymbol ?? "unavailable")."
         )

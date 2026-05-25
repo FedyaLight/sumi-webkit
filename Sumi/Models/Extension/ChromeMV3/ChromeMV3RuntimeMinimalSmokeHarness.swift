@@ -366,6 +366,8 @@ struct ChromeMV3RuntimeMinimalSmokeReport:
     var outcome: ChromeMV3RuntimeMinimalSmokeOutcome
     var fixturePolicyResult:
         ChromeMV3MinimalInertFixturePolicyResult
+    var contentScriptSmokeSummary:
+        ChromeMV3ContentScriptSmokeReportSummary? = nil
     var controllerLoadResult:
         ChromeMV3RuntimeMinimalSmokeControllerLoadSummary
     var gateDecision: ChromeMV3RuntimeMinimalSmokeGateDecision
