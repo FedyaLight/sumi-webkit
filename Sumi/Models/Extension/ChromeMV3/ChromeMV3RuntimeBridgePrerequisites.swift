@@ -1742,6 +1742,8 @@ struct ChromeMV3RuntimeBridgeReadinessReport:
         ChromeMV3RuntimeMessagingContractReportSummary
     var runtimeMessageDispatcherSkeletonReportSummary:
         ChromeMV3RuntimeMessageDispatcherSkeletonReportSummary? = nil
+    var jsBridgeContractReportSummary:
+        ChromeMV3JSBridgeContractReportSummary? = nil
     var runtimeListenerContractReportSummary:
         ChromeMV3RuntimeListenerContractReportSummary? = nil
     var permissionBrokerReadinessReportSummary:
@@ -1964,6 +1966,10 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
         let dispatcherReport =
             ChromeMV3RuntimeMessageDispatcherSkeletonReportGenerator
             .makeReport(prerequisitesReport: prerequisites)
+        let jsBridgeContractReport =
+            ChromeMV3JSBridgeContractReportGenerator.makeReport(
+                prerequisitesReport: prerequisites
+            )
         let listenerContractReport =
             ChromeMV3RuntimeListenerContractReportGenerator.makeReport(
                 prerequisitesReport: prerequisites,
@@ -1973,6 +1979,7 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
             prerequisites.contextReadinessConsumerDiagnostic.blockingReasons
                 + messaging.blockers
                 + dispatcherReport.diagnostics
+                + jsBridgeContractReport.blockers
                 + listenerContractReport.diagnostics
                 + storage.blockers
                 + storageBrokerReport.blockers
@@ -2038,6 +2045,8 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
                 messagingContractReport.summary,
             runtimeMessageDispatcherSkeletonReportSummary:
                 dispatcherReport.summary,
+            jsBridgeContractReportSummary:
+                jsBridgeContractReport.summary,
             runtimeListenerContractReportSummary:
                 listenerContractReport.summary,
             permissionBrokerReadinessReportSummary:

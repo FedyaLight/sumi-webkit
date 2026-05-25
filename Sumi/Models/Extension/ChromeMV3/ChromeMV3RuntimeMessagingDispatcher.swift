@@ -1199,6 +1199,8 @@ struct ChromeMV3RuntimeMessageDispatcherSkeletonReportSummary:
     var runtimeLoadable: Bool
     var passwordManagerModelMessagingReady: Bool
     var passwordManagerRuntimeMessagingReady: Bool
+    var jsBridgeRoutingSummary:
+        ChromeMV3JSBridgeRoutingSummary? = nil
 }
 
 struct ChromeMV3RuntimeMessageDispatcherSkeletonReport:
@@ -1221,6 +1223,8 @@ struct ChromeMV3RuntimeMessageDispatcherSkeletonReport:
         ChromeMV3RuntimeDispatcherCallbackPromiseLastErrorCoverage
     var passwordManagerMessagingFlowSummary:
         ChromeMV3PasswordManagerDispatcherFlowSummary
+    var jsBridgeRoutingSummary:
+        ChromeMV3JSBridgeRoutingSummary? = nil
     var modelOnlyDispatchAvailable: Bool
     var runtimeDispatchAvailable: Bool
     var jsBridgeAvailable: Bool
@@ -1245,7 +1249,8 @@ struct ChromeMV3RuntimeMessageDispatcherSkeletonReport:
             passwordManagerModelMessagingReady:
                 passwordManagerMessagingFlowSummary
                 .passwordManagerModelMessagingReady,
-            passwordManagerRuntimeMessagingReady: false
+            passwordManagerRuntimeMessagingReady: false,
+            jsBridgeRoutingSummary: jsBridgeRoutingSummary
         )
     }
 }
@@ -1386,6 +1391,9 @@ enum ChromeMV3RuntimeMessageDispatcherSkeletonReportGenerator {
             callbackPromiseLastErrorCoverage:
                 callbackPromiseLastErrorCoverage(),
             passwordManagerMessagingFlowSummary: password,
+            jsBridgeRoutingSummary:
+                ChromeMV3JSBridgeContractReportGenerator
+                .routingSummary(),
             modelOnlyDispatchAvailable: true,
             runtimeDispatchAvailable: false,
             jsBridgeAvailable: false,
