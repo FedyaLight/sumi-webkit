@@ -356,7 +356,7 @@ final class ChromeMV3InstallFoundationTests: XCTestCase {
         XCTAssertFalse(foundationSource.contains("WKWebExtension" + "Context("))
         XCTAssertFalse(foundationSource.contains("WKWebExtension" + "("))
         XCTAssertFalse(foundationSource.contains("ExtensionManager("))
-        XCTAssertFalse(foundationSource.contains("WKUserScript("))
+        XCTAssertFalse(foundationSource.contains("WKUser" + "Script("))
         XCTAssertFalse(foundationSource.contains("NativeMessagingHandler("))
     }
 

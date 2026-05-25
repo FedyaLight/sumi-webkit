@@ -98,6 +98,8 @@ struct ChromeMV3ProfileHostDiagnostics: Codable, Equatable, Sendable {
         ChromeMV3RuntimeMessagingContractReportSummary?
     var runtimeMessageDispatcherSkeletonReportSummary:
         ChromeMV3RuntimeMessageDispatcherSkeletonReportSummary? = nil
+    var jsBridgeContractReportSummary:
+        ChromeMV3JSBridgeContractReportSummary? = nil
     var nativeMessagingReadinessReportSummary:
         ChromeMV3NativeMessagingReadinessReportSummary? = nil
     var runtimeListenerContractReportSummary:
@@ -272,6 +274,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
             ChromeMV3RuntimeMessagingContractReportSummary? = nil,
         runtimeMessageDispatcherSkeletonReportSummary:
             ChromeMV3RuntimeMessageDispatcherSkeletonReportSummary? = nil,
+        jsBridgeContractReportSummary:
+            ChromeMV3JSBridgeContractReportSummary? = nil,
         nativeMessagingReadinessReportSummary:
             ChromeMV3NativeMessagingReadinessReportSummary? = nil,
         runtimeListenerContractReportSummary:
@@ -354,6 +358,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
                 runtimeMessagingContractReportSummary,
             runtimeMessageDispatcherSkeletonReportSummary:
                 runtimeMessageDispatcherSkeletonReportSummary,
+            jsBridgeContractReportSummary:
+                jsBridgeContractReportSummary,
             nativeMessagingReadinessReportSummary:
                 nativeMessagingReadinessReportSummary,
             runtimeListenerContractReportSummary:

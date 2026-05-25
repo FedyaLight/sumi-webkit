@@ -46,6 +46,8 @@ final class SumiExtensionsModule {
             ChromeMV3RuntimeMessagingContractReport?
         private var lastChromeMV3RuntimeMessageDispatcherSkeletonReport:
             ChromeMV3RuntimeMessageDispatcherSkeletonReport?
+        private var lastChromeMV3JSBridgeContractReport:
+            ChromeMV3JSBridgeContractReport?
         private var lastChromeMV3NativeMessagingReadinessReport:
             ChromeMV3NativeMessagingReadinessReport?
         private var lastChromeMV3RuntimeListenerContractReport:
@@ -145,6 +147,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3StorageAPIOperationsReport = nil
                     lastChromeMV3RuntimeMessagingContractReport = nil
                     lastChromeMV3RuntimeMessageDispatcherSkeletonReport = nil
+                    lastChromeMV3JSBridgeContractReport = nil
                     lastChromeMV3NativeMessagingReadinessReport = nil
                     lastChromeMV3RuntimeListenerContractReport = nil
                     lastChromeMV3ServiceWorkerLifecycleReport = nil
@@ -218,6 +221,8 @@ final class SumiExtensionsModule {
             ChromeMV3RuntimeMessagingContractReportSummary?
         let runtimeMessageDispatcherSkeletonReportSummary:
             ChromeMV3RuntimeMessageDispatcherSkeletonReportSummary?
+        let jsBridgeContractReportSummary:
+            ChromeMV3JSBridgeContractReportSummary?
         let nativeMessagingReadinessReportSummary:
             ChromeMV3NativeMessagingReadinessReportSummary?
         let runtimeListenerContractReportSummary:
@@ -251,6 +256,8 @@ final class SumiExtensionsModule {
                 runtimeMessageDispatcherSkeletonReportSummary =
                     lastChromeMV3RuntimeMessageDispatcherSkeletonReport?
                     .summary
+                jsBridgeContractReportSummary =
+                    lastChromeMV3JSBridgeContractReport?.summary
                 nativeMessagingReadinessReportSummary =
                     lastChromeMV3NativeMessagingReadinessReport?.summary
                 runtimeListenerContractReportSummary =
@@ -273,6 +280,7 @@ final class SumiExtensionsModule {
                 storageAPIOperationsReportSummary = nil
                 runtimeMessagingContractReportSummary = nil
                 runtimeMessageDispatcherSkeletonReportSummary = nil
+                jsBridgeContractReportSummary = nil
                 nativeMessagingReadinessReportSummary = nil
                 runtimeListenerContractReportSummary = nil
                 serviceWorkerLifecycleReportSummary = nil
@@ -290,6 +298,7 @@ final class SumiExtensionsModule {
             storageAPIOperationsReportSummary = nil
             runtimeMessagingContractReportSummary = nil
             runtimeMessageDispatcherSkeletonReportSummary = nil
+            jsBridgeContractReportSummary = nil
             nativeMessagingReadinessReportSummary = nil
             runtimeListenerContractReportSummary = nil
             serviceWorkerLifecycleReportSummary = nil
@@ -316,6 +325,8 @@ final class SumiExtensionsModule {
                 runtimeMessagingContractReportSummary,
             runtimeMessageDispatcherSkeletonReportSummary:
                 runtimeMessageDispatcherSkeletonReportSummary,
+            jsBridgeContractReportSummary:
+                jsBridgeContractReportSummary,
             nativeMessagingReadinessReportSummary:
                 nativeMessagingReadinessReportSummary,
             runtimeListenerContractReportSummary:
@@ -872,6 +883,32 @@ final class SumiExtensionsModule {
                     report,
                     toRewrittenBundleRoot: rootURL
                 )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3JSBridgeContractReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            writeReport: Bool = false
+        ) -> ChromeMV3JSBridgeContractReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let report: ChromeMV3JSBridgeContractReport
+            do {
+                report = try ChromeMV3JSBridgeContractReportGenerator
+                    .makeReport(
+                        loadingPrerequisitesReportFrom: rootURL
+                    )
+            } catch {
+                return nil
+            }
+            lastChromeMV3JSBridgeContractReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3JSBridgeContractReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
         }
 
         @available(macOS 15.5, *)
