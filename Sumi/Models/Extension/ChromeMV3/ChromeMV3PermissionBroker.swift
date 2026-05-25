@@ -2752,6 +2752,8 @@ struct ChromeMV3PermissionLifecycleReportSummary:
     var passwordManagerPermissionReady: Bool
     var permissionsAPIContractReportSummary:
         ChromeMV3PermissionsAPIContractReportSummary? = nil
+    var serviceWorkerLifecycleReportSummary:
+        ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
 }
 
 struct ChromeMV3PermissionLifecycleReport:
@@ -2785,6 +2787,8 @@ struct ChromeMV3PermissionLifecycleReport:
         ChromeMV3PasswordManagerPermissionReadiness
     var permissionsAPIContractReportSummary:
         ChromeMV3PermissionsAPIContractReportSummary? = nil
+    var serviceWorkerLifecycleReportSummary:
+        ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
     var canPromptUserNow: Bool
     var canDispatchMessagesNow: Bool
     var canRegisterListenersNow: Bool
@@ -2813,7 +2817,9 @@ struct ChromeMV3PermissionLifecycleReport:
             runtimeLoadable: false,
             passwordManagerPermissionReady: false,
             permissionsAPIContractReportSummary:
-                permissionsAPIContractReportSummary
+                permissionsAPIContractReportSummary,
+            serviceWorkerLifecycleReportSummary:
+                serviceWorkerLifecycleReportSummary
         )
     }
 }
@@ -2836,6 +2842,8 @@ struct ChromeMV3PermissionBrokerReadinessReportSummary:
     var passwordManagerPermissionReady: Bool
     var permissionsAPIContractReportSummary:
         ChromeMV3PermissionsAPIContractReportSummary? = nil
+    var serviceWorkerLifecycleReportSummary:
+        ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
 }
 
 struct ChromeMV3PermissionBrokerReadinessReport:
@@ -2867,6 +2875,8 @@ struct ChromeMV3PermissionBrokerReadinessReport:
         ChromeMV3PasswordManagerPermissionReadiness
     var permissionsAPIContractReportSummary:
         ChromeMV3PermissionsAPIContractReportSummary? = nil
+    var serviceWorkerLifecycleReportSummary:
+        ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
     var canGrantPermissionsNow: Bool
     var canPromptUserNow: Bool
     var canDispatchMessagesNow: Bool
@@ -2889,7 +2899,9 @@ struct ChromeMV3PermissionBrokerReadinessReport:
             runtimeLoadable: false,
             passwordManagerPermissionReady: false,
             permissionsAPIContractReportSummary:
-                permissionsAPIContractReportSummary
+                permissionsAPIContractReportSummary,
+            serviceWorkerLifecycleReportSummary:
+                serviceWorkerLifecycleReportSummary
         )
     }
 }
@@ -2973,6 +2985,11 @@ enum ChromeMV3PermissionLifecycleReportGenerator {
                 profileID: profileID,
                 modeledActiveTabGrants: modeledActiveTabGrants
             )
+        let serviceWorkerLifecycleSummary =
+            ChromeMV3ServiceWorkerLifecycleReportGenerator.makeReport(
+                prerequisitesReport: prerequisites,
+                profileID: profileID
+            ).summary
 
         return ChromeMV3PermissionLifecycleReport(
             schemaVersion: 1,
@@ -3007,6 +3024,8 @@ enum ChromeMV3PermissionLifecycleReportGenerator {
             deferredPermissions: permissionSnapshot.deferredPermissions,
             passwordManagerPermissionReadiness: password,
             permissionsAPIContractReportSummary: permissionsAPISummary,
+            serviceWorkerLifecycleReportSummary:
+                serviceWorkerLifecycleSummary,
             canPromptUserNow: false,
             canDispatchMessagesNow: false,
             canRegisterListenersNow: false,
@@ -3259,6 +3278,11 @@ enum ChromeMV3PermissionBrokerReadinessReportGenerator {
                 profileID: profileID,
                 modeledActiveTabGrants: modeledActiveTabGrants
             )
+        let serviceWorkerLifecycleSummary =
+            ChromeMV3ServiceWorkerLifecycleReportGenerator.makeReport(
+                prerequisitesReport: prerequisites,
+                profileID: profileID
+            ).summary
 
         return ChromeMV3PermissionBrokerReadinessReport(
             schemaVersion: 1,
@@ -3293,6 +3317,8 @@ enum ChromeMV3PermissionBrokerReadinessReportGenerator {
                     broker: broker
                 ),
             permissionsAPIContractReportSummary: permissionsAPISummary,
+            serviceWorkerLifecycleReportSummary:
+                serviceWorkerLifecycleSummary,
             canGrantPermissionsNow: false,
             canPromptUserNow: false,
             canDispatchMessagesNow: false,

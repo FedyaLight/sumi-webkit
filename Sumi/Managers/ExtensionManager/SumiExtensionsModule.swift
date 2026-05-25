@@ -46,6 +46,8 @@ final class SumiExtensionsModule {
             ChromeMV3RuntimeMessagingContractReport?
         private var lastChromeMV3RuntimeListenerContractReport:
             ChromeMV3RuntimeListenerContractReport?
+        private var lastChromeMV3ServiceWorkerLifecycleReport:
+            ChromeMV3ServiceWorkerLifecycleReport?
         private var lastChromeMV3PermissionBrokerReadinessReport:
             ChromeMV3PermissionBrokerReadinessReport?
         private var lastChromeMV3PermissionLifecycleReport:
@@ -139,6 +141,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3StorageAPIOperationsReport = nil
                     lastChromeMV3RuntimeMessagingContractReport = nil
                     lastChromeMV3RuntimeListenerContractReport = nil
+                    lastChromeMV3ServiceWorkerLifecycleReport = nil
                     lastChromeMV3PermissionBrokerReadinessReport = nil
                     lastChromeMV3PermissionLifecycleReport = nil
                     lastChromeMV3PermissionsAPIContractReport = nil
@@ -209,6 +212,8 @@ final class SumiExtensionsModule {
             ChromeMV3RuntimeMessagingContractReportSummary?
         let runtimeListenerContractReportSummary:
             ChromeMV3RuntimeListenerContractReportSummary?
+        let serviceWorkerLifecycleReportSummary:
+            ChromeMV3ServiceWorkerLifecycleReportSummary?
         let permissionBrokerReadinessReportSummary:
             ChromeMV3PermissionBrokerReadinessReportSummary?
         let permissionLifecycleReportSummary:
@@ -235,6 +240,8 @@ final class SumiExtensionsModule {
                     lastChromeMV3RuntimeMessagingContractReport?.summary
                 runtimeListenerContractReportSummary =
                     lastChromeMV3RuntimeListenerContractReport?.summary
+                serviceWorkerLifecycleReportSummary =
+                    lastChromeMV3ServiceWorkerLifecycleReport?.summary
                 permissionBrokerReadinessReportSummary =
                     lastChromeMV3PermissionBrokerReadinessReport?.summary
                 permissionLifecycleReportSummary =
@@ -251,6 +258,7 @@ final class SumiExtensionsModule {
                 storageAPIOperationsReportSummary = nil
                 runtimeMessagingContractReportSummary = nil
                 runtimeListenerContractReportSummary = nil
+                serviceWorkerLifecycleReportSummary = nil
                 permissionBrokerReadinessReportSummary = nil
                 permissionLifecycleReportSummary = nil
                 permissionsAPIContractReportSummary = nil
@@ -265,6 +273,7 @@ final class SumiExtensionsModule {
             storageAPIOperationsReportSummary = nil
             runtimeMessagingContractReportSummary = nil
             runtimeListenerContractReportSummary = nil
+            serviceWorkerLifecycleReportSummary = nil
             permissionBrokerReadinessReportSummary = nil
             permissionLifecycleReportSummary = nil
             permissionsAPIContractReportSummary = nil
@@ -288,6 +297,8 @@ final class SumiExtensionsModule {
                 runtimeMessagingContractReportSummary,
             runtimeListenerContractReportSummary:
                 runtimeListenerContractReportSummary,
+            serviceWorkerLifecycleReportSummary:
+                serviceWorkerLifecycleReportSummary,
             permissionBrokerReadinessReportSummary:
                 permissionBrokerReadinessReportSummary,
             permissionLifecycleReportSummary:
@@ -834,6 +845,32 @@ final class SumiExtensionsModule {
 
             guard writeReport else { return report }
             return (try? ChromeMV3RuntimeListenerContractReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3ServiceWorkerLifecycleReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            writeReport: Bool = false
+        ) -> ChromeMV3ServiceWorkerLifecycleReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let report: ChromeMV3ServiceWorkerLifecycleReport
+            do {
+                report = try ChromeMV3ServiceWorkerLifecycleReportGenerator
+                    .makeReport(
+                        loadingPrerequisitesReportFrom: rootURL
+                    )
+            } catch {
+                return nil
+            }
+            lastChromeMV3ServiceWorkerLifecycleReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3ServiceWorkerLifecycleReportWriter.write(
                 report,
                 toRewrittenBundleRoot: rootURL
             )) ?? report

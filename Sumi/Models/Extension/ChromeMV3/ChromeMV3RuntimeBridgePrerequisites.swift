@@ -934,8 +934,8 @@ enum ChromeMV3RuntimeBridgePrerequisitesReportGenerator {
         report: ChromeMV3ContextReadinessReport
     ) -> ChromeMV3ServiceWorkerLifecycleReadiness {
         ChromeMV3ServiceWorkerLifecycleReadiness(
-            status: .notImplemented,
-            lifecycleCoordinatorImplemented: false,
+            status: .modeled,
+            lifecycleCoordinatorImplemented: true,
             serviceWorkerWakeImplemented: false,
             idleUnloadPolicyModeled: true,
             permanentBackgroundForbidden: true,
@@ -982,7 +982,7 @@ enum ChromeMV3RuntimeBridgePrerequisitesReportGenerator {
             blockers: uniqueSorted(
                 report.runtimeBlockers.serviceWorkerLifecycleBlockers
                     + [
-                        "Service-worker lifecycle coordinator is not implemented.",
+                        "Service-worker lifecycle coordinator skeleton is modeled but non-executing.",
                         "Service-worker wake is not implemented.",
                         "Permanent background execution is forbidden.",
                     ]
@@ -1733,6 +1733,8 @@ struct ChromeMV3RuntimeBridgeReadinessReport:
     var nativeMessagingGate: ChromeMV3NativeMessagingReadinessGate
     var serviceWorkerLifecycleGate:
         ChromeMV3ServiceWorkerLifecycleReadinessGate
+    var serviceWorkerLifecycleReportSummary:
+        ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
     var passwordManagerGate: ChromeMV3PasswordManagerReadinessGate
     var runtimeMessagingContractReportSummary:
         ChromeMV3RuntimeMessagingContractReportSummary
@@ -1935,6 +1937,10 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
             prerequisites.serviceWorkerLifecyclePrerequisites,
             manifestFacts: prerequisites.manifestFacts
         )
+        let serviceWorkerLifecycleReport =
+            ChromeMV3ServiceWorkerLifecycleReportGenerator.makeReport(
+                prerequisitesReport: prerequisites
+            )
         let password = passwordManagerGate(
             prerequisites.passwordManagerPrerequisiteSummary,
             messaging: messaging,
@@ -2010,6 +2016,8 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
             permissionsActiveTabGate: permissions,
             nativeMessagingGate: native,
             serviceWorkerLifecycleGate: lifecycle,
+            serviceWorkerLifecycleReportSummary:
+                serviceWorkerLifecycleReport.summary,
             passwordManagerGate: password,
             runtimeMessagingContractReportSummary:
                 messagingContractReport.summary,
@@ -2280,9 +2288,9 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
             ? uniqueSorted(
                 prerequisites.blockers
                     + [
-                        "Service-worker lifecycle coordinator is not implemented.",
+                        "Service-worker lifecycle coordinator skeleton is modeled but non-executing.",
                         "Service-worker wake is not implemented.",
-                        "Event dispatch and idle release policies are not implemented.",
+                        "Event dispatch remains unavailable.",
                     ]
             )
             : []
@@ -2300,7 +2308,8 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
             statePersistencePolicyRequired: required,
             diagnosticsModelRequired: required,
             permanentBackgroundForbidden: true,
-            lifecycleCoordinatorImplemented: false,
+            lifecycleCoordinatorImplemented:
+                prerequisites.lifecycleCoordinatorImplemented,
             serviceWorkerWakeImplemented: false,
             lifecycleReadyForContextLoad: false,
             blockers: blockers
