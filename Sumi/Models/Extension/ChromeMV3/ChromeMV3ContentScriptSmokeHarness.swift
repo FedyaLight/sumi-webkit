@@ -34,6 +34,282 @@ enum ChromeMV3ContentScriptSmokeObservationState:
     case notObserved
 }
 
+enum ChromeMV3ContentScriptObservationStrategy:
+    String,
+    Codable,
+    CaseIterable,
+    Sendable
+{
+    case none
+    case testDOMInspection
+    case webKitSupportedInspection = "WebKitSupportedInspection"
+    case blockedRequiresSumiInjection
+    case blockedRequiresScriptMessageHandler
+    case blockedRequiresJSBridge
+    case unsupportedByCurrentSDK
+}
+
+enum ChromeMV3ContentScriptObservationRiskLevel:
+    String,
+    Codable,
+    CaseIterable,
+    Sendable
+{
+    case none
+    case low
+    case unsupported
+    case forbidden
+}
+
+struct ChromeMV3ContentScriptObservationStrategyScope:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var debugBuild: Bool
+    var internalSyntheticWebViewOnly: Bool
+    var explicitTestDOMInspectionAllowed: Bool
+    var sameControllerSyntheticConfiguration: Bool
+    var syntheticNavigationAllowed: Bool
+    var productNormalTabAttachmentCount: Int
+    var registersPersistentScripts: Bool
+    var registersScriptMessageHandlers: Bool
+    var exposesJSBridge: Bool
+    var dispatchesRuntimeMessages: Bool
+    var opensRuntimePorts: Bool
+    var launchesNativeMessaging: Bool
+    var launchesNativeHost: Bool
+    var usesScheduledClockOrRepeatedChecks: Bool
+    var currentSDKSupportsOneShotDOMEvaluation: Bool
+    var currentSDKSupportsWebKitContentScriptInspection: Bool
+
+    static func contentScriptSmoke(
+        explicitTestDOMInspectionAllowed: Bool,
+        sameControllerSyntheticConfiguration: Bool,
+        syntheticNavigationAllowed: Bool,
+        productNormalTabAttachmentCount: Int
+    ) -> ChromeMV3ContentScriptObservationStrategyScope {
+        let isDebugBuild: Bool
+#if DEBUG
+        isDebugBuild = true
+#else
+        isDebugBuild = false
+#endif
+        return ChromeMV3ContentScriptObservationStrategyScope(
+            debugBuild: isDebugBuild,
+            internalSyntheticWebViewOnly: true,
+            explicitTestDOMInspectionAllowed:
+                explicitTestDOMInspectionAllowed,
+            sameControllerSyntheticConfiguration:
+                sameControllerSyntheticConfiguration,
+            syntheticNavigationAllowed: syntheticNavigationAllowed,
+            productNormalTabAttachmentCount:
+                productNormalTabAttachmentCount,
+            registersPersistentScripts: false,
+            registersScriptMessageHandlers: false,
+            exposesJSBridge: false,
+            dispatchesRuntimeMessages: false,
+            opensRuntimePorts: false,
+            launchesNativeMessaging: false,
+            launchesNativeHost: false,
+            usesScheduledClockOrRepeatedChecks: false,
+            currentSDKSupportsOneShotDOMEvaluation: true,
+            currentSDKSupportsWebKitContentScriptInspection: false
+        )
+    }
+}
+
+struct ChromeMV3ContentScriptObservationStrategyClassification:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var strategy: ChromeMV3ContentScriptObservationStrategy
+    var allowedInThisPrompt: Bool
+    var reason: String
+    var riskLevel: ChromeMV3ContentScriptObservationRiskLevel
+    var sourceDocBasis: [String]
+    var productExposure: Bool
+}
+
+enum ChromeMV3ContentScriptObservationStrategyClassifier {
+    static func classifyAll(
+        scope: ChromeMV3ContentScriptObservationStrategyScope
+    ) -> [ChromeMV3ContentScriptObservationStrategyClassification] {
+        ChromeMV3ContentScriptObservationStrategy.allCases.map {
+            classify($0, scope: scope)
+        }
+    }
+
+    static func classify(
+        _ strategy: ChromeMV3ContentScriptObservationStrategy,
+        scope: ChromeMV3ContentScriptObservationStrategyScope
+    ) -> ChromeMV3ContentScriptObservationStrategyClassification {
+        let forbiddenReasons = forbiddenScopeReasons(scope)
+        switch strategy {
+        case .none:
+            return classification(
+                strategy: strategy,
+                allowed: true,
+                reason:
+                    "No observation is performed; WebKit-owned content-script effects remain unverified.",
+                risk: .none,
+                basis: [
+                    "Safe fallback when no explicit DEBUG/internal inspection flag is present.",
+                ]
+            )
+        case .testDOMInspection:
+            var blockers: [String] = []
+            if scope.debugBuild == false {
+                blockers.append("DEBUG build scope is required.")
+            }
+            if scope.internalSyntheticWebViewOnly == false {
+                blockers.append("Only the internal synthetic WebView scope is allowed.")
+            }
+            if scope.explicitTestDOMInspectionAllowed == false {
+                blockers.append("The explicit test DOM inspection flag is not enabled.")
+            }
+            if scope.sameControllerSyntheticConfiguration == false {
+                blockers.append("The synthetic configuration must use the loaded context controller.")
+            }
+            if scope.syntheticNavigationAllowed == false {
+                blockers.append("Synthetic navigation must be explicitly allowed.")
+            }
+            if scope.currentSDKSupportsOneShotDOMEvaluation == false {
+                blockers.append("The current SDK does not expose one-shot DOM evaluation.")
+            }
+            blockers.append(contentsOf: forbiddenReasons)
+            return classification(
+                strategy: strategy,
+                allowed: blockers.isEmpty,
+                reason: blockers.isEmpty
+                    ? "A one-shot page-world DOM read after deterministic synthetic navigation is allowed for DEBUG/internal observation."
+                    : blockers.joined(separator: " "),
+                risk: blockers.isEmpty ? .low : .forbidden,
+                basis: [
+                    "Apple WKWebView evaluation API executes a supplied script and calls a completion handler with the result or error.",
+                    "Local WebKit headers state the default evaluation targets the main frame in WKContentWorld.pageWorld.",
+                    "Local WebKit headers state DOM changes are visible across content worlds; this harness reads DOM state only.",
+                    "Chrome content-script documentation states content scripts can read and modify the DOM and that isolated worlds share access to the page DOM.",
+                ]
+            )
+        case .webKitSupportedInspection:
+            return classification(
+                strategy: strategy,
+                allowed:
+                    scope.currentSDKSupportsWebKitContentScriptInspection
+                        && forbiddenReasons.isEmpty,
+                reason:
+                    scope.currentSDKSupportsWebKitContentScriptInspection
+                        ? "A dedicated WebKit content-script inspection API is available in this SDK."
+                        : "The checked WebKit SDK headers expose controller load and WebView association APIs, but no dedicated content-script marker inspection API.",
+                risk:
+                    scope.currentSDKSupportsWebKitContentScriptInspection
+                        ? .low
+                        : .unsupported,
+                basis: [
+                    "Local WebKit headers checked: WKWebExtensionController, WKWebViewConfiguration, WKWebExtensionContext, WKWebExtensionTab, and WKWebView.",
+                ]
+            )
+        case .blockedRequiresSumiInjection:
+            return classification(
+                strategy: strategy,
+                allowed: false,
+                reason:
+                    "Rejected because it would require Sumi-owned persistent script registration or product bridge code.",
+                risk: .forbidden,
+                basis: [
+                    "Prompt boundary forbids Sumi-owned script injection for this observation task.",
+                ]
+            )
+        case .blockedRequiresScriptMessageHandler:
+            return classification(
+                strategy: strategy,
+                allowed: false,
+                reason:
+                    "Rejected because it would require native script-message handler registration.",
+                risk: .forbidden,
+                basis: [
+                    "Prompt boundary forbids script-message handler registration for this observation task.",
+                ]
+            )
+        case .blockedRequiresJSBridge:
+            return classification(
+                strategy: strategy,
+                allowed: false,
+                reason:
+                    "Rejected because it would expose or rely on the Sumi JavaScript bridge.",
+                risk: .forbidden,
+                basis: [
+                    "The Chrome MV3 JS bridge contract remains unavailable in this smoke scope.",
+                ]
+            )
+        case .unsupportedByCurrentSDK:
+            return classification(
+                strategy: strategy,
+                allowed: false,
+                reason:
+                    "The current SDK does not expose a first-class WebKit-owned content-script effect inspection surface.",
+                risk: .unsupported,
+                basis: [
+                    "Local WebKit headers provide WebView evaluation and extension controller association, not a marker-specific content-script observation API.",
+                ]
+            )
+        }
+    }
+
+    private static func forbiddenScopeReasons(
+        _ scope: ChromeMV3ContentScriptObservationStrategyScope
+    ) -> [String] {
+        [
+            scope.productNormalTabAttachmentCount > 0
+                ? "Product normal-tab attachment is present."
+                : nil,
+            scope.registersPersistentScripts
+                ? "Persistent script registration is requested."
+                : nil,
+            scope.registersScriptMessageHandlers
+                ? "Script-message handler registration is requested."
+                : nil,
+            scope.exposesJSBridge
+                ? "Sumi JavaScript bridge exposure is requested."
+                : nil,
+            scope.dispatchesRuntimeMessages
+                ? "Runtime message dispatch is requested."
+                : nil,
+            scope.opensRuntimePorts
+                ? "Runtime port opening is requested."
+                : nil,
+            scope.launchesNativeMessaging
+                ? "Native messaging is requested."
+                : nil,
+            scope.launchesNativeHost
+                ? "Native host launch is requested."
+                : nil,
+            scope.usesScheduledClockOrRepeatedChecks
+                ? "Scheduled-clock or repeated observation checks are requested."
+                : nil,
+        ].compactMap { $0 }
+    }
+
+    private static func classification(
+        strategy: ChromeMV3ContentScriptObservationStrategy,
+        allowed: Bool,
+        reason: String,
+        risk: ChromeMV3ContentScriptObservationRiskLevel,
+        basis: [String]
+    ) -> ChromeMV3ContentScriptObservationStrategyClassification {
+        ChromeMV3ContentScriptObservationStrategyClassification(
+            strategy: strategy,
+            allowedInThisPrompt: allowed,
+            reason: reason,
+            riskLevel: risk,
+            sourceDocBasis: uniqueSorted(basis),
+            productExposure: false
+        )
+    }
+}
+
 enum ChromeMV3ContentScriptSmokeFixtureKind:
     String,
     Codable,
@@ -956,6 +1232,248 @@ struct ChromeMV3ContentScriptSyntheticHTMLFixture:
     }
 }
 
+struct ChromeMV3ContentScriptMarkerFixtureFacts:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var markerToken: String
+    var markerAttributeName: String
+    var markerTokenAttributeName: String
+    var deterministic: Bool
+    var runtimeMessaging: Bool
+    var serviceWorkerWake: Bool
+    var externalResources: Bool
+    var nativeMessaging: Bool
+    var dynamicCodeExecution: Bool
+    var pageVisibleDOMMarkerExpected: Bool
+    var pageVisibleDOMMarkerBasis: [String]
+
+    static let inertMarker =
+        ChromeMV3ContentScriptMarkerFixtureFacts(
+            markerToken:
+                ChromeMV3ContentScriptSmokeFixturePolicy.markerToken,
+            markerAttributeName:
+                "data-sumi-mv3-content-script-smoke",
+            markerTokenAttributeName:
+                "data-sumi-mv3-content-script-smoke-marker",
+            deterministic: true,
+            runtimeMessaging: false,
+            serviceWorkerWake: false,
+            externalResources: false,
+            nativeMessaging: false,
+            dynamicCodeExecution: false,
+            pageVisibleDOMMarkerExpected: true,
+            pageVisibleDOMMarkerBasis: [
+                "The marker writes only static DOM attributes on document.documentElement.",
+                "Chrome documentation states content scripts can read and modify the DOM and isolated worlds share page DOM access.",
+                "Local WebKit headers state DOM changes are visible to script in all content worlds.",
+            ]
+        )
+}
+
+enum ChromeMV3ContentScriptFrameMarkerObservationState:
+    String,
+    Codable,
+    CaseIterable,
+    Sendable
+{
+    case observed
+    case notObserved
+    case unverified
+    case blocked
+}
+
+struct ChromeMV3ContentScriptFrameMarkerObservation:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var frameID: String
+    var kind: ChromeMV3ContentScriptFrameKind
+    var expectedEligibility: ChromeMV3ContentScriptFrameExpectation
+    var observedMarker: ChromeMV3ContentScriptFrameMarkerObservationState
+    var markerAttributeValue: String?
+    var markerTokenValue: String?
+    var reason: String
+    var observationStrategy: ChromeMV3ContentScriptObservationStrategy
+    var webKitUncertaintyNotes: [String]
+}
+
+struct ChromeMV3ContentScriptTestDOMInspectionSummary:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var attempted: Bool
+    var navigationCompletionState: String
+    var javaScriptEvaluationCompleted: Bool
+    var readOnlyDOMInspection: Bool
+    var persistentScriptRegistered: Bool
+    var scriptMessageHandlerRegistered: Bool
+    var jsBridgeUsed: Bool
+    var scheduledClockOrRepeatedChecksUsed: Bool
+    var inspectedFrameIDs: [String]
+    var diagnostics: [String]
+
+    static let notAttempted =
+        ChromeMV3ContentScriptTestDOMInspectionSummary(
+            attempted: false,
+            navigationCompletionState: "notAttempted",
+            javaScriptEvaluationCompleted: false,
+            readOnlyDOMInspection: true,
+            persistentScriptRegistered: false,
+            scriptMessageHandlerRegistered: false,
+            jsBridgeUsed: false,
+            scheduledClockOrRepeatedChecksUsed: false,
+            inspectedFrameIDs: [],
+            diagnostics: []
+        )
+}
+
+struct ChromeMV3ContentScriptTestDOMFrameSnapshot:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var frameID: String
+    var accessible: Bool
+    var markerObserved: Bool
+    var markerAttributeValue: String?
+    var markerTokenValue: String?
+    var reason: String?
+}
+
+enum ChromeMV3ContentScriptSmokeNextRecommendedAction:
+    String,
+    Codable,
+    CaseIterable,
+    Sendable
+{
+    case proceedToActionPopupHost
+    case broadenContentScriptFixtureMatrix
+    case blockedUntilSafeObservationAvailable
+}
+
+enum ChromeMV3ContentScriptFrameObservationModel {
+    static func blockedOrUnverifiedRecords(
+        matrix: ChromeMV3ContentScriptFrameMatrixResult,
+        strategy: ChromeMV3ContentScriptObservationStrategy,
+        eligibleState:
+            ChromeMV3ContentScriptFrameMarkerObservationState = .unverified,
+        reason: String
+    ) -> [ChromeMV3ContentScriptFrameMarkerObservation] {
+        matrix.allDecisions.map { decision in
+            let state: ChromeMV3ContentScriptFrameMarkerObservationState
+            let recordReason: String
+            switch decision.expected {
+            case .eligible:
+                state = eligibleState
+                recordReason = reason
+            case .blocked:
+                state = .blocked
+                recordReason = decision.reason
+            case .unsupportedNeedsVerification:
+                state = .unverified
+                recordReason = decision.reason
+            }
+            return ChromeMV3ContentScriptFrameMarkerObservation(
+                frameID: decision.frameID,
+                kind: decision.kind,
+                expectedEligibility: decision.expected,
+                observedMarker: state,
+                markerAttributeValue: nil,
+                markerTokenValue: nil,
+                reason: recordReason,
+                observationStrategy: strategy,
+                webKitUncertaintyNotes:
+                    notes(
+                        decision: decision,
+                        state: state
+                    )
+            )
+        }.sorted { $0.frameID < $1.frameID }
+    }
+
+    static func records(
+        matrix: ChromeMV3ContentScriptFrameMatrixResult,
+        strategy: ChromeMV3ContentScriptObservationStrategy,
+        snapshots:
+            [String: ChromeMV3ContentScriptTestDOMFrameSnapshot]
+    ) -> [ChromeMV3ContentScriptFrameMarkerObservation] {
+        matrix.allDecisions.map { decision in
+            let snapshot = snapshots[decision.frameID]
+            let state: ChromeMV3ContentScriptFrameMarkerObservationState
+            let reason: String
+            switch decision.expected {
+            case .eligible:
+                if snapshot?.markerObserved == true {
+                    state = .observed
+                    reason = "The inert marker DOM attributes were observed in the expected eligible frame."
+                } else if snapshot?.accessible == true {
+                    state = .notObserved
+                    reason = "The eligible frame was DOM-accessible, but the inert marker attributes were absent."
+                } else {
+                    state = .unverified
+                    reason =
+                        snapshot?.reason
+                            ?? "No DOM snapshot was available for this eligible frame."
+                }
+            case .blocked:
+                state = .blocked
+                reason = decision.reason
+            case .unsupportedNeedsVerification:
+                state = .unverified
+                reason = decision.reason
+            }
+
+            return ChromeMV3ContentScriptFrameMarkerObservation(
+                frameID: decision.frameID,
+                kind: decision.kind,
+                expectedEligibility: decision.expected,
+                observedMarker: state,
+                markerAttributeValue: snapshot?.markerAttributeValue,
+                markerTokenValue: snapshot?.markerTokenValue,
+                reason: reason,
+                observationStrategy: strategy,
+                webKitUncertaintyNotes:
+                    notes(
+                        decision: decision,
+                        state: state
+                    )
+            )
+        }.sorted { $0.frameID < $1.frameID }
+    }
+
+    private static func notes(
+        decision: ChromeMV3ContentScriptFrameDecision,
+        state: ChromeMV3ContentScriptFrameMarkerObservationState
+    ) -> [String] {
+        var notes: [String] = []
+        if decision.world == "ISOLATED" {
+            notes.append(
+                "The content script is modeled as isolated-world; DOM markers should still be page-visible, but JavaScript globals are not used for observation."
+            )
+        }
+        if decision.kind == .sameOriginIframe {
+            notes.append(
+                "The no-network synthetic fixture uses embedded frame HTML; direct same-origin URL matching remains matrix-modeled."
+            )
+        }
+        if decision.kind == .dataIframe || decision.kind == .blobIframe {
+            notes.append(
+                "Opaque-origin related-frame behavior remains WebKit-verified only."
+            )
+        }
+        if state == .notObserved {
+            notes.append(
+                "This is a test DOM inspection result, not a claim about Chrome parity or product runtime support."
+            )
+        }
+        return uniqueSorted(notes)
+    }
+}
+
 enum ChromeMV3ContentScriptSmokeGateBlocker:
     String,
     Codable,
@@ -1045,6 +1563,7 @@ struct ChromeMV3ContentScriptSmokeGateInput:
     var explicitInternalContentScriptSmokeAllowed: Bool
     var explicitSyntheticWebViewCreationAllowed: Bool
     var explicitSyntheticNavigationAllowed: Bool
+    var explicitTestDOMInspectionAllowed: Bool
     var acceptedWebExtensionObjectAvailable: Bool
     var detachedContextAvailable: Bool
     var loadedContextAvailable: Bool
@@ -1318,7 +1837,11 @@ struct ChromeMV3ContentScriptSmokeObservationResult:
     var state: ChromeMV3ContentScriptSmokeObservationState
     var webKitOwnedContentScriptObserved: String
     var observedFrames: [String]
+    var observationStrategy: ChromeMV3ContentScriptObservationStrategy
     var observationMethod: String
+    var frameResults: [ChromeMV3ContentScriptFrameMarkerObservation]
+    var testDOMInspection:
+        ChromeMV3ContentScriptTestDOMInspectionSummary
     var blockedReasons: [String]
     var unverifiedWebKitInternalSideEffects: [String]
 }
@@ -1338,6 +1861,9 @@ struct ChromeMV3ContentScriptSmokeReportSummary:
     var expectedBlockedFrameIDs: [String]
     var unsupportedFrameIDs: [String]
     var observationState: ChromeMV3ContentScriptSmokeObservationState
+    var observationStrategy: ChromeMV3ContentScriptObservationStrategy
+    var nextRecommendedAction:
+        ChromeMV3ContentScriptSmokeNextRecommendedAction
     var runtimeLoadable: Bool
     var chromeRuntimeAvailableNow: Bool
     var jsBridgeAvailableNow: Bool
@@ -1367,8 +1893,15 @@ struct ChromeMV3ContentScriptSmokeReport:
     var gateDecision: ChromeMV3ContentScriptSmokeGateDecision
     var syntheticWebViewResult:
         ChromeMV3ContentScriptSmokeSyntheticWebViewResult
+    var observationStrategyClassifications:
+        [ChromeMV3ContentScriptObservationStrategyClassification]
+    var markerFixtureFacts: ChromeMV3ContentScriptMarkerFixtureFacts
+    var frameObservationResults:
+        [ChromeMV3ContentScriptFrameMarkerObservation]
     var observationResult:
         ChromeMV3ContentScriptSmokeObservationResult
+    var nextRecommendedAction:
+        ChromeMV3ContentScriptSmokeNextRecommendedAction
     var sideEffectCounters:
         ChromeMV3ContentScriptSmokeRuntimeCounters
     var webKitUncertaintyNotes: [String]
@@ -1386,9 +1919,7 @@ struct ChromeMV3ContentScriptSmokeReport:
             reportID: id,
             reportFileName: reportFileName,
             scenarioID: scenario.scenarioID,
-            outcome: observationResult.state == .observed
-                ? .passed
-                : (gateDecision.canRunContentScriptSmokeNow ? .unverified : .blocked),
+            outcome: summaryOutcome,
             fixtureKind: fixturePolicyResult.fixtureKind,
             contentScriptCount:
                 contentScriptManifestSummary.contentScriptCount,
@@ -1400,11 +1931,29 @@ struct ChromeMV3ContentScriptSmokeReport:
                 frameMatrixResult.unsupportedOrNeedsVerificationFrames
                 .map(\.frameID),
             observationState: observationResult.state,
+            observationStrategy: observationResult.observationStrategy,
+            nextRecommendedAction: nextRecommendedAction,
             runtimeLoadable: false,
             chromeRuntimeAvailableNow: false,
             jsBridgeAvailableNow: false,
             productRuntimeExposed: false
         )
+    }
+
+    private var summaryOutcome: ChromeMV3ContentScriptSmokeOutcome {
+        if gateDecision.canRunContentScriptSmokeNow == false {
+            return .blocked
+        }
+        switch observationResult.state {
+        case .observed:
+            return .passed
+        case .blocked, .notRequested:
+            return .blocked
+        case .unverified:
+            return .unverified
+        case .notObserved:
+            return .failed
+        }
     }
 }
 
@@ -1445,7 +1994,11 @@ enum ChromeMV3ContentScriptSmokeReportGenerator {
         syntheticWebViewResult:
             ChromeMV3ContentScriptSmokeSyntheticWebViewResult,
         observationResult:
-            ChromeMV3ContentScriptSmokeObservationResult
+            ChromeMV3ContentScriptSmokeObservationResult,
+        observationStrategyClassifications:
+            [ChromeMV3ContentScriptObservationStrategyClassification] = [],
+        markerFixtureFacts: ChromeMV3ContentScriptMarkerFixtureFacts =
+            .inertMarker
     ) -> ChromeMV3ContentScriptSmokeReport {
         let input = gateDecision.input
         let loadDiagnostics = input.controllerLoadOwnerDiagnostics
@@ -1457,11 +2010,47 @@ enum ChromeMV3ContentScriptSmokeReportGenerator {
             outcome = .blocked
         } else if observationResult.state == .observed {
             outcome = .passed
+        } else if observationResult.state == .blocked {
+            outcome = .blocked
         } else if observationResult.state == .unverified {
             outcome = .unverified
         } else {
             outcome = .failed
         }
+        let frameObservationResults = observationResult.frameResults
+            .isEmpty
+            ? ChromeMV3ContentScriptFrameObservationModel
+                .blockedOrUnverifiedRecords(
+                    matrix: frameMatrixResult,
+                    strategy: observationResult.observationStrategy,
+                    reason:
+                        "No frame-specific marker observation record was supplied."
+                )
+            : observationResult.frameResults
+        let nextAction = nextRecommendedAction(
+            outcome: outcome,
+            frameMatrixResult: frameMatrixResult,
+            frameObservationResults: frameObservationResults
+        )
+        let classifications =
+            observationStrategyClassifications.isEmpty
+                ? ChromeMV3ContentScriptObservationStrategyClassifier
+                    .classifyAll(
+                        scope:
+                            ChromeMV3ContentScriptObservationStrategyScope
+                            .contentScriptSmoke(
+                                explicitTestDOMInspectionAllowed:
+                                    input.explicitTestDOMInspectionAllowed,
+                                sameControllerSyntheticConfiguration:
+                                    syntheticWebViewResult
+                                    .syntheticConfigurationUsesSameController,
+                                syntheticNavigationAllowed:
+                                    syntheticWebViewResult
+                                    .syntheticNavigationAttempted,
+                                productNormalTabAttachmentCount: 0
+                            )
+                    )
+                : observationStrategyClassifications
 
         let unsupported = frameMatrixResult
             .unsupportedOrNeedsVerificationFrames
@@ -1506,7 +2095,12 @@ enum ChromeMV3ContentScriptSmokeReportGenerator {
                 ),
             gateDecision: gateDecision,
             syntheticWebViewResult: syntheticWebViewResult,
+            observationStrategyClassifications:
+                classifications,
+            markerFixtureFacts: markerFixtureFacts,
+            frameObservationResults: frameObservationResults,
             observationResult: observationResult,
+            nextRecommendedAction: nextAction,
             sideEffectCounters:
                 .zero(
                     syntheticConfigurationAttached:
@@ -1571,7 +2165,11 @@ enum ChromeMV3ContentScriptSmokeReportGenerator {
 
     static func observationResult(
         state: ChromeMV3ContentScriptSmokeObservationState,
+        strategy: ChromeMV3ContentScriptObservationStrategy = .none,
         observedFrames: [String] = [],
+        frameResults: [ChromeMV3ContentScriptFrameMarkerObservation] = [],
+        testDOMInspection:
+            ChromeMV3ContentScriptTestDOMInspectionSummary = .notAttempted,
         blockedReasons: [String],
         unverifiedNotes: [String]
     ) -> ChromeMV3ContentScriptSmokeObservationResult {
@@ -1588,12 +2186,36 @@ enum ChromeMV3ContentScriptSmokeReportGenerator {
             state: state,
             webKitOwnedContentScriptObserved: observedString,
             observedFrames: uniqueSorted(observedFrames),
+            observationStrategy: strategy,
             observationMethod:
-                "No Sumi WK user script, add-user-script call, script handler, JS bridge, runtime message dispatch, port, native host launch, product tab, or product UI is used.",
+                observationMethod(strategy: strategy),
+            frameResults: frameResults,
+            testDOMInspection: testDOMInspection,
             blockedReasons: uniqueSorted(blockedReasons),
             unverifiedWebKitInternalSideEffects:
                 uniqueSorted(unverifiedNotes)
         )
+    }
+
+    private static func observationMethod(
+        strategy: ChromeMV3ContentScriptObservationStrategy
+    ) -> String {
+        switch strategy {
+        case .testDOMInspection:
+            return "testDOMInspection: one-shot page-world DOM read after synthetic navigation; no Sumi-owned persistent script, script handler, JS bridge, runtime message dispatch, port, native host launch, product tab, or product UI is used."
+        case .none:
+            return "No page-state observation is performed; no Sumi-owned persistent script, script handler, JS bridge, runtime message dispatch, port, native host launch, product tab, or product UI is used."
+        case .webKitSupportedInspection:
+            return "WebKitSupportedInspection is reserved for a future public WebKit marker-inspection surface."
+        case .blockedRequiresSumiInjection:
+            return "Rejected Sumi-owned injection strategy."
+        case .blockedRequiresScriptMessageHandler:
+            return "Rejected script-message handler strategy."
+        case .blockedRequiresJSBridge:
+            return "Rejected Sumi JavaScript bridge strategy."
+        case .unsupportedByCurrentSDK:
+            return "No public SDK marker-inspection surface is available."
+        }
     }
 
     private static func reportID(
@@ -1613,6 +2235,30 @@ enum ChromeMV3ContentScriptSmokeReportGenerator {
         ].joined(separator: "|")
         let digest = SHA256.hash(data: Data(input.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func nextRecommendedAction(
+        outcome: ChromeMV3ContentScriptSmokeOutcome,
+        frameMatrixResult: ChromeMV3ContentScriptFrameMatrixResult,
+        frameObservationResults:
+            [ChromeMV3ContentScriptFrameMarkerObservation]
+    ) -> ChromeMV3ContentScriptSmokeNextRecommendedAction {
+        guard outcome == .passed else {
+            return .blockedUntilSafeObservationAvailable
+        }
+        let eligibleIDs = Set(
+            frameMatrixResult.expectedEligibleFrames.map(\.frameID)
+        )
+        let observedIDs = Set(
+            frameObservationResults
+                .filter { $0.observedMarker == .observed }
+                .map(\.frameID)
+        )
+        if eligibleIDs.isSubset(of: observedIDs),
+           frameMatrixResult.unsupportedOrNeedsVerificationFrames.isEmpty {
+            return .proceedToActionPopupHost
+        }
+        return .broadenContentScriptFixtureMatrix
     }
 
     private static func webKitUncertaintyNotes(
@@ -1663,6 +2309,12 @@ enum ChromeMV3ContentScriptSmokeReportGenerator {
             ),
             source(
                 kind: "appleDeveloperDocumentation",
+                title: "WKWebView.evaluateJavaScript",
+                url: "https://developer.apple.com/documentation/webkit/wkwebview/evaluatejavascript%28_%3Acompletionhandler%3A%29",
+                note: "Used only to classify the DEBUG/internal one-shot testDOMInspection DOM read; it is not persistent script registration or bridge communication."
+            ),
+            source(
+                kind: "appleDeveloperDocumentation",
                 title: "WKWebExtensionController",
                 url: "https://developer.apple.com/documentation/webkit/wkwebextensioncontroller",
                 note: "A controller manages loaded extension contexts."
@@ -1700,6 +2352,378 @@ enum ChromeMV3ContentScriptSmokeReportGenerator {
 #if DEBUG
 import WebKit
 
+enum ChromeMV3ContentScriptSmokeNavigationCompletionState:
+    String,
+    Codable,
+    CaseIterable,
+    Sendable
+{
+    case notStarted
+    case finished
+    case failed
+}
+
+struct ChromeMV3ContentScriptSmokeNavigationCompletion:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var state: ChromeMV3ContentScriptSmokeNavigationCompletionState
+    var errorDescription: String?
+
+    static let notStarted =
+        ChromeMV3ContentScriptSmokeNavigationCompletion(
+            state: .notStarted,
+            errorDescription: nil
+        )
+}
+
+@MainActor
+private final class ChromeMV3ContentScriptSmokeNavigationObserver:
+    NSObject,
+    WKNavigationDelegate
+{
+    private var completion:
+        ChromeMV3ContentScriptSmokeNavigationCompletion?
+    private var continuation:
+        CheckedContinuation<
+            ChromeMV3ContentScriptSmokeNavigationCompletion,
+            Never
+        >?
+
+    func waitForCompletion(
+        navigation: WKNavigation?
+    ) async -> ChromeMV3ContentScriptSmokeNavigationCompletion {
+        guard navigation != nil else {
+            return .notStarted
+        }
+        if let completion {
+            return completion
+        }
+        return await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFinish navigation: WKNavigation!
+    ) {
+        _ = webView
+        finish(
+            ChromeMV3ContentScriptSmokeNavigationCompletion(
+                state: .finished,
+                errorDescription: nil
+            )
+        )
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFail navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        _ = webView
+        _ = navigation
+        finish(
+            ChromeMV3ContentScriptSmokeNavigationCompletion(
+                state: .failed,
+                errorDescription: error.localizedDescription
+            )
+        )
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        _ = webView
+        _ = navigation
+        finish(
+            ChromeMV3ContentScriptSmokeNavigationCompletion(
+                state: .failed,
+                errorDescription: error.localizedDescription
+            )
+        )
+    }
+
+    private func finish(
+        _ completion:
+            ChromeMV3ContentScriptSmokeNavigationCompletion
+    ) {
+        guard self.completion == nil else { return }
+        self.completion = completion
+        continuation?.resume(returning: completion)
+        continuation = nil
+    }
+}
+
+@available(macOS 15.5, *)
+@MainActor
+private enum ChromeMV3ContentScriptTestDOMInspection {
+    static func inspect(
+        webView: WKWebView,
+        navigationCompletion:
+            ChromeMV3ContentScriptSmokeNavigationCompletion,
+        matrix: ChromeMV3ContentScriptFrameMatrixResult
+    ) async -> (
+        result: ChromeMV3ContentScriptSmokeObservationResult,
+        snapshots: [String: ChromeMV3ContentScriptTestDOMFrameSnapshot]
+    ) {
+        guard navigationCompletion.state == .finished else {
+            let records =
+                ChromeMV3ContentScriptFrameObservationModel
+                .blockedOrUnverifiedRecords(
+                    matrix: matrix,
+                    strategy: .testDOMInspection,
+                    eligibleState: .unverified,
+                    reason:
+                        "Synthetic navigation did not finish before test DOM inspection."
+                )
+            let summary = ChromeMV3ContentScriptTestDOMInspectionSummary(
+                attempted: true,
+                navigationCompletionState:
+                    navigationCompletion.state.rawValue,
+                javaScriptEvaluationCompleted: false,
+                readOnlyDOMInspection: true,
+                persistentScriptRegistered: false,
+                scriptMessageHandlerRegistered: false,
+                jsBridgeUsed: false,
+                scheduledClockOrRepeatedChecksUsed: false,
+                inspectedFrameIDs: [],
+                diagnostics:
+                    uniqueSorted(
+                        [
+                            navigationCompletion.errorDescription,
+                            "Navigation completion is required before DOM marker inspection.",
+                        ].compactMap { $0 }
+                    )
+            )
+            return (
+                ChromeMV3ContentScriptSmokeReportGenerator
+                    .observationResult(
+                        state: .unverified,
+                        strategy: .testDOMInspection,
+                        frameResults: records,
+                        testDOMInspection: summary,
+                        blockedReasons: [],
+                        unverifiedNotes: summary.diagnostics
+                    ),
+                [:]
+            )
+        }
+
+        do {
+            let json = try await evaluateMarkerReadScript(in: webView)
+            let snapshots = decodeSnapshots(json)
+            let records = ChromeMV3ContentScriptFrameObservationModel
+                .records(
+                    matrix: matrix,
+                    strategy: .testDOMInspection,
+                    snapshots: snapshots
+                )
+            let observedFrames = records
+                .filter { $0.observedMarker == .observed }
+                .map(\.frameID)
+            let eligibleRecords = records.filter {
+                $0.expectedEligibility == .eligible
+            }
+            let allEligibleObserved = eligibleRecords.isEmpty == false
+                && eligibleRecords.allSatisfy {
+                    $0.observedMarker == .observed
+                }
+            let anyEligibleMissing = eligibleRecords.contains {
+                $0.observedMarker == .notObserved
+            }
+            let state: ChromeMV3ContentScriptSmokeObservationState
+            if allEligibleObserved {
+                state = .observed
+            } else if anyEligibleMissing {
+                state = .notObserved
+            } else {
+                state = .unverified
+            }
+            let summary = ChromeMV3ContentScriptTestDOMInspectionSummary(
+                attempted: true,
+                navigationCompletionState:
+                    navigationCompletion.state.rawValue,
+                javaScriptEvaluationCompleted: true,
+                readOnlyDOMInspection: true,
+                persistentScriptRegistered: false,
+                scriptMessageHandlerRegistered: false,
+                jsBridgeUsed: false,
+                scheduledClockOrRepeatedChecksUsed: false,
+                inspectedFrameIDs: uniqueSorted(Array(snapshots.keys)),
+                diagnostics: []
+            )
+            return (
+                ChromeMV3ContentScriptSmokeReportGenerator
+                    .observationResult(
+                        state: state,
+                        strategy: .testDOMInspection,
+                        observedFrames: observedFrames,
+                        frameResults: records,
+                        testDOMInspection: summary,
+                        blockedReasons: [],
+                        unverifiedNotes:
+                            state == .observed
+                                ? [
+                                    "WebKit-owned content-script marker DOM attributes were observed by testDOMInspection.",
+                                ]
+                                : [
+                                    "testDOMInspection completed without forbidden Sumi runtime paths, but not every eligible marker was observed.",
+                                ]
+                    ),
+                snapshots
+            )
+        } catch {
+            let records =
+                ChromeMV3ContentScriptFrameObservationModel
+                .blockedOrUnverifiedRecords(
+                    matrix: matrix,
+                    strategy: .testDOMInspection,
+                    eligibleState: .unverified,
+                    reason:
+                        "One-shot DOM inspection failed: \(error.localizedDescription)"
+                )
+            let summary = ChromeMV3ContentScriptTestDOMInspectionSummary(
+                attempted: true,
+                navigationCompletionState:
+                    navigationCompletion.state.rawValue,
+                javaScriptEvaluationCompleted: false,
+                readOnlyDOMInspection: true,
+                persistentScriptRegistered: false,
+                scriptMessageHandlerRegistered: false,
+                jsBridgeUsed: false,
+                scheduledClockOrRepeatedChecksUsed: false,
+                inspectedFrameIDs: [],
+                diagnostics: [error.localizedDescription]
+            )
+            return (
+                ChromeMV3ContentScriptSmokeReportGenerator
+                    .observationResult(
+                        state: .unverified,
+                        strategy: .testDOMInspection,
+                        frameResults: records,
+                        testDOMInspection: summary,
+                        blockedReasons: [],
+                        unverifiedNotes: summary.diagnostics
+                    ),
+                [:]
+            )
+        }
+    }
+
+    private static func evaluateMarkerReadScript(
+        in webView: WKWebView
+    ) async throws -> String {
+        let script = """
+        (() => {
+          const marker = "sumiChromeMV3ContentScriptSmokeMarker";
+          const readRoot = (root) => {
+            if (!root) {
+              return {
+                accessible: false,
+                markerObserved: false,
+                markerAttributeValue: null,
+                markerTokenValue: null,
+                reason: "missing-document-root"
+              };
+            }
+            const markerAttributeValue = root.getAttribute("data-sumi-mv3-content-script-smoke") || "";
+            const markerTokenValue = root.getAttribute("data-sumi-mv3-content-script-smoke-marker") || "";
+            return {
+              accessible: true,
+              markerObserved: markerAttributeValue.length > 0 && markerTokenValue === marker,
+              markerAttributeValue,
+              markerTokenValue,
+              reason: null
+            };
+          };
+          const readFrame = (id) => {
+            const frame = document.getElementById(id);
+            if (!frame) {
+              return {
+                accessible: false,
+                markerObserved: false,
+                markerAttributeValue: null,
+                markerTokenValue: null,
+                reason: "missing-frame-element"
+              };
+            }
+            try {
+              return readRoot(frame.contentDocument && frame.contentDocument.documentElement);
+            } catch (error) {
+              return {
+                accessible: false,
+                markerObserved: false,
+                markerAttributeValue: null,
+                markerTokenValue: null,
+                reason: "frame-dom-inaccessible:" + error.name
+              };
+            }
+          };
+          return JSON.stringify({
+            "top": readRoot(document.documentElement),
+            "same-origin": readFrame("same-origin-frame"),
+            "about-blank": readFrame("about-blank-frame"),
+            "data": readFrame("data-frame")
+          });
+        })();
+        """
+        return try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<String, Error>) in
+            webView.evaluateJavaScript(script) { result, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if let string = result as? String {
+                    continuation.resume(returning: string)
+                } else {
+                    continuation.resume(
+                        throwing:
+                            NSError(
+                                domain:
+                                    "Sumi.ChromeMV3ContentScriptTestDOMInspection",
+                                code: 1,
+                                userInfo: [
+                                    NSLocalizedDescriptionKey:
+                                        "DOM inspection did not return a JSON string.",
+                                ]
+                            )
+                    )
+                }
+            }
+        }
+    }
+
+    private static func decodeSnapshots(
+        _ json: String
+    ) -> [String: ChromeMV3ContentScriptTestDOMFrameSnapshot] {
+        guard let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data)
+                as? [String: [String: Any]]
+        else {
+            return [:]
+        }
+
+        return object.reduce(into: [:]) { result, entry in
+            let value = entry.value
+            result[entry.key] =
+                ChromeMV3ContentScriptTestDOMFrameSnapshot(
+                    frameID: entry.key,
+                    accessible: boolValue(value["accessible"]) ?? false,
+                    markerObserved:
+                        boolValue(value["markerObserved"]) ?? false,
+                    markerAttributeValue:
+                        stringValue(value["markerAttributeValue"]),
+                    markerTokenValue: stringValue(value["markerTokenValue"]),
+                    reason: stringValue(value["reason"])
+                )
+        }
+    }
+}
+
 @available(macOS 15.5, *)
 enum ChromeMV3ContentScriptSmokeHarness {
     @MainActor
@@ -1711,6 +2735,7 @@ enum ChromeMV3ContentScriptSmokeHarness {
         explicitInternalContentScriptSmokeAllowed: Bool,
         explicitSyntheticWebViewCreationAllowed: Bool,
         explicitSyntheticNavigationAllowed: Bool = false,
+        explicitTestDOMInspectionAllowed: Bool = false,
         objectAcceptanceReport:
             ChromeMV3WebKitObjectAcceptanceReport?,
         runtimeBridgeReadinessReport:
@@ -1771,6 +2796,8 @@ enum ChromeMV3ContentScriptSmokeHarness {
                 explicitSyntheticWebViewCreationAllowed,
             explicitSyntheticNavigationAllowed:
                 explicitSyntheticNavigationAllowed,
+            explicitTestDOMInspectionAllowed:
+                explicitTestDOMInspectionAllowed,
             acceptedWebExtensionObjectAvailable: accepted,
             detachedContextAvailable: detachedAvailable,
             loadedContextAvailable:
@@ -1893,22 +2920,84 @@ enum ChromeMV3ContentScriptSmokeHarness {
                 warnings: webViewWarnings
             )
 
+        let observationScope =
+            ChromeMV3ContentScriptObservationStrategyScope
+            .contentScriptSmoke(
+                explicitTestDOMInspectionAllowed:
+                    explicitTestDOMInspectionAllowed,
+                sameControllerSyntheticConfiguration:
+                    syntheticConfigurationUsesSameController,
+                syntheticNavigationAllowed: syntheticNavigationAttempted,
+                productNormalTabAttachmentCount:
+                    liveNormalTabAttachmentSnapshot?
+                    .attachedConfigurationCount ?? 0
+            )
+        let observationStrategies =
+            ChromeMV3ContentScriptObservationStrategyClassifier
+            .classifyAll(scope: observationScope)
+        let testDOMInspectionClassification = observationStrategies
+            .first { $0.strategy == .testDOMInspection }
+        let frameObservationReason =
+            testDOMInspectionClassification?.reason
+                ?? "No test DOM inspection strategy classification was available."
         let observation: ChromeMV3ContentScriptSmokeObservationResult
         if gateDecision.canRunContentScriptSmokeNow == false {
+            let records =
+                ChromeMV3ContentScriptFrameObservationModel
+                .blockedOrUnverifiedRecords(
+                    matrix: frameMatrix,
+                    strategy: .none,
+                    eligibleState: .blocked,
+                    reason:
+                        "No WebKit-owned content-script observation is attempted while the smoke gate is blocked."
+                )
             observation =
                 ChromeMV3ContentScriptSmokeReportGenerator
                 .observationResult(
                     state: .blocked,
+                    strategy: .none,
+                    frameResults: records,
                     blockedReasons: gateDecision.blockingReasons,
                     unverifiedNotes: [
                         "No WebKit-owned content-script observation is attempted while the smoke gate is blocked.",
                     ]
                 )
+        } else if testDOMInspectionClassification?
+            .allowedInThisPrompt != true {
+            let records =
+                ChromeMV3ContentScriptFrameObservationModel
+                .blockedOrUnverifiedRecords(
+                    matrix: frameMatrix,
+                    strategy: .testDOMInspection,
+                    eligibleState: .blocked,
+                    reason: frameObservationReason
+                )
+            observation =
+                ChromeMV3ContentScriptSmokeReportGenerator
+                .observationResult(
+                    state: .blocked,
+                    strategy: .testDOMInspection,
+                    frameResults: records,
+                    blockedReasons: [frameObservationReason],
+                    unverifiedNotes: [
+                        "testDOMInspection is the only currently allowed observation strategy, and it is blocked by scope or explicit flag.",
+                    ]
+                )
         } else {
+            let records =
+                ChromeMV3ContentScriptFrameObservationModel
+                .blockedOrUnverifiedRecords(
+                    matrix: frameMatrix,
+                    strategy: .testDOMInspection,
+                    reason:
+                        "Use the async content-script smoke path to wait for navigation completion and perform testDOMInspection."
+                )
             observation =
                 ChromeMV3ContentScriptSmokeReportGenerator
                 .observationResult(
                     state: .unverified,
+                    strategy: .testDOMInspection,
+                    frameResults: records,
                     blockedReasons:
                         syntheticNavigationAttempted
                             ? []
@@ -1937,7 +3026,330 @@ enum ChromeMV3ContentScriptSmokeHarness {
             frameMatrixResult: frameMatrix,
             syntheticHTMLFixture: htmlFixture,
             syntheticWebViewResult: webViewResult,
-            observationResult: observation
+            observationResult: observation,
+            observationStrategyClassifications:
+                observationStrategies
+        )
+    }
+
+    @MainActor
+    static func runWithTestDOMInspection(
+        scenarioID: String = "runtime-content-script-smoke",
+        fixtureID: String? = nil,
+        candidate: ChromeMV3RewrittenVariantCandidate,
+        extensionsModuleEnabled: Bool,
+        explicitInternalContentScriptSmokeAllowed: Bool,
+        explicitSyntheticWebViewCreationAllowed: Bool,
+        explicitSyntheticNavigationAllowed: Bool,
+        explicitTestDOMInspectionAllowed: Bool,
+        objectAcceptanceReport:
+            ChromeMV3WebKitObjectAcceptanceReport?,
+        runtimeBridgeReadinessReport:
+            ChromeMV3RuntimeBridgeReadinessReport?,
+        emptyControllerOwner:
+            ChromeMV3EmptyControllerOwner?,
+        detachedContextOwner:
+            ChromeMV3DetachedContextOwner?,
+        controllerLoadOwner:
+            ChromeMV3ControllerLoadOwner?,
+        liveNormalTabAttachmentSnapshot:
+            ChromeMV3LiveNormalTabAttachmentRecorderSnapshot? = nil,
+        tearDownLoadedContextAndControllerAfterRun: Bool = true
+    ) async -> ChromeMV3ContentScriptSmokeReport {
+        let rootPath = URL(
+            fileURLWithPath: candidate.rewrittenVariantRootPath,
+            isDirectory: true
+        ).standardizedFileURL.path
+        let loadDiagnostics = controllerLoadOwner?.diagnostics()
+        let controller = emptyControllerOwner?.controller
+        let context = detachedContextOwner?.detachedContext
+        let accepted =
+            objectAcceptanceReport?.objectAcceptedByWebKit == true
+        let detachedAvailable =
+            context != nil
+                || isSet(loadDiagnostics?.contextLoadedIntoController)
+        let sameController =
+            controller != nil
+                && context?.webExtensionController === controller
+                && isSet(loadDiagnostics?.contextLoadedIntoController)
+        let policy = ChromeMV3ContentScriptSmokeFixturePolicy.evaluate(
+            generatedRewrittenRootPath: rootPath,
+            acceptedWebExtensionObjectAvailable: accepted,
+            detachedContextCreated: detachedAvailable
+        )
+        let scenario = ChromeMV3ContentScriptSmokeScenario(
+            scenarioID: scenarioID,
+            fixtureID:
+                fixtureID
+                    ?? "content-script-smoke-fixture:\(candidate.id)",
+            extensionID:
+                objectAcceptanceReport?.generatedBundleID
+                    ?? candidate.id,
+            profileID:
+                loadDiagnostics?
+                .gateDecision
+                .input
+                .profileIdentifier
+                    ?? "unknown-profile"
+        )
+        let gateInput = ChromeMV3ContentScriptSmokeGateInput(
+            scenario: scenario,
+            generatedRewrittenRootPath: rootPath,
+            extensionsModuleEnabled: extensionsModuleEnabled,
+            explicitInternalContentScriptSmokeAllowed:
+                explicitInternalContentScriptSmokeAllowed,
+            explicitSyntheticWebViewCreationAllowed:
+                explicitSyntheticWebViewCreationAllowed,
+            explicitSyntheticNavigationAllowed:
+                explicitSyntheticNavigationAllowed,
+            explicitTestDOMInspectionAllowed:
+                explicitTestDOMInspectionAllowed,
+            acceptedWebExtensionObjectAvailable: accepted,
+            detachedContextAvailable: detachedAvailable,
+            loadedContextAvailable:
+                isSet(loadDiagnostics?.contextLoadedIntoController),
+            sameControllerAvailable: sameController,
+            contentScriptFixturePolicy: policy,
+            controllerLoadGateDecision: loadDiagnostics?.gateDecision,
+            controllerLoadOwnerDiagnostics: loadDiagnostics,
+            liveNormalTabAttachmentSnapshot:
+                liveNormalTabAttachmentSnapshot,
+            runtimeBridgeReadinessReport:
+                runtimeBridgeReadinessReport,
+            requestedProductRuntimeExposure: false,
+            requestedExtensionCodeExecution: false,
+            requestedUserScriptRegistration: false,
+            requestedNativeMessagingLaunch: false,
+            requestedServiceWorkerWake: false,
+            requestedRuntimeDispatch: false,
+            requestedProductUI: false
+        )
+        let gateDecision = ChromeMV3ContentScriptSmokeGate.evaluate(
+            input: gateInput
+        )
+        let frameMatrix = ChromeMV3ContentScriptFrameMatrix.evaluate(
+            scenarioID: scenarioID,
+            manifestSummary: policy.manifestSummary
+        )
+        let htmlFixture = ChromeMV3ContentScriptSyntheticHTMLFixture.generate(
+            matrix: frameMatrix
+        )
+
+        var syntheticConfiguration: WKWebViewConfiguration?
+        var syntheticWebView: WKWebView?
+        var syntheticConfigurationAttached = false
+        var syntheticConfigurationUsesSameController = false
+        var syntheticWebViewUsesSameController = false
+        var syntheticNavigationAttempted = false
+        var syntheticHTMLLoaded = false
+        var userScriptCount = 0
+        var webViewWarnings: [String] = []
+        var webViewBlockingReasons: [String] = []
+        var navigationObserver:
+            ChromeMV3ContentScriptSmokeNavigationObserver?
+        var navigation: WKNavigation?
+
+        if gateDecision.canCreateSyntheticConfigurationNow,
+           let controller {
+            syntheticConfiguration = WKWebViewConfiguration()
+            syntheticConfiguration?
+                .sumiIsNormalTabWebViewConfiguration = false
+            syntheticConfiguration?.webExtensionController = controller
+            syntheticConfigurationAttached =
+                syntheticConfiguration?.webExtensionController === controller
+            syntheticConfigurationUsesSameController =
+                syntheticConfigurationAttached && sameController
+            userScriptCount =
+                syntheticConfiguration?.userContentController
+                .userScripts
+                .count ?? 0
+        } else {
+            webViewBlockingReasons.append(
+                "Synthetic configuration was not created because the content-script smoke gate is blocked."
+            )
+        }
+
+        if gateDecision.canCreateSyntheticWebViewNow,
+           syntheticConfigurationAttached,
+           let syntheticConfiguration,
+           let controller {
+            syntheticWebView = WKWebView(
+                frame: .zero,
+                configuration: syntheticConfiguration
+            )
+            syntheticWebViewUsesSameController =
+                syntheticWebView?.configuration
+                .webExtensionController === controller
+            webViewWarnings.append(
+                "Hidden synthetic WKWebView was created without a user-visible window or product tab registration."
+            )
+        } else {
+            webViewBlockingReasons.append(
+                "Synthetic WKWebView creation is blocked unless all content-script smoke gates pass."
+            )
+        }
+
+        if gateDecision.canNavigateSyntheticWebViewNow,
+           let syntheticWebView,
+           let baseURL = URL(string: htmlFixture.topURLString) {
+            syntheticNavigationAttempted = true
+            navigationObserver =
+                ChromeMV3ContentScriptSmokeNavigationObserver()
+            syntheticWebView.navigationDelegate = navigationObserver
+            navigation = syntheticWebView.loadHTMLString(
+                htmlFixture.topHTML,
+                baseURL: baseURL
+            )
+            syntheticHTMLLoaded = navigation != nil
+            webViewWarnings.append(
+                "Synthetic HTML navigation was started only on the hidden synthetic WebView."
+            )
+        } else {
+            webViewBlockingReasons.append(
+                "Synthetic HTML navigation is blocked unless its explicit DEBUG/internal flag passes."
+            )
+        }
+
+        let webViewResult =
+            ChromeMV3ContentScriptSmokeReportGenerator
+            .syntheticWebViewResult(
+                syntheticConfigurationCreated:
+                    syntheticConfiguration != nil,
+                syntheticConfigurationAttached:
+                    syntheticConfigurationAttached,
+                syntheticConfigurationUsesSameController:
+                    syntheticConfigurationUsesSameController,
+                syntheticWebViewCreated: syntheticWebView != nil,
+                syntheticWebViewUsesSameController:
+                    syntheticWebViewUsesSameController,
+                syntheticNavigationAttempted:
+                    syntheticNavigationAttempted,
+                syntheticHTMLLoaded: syntheticHTMLLoaded,
+                userScriptCount: userScriptCount,
+                blockingReasons:
+                    gateDecision.blockingReasons
+                        + webViewBlockingReasons,
+                warnings: webViewWarnings
+            )
+
+        let observationScope =
+            ChromeMV3ContentScriptObservationStrategyScope
+            .contentScriptSmoke(
+                explicitTestDOMInspectionAllowed:
+                    explicitTestDOMInspectionAllowed,
+                sameControllerSyntheticConfiguration:
+                    syntheticConfigurationUsesSameController,
+                syntheticNavigationAllowed: syntheticNavigationAttempted,
+                productNormalTabAttachmentCount:
+                    liveNormalTabAttachmentSnapshot?
+                    .attachedConfigurationCount ?? 0
+            )
+        let observationStrategies =
+            ChromeMV3ContentScriptObservationStrategyClassifier
+            .classifyAll(scope: observationScope)
+        let testDOMInspectionClassification = observationStrategies
+            .first { $0.strategy == .testDOMInspection }
+        let observation: ChromeMV3ContentScriptSmokeObservationResult
+        if gateDecision.canRunContentScriptSmokeNow == false {
+            let records =
+                ChromeMV3ContentScriptFrameObservationModel
+                .blockedOrUnverifiedRecords(
+                    matrix: frameMatrix,
+                    strategy: .none,
+                    eligibleState: .blocked,
+                    reason:
+                        "No WebKit-owned content-script observation is attempted while the smoke gate is blocked."
+                )
+            observation =
+                ChromeMV3ContentScriptSmokeReportGenerator
+                .observationResult(
+                    state: .blocked,
+                    strategy: .none,
+                    frameResults: records,
+                    blockedReasons: gateDecision.blockingReasons,
+                    unverifiedNotes: [
+                        "No WebKit-owned content-script observation is attempted while the smoke gate is blocked.",
+                    ]
+                )
+        } else if testDOMInspectionClassification?
+            .allowedInThisPrompt != true {
+            let reason =
+                testDOMInspectionClassification?.reason
+                    ?? "testDOMInspection was not classified as allowed."
+            let records =
+                ChromeMV3ContentScriptFrameObservationModel
+                .blockedOrUnverifiedRecords(
+                    matrix: frameMatrix,
+                    strategy: .testDOMInspection,
+                    eligibleState: .blocked,
+                    reason: reason
+                )
+            observation =
+                ChromeMV3ContentScriptSmokeReportGenerator
+                .observationResult(
+                    state: .blocked,
+                    strategy: .testDOMInspection,
+                    frameResults: records,
+                    blockedReasons: [reason],
+                    unverifiedNotes: [
+                        "testDOMInspection is blocked by scope or explicit flag.",
+                    ]
+                )
+        } else if let syntheticWebView,
+                  let navigationObserver {
+            let navigationCompletion =
+                await navigationObserver.waitForCompletion(
+                    navigation: navigation
+                )
+            observation =
+                await ChromeMV3ContentScriptTestDOMInspection
+                .inspect(
+                    webView: syntheticWebView,
+                    navigationCompletion: navigationCompletion,
+                    matrix: frameMatrix
+                ).result
+        } else {
+            let records =
+                ChromeMV3ContentScriptFrameObservationModel
+                .blockedOrUnverifiedRecords(
+                    matrix: frameMatrix,
+                    strategy: .testDOMInspection,
+                    eligibleState: .unverified,
+                    reason:
+                        "Synthetic WebView or navigation observer was unavailable for testDOMInspection."
+                )
+            observation =
+                ChromeMV3ContentScriptSmokeReportGenerator
+                .observationResult(
+                    state: .unverified,
+                    strategy: .testDOMInspection,
+                    frameResults: records,
+                    blockedReasons: [],
+                    unverifiedNotes: [
+                        "Synthetic WebView or navigation observer was unavailable for testDOMInspection.",
+                    ]
+                )
+        }
+
+        syntheticWebView?.navigationDelegate = nil
+        syntheticWebView = nil
+        syntheticConfiguration?.webExtensionController = nil
+        syntheticConfiguration = nil
+
+        if tearDownLoadedContextAndControllerAfterRun {
+            _ = controllerLoadOwner?.tearDown()
+            _ = detachedContextOwner?.tearDown()
+            _ = emptyControllerOwner?.tearDown(trigger: .explicitReset)
+        }
+
+        return ChromeMV3ContentScriptSmokeReportGenerator.makeReport(
+            gateDecision: gateDecision,
+            frameMatrixResult: frameMatrix,
+            syntheticHTMLFixture: htmlFixture,
+            syntheticWebViewResult: webViewResult,
+            observationResult: observation,
+            observationStrategyClassifications:
+                observationStrategies
         )
     }
 }

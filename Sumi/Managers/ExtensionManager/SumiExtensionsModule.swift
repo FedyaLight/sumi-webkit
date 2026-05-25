@@ -1360,6 +1360,7 @@ final class SumiExtensionsModule {
             explicitInternalContentScriptSmokeAllowed: Bool,
             explicitSyntheticWebViewCreationAllowed: Bool = false,
             explicitSyntheticNavigationAllowed: Bool = false,
+            explicitTestDOMInspectionAllowed: Bool = false,
             candidate: ChromeMV3RewrittenVariantCandidate,
             objectAcceptanceReport:
                 ChromeMV3WebKitObjectAcceptanceReport? = nil,
@@ -1393,6 +1394,8 @@ final class SumiExtensionsModule {
                     explicitSyntheticWebViewCreationAllowed,
                 explicitSyntheticNavigationAllowed:
                     explicitSyntheticNavigationAllowed,
+                explicitTestDOMInspectionAllowed:
+                    explicitTestDOMInspectionAllowed,
                 objectAcceptanceReport:
                     resolvedObjectAcceptanceReport,
                 runtimeBridgeReadinessReport:
@@ -1408,6 +1411,92 @@ final class SumiExtensionsModule {
                 tearDownLoadedContextAndControllerAfterRun:
                     tearDownLoadedContextAndControllerAfterRun
             )
+            lastChromeMV3RuntimeContentScriptSmokeReport = report
+
+            if report.gateDecision.canRunContentScriptSmokeNow,
+               let minimalReport = lastChromeMV3RuntimeMinimalSmokeReport {
+                var linkedMinimalReport = minimalReport
+                linkedMinimalReport.contentScriptSmokeSummary = report.summary
+                lastChromeMV3RuntimeMinimalSmokeReport = linkedMinimalReport
+            }
+
+            if tearDownLoadedContextAndControllerAfterRun {
+                cachedChromeMV3ControllerLoadOwner = nil
+                cachedChromeMV3DetachedContextOwner = nil
+                cachedChromeMV3EmptyControllerOwner = nil
+            }
+
+            if writeReport {
+                let rootURL = URL(
+                    fileURLWithPath: candidate.rewrittenVariantRootPath,
+                    isDirectory: true
+                ).standardizedFileURL
+                _ = try? ChromeMV3ContentScriptSmokeReportWriter.write(
+                    report,
+                    toRewrittenBundleRoot: rootURL
+                )
+            }
+            return report
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3RuntimeContentScriptSmokeReportWithTestDOMInspectionIfEnabled(
+            explicitInternalContentScriptSmokeAllowed: Bool,
+            explicitSyntheticWebViewCreationAllowed: Bool,
+            explicitSyntheticNavigationAllowed: Bool,
+            explicitTestDOMInspectionAllowed: Bool,
+            candidate: ChromeMV3RewrittenVariantCandidate,
+            objectAcceptanceReport:
+                ChromeMV3WebKitObjectAcceptanceReport? = nil,
+            runtimeBridgeReadinessReport:
+                ChromeMV3RuntimeBridgeReadinessReport? = nil,
+            writeReport: Bool = false,
+            tearDownLoadedContextAndControllerAfterRun: Bool = true
+        ) async -> ChromeMV3ContentScriptSmokeReport? {
+            guard isEnabled else { return nil }
+
+            let resolvedObjectAcceptanceReport =
+                objectAcceptanceReport
+                    ?? lastChromeMV3WebKitObjectAcceptanceReport
+                    ?? loadChromeMV3WebKitObjectAcceptanceReport(
+                        fromRewrittenBundleRootPath:
+                            candidate.rewrittenVariantRootPath
+                    )
+            let resolvedRuntimeBridgeReadinessReport =
+                runtimeBridgeReadinessReport
+                    ?? lastChromeMV3RuntimeBridgeReadinessReport
+                    ?? loadChromeMV3RuntimeBridgeReadinessReport(
+                        fromRewrittenBundleRootPath:
+                            candidate.rewrittenVariantRootPath
+                    )
+            let report =
+                await ChromeMV3ContentScriptSmokeHarness
+                .runWithTestDOMInspection(
+                    candidate: candidate,
+                    extensionsModuleEnabled: true,
+                    explicitInternalContentScriptSmokeAllowed:
+                        explicitInternalContentScriptSmokeAllowed,
+                    explicitSyntheticWebViewCreationAllowed:
+                        explicitSyntheticWebViewCreationAllowed,
+                    explicitSyntheticNavigationAllowed:
+                        explicitSyntheticNavigationAllowed,
+                    explicitTestDOMInspectionAllowed:
+                        explicitTestDOMInspectionAllowed,
+                    objectAcceptanceReport:
+                        resolvedObjectAcceptanceReport,
+                    runtimeBridgeReadinessReport:
+                        resolvedRuntimeBridgeReadinessReport,
+                    emptyControllerOwner:
+                        cachedChromeMV3EmptyControllerOwner,
+                    detachedContextOwner:
+                        cachedChromeMV3DetachedContextOwner,
+                    controllerLoadOwner:
+                        cachedChromeMV3ControllerLoadOwner,
+                    liveNormalTabAttachmentSnapshot:
+                        chromeMV3LiveNormalTabAttachmentDiagnosticsSnapshot(),
+                    tearDownLoadedContextAndControllerAfterRun:
+                        tearDownLoadedContextAndControllerAfterRun
+                )
             lastChromeMV3RuntimeContentScriptSmokeReport = report
 
             if report.gateDecision.canRunContentScriptSmokeNow,
