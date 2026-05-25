@@ -442,6 +442,25 @@ final class ChromeMV3ReadinessFixturePipelineTests: XCTestCase {
         XCTAssertFalse(report.canCreateContextNow)
         XCTAssertFalse(report.canLoadContextNow)
         XCTAssertFalse(report.runtimeLoadable)
+
+        let messagingReport = try XCTUnwrap(
+            result.runtimeMessagingContractReport
+        )
+        XCTAssertEqual(
+            Set(messagingReport.routeContractCoverage.map(\.routeKind)),
+            Set(ChromeMV3RuntimeMessagingRouteKind.allCases)
+        )
+        XCTAssertFalse(messagingReport.canDispatchMessagesNow)
+        XCTAssertFalse(messagingReport.canRegisterListenersNow)
+        XCTAssertFalse(messagingReport.canWakeServiceWorkerNow)
+        XCTAssertFalse(messagingReport.canOpenPortNow)
+        XCTAssertFalse(messagingReport.canCreateContextNow)
+        XCTAssertFalse(messagingReport.canLoadContextNow)
+        XCTAssertFalse(messagingReport.runtimeLoadable)
+        XCTAssertFalse(
+            messagingReport.passwordManagerMessagingSummary
+                .passwordManagerMessagingReady
+        )
     }
 
     @MainActor
@@ -483,6 +502,18 @@ final class ChromeMV3ReadinessFixturePipelineTests: XCTestCase {
         XCTAssertEqual(
             report.nextRequiredCategory,
             .diagnosticRuntimePrerequisite
+        )
+        XCTAssertEqual(
+            report.runtimeMessagingContractReportSummary.reportFileName,
+            ChromeMV3RuntimeMessagingContractReportWriter.reportFileName
+        )
+        XCTAssertFalse(
+            report.runtimeMessagingContractReportSummary
+                .canDispatchMessagesNow
+        )
+        XCTAssertFalse(
+            report.runtimeMessagingContractReportSummary
+                .passwordManagerMessagingReady
         )
         XCTAssertTrue(report.shouldFutureContextCreationRemainBlocked)
         XCTAssertFalse(report.canCreateContextNow)
@@ -822,6 +853,7 @@ private struct ChromeMV3ReadinessFixturePipelineResult {
     var objectAcceptanceReportURL: URL?
     var contextReadinessReportURL: URL?
     var runtimeBridgePrerequisitesReportURL: URL?
+    var runtimeMessagingContractReportURL: URL?
     var runtimeBridgeReadinessReportURL: URL?
     var runtimeLoadabilityReport: ChromeMV3RuntimeLoadabilityReport?
     var candidate: ChromeMV3RewrittenVariantCandidate?
@@ -829,6 +861,8 @@ private struct ChromeMV3ReadinessFixturePipelineResult {
     var contextReadinessReport: ChromeMV3ContextReadinessReport?
     var runtimeBridgePrerequisitesReport:
         ChromeMV3RuntimeBridgePrerequisitesReport?
+    var runtimeMessagingContractReport:
+        ChromeMV3RuntimeMessagingContractReport?
     var runtimeBridgeReadinessReport:
         ChromeMV3RuntimeBridgeReadinessReport?
     var consumerDiagnostic:
@@ -877,12 +911,14 @@ private final class ChromeMV3ReadinessFixturePipeline {
                 objectAcceptanceReportURL: nil,
                 contextReadinessReportURL: nil,
                 runtimeBridgePrerequisitesReportURL: nil,
+                runtimeMessagingContractReportURL: nil,
                 runtimeBridgeReadinessReportURL: nil,
                 runtimeLoadabilityReport: nil,
                 candidate: nil,
                 objectAcceptanceReport: nil,
                 contextReadinessReport: nil,
                 runtimeBridgePrerequisitesReport: nil,
+                runtimeMessagingContractReport: nil,
                 runtimeBridgeReadinessReport: nil,
                 consumerDiagnostic: nil
             )
@@ -1004,6 +1040,14 @@ private final class ChromeMV3ReadinessFixturePipeline {
             runtimeBridgePrerequisitesReport,
             toRewrittenBundleRoot: variant.variantRootURL
         )
+        let runtimeMessagingContractReport =
+            ChromeMV3RuntimeMessagingContractReportGenerator.makeReport(
+                prerequisitesReport: runtimeBridgePrerequisitesReport
+            )
+        try ChromeMV3RuntimeMessagingContractReportWriter.write(
+            runtimeMessagingContractReport,
+            toRewrittenBundleRoot: variant.variantRootURL
+        )
         let runtimeBridgeReadinessReport =
             ChromeMV3RuntimeBridgeReadinessReportGenerator.makeReport(
                 prerequisitesReport: runtimeBridgePrerequisitesReport,
@@ -1036,6 +1080,11 @@ private final class ChromeMV3ReadinessFixturePipeline {
                     ChromeMV3RuntimeBridgePrerequisitesReportWriter
                         .reportFileName
                 ),
+            runtimeMessagingContractReportURL: variant.variantRootURL
+                .appendingPathComponent(
+                    ChromeMV3RuntimeMessagingContractReportWriter
+                        .reportFileName
+                ),
             runtimeBridgeReadinessReportURL: variant.variantRootURL
                 .appendingPathComponent(
                     ChromeMV3RuntimeBridgeReadinessReportWriter
@@ -1047,6 +1096,8 @@ private final class ChromeMV3ReadinessFixturePipeline {
             contextReadinessReport: contextReport,
             runtimeBridgePrerequisitesReport:
                 runtimeBridgePrerequisitesReport,
+            runtimeMessagingContractReport:
+                runtimeMessagingContractReport,
             runtimeBridgeReadinessReport:
                 runtimeBridgeReadinessReport,
             consumerDiagnostic: consumer

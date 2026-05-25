@@ -38,6 +38,8 @@ final class SumiExtensionsModule {
             ChromeMV3RuntimeBridgePrerequisitesReport?
         private var lastChromeMV3RuntimeBridgeReadinessReport:
             ChromeMV3RuntimeBridgeReadinessReport?
+        private var lastChromeMV3RuntimeMessagingContractReport:
+            ChromeMV3RuntimeMessagingContractReport?
     #endif
     weak var browserManager: BrowserManager?
     #if DEBUG
@@ -121,6 +123,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3ContextReadinessReport = nil
                     lastChromeMV3RuntimeBridgePrerequisitesReport = nil
                     lastChromeMV3RuntimeBridgeReadinessReport = nil
+                    lastChromeMV3RuntimeMessagingContractReport = nil
                 }
             #endif
             tearDownChromeMV3EmptyControllerOwner()
@@ -180,6 +183,8 @@ final class SumiExtensionsModule {
             ChromeMV3RuntimeBridgePrerequisitesReport?
         let runtimeBridgeReadinessReport:
             ChromeMV3RuntimeBridgeReadinessReport?
+        let runtimeMessagingContractReportSummary:
+            ChromeMV3RuntimeMessagingContractReportSummary?
         #if DEBUG
             if #available(macOS 15.5, *) {
                 probeDiagnostics =
@@ -192,12 +197,15 @@ final class SumiExtensionsModule {
                     lastChromeMV3RuntimeBridgePrerequisitesReport
                 runtimeBridgeReadinessReport =
                     lastChromeMV3RuntimeBridgeReadinessReport
+                runtimeMessagingContractReportSummary =
+                    lastChromeMV3RuntimeMessagingContractReport?.summary
             } else {
                 probeDiagnostics = nil
                 objectAcceptanceReport = nil
                 contextReadinessReport = nil
                 runtimeBridgePrerequisitesReport = nil
                 runtimeBridgeReadinessReport = nil
+                runtimeMessagingContractReportSummary = nil
             }
         #else
             probeDiagnostics = nil
@@ -205,6 +213,7 @@ final class SumiExtensionsModule {
             contextReadinessReport = nil
             runtimeBridgePrerequisitesReport = nil
             runtimeBridgeReadinessReport = nil
+            runtimeMessagingContractReportSummary = nil
         #endif
         return chromeMV3ProfileHostIfEnabled(
             candidateRewrittenVariants: candidates
@@ -216,7 +225,9 @@ final class SumiExtensionsModule {
             runtimeBridgePrerequisitesReport:
                 runtimeBridgePrerequisitesReport,
             runtimeBridgeReadinessReport:
-                runtimeBridgeReadinessReport
+                runtimeBridgeReadinessReport,
+            runtimeMessagingContractReportSummary:
+                runtimeMessagingContractReportSummary
         )
     }
 
@@ -653,6 +664,32 @@ final class SumiExtensionsModule {
 
             guard writeReport else { return report }
             return (try? ChromeMV3RuntimeBridgeReadinessReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3RuntimeMessagingContractReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            writeReport: Bool = false
+        ) -> ChromeMV3RuntimeMessagingContractReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let report: ChromeMV3RuntimeMessagingContractReport
+            do {
+                report = try ChromeMV3RuntimeMessagingContractReportGenerator
+                    .makeReport(
+                        loadingPrerequisitesReportFrom: rootURL
+                    )
+            } catch {
+                return nil
+            }
+            lastChromeMV3RuntimeMessagingContractReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3RuntimeMessagingContractReportWriter.write(
                 report,
                 toRewrittenBundleRoot: rootURL
             )) ?? report
