@@ -754,6 +754,23 @@ struct ChromeMV3RuntimeMessagingPermissionDecision:
     static func evaluate(
         route: ChromeMV3RuntimeMessagingRoute,
         envelope: ChromeMV3RuntimeMessageEnvelope? = nil,
+        permissionStore: ChromeMV3PermissionDecisionStore,
+        activeTabStore: ChromeMV3ActiveTabGrantStore,
+        userGestureAvailable: Bool = false
+    ) -> ChromeMV3RuntimeMessagingPermissionDecision {
+        evaluate(
+            route: route,
+            envelope: envelope,
+            permissionBroker: permissionStore.permissionBroker(
+                activeTabStore: activeTabStore
+            ),
+            userGestureAvailable: userGestureAvailable
+        )
+    }
+
+    static func evaluate(
+        route: ChromeMV3RuntimeMessagingRoute,
+        envelope: ChromeMV3RuntimeMessageEnvelope? = nil,
         permissionBroker: ChromeMV3PermissionBroker,
         userGestureAvailable: Bool = false
     ) -> ChromeMV3RuntimeMessagingPermissionDecision {
@@ -789,7 +806,7 @@ struct ChromeMV3RuntimeMessagingPermissionDecision:
         let hostOrActive = hostDecision.hasHostAccess
 
         if route.requiresHostPermission && hostOrActive == false {
-            if hostDecision.deniedByPattern {
+            if hostDecision.deniedByPattern || hostDecision.revokedByPattern {
                 return ChromeMV3RuntimeMessagingPermissionDecision(
                     allowedForFutureDispatch: false,
                     requiredGrant: .hostPermission,
@@ -827,6 +844,7 @@ struct ChromeMV3RuntimeMessagingPermissionDecision:
                 requiredGrant: .hostPermission,
                 missingGrantReason:
                     hostDecision.missingReason == .permissionDenied
+                        || hostDecision.missingReason == .permissionRevoked
                         ? .permissionDenied
                         : .missingHostPermission,
                 senderMetadataRedaction: .redactURLAndOrigin,
@@ -1103,6 +1121,29 @@ struct ChromeMV3RuntimeMessagingRouteEvaluation:
 }
 
 enum ChromeMV3RuntimeMessagingRouteEvaluator {
+    static func evaluate(
+        route: ChromeMV3RuntimeMessagingRoute,
+        envelope: ChromeMV3RuntimeMessageEnvelope,
+        permissionStore: ChromeMV3PermissionDecisionStore,
+        activeTabStore: ChromeMV3ActiveTabGrantStore,
+        readiness: ChromeMV3RuntimeMessagingReadinessSnapshot,
+        userGestureAvailable: Bool = false
+    ) -> ChromeMV3RuntimeMessagingRouteEvaluation {
+        let permissionDecision =
+            ChromeMV3RuntimeMessagingPermissionDecision.evaluate(
+                route: route,
+                envelope: envelope,
+                permissionStore: permissionStore,
+                activeTabStore: activeTabStore,
+                userGestureAvailable: userGestureAvailable
+            )
+        return evaluate(
+            route: route,
+            permissionDecision: permissionDecision,
+            readiness: readiness
+        )
+    }
+
     static func evaluate(
         route: ChromeMV3RuntimeMessagingRoute,
         envelope: ChromeMV3RuntimeMessageEnvelope,
@@ -1432,6 +1473,8 @@ struct ChromeMV3RuntimeMessagingContractReportSummary:
         ChromeMV3RuntimeListenerContractReportSummary? = nil
     var permissionBrokerReadinessReportSummary:
         ChromeMV3PermissionBrokerReadinessReportSummary? = nil
+    var permissionLifecycleReportSummary:
+        ChromeMV3PermissionLifecycleReportSummary? = nil
 }
 
 struct ChromeMV3RuntimeMessagingContractReport:
@@ -1456,6 +1499,8 @@ struct ChromeMV3RuntimeMessagingContractReport:
         ChromeMV3RuntimeListenerContractReportSummary? = nil
     var permissionBrokerReadinessReportSummary:
         ChromeMV3PermissionBrokerReadinessReportSummary? = nil
+    var permissionLifecycleReportSummary:
+        ChromeMV3PermissionLifecycleReportSummary? = nil
     var permissionBrokerRouteDecisions:
         [ChromeMV3PermissionBrokerRouteScenario] = []
     var canDispatchMessagesNow: Bool
@@ -1483,7 +1528,9 @@ struct ChromeMV3RuntimeMessagingContractReport:
             passwordManagerMessagingReady: false,
             listenerContractReportSummary: listenerContractReportSummary,
             permissionBrokerReadinessReportSummary:
-                permissionBrokerReadinessReportSummary
+                permissionBrokerReadinessReportSummary,
+            permissionLifecycleReportSummary:
+                permissionLifecycleReportSummary
         )
     }
 }
@@ -1548,6 +1595,11 @@ enum ChromeMV3RuntimeMessagingContractReportGenerator {
                 prerequisitesReport: prerequisites,
                 profileID: profileID
             )
+        let lifecycleReport =
+            ChromeMV3PermissionLifecycleReportGenerator.makeReport(
+                prerequisitesReport: prerequisites,
+                profileID: profileID
+            )
         let listenerSummary = ChromeMV3RuntimeListenerContractReportGenerator
             .makeReport(
                 prerequisitesReport: prerequisites,
@@ -1603,6 +1655,8 @@ enum ChromeMV3RuntimeMessagingContractReportGenerator {
             listenerContractReportSummary: listenerSummary,
             permissionBrokerReadinessReportSummary:
                 permissionReport.summary,
+            permissionLifecycleReportSummary:
+                lifecycleReport.summary,
             permissionBrokerRouteDecisions:
                 permissionReport.permissionDecisionsForKeyRoutes,
             canDispatchMessagesNow: false,

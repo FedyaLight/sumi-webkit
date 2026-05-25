@@ -342,6 +342,7 @@ enum ChromeMV3PermissionBrokerDecisionStatus:
     case blocked
     case promptRequired
     case denied
+    case revoked
     case deferred
     case unsupported
 }
@@ -355,6 +356,7 @@ enum ChromeMV3HostAccessMissingReason:
     case none
     case invalidURL
     case permissionDenied
+    case permissionRevoked
     case hostPermissionMissing
     case activeTabMissing
     case unsupportedPattern
@@ -374,6 +376,7 @@ struct ChromeMV3APIPermissionDecision:
     var declaredOptional: Bool
     var grantedOptional: Bool
     var denied: Bool
+    var revoked: Bool
     var unsupported: Bool
     var deferred: Bool
     var wouldNeedPrompt: Bool
@@ -398,6 +401,7 @@ struct ChromeMV3HostAccessDecision:
     var invalidHostPatterns: [String]
     var unsupportedHostPatterns: [String]
     var deniedByPattern: Bool
+    var revokedByPattern: Bool
     var wouldNeedPrompt: Bool
     var missingReason: ChromeMV3HostAccessMissingReason
     var diagnostics: [String]
@@ -413,6 +417,7 @@ enum ChromeMV3ActiveTabGrantReason:
     case contextMenu
     case command
     case testFixture
+    case futureUserGesture
 }
 
 enum ChromeMV3ActiveTabExpiryTrigger:
@@ -810,6 +815,47 @@ struct ChromeMV3ActiveTabGrantBroker:
         )
     }
 
+    func applyingProfileClose(
+        profileID: String,
+        sequence: Int
+    ) -> ChromeMV3ActiveTabGrantBroker {
+        ChromeMV3ActiveTabGrantBroker(
+            grants: grants.map { grant in
+                guard grant.profileID == profileID,
+                      grant.expiryTriggers.contains(.profileClose)
+                else { return grant }
+                return grant.expiring(
+                    trigger: .profileClose,
+                    sequence: sequence,
+                    reason: "Profile was closed."
+                )
+            }
+        )
+    }
+
+    func applyingPermissionRevoke(
+        extensionID: String,
+        profileID: String,
+        sequence: Int,
+        permission: String? = nil
+    ) -> ChromeMV3ActiveTabGrantBroker {
+        ChromeMV3ActiveTabGrantBroker(
+            grants: grants.map { grant in
+                guard grant.extensionID == extensionID,
+                      grant.profileID == profileID,
+                      grant.expiryTriggers.contains(.permissionRevoke)
+                else { return grant }
+                return grant.expiring(
+                    trigger: .permissionRevoke,
+                    sequence: sequence,
+                    reason:
+                        "Permission revoke expired activeTab grant"
+                        + (permission.map { " for \($0)." } ?? ".")
+                )
+            }
+        )
+    }
+
     func missingActiveTabReason(
         extensionID: String,
         profileID: String,
@@ -842,6 +888,7 @@ struct ChromeMV3PermissionBrokerState:
     var optionalHostPermissions: [String]
     var grantedOptionalHostPermissions: [String]
     var deniedPermissions: [String]
+    var revokedPermissions: [String]
     var unavailablePermissions: [String]
     var unsupportedPermissions: [String]
     var activeTabGrants: [ChromeMV3ActiveTabGrant]
@@ -857,6 +904,7 @@ struct ChromeMV3PermissionBrokerState:
         optionalHostPermissions: [String] = [],
         grantedOptionalHostPermissions: [String] = [],
         deniedPermissions: [String] = [],
+        revokedPermissions: [String] = [],
         unavailablePermissions: [String] = [],
         unsupportedPermissions: [String] = [],
         activeTabGrants: [ChromeMV3ActiveTabGrant] = [],
@@ -877,6 +925,7 @@ struct ChromeMV3PermissionBrokerState:
             grantedOptionalHostPermissions
         )
         self.deniedPermissions = Self.uniqueSorted(deniedPermissions)
+        self.revokedPermissions = Self.uniqueSorted(revokedPermissions)
         self.unavailablePermissions = Self.uniqueSorted(unavailablePermissions)
         self.unsupportedPermissions = Self.uniqueSorted(unsupportedPermissions)
         self.activeTabGrants = ChromeMV3ActiveTabGrantBroker(
@@ -971,6 +1020,10 @@ struct ChromeMV3PermissionBroker:
         state.unavailablePermissions.contains(permission)
     }
 
+    func isPermissionRevoked(_ permission: String) -> Bool {
+        state.revokedPermissions.contains(permission)
+    }
+
     func apiPermissionDecision(
         _ permission: String
     ) -> ChromeMV3APIPermissionDecision {
@@ -979,15 +1032,18 @@ struct ChromeMV3PermissionBroker:
         let grantedOptional =
             state.grantedOptionalPermissions.contains(permission)
         let denied = state.deniedPermissions.contains(permission)
+        let revoked = state.revokedPermissions.contains(permission)
         let unsupported = state.unsupportedPermissions.contains(permission)
         let deferred = state.unavailablePermissions.contains(permission)
         let hasPermission = (declaredRequired || grantedOptional)
             && denied == false
+            && revoked == false
             && unsupported == false
             && deferred == false
         let wouldNeedPrompt = declaredOptional
             && grantedOptional == false
             && denied == false
+            && revoked == false
             && unsupported == false
             && deferred == false
         let status: ChromeMV3PermissionBrokerDecisionStatus
@@ -1000,6 +1056,9 @@ struct ChromeMV3PermissionBroker:
             source = .none
         } else if denied {
             status = .denied
+            source = .none
+        } else if revoked {
+            status = .revoked
             source = .none
         } else if hasPermission {
             status = .allowed
@@ -1023,6 +1082,7 @@ struct ChromeMV3PermissionBroker:
             declaredOptional: declaredOptional,
             grantedOptional: grantedOptional,
             denied: denied,
+            revoked: revoked,
             unsupported: unsupported,
             deferred: deferred,
             wouldNeedPrompt: wouldNeedPrompt,
@@ -1116,6 +1176,7 @@ struct ChromeMV3PermissionBroker:
                 invalidHostPatterns: [],
                 unsupportedHostPatterns: [],
                 deniedByPattern: false,
+                revokedByPattern: false,
                 wouldNeedPrompt: false,
                 missingReason: .invalidURL,
                 diagnostics: ["No URL or origin was available for host access evaluation."]
@@ -1135,8 +1196,14 @@ struct ChromeMV3PermissionBroker:
         let deniedPatterns = state.deniedPermissions
             .filter { $0.contains("://") || $0 == "<all_urls>" }
             .map(ChromeMV3HostMatchPattern.init)
+        let revokedPatterns = state.revokedPermissions
+            .filter { $0.contains("://") || $0 == "<all_urls>" }
+            .map(ChromeMV3HostMatchPattern.init)
         let target = url ?? origin
         let deniedByPattern = deniedPatterns.contains {
+            $0.matches(url: target)
+        }
+        let revokedByPattern = revokedPatterns.contains {
             $0.matches(url: target)
         }
         let requiredMatches = requiredPatterns.filter {
@@ -1161,9 +1228,11 @@ struct ChromeMV3PermissionBroker:
         let allowedByOptional = optionalGrantMatches.isEmpty == false
         let allowedByActiveTab = activeDecision.hasGrant
         let hasHostAccess = deniedByPattern == false
+            && revokedByPattern == false
             && (allowedByRequired || allowedByOptional || allowedByActiveTab)
         let wouldPrompt = hasHostAccess == false
             && deniedByPattern == false
+            && revokedByPattern == false
             && optionalCouldPrompt.isEmpty == false
         let status: ChromeMV3PermissionBrokerDecisionStatus
         let source: ChromeMV3PermissionBrokerGrantSource
@@ -1173,6 +1242,10 @@ struct ChromeMV3PermissionBroker:
             status = .denied
             source = .none
             missingReason = .permissionDenied
+        } else if revokedByPattern {
+            status = .revoked
+            source = .none
+            missingReason = .permissionRevoked
         } else if allowedByRequired {
             status = .allowed
             source = .requiredHostPermission
@@ -1217,6 +1290,7 @@ struct ChromeMV3PermissionBroker:
             invalidHostPatterns: Array(Set(invalid)).sorted(),
             unsupportedHostPatterns: Array(Set(unsupported)).sorted(),
             deniedByPattern: deniedByPattern,
+            revokedByPattern: revokedByPattern,
             wouldNeedPrompt: wouldPrompt,
             missingReason: missingReason,
             diagnostics: hostDiagnostics(
@@ -1227,7 +1301,8 @@ struct ChromeMV3PermissionBroker:
                 optionalCouldPrompt: optionalCouldPrompt,
                 activeDecision: activeDecision,
                 invalid: invalid,
-                unsupported: unsupported
+                unsupported: unsupported,
+                revokedByPattern: revokedByPattern
             )
         )
     }
@@ -1258,6 +1333,9 @@ struct ChromeMV3PermissionBroker:
         if state.deniedPermissions.contains(permission) {
             values.append("Permission is explicitly denied by broker state.")
         }
+        if state.revokedPermissions.contains(permission) {
+            values.append("Permission has been revoked by broker state.")
+        }
         return Array(Set(values)).sorted()
     }
 
@@ -1269,7 +1347,8 @@ struct ChromeMV3PermissionBroker:
         optionalCouldPrompt: [String],
         activeDecision: ChromeMV3ActiveTabAccessDecision,
         invalid: [String],
-        unsupported: [String]
+        unsupported: [String],
+        revokedByPattern: Bool
     ) -> [String] {
         var values = [
             "Host access decision for \(target ?? "unknown-target"): \(status.rawValue).",
@@ -1292,8 +1371,1277 @@ struct ChromeMV3PermissionBroker:
         if unsupported.isEmpty == false {
             values.append("Unsupported host match patterns require verification.")
         }
+        if revokedByPattern {
+            values.append("Host access was revoked by broker state.")
+        }
         values.append(contentsOf: activeDecision.diagnostics)
         return Array(Set(values)).sorted()
+    }
+}
+
+enum ChromeMV3PermissionDecisionSubjectKind:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case apiPermission
+    case hostPermission
+
+    static func < (
+        lhs: ChromeMV3PermissionDecisionSubjectKind,
+        rhs: ChromeMV3PermissionDecisionSubjectKind
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3ModeledPermissionDecisionRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var id: String
+    var extensionID: String
+    var profileID: String
+    var subjectKind: ChromeMV3PermissionDecisionSubjectKind
+    var value: String
+    var status: ChromeMV3PermissionBrokerDecisionStatus
+    var grantSource: ChromeMV3PermissionBrokerGrantSource
+    var sequence: Int
+    var diagnostics: [String]
+
+    init(
+        extensionID: String,
+        profileID: String,
+        subjectKind: ChromeMV3PermissionDecisionSubjectKind,
+        value: String,
+        status: ChromeMV3PermissionBrokerDecisionStatus,
+        grantSource: ChromeMV3PermissionBrokerGrantSource,
+        sequence: Int,
+        diagnostics: [String]
+    ) {
+        self.extensionID = extensionID.isEmpty
+            ? "unknown-extension"
+            : extensionID
+        self.profileID = profileID.isEmpty ? "unknown-profile" : profileID
+        self.subjectKind = subjectKind
+        self.value = value
+        self.status = status
+        self.grantSource = grantSource
+        self.sequence = sequence
+        self.diagnostics = Self.uniqueSorted(diagnostics)
+        self.id = ChromeMV3PermissionBrokerStableID.make(
+            prefix: "permission-decision",
+            parts: [
+                self.extensionID,
+                self.profileID,
+                subjectKind.rawValue,
+                value,
+                status.rawValue,
+                grantSource.rawValue,
+                String(sequence),
+            ]
+        )
+    }
+
+    private static func uniqueSorted(_ values: [String]) -> [String] {
+        Array(Set(values.filter { $0.isEmpty == false })).sorted()
+    }
+}
+
+struct ChromeMV3PermissionDecisionStoreSnapshotSummary:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var storeID: String
+    var extensionID: String
+    var profileID: String
+    var declaredAPIPermissions: [String]
+    var declaredHostPermissions: [String]
+    var optionalAPIPermissions: [String]
+    var optionalHostPermissions: [String]
+    var grantedOptionalAPIPermissions: [String]
+    var grantedOptionalHostPermissions: [String]
+    var deniedPermissions: [String]
+    var revokedPermissions: [String]
+    var deferredPermissions: [String]
+    var unsupportedPermissions: [String]
+    var decisionRecordIDs: [String]
+}
+
+struct ChromeMV3PermissionDecisionStoreSnapshot:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var schemaVersion: Int
+    var storeID: String
+    var extensionID: String
+    var profileID: String
+    var declaredAPIPermissions: [String]
+    var declaredHostPermissions: [String]
+    var optionalAPIPermissions: [String]
+    var optionalHostPermissions: [String]
+    var grantedOptionalAPIPermissions: [String]
+    var grantedOptionalHostPermissions: [String]
+    var deniedPermissions: [String]
+    var revokedPermissions: [String]
+    var deferredPermissions: [String]
+    var unsupportedPermissions: [String]
+    var decisionRecords: [ChromeMV3ModeledPermissionDecisionRecord]
+    var diagnostics: [String]
+
+    init(
+        schemaVersion: Int = 1,
+        extensionID: String,
+        profileID: String,
+        declaredAPIPermissions: [String] = [],
+        declaredHostPermissions: [String] = [],
+        optionalAPIPermissions: [String] = [],
+        optionalHostPermissions: [String] = [],
+        grantedOptionalAPIPermissions: [String] = [],
+        grantedOptionalHostPermissions: [String] = [],
+        deniedPermissions: [String] = [],
+        revokedPermissions: [String] = [],
+        deferredPermissions: [String] = [],
+        unsupportedPermissions: [String] = [],
+        decisionRecords: [ChromeMV3ModeledPermissionDecisionRecord] = [],
+        diagnostics: [String] = []
+    ) {
+        self.schemaVersion = schemaVersion
+        self.extensionID = extensionID.isEmpty
+            ? "unknown-extension"
+            : extensionID
+        self.profileID = profileID.isEmpty ? "unknown-profile" : profileID
+        self.declaredAPIPermissions =
+            Self.uniqueSorted(declaredAPIPermissions)
+        self.declaredHostPermissions =
+            Self.uniqueSorted(declaredHostPermissions)
+        self.optionalAPIPermissions =
+            Self.uniqueSorted(optionalAPIPermissions)
+        self.optionalHostPermissions =
+            Self.uniqueSorted(optionalHostPermissions)
+        self.grantedOptionalAPIPermissions =
+            Self.uniqueSorted(grantedOptionalAPIPermissions)
+        self.grantedOptionalHostPermissions =
+            Self.uniqueSorted(grantedOptionalHostPermissions)
+        self.deniedPermissions = Self.uniqueSorted(deniedPermissions)
+        self.revokedPermissions = Self.uniqueSorted(revokedPermissions)
+        self.deferredPermissions = Self.uniqueSorted(deferredPermissions)
+        self.unsupportedPermissions = Self.uniqueSorted(unsupportedPermissions)
+        self.decisionRecords = decisionRecords.sorted {
+            if $0.sequence != $1.sequence {
+                return $0.sequence < $1.sequence
+            }
+            return $0.id < $1.id
+        }
+        self.diagnostics = Self.uniqueSorted(diagnostics)
+        self.storeID = ChromeMV3PermissionBrokerStableID.make(
+            prefix: "permission-decision-store",
+            parts: [
+                self.extensionID,
+                self.profileID,
+                self.declaredAPIPermissions.joined(separator: ","),
+                self.declaredHostPermissions.joined(separator: ","),
+                self.optionalAPIPermissions.joined(separator: ","),
+                self.optionalHostPermissions.joined(separator: ","),
+                self.grantedOptionalAPIPermissions.joined(separator: ","),
+                self.grantedOptionalHostPermissions.joined(separator: ","),
+                self.deniedPermissions.joined(separator: ","),
+                self.revokedPermissions.joined(separator: ","),
+                self.deferredPermissions.joined(separator: ","),
+                self.unsupportedPermissions.joined(separator: ","),
+            ]
+        )
+    }
+
+    var summary: ChromeMV3PermissionDecisionStoreSnapshotSummary {
+        ChromeMV3PermissionDecisionStoreSnapshotSummary(
+            storeID: storeID,
+            extensionID: extensionID,
+            profileID: profileID,
+            declaredAPIPermissions: declaredAPIPermissions,
+            declaredHostPermissions: declaredHostPermissions,
+            optionalAPIPermissions: optionalAPIPermissions,
+            optionalHostPermissions: optionalHostPermissions,
+            grantedOptionalAPIPermissions: grantedOptionalAPIPermissions,
+            grantedOptionalHostPermissions: grantedOptionalHostPermissions,
+            deniedPermissions: deniedPermissions,
+            revokedPermissions: revokedPermissions,
+            deferredPermissions: deferredPermissions,
+            unsupportedPermissions: unsupportedPermissions,
+            decisionRecordIDs: decisionRecords.map(\.id).sorted()
+        )
+    }
+
+    fileprivate func with(
+        grantedOptionalAPIPermissions: [String]? = nil,
+        grantedOptionalHostPermissions: [String]? = nil,
+        deniedPermissions: [String]? = nil,
+        revokedPermissions: [String]? = nil,
+        decisionRecords: [ChromeMV3ModeledPermissionDecisionRecord]? = nil,
+        diagnostics: [String]? = nil
+    ) -> ChromeMV3PermissionDecisionStoreSnapshot {
+        ChromeMV3PermissionDecisionStoreSnapshot(
+            schemaVersion: schemaVersion,
+            extensionID: extensionID,
+            profileID: profileID,
+            declaredAPIPermissions: declaredAPIPermissions,
+            declaredHostPermissions: declaredHostPermissions,
+            optionalAPIPermissions: optionalAPIPermissions,
+            optionalHostPermissions: optionalHostPermissions,
+            grantedOptionalAPIPermissions:
+                grantedOptionalAPIPermissions
+                    ?? self.grantedOptionalAPIPermissions,
+            grantedOptionalHostPermissions:
+                grantedOptionalHostPermissions
+                    ?? self.grantedOptionalHostPermissions,
+            deniedPermissions: deniedPermissions ?? self.deniedPermissions,
+            revokedPermissions: revokedPermissions ?? self.revokedPermissions,
+            deferredPermissions: deferredPermissions,
+            unsupportedPermissions: unsupportedPermissions,
+            decisionRecords: decisionRecords ?? self.decisionRecords,
+            diagnostics: diagnostics ?? self.diagnostics
+        )
+    }
+
+    fileprivate static func uniqueSorted(_ values: [String]) -> [String] {
+        Array(Set(values.filter { $0.isEmpty == false })).sorted()
+    }
+}
+
+struct ChromeMV3PermissionDecisionStore:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var snapshot: ChromeMV3PermissionDecisionStoreSnapshot
+
+    init(snapshot: ChromeMV3PermissionDecisionStoreSnapshot) {
+        self.snapshot = snapshot
+    }
+
+    static func from(
+        manifestFacts: ChromeMV3RuntimeBridgeManifestFacts,
+        extensionID: String,
+        profileID: String,
+        deferredPermissions explicitDeferredPermissions: [String] = [],
+        unsupportedPermissions: [String] = []
+    ) -> ChromeMV3PermissionDecisionStore {
+        var deferred = explicitDeferredPermissions
+        deferred.append(
+            contentsOf: manifestFacts.declaredPermissions.filter {
+                ["nativeMessaging", "storage"].contains($0)
+            }
+        )
+        if manifestFacts.permissionsAPIPresent {
+            deferred.append("permissions")
+        }
+        let snapshot = ChromeMV3PermissionDecisionStoreSnapshot(
+            extensionID: extensionID,
+            profileID: profileID,
+            declaredAPIPermissions: manifestFacts.declaredPermissions,
+            declaredHostPermissions: manifestFacts.hostPermissions,
+            optionalAPIPermissions: manifestFacts.optionalPermissions,
+            optionalHostPermissions: manifestFacts.optionalHostPermissions,
+            deferredPermissions: deferred,
+            unsupportedPermissions: unsupportedPermissions,
+            diagnostics: manifestFacts.warnings
+        )
+        return ChromeMV3PermissionDecisionStore(
+            snapshot: snapshot.with(
+                decisionRecords:
+                    Self.derivedDecisionRecords(from: snapshot)
+            )
+        )
+    }
+
+    func exportSnapshot()
+        -> ChromeMV3PermissionDecisionStoreSnapshot
+    {
+        if snapshot.decisionRecords.isEmpty {
+            return snapshot.with(
+                decisionRecords:
+                    Self.derivedDecisionRecords(from: snapshot)
+            )
+        }
+        return snapshot
+    }
+
+    func applyingModeledGrant(
+        _ permission: String,
+        sequence: Int
+    ) -> ChromeMV3PermissionDecisionStore {
+        let value = permission.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard value.isEmpty == false else {
+            return appendingRecord(
+                value: value,
+                status: .blocked,
+                grantSource: .none,
+                sequence: sequence,
+                diagnostics: ["Empty permission grant was ignored."]
+            )
+        }
+
+        var apiGrants = snapshot.grantedOptionalAPIPermissions
+        var hostGrants = snapshot.grantedOptionalHostPermissions
+        var denied = snapshot.deniedPermissions.filter { $0 != value }
+        var revoked = snapshot.revokedPermissions.filter { $0 != value }
+        let subjectKind = Self.subjectKind(for: value)
+        let status: ChromeMV3PermissionBrokerDecisionStatus
+        let source: ChromeMV3PermissionBrokerGrantSource
+        let diagnostics: [String]
+
+        if subjectKind == .hostPermission {
+            if snapshot.declaredHostPermissions.contains(value) {
+                status = .allowed
+                source = .requiredHostPermission
+                diagnostics = [
+                    "Required host permission is already declared; modeled grant records current allowance.",
+                ]
+            } else if snapshot.optionalHostPermissions.contains(value) {
+                hostGrants.append(value)
+                status = .allowed
+                source = .optionalHostPermissionModeledGrant
+                diagnostics = [
+                    "Modeled optional host permission grant was recorded.",
+                ]
+            } else {
+                status = .blocked
+                source = .none
+                diagnostics = [
+                    "Host permission is not declared as required or optional.",
+                ]
+            }
+        } else if snapshot.declaredAPIPermissions.contains(value) {
+            status = .allowed
+            source = .requiredPermission
+            diagnostics = [
+                "Required API permission is already declared; modeled grant records current allowance.",
+            ]
+        } else if snapshot.optionalAPIPermissions.contains(value) {
+            apiGrants.append(value)
+            status = .allowed
+            source = .optionalPermissionModeledGrant
+            diagnostics = [
+                "Modeled optional API permission grant was recorded.",
+            ]
+        } else {
+            status = .blocked
+            source = .none
+            diagnostics = [
+                "API permission is not declared as required or optional.",
+            ]
+        }
+
+        if status != .allowed {
+            denied = snapshot.deniedPermissions
+            revoked = snapshot.revokedPermissions
+        }
+
+        return appendingRecord(
+            value: value,
+            status: status,
+            grantSource: source,
+            sequence: sequence,
+            grantedOptionalAPIPermissions: apiGrants,
+            grantedOptionalHostPermissions: hostGrants,
+            deniedPermissions: denied,
+            revokedPermissions: revoked,
+            diagnostics: diagnostics
+        )
+    }
+
+    func applyingModeledDenial(
+        _ permission: String,
+        sequence: Int
+    ) -> ChromeMV3PermissionDecisionStore {
+        let value = permission.trimmingCharacters(in: .whitespacesAndNewlines)
+        return appendingRecord(
+            value: value,
+            status: .denied,
+            grantSource: .none,
+            sequence: sequence,
+            grantedOptionalAPIPermissions:
+                snapshot.grantedOptionalAPIPermissions.filter { $0 != value },
+            grantedOptionalHostPermissions:
+                snapshot.grantedOptionalHostPermissions.filter { $0 != value },
+            deniedPermissions: snapshot.deniedPermissions + [value],
+            revokedPermissions:
+                snapshot.revokedPermissions.filter { $0 != value },
+            diagnostics: ["Modeled permission denial was recorded."]
+        )
+    }
+
+    func applyingRevoke(
+        _ permission: String,
+        sequence: Int
+    ) -> ChromeMV3PermissionDecisionStore {
+        let value = permission.trimmingCharacters(in: .whitespacesAndNewlines)
+        return appendingRecord(
+            value: value,
+            status: .revoked,
+            grantSource: .none,
+            sequence: sequence,
+            grantedOptionalAPIPermissions:
+                snapshot.grantedOptionalAPIPermissions.filter { $0 != value },
+            grantedOptionalHostPermissions:
+                snapshot.grantedOptionalHostPermissions.filter { $0 != value },
+            deniedPermissions:
+                snapshot.deniedPermissions.filter { $0 != value },
+            revokedPermissions: snapshot.revokedPermissions + [value],
+            diagnostics: ["Modeled permission revoke was recorded."]
+        )
+    }
+
+    func apiPermissionDecision(
+        _ permission: String
+    ) -> ChromeMV3APIPermissionDecision {
+        permissionBroker().apiPermissionDecision(permission)
+    }
+
+    func optionalPermissionDecision(
+        _ permission: String
+    ) -> ChromeMV3APIPermissionDecision {
+        apiPermissionDecision(permission)
+    }
+
+    func hostAccessDecision(
+        url: String?,
+        tabID: Int? = nil,
+        activeTabStore: ChromeMV3ActiveTabGrantStore? = nil,
+        userGestureAvailable: Bool = false
+    ) -> ChromeMV3HostAccessDecision {
+        permissionBroker(activeTabStore: activeTabStore)
+            .hostAccessDecision(
+                url: url,
+                tabID: tabID,
+                userGestureAvailable: userGestureAvailable
+            )
+    }
+
+    func isPermissionUnsupported(_ permission: String) -> Bool {
+        snapshot.unsupportedPermissions.contains(permission)
+    }
+
+    func isPermissionDeferred(_ permission: String) -> Bool {
+        snapshot.deferredPermissions.contains(permission)
+    }
+
+    func permissionBroker(
+        activeTabStore: ChromeMV3ActiveTabGrantStore? = nil
+    ) -> ChromeMV3PermissionBroker {
+        ChromeMV3PermissionBroker(
+            state: ChromeMV3PermissionBrokerState(
+                extensionID: snapshot.extensionID,
+                profileID: snapshot.profileID,
+                requiredPermissions: snapshot.declaredAPIPermissions,
+                optionalPermissions: snapshot.optionalAPIPermissions,
+                grantedOptionalPermissions:
+                    snapshot.grantedOptionalAPIPermissions,
+                hostPermissions: snapshot.declaredHostPermissions,
+                optionalHostPermissions: snapshot.optionalHostPermissions,
+                grantedOptionalHostPermissions:
+                    snapshot.grantedOptionalHostPermissions,
+                deniedPermissions: snapshot.deniedPermissions,
+                revokedPermissions: snapshot.revokedPermissions,
+                unavailablePermissions: snapshot.deferredPermissions,
+                unsupportedPermissions: snapshot.unsupportedPermissions,
+                activeTabGrants:
+                    activeTabStore?.snapshot.grantRecords.map(\.grant) ?? []
+            )
+        )
+    }
+
+    private func appendingRecord(
+        value: String,
+        status: ChromeMV3PermissionBrokerDecisionStatus,
+        grantSource: ChromeMV3PermissionBrokerGrantSource,
+        sequence: Int,
+        grantedOptionalAPIPermissions: [String]? = nil,
+        grantedOptionalHostPermissions: [String]? = nil,
+        deniedPermissions: [String]? = nil,
+        revokedPermissions: [String]? = nil,
+        diagnostics: [String]
+    ) -> ChromeMV3PermissionDecisionStore {
+        let record = ChromeMV3ModeledPermissionDecisionRecord(
+            extensionID: snapshot.extensionID,
+            profileID: snapshot.profileID,
+            subjectKind: Self.subjectKind(for: value),
+            value: value,
+            status: status,
+            grantSource: grantSource,
+            sequence: sequence,
+            diagnostics: diagnostics
+        )
+        return ChromeMV3PermissionDecisionStore(
+            snapshot: snapshot.with(
+                grantedOptionalAPIPermissions:
+                    grantedOptionalAPIPermissions,
+                grantedOptionalHostPermissions:
+                    grantedOptionalHostPermissions,
+                deniedPermissions: deniedPermissions,
+                revokedPermissions: revokedPermissions,
+                decisionRecords: snapshot.decisionRecords + [record],
+                diagnostics: snapshot.diagnostics + diagnostics
+            )
+        )
+    }
+
+    private static func subjectKind(
+        for value: String
+    ) -> ChromeMV3PermissionDecisionSubjectKind {
+        value == "<all_urls>" || value.contains("://")
+            ? .hostPermission
+            : .apiPermission
+    }
+
+    private static func derivedDecisionRecords(
+        from snapshot: ChromeMV3PermissionDecisionStoreSnapshot
+    ) -> [ChromeMV3ModeledPermissionDecisionRecord] {
+        let apiValues = Array(Set(
+            snapshot.declaredAPIPermissions
+                + snapshot.optionalAPIPermissions
+                + snapshot.grantedOptionalAPIPermissions
+                + snapshot.deniedPermissions.filter {
+                    subjectKind(for: $0) == .apiPermission
+                }
+                + snapshot.revokedPermissions.filter {
+                    subjectKind(for: $0) == .apiPermission
+                }
+                + snapshot.deferredPermissions
+                + snapshot.unsupportedPermissions
+        )).sorted()
+        let hostValues = Array(Set(
+            snapshot.declaredHostPermissions
+                + snapshot.optionalHostPermissions
+                + snapshot.grantedOptionalHostPermissions
+                + snapshot.deniedPermissions.filter {
+                    subjectKind(for: $0) == .hostPermission
+                }
+                + snapshot.revokedPermissions.filter {
+                    subjectKind(for: $0) == .hostPermission
+                }
+        )).sorted()
+
+        let apiRecords = apiValues.enumerated().map { index, value in
+            record(
+                snapshot: snapshot,
+                subjectKind: .apiPermission,
+                value: value,
+                sequence: index
+            )
+        }
+        let hostRecords = hostValues.enumerated().map { index, value in
+            record(
+                snapshot: snapshot,
+                subjectKind: .hostPermission,
+                value: value,
+                sequence: apiValues.count + index
+            )
+        }
+        return (apiRecords + hostRecords).sorted {
+            if $0.sequence != $1.sequence {
+                return $0.sequence < $1.sequence
+            }
+            return $0.id < $1.id
+        }
+    }
+
+    private static func record(
+        snapshot: ChromeMV3PermissionDecisionStoreSnapshot,
+        subjectKind: ChromeMV3PermissionDecisionSubjectKind,
+        value: String,
+        sequence: Int
+    ) -> ChromeMV3ModeledPermissionDecisionRecord {
+        let status: ChromeMV3PermissionBrokerDecisionStatus
+        let source: ChromeMV3PermissionBrokerGrantSource
+        if snapshot.unsupportedPermissions.contains(value) {
+            status = .unsupported
+            source = .none
+        } else if snapshot.deferredPermissions.contains(value) {
+            status = .deferred
+            source = .none
+        } else if snapshot.deniedPermissions.contains(value) {
+            status = .denied
+            source = .none
+        } else if snapshot.revokedPermissions.contains(value) {
+            status = .revoked
+            source = .none
+        } else if subjectKind == .hostPermission,
+                  snapshot.declaredHostPermissions.contains(value)
+        {
+            status = .allowed
+            source = .requiredHostPermission
+        } else if subjectKind == .hostPermission,
+                  snapshot.grantedOptionalHostPermissions.contains(value)
+        {
+            status = .allowed
+            source = .optionalHostPermissionModeledGrant
+        } else if subjectKind == .hostPermission,
+                  snapshot.optionalHostPermissions.contains(value)
+        {
+            status = .promptRequired
+            source = .none
+        } else if snapshot.declaredAPIPermissions.contains(value) {
+            status = .allowed
+            source = .requiredPermission
+        } else if snapshot.grantedOptionalAPIPermissions.contains(value) {
+            status = .allowed
+            source = .optionalPermissionModeledGrant
+        } else if snapshot.optionalAPIPermissions.contains(value) {
+            status = .promptRequired
+            source = .none
+        } else {
+            status = .blocked
+            source = .none
+        }
+
+        return ChromeMV3ModeledPermissionDecisionRecord(
+            extensionID: snapshot.extensionID,
+            profileID: snapshot.profileID,
+            subjectKind: subjectKind,
+            value: value,
+            status: status,
+            grantSource: source,
+            sequence: sequence,
+            diagnostics: [
+                "Permission store derived \(value) as \(status.rawValue).",
+            ]
+        )
+    }
+}
+
+struct ChromeMV3ActiveTabGrantRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var id: String
+    var grant: ChromeMV3ActiveTabGrant
+
+    init(grant: ChromeMV3ActiveTabGrant) {
+        self.grant = grant
+        self.id = ChromeMV3PermissionBrokerStableID.make(
+            prefix: "active-tab-grant",
+            parts: [
+                grant.extensionID,
+                grant.profileID,
+                String(grant.tabID),
+                grant.scope.diagnosticValue,
+                grant.reason.rawValue,
+                String(grant.createdSequence),
+            ]
+        )
+    }
+}
+
+struct ChromeMV3ActiveTabGrantStoreSnapshotSummary:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var storeID: String
+    var extensionID: String
+    var profileID: String
+    var activeGrantCount: Int
+    var inactiveGrantCount: Int
+    var grantRecordIDs: [String]
+    var activeGrantScopes: [String]
+    var nextSequence: Int
+}
+
+struct ChromeMV3ActiveTabGrantStoreSnapshot:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var schemaVersion: Int
+    var storeID: String
+    var extensionID: String
+    var profileID: String
+    var grantRecords: [ChromeMV3ActiveTabGrantRecord]
+    var nextSequence: Int
+    var diagnostics: [String]
+
+    init(
+        schemaVersion: Int = 1,
+        extensionID: String,
+        profileID: String,
+        grantRecords: [ChromeMV3ActiveTabGrantRecord] = [],
+        nextSequence: Int = 1,
+        diagnostics: [String] = []
+    ) {
+        self.schemaVersion = schemaVersion
+        self.extensionID = extensionID.isEmpty
+            ? "unknown-extension"
+            : extensionID
+        self.profileID = profileID.isEmpty ? "unknown-profile" : profileID
+        self.grantRecords = grantRecords.sorted {
+            if $0.grant.createdSequence != $1.grant.createdSequence {
+                return $0.grant.createdSequence < $1.grant.createdSequence
+            }
+            return $0.id < $1.id
+        }
+        self.nextSequence = max(
+            nextSequence,
+            (self.grantRecords.map(\.grant.createdSequence).max() ?? 0) + 1
+        )
+        self.diagnostics = Array(Set(
+            diagnostics.filter { $0.isEmpty == false }
+        )).sorted()
+        self.storeID = ChromeMV3PermissionBrokerStableID.make(
+            prefix: "active-tab-grant-store",
+            parts: [
+                self.extensionID,
+                self.profileID,
+                self.grantRecords.map(\.id).joined(separator: ","),
+                String(self.nextSequence),
+            ]
+        )
+    }
+
+    var summary: ChromeMV3ActiveTabGrantStoreSnapshotSummary {
+        ChromeMV3ActiveTabGrantStoreSnapshotSummary(
+            storeID: storeID,
+            extensionID: extensionID,
+            profileID: profileID,
+            activeGrantCount:
+                grantRecords.filter { $0.grant.active }.count,
+            inactiveGrantCount:
+                grantRecords.filter { $0.grant.active == false }.count,
+            grantRecordIDs: grantRecords.map(\.id).sorted(),
+            activeGrantScopes:
+                grantRecords
+                    .filter { $0.grant.active }
+                    .map(\.grant.scope.diagnosticValue)
+                    .sorted(),
+            nextSequence: nextSequence
+        )
+    }
+}
+
+struct ChromeMV3ActiveTabGrantStore:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var snapshot: ChromeMV3ActiveTabGrantStoreSnapshot
+
+    init(snapshot: ChromeMV3ActiveTabGrantStoreSnapshot) {
+        self.snapshot = snapshot
+    }
+
+    static func empty(
+        extensionID: String,
+        profileID: String
+    ) -> ChromeMV3ActiveTabGrantStore {
+        ChromeMV3ActiveTabGrantStore(
+            snapshot: ChromeMV3ActiveTabGrantStoreSnapshot(
+                extensionID: extensionID,
+                profileID: profileID,
+                diagnostics: [
+                    "No activeTab grants are modeled.",
+                ]
+            )
+        )
+    }
+
+    static func from(
+        extensionID: String,
+        profileID: String,
+        grants: [ChromeMV3ActiveTabGrant]
+    ) -> ChromeMV3ActiveTabGrantStore {
+        ChromeMV3ActiveTabGrantStore(
+            snapshot: ChromeMV3ActiveTabGrantStoreSnapshot(
+                extensionID: extensionID,
+                profileID: profileID,
+                grantRecords: grants.map(ChromeMV3ActiveTabGrantRecord.init)
+            )
+        )
+    }
+
+    func exportSnapshot() -> ChromeMV3ActiveTabGrantStoreSnapshot {
+        snapshot
+    }
+
+    func addingModeledGrant(
+        tabID: Int,
+        url: String,
+        reason: ChromeMV3ActiveTabGrantReason,
+        sequence: Int? = nil
+    ) -> ChromeMV3ActiveTabGrantStore {
+        guard let origin = ChromeMV3PermissionBrokerURL.origin(from: url)
+        else {
+            return with(
+                diagnostics: snapshot.diagnostics + [
+                    "activeTab grant was not created because URL origin is invalid.",
+                ]
+            )
+        }
+        let createdSequence = sequence ?? snapshot.nextSequence
+        let grant = ChromeMV3ActiveTabGrant(
+            extensionID: snapshot.extensionID,
+            profileID: snapshot.profileID,
+            tabID: tabID,
+            scope: .origin(origin),
+            reason: reason,
+            userGestureModeled: true,
+            createdSequence: createdSequence,
+            diagnostics: [
+                "Modeled activeTab grant created by \(reason.rawValue).",
+            ]
+        )
+        return ChromeMV3ActiveTabGrantStore(
+            snapshot: ChromeMV3ActiveTabGrantStoreSnapshot(
+                extensionID: snapshot.extensionID,
+                profileID: snapshot.profileID,
+                grantRecords:
+                    snapshot.grantRecords
+                        + [ChromeMV3ActiveTabGrantRecord(grant: grant)],
+                nextSequence: createdSequence + 1,
+                diagnostics: snapshot.diagnostics + grant.diagnostics
+            )
+        )
+    }
+
+    func activeTabDecision(
+        tabID: Int?,
+        url: String?,
+        activeTabPermissionDeclared: Bool = true,
+        userGestureAvailable: Bool = false
+    ) -> ChromeMV3ActiveTabAccessDecision {
+        ChromeMV3ActiveTabGrantBroker(
+            grants: snapshot.grantRecords.map(\.grant)
+        )
+        .activeTabDecision(
+            extensionID: snapshot.extensionID,
+            profileID: snapshot.profileID,
+            tabID: tabID,
+            url: url,
+            activeTabPermissionDeclared: activeTabPermissionDeclared,
+            userGestureAvailable: userGestureAvailable
+        )
+    }
+
+    func hasActiveTabGrant(tabID: Int?, url: String?) -> Bool {
+        activeTabDecision(tabID: tabID, url: url).hasGrant
+    }
+
+    func expiringForTabClose(
+        tabID: Int,
+        sequence: Int
+    ) -> (
+        store: ChromeMV3ActiveTabGrantStore,
+        expired: [ChromeMV3ActiveTabGrantRecord],
+        retained: [ChromeMV3ActiveTabGrantRecord]
+    ) {
+        expiring(
+            trigger: .tabClose,
+            sequence: sequence,
+            reason: "Tab was closed.",
+            shouldExpire: { $0.profileID == snapshot.profileID && $0.tabID == tabID }
+        )
+    }
+
+    func expiringForNavigation(
+        tabID: Int,
+        oldURL: String?,
+        newURL: String?,
+        sequence: Int
+    ) -> (
+        store: ChromeMV3ActiveTabGrantStore,
+        expired: [ChromeMV3ActiveTabGrantRecord],
+        retained: [ChromeMV3ActiveTabGrantRecord]
+    ) {
+        expiring(
+            trigger: .tabNavigation,
+            sequence: sequence,
+            reason: "Tab navigated away from the granted scope.",
+            shouldExpire: {
+                $0.profileID == snapshot.profileID
+                    && $0.tabID == tabID
+                    && $0.scope.expiresOnNavigation(
+                        oldURL: oldURL,
+                        newURL: newURL
+                    )
+            }
+        )
+    }
+
+    func expiringForProfileClose(
+        profileID: String,
+        sequence: Int
+    ) -> (
+        store: ChromeMV3ActiveTabGrantStore,
+        expired: [ChromeMV3ActiveTabGrantRecord],
+        retained: [ChromeMV3ActiveTabGrantRecord]
+    ) {
+        expiring(
+            trigger: .profileClose,
+            sequence: sequence,
+            reason: "Profile was closed.",
+            shouldExpire: { $0.profileID == profileID }
+        )
+    }
+
+    func expiringForExtensionDisable(
+        extensionID: String,
+        profileID: String,
+        sequence: Int
+    ) -> (
+        store: ChromeMV3ActiveTabGrantStore,
+        expired: [ChromeMV3ActiveTabGrantRecord],
+        retained: [ChromeMV3ActiveTabGrantRecord]
+    ) {
+        expiring(
+            trigger: .extensionDisable,
+            sequence: sequence,
+            reason: "Extension was disabled.",
+            shouldExpire: {
+                $0.extensionID == extensionID && $0.profileID == profileID
+            }
+        )
+    }
+
+    func expiringForPermissionRevoke(
+        extensionID: String,
+        profileID: String,
+        permission: String?,
+        sequence: Int
+    ) -> (
+        store: ChromeMV3ActiveTabGrantStore,
+        expired: [ChromeMV3ActiveTabGrantRecord],
+        retained: [ChromeMV3ActiveTabGrantRecord]
+    ) {
+        expiring(
+            trigger: .permissionRevoke,
+            sequence: sequence,
+            reason:
+                "Permission revoke expired activeTab grant"
+                + (permission.map { " for \($0)." } ?? "."),
+            shouldExpire: {
+                $0.extensionID == extensionID && $0.profileID == profileID
+            }
+        )
+    }
+
+    private func expiring(
+        trigger: ChromeMV3ActiveTabExpiryTrigger,
+        sequence: Int,
+        reason: String,
+        shouldExpire: (ChromeMV3ActiveTabGrant) -> Bool
+    ) -> (
+        store: ChromeMV3ActiveTabGrantStore,
+        expired: [ChromeMV3ActiveTabGrantRecord],
+        retained: [ChromeMV3ActiveTabGrantRecord]
+    ) {
+        let before = snapshot.grantRecords
+        let after = before.map { record -> ChromeMV3ActiveTabGrantRecord in
+            guard record.grant.active,
+                  record.grant.expiryTriggers.contains(trigger),
+                  shouldExpire(record.grant)
+            else { return record }
+            return ChromeMV3ActiveTabGrantRecord(
+                grant: record.grant.expiring(
+                    trigger: trigger,
+                    sequence: sequence,
+                    reason: reason
+                )
+            )
+        }
+        let expired = zip(before, after).compactMap { old, new in
+            old.grant.active && new.grant.active == false ? new : nil
+        }
+        let retained = after.filter { $0.grant.active }
+        let diagnostics = expired.isEmpty
+            ? ["No activeTab grants expired for \(trigger.rawValue)."]
+            : expired.flatMap(\.grant.diagnostics)
+        let store = ChromeMV3ActiveTabGrantStore(
+            snapshot: ChromeMV3ActiveTabGrantStoreSnapshot(
+                extensionID: snapshot.extensionID,
+                profileID: snapshot.profileID,
+                grantRecords: after,
+                nextSequence: max(snapshot.nextSequence, sequence + 1),
+                diagnostics: snapshot.diagnostics + diagnostics
+            )
+        )
+        return (store, expired.sorted { $0.id < $1.id }, retained.sorted { $0.id < $1.id })
+    }
+
+    private func with(
+        diagnostics: [String]
+    ) -> ChromeMV3ActiveTabGrantStore {
+        ChromeMV3ActiveTabGrantStore(
+            snapshot: ChromeMV3ActiveTabGrantStoreSnapshot(
+                extensionID: snapshot.extensionID,
+                profileID: snapshot.profileID,
+                grantRecords: snapshot.grantRecords,
+                nextSequence: snapshot.nextSequence,
+                diagnostics: diagnostics
+            )
+        )
+    }
+}
+
+enum ChromeMV3PermissionLifecycleEventKind:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case extensionDisabled
+    case permissionRevoked
+    case profileClosed
+    case tabClosed
+    case tabCreated
+    case tabNavigated
+    case tabReplaced
+
+    static func < (
+        lhs: ChromeMV3PermissionLifecycleEventKind,
+        rhs: ChromeMV3PermissionLifecycleEventKind
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3PermissionLifecycleEvent:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var kind: ChromeMV3PermissionLifecycleEventKind
+    var extensionID: String
+    var profileID: String
+    var tabID: Int?
+    var replacementTabID: Int?
+    var oldURL: String?
+    var newURL: String?
+    var permission: String?
+    var sequence: Int
+
+    init(
+        kind: ChromeMV3PermissionLifecycleEventKind,
+        extensionID: String,
+        profileID: String,
+        tabID: Int? = nil,
+        replacementTabID: Int? = nil,
+        oldURL: String? = nil,
+        newURL: String? = nil,
+        permission: String? = nil,
+        sequence: Int
+    ) {
+        self.kind = kind
+        self.extensionID = extensionID.isEmpty
+            ? "unknown-extension"
+            : extensionID
+        self.profileID = profileID.isEmpty ? "unknown-profile" : profileID
+        self.tabID = tabID
+        self.replacementTabID = replacementTabID
+        self.oldURL = oldURL
+        self.newURL = newURL
+        self.permission = permission
+        self.sequence = sequence
+    }
+}
+
+struct ChromeMV3PermissionLifecycleEventResult:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var event: ChromeMV3PermissionLifecycleEvent
+    var grantsExpired: [ChromeMV3ActiveTabGrantRecord]
+    var grantsRetained: [ChromeMV3ActiveTabGrantRecord]
+    var permissionStoreSummary:
+        ChromeMV3PermissionDecisionStoreSnapshotSummary
+    var activeTabStoreSummary:
+        ChromeMV3ActiveTabGrantStoreSnapshotSummary
+    var readinessImpact: [String]
+    var diagnostics: [String]
+}
+
+struct ChromeMV3PermissionLifecycleAdapter:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var permissionStore: ChromeMV3PermissionDecisionStore
+    var activeTabStore: ChromeMV3ActiveTabGrantStore
+    var appliedEvents: [ChromeMV3PermissionLifecycleEvent]
+    var eventResults: [ChromeMV3PermissionLifecycleEventResult]
+
+    init(
+        permissionStore: ChromeMV3PermissionDecisionStore,
+        activeTabStore: ChromeMV3ActiveTabGrantStore,
+        appliedEvents: [ChromeMV3PermissionLifecycleEvent] = [],
+        eventResults: [ChromeMV3PermissionLifecycleEventResult] = []
+    ) {
+        self.permissionStore = permissionStore
+        self.activeTabStore = activeTabStore
+        self.appliedEvents = appliedEvents.sorted {
+            if $0.sequence != $1.sequence {
+                return $0.sequence < $1.sequence
+            }
+            return $0.kind < $1.kind
+        }
+        self.eventResults = eventResults.sorted {
+            if $0.event.sequence != $1.event.sequence {
+                return $0.event.sequence < $1.event.sequence
+            }
+            return $0.event.kind < $1.event.kind
+        }
+    }
+
+    func applying(
+        _ event: ChromeMV3PermissionLifecycleEvent
+    ) -> ChromeMV3PermissionLifecycleAdapter {
+        var nextPermissionStore = permissionStore
+        let expiry: (
+            store: ChromeMV3ActiveTabGrantStore,
+            expired: [ChromeMV3ActiveTabGrantRecord],
+            retained: [ChromeMV3ActiveTabGrantRecord]
+        )
+
+        switch event.kind {
+        case .tabCreated:
+            expiry = (activeTabStore, [], activeTabStore.snapshot.grantRecords.filter { $0.grant.active })
+        case .tabClosed:
+            if let tabID = event.tabID {
+                expiry = activeTabStore.expiringForTabClose(
+                    tabID: tabID,
+                    sequence: event.sequence
+                )
+            } else {
+                expiry = (activeTabStore, [], activeTabStore.snapshot.grantRecords.filter { $0.grant.active })
+            }
+        case .tabNavigated:
+            if let tabID = event.tabID {
+                expiry = activeTabStore.expiringForNavigation(
+                    tabID: tabID,
+                    oldURL: event.oldURL,
+                    newURL: event.newURL,
+                    sequence: event.sequence
+                )
+            } else {
+                expiry = (activeTabStore, [], activeTabStore.snapshot.grantRecords.filter { $0.grant.active })
+            }
+        case .tabReplaced:
+            if let tabID = event.tabID {
+                expiry = activeTabStore.expiringForTabClose(
+                    tabID: tabID,
+                    sequence: event.sequence
+                )
+            } else {
+                expiry = (activeTabStore, [], activeTabStore.snapshot.grantRecords.filter { $0.grant.active })
+            }
+        case .profileClosed:
+            expiry = activeTabStore.expiringForProfileClose(
+                profileID: event.profileID,
+                sequence: event.sequence
+            )
+        case .extensionDisabled:
+            expiry = activeTabStore.expiringForExtensionDisable(
+                extensionID: event.extensionID,
+                profileID: event.profileID,
+                sequence: event.sequence
+            )
+        case .permissionRevoked:
+            if let permission = event.permission {
+                nextPermissionStore = permissionStore.applyingRevoke(
+                    permission,
+                    sequence: event.sequence
+                )
+            }
+            expiry = activeTabStore.expiringForPermissionRevoke(
+                extensionID: event.extensionID,
+                profileID: event.profileID,
+                permission: event.permission,
+                sequence: event.sequence
+            )
+        }
+
+        let result = ChromeMV3PermissionLifecycleEventResult(
+            event: event,
+            grantsExpired: expiry.expired,
+            grantsRetained: expiry.retained,
+            permissionStoreSummary:
+                nextPermissionStore.exportSnapshot().summary,
+            activeTabStoreSummary:
+                expiry.store.exportSnapshot().summary,
+            readinessImpact: readinessImpact(
+                event: event,
+                expired: expiry.expired
+            ),
+            diagnostics: diagnostics(
+                event: event,
+                expired: expiry.expired,
+                retained: expiry.retained
+            )
+        )
+
+        return ChromeMV3PermissionLifecycleAdapter(
+            permissionStore: nextPermissionStore,
+            activeTabStore: expiry.store,
+            appliedEvents: appliedEvents + [event],
+            eventResults: eventResults + [result]
+        )
+    }
+
+    func applying(
+        _ events: [ChromeMV3PermissionLifecycleEvent]
+    ) -> ChromeMV3PermissionLifecycleAdapter {
+        events.sorted {
+            if $0.sequence != $1.sequence {
+                return $0.sequence < $1.sequence
+            }
+            return $0.kind < $1.kind
+        }.reduce(self) { adapter, event in
+            adapter.applying(event)
+        }
+    }
+
+    private func readinessImpact(
+        event: ChromeMV3PermissionLifecycleEvent,
+        expired: [ChromeMV3ActiveTabGrantRecord]
+    ) -> [String] {
+        var impact = [
+            "canPromptUserNow remains false.",
+            "canDispatchMessagesNow remains false.",
+            "canRegisterListenersNow remains false.",
+            "canWakeServiceWorkerNow remains false.",
+            "canLoadContextNow remains false.",
+            "runtimeLoadable remains false.",
+        ]
+        if expired.isEmpty == false {
+            impact.append(
+                "activeTab access was reduced by \(event.kind.rawValue)."
+            )
+        }
+        if event.kind == .permissionRevoked {
+            impact.append(
+                "Permission revoke updates modeled store state only."
+            )
+        }
+        return Array(Set(impact)).sorted()
+    }
+
+    private func diagnostics(
+        event: ChromeMV3PermissionLifecycleEvent,
+        expired: [ChromeMV3ActiveTabGrantRecord],
+        retained: [ChromeMV3ActiveTabGrantRecord]
+    ) -> [String] {
+        [
+            "Lifecycle event \(event.kind.rawValue) was applied deterministically.",
+            "Expired activeTab grants: \(expired.map(\.id).sorted().joined(separator: ","))",
+            "Retained activeTab grants: \(retained.map(\.id).sorted().joined(separator: ","))",
+            "No observer, scheduler, context, listener, or dispatch path is installed.",
+        ]
     }
 }
 
@@ -1311,6 +2659,7 @@ struct ChromeMV3PermissionBrokerStateSummary:
     var optionalHostPermissions: [String]
     var grantedOptionalHostPermissions: [String]
     var deniedPermissions: [String]
+    var revokedPermissions: [String]
     var unavailablePermissions: [String]
     var unsupportedPermissions: [String]
 }
@@ -1361,16 +2710,106 @@ struct ChromeMV3PasswordManagerPermissionReadiness:
     Equatable,
     Sendable
 {
+    var hostPermissionsDeclared: [String]
     var hostPermissionsDetected: Bool
+    var loginPageURL: String
+    var loginPageTabID: Int
+    var loginPageHostAccessDecision: ChromeMV3HostAccessDecision
+    var loginPageActiveTabDecision: ChromeMV3ActiveTabAccessDecision
     var contentScriptHostAccessRequired: Bool
+    var contentScriptHostAccessRequirement: String
     var actionPopupUserGestureMayCreateActiveTabGrantInFuture: Bool
     var nativeMessagingPermissionDetectedButBlocked: Bool
+    var nativeMessagingPermissionStillBlockedByNativeMessagingLayer: Bool
     var storagePermissionDetectedButRuntimeMissing: Bool
+    var storagePermissionStillBlockedByStorageRuntime: Bool
     var runtimeMessagingBlocked: Bool
+    var runtimeMessagingStillBlockedByDispatcherListenerServiceWorker: Bool
     var permissionBrokerSkeletonPresent: Bool
     var realPermissionPromptsImplemented: Bool
+    var permissionPromptsNotImplemented: Bool
     var passwordManagerPermissionReady: Bool
     var blockers: [String]
+}
+
+struct ChromeMV3PermissionLifecycleReportSummary:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var reportID: String
+    var reportFileName: String
+    var permissionStoreID: String
+    var activeTabGrantStoreID: String
+    var lifecycleEventCount: Int
+    var expiredGrantCount: Int
+    var canPromptUserNow: Bool
+    var canDispatchMessagesNow: Bool
+    var canRegisterListenersNow: Bool
+    var canWakeServiceWorkerNow: Bool
+    var canLoadContextNow: Bool
+    var runtimeLoadable: Bool
+    var passwordManagerPermissionReady: Bool
+}
+
+struct ChromeMV3PermissionLifecycleReport:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var schemaVersion: Int
+    var id: String
+    var reportFileName: String
+    var candidateID: String
+    var extensionID: String
+    var profileID: String
+    var permissionStoreSnapshotSummary:
+        ChromeMV3PermissionDecisionStoreSnapshotSummary
+    var activeTabGrantSnapshotSummary:
+        ChromeMV3ActiveTabGrantStoreSnapshotSummary
+    var lifecycleEventsApplied: [ChromeMV3PermissionLifecycleEvent]
+    var lifecycleEventResults: [ChromeMV3PermissionLifecycleEventResult]
+    var expiredGrantDiagnostics: [String]
+    var routePermissionDecisions:
+        [ChromeMV3PermissionBrokerRouteScenario]
+    var listenerPermissionDecisions:
+        [ChromeMV3RuntimeEventSurfaceCapability]
+    var senderMetadataRedactionDecisions:
+        [ChromeMV3RuntimeMessagingRouteKind:
+            ChromeMV3RuntimeMessagingMetadataRedaction]
+    var unsupportedPermissions: [String]
+    var deferredPermissions: [String]
+    var passwordManagerPermissionReadiness:
+        ChromeMV3PasswordManagerPermissionReadiness
+    var canPromptUserNow: Bool
+    var canDispatchMessagesNow: Bool
+    var canRegisterListenersNow: Bool
+    var canWakeServiceWorkerNow: Bool
+    var canLoadContextNow: Bool
+    var runtimeLoadable: Bool
+    var documentationSources: [ChromeMV3ManifestRewritePreviewSource]
+    var diagnostics: [String]
+
+    var summary: ChromeMV3PermissionLifecycleReportSummary {
+        ChromeMV3PermissionLifecycleReportSummary(
+            reportID: id,
+            reportFileName: reportFileName,
+            permissionStoreID:
+                permissionStoreSnapshotSummary.storeID,
+            activeTabGrantStoreID:
+                activeTabGrantSnapshotSummary.storeID,
+            lifecycleEventCount: lifecycleEventsApplied.count,
+            expiredGrantCount:
+                lifecycleEventResults.flatMap(\.grantsExpired).count,
+            canPromptUserNow: false,
+            canDispatchMessagesNow: false,
+            canRegisterListenersNow: false,
+            canWakeServiceWorkerNow: false,
+            canLoadContextNow: false,
+            runtimeLoadable: false,
+            passwordManagerPermissionReady: false
+        )
+    }
 }
 
 struct ChromeMV3PermissionBrokerReadinessReportSummary:
@@ -1402,6 +2841,10 @@ struct ChromeMV3PermissionBrokerReadinessReport:
     var candidateID: String
     var extensionID: String
     var profileID: String
+    var permissionDecisionStoreSummary:
+        ChromeMV3PermissionDecisionStoreSnapshotSummary
+    var activeTabGrantStoreSnapshotSummary:
+        ChromeMV3ActiveTabGrantStoreSnapshotSummary
     var brokerStateSummary: ChromeMV3PermissionBrokerStateSummary
     var hostPatternSupportSummary: ChromeMV3HostPatternSupportSummary
     var activeTabGrantSummary: ChromeMV3ActiveTabGrantSummary
@@ -1435,6 +2878,298 @@ struct ChromeMV3PermissionBrokerReadinessReport:
             canLoadContextNow: false,
             runtimeLoadable: false,
             passwordManagerPermissionReady: false
+        )
+    }
+}
+
+enum ChromeMV3PermissionLifecycleReportWriter {
+    static let reportFileName = "runtime-permission-lifecycle-report.json"
+
+    @discardableResult
+    static func write(
+        _ report: ChromeMV3PermissionLifecycleReport,
+        toRewrittenBundleRoot rootURL: URL
+    ) throws -> ChromeMV3PermissionLifecycleReport {
+        guard directoryExists(rootURL.standardizedFileURL) else {
+            return report
+        }
+        try ChromeMV3DeterministicJSON.write(
+            report,
+            to: rootURL.standardizedFileURL
+                .appendingPathComponent(Self.reportFileName)
+        )
+        return report
+    }
+
+    private static func directoryExists(_ url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(
+            atPath: url.path,
+            isDirectory: &isDirectory
+        ) && isDirectory.boolValue
+    }
+}
+
+enum ChromeMV3PermissionLifecycleReportGenerator {
+    static func makeReport(
+        prerequisitesReport prerequisites:
+            ChromeMV3RuntimeBridgePrerequisitesReport,
+        profileID: String = "diagnostic-profile",
+        modeledActiveTabGrants: [ChromeMV3ActiveTabGrant] = [],
+        lifecycleEvents: [ChromeMV3PermissionLifecycleEvent] = []
+    ) -> ChromeMV3PermissionLifecycleReport {
+        let extensionID = prerequisites.candidateID
+        let permissionStore = permissionStore(
+            prerequisites: prerequisites,
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        let activeTabStore = ChromeMV3ActiveTabGrantStore.from(
+            extensionID: extensionID,
+            profileID: profileID,
+            grants: modeledActiveTabGrants
+        )
+        let adapter = ChromeMV3PermissionLifecycleAdapter(
+            permissionStore: permissionStore,
+            activeTabStore: activeTabStore
+        ).applying(lifecycleEvents)
+        let broker = adapter.permissionStore.permissionBroker(
+            activeTabStore: adapter.activeTabStore
+        )
+        let routes = routeScenarios(
+            extensionID: extensionID,
+            profileID: profileID,
+            broker: broker
+        )
+        let surfaces = ChromeMV3RuntimeListenerSurface.allModeledSurfaces(
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        let listenerDecisions = ChromeMV3RuntimeEventSurfaceCapability.matrix(
+            surfaces: surfaces,
+            permissionBroker: broker
+        )
+        let password = passwordManagerPermissionReadiness(
+            prerequisites: prerequisites,
+            broker: broker
+        )
+        let permissionSnapshot = adapter.permissionStore.exportSnapshot()
+        let activeTabSnapshot = adapter.activeTabStore.exportSnapshot()
+
+        return ChromeMV3PermissionLifecycleReport(
+            schemaVersion: 1,
+            id: id(
+                candidateID: prerequisites.candidateID,
+                prerequisiteReportID: prerequisites.id,
+                permissionStoreID: permissionSnapshot.storeID,
+                activeTabStoreID: activeTabSnapshot.storeID,
+                events: adapter.appliedEvents
+            ),
+            reportFileName:
+                ChromeMV3PermissionLifecycleReportWriter.reportFileName,
+            candidateID: prerequisites.candidateID,
+            extensionID: extensionID,
+            profileID: profileID,
+            permissionStoreSnapshotSummary: permissionSnapshot.summary,
+            activeTabGrantSnapshotSummary: activeTabSnapshot.summary,
+            lifecycleEventsApplied: adapter.appliedEvents,
+            lifecycleEventResults: adapter.eventResults,
+            expiredGrantDiagnostics:
+                adapter.eventResults
+                    .flatMap(\.grantsExpired)
+                    .flatMap(\.grant.diagnostics)
+                    .sorted(),
+            routePermissionDecisions: routes,
+            listenerPermissionDecisions: listenerDecisions,
+            senderMetadataRedactionDecisions:
+                Dictionary(uniqueKeysWithValues: routes.map {
+                    ($0.routeKind, $0.senderMetadataRedaction)
+                }),
+            unsupportedPermissions: permissionSnapshot.unsupportedPermissions,
+            deferredPermissions: permissionSnapshot.deferredPermissions,
+            passwordManagerPermissionReadiness: password,
+            canPromptUserNow: false,
+            canDispatchMessagesNow: false,
+            canRegisterListenersNow: false,
+            canWakeServiceWorkerNow: false,
+            canLoadContextNow: false,
+            runtimeLoadable: false,
+            documentationSources:
+                ChromeMV3PermissionBrokerReadinessReportGenerator
+                .documentationSourcesForPermissionReports(),
+            diagnostics: [
+                "Permission lifecycle report is deterministic and host-side only.",
+                "Permission store state is modeled but no real prompt is shown.",
+                "activeTab grant expiry is modeled from explicit lifecycle inputs.",
+                "Messaging and listener readiness consume store-backed decisions.",
+                "No extension context, script, listener, worker, port, native host, or scheduler is started.",
+                "runtimeLoadable remains false.",
+            ]
+        )
+    }
+
+    static func makeReport(
+        loadingPrerequisitesReportFrom rootURL: URL,
+        fileManager: FileManager = .default
+    ) throws -> ChromeMV3PermissionLifecycleReport {
+        let rootURL = rootURL.standardizedFileURL
+        let prerequisitesURL = rootURL.appendingPathComponent(
+            ChromeMV3RuntimeBridgePrerequisitesReportWriter.reportFileName
+        )
+        let data = try Data(contentsOf: prerequisitesURL)
+        let prerequisites = try JSONDecoder().decode(
+            ChromeMV3RuntimeBridgePrerequisitesReport.self,
+            from: data
+        )
+        return makeReport(prerequisitesReport: prerequisites)
+    }
+
+    static func permissionStore(
+        prerequisites: ChromeMV3RuntimeBridgePrerequisitesReport,
+        extensionID: String,
+        profileID: String
+    ) -> ChromeMV3PermissionDecisionStore {
+        ChromeMV3PermissionDecisionStore.from(
+            manifestFacts: prerequisites.manifestFacts,
+            extensionID: extensionID,
+            profileID: profileID,
+            deferredPermissions:
+                prerequisites.unsupportedDeferredAPIs.deferredAPIs
+                    .map(\.rawValue),
+            unsupportedPermissions:
+                prerequisites.unsupportedDeferredAPIs.unsupportedAPIs
+                    .map(\.rawValue)
+        )
+    }
+
+    fileprivate static func routeScenarios(
+        extensionID: String,
+        profileID: String,
+        broker: ChromeMV3PermissionBroker
+    ) -> [ChromeMV3PermissionBrokerRouteScenario] {
+        [
+            ChromeMV3RuntimeMessagingRouteKind.contentScriptToServiceWorker,
+            .serviceWorkerToTab,
+            .tabsSendMessage,
+        ].map {
+            ChromeMV3RuntimeMessagingRoute.make(
+                kind: $0,
+                extensionID: extensionID,
+                profileID: profileID,
+                tabID: 1,
+                frameID: 0,
+                documentID: "document-0",
+                sourceURL: "https://example.com/login",
+                targetURL: "https://example.com/login"
+            )
+        }
+        .map { route in
+            let hostDecision = broker.hostAccessDecision(
+                url: route.source.url ?? route.target.url,
+                tabID: route.tabID
+            )
+            let permissionDecision =
+                ChromeMV3RuntimeMessagingPermissionDecision.evaluate(
+                    route: route,
+                    permissionBroker: broker
+                )
+            return ChromeMV3PermissionBrokerRouteScenario(
+                routeKind: route.kind,
+                hostAccessDecision: hostDecision,
+                messagingPermissionDecision: permissionDecision,
+                senderMetadataRedaction:
+                    permissionDecision.senderMetadataRedaction,
+                canDispatchMessagesNow: false
+            )
+        }.sorted { $0.routeKind < $1.routeKind }
+    }
+
+    fileprivate static func passwordManagerPermissionReadiness(
+        prerequisites: ChromeMV3RuntimeBridgePrerequisitesReport,
+        broker: ChromeMV3PermissionBroker
+    ) -> ChromeMV3PasswordManagerPermissionReadiness {
+        let summary = prerequisites.passwordManagerPrerequisiteSummary
+        let loginPageURL = "https://example.com/login"
+        let loginPageTabID = 1
+        let hostDecision = broker.hostAccessDecision(
+            url: loginPageURL,
+            tabID: loginPageTabID
+        )
+        let activeDecision = broker.activeTabDecision(
+            tabID: loginPageTabID,
+            url: loginPageURL
+        )
+        let hostDetected = summary.hostPermissionsPresent
+            || prerequisites.manifestFacts.hostPermissions.isEmpty == false
+        let nativeDetected = summary.nativeMessagingPermissionPresent
+            || broker.apiPermissionDecision("nativeMessaging").deferred
+        let storageDetected = summary.storagePermissionPresent
+            || prerequisites.manifestFacts.storagePermissionPresent
+        let contentScriptRequiresHost =
+            prerequisites.manifestFacts.contentScriptsPresent
+                || summary.contentScriptsPresent
+        return ChromeMV3PasswordManagerPermissionReadiness(
+            hostPermissionsDeclared:
+                prerequisites.manifestFacts.hostPermissions,
+            hostPermissionsDetected: hostDetected,
+            loginPageURL: loginPageURL,
+            loginPageTabID: loginPageTabID,
+            loginPageHostAccessDecision: hostDecision,
+            loginPageActiveTabDecision: activeDecision,
+            contentScriptHostAccessRequired: contentScriptRequiresHost,
+            contentScriptHostAccessRequirement:
+                contentScriptRequiresHost
+                    ? "Password-manager content scripts require modeled host access for the login page before any future injection."
+                    : "No content script host access requirement was detected.",
+            actionPopupUserGestureMayCreateActiveTabGrantInFuture:
+                prerequisites.manifestFacts.actionPopupPresent
+                    || summary.actionPopupPresent,
+            nativeMessagingPermissionDetectedButBlocked: nativeDetected,
+            nativeMessagingPermissionStillBlockedByNativeMessagingLayer:
+                nativeDetected,
+            storagePermissionDetectedButRuntimeMissing: storageDetected,
+            storagePermissionStillBlockedByStorageRuntime: storageDetected,
+            runtimeMessagingBlocked: true,
+            runtimeMessagingStillBlockedByDispatcherListenerServiceWorker:
+                true,
+            permissionBrokerSkeletonPresent: true,
+            realPermissionPromptsImplemented: false,
+            permissionPromptsNotImplemented: true,
+            passwordManagerPermissionReady: false,
+            blockers: Array(Set(
+                summary.blockers
+                    + hostDecision.diagnostics
+                    + activeDecision.diagnostics
+                    + [
+                        "Password-manager content scripts still require authorized injection.",
+                        "Action popup user gestures are modeled but not connected to real UI.",
+                        "Native messaging permission is detected but native messaging remains blocked.",
+                        "storage permission is detected but storage runtime is not implemented.",
+                        "Runtime messaging remains blocked by dispatcher, listener, and service-worker gates.",
+                        "Real permission prompts are not implemented.",
+                    ]
+            )).sorted()
+        )
+    }
+
+    private static func id(
+        candidateID: String,
+        prerequisiteReportID: String,
+        permissionStoreID: String,
+        activeTabStoreID: String,
+        events: [ChromeMV3PermissionLifecycleEvent]
+    ) -> String {
+        ChromeMV3PermissionBrokerStableID.make(
+            prefix: "runtime-permission-lifecycle",
+            parts: [
+                candidateID,
+                prerequisiteReportID,
+                permissionStoreID,
+                activeTabStoreID,
+                events.map {
+                    "\($0.sequence):\($0.kind.rawValue):\($0.tabID.map(String.init) ?? "no-tab"):\($0.permission ?? "no-permission")"
+                }.joined(separator: ","),
+            ]
         )
     }
 }
@@ -1476,48 +3211,29 @@ enum ChromeMV3PermissionBrokerReadinessReportGenerator {
         modeledActiveTabGrants: [ChromeMV3ActiveTabGrant] = []
     ) -> ChromeMV3PermissionBrokerReadinessReport {
         let extensionID = prerequisites.candidateID
-        let state = ChromeMV3PermissionBrokerState.from(
-            manifestFacts: prerequisites.manifestFacts,
+        let permissionStore = ChromeMV3PermissionLifecycleReportGenerator
+            .permissionStore(
+                prerequisites: prerequisites,
+                extensionID: extensionID,
+                profileID: profileID
+            )
+        let activeTabStore = ChromeMV3ActiveTabGrantStore.from(
             extensionID: extensionID,
             profileID: profileID,
-            activeTabGrants: modeledActiveTabGrants
+            grants: modeledActiveTabGrants
         )
-        let broker = ChromeMV3PermissionBroker(state: state)
-        let routes = [
-            ChromeMV3RuntimeMessagingRouteKind.contentScriptToServiceWorker,
-            .serviceWorkerToTab,
-            .tabsSendMessage,
-        ].map {
-            ChromeMV3RuntimeMessagingRoute.make(
-                kind: $0,
+        let broker = permissionStore.permissionBroker(
+            activeTabStore: activeTabStore
+        )
+        let state = broker.state
+        let permissionSnapshot = permissionStore.exportSnapshot()
+        let activeTabSnapshot = activeTabStore.exportSnapshot()
+        let scenarios = ChromeMV3PermissionLifecycleReportGenerator
+            .routeScenarios(
                 extensionID: extensionID,
                 profileID: profileID,
-                tabID: 1,
-                frameID: 0,
-                documentID: "document-0",
-                sourceURL: "https://example.com/login",
-                targetURL: "https://example.com/login"
+                broker: broker
             )
-        }
-        let scenarios = routes.map { route in
-            let hostDecision = broker.hostAccessDecision(
-                url: route.source.url ?? route.target.url,
-                tabID: route.tabID
-            )
-            let permissionDecision =
-                ChromeMV3RuntimeMessagingPermissionDecision.evaluate(
-                    route: route,
-                    permissionBroker: broker
-                )
-            return ChromeMV3PermissionBrokerRouteScenario(
-                routeKind: route.kind,
-                hostAccessDecision: hostDecision,
-                messagingPermissionDecision: permissionDecision,
-                senderMetadataRedaction:
-                    permissionDecision.senderMetadataRedaction,
-                canDispatchMessagesNow: false
-            )
-        }.sorted { $0.routeKind < $1.routeKind }
 
         return ChromeMV3PermissionBrokerReadinessReport(
             schemaVersion: 1,
@@ -1531,6 +3247,8 @@ enum ChromeMV3PermissionBrokerReadinessReportGenerator {
             candidateID: prerequisites.candidateID,
             extensionID: extensionID,
             profileID: profileID,
+            permissionDecisionStoreSummary: permissionSnapshot.summary,
+            activeTabGrantStoreSnapshotSummary: activeTabSnapshot.summary,
             brokerStateSummary: brokerStateSummary(state),
             hostPatternSupportSummary:
                 hostPatternSupportSummary(state: state),
@@ -1544,7 +3262,8 @@ enum ChromeMV3PermissionBrokerReadinessReportGenerator {
             unsupportedPermissions: state.unsupportedPermissions,
             deferredPermissions: state.unavailablePermissions,
             passwordManagerPermissionReadiness:
-                passwordManagerPermissionReadiness(
+                ChromeMV3PermissionLifecycleReportGenerator
+                .passwordManagerPermissionReadiness(
                     prerequisites: prerequisites,
                     broker: broker
                 ),
@@ -1555,9 +3274,9 @@ enum ChromeMV3PermissionBrokerReadinessReportGenerator {
             runtimeLoadable: false,
             documentationSources: documentationSources(),
             diagnostics: [
-                "Permission broker skeleton is present and deterministic.",
-                "Host access decisions are modeled without runtime grants.",
-                "activeTab grants are modeled only from fixtures or future gestures.",
+                "Permission decision store is present and deterministic.",
+                "Host access decisions are modeled from store-backed state.",
+                "activeTab grants are modeled from a deterministic grant store.",
                 "Permission prompts are not implemented.",
                 "Runtime dispatch remains disabled.",
                 "Context loading remains disabled.",
@@ -1596,6 +3315,7 @@ enum ChromeMV3PermissionBrokerReadinessReportGenerator {
             grantedOptionalHostPermissions:
                 state.grantedOptionalHostPermissions,
             deniedPermissions: state.deniedPermissions,
+            revokedPermissions: state.revokedPermissions,
             unavailablePermissions: state.unavailablePermissions,
             unsupportedPermissions: state.unsupportedPermissions
         )
@@ -1655,42 +3375,14 @@ enum ChromeMV3PermissionBrokerReadinessReportGenerator {
         prerequisites: ChromeMV3RuntimeBridgePrerequisitesReport,
         broker: ChromeMV3PermissionBroker
     ) -> ChromeMV3PasswordManagerPermissionReadiness {
-        let summary = prerequisites.passwordManagerPrerequisiteSummary
-        let hostDetected = summary.hostPermissionsPresent
-            || prerequisites.manifestFacts.hostPermissions.isEmpty == false
-        let nativeDetected = summary.nativeMessagingPermissionPresent
-            || broker.apiPermissionDecision("nativeMessaging").deferred
-        let storageDetected = summary.storagePermissionPresent
-            || prerequisites.manifestFacts.storagePermissionPresent
-        return ChromeMV3PasswordManagerPermissionReadiness(
-            hostPermissionsDetected: hostDetected,
-            contentScriptHostAccessRequired:
-                prerequisites.manifestFacts.contentScriptsPresent
-                    || summary.contentScriptsPresent,
-            actionPopupUserGestureMayCreateActiveTabGrantInFuture:
-                prerequisites.manifestFacts.actionPopupPresent
-                    || summary.actionPopupPresent,
-            nativeMessagingPermissionDetectedButBlocked: nativeDetected,
-            storagePermissionDetectedButRuntimeMissing: storageDetected,
-            runtimeMessagingBlocked: true,
-            permissionBrokerSkeletonPresent: true,
-            realPermissionPromptsImplemented: false,
-            passwordManagerPermissionReady: false,
-            blockers: Array(Set(
-                summary.blockers
-                    + [
-                        "Password-manager content scripts still require authorized injection.",
-                        "Action popup user gestures are modeled but not connected to real UI.",
-                        "Native messaging permission is detected but native messaging remains blocked.",
-                        "storage permission is detected but storage runtime is not implemented.",
-                        "Runtime messaging remains blocked.",
-                        "Real permission prompts are not implemented.",
-                    ]
-            )).sorted()
-        )
+        ChromeMV3PermissionLifecycleReportGenerator
+            .passwordManagerPermissionReadiness(
+                prerequisites: prerequisites,
+                broker: broker
+            )
     }
 
-    private static func documentationSources()
+    fileprivate static func documentationSourcesForPermissionReports()
         -> [ChromeMV3ManifestRewritePreviewSource]
     {
         [
@@ -1730,6 +3422,12 @@ enum ChromeMV3PermissionBrokerReadinessReportGenerator {
                 note: "Defines host permissions and activeTab requirements for programmatic content script injection."
             ),
         ]
+    }
+
+    private static func documentationSources()
+        -> [ChromeMV3ManifestRewritePreviewSource]
+    {
+        documentationSourcesForPermissionReports()
     }
 
     private static func source(
