@@ -1726,6 +1726,8 @@ struct ChromeMV3RuntimeBridgeReadinessReport:
     var storageGate: ChromeMV3StorageReadinessGate
     var storageBrokerReadinessReportSummary:
         ChromeMV3StorageBrokerReadinessReportSummary? = nil
+    var storageAPIOperationsReportSummary:
+        ChromeMV3StorageAPIOperationsReportSummary? = nil
     var permissionsActiveTabGate:
         ChromeMV3PermissionsActiveTabReadinessGate
     var nativeMessagingGate: ChromeMV3NativeMessagingReadinessGate
@@ -2003,6 +2005,8 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
             storageGate: storage,
             storageBrokerReadinessReportSummary:
                 storageBrokerReport.summary,
+            storageAPIOperationsReportSummary:
+                storageBrokerReport.summary.storageAPIOperationsReportSummary,
             permissionsActiveTabGate: permissions,
             nativeMessagingGate: native,
             serviceWorkerLifecycleGate: lifecycle,

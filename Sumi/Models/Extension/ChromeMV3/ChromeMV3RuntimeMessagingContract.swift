@@ -1478,6 +1478,8 @@ struct ChromeMV3RuntimeMessagingContractReportSummary:
         ChromeMV3RuntimeListenerContractReportSummary? = nil
     var storageBrokerReadinessReportSummary:
         ChromeMV3StorageBrokerReadinessReportSummary? = nil
+    var storageAPIOperationsReportSummary:
+        ChromeMV3StorageAPIOperationsReportSummary? = nil
     var permissionBrokerReadinessReportSummary:
         ChromeMV3PermissionBrokerReadinessReportSummary? = nil
     var permissionLifecycleReportSummary:
@@ -1508,6 +1510,8 @@ struct ChromeMV3RuntimeMessagingContractReport:
         ChromeMV3RuntimeListenerContractReportSummary? = nil
     var storageBrokerReadinessReportSummary:
         ChromeMV3StorageBrokerReadinessReportSummary? = nil
+    var storageAPIOperationsReportSummary:
+        ChromeMV3StorageAPIOperationsReportSummary? = nil
     var permissionBrokerReadinessReportSummary:
         ChromeMV3PermissionBrokerReadinessReportSummary? = nil
     var permissionLifecycleReportSummary:
@@ -1542,6 +1546,8 @@ struct ChromeMV3RuntimeMessagingContractReport:
             listenerContractReportSummary: listenerContractReportSummary,
             storageBrokerReadinessReportSummary:
                 storageBrokerReadinessReportSummary,
+            storageAPIOperationsReportSummary:
+                storageAPIOperationsReportSummary,
             permissionBrokerReadinessReportSummary:
                 permissionBrokerReadinessReportSummary,
             permissionLifecycleReportSummary:
@@ -1681,6 +1687,8 @@ enum ChromeMV3RuntimeMessagingContractReportGenerator {
             passwordManagerMessagingSummary: passwordSummary,
             listenerContractReportSummary: listenerSummary,
             storageBrokerReadinessReportSummary: storageSummary,
+            storageAPIOperationsReportSummary:
+                storageSummary.storageAPIOperationsReportSummary,
             permissionBrokerReadinessReportSummary:
                 permissionReport.summary,
             permissionLifecycleReportSummary:

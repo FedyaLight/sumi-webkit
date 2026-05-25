@@ -1161,6 +1161,8 @@ struct ChromeMV3RuntimeListenerContractReportSummary:
     var canLoadContextNow: Bool
     var runtimeLoadable: Bool
     var passwordManagerListenerReady: Bool
+    var storageAPIOperationsReportSummary:
+        ChromeMV3StorageAPIOperationsReportSummary? = nil
     var permissionBrokerReadinessReportSummary:
         ChromeMV3PermissionBrokerReadinessReportSummary? = nil
     var permissionLifecycleReportSummary:
@@ -1191,6 +1193,8 @@ struct ChromeMV3RuntimeListenerContractReport:
         ChromeMV3RuntimeServiceWorkerEventAvailabilityContract
     var passwordManagerListenerSummary:
         ChromeMV3PasswordManagerListenerSummary
+    var storageAPIOperationsReportSummary:
+        ChromeMV3StorageAPIOperationsReportSummary? = nil
     var permissionBrokerReadinessReportSummary:
         ChromeMV3PermissionBrokerReadinessReportSummary? = nil
     var permissionLifecycleReportSummary:
@@ -1221,6 +1225,8 @@ struct ChromeMV3RuntimeListenerContractReport:
             canLoadContextNow: false,
             runtimeLoadable: false,
             passwordManagerListenerReady: false,
+            storageAPIOperationsReportSummary:
+                storageAPIOperationsReportSummary,
             permissionBrokerReadinessReportSummary:
                 permissionBrokerReadinessReportSummary,
             permissionLifecycleReportSummary:
@@ -1280,6 +1286,11 @@ enum ChromeMV3RuntimeListenerContractReportGenerator {
             )
         let permissionsAPIReport =
             ChromeMV3PermissionsAPIContractReportGenerator.makeReport(
+                prerequisitesReport: prerequisites,
+                profileID: profileID
+            )
+        let storageAPIReport =
+            ChromeMV3StorageAPIOperationsReportGenerator.makeReport(
                 prerequisitesReport: prerequisites,
                 profileID: profileID
             )
@@ -1382,6 +1393,8 @@ enum ChromeMV3RuntimeListenerContractReportGenerator {
             serviceWorkerEventAvailabilityContract:
                 serviceWorkerAvailability,
             passwordManagerListenerSummary: passwordSummary,
+            storageAPIOperationsReportSummary:
+                storageAPIReport.summary,
             permissionBrokerReadinessReportSummary:
                 permissionReport.summary,
             permissionLifecycleReportSummary:

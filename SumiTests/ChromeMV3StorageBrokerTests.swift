@@ -400,6 +400,435 @@ final class ChromeMV3StorageBrokerTests: XCTestCase {
                 .canDispatchStorageChangeEventNow
         )
         XCTAssertFalse(dispatchFlag)
+        XCTAssertEqual(
+            readiness.storageAPIOperationsReportSummary?
+                .operationHandlerAvailableInModel,
+            true
+        )
+        XCTAssertEqual(
+            messaging.summary.storageAPIOperationsReportSummary?
+                .jsRuntimeStorageExposureNow,
+            false
+        )
+    }
+
+    func testStorageAPIOperationGetSingleKeyReturnsResultEnvelope() {
+        var broker = storageBroker(
+            area: .local,
+            initialValues: [
+                "token": .string("abc"),
+                "other": .number(1),
+            ]
+        )
+        let input = storageAPIInput(
+            operation: .get,
+            invocationMode: .promise,
+            keySelector: .singleString("token")
+        )
+
+        let result = ChromeMV3StorageAPIOperationHandler()
+            .handle(input, broker: &broker)
+
+        XCTAssertTrue(result.succeeded)
+        XCTAssertEqual(result.resultPayload.values, ["token": .string("abc")])
+        XCTAssertEqual(result.normalizedKeySelector?.stableOrdering, ["token"])
+        XCTAssertTrue(result.promiseBehavior.wouldResolve)
+        XCTAssertFalse(result.callbackBehavior.wouldInvokeCallback)
+        XCTAssertTrue(result.brokerOperationExecutedInModel)
+        XCTAssertFalse(result.runtimeImplementedNow)
+        XCTAssertFalse(result.jsRuntimeStorageExposureNow)
+    }
+
+    func testStorageAPIGetMultipleKeysDefaultsAndAllAreDeterministic()
+        throws
+    {
+        var broker = storageBroker(
+            area: .local,
+            initialValues: [
+                "b": .string("two"),
+                "a": .string("one"),
+            ]
+        )
+        let multiple = storageAPIInput(
+            operation: .get,
+            keySelector: .stringArray(["b", "a", "b"])
+        )
+        let defaults = storageAPIInput(
+            operation: .get,
+            keySelector: .defaults([
+                "a": .string("default"),
+                "missing": .bool(true),
+            ])
+        )
+        let all = storageAPIInput(
+            operation: .get,
+            keySelector: .allKeys
+        )
+        let handler = ChromeMV3StorageAPIOperationHandler()
+
+        let multipleResult = handler.handle(multiple, broker: &broker)
+        let defaultsResult = handler.handle(defaults, broker: &broker)
+        let allResult = handler.handle(all, broker: &broker)
+
+        XCTAssertEqual(
+            multipleResult.normalizedKeySelector?.stableOrdering,
+            ["a", "b"]
+        )
+        XCTAssertEqual(
+            multipleResult.normalizedKeySelector?.duplicateKeysDropped,
+            ["b"]
+        )
+        XCTAssertEqual(
+            multipleResult.resultPayload.values,
+            ["a": .string("one"), "b": .string("two")]
+        )
+        XCTAssertEqual(
+            defaultsResult.resultPayload.values,
+            ["a": .string("one"), "missing": .bool(true)]
+        )
+        XCTAssertEqual(
+            allResult.resultPayload.values.keys.sorted(),
+            ["a", "b"]
+        )
+        XCTAssertEqual(
+            try ChromeMV3DeterministicJSON.encodedData(multipleResult),
+            try ChromeMV3DeterministicJSON.encodedData(multipleResult)
+        )
+    }
+
+    func testStorageAPISetRemoveClearAndGetBytesUseBrokerModel() {
+        var broker = storageBroker(
+            area: .session,
+            initialValues: [
+                "unlock": .bool(true),
+                "count": .number(3),
+            ]
+        )
+        let handler = ChromeMV3StorageAPIOperationHandler()
+        let set = handler.handle(
+            storageAPIInput(
+                area: .session,
+                operation: .set,
+                invocationMode: .callback,
+                values: ["count": .number(4), "new": .string("value")],
+                sourceContext: .serviceWorker
+            ),
+            broker: &broker
+        )
+        let bytes = handler.handle(
+            storageAPIInput(
+                area: .session,
+                operation: .getBytesInUse,
+                keySelector: .stringArray(["new", "count"]),
+                sourceContext: .serviceWorker
+            ),
+            broker: &broker
+        )
+        let remove = handler.handle(
+            storageAPIInput(
+                area: .session,
+                operation: .remove,
+                keySelector: .singleString("unlock"),
+                sourceContext: .serviceWorker
+            ),
+            broker: &broker
+        )
+        let clear = handler.handle(
+            storageAPIInput(
+                area: .session,
+                operation: .clear,
+                sourceContext: .serviceWorker
+            ),
+            broker: &broker
+        )
+
+        XCTAssertTrue(set.succeeded)
+        XCTAssertEqual(set.changedKeys, ["count", "new"])
+        XCTAssertTrue(set.callbackBehavior.wouldInvokeCallback)
+        XCTAssertEqual(set.callbackBehavior.callbackPayload?.voidResult, true)
+        XCTAssertGreaterThan(bytes.resultPayload.bytesInUse ?? 0, 0)
+        XCTAssertEqual(remove.changedKeys, ["unlock"])
+        XCTAssertEqual(clear.changedKeys, ["count", "new"])
+        XCTAssertTrue(broker.exportSnapshot().values.isEmpty)
+        XCTAssertTrue([set, remove, clear].allSatisfy {
+            $0.generatedOnChangedPayload?.wouldDispatchNow == false
+        })
+    }
+
+    func testStorageAPIInvalidKeyInvalidValueAndQuotaMapLastError() {
+        var keyBroker = storageBroker(area: .local)
+        var valueBroker = storageBroker(area: .local)
+        var quotaBroker = storageBroker(area: .local)
+        let handler = ChromeMV3StorageAPIOperationHandler()
+
+        let invalidKey = handler.handle(
+            storageAPIInput(
+                operation: .get,
+                invocationMode: .callback,
+                keySelector: .invalidType("number")
+            ),
+            broker: &keyBroker
+        )
+        let invalidValue = handler.handle(
+            storageAPIInput(
+                operation: .set,
+                invocationMode: .promise,
+                values: ["bad": .number(.nan)]
+            ),
+            broker: &valueBroker
+        )
+        let quota = handler.handle(
+            storageAPIInput(
+                operation: .set,
+                invocationMode: .promise,
+                values: [
+                    "blob": .string(
+                        String(repeating: "x", count: 10_485_760)
+                    ),
+                ]
+            ),
+            broker: &quotaBroker
+        )
+
+        XCTAssertFalse(invalidKey.succeeded)
+        XCTAssertEqual(invalidKey.futureLastErrorContract?.code, .invalidKey)
+        XCTAssertTrue(invalidKey.callbackBehavior.wouldSetRuntimeLastError)
+        XCTAssertFalse(invalidValue.succeeded)
+        XCTAssertEqual(
+            invalidValue.futureLastErrorContract?.code,
+            .invalidValue
+        )
+        XCTAssertTrue(invalidValue.promiseBehavior.wouldReject)
+        XCTAssertFalse(quota.succeeded)
+        XCTAssertEqual(
+            quota.futureLastErrorContract?.code,
+            .quotaBytesExceeded
+        )
+        XCTAssertEqual(
+            quota.futureLastErrorContract?.retryability,
+            .retryAfterQuotaCleanup
+        )
+    }
+
+    func testStorageAPIDisabledSyncManagedAndRuntimeExposureRemainBlocked() {
+        var local = storageBroker(area: .local)
+        var sync = storageBroker(area: .sync)
+        var managed = storageBroker(area: .managed)
+        let disabled = ChromeMV3StorageAPIOperationHandler(
+            state: .disabledModule
+        ).handle(
+            storageAPIInput(operation: .get, keySelector: .singleString("a")),
+            broker: &local
+        )
+        let syncResult = ChromeMV3StorageAPIOperationHandler().handle(
+            storageAPIInput(
+                area: .sync,
+                operation: .get,
+                keySelector: .singleString("a")
+            ),
+            broker: &sync
+        )
+        let managedResult = ChromeMV3StorageAPIOperationHandler().handle(
+            storageAPIInput(
+                area: .managed,
+                operation: .get,
+                keySelector: .allKeys
+            ),
+            broker: &managed
+        )
+        var runtimeBroker = storageBroker(area: .local)
+        var runtimeState = ChromeMV3StorageAPIOperationHandlerState
+            .enabledModelTestFixture
+        runtimeState.requestedJSRuntimeExecution = true
+        let runtimeExposure = ChromeMV3StorageAPIOperationHandler(
+            state: runtimeState
+        ).handle(
+            storageAPIInput(operation: .get, keySelector: .singleString("a")),
+            broker: &runtimeBroker
+        )
+
+        XCTAssertEqual(
+            disabled.futureLastErrorContract?.code,
+            .extensionDisabled
+        )
+        XCTAssertFalse(disabled.brokerOperationExecutedInModel)
+        XCTAssertEqual(syncResult.futureLastErrorContract?.code, .syncUnavailable)
+        XCTAssertFalse(syncResult.brokerOperationExecutedInModel)
+        XCTAssertEqual(
+            managedResult.futureLastErrorContract?.code,
+            .areaUnsupported
+        )
+        XCTAssertEqual(
+            runtimeExposure.futureLastErrorContract?.code,
+            .operationNotImplementedForJSRuntime
+        )
+        XCTAssertFalse(runtimeExposure.jsRuntimeStorageExposureNow)
+        XCTAssertFalse(runtimeExposure.canLoadContextNow)
+        XCTAssertFalse(runtimeExposure.runtimeLoadable)
+    }
+
+    func testStorageAPIOnChangedPayloadGeneratedButNotDispatched() {
+        var broker = storageBroker(
+            area: .local,
+            initialValues: ["a": .string("old")]
+        )
+        let result = ChromeMV3StorageAPIOperationHandler().handle(
+            storageAPIInput(
+                operation: .set,
+                values: ["a": .string("new")]
+            ),
+            broker: &broker
+        )
+        let payload = result.generatedOnChangedPayload
+
+        XCTAssertEqual(payload?.areaName, "local")
+        XCTAssertEqual(payload?.changedKeys, ["a"])
+        XCTAssertEqual(payload?.changes.first?.oldValue, .string("old"))
+        XCTAssertEqual(payload?.changes.first?.newValue, .string("new"))
+        XCTAssertFalse(payload?.wouldDispatchNow ?? true)
+        XCTAssertTrue(payload?.listenerRegistrationRequired ?? false)
+        XCTAssertTrue(payload?.serviceWorkerWakeRequired ?? false)
+    }
+
+    func testStorageAPIOperationsReportKeepsRuntimeBlocked()
+        throws
+    {
+        let report = ChromeMV3StorageAPIOperationsReportGenerator.makeReport(
+            extensionID: "extension",
+            profileID: "profile",
+            storagePermissionDetected: true,
+            passwordManagerLikeFixtureDetected: true,
+            runtimeMessagingStillBlocked: true,
+            nativeMessagingStillBlocked: true
+        )
+        let first = try ChromeMV3DeterministicJSON.encodedData(report)
+        let second = try ChromeMV3DeterministicJSON.encodedData(report)
+
+        XCTAssertEqual(first, second)
+        XCTAssertTrue(report.brokerModelOperationsAvailable)
+        XCTAssertTrue(report.summary.operationHandlerAvailableInModel)
+        XCTAssertEqual(
+            report.summary.operationKindsModeled,
+            [.clear, .get, .getBytesInUse, .remove, .set]
+        )
+        XCTAssertTrue(
+            report.operationHandlerCoverage.contains {
+                $0.area == .local
+                    && $0.operation == .set
+                    && $0.brokerOperationCanExecuteInModel
+            }
+        )
+        XCTAssertTrue(
+            report.operationHandlerCoverage.contains {
+                $0.area == .sync
+                    && $0.areaPolicyStatus == .deferred
+            }
+        )
+        XCTAssertTrue(
+            report.errorLastErrorCoverage.contains {
+                $0.code == .operationNotImplementedForJSRuntime
+            }
+        )
+        XCTAssertFalse(report.jsRuntimeStorageExposureNow)
+        XCTAssertFalse(report.canDispatchStorageChangeEventNow)
+        XCTAssertFalse(report.canWakeServiceWorkerNow)
+        XCTAssertFalse(report.canLoadContextNow)
+        XCTAssertFalse(report.runtimeLoadable)
+        XCTAssertFalse(
+            report.passwordManagerStorageAPISummary
+                .passwordManagerStorageAPIReady
+        )
+        XCTAssertTrue(
+            report.passwordManagerStorageAPISummary
+                .storageLocalOperationHandlerAvailableInModel
+        )
+        XCTAssertTrue(
+            report.passwordManagerStorageAPISummary
+                .storageSessionOperationHandlerAvailableInModel
+        )
+        XCTAssertFalse(report.onChangedGenerationCoverage.isEmpty)
+        XCTAssertTrue(
+            report.onChangedGenerationCoverage.allSatisfy {
+                $0.wouldDispatchNow == false
+            }
+        )
+    }
+
+    @MainActor
+    func testSumiExtensionsModuleWritesStorageAPIOperationsReportOnlyWhenEnabled()
+        throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Chrome MV3 module diagnostics require macOS 15.5.")
+        }
+
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try writePasswordManagerLikeManifest(to: root)
+        let contextReport = makeContextReadinessReport(root: root)
+        try ChromeMV3ContextReadinessReportWriter.write(
+            contextReport,
+            toRewrittenBundleRoot: root
+        )
+        let prerequisites = try ChromeMV3RuntimeBridgePrerequisitesReportGenerator
+            .makeReport(loadingContextReadinessReportFrom: root)
+        try ChromeMV3RuntimeBridgePrerequisitesReportWriter.write(
+            prerequisites,
+            toRewrittenBundleRoot: root
+        )
+        let reportURL = root.appendingPathComponent(
+            ChromeMV3StorageAPIOperationsReportWriter.reportFileName
+        )
+        let disabledHarness = TestDefaultsHarness()
+        defer { disabledHarness.reset() }
+        let disabledRegistry = SumiModuleRegistry(
+            settingsStore:
+                SumiModuleSettingsStore(userDefaults: disabledHarness.defaults)
+        )
+        let disabledModule = SumiExtensionsModule(
+            moduleRegistry: disabledRegistry,
+            browserConfiguration: BrowserConfiguration()
+        )
+
+        let disabledReport =
+            disabledModule.chromeMV3StorageAPIOperationsReportIfEnabled(
+                fromRewrittenBundleRoot: root,
+                writeReport: true
+            )
+
+        XCTAssertNil(disabledReport)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: reportURL.path))
+
+        let enabledHarness = TestDefaultsHarness()
+        defer { enabledHarness.reset() }
+        let enabledRegistry = SumiModuleRegistry(
+            settingsStore:
+                SumiModuleSettingsStore(userDefaults: enabledHarness.defaults)
+        )
+        enabledRegistry.enable(.extensions)
+        let enabledModule = SumiExtensionsModule(
+            moduleRegistry: enabledRegistry,
+            browserConfiguration: BrowserConfiguration()
+        )
+
+        let enabledReport = try XCTUnwrap(
+            enabledModule.chromeMV3StorageAPIOperationsReportIfEnabled(
+                fromRewrittenBundleRoot: root,
+                writeReport: true
+            )
+        )
+        let diagnostics = enabledModule.chromeMV3InventoryDiagnosticsIfEnabled(
+            rootURL: root
+        )
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: reportURL.path))
+        XCTAssertEqual(
+            diagnostics?.storageAPIOperationsReportSummary,
+            enabledReport.summary
+        )
+        XCTAssertFalse(enabledModule.hasLoadedRuntime)
+        XCTAssertFalse(enabledReport.summary.canLoadContextNow)
+        XCTAssertFalse(enabledReport.summary.runtimeLoadable)
     }
 
     func testStorageSourceGuardsKeepRuntimeBoundariesAbsent() throws {
@@ -414,10 +843,13 @@ final class ChromeMV3StorageBrokerTests: XCTestCase {
             "DispatchSource" + "Ti" + "mer",
             "Ti" + "mer",
             "runtime" + "Loadable" + " = " + "tr" + "ue",
+            "canCreate" + "ContextNow" + " = " + "tr" + "ue",
             "canLoad" + "ContextNow" + " = " + "tr" + "ue",
+            "jsRuntimeStorage" + "ExposureNow" + " = " + "tr" + "ue",
             "canDispatchStorage" + "ChangeEventNow" + " = " + "tr" + "ue",
             "canWake" + "ServiceWorkerNow" + " = " + "tr" + "ue",
             "passwordManager" + "StorageReady" + " = " + "tr" + "ue",
+            "passwordManager" + "StorageAPIReady" + " = " + "tr" + "ue",
         ]
 
         for pattern in forbidden {
@@ -428,12 +860,40 @@ final class ChromeMV3StorageBrokerTests: XCTestCase {
     private func storageBroker(
         area: ChromeMV3StorageAreaKind
     ) -> ChromeMV3StorageBroker {
+        storageBroker(area: area, initialValues: [:])
+    }
+
+    private func storageBroker(
+        area: ChromeMV3StorageAreaKind,
+        initialValues: [String: ChromeMV3StorageValue]
+    ) -> ChromeMV3StorageBroker {
         ChromeMV3StorageBroker(
             namespace: ChromeMV3StorageNamespace(
                 profileID: "profile",
                 extensionID: "extension",
                 area: area
-            )
+            ),
+            initialValues: initialValues
+        )
+    }
+
+    private func storageAPIInput(
+        area: ChromeMV3StorageAreaKind = .local,
+        operation: ChromeMV3StorageOperationKind,
+        invocationMode: ChromeMV3StorageAPIInvocationMode = .promise,
+        keySelector: ChromeMV3StorageAPIKeySelector? = nil,
+        values: [String: ChromeMV3StorageValue] = [:],
+        sourceContext: ChromeMV3StorageAPISourceContext = .testFixture
+    ) -> ChromeMV3StorageAPIOperationInput {
+        ChromeMV3StorageAPIOperationInput(
+            extensionID: "extension",
+            profileID: "profile",
+            area: area,
+            operation: operation,
+            invocationMode: invocationMode,
+            keySelector: keySelector,
+            values: values,
+            sourceContext: sourceContext
         )
     }
 
