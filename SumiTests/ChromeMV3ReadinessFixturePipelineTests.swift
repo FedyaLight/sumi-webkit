@@ -385,14 +385,14 @@ final class ChromeMV3ReadinessFixturePipelineTests: XCTestCase {
             report.storagePrerequisites.hostBackedLayerDecisionRequired
         )
 
-        XCTAssertFalse(
+        XCTAssertTrue(
             report.permissionsActiveTabPrerequisites
                 .permissionBrokerImplemented
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             report.permissionsActiveTabPrerequisites.activeTabImplemented
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             report.permissionsActiveTabPrerequisites
                 .hostPermissionEvaluationImplemented
         )
@@ -610,13 +610,13 @@ final class ChromeMV3ReadinessFixturePipelineTests: XCTestCase {
         XCTAssertTrue(
             report.permissionsActiveTabGate.activeTabGrantModelRequired
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             report.permissionsActiveTabGate.permissionBrokerImplemented
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             report.permissionsActiveTabGate.activeTabImplemented
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             report.permissionsActiveTabGate
                 .hostPermissionEvaluationImplemented
         )

@@ -627,14 +627,14 @@ struct ChromeMV3RuntimeMessagingPermissionSnapshot:
     func grantsHostAccess(to url: String?) -> Bool {
         guard let url else { return false }
         return grantedHostPermissions.contains {
-            ChromeMV3RuntimeMessagingHostPattern($0).matches(url: url)
+            ChromeMV3HostMatchPattern($0).matches(url: url)
         }
     }
 
     func optionalHostCouldGrantAccess(to url: String?) -> Bool {
         guard let url else { return false }
         return optionalHostPermissions.contains {
-            ChromeMV3RuntimeMessagingHostPattern($0).matches(url: url)
+            ChromeMV3HostMatchPattern($0).matches(url: url)
         }
     }
 
@@ -651,6 +651,71 @@ struct ChromeMV3RuntimeMessagingPermissionSnapshot:
                 && $0.isValid
         }
     }
+
+    func permissionBroker(
+        extensionID: String,
+        profileID: String
+    ) -> ChromeMV3PermissionBroker {
+        let mappedGrants = activeTabGrants.enumerated().map { index, grant in
+            ChromeMV3ActiveTabGrant(
+                extensionID: extensionID,
+                profileID: profileID,
+                tabID: grant.tabID,
+                scope: .origin(grant.origin),
+                reason: .testFixture,
+                userGestureModeled: grant.createdByUserGesture,
+                createdSequence: index,
+                expiryTriggers: [
+                    .tabClose,
+                    .tabNavigation,
+                    .extensionDisable,
+                    .permissionRevoke,
+                    .profileClose,
+                ],
+                expiryRecord: expiryRecord(for: grant, sequence: index),
+                diagnostics: [
+                    "Imported from runtime messaging permission snapshot.",
+                ]
+            )
+        }
+        let state = ChromeMV3PermissionBrokerState(
+            extensionID: extensionID,
+            profileID: profileID,
+            requiredPermissions:
+                (tabPermissionGranted ? ["tabs"] : [])
+                    + (activeTabPermissionDeclared ? ["activeTab"] : []),
+            optionalPermissions: optionalPermissions,
+            hostPermissions: grantedHostPermissions,
+            optionalHostPermissions: optionalHostPermissions,
+            deniedPermissions: deniedPermissions,
+            activeTabGrants: mappedGrants,
+            diagnostics: [
+                "Permission broker state was adapted from a legacy messaging snapshot.",
+            ]
+        )
+        return ChromeMV3PermissionBroker(state: state)
+    }
+
+    private func expiryRecord(
+        for grant: ChromeMV3RuntimeMessagingActiveTabGrant,
+        sequence: Int
+    ) -> ChromeMV3ActiveTabExpiryRecord? {
+        if grant.expiredByTabClose {
+            return ChromeMV3ActiveTabExpiryRecord(
+                trigger: .tabClose,
+                sequence: sequence,
+                reason: "Snapshot marked the activeTab grant expired by tab close."
+            )
+        }
+        if grant.expiredByNavigation {
+            return ChromeMV3ActiveTabExpiryRecord(
+                trigger: .tabNavigation,
+                sequence: sequence,
+                reason: "Snapshot marked the activeTab grant expired by navigation."
+            )
+        }
+        return nil
+    }
 }
 
 struct ChromeMV3RuntimeMessagingPermissionDecision:
@@ -666,11 +731,31 @@ struct ChromeMV3RuntimeMessagingPermissionDecision:
         ChromeMV3RuntimeMessagingMetadataRedaction
     var futurePromptRequired: Bool
     var diagnosticReason: String
+    var hostAccessDecision: ChromeMV3HostAccessDecision? = nil
+    var activeTabDecision: ChromeMV3ActiveTabAccessDecision? = nil
+    var brokerDiagnostics: [String] = []
 
     static func evaluate(
         route: ChromeMV3RuntimeMessagingRoute,
         envelope: ChromeMV3RuntimeMessageEnvelope? = nil,
         snapshot: ChromeMV3RuntimeMessagingPermissionSnapshot
+    ) -> ChromeMV3RuntimeMessagingPermissionDecision {
+        evaluate(
+            route: route,
+            envelope: envelope,
+            permissionBroker: snapshot.permissionBroker(
+                extensionID: route.extensionID,
+                profileID: route.profileID
+            ),
+            userGestureAvailable: snapshot.userGestureAvailable
+        )
+    }
+
+    static func evaluate(
+        route: ChromeMV3RuntimeMessagingRoute,
+        envelope: ChromeMV3RuntimeMessageEnvelope? = nil,
+        permissionBroker: ChromeMV3PermissionBroker,
+        userGestureAvailable: Bool = false
     ) -> ChromeMV3RuntimeMessagingPermissionDecision {
         if route.requiresNativeMessaging {
             return ChromeMV3RuntimeMessagingPermissionDecision(
@@ -688,51 +773,88 @@ struct ChromeMV3RuntimeMessagingPermissionDecision:
             ?? envelope?.source.url
             ?? envelope?.target.url
         let tabID = route.tabID ?? route.source.tabID ?? route.target.tabID
-        let hostGranted = snapshot.grantsHostAccess(to: url)
-        let activeGrant = snapshot.activeTabGrant(tabID: tabID, url: url)
-        let activeTabGranted = activeGrant != nil
-        let hostOrActive = hostGranted || activeTabGranted
+        let hostDecision = permissionBroker.hostAccessDecision(
+            url: url,
+            tabID: tabID,
+            userGestureAvailable: userGestureAvailable
+        )
+        let activeDecision = permissionBroker.activeTabDecision(
+            tabID: tabID,
+            url: url,
+            userGestureAvailable: userGestureAvailable
+        )
+        let hostGranted = hostDecision.allowedByHostPermission
+            || hostDecision.allowedByOptionalHostPermission
+        let activeTabGranted = hostDecision.allowedByActiveTab
+        let hostOrActive = hostDecision.hasHostAccess
 
         if route.requiresHostPermission && hostOrActive == false {
-            if route.requiresActiveTab && snapshot.activeTabPermissionDeclared {
+            if hostDecision.deniedByPattern {
+                return ChromeMV3RuntimeMessagingPermissionDecision(
+                    allowedForFutureDispatch: false,
+                    requiredGrant: .hostPermission,
+                    missingGrantReason: .permissionDenied,
+                    senderMetadataRedaction: .redactURLAndOrigin,
+                    futurePromptRequired: false,
+                    diagnosticReason:
+                        "Route is blocked by an explicit modeled permission denial.",
+                    hostAccessDecision: hostDecision,
+                    activeTabDecision: activeDecision,
+                    brokerDiagnostics: hostDecision.diagnostics
+                )
+            }
+
+            if route.requiresActiveTab
+                && permissionBroker.activeTabPermissionDeclared
+            {
                 return ChromeMV3RuntimeMessagingPermissionDecision(
                     allowedForFutureDispatch: false,
                     requiredGrant: .activeTab,
                     missingGrantReason:
-                        snapshot.userGestureAvailable
-                            ? .missingActiveTabGrant
-                            : .userGestureRequired,
+                        activeDecision.missingReason,
                     senderMetadataRedaction: .redactURLAndOrigin,
-                    futurePromptRequired: false,
+                    futurePromptRequired: hostDecision.wouldNeedPrompt,
                     diagnosticReason:
-                        "Route needs a temporary activeTab grant for the target tab and origin."
+                        "Route needs host access or a temporary activeTab grant for the target tab and origin.",
+                    hostAccessDecision: hostDecision,
+                    activeTabDecision: activeDecision,
+                    brokerDiagnostics: hostDecision.diagnostics
                 )
             }
 
             return ChromeMV3RuntimeMessagingPermissionDecision(
                 allowedForFutureDispatch: false,
                 requiredGrant: .hostPermission,
-                missingGrantReason: .missingHostPermission,
+                missingGrantReason:
+                    hostDecision.missingReason == .permissionDenied
+                        ? .permissionDenied
+                        : .missingHostPermission,
                 senderMetadataRedaction: .redactURLAndOrigin,
-                futurePromptRequired:
-                    snapshot.optionalHostCouldGrantAccess(to: url),
+                futurePromptRequired: hostDecision.wouldNeedPrompt,
                 diagnosticReason:
-                    "Route needs host permission before sender URL and origin metadata can be exposed."
+                    "Route needs host permission before sender URL and origin metadata can be exposed.",
+                hostAccessDecision: hostDecision,
+                activeTabDecision: activeDecision,
+                brokerDiagnostics: hostDecision.diagnostics
             )
         }
 
-        if route.requiresTabPermission && snapshot.tabPermissionGranted == false
+        if route.requiresTabPermission
+            && permissionBroker.hasAPIPermission("tabs") == false
             && route.requiresHostPermission == false
         {
+            let tabDecision = permissionBroker.apiPermissionDecision("tabs")
             return ChromeMV3RuntimeMessagingPermissionDecision(
                 allowedForFutureDispatch: false,
                 requiredGrant: .tabPermission,
                 missingGrantReason: .missingTabPermission,
                 senderMetadataRedaction: .redactURLAndOrigin,
-                futurePromptRequired:
-                    snapshot.optionalPermissions.contains("tabs"),
+                futurePromptRequired: tabDecision.wouldNeedPrompt,
                 diagnosticReason:
-                    "Route needs tab metadata permission for future dispatch."
+                    "Route needs tab metadata permission for future dispatch.",
+                hostAccessDecision: hostDecision,
+                activeTabDecision: activeDecision,
+                brokerDiagnostics: tabDecision.diagnostics
             )
         }
 
@@ -756,10 +878,13 @@ struct ChromeMV3RuntimeMessagingPermissionDecision:
             futurePromptRequired: false,
             diagnosticReason:
                 hostGranted
-                    ? "Modeled host permission allows future metadata exposure."
+                    ? "Permission broker host access allows future metadata exposure."
                     : (activeTabGranted
-                        ? "Modeled activeTab grant allows future metadata exposure."
-                        : "No route permission grant is required by this contract.")
+                        ? "Permission broker activeTab grant allows future metadata exposure."
+                        : "No route permission grant is required by this contract."),
+            hostAccessDecision: hostDecision,
+            activeTabDecision: activeDecision,
+            brokerDiagnostics: hostDecision.diagnostics
         )
     }
 }
@@ -981,6 +1106,27 @@ enum ChromeMV3RuntimeMessagingRouteEvaluator {
     static func evaluate(
         route: ChromeMV3RuntimeMessagingRoute,
         envelope: ChromeMV3RuntimeMessageEnvelope,
+        permissionBroker: ChromeMV3PermissionBroker,
+        readiness: ChromeMV3RuntimeMessagingReadinessSnapshot,
+        userGestureAvailable: Bool = false
+    ) -> ChromeMV3RuntimeMessagingRouteEvaluation {
+        let permissionDecision =
+            ChromeMV3RuntimeMessagingPermissionDecision.evaluate(
+                route: route,
+                envelope: envelope,
+                permissionBroker: permissionBroker,
+                userGestureAvailable: userGestureAvailable
+            )
+        return evaluate(
+            route: route,
+            permissionDecision: permissionDecision,
+            readiness: readiness
+        )
+    }
+
+    static func evaluate(
+        route: ChromeMV3RuntimeMessagingRoute,
+        envelope: ChromeMV3RuntimeMessageEnvelope,
         permissionSnapshot:
             ChromeMV3RuntimeMessagingPermissionSnapshot,
         readiness: ChromeMV3RuntimeMessagingReadinessSnapshot
@@ -991,6 +1137,19 @@ enum ChromeMV3RuntimeMessagingRouteEvaluator {
                 envelope: envelope,
                 snapshot: permissionSnapshot
             )
+        return evaluate(
+            route: route,
+            permissionDecision: permissionDecision,
+            readiness: readiness
+        )
+    }
+
+    private static func evaluate(
+        route: ChromeMV3RuntimeMessagingRoute,
+        permissionDecision:
+            ChromeMV3RuntimeMessagingPermissionDecision,
+        readiness: ChromeMV3RuntimeMessagingReadinessSnapshot
+    ) -> ChromeMV3RuntimeMessagingRouteEvaluation {
         let error = firstBlockingError(
             route: route,
             permissionDecision: permissionDecision,
@@ -1271,6 +1430,8 @@ struct ChromeMV3RuntimeMessagingContractReportSummary:
     var passwordManagerMessagingReady: Bool
     var listenerContractReportSummary:
         ChromeMV3RuntimeListenerContractReportSummary? = nil
+    var permissionBrokerReadinessReportSummary:
+        ChromeMV3PermissionBrokerReadinessReportSummary? = nil
 }
 
 struct ChromeMV3RuntimeMessagingContractReport:
@@ -1293,6 +1454,10 @@ struct ChromeMV3RuntimeMessagingContractReport:
         ChromeMV3PasswordManagerMessagingSummary
     var listenerContractReportSummary:
         ChromeMV3RuntimeListenerContractReportSummary? = nil
+    var permissionBrokerReadinessReportSummary:
+        ChromeMV3PermissionBrokerReadinessReportSummary? = nil
+    var permissionBrokerRouteDecisions:
+        [ChromeMV3PermissionBrokerRouteScenario] = []
     var canDispatchMessagesNow: Bool
     var canRegisterListenersNow: Bool
     var canWakeServiceWorkerNow: Bool
@@ -1316,7 +1481,9 @@ struct ChromeMV3RuntimeMessagingContractReport:
             canLoadContextNow: false,
             runtimeLoadable: false,
             passwordManagerMessagingReady: false,
-            listenerContractReportSummary: listenerContractReportSummary
+            listenerContractReportSummary: listenerContractReportSummary,
+            permissionBrokerReadinessReportSummary:
+                permissionBrokerReadinessReportSummary
         )
     }
 }
@@ -1376,6 +1543,11 @@ enum ChromeMV3RuntimeMessagingContractReportGenerator {
         let passwordSummary = passwordManagerSummary(
             prerequisites: prerequisites
         )
+        let permissionReport =
+            ChromeMV3PermissionBrokerReadinessReportGenerator.makeReport(
+                prerequisitesReport: prerequisites,
+                profileID: profileID
+            )
         let listenerSummary = ChromeMV3RuntimeListenerContractReportGenerator
             .makeReport(
                 prerequisitesReport: prerequisites,
@@ -1419,6 +1591,8 @@ enum ChromeMV3RuntimeMessagingContractReportGenerator {
                 "permission denied",
                 "missing host permission",
                 "missing activeTab grant",
+                "permission broker host access decision",
+                "permission broker activeTab decision",
                 "URL and origin redaction",
             ],
             lastErrorCoverage:
@@ -1427,6 +1601,10 @@ enum ChromeMV3RuntimeMessagingContractReportGenerator {
                 ChromeMV3RuntimePortDisconnectReason.allCases.sorted(),
             passwordManagerMessagingSummary: passwordSummary,
             listenerContractReportSummary: listenerSummary,
+            permissionBrokerReadinessReportSummary:
+                permissionReport.summary,
+            permissionBrokerRouteDecisions:
+                permissionReport.permissionDecisionsForKeyRoutes,
             canDispatchMessagesNow: false,
             canRegisterListenersNow: false,
             canWakeServiceWorkerNow: false,
@@ -1531,57 +1709,8 @@ private enum ChromeMV3RuntimeMessagingStableID {
     }
 }
 
-private enum ChromeMV3RuntimeMessagingURL {
+enum ChromeMV3RuntimeMessagingURL {
     static func origin(from urlString: String?) -> String? {
-        guard let urlString,
-              let components = URLComponents(string: urlString),
-              let scheme = components.scheme,
-              let host = components.host
-        else { return nil }
-        if let port = components.port {
-            return "\(scheme)://\(host):\(port)"
-        }
-        return "\(scheme)://\(host)"
-    }
-}
-
-private struct ChromeMV3RuntimeMessagingHostPattern {
-    var rawValue: String
-
-    init(_ rawValue: String) {
-        self.rawValue = rawValue
-    }
-
-    func matches(url urlString: String) -> Bool {
-        if rawValue == "<all_urls>" || rawValue == "*://*/*" {
-            return true
-        }
-        guard let components = URLComponents(string: urlString),
-              let scheme = components.scheme,
-              let host = components.host
-        else { return false }
-
-        let parts = rawValue.split(separator: "://", maxSplits: 1)
-        guard parts.count == 2 else { return false }
-        let patternScheme = String(parts[0])
-        let hostAndPath = String(parts[1])
-        let hostPattern = hostAndPath
-            .split(separator: "/", maxSplits: 1)
-            .first
-            .map(String.init)
-            ?? hostAndPath
-
-        let schemeMatches = patternScheme == "*" || patternScheme == scheme
-        let hostMatches: Bool
-        if hostPattern == "*" {
-            hostMatches = true
-        } else if hostPattern.hasPrefix("*.") {
-            let suffix = String(hostPattern.dropFirst(2))
-            hostMatches = host == suffix || host.hasSuffix(".\(suffix)")
-        } else {
-            hostMatches = host == hostPattern
-        }
-
-        return schemeMatches && hostMatches
+        ChromeMV3PermissionBrokerURL.origin(from: urlString)
     }
 }

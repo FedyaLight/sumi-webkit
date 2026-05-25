@@ -4,230 +4,155 @@ import XCTest
 
 @testable import Sumi
 
-final class ChromeMV3RuntimeMessagingContractTests: XCTestCase {
-    func testAllRequiredRouteKindsAreModeled() {
-        let routes = ChromeMV3RuntimeMessagingRoute.allModeledRoutes(
-            extensionID: "extension-a",
-            profileID: "profile-a"
+final class ChromeMV3PermissionBrokerTests: XCTestCase {
+    func testRequiredOptionalAndHostPermissionsAreModeled() {
+        let broker = permissionBroker(
+            required: ["tabs", "storage"],
+            optional: ["bookmarks", "history"],
+            grantedOptional: ["bookmarks"],
+            hostPermissions: ["https://example.com/*"],
+            optionalHostPermissions: ["https://optional.example/*"],
+            grantedOptionalHostPermissions: ["https://granted.example/*"]
         )
 
-        XCTAssertEqual(
-            Set(routes.map(\.kind)),
-            Set(ChromeMV3RuntimeMessagingRouteKind.allCases)
+        XCTAssertTrue(broker.hasAPIPermission("tabs"))
+        XCTAssertTrue(broker.hasOptionalPermission("bookmarks"))
+        XCTAssertFalse(broker.hasOptionalPermission("history"))
+        XCTAssertTrue(broker.wouldNeedPrompt(permission: "history"))
+        XCTAssertTrue(
+            broker.hasHostPermission(url: "https://example.com/login")
         )
-        XCTAssertTrue(routes.allSatisfy { $0.implementedNow == false })
+        XCTAssertTrue(
+            broker.hasHostPermission(url: "https://granted.example/login")
+        )
+        XCTAssertTrue(
+            broker.wouldNeedPrompt(host: "https://optional.example/login")
+        )
     }
 
-    func testContentScriptToServiceWorkerRequiresWakeAndDoesNotDispatch() {
+    func testUnsupportedAndDeferredPermissionsAreReported() {
+        let broker = permissionBroker(
+            required: ["nativeMessaging", "debugger"],
+            unavailable: ["nativeMessaging"],
+            unsupported: ["debugger"]
+        )
+
+        let native = broker.apiPermissionDecision("nativeMessaging")
+        let debugger = broker.apiPermissionDecision("debugger")
+
+        XCTAssertFalse(native.hasPermission)
+        XCTAssertEqual(native.status, .deferred)
+        XCTAssertTrue(broker.isPermissionDeferred("nativeMessaging"))
+        XCTAssertFalse(debugger.hasPermission)
+        XCTAssertEqual(debugger.status, .unsupported)
+        XCTAssertTrue(broker.isPermissionUnsupported("debugger"))
+    }
+
+    func testAllURLsMatchesHTTPAndHTTPSOnlyForModeledHostAccess() {
+        let pattern = ChromeMV3HostMatchPattern("<all_urls>")
+
+        XCTAssertTrue(pattern.matches(url: "http://example.com/"))
+        XCTAssertTrue(pattern.matches(url: "https://example.com/"))
+        XCTAssertFalse(pattern.matches(url: "chrome://extensions/"))
+        XCTAssertTrue(pattern.isValid)
+    }
+
+    func testSchemeSpecificHostPatternsMatchOnlyCorrectScheme() {
+        let https = ChromeMV3HostMatchPattern("https://example.com/*")
+
+        XCTAssertTrue(https.matches(url: "https://example.com/a"))
+        XCTAssertFalse(https.matches(url: "http://example.com/a"))
+        XCTAssertFalse(https.matches(url: "https://other.example/a"))
+    }
+
+    func testWildcardSubdomainPatternBehaviorIsDeterministic() {
+        let pattern = ChromeMV3HostMatchPattern("*://*.example.com/*")
+
+        XCTAssertTrue(pattern.matches(url: "https://example.com/login"))
+        XCTAssertTrue(pattern.matches(url: "http://www.example.com/login"))
+        XCTAssertTrue(pattern.matches(url: "https://a.b.example.com/login"))
+        XCTAssertFalse(pattern.matches(url: "https://badexample.com/login"))
+    }
+
+    func testInvalidAndUnsupportedPatternsProduceDiagnostics() {
+        let invalidWildcard =
+            ChromeMV3HostMatchPattern("https://exa*mple.com/*")
+        let missingPath = ChromeMV3HostMatchPattern("https://example.com")
+        let unsupportedFile = ChromeMV3HostMatchPattern("file:///tmp/*")
+
+        XCTAssertTrue(invalidWildcard.isInvalid)
+        XCTAssertTrue(missingPath.isInvalid)
+        XCTAssertTrue(unsupportedFile.isUnsupported)
+        XCTAssertFalse(invalidWildcard.diagnostics.isEmpty)
+        XCTAssertFalse(unsupportedFile.diagnostics.isEmpty)
+    }
+
+    func testHostPermissionAllowsSenderMetadataExposure() {
         let route = route(
             .contentScriptToServiceWorker,
             sourceURL: "https://example.com/login"
         )
-        let snapshot = permissionSnapshot(
+        let broker = permissionBroker(
             hostPermissions: ["https://example.com/*"]
         )
         let decision = ChromeMV3RuntimeMessagingPermissionDecision.evaluate(
             route: route,
-            snapshot: snapshot
+            permissionBroker: broker
         )
         let envelope = ChromeMV3RuntimeMessageEnvelope.make(
             route: route,
             permissionDecision: decision
         )
 
-        let evaluation = ChromeMV3RuntimeMessagingRouteEvaluator.evaluate(
-            route: route,
-            envelope: envelope,
-            permissionSnapshot: snapshot,
-            readiness: readiness(
-                contextLoaded: true,
-                receiverListenerRegistered: true,
-                serviceWorkerLifecycleReady: false
-            )
-        )
-
-        XCTAssertTrue(route.requiresServiceWorkerWake)
-        XCTAssertTrue(route.requiresHostPermission)
-        XCTAssertFalse(evaluation.canDispatchNow)
-        XCTAssertFalse(evaluation.canWakeServiceWorkerNow)
-        XCTAssertEqual(
-            evaluation.errorContract?.error,
-            .serviceWorkerUnavailable
-        )
+        XCTAssertTrue(decision.allowedForFutureDispatch)
+        XCTAssertEqual(decision.senderMetadataRedaction, .preserveURLAndOrigin)
+        XCTAssertEqual(envelope.senderMetadata.url, "https://example.com/login")
+        XCTAssertEqual(envelope.senderMetadata.origin, "https://example.com")
+        XCTAssertTrue(decision.hostAccessDecision?.hasHostAccess == true)
     }
 
-    func testActionPopupToServiceWorkerIsModeledAndNonDispatchable() {
-        let route = route(.actionPopupToServiceWorker)
-        let envelope = ChromeMV3RuntimeMessageEnvelope.make(route: route)
-
-        let evaluation = ChromeMV3RuntimeMessagingRouteEvaluator.evaluate(
-            route: route,
-            envelope: envelope,
-            permissionSnapshot: .empty,
-            readiness: readiness(
-                contextLoaded: true,
-                receiverListenerRegistered: true,
-                serviceWorkerLifecycleReady: true
-            )
-        )
-
-        XCTAssertEqual(route.source.context, .actionPopup)
-        XCTAssertEqual(route.target.context, .serviceWorker)
-        XCTAssertTrue(route.requiresServiceWorkerWake)
-        XCTAssertFalse(evaluation.canDispatchNow)
-        XCTAssertEqual(evaluation.errorContract?.error, .routeNotImplemented)
-    }
-
-    func testServiceWorkerToTabRequiresTargetAndPermissionDecision() {
-        let missingTabRoute = ChromeMV3RuntimeMessagingRoute.make(
-            kind: .serviceWorkerToTab,
-            extensionID: "extension-a",
-            profileID: "profile-a"
-        )
-        let missingTabEnvelope = ChromeMV3RuntimeMessageEnvelope.make(
-            route: missingTabRoute
-        )
-        let missingTabEvaluation =
-            ChromeMV3RuntimeMessagingRouteEvaluator.evaluate(
-                route: missingTabRoute,
-                envelope: missingTabEnvelope,
-                permissionSnapshot: .empty,
-                readiness: readiness()
-            )
-
-        let route = route(
-            .serviceWorkerToTab,
-            targetURL: "https://example.com/login"
-        )
-        let permissionDecision =
-            ChromeMV3RuntimeMessagingPermissionDecision.evaluate(
-                route: route,
-                snapshot: .empty
-            )
-
-        XCTAssertEqual(
-            missingTabEvaluation.errorContract?.error,
-            .targetTabMissing
-        )
-        XCTAssertTrue(route.requiresTabPermission)
-        XCTAssertTrue(route.requiresHostPermission)
-        XCTAssertTrue(route.requiresActiveTab)
-        XCTAssertFalse(permissionDecision.allowedForFutureDispatch)
-    }
-
-    func testTabsSendMessageEvaluatesTabAndFrameMetadata() {
-        let route = route(
-            .tabsSendMessage,
-            frameID: 7,
-            documentID: "document-7",
-            targetURL: "https://example.com/form"
-        )
-        let snapshot = permissionSnapshot(
-            hostPermissions: ["https://example.com/*"]
-        )
-        let decision = ChromeMV3RuntimeMessagingPermissionDecision.evaluate(
-            route: route,
-            snapshot: snapshot
-        )
-        let envelope = ChromeMV3RuntimeMessageEnvelope.make(
-            route: route,
-            permissionDecision: decision
-        )
-
-        XCTAssertEqual(envelope.senderMetadata.tabID, 42)
-        XCTAssertEqual(envelope.senderMetadata.frameID, 7)
-        XCTAssertEqual(envelope.senderMetadata.documentID, "document-7")
-        XCTAssertEqual(
-            envelope.senderMetadata.urlExposureStatus,
-            .exposed
-        )
-    }
-
-    func testNativeMessagingRouteIsBlockedAndDeferred() {
-        let route = route(.nativeMessaging)
-        let envelope = ChromeMV3RuntimeMessageEnvelope.make(
-            route: route,
-            payloadClassification: .nativeMessagingJSON
-        )
-
-        let evaluation = ChromeMV3RuntimeMessagingRouteEvaluator.evaluate(
-            route: route,
-            envelope: envelope,
-            permissionSnapshot: .empty,
-            readiness: readiness(contextLoaded: true)
-        )
-
-        XCTAssertTrue(route.requiresNativeMessaging)
-        XCTAssertFalse(evaluation.canDispatchNow)
-        XCTAssertEqual(evaluation.errorContract?.error, .nativeMessagingBlocked)
-    }
-
-    func testEnvelopeOutputIsDeterministic() {
-        let route = route(.runtimeSendMessage)
-
-        let first = ChromeMV3RuntimeMessageEnvelope.make(
-            route: route,
-            responseMode: .callback,
-            seed: "same-seed"
-        )
-        let second = ChromeMV3RuntimeMessageEnvelope.make(
-            route: route,
-            responseMode: .callback,
-            seed: "same-seed"
-        )
-
-        XCTAssertEqual(first, second)
-        XCTAssertTrue(first.messageID.hasPrefix("message-"))
-        XCTAssertTrue(first.diagnosticTraceID.hasPrefix("trace-"))
-    }
-
-    func testSenderURLAndOriginAreRedactedWhenPermissionIsMissing() {
+    func testMissingHostPermissionRedactsSenderMetadata() {
         let route = route(
             .contentScriptToServiceWorker,
             sourceURL: "https://secret.example/login"
         )
+        let broker = permissionBroker()
         let decision = ChromeMV3RuntimeMessagingPermissionDecision.evaluate(
             route: route,
-            snapshot: .empty
+            permissionBroker: broker
         )
         let envelope = ChromeMV3RuntimeMessageEnvelope.make(
             route: route,
             permissionDecision: decision
         )
 
-        XCTAssertEqual(
-            decision.missingGrantReason,
-            .missingHostPermission
-        )
-        XCTAssertEqual(
-            decision.senderMetadataRedaction,
-            .redactURLAndOrigin
-        )
+        XCTAssertFalse(decision.allowedForFutureDispatch)
+        XCTAssertEqual(decision.missingGrantReason, .missingHostPermission)
+        XCTAssertEqual(decision.senderMetadataRedaction, .redactURLAndOrigin)
         XCTAssertNil(envelope.senderMetadata.url)
         XCTAssertNil(envelope.senderMetadata.origin)
-        XCTAssertEqual(envelope.senderMetadata.urlExposureStatus, .redacted)
     }
 
-    func testModeledHostPermissionExposesMetadataButStillDoesNotDispatch() {
+    func testModeledActiveTabGrantAllowsTabRouteButStillDoesNotDispatch() {
         let route = route(
-            .contentScriptToServiceWorker,
-            sourceURL: "https://example.com/login"
+            .serviceWorkerToTab,
+            targetURL: "https://example.com/login"
         )
-        let snapshot = permissionSnapshot(
-            hostPermissions: ["https://example.com/*"]
+        let broker = permissionBroker(
+            required: ["activeTab"],
+            activeTabGrants: [
+                activeTabGrant(
+                    tabID: 42,
+                    origin: "https://example.com"
+                ),
+            ]
         )
-        let decision = ChromeMV3RuntimeMessagingPermissionDecision.evaluate(
-            route: route,
-            snapshot: snapshot
-        )
-        let envelope = ChromeMV3RuntimeMessageEnvelope.make(
-            route: route,
-            permissionDecision: decision
-        )
+        let envelope = ChromeMV3RuntimeMessageEnvelope.make(route: route)
+
         let evaluation = ChromeMV3RuntimeMessagingRouteEvaluator.evaluate(
             route: route,
             envelope: envelope,
-            permissionSnapshot: snapshot,
+            permissionBroker: broker,
             readiness: readiness(
                 contextLoaded: true,
                 receiverListenerRegistered: true,
@@ -235,31 +160,108 @@ final class ChromeMV3RuntimeMessagingContractTests: XCTestCase {
             )
         )
 
-        XCTAssertTrue(decision.allowedForFutureDispatch)
-        XCTAssertEqual(envelope.senderMetadata.url, "https://example.com/login")
-        XCTAssertEqual(envelope.senderMetadata.origin, "https://example.com")
+        XCTAssertTrue(
+            evaluation.permissionDecision.allowedForFutureDispatch
+        )
+        XCTAssertTrue(
+            evaluation.permissionDecision.hostAccessDecision?
+                .allowedByActiveTab == true
+        )
         XCTAssertFalse(evaluation.canDispatchNow)
         XCTAssertEqual(evaluation.errorContract?.error, .routeNotImplemented)
     }
 
-    func testMissingHostPermissionMapsToHostPermissionMissing() {
-        let route = route(
-            .contentScriptToServiceWorker,
-            sourceURL: "https://example.com/login"
+    func testActiveTabExpiresOnNavigationAwayFromOrigin() {
+        let broker = ChromeMV3ActiveTabGrantBroker(
+            grants: [
+                activeTabGrant(
+                    tabID: 42,
+                    origin: "https://example.com"
+                ),
+            ]
         )
-        let envelope = ChromeMV3RuntimeMessageEnvelope.make(route: route)
+        let sameOrigin = broker.applyingNavigation(
+            extensionID: "extension-a",
+            profileID: "profile-a",
+            tabID: 42,
+            oldURL: "https://example.com/login",
+            newURL: "https://example.com/settings",
+            sequence: 2
+        )
+        let crossOrigin = broker.applyingNavigation(
+            extensionID: "extension-a",
+            profileID: "profile-a",
+            tabID: 42,
+            oldURL: "https://example.com/login",
+            newURL: "https://chromium.org/",
+            sequence: 3
+        )
 
-        let evaluation = ChromeMV3RuntimeMessagingRouteEvaluator.evaluate(
-            route: route,
-            envelope: envelope,
-            permissionSnapshot: .empty,
-            readiness: readiness(contextLoaded: true)
+        XCTAssertTrue(
+            sameOrigin.hasActiveTabGrant(
+                extensionID: "extension-a",
+                profileID: "profile-a",
+                tabID: 42,
+                url: "https://example.com/settings"
+            )
+        )
+        XCTAssertFalse(
+            crossOrigin.hasActiveTabGrant(
+                extensionID: "extension-a",
+                profileID: "profile-a",
+                tabID: 42,
+                url: "https://example.com/login"
+            )
+        )
+        XCTAssertEqual(crossOrigin.grants.first?.expiryRecord?.trigger, .tabNavigation)
+    }
+
+    func testActiveTabExpiresOnTabClose() {
+        let broker = ChromeMV3ActiveTabGrantBroker(
+            grants: [
+                activeTabGrant(
+                    tabID: 42,
+                    origin: "https://example.com"
+                ),
+            ]
+        )
+        let expired = broker.applyingTabClose(
+            profileID: "profile-a",
+            tabID: 42,
+            sequence: 4
+        )
+
+        XCTAssertFalse(
+            expired.hasActiveTabGrant(
+                extensionID: "extension-a",
+                profileID: "profile-a",
+                tabID: 42,
+                url: "https://example.com/login"
+            )
+        )
+        XCTAssertEqual(expired.grants.first?.expiryRecord?.trigger, .tabClose)
+    }
+
+    func testActiveTabExpiresOnExtensionDisable() {
+        let broker = ChromeMV3ActiveTabGrantBroker(
+            grants: [
+                activeTabGrant(
+                    tabID: 42,
+                    origin: "https://example.com"
+                ),
+            ]
+        )
+        let expired = broker.applyingExtensionDisable(
+            extensionID: "extension-a",
+            profileID: "profile-a",
+            sequence: 5
         )
 
         XCTAssertEqual(
-            evaluation.errorContract?.error,
-            .hostPermissionMissing
+            expired.grants.first?.expiryRecord?.trigger,
+            .extensionDisable
         )
+        XCTAssertFalse(expired.grants.first?.active ?? true)
     }
 
     func testMissingActiveTabMapsToActiveTabMissing() {
@@ -267,171 +269,157 @@ final class ChromeMV3RuntimeMessagingContractTests: XCTestCase {
             .serviceWorkerToTab,
             targetURL: "https://example.com/login"
         )
-        let snapshot = ChromeMV3RuntimeMessagingPermissionSnapshot(
-            grantedHostPermissions: [],
-            optionalPermissions: [],
-            optionalHostPermissions: [],
-            tabPermissionGranted: false,
-            activeTabPermissionDeclared: true,
-            activeTabGrants: [],
-            deniedPermissions: [],
-            userGestureAvailable: false
-        )
+        let broker = permissionBroker(required: ["activeTab"])
         let envelope = ChromeMV3RuntimeMessageEnvelope.make(route: route)
 
         let evaluation = ChromeMV3RuntimeMessagingRouteEvaluator.evaluate(
             route: route,
             envelope: envelope,
-            permissionSnapshot: snapshot,
+            permissionBroker: broker,
             readiness: readiness(contextLoaded: true)
         )
 
+        XCTAssertFalse(
+            evaluation.permissionDecision.allowedForFutureDispatch
+        )
         XCTAssertEqual(evaluation.errorContract?.error, .activeTabMissing)
     }
 
-    func testContextNotLoadedMapsToContextNotLoaded() {
-        let route = route(.extensionPageToServiceWorker)
-        let envelope = ChromeMV3RuntimeMessageEnvelope.make(route: route)
-
-        let evaluation = ChromeMV3RuntimeMessagingRouteEvaluator.evaluate(
-            route: route,
-            envelope: envelope,
-            permissionSnapshot: .empty,
-            readiness: readiness(contextLoaded: false)
+    func testServiceWorkerToTabAndTabsSendMessageUseBrokerDecision() {
+        let broker = permissionBroker(
+            hostPermissions: ["https://example.com/*"]
         )
 
-        XCTAssertEqual(evaluation.errorContract?.error, .contextNotLoaded)
-    }
+        for kind in [
+            ChromeMV3RuntimeMessagingRouteKind.serviceWorkerToTab,
+            .tabsSendMessage,
+        ] {
+            let route = route(kind, targetURL: "https://example.com/login")
+            let decision = ChromeMV3RuntimeMessagingPermissionDecision
+                .evaluate(route: route, permissionBroker: broker)
 
-    func testNoReceivingEndMapsToNoReceivingEnd() {
-        let route = route(.extensionPageToServiceWorker)
-        let envelope = ChromeMV3RuntimeMessageEnvelope.make(route: route)
-
-        let evaluation = ChromeMV3RuntimeMessagingRouteEvaluator.evaluate(
-            route: route,
-            envelope: envelope,
-            permissionSnapshot: .empty,
-            readiness: readiness(
-                contextLoaded: true,
-                receiverListenerRegistered: false,
-                serviceWorkerLifecycleReady: true
+            XCTAssertTrue(decision.allowedForFutureDispatch, kind.rawValue)
+            XCTAssertTrue(
+                decision.hostAccessDecision?.allowedByHostPermission == true,
+                kind.rawValue
             )
-        )
-
-        XCTAssertEqual(evaluation.errorContract?.error, .noReceivingEnd)
+        }
     }
 
-    func testCallbackAndPromiseBehaviorIsRepresentedButNotImplemented() {
-        let contract = ChromeMV3RuntimeLastErrorContract.contract(
-            for: .noReceivingEnd
+    func testContentScriptToServiceWorkerRecordsHostAccessRequirement() {
+        let route = route(
+            .contentScriptToServiceWorker,
+            sourceURL: "https://example.com/login"
         )
-        let envelope = ChromeMV3RuntimeMessageEnvelope.make(
-            route: route(.runtimeSendMessage),
-            responseMode: .callback
+        let broker = permissionBroker()
+        let decision = ChromeMV3RuntimeMessagingPermissionDecision.evaluate(
+            route: route,
+            permissionBroker: broker
         )
 
-        XCTAssertEqual(contract.promiseBehavior, .wouldReject)
+        XCTAssertFalse(decision.allowedForFutureDispatch)
         XCTAssertEqual(
-            contract.callbackBehavior,
-            .wouldInvokeWithUndefinedAndSetLastError
+            decision.hostAccessDecision?.missingReason,
+            .hostPermissionMissing
         )
-        XCTAssertEqual(envelope.responseMode, .callback)
+        XCTAssertTrue(
+            decision.brokerDiagnostics.contains {
+                $0.contains("Host access decision")
+            }
+        )
     }
 
-    func testPortLifecycleModelIsDeterministicAndOpensNoPort() {
-        let route = route(.runtimeConnect)
-        let envelope = ChromeMV3RuntimeMessageEnvelope.make(
-            route: route,
-            payloadClassification: .portConnectionRequest
-        )
+    func testListenerDiagnosticsIncludePermissionBrokerBlockers() {
+        let report = ChromeMV3RuntimeListenerContractReportGenerator
+            .makeReport(
+                prerequisitesReport:
+                    makePrerequisitesReport(hostPermissions: [])
+            )
+        let statuses = report.eventSurfaceCapabilityMatrix
+            .first { $0.surface == .tabsMessageContentScript }?
+            .statuses ?? []
+        let resolution = report.listenerResolutionContractCoverage
+            .first { $0.routeKind == .tabsSendMessage }
 
-        let first = ChromeMV3RuntimePortContract.model(
-            route: route,
-            envelope: envelope,
-            permissionSnapshot: .empty,
-            readiness: readiness(contextLoaded: true)
-        )
-        let second = ChromeMV3RuntimePortContract.model(
-            route: route,
-            envelope: envelope,
-            permissionSnapshot: .empty,
-            readiness: readiness(contextLoaded: true)
-        )
-
-        XCTAssertEqual(first, second)
-        XCTAssertFalse(first.canOpenPortNow)
-        XCTAssertFalse(first.portLifecycleImplemented)
+        XCTAssertTrue(statuses.contains(.permissionBrokerModeled))
+        XCTAssertTrue(statuses.contains(.blockedByMissingHostAccess))
         XCTAssertEqual(
-            Set(first.disconnectReasons),
-            Set(ChromeMV3RuntimePortDisconnectReason.allCases)
+            resolution?.errorContract?.error,
+            .hostPermissionMissing
+        )
+        XCTAssertTrue(
+            resolution?.diagnostics.contains {
+                $0.contains("Host access decision")
+            } == true
         )
     }
 
-    func testPasswordManagerLikeReportKeepsMessagingBlocked() {
-        let report = ChromeMV3RuntimeMessagingContractReportGenerator
+    func testPermissionReadinessReportIncludesPasswordManagerBlockers() {
+        let report = ChromeMV3PermissionBrokerReadinessReportGenerator
             .makeReport(prerequisitesReport: makePrerequisitesReport())
-        let password = report.passwordManagerMessagingSummary
+        let password = report.passwordManagerPermissionReadiness
 
-        XCTAssertTrue(password.contentScriptToServiceWorkerRouteRequired)
-        XCTAssertTrue(password.popupToServiceWorkerRouteRequired)
-        XCTAssertTrue(password.serviceWorkerToTabContentRouteRequired)
-        XCTAssertTrue(password.portLifecycleRequiredForUnlockFillFlow)
-        XCTAssertTrue(password.hostPermissionRequired)
-        XCTAssertTrue(password.activeTabMayBeRequiredDependingOnUserAction)
-        XCTAssertTrue(password.nativeMessagingRouteDetectedButBlocked)
-        XCTAssertFalse(password.controlledInputPageWorldBehaviorVerified)
-        XCTAssertFalse(password.passwordManagerMessagingReady)
+        XCTAssertTrue(password.hostPermissionsDetected)
+        XCTAssertTrue(password.contentScriptHostAccessRequired)
+        XCTAssertTrue(
+            password
+                .actionPopupUserGestureMayCreateActiveTabGrantInFuture
+        )
+        XCTAssertTrue(password.nativeMessagingPermissionDetectedButBlocked)
+        XCTAssertTrue(password.storagePermissionDetectedButRuntimeMissing)
+        XCTAssertTrue(password.runtimeMessagingBlocked)
+        XCTAssertTrue(password.permissionBrokerSkeletonPresent)
+        XCTAssertFalse(password.realPermissionPromptsImplemented)
+        XCTAssertFalse(password.passwordManagerPermissionReady)
+    }
+
+    func testPermissionReadinessReportKeepsRuntimeFlagsFalse() {
+        let report = ChromeMV3PermissionBrokerReadinessReportGenerator
+            .makeReport(prerequisitesReport: makePrerequisitesReport())
+
+        XCTAssertFalse(report.canGrantPermissionsNow)
+        XCTAssertFalse(report.canPromptUserNow)
         XCTAssertFalse(report.canDispatchMessagesNow)
-        XCTAssertFalse(report.canRegisterListenersNow)
-        XCTAssertFalse(report.canWakeServiceWorkerNow)
-        XCTAssertFalse(report.canOpenPortNow)
-        XCTAssertFalse(report.canCreateContextNow)
         XCTAssertFalse(report.canLoadContextNow)
         XCTAssertFalse(report.runtimeLoadable)
-    }
-
-    func testMessagingReportIsDeterministic() throws {
-        let prerequisites = makePrerequisitesReport()
-
-        let first = ChromeMV3RuntimeMessagingContractReportGenerator
-            .makeReport(prerequisitesReport: prerequisites)
-        let second = ChromeMV3RuntimeMessagingContractReportGenerator
-            .makeReport(prerequisitesReport: prerequisites)
-        let firstData = try ChromeMV3DeterministicJSON.encodedData(first)
-        let secondData = try ChromeMV3DeterministicJSON.encodedData(second)
-
-        XCTAssertEqual(first, second)
-        XCTAssertEqual(firstData, secondData)
-        XCTAssertEqual(
-            first.reportFileName,
-            ChromeMV3RuntimeMessagingContractReportWriter.reportFileName
+        XCTAssertFalse(
+            report.passwordManagerPermissionReadiness
+                .passwordManagerPermissionReady
         )
+        XCTAssertFalse(report.summary.canPromptUserNow)
+        XCTAssertFalse(report.summary.canDispatchMessagesNow)
+        XCTAssertFalse(report.summary.canLoadContextNow)
+        XCTAssertFalse(report.summary.runtimeLoadable)
     }
 
-    func testMessagingContractReportWriterWritesExpectedFile() throws {
+    func testPermissionReadinessReportIsDeterministicAndWritable() throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
-        let report = ChromeMV3RuntimeMessagingContractReportGenerator
+        let report = ChromeMV3PermissionBrokerReadinessReportGenerator
             .makeReport(prerequisitesReport: makePrerequisitesReport())
+        let first = try ChromeMV3DeterministicJSON.encodedData(report)
+        let second = try ChromeMV3DeterministicJSON.encodedData(report)
 
-        try ChromeMV3RuntimeMessagingContractReportWriter.write(
+        try ChromeMV3PermissionBrokerReadinessReportWriter.write(
             report,
             toRewrittenBundleRoot: root
         )
 
-        let reportURL = root.appendingPathComponent(
-            ChromeMV3RuntimeMessagingContractReportWriter.reportFileName
-        )
-        XCTAssertTrue(FileManager.default.fileExists(atPath: reportURL.path))
         let decoded = try JSONDecoder().decode(
-            ChromeMV3RuntimeMessagingContractReport.self,
-            from: Data(contentsOf: reportURL)
+            ChromeMV3PermissionBrokerReadinessReport.self,
+            from: Data(
+                contentsOf: root.appendingPathComponent(
+                    ChromeMV3PermissionBrokerReadinessReportWriter
+                        .reportFileName
+                )
+            )
         )
+        XCTAssertEqual(first, second)
         XCTAssertEqual(decoded, report)
     }
 
     @MainActor
-    func testSumiExtensionsModuleWritesMessagingContractReportOnlyWhenEnabled()
+    func testSumiExtensionsModuleWritesPermissionReportOnlyWhenEnabled()
         throws
     {
         guard #available(macOS 15.5, *) else {
@@ -445,7 +433,7 @@ final class ChromeMV3RuntimeMessagingContractTests: XCTestCase {
             toRewrittenBundleRoot: root
         )
         let reportURL = root.appendingPathComponent(
-            ChromeMV3RuntimeMessagingContractReportWriter.reportFileName
+            ChromeMV3PermissionBrokerReadinessReportWriter.reportFileName
         )
         let disabledHarness = TestDefaultsHarness()
         defer { disabledHarness.reset() }
@@ -459,7 +447,7 @@ final class ChromeMV3RuntimeMessagingContractTests: XCTestCase {
         )
 
         let disabledReport =
-            disabledModule.chromeMV3RuntimeMessagingContractReportIfEnabled(
+            disabledModule.chromeMV3PermissionBrokerReadinessReportIfEnabled(
                 fromRewrittenBundleRoot: root,
                 writeReport: true
             )
@@ -480,7 +468,7 @@ final class ChromeMV3RuntimeMessagingContractTests: XCTestCase {
         )
 
         let enabledReport = try XCTUnwrap(
-            enabledModule.chromeMV3RuntimeMessagingContractReportIfEnabled(
+            enabledModule.chromeMV3PermissionBrokerReadinessReportIfEnabled(
                 fromRewrittenBundleRoot: root,
                 writeReport: true
             )
@@ -491,15 +479,13 @@ final class ChromeMV3RuntimeMessagingContractTests: XCTestCase {
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: reportURL.path))
         XCTAssertEqual(
-            diagnostics?.runtimeMessagingContractReportSummary,
+            diagnostics?.permissionBrokerReadinessReportSummary,
             enabledReport.summary
         )
         XCTAssertFalse(enabledModule.hasLoadedRuntime)
     }
 
-    func testSourceLevelGuardsForRuntimeMessagingContractLayer()
-        throws
-    {
+    func testSourceLevelGuardsForPermissionBrokerLayer() throws {
         let sources = try Self.sourceFiles(in: [
             "Sumi/Models/Extension/ChromeMV3",
             "SumiTests",
@@ -524,12 +510,11 @@ final class ChromeMV3RuntimeMessagingContractTests: XCTestCase {
 
         for forbiddenRegex in [
             "runtime" + "Loadable\\s*[:=].*" + "tr" + "ue",
+            "canCreate" + "ContextNow\\s*[:=].*" + "tr" + "ue",
             "canLoad" + "ContextNow\\s*[:=].*" + "tr" + "ue",
             "canDispatch" + "MessagesNow\\s*[:=].*" + "tr" + "ue",
-            "canRegister" + "ListenersNow\\s*[:=].*" + "tr" + "ue",
-            "canWake" + "ServiceWorkerNow\\s*[:=].*" + "tr" + "ue",
-            "canOpen" + "PortNow\\s*[:=].*" + "tr" + "ue",
-            "password" + "ManagerMessagingReady\\s*[:=].*" + "tr" + "ue",
+            "canPrompt" + "UserNow\\s*[:=].*" + "tr" + "ue",
+            "password" + "ManagerPermissionReady\\s*[:=].*" + "tr" + "ue",
         ] {
             XCTAssertNil(
                 joined.range(
@@ -560,6 +545,52 @@ final class ChromeMV3RuntimeMessagingContractTests: XCTestCase {
         )
     }
 
+    private func permissionBroker(
+        required: [String] = [],
+        optional: [String] = [],
+        grantedOptional: [String] = [],
+        hostPermissions: [String] = [],
+        optionalHostPermissions: [String] = [],
+        grantedOptionalHostPermissions: [String] = [],
+        denied: [String] = [],
+        unavailable: [String] = [],
+        unsupported: [String] = [],
+        activeTabGrants: [ChromeMV3ActiveTabGrant] = []
+    ) -> ChromeMV3PermissionBroker {
+        ChromeMV3PermissionBroker(
+            state: ChromeMV3PermissionBrokerState(
+                extensionID: "extension-a",
+                profileID: "profile-a",
+                requiredPermissions: required,
+                optionalPermissions: optional,
+                grantedOptionalPermissions: grantedOptional,
+                hostPermissions: hostPermissions,
+                optionalHostPermissions: optionalHostPermissions,
+                grantedOptionalHostPermissions:
+                    grantedOptionalHostPermissions,
+                deniedPermissions: denied,
+                unavailablePermissions: unavailable,
+                unsupportedPermissions: unsupported,
+                activeTabGrants: activeTabGrants
+            )
+        )
+    }
+
+    private func activeTabGrant(
+        tabID: Int,
+        origin: String
+    ) -> ChromeMV3ActiveTabGrant {
+        ChromeMV3ActiveTabGrant(
+            extensionID: "extension-a",
+            profileID: "profile-a",
+            tabID: tabID,
+            scope: .origin(origin),
+            reason: .testFixture,
+            userGestureModeled: true,
+            createdSequence: 1
+        )
+    }
+
     private func readiness(
         contextLoaded: Bool = false,
         receiverListenerRegistered: Bool = false,
@@ -580,24 +611,9 @@ final class ChromeMV3RuntimeMessagingContractTests: XCTestCase {
         )
     }
 
-    private func permissionSnapshot(
-        hostPermissions: [String]
-    ) -> ChromeMV3RuntimeMessagingPermissionSnapshot {
-        ChromeMV3RuntimeMessagingPermissionSnapshot(
-            grantedHostPermissions: hostPermissions,
-            optionalPermissions: [],
-            optionalHostPermissions: [],
-            tabPermissionGranted: false,
-            activeTabPermissionDeclared: false,
-            activeTabGrants: [],
-            deniedPermissions: [],
-            userGestureAvailable: false
-        )
-    }
-
-    private func makePrerequisitesReport()
-        -> ChromeMV3RuntimeBridgePrerequisitesReport
-    {
+    private func makePrerequisitesReport(
+        hostPermissions: [String] = ["https://example.com/*"]
+    ) -> ChromeMV3RuntimeBridgePrerequisitesReport {
         ChromeMV3RuntimeBridgePrerequisitesReport(
             schemaVersion: 1,
             id: "runtime-prerequisites-test",
@@ -629,13 +645,15 @@ final class ChromeMV3RuntimeMessagingContractTests: XCTestCase {
                     warnings: [],
                     requiredActions: []
                 ),
-            manifestFacts: manifestFacts(),
+            manifestFacts: manifestFacts(hostPermissions: hostPermissions),
             runtimeMessagingPrerequisites: runtimeMessagingPrerequisites(),
             nativeMessagingPrerequisites: nativeMessagingPrerequisites(),
             storagePrerequisites: storagePrerequisites(),
-            permissionsActiveTabPrerequisites: permissionsPrerequisites(),
+            permissionsActiveTabPrerequisites:
+                permissionsPrerequisites(hostPermissions: hostPermissions),
             serviceWorkerLifecyclePrerequisites: lifecyclePrerequisites(),
-            passwordManagerPrerequisiteSummary: passwordSummary(),
+            passwordManagerPrerequisiteSummary:
+                passwordSummary(hostPermissions: hostPermissions),
             unsupportedDeferredAPIs:
                 ChromeMV3UnsupportedDeferredAPISummary(
                     unsupportedAPIs: [],
@@ -662,17 +680,7 @@ final class ChromeMV3RuntimeMessagingContractTests: XCTestCase {
         )
     }
 
-    private func makeTemporaryDirectory() throws -> URL {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: true
-        )
-        return directory
-    }
-
-    private func manifestFacts()
+    private func manifestFacts(hostPermissions: [String])
         -> ChromeMV3RuntimeBridgeManifestFacts
     {
         ChromeMV3RuntimeBridgeManifestFacts(
@@ -681,10 +689,13 @@ final class ChromeMV3RuntimeMessagingContractTests: XCTestCase {
             manifestSHA256: String(repeating: "b", count: 64),
             declaredPermissions: ["nativeMessaging", "storage"],
             optionalPermissions: [],
-            hostPermissions: ["https://example.com/*"],
+            hostPermissions: hostPermissions,
             optionalHostPermissions: [],
             contentScriptsPresent: true,
-            contentScriptMatchPatterns: ["https://example.com/*"],
+            contentScriptMatchPatterns:
+                hostPermissions.isEmpty
+                    ? ["https://example.com/*"]
+                    : hostPermissions,
             actionPopupPresent: true,
             backgroundServiceWorkerPresent: true,
             storagePermissionPresent: true,
@@ -699,7 +710,7 @@ final class ChromeMV3RuntimeMessagingContractTests: XCTestCase {
         -> ChromeMV3RuntimeMessagingContract
     {
         ChromeMV3RuntimeMessagingContract(
-            status: .modeled,
+            status: .notImplemented,
             implementedNow: false,
             dispatchImplemented: false,
             listenerDeliveryImplemented: false,
@@ -713,6 +724,22 @@ final class ChromeMV3RuntimeMessagingContractTests: XCTestCase {
                 ChromeMV3RuntimeMessagingRouteContract(
                     route: "contentScriptToServiceWorker",
                     requiredAPI: "runtime.sendMessage",
+                    requiresServiceWorkerWakePolicy: true,
+                    requiresTabAddressing: true,
+                    implementedNow: false,
+                    blockedReason: "Modeled only."
+                ),
+                ChromeMV3RuntimeMessagingRouteContract(
+                    route: "serviceWorkerToTabContentScript",
+                    requiredAPI: "tabs.sendMessage",
+                    requiresServiceWorkerWakePolicy: false,
+                    requiresTabAddressing: true,
+                    implementedNow: false,
+                    blockedReason: "Modeled only."
+                ),
+                ChromeMV3RuntimeMessagingRouteContract(
+                    route: "contentScriptLongLivedPortToExtension",
+                    requiredAPI: "runtime.connect",
                     requiresServiceWorkerWakePolicy: true,
                     requiresTabAddressing: true,
                     implementedNow: false,
@@ -785,14 +812,14 @@ final class ChromeMV3RuntimeMessagingContractTests: XCTestCase {
         )
     }
 
-    private func permissionsPrerequisites()
+    private func permissionsPrerequisites(hostPermissions: [String])
         -> ChromeMV3PermissionsActiveTabPrerequisites
     {
         ChromeMV3PermissionsActiveTabPrerequisites(
-            status: .notImplemented,
+            status: .modeled,
             requiredPermissions: ["nativeMessaging", "storage"],
             optionalPermissions: [],
-            hostPermissions: ["https://example.com/*"],
+            hostPermissions: hostPermissions,
             optionalHostPermissions: [],
             activeTabDeclared: false,
             permissionBrokerImplemented: true,
@@ -837,13 +864,13 @@ final class ChromeMV3RuntimeMessagingContractTests: XCTestCase {
         )
     }
 
-    private func passwordSummary()
+    private func passwordSummary(hostPermissions: [String])
         -> ChromeMV3PasswordManagerPrerequisiteSummary
     {
         ChromeMV3PasswordManagerPrerequisiteSummary(
             contentScriptsPresent: true,
             actionPopupPresent: true,
-            hostPermissionsPresent: true,
+            hostPermissionsPresent: hostPermissions.isEmpty == false,
             storagePermissionPresent: true,
             nativeMessagingPermissionPresent: true,
             runtimeMessagingMissing: true,
@@ -853,9 +880,19 @@ final class ChromeMV3RuntimeMessagingContractTests: XCTestCase {
             controlledInputPageWorldBehaviorNotVerified: true,
             serviceWorkerLifecycleNotVerified: true,
             passwordManagerSupportReady: false,
-            blockers: ["Password-manager messaging is not ready."],
+            blockers: ["Password-manager permissions are not ready."],
             deferredChecks: []
         )
+    }
+
+    private func makeTemporaryDirectory() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        return directory
     }
 
     private static func sourceFiles(

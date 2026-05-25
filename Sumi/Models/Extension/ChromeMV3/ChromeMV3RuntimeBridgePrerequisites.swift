@@ -889,15 +889,15 @@ enum ChromeMV3RuntimeBridgePrerequisitesReportGenerator {
             || report.passwordManagerReadiness.hostPermissionsPresent
             || manifestFacts.contentScriptsPresent
         return ChromeMV3PermissionsActiveTabPrerequisites(
-            status: .notImplemented,
+            status: .modeled,
             requiredPermissions: manifestFacts.declaredPermissions,
             optionalPermissions: manifestFacts.optionalPermissions,
             hostPermissions: manifestFacts.hostPermissions,
             optionalHostPermissions: manifestFacts.optionalHostPermissions,
             activeTabDeclared: manifestFacts.activeTabPermissionPresent,
-            permissionBrokerImplemented: false,
-            activeTabImplemented: false,
-            hostPermissionEvaluationImplemented: false,
+            permissionBrokerImplemented: true,
+            activeTabImplemented: true,
+            hostPermissionEvaluationImplemented: true,
             userGestureRequirementModeled: true,
             grantLifetimeRequirement:
                 "activeTab grants must be tab-scoped, user-gesture-bound, and temporary.",
@@ -913,9 +913,10 @@ enum ChromeMV3RuntimeBridgePrerequisitesReportGenerator {
             blockers: uniqueSorted(
                 report.runtimeBlockers.permissionActiveTabBlockers
                     + [
-                        "Permission broker is not implemented.",
-                        "activeTab grant policy is not implemented.",
-                        "Host permission evaluation is not implemented.",
+                        "Permission broker skeleton is modeled but does not grant real permissions.",
+                        "activeTab grant policy is modeled but not connected to real UI gestures.",
+                        "Real permission prompt UI is not implemented.",
+                        "Content-script injection authorization policy is not implemented.",
                     ]
             ),
             futureTestsNeeded: [
@@ -1008,9 +1009,8 @@ enum ChromeMV3RuntimeBridgePrerequisitesReportGenerator {
         let readiness = report.passwordManagerReadiness
         let runtimeMissing = runtimeMessaging.implementedNow == false
         let permissionMissing =
-            permissions.permissionBrokerImplemented == false
-            || permissions.activeTabImplemented == false
-            || permissions.hostPermissionEvaluationImplemented == false
+            permissions.requiredBeforePasswordManagerSupport
+                && permissions.permissionPromptUIFutureRequirement
         let storageMissing = storage.implementedNow == false
         let nativeMissing = nativeMessaging.nativeMessagingDetected
             && nativeMessaging.processLaunchImplemented == false
@@ -1734,6 +1734,8 @@ struct ChromeMV3RuntimeBridgeReadinessReport:
         ChromeMV3RuntimeMessagingContractReportSummary
     var runtimeListenerContractReportSummary:
         ChromeMV3RuntimeListenerContractReportSummary? = nil
+    var permissionBrokerReadinessReportSummary:
+        ChromeMV3PermissionBrokerReadinessReportSummary? = nil
     var canCreateContextNow: Bool
     var canLoadContextNow: Bool
     var runtimeLoadable: Bool
@@ -1901,6 +1903,10 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
             manifestFacts: prerequisites.manifestFacts,
             installReport: installReport
         )
+        let permissionBrokerReport =
+            ChromeMV3PermissionBrokerReadinessReportGenerator.makeReport(
+                prerequisitesReport: prerequisites
+            )
         let native = nativeMessagingGate(
             prerequisites.nativeMessagingPrerequisites,
             installReport: installReport
@@ -1984,6 +1990,8 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
                 messagingContractReport.summary,
             runtimeListenerContractReportSummary:
                 listenerContractReport.summary,
+            permissionBrokerReadinessReportSummary:
+                permissionBrokerReport.summary,
             canCreateContextNow: false,
             canLoadContextNow: false,
             runtimeLoadable: false,
@@ -2156,11 +2164,18 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
             ? uniqueSorted(
                 prerequisites.blockers
                     + [
-                        "Permission broker is not implemented.",
-                        "activeTab grant model is not implemented.",
-                        "Host permission evaluation is not implemented.",
+                        prerequisites.permissionBrokerImplemented
+                            ? nil
+                            : "Permission broker is not implemented.",
+                        prerequisites.activeTabImplemented
+                            ? nil
+                            : "activeTab grant model is not implemented.",
+                        prerequisites.hostPermissionEvaluationImplemented
+                            ? nil
+                            : "Host permission evaluation is not implemented.",
+                        "Real permission prompts are not implemented.",
                         "Content-script injection authorization policy is not implemented.",
-                    ]
+                    ].compactMap { $0 }
             )
             : []
 
@@ -2175,9 +2190,11 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
             permissionPromptPolicyRequired: required,
             contentScriptAuthorizationPolicyRequired:
                 manifestFacts.contentScriptsPresent || hostAccessRequired,
-            permissionBrokerImplemented: false,
-            activeTabImplemented: false,
-            hostPermissionEvaluationImplemented: false,
+            permissionBrokerImplemented:
+                prerequisites.permissionBrokerImplemented,
+            activeTabImplemented: prerequisites.activeTabImplemented,
+            hostPermissionEvaluationImplemented:
+                prerequisites.hostPermissionEvaluationImplemented,
             permissionsReadyForContextLoad: false,
             blockers: blockers
         )
@@ -2299,7 +2316,8 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
             nativeMessagingDetected:
                 summary.nativeMessagingPermissionPresent,
             runtimeMessagingMissing: true,
-            permissionsActiveTabMissing: true,
+            permissionsActiveTabMissing:
+                permissions.permissionsReadyForContextLoad == false,
             storageBackendMissing: summary.storagePermissionPresent,
             nativeMessagingMissing:
                 summary.nativeMessagingPermissionPresent
