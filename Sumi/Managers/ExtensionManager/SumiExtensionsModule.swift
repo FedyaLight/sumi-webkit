@@ -1419,6 +1419,15 @@ final class SumiExtensionsModule {
                 linkedMinimalReport.contentScriptSmokeSummary = report.summary
                 lastChromeMV3RuntimeMinimalSmokeReport = linkedMinimalReport
             }
+            if report.gateDecision.canRunContentScriptSmokeNow,
+               var linkedReadinessReport =
+                lastChromeMV3RuntimeBridgeReadinessReport
+                    ?? resolvedRuntimeBridgeReadinessReport {
+                linkedReadinessReport.contentScriptSmokeSummary =
+                    report.summary
+                lastChromeMV3RuntimeBridgeReadinessReport =
+                    linkedReadinessReport
+            }
 
             if tearDownLoadedContextAndControllerAfterRun {
                 cachedChromeMV3ControllerLoadOwner = nil
@@ -1504,6 +1513,15 @@ final class SumiExtensionsModule {
                 var linkedMinimalReport = minimalReport
                 linkedMinimalReport.contentScriptSmokeSummary = report.summary
                 lastChromeMV3RuntimeMinimalSmokeReport = linkedMinimalReport
+            }
+            if report.gateDecision.canRunContentScriptSmokeNow,
+               var linkedReadinessReport =
+                lastChromeMV3RuntimeBridgeReadinessReport
+                    ?? resolvedRuntimeBridgeReadinessReport {
+                linkedReadinessReport.contentScriptSmokeSummary =
+                    report.summary
+                lastChromeMV3RuntimeBridgeReadinessReport =
+                    linkedReadinessReport
             }
 
             if tearDownLoadedContextAndControllerAfterRun {

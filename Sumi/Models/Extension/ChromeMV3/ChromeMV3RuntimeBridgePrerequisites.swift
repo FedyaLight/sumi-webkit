@@ -1746,6 +1746,8 @@ struct ChromeMV3RuntimeBridgeReadinessReport:
         ChromeMV3JSBridgeContractReportSummary? = nil
     var runtimeListenerContractReportSummary:
         ChromeMV3RuntimeListenerContractReportSummary? = nil
+    var contentScriptSmokeSummary:
+        ChromeMV3ContentScriptSmokeReportSummary? = nil
     var permissionBrokerReadinessReportSummary:
         ChromeMV3PermissionBrokerReadinessReportSummary? = nil
     var permissionLifecycleReportSummary:
