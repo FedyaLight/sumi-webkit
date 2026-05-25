@@ -450,6 +450,8 @@ struct ChromeMV3ContentScriptSmokeManifestSummary:
     Equatable,
     Sendable
 {
+    var contentScriptMetadata:
+        [ChromeMV3ContentScriptSmokeManifestContentScriptMetadata]
     var contentScriptCount: Int
     var jsPaths: [String]
     var cssPaths: [String]
@@ -464,6 +466,25 @@ struct ChromeMV3ContentScriptSmokeManifestSummary:
     var worldValues: [String]
     var hostPermissions: [String]
     var declaredPermissions: [String]
+}
+
+struct ChromeMV3ContentScriptSmokeManifestContentScriptMetadata:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var contentScriptIndex: Int
+    var jsPaths: [String]
+    var cssPaths: [String]
+    var matchPatterns: [String]
+    var excludeMatchPatterns: [String]
+    var includeGlobs: [String]
+    var excludeGlobs: [String]
+    var allFrames: Bool
+    var matchAboutBlank: Bool
+    var matchOriginAsFallback: Bool
+    var runAt: String
+    var world: String?
 }
 
 struct ChromeMV3ContentScriptSmokeScriptResource:
@@ -640,8 +661,10 @@ enum ChromeMV3ContentScriptSmokeFixturePolicy {
         var matchOriginAsFallbackValues: [Bool] = []
         var runAtValues: [String] = []
         var worldValues: [String] = []
+        var contentScriptMetadata:
+            [ChromeMV3ContentScriptSmokeManifestContentScriptMetadata] = []
 
-        for script in contentScripts {
+        for (index, script) in contentScripts.enumerated() {
             let scriptMatches = stringArray(script["matches"])
             if scriptMatches.isEmpty {
                 blockers.append(.contentScriptMissingExplicitMatches)
@@ -668,6 +691,15 @@ enum ChromeMV3ContentScriptSmokeFixturePolicy {
 
             let js = stringArray(script["js"])
             let css = stringArray(script["css"])
+            let scriptExcludeMatches = stringArray(script["exclude_matches"])
+            let scriptIncludeGlobs = stringArray(script["include_globs"])
+            let scriptExcludeGlobs = stringArray(script["exclude_globs"])
+            let scriptAllFrames = boolValue(script["all_frames"]) ?? false
+            let scriptMatchAboutBlank =
+                boolValue(script["match_about_blank"]) ?? false
+            let scriptMatchOriginAsFallback =
+                boolValue(script["match_origin_as_fallback"]) ?? false
+            let scriptWorld = stringValue(script["world"])
             if css.isEmpty == false {
                 blockers.append(.contentScriptCSSPresent)
             }
@@ -698,20 +730,32 @@ enum ChromeMV3ContentScriptSmokeFixturePolicy {
             jsPaths.append(contentsOf: js)
             cssPaths.append(contentsOf: css)
             matches.append(contentsOf: scriptMatches)
-            excludeMatches.append(contentsOf: stringArray(script["exclude_matches"]))
-            includeGlobs.append(contentsOf: stringArray(script["include_globs"]))
-            excludeGlobs.append(contentsOf: stringArray(script["exclude_globs"]))
-            allFramesValues.append(boolValue(script["all_frames"]) ?? false)
-            matchAboutBlankValues.append(
-                boolValue(script["match_about_blank"]) ?? false
-            )
-            matchOriginAsFallbackValues.append(
-                boolValue(script["match_origin_as_fallback"]) ?? false
-            )
+            excludeMatches.append(contentsOf: scriptExcludeMatches)
+            includeGlobs.append(contentsOf: scriptIncludeGlobs)
+            excludeGlobs.append(contentsOf: scriptExcludeGlobs)
+            allFramesValues.append(scriptAllFrames)
+            matchAboutBlankValues.append(scriptMatchAboutBlank)
+            matchOriginAsFallbackValues.append(scriptMatchOriginAsFallback)
             runAtValues.append(runAt)
-            if let world = stringValue(script["world"]) {
+            if let world = scriptWorld {
                 worldValues.append(world)
             }
+            contentScriptMetadata.append(
+                ChromeMV3ContentScriptSmokeManifestContentScriptMetadata(
+                    contentScriptIndex: index,
+                    jsPaths: uniqueSorted(js),
+                    cssPaths: uniqueSorted(css),
+                    matchPatterns: uniqueSorted(scriptMatches),
+                    excludeMatchPatterns: uniqueSorted(scriptExcludeMatches),
+                    includeGlobs: uniqueSorted(scriptIncludeGlobs),
+                    excludeGlobs: uniqueSorted(scriptExcludeGlobs),
+                    allFrames: scriptAllFrames,
+                    matchAboutBlank: scriptMatchAboutBlank,
+                    matchOriginAsFallback: scriptMatchOriginAsFallback,
+                    runAt: runAt,
+                    world: scriptWorld
+                )
+            )
         }
 
         warnings.append(
@@ -744,6 +788,11 @@ enum ChromeMV3ContentScriptSmokeFixturePolicy {
             fixtureKind: fixtureKind,
             manifestSummary:
                 ChromeMV3ContentScriptSmokeManifestSummary(
+                    contentScriptMetadata:
+                        contentScriptMetadata.sorted {
+                            $0.contentScriptIndex
+                                < $1.contentScriptIndex
+                        },
                     contentScriptCount: contentScripts.count,
                     jsPaths: uniqueSorted(jsPaths),
                     cssPaths: uniqueSorted(cssPaths),
@@ -929,6 +978,35 @@ struct ChromeMV3ContentScriptFrameScenario:
     var urlString: String
     var parentURLString: String?
     var safeToInstantiateWithoutNetwork: Bool
+    var fixtureElementID: String?
+    var safeToObserveWithTestDOMInspection: Bool
+    var syntheticFixtureDiagnostic: String?
+}
+
+struct ChromeMV3ContentScriptFrameObservationBlockers:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var blockedByWebKitBehavior: Bool
+    var blockedByCurrentSDKShape: Bool
+    var blockedByUnsafeObservationMechanism: Bool
+    var needsManualWebKitVerification: Bool
+    var diagnostics: [String]
+
+    static let none = ChromeMV3ContentScriptFrameObservationBlockers(
+        blockedByWebKitBehavior: false,
+        blockedByCurrentSDKShape: false,
+        blockedByUnsafeObservationMechanism: false,
+        needsManualWebKitVerification: false,
+        diagnostics: []
+    )
+
+    var hasBlockingObservationConstraint: Bool {
+        blockedByWebKitBehavior
+            || blockedByCurrentSDKShape
+            || blockedByUnsafeObservationMechanism
+    }
 }
 
 struct ChromeMV3ContentScriptFrameDecision:
@@ -943,6 +1021,12 @@ struct ChromeMV3ContentScriptFrameDecision:
     var reason: String
     var runAt: String
     var world: String?
+    var allFrames: Bool
+    var matchAboutBlank: Bool
+    var matchOriginAsFallback: Bool
+    var safeToObserveWithTestDOMInspection: Bool
+    var observationBlockers:
+        ChromeMV3ContentScriptFrameObservationBlockers
 }
 
 struct ChromeMV3ContentScriptFrameMatrixResult:
@@ -956,6 +1040,7 @@ struct ChromeMV3ContentScriptFrameMatrixResult:
     var unsupportedOrNeedsVerificationFrames:
         [ChromeMV3ContentScriptFrameDecision]
     var allDecisions: [ChromeMV3ContentScriptFrameDecision]
+    var frameScenarios: [ChromeMV3ContentScriptFrameScenario]
 }
 
 enum ChromeMV3ContentScriptFrameMatrix {
@@ -965,42 +1050,64 @@ enum ChromeMV3ContentScriptFrameMatrix {
             kind: .topFrame,
             urlString: "https://sumi.test/index.html",
             parentURLString: nil,
-            safeToInstantiateWithoutNetwork: true
+            safeToInstantiateWithoutNetwork: true,
+            fixtureElementID: nil,
+            safeToObserveWithTestDOMInspection: true,
+            syntheticFixtureDiagnostic: nil
         ),
         ChromeMV3ContentScriptFrameScenario(
             frameID: "same-origin",
             kind: .sameOriginIframe,
             urlString: "https://sumi.test/frame.html",
             parentURLString: "https://sumi.test/index.html",
-            safeToInstantiateWithoutNetwork: true
+            safeToInstantiateWithoutNetwork: false,
+            fixtureElementID: "same-origin-frame",
+            safeToObserveWithTestDOMInspection: false,
+            syntheticFixtureDiagnostic:
+                "No public WKWebView API in this harness serves deterministic http(s) subframe URLs without network; srcdoc/about:blank would exercise a different frame-matching path."
         ),
         ChromeMV3ContentScriptFrameScenario(
             frameID: "cross-origin",
             kind: .crossOriginIframe,
             urlString: "https://cross.sumi.test/frame.html",
             parentURLString: "https://sumi.test/index.html",
-            safeToInstantiateWithoutNetwork: false
+            safeToInstantiateWithoutNetwork: false,
+            fixtureElementID: "cross-origin-frame",
+            safeToObserveWithTestDOMInspection: false,
+            syntheticFixtureDiagnostic:
+                "No no-network deterministic cross-origin http(s) iframe fixture is installed; top-page DOM inspection cannot safely read a real cross-origin frame."
         ),
         ChromeMV3ContentScriptFrameScenario(
             frameID: "about-blank",
             kind: .aboutBlankIframe,
             urlString: "about:blank",
             parentURLString: "https://sumi.test/index.html",
-            safeToInstantiateWithoutNetwork: true
+            safeToInstantiateWithoutNetwork: true,
+            fixtureElementID: "about-blank-frame",
+            safeToObserveWithTestDOMInspection: true,
+            syntheticFixtureDiagnostic: nil
         ),
         ChromeMV3ContentScriptFrameScenario(
             frameID: "data",
             kind: .dataIframe,
             urlString: "data:text/html,%3C!doctype%20html%3E",
             parentURLString: "https://sumi.test/index.html",
-            safeToInstantiateWithoutNetwork: true
+            safeToInstantiateWithoutNetwork: true,
+            fixtureElementID: "data-frame",
+            safeToObserveWithTestDOMInspection: false,
+            syntheticFixtureDiagnostic:
+                "A data: frame is deterministic and network-free, but page-world top-frame DOM inspection cannot safely read opaque-origin frame DOM."
         ),
         ChromeMV3ContentScriptFrameScenario(
             frameID: "blob",
             kind: .blobIframe,
             urlString: "blob:https://sumi.test/synthetic",
             parentURLString: "https://sumi.test/index.html",
-            safeToInstantiateWithoutNetwork: false
+            safeToInstantiateWithoutNetwork: true,
+            fixtureElementID: "blob-frame",
+            safeToObserveWithTestDOMInspection: true,
+            syntheticFixtureDiagnostic:
+                "A same-origin blob: frame can be generated by deterministic synthetic HTML; exact WebKit initiator-origin behavior still needs marker observation."
         ),
     ]
 
@@ -1025,7 +1132,8 @@ enum ChromeMV3ContentScriptFrameMatrix {
                 decisions.filter {
                     $0.expected == .unsupportedNeedsVerification
                 },
-            allDecisions: decisions
+            allDecisions: decisions,
+            frameScenarios: scenarios.sorted { $0.frameID < $1.frameID }
         )
     }
 
@@ -1051,49 +1159,99 @@ enum ChromeMV3ContentScriptFrameMatrix {
 
         let expected: ChromeMV3ContentScriptFrameExpectation
         let reason: String
+        let observationBlockers: ChromeMV3ContentScriptFrameObservationBlockers
         switch frame.kind {
         case .topFrame:
             expected = directMatch ? .eligible : .blocked
             reason = directMatch
                 ? "Top frame URL matches the content_scripts matches list."
                 : "Top frame URL does not match the content_scripts matches list."
+            observationBlockers = .none
         case .sameOriginIframe:
             if allFrames && directMatch {
                 expected = .eligible
-                reason = "all_frames is true and the same-origin iframe URL matches."
+                reason = "all_frames is true and the same-origin iframe URL matches; execution is eligible, but the no-network fixture cannot instantiate that http(s) subframe URL."
+                observationBlockers = blockers(
+                    currentSDK: true,
+                    unsafe: false,
+                    manual: true,
+                    diagnostics: [
+                        frame.syntheticFixtureDiagnostic,
+                        "A deterministic same-origin http(s) iframe would require local request interception outside the current safe fixture shape.",
+                    ]
+                )
             } else if allFrames {
                 expected = .blocked
                 reason = "all_frames is true, but the same-origin iframe URL does not match."
+                observationBlockers = .none
             } else {
                 expected = .blocked
                 reason = "all_frames is false, so matching is top-frame only."
+                observationBlockers = .none
             }
         case .crossOriginIframe:
-            if frame.safeToInstantiateWithoutNetwork == false {
-                expected = .unsupportedNeedsVerification
-                reason = "Cross-origin synthetic frames need dedicated no-network infrastructure before execution can be observed."
-            } else if allFrames && directMatch {
+            if allFrames && directMatch {
                 expected = .eligible
-                reason = "all_frames is true and the cross-origin iframe URL matches."
+                reason = "all_frames is true and the cross-origin iframe URL matches; observation is blocked without a deterministic no-network cross-origin subframe fixture."
+                observationBlockers = blockers(
+                    currentSDK: frame.safeToInstantiateWithoutNetwork == false,
+                    unsafe: true,
+                    manual: true,
+                    diagnostics: [
+                        frame.syntheticFixtureDiagnostic,
+                        "Reading a real cross-origin iframe from the top page would require an unsafe observation mechanism or a frame-specific WebKit verification path not installed here.",
+                    ]
+                )
+            } else if allFrames {
+                expected = .blocked
+                reason = "all_frames is true, but the cross-origin iframe URL does not match."
+                observationBlockers = .none
             } else {
                 expected = .blocked
-                reason = "Cross-origin iframe is not eligible under the current content-script policy."
+                reason = "all_frames is false, so matching is top-frame only."
+                observationBlockers = .none
             }
         case .aboutBlankIframe:
-            if allFrames && matchAboutBlank && parentMatch {
+            if allFrames && matchOriginAsFallback && parentMatch {
+                expected = .eligible
+                reason = "match_origin_as_fallback is true, takes priority over match_about_blank, and the initiator parent frame matches."
+                observationBlockers = .none
+            } else if allFrames && matchAboutBlank && parentMatch {
                 expected = .eligible
                 reason = "match_about_blank is true and the parent frame matches."
+                observationBlockers = .none
             } else {
                 expected = .blocked
-                reason = "about:blank requires all_frames plus match_about_blank with a matching parent frame."
+                reason = "about:blank requires all_frames plus match_about_blank or match_origin_as_fallback with a matching parent frame."
+                observationBlockers = .none
             }
-        case .dataIframe, .blobIframe:
+        case .dataIframe:
             if allFrames && matchOriginAsFallback && parentMatch {
-                expected = .unsupportedNeedsVerification
-                reason = "match_origin_as_fallback maps this frame to the initiator origin, but WebKit behavior remains fixture-verified only."
+                expected = .eligible
+                reason = "match_origin_as_fallback maps this data: frame to the initiator origin; top-page DOM inspection cannot safely observe the opaque-origin frame."
+                observationBlockers = blockers(
+                    webKit: true,
+                    unsafe: true,
+                    manual: true,
+                    diagnostics: [
+                        frame.syntheticFixtureDiagnostic,
+                        "Chrome documents initiator-origin matching for data: frames; WebKit-owned behavior needs manual verification or a safe frame-targeted inspection path.",
+                    ]
+                )
             } else {
                 expected = .blocked
                 reason = "Opaque-origin frames require match_origin_as_fallback and a matching initiator origin."
+                observationBlockers = .none
+            }
+        case .blobIframe:
+            if allFrames && matchOriginAsFallback && parentMatch {
+                expected = .eligible
+                reason = "match_origin_as_fallback maps this blob: frame to the initiator origin; the fixture can instantiate it without network."
+                observationBlockers = .none
+            } else {
+                expected = .blocked
+                reason = "blob: frames require match_origin_as_fallback and a matching initiator origin."
+                observationBlockers = .none
             }
         }
 
@@ -1104,7 +1262,31 @@ enum ChromeMV3ContentScriptFrameMatrix {
             expected: expected,
             reason: reason,
             runAt: runAt,
-            world: world
+            world: world,
+            allFrames: allFrames,
+            matchAboutBlank: matchAboutBlank,
+            matchOriginAsFallback: matchOriginAsFallback,
+            safeToObserveWithTestDOMInspection:
+                frame.safeToObserveWithTestDOMInspection
+                    && observationBlockers
+                    .hasBlockingObservationConstraint == false,
+            observationBlockers: observationBlockers
+        )
+    }
+
+    private static func blockers(
+        webKit: Bool = false,
+        currentSDK: Bool = false,
+        unsafe: Bool = false,
+        manual: Bool = false,
+        diagnostics: [String?]
+    ) -> ChromeMV3ContentScriptFrameObservationBlockers {
+        ChromeMV3ContentScriptFrameObservationBlockers(
+            blockedByWebKitBehavior: webKit,
+            blockedByCurrentSDKShape: currentSDK,
+            blockedByUnsafeObservationMechanism: unsafe,
+            needsManualWebKitVerification: manual,
+            diagnostics: uniqueSorted(diagnostics.compactMap { $0 })
         )
     }
 
@@ -1167,9 +1349,10 @@ struct ChromeMV3ContentScriptSyntheticHTMLFixture:
                 return ChromeMV3ContentScriptSyntheticFrameHTML(
                     frameID: decision.frameID,
                     kind: decision.kind,
-                    html: "<!doctype html><html><body><main id=\"same-origin-frame\"></main></body></html>",
-                    includedInTopHTML: true,
-                    blockedReason: nil
+                    html: "",
+                    includedInTopHTML: false,
+                    blockedReason:
+                        "Same-origin http(s) iframe URL execution is matrix-modeled but not instantiated because the safe synthetic fixture has no network-free http(s) subframe server."
                 )
             case .aboutBlankIframe:
                 return ChromeMV3ContentScriptSyntheticFrameHTML(
@@ -1199,10 +1382,14 @@ struct ChromeMV3ContentScriptSyntheticHTMLFixture:
                 return ChromeMV3ContentScriptSyntheticFrameHTML(
                     frameID: decision.frameID,
                     kind: decision.kind,
-                    html: "",
-                    includedInTopHTML: false,
+                    html: decision.kind == .blobIframe
+                        ? "<!doctype html><html><body><main id=\"blob-frame-marker\"></main></body></html>"
+                        : "",
+                    includedInTopHTML: decision.kind == .blobIframe,
                     blockedReason:
-                        "Frame is represented in policy only; no-network execution fixture is not installed."
+                        decision.kind == .blobIframe
+                            ? nil
+                            : "Cross-origin http(s) iframe URL execution is matrix-modeled but not instantiated because the safe synthetic fixture has no network-free cross-origin subframe server."
                 )
             }
         }
@@ -1213,9 +1400,21 @@ struct ChromeMV3ContentScriptSyntheticHTMLFixture:
         <head><meta charset="utf-8"><title>Sumi MV3 Content Script Smoke</title></head>
         <body>
           <main id="top-frame-marker"></main>
-          <iframe id="same-origin-frame" srcdoc="<!doctype html><html><body><main id='same-origin-frame-marker'></main></body></html>"></iframe>
+          <iframe id="same-origin-frame" data-sumi-fixture-blocked="no-network-same-origin-http-subframe"></iframe>
+          <iframe id="cross-origin-frame" data-sumi-fixture-blocked="no-network-cross-origin-http-subframe"></iframe>
           <iframe id="about-blank-frame"></iframe>
           <iframe id="data-frame" src="data:text/html,%3C!doctype%20html%3E%3Chtml%3E%3Cbody%3E%3Cmain%20id%3D%22data-frame-marker%22%3E%3C%2Fmain%3E%3C%2Fbody%3E%3C%2Fhtml%3E"></iframe>
+          <iframe id="blob-frame"></iframe>
+          <script>
+          (() => {
+            const frame = document.getElementById("blob-frame");
+            if (!frame) { return; }
+            const html = "<!doctype html><html><body><main id='blob-frame-marker'></main></body></html>";
+            const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+            frame.setAttribute("data-sumi-blob-frame-url-created", "true");
+            frame.src = url;
+          })();
+          </script>
         </body>
         </html>
 
@@ -1272,6 +1471,77 @@ struct ChromeMV3ContentScriptMarkerFixtureFacts:
         )
 }
 
+struct ChromeMV3ContentScriptRunAtClassification:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var runAt: String
+    var observedMarkerAfterLoad: Bool
+    var exactRunAtTiming: String
+    var reason: String
+    var sourceDocBasis: [String]
+
+    static func classify(
+        runAt: String,
+        observedMarkerAfterLoad: Bool
+    ) -> ChromeMV3ContentScriptRunAtClassification {
+        ChromeMV3ContentScriptRunAtClassification(
+            runAt: runAt,
+            observedMarkerAfterLoad: observedMarkerAfterLoad,
+            exactRunAtTiming: "unverified",
+            reason:
+                "The smoke reads DOM marker state only after synthetic navigation completion; it does not observe exact \(runAt) scheduling without adding forbidden hooks or repeated checks.",
+            sourceDocBasis: [
+                "Chrome documents document_start, document_end, and document_idle timing, but this harness records only observedMarkerAfterLoad.",
+                "WKWebView.evaluateJavaScript default evaluation targets the main frame in pageWorld and is used only after navigation completion.",
+            ]
+        )
+    }
+}
+
+struct ChromeMV3ContentScriptWorldBehaviorClassification:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var declaredWorld: String?
+    var effectiveWorld: String
+    var supportedByCurrentModel: Bool
+    var pageVisibleDOMMarkerExpected: Bool
+    var testDOMInspectionCanSeeMarker: Bool
+    var exactWorldExecutionVerified: Bool
+    var reason: String
+    var sourceDocBasis: [String]
+
+    static func classify(
+        declaredWorld: String?,
+        markerFacts: ChromeMV3ContentScriptMarkerFixtureFacts = .inertMarker
+    ) -> ChromeMV3ContentScriptWorldBehaviorClassification {
+        let effectiveWorld = declaredWorld ?? "ISOLATED"
+        let supported = ["ISOLATED", "MAIN"].contains(effectiveWorld)
+        return ChromeMV3ContentScriptWorldBehaviorClassification(
+            declaredWorld: declaredWorld,
+            effectiveWorld: effectiveWorld,
+            supportedByCurrentModel: supported,
+            pageVisibleDOMMarkerExpected:
+                supported && markerFacts.pageVisibleDOMMarkerExpected,
+            testDOMInspectionCanSeeMarker:
+                supported && markerFacts.pageVisibleDOMMarkerExpected,
+            exactWorldExecutionVerified: false,
+            reason:
+                supported
+                    ? "The marker uses DOM attributes, so page-world testDOMInspection can see the DOM effect; the harness does not prove whether WebKit executed the content script in \(effectiveWorld) world."
+                    : "The current manifest model supports omitted world, ISOLATED, and MAIN only.",
+            sourceDocBasis: [
+                "Chrome documents ISOLATED as the default content-script world and MAIN as the page-shared world.",
+                "Chrome documents that isolated content scripts share DOM access with the page.",
+                "Local WebKit headers state DOM changes are visible to script executing in all WKContentWorlds.",
+            ]
+        )
+    }
+}
+
 enum ChromeMV3ContentScriptFrameMarkerObservationState:
     String,
     Codable,
@@ -1297,6 +1567,8 @@ struct ChromeMV3ContentScriptFrameMarkerObservation:
     var markerTokenValue: String?
     var reason: String
     var observationStrategy: ChromeMV3ContentScriptObservationStrategy
+    var observationBlockers:
+        ChromeMV3ContentScriptFrameObservationBlockers
     var webKitUncertaintyNotes: [String]
 }
 
@@ -1351,8 +1623,8 @@ enum ChromeMV3ContentScriptSmokeNextRecommendedAction:
     Sendable
 {
     case proceedToActionPopupHost
-    case broadenContentScriptFixtureMatrix
-    case blockedUntilSafeObservationAvailable
+    case broadenManualWebKitVerification
+    case blockedByUnsafeObservationMechanism
 }
 
 enum ChromeMV3ContentScriptFrameObservationModel {
@@ -1368,13 +1640,21 @@ enum ChromeMV3ContentScriptFrameObservationModel {
             let recordReason: String
             switch decision.expected {
             case .eligible:
-                state = eligibleState
-                recordReason = reason
+                if decision.observationBlockers
+                    .hasBlockingObservationConstraint {
+                    state = .blocked
+                    recordReason = uniqueSorted(
+                        decision.observationBlockers.diagnostics
+                    ).joined(separator: " ")
+                } else {
+                    state = eligibleState
+                    recordReason = reason
+                }
             case .blocked:
                 state = .blocked
                 recordReason = decision.reason
             case .unsupportedNeedsVerification:
-                state = .unverified
+                state = .blocked
                 recordReason = decision.reason
             }
             return ChromeMV3ContentScriptFrameMarkerObservation(
@@ -1386,6 +1666,7 @@ enum ChromeMV3ContentScriptFrameObservationModel {
                 markerTokenValue: nil,
                 reason: recordReason,
                 observationStrategy: strategy,
+                observationBlockers: decision.observationBlockers,
                 webKitUncertaintyNotes:
                     notes(
                         decision: decision,
@@ -1407,7 +1688,13 @@ enum ChromeMV3ContentScriptFrameObservationModel {
             let reason: String
             switch decision.expected {
             case .eligible:
-                if snapshot?.markerObserved == true {
+                if decision.observationBlockers
+                    .hasBlockingObservationConstraint {
+                    state = .blocked
+                    reason = uniqueSorted(
+                        decision.observationBlockers.diagnostics
+                    ).joined(separator: " ")
+                } else if snapshot?.markerObserved == true {
                     state = .observed
                     reason = "The inert marker DOM attributes were observed in the expected eligible frame."
                 } else if snapshot?.accessible == true {
@@ -1423,7 +1710,7 @@ enum ChromeMV3ContentScriptFrameObservationModel {
                 state = .blocked
                 reason = decision.reason
             case .unsupportedNeedsVerification:
-                state = .unverified
+                state = .blocked
                 reason = decision.reason
             }
 
@@ -1436,6 +1723,7 @@ enum ChromeMV3ContentScriptFrameObservationModel {
                 markerTokenValue: snapshot?.markerTokenValue,
                 reason: reason,
                 observationStrategy: strategy,
+                observationBlockers: decision.observationBlockers,
                 webKitUncertaintyNotes:
                     notes(
                         decision: decision,
@@ -1464,6 +1752,18 @@ enum ChromeMV3ContentScriptFrameObservationModel {
             notes.append(
                 "Opaque-origin related-frame behavior remains WebKit-verified only."
             )
+        }
+        if decision.observationBlockers.blockedByCurrentSDKShape {
+            notes.append("blockedByCurrentSDKShape")
+        }
+        if decision.observationBlockers.blockedByUnsafeObservationMechanism {
+            notes.append("blockedByUnsafeObservationMechanism")
+        }
+        if decision.observationBlockers.blockedByWebKitBehavior {
+            notes.append("blockedByWebKitBehavior")
+        }
+        if decision.observationBlockers.needsManualWebKitVerification {
+            notes.append("needsManualWebKitVerification")
         }
         if state == .notObserved {
             notes.append(
@@ -1846,6 +2146,35 @@ struct ChromeMV3ContentScriptSmokeObservationResult:
     var unverifiedWebKitInternalSideEffects: [String]
 }
 
+struct ChromeMV3ContentScriptExpandedMatrixRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var fixtureID: String
+    var manifestContentScriptMetadata:
+        ChromeMV3ContentScriptSmokeManifestContentScriptMetadata
+    var frameScenario: ChromeMV3ContentScriptFrameScenario
+    var frameDecision: ChromeMV3ContentScriptFrameDecision
+    var runAt: String
+    var allFrames: Bool
+    var matchAboutBlank: Bool
+    var matchOriginAsFallback: Bool
+    var world: String?
+    var expectedEligibility: ChromeMV3ContentScriptFrameExpectation
+    var observationStrategy: ChromeMV3ContentScriptObservationStrategy
+    var resultClassification:
+        ChromeMV3ContentScriptFrameMarkerObservationState
+    var markerAttributeValue: String?
+    var markerTokenValue: String?
+    var resultReason: String
+    var runAtClassification: ChromeMV3ContentScriptRunAtClassification
+    var worldClassification:
+        ChromeMV3ContentScriptWorldBehaviorClassification
+    var observationBlockers:
+        ChromeMV3ContentScriptFrameObservationBlockers
+}
+
 struct ChromeMV3ContentScriptSmokeReportSummary:
     Codable,
     Equatable,
@@ -1860,6 +2189,10 @@ struct ChromeMV3ContentScriptSmokeReportSummary:
     var expectedEligibleFrameIDs: [String]
     var expectedBlockedFrameIDs: [String]
     var unsupportedFrameIDs: [String]
+    var observedFrameIDs: [String]
+    var notObservedFrameIDs: [String]
+    var blockedFrameIDs: [String]
+    var unverifiedFrameIDs: [String]
     var observationState: ChromeMV3ContentScriptSmokeObservationState
     var observationStrategy: ChromeMV3ContentScriptObservationStrategy
     var nextRecommendedAction:
@@ -1898,6 +2231,7 @@ struct ChromeMV3ContentScriptSmokeReport:
     var markerFixtureFacts: ChromeMV3ContentScriptMarkerFixtureFacts
     var frameObservationResults:
         [ChromeMV3ContentScriptFrameMarkerObservation]
+    var expandedMatrixResults: [ChromeMV3ContentScriptExpandedMatrixRecord]
     var observationResult:
         ChromeMV3ContentScriptSmokeObservationResult
     var nextRecommendedAction:
@@ -1929,6 +2263,22 @@ struct ChromeMV3ContentScriptSmokeReport:
                 frameMatrixResult.expectedBlockedFrames.map(\.frameID),
             unsupportedFrameIDs:
                 frameMatrixResult.unsupportedOrNeedsVerificationFrames
+                .map(\.frameID),
+            observedFrameIDs:
+                frameObservationResults
+                .filter { $0.observedMarker == .observed }
+                .map(\.frameID),
+            notObservedFrameIDs:
+                frameObservationResults
+                .filter { $0.observedMarker == .notObserved }
+                .map(\.frameID),
+            blockedFrameIDs:
+                frameObservationResults
+                .filter { $0.observedMarker == .blocked }
+                .map(\.frameID),
+            unverifiedFrameIDs:
+                frameObservationResults
+                .filter { $0.observedMarker == .unverified }
                 .map(\.frameID),
             observationState: observationResult.state,
             observationStrategy: observationResult.observationStrategy,
@@ -2059,6 +2409,15 @@ enum ChromeMV3ContentScriptSmokeReportGenerator {
             + input.contentScriptFixturePolicy.blockingReasons
             + observationResult.blockedReasons
             + unsupported
+        let expandedMatrixResults = expandedMatrixRecords(
+            fixtureID: input.scenario.fixtureID,
+            manifestSummary: input.contentScriptFixturePolicy
+                .manifestSummary,
+            frameMatrixResult: frameMatrixResult,
+            frameObservationResults: frameObservationResults,
+            markerFixtureFacts: markerFixtureFacts,
+            strategy: observationResult.observationStrategy
+        )
 
         return ChromeMV3ContentScriptSmokeReport(
             schemaVersion: 1,
@@ -2099,6 +2458,7 @@ enum ChromeMV3ContentScriptSmokeReportGenerator {
                 classifications,
             markerFixtureFacts: markerFixtureFacts,
             frameObservationResults: frameObservationResults,
+            expandedMatrixResults: expandedMatrixResults,
             observationResult: observationResult,
             nextRecommendedAction: nextAction,
             sideEffectCounters:
@@ -2244,21 +2604,133 @@ enum ChromeMV3ContentScriptSmokeReportGenerator {
             [ChromeMV3ContentScriptFrameMarkerObservation]
     ) -> ChromeMV3ContentScriptSmokeNextRecommendedAction {
         guard outcome == .passed else {
-            return .blockedUntilSafeObservationAvailable
+            return .blockedByUnsafeObservationMechanism
         }
         let eligibleIDs = Set(
-            frameMatrixResult.expectedEligibleFrames.map(\.frameID)
+            frameMatrixResult.expectedEligibleFrames
+                .filter {
+                    $0.observationBlockers
+                        .hasBlockingObservationConstraint == false
+                }
+                .map(\.frameID)
         )
         let observedIDs = Set(
             frameObservationResults
                 .filter { $0.observedMarker == .observed }
                 .map(\.frameID)
         )
+        let needsManualVerification = frameObservationResults.contains {
+            $0.observationBlockers.needsManualWebKitVerification
+        }
         if eligibleIDs.isSubset(of: observedIDs),
-           frameMatrixResult.unsupportedOrNeedsVerificationFrames.isEmpty {
+           needsManualVerification == false {
             return .proceedToActionPopupHost
         }
-        return .broadenContentScriptFixtureMatrix
+        return .broadenManualWebKitVerification
+    }
+
+    private static func expandedMatrixRecords(
+        fixtureID: String,
+        manifestSummary: ChromeMV3ContentScriptSmokeManifestSummary,
+        frameMatrixResult: ChromeMV3ContentScriptFrameMatrixResult,
+        frameObservationResults:
+            [ChromeMV3ContentScriptFrameMarkerObservation],
+        markerFixtureFacts: ChromeMV3ContentScriptMarkerFixtureFacts,
+        strategy: ChromeMV3ContentScriptObservationStrategy
+    ) -> [ChromeMV3ContentScriptExpandedMatrixRecord] {
+        let metadata =
+            manifestSummary.contentScriptMetadata.first
+                ?? ChromeMV3ContentScriptSmokeManifestContentScriptMetadata(
+                    contentScriptIndex: 0,
+                    jsPaths: manifestSummary.jsPaths,
+                    cssPaths: manifestSummary.cssPaths,
+                    matchPatterns: manifestSummary.matchPatterns,
+                    excludeMatchPatterns:
+                        manifestSummary.excludeMatchPatterns,
+                    includeGlobs: manifestSummary.includeGlobs,
+                    excludeGlobs: manifestSummary.excludeGlobs,
+                    allFrames:
+                        manifestSummary.allFramesValues.contains(true),
+                    matchAboutBlank:
+                        manifestSummary.matchAboutBlankValues
+                        .contains(true),
+                    matchOriginAsFallback:
+                        manifestSummary.matchOriginAsFallbackValues
+                        .contains(true),
+                    runAt:
+                        manifestSummary.runAtValues.first
+                            ?? "document_idle",
+                    world: manifestSummary.worldValues.first
+                )
+        let scenarios = Dictionary(
+            uniqueKeysWithValues:
+                frameMatrixResult.frameScenarios.map {
+                    ($0.frameID, $0)
+                }
+        )
+        let observations = Dictionary(
+            uniqueKeysWithValues:
+                frameObservationResults.map {
+                    ($0.frameID, $0)
+                }
+        )
+
+        return frameMatrixResult.allDecisions.map { decision in
+            let observation = observations[decision.frameID]
+            let state =
+                observation?.observedMarker
+                    ?? (decision.expected == .blocked
+                        ? ChromeMV3ContentScriptFrameMarkerObservationState
+                            .blocked
+                        : .unverified)
+            let blockers = observation?.observationBlockers
+                ?? decision.observationBlockers
+            let observedAfterLoad = state == .observed
+            return ChromeMV3ContentScriptExpandedMatrixRecord(
+                fixtureID: fixtureID,
+                manifestContentScriptMetadata: metadata,
+                frameScenario:
+                    scenarios[decision.frameID]
+                        ?? ChromeMV3ContentScriptFrameScenario(
+                            frameID: decision.frameID,
+                            kind: decision.kind,
+                            urlString: decision.urlString,
+                            parentURLString: nil,
+                            safeToInstantiateWithoutNetwork: false,
+                            fixtureElementID: nil,
+                            safeToObserveWithTestDOMInspection: false,
+                            syntheticFixtureDiagnostic:
+                                "Frame scenario was not present in the matrix scenario list."
+                        ),
+                frameDecision: decision,
+                runAt: decision.runAt,
+                allFrames: decision.allFrames,
+                matchAboutBlank: decision.matchAboutBlank,
+                matchOriginAsFallback: decision.matchOriginAsFallback,
+                world: decision.world,
+                expectedEligibility: decision.expected,
+                observationStrategy:
+                    observation?.observationStrategy ?? strategy,
+                resultClassification: state,
+                markerAttributeValue: observation?.markerAttributeValue,
+                markerTokenValue: observation?.markerTokenValue,
+                resultReason:
+                    observation?.reason
+                        ?? "No frame-specific observation was supplied.",
+                runAtClassification:
+                    ChromeMV3ContentScriptRunAtClassification.classify(
+                        runAt: decision.runAt,
+                        observedMarkerAfterLoad: observedAfterLoad
+                    ),
+                worldClassification:
+                    ChromeMV3ContentScriptWorldBehaviorClassification
+                    .classify(
+                        declaredWorld: decision.world,
+                        markerFacts: markerFixtureFacts
+                    ),
+                observationBlockers: blockers
+            )
+        }.sorted { $0.frameDecision.frameID < $1.frameDecision.frameID }
     }
 
     private static func webKitUncertaintyNotes(
@@ -2667,8 +3139,10 @@ private enum ChromeMV3ContentScriptTestDOMInspection {
           return JSON.stringify({
             "top": readRoot(document.documentElement),
             "same-origin": readFrame("same-origin-frame"),
+            "cross-origin": readFrame("cross-origin-frame"),
             "about-blank": readFrame("about-blank-frame"),
-            "data": readFrame("data-frame")
+            "data": readFrame("data-frame"),
+            "blob": readFrame("blob-frame")
           });
         })();
         """

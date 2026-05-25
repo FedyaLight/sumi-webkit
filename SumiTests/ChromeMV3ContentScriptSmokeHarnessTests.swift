@@ -42,6 +42,11 @@ final class ChromeMV3ContentScriptSmokeHarnessTests: XCTestCase {
         )
         XCTAssertEqual(contentPolicy.manifestSummary.contentScriptCount, 1)
         XCTAssertEqual(
+            contentPolicy.manifestSummary.contentScriptMetadata.first?
+                .runAt,
+            "document_idle"
+        )
+        XCTAssertEqual(
             contentPolicy.manifestSummary.matchPatterns,
             ["https://sumi.test/*"]
         )
@@ -159,15 +164,25 @@ final class ChromeMV3ContentScriptSmokeHarnessTests: XCTestCase {
             manifestSummary: allFrames.manifestSummary
         )
         let eligible = matrix.expectedEligibleFrames.map(\.frameID)
-        let unsupported =
-            matrix.unsupportedOrNeedsVerificationFrames.map(\.frameID)
+        let blocked =
+            matrix.expectedBlockedFrames.map(\.frameID)
 
         XCTAssertTrue(eligible.contains("top"))
         XCTAssertTrue(eligible.contains("same-origin"))
         XCTAssertTrue(eligible.contains("about-blank"))
-        XCTAssertTrue(unsupported.contains("cross-origin"))
-        XCTAssertTrue(unsupported.contains("data"))
-        XCTAssertTrue(unsupported.contains("blob"))
+        XCTAssertTrue(eligible.contains("data"))
+        XCTAssertTrue(eligible.contains("blob"))
+        XCTAssertTrue(blocked.contains("cross-origin"))
+        XCTAssertTrue(
+            matrix.allDecisions.first { $0.frameID == "same-origin" }?
+                .observationBlockers
+                .blockedByCurrentSDKShape == true
+        )
+        XCTAssertTrue(
+            matrix.allDecisions.first { $0.frameID == "data" }?
+                .observationBlockers
+                .blockedByUnsafeObservationMechanism == true
+        )
         XCTAssertEqual(
             matrix.allDecisions.first { $0.frameID == "top" }?.runAt,
             "document_start"
@@ -201,8 +216,10 @@ final class ChromeMV3ContentScriptSmokeHarnessTests: XCTestCase {
         XCTAssertFalse(fixture.userVisibleWindowRequired)
         XCTAssertTrue(fixture.topHTML.contains("top-frame-marker"))
         XCTAssertTrue(fixture.topHTML.contains("same-origin-frame"))
+        XCTAssertTrue(fixture.topHTML.contains("cross-origin-frame"))
         XCTAssertTrue(fixture.topHTML.contains("about-blank-frame"))
         XCTAssertTrue(fixture.topHTML.contains("data-frame"))
+        XCTAssertTrue(fixture.topHTML.contains("blob-frame"))
         XCTAssertNotNil(
             fixture.frames.first {
                 $0.kind == .crossOriginIframe
@@ -240,6 +257,137 @@ final class ChromeMV3ContentScriptSmokeHarnessTests: XCTestCase {
         XCTAssertEqual(probe.managerCount, 0)
         XCTAssertFalse(module.hasLoadedRuntime)
         XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(
+                    ChromeMV3ContentScriptSmokeReportWriter.reportFileName
+                ).path
+            )
+        )
+    }
+
+    @MainActor
+    func testRunWithTestDOMInspectionAttemptsExpandedMatrixWhenWebKitAcceptsFixture()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Chrome MV3 content-script smoke requires macOS 15.5.")
+        }
+
+        let root = try makeContentScriptRoot(
+            named: "content-dom-inspection-run",
+            manifest: contentScriptManifest(
+                allFrames: true,
+                matchAboutBlank: true,
+                matchOriginAsFallback: true
+            )
+        )
+        let candidate = makeCandidate(rootURL: root)
+        let runtimeReport = runtimeLoadabilityReport(rootPath: root.path)
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.extensions)
+        let probe = ContentScriptModuleProbe()
+        let module = try makeExtensionsModule(registry: registry, probe: probe)
+
+        let probeDiagnostics = await module
+            .runChromeMV3ExtensionObjectProbeIfEnabled(
+                explicitInternalExtensionObjectProbeAllowed: true,
+                candidate: candidate,
+                runtimeLoadabilityReport: runtimeReport
+            )
+        guard probeDiagnostics?.state == .created else {
+            throw XCTSkip(
+                "WKWebExtension object probe failed: \(probeDiagnostics?.error?.message ?? "unknown")"
+            )
+        }
+        let objectReport = try XCTUnwrap(
+            module.chromeMV3WebKitObjectAcceptanceReportIfEnabled(
+                explicitInternalExtensionObjectProbeAllowed: true,
+                candidate: candidate,
+                runtimeLoadabilityReport: runtimeReport,
+                probeDiagnostics: probeDiagnostics
+            )
+        )
+        guard objectReport.objectAcceptedByWebKit else {
+            throw XCTSkip("WKWebExtension object was not accepted.")
+        }
+        let emptyOwner = try XCTUnwrap(
+            module.createChromeMV3EmptyControllerOwnerIfEnabled(
+                explicitControllerCreationAllowed: true,
+                candidateRewrittenVariants: [candidate]
+            )
+        )
+        let readiness = try runtimeBridgeReadinessReport(
+            rootURL: root,
+            runtimeLoadabilityReport: runtimeReport,
+            objectAcceptanceReport: objectReport,
+            emptyControllerDiagnostics: emptyOwner.diagnostics()
+        )
+        let contextDiagnostics =
+            module.createChromeMV3DetachedContextIfEnabled(
+                explicitInternalContextCreationAllowed: true,
+                candidate: candidate,
+                objectAcceptanceReport: objectReport,
+                runtimeBridgeReadinessReport: readiness
+            )
+        guard contextDiagnostics?.contextObjectCreated == true else {
+            throw XCTSkip("Detached WKWebExtensionContext was not created.")
+        }
+        let loadDiagnostics =
+            module.loadChromeMV3DetachedContextIntoControllerIfEnabled(
+                explicitInternalControllerLoadProbeAllowed: true,
+                candidate: candidate,
+                objectAcceptanceReport: objectReport,
+                runtimeBridgeReadinessReport: readiness
+            )
+        guard loadDiagnostics?.contextLoadedIntoController == .some(!false)
+        else {
+            throw XCTSkip(
+                "WKWebExtensionContext did not load into the controller: \(loadDiagnostics?.webKitError?.message ?? "unknown")"
+            )
+        }
+
+        let reportOptional = await module
+            .chromeMV3RuntimeContentScriptSmokeReportWithTestDOMInspectionIfEnabled(
+                explicitInternalContentScriptSmokeAllowed: true,
+                explicitSyntheticWebViewCreationAllowed: true,
+                explicitSyntheticNavigationAllowed: true,
+                explicitTestDOMInspectionAllowed: true,
+                candidate: candidate,
+                objectAcceptanceReport: objectReport,
+                runtimeBridgeReadinessReport: readiness,
+                writeReport: true
+        )
+        let report = try XCTUnwrap(reportOptional)
+
+        XCTAssertTrue(report.observationResult.testDOMInspection.attempted)
+        XCTAssertTrue(report.syntheticWebViewResult.syntheticNavigationAttempted)
+        XCTAssertEqual(
+            report.expandedMatrixResults.map(\.frameDecision.frameID),
+            report.frameMatrixResult.allDecisions.map(\.frameID)
+        )
+        XCTAssertTrue(
+            [.observed, .notObserved, .unverified]
+                .contains(report.observationResult.state)
+        )
+        XCTAssertEqual(
+            report.frameObservationResults.first { $0.frameID == "data" }?
+                .observedMarker,
+            .blocked
+        )
+        XCTAssertEqual(
+            report.frameObservationResults.first {
+                $0.frameID == "same-origin"
+            }?.observationBlockers.blockedByCurrentSDKShape,
+            true
+        )
+        XCTAssertFalse(report.runtimeLoadable)
+        XCTAssertFalse(report.productRuntimeExposed)
+        assertContentScriptRuntimeCountersStayUnavailable(report)
+        XCTAssertTrue(
             FileManager.default.fileExists(
                 atPath: root.appendingPathComponent(
                     ChromeMV3ContentScriptSmokeReportWriter.reportFileName
@@ -431,6 +579,152 @@ final class ChromeMV3ContentScriptSmokeHarnessTests: XCTestCase {
                 .expectedEligibility,
             .eligible
         )
+        XCTAssertEqual(
+            records.first { $0.frameID == "same-origin" }?
+                .observedMarker,
+            .blocked
+        )
+        XCTAssertTrue(
+            records.first { $0.frameID == "same-origin" }?
+                .observationBlockers
+                .blockedByCurrentSDKShape == true
+        )
+    }
+
+    @MainActor
+    func testExpandedMatrixClassifiesFrameControlsRunAtWorldAndBlockedReasons()
+        throws
+    {
+        let root = try makeContentScriptRoot(
+            named: "content-expanded-matrix",
+            manifest: contentScriptManifest(
+                allFrames: true,
+                matchAboutBlank: true,
+                matchOriginAsFallback: true,
+                runAt: "document_end",
+                world: "MAIN"
+            )
+        )
+        let decision = ChromeMV3ContentScriptSmokeGate.evaluate(
+            input: try contentScriptSmokeGateInput(rootURL: root)
+        )
+        let matrix = ChromeMV3ContentScriptFrameMatrix.evaluate(
+            scenarioID: "expanded-matrix",
+            manifestSummary: policy(root).manifestSummary
+        )
+        let fixture = ChromeMV3ContentScriptSyntheticHTMLFixture.generate(
+            matrix: matrix
+        )
+        let records =
+            ChromeMV3ContentScriptFrameObservationModel
+            .blockedOrUnverifiedRecords(
+                matrix: matrix,
+                strategy: .testDOMInspection,
+                reason: "Synthetic DOM inspection not run in this unit test."
+            )
+        let observation =
+            ChromeMV3ContentScriptSmokeReportGenerator.observationResult(
+                state: .unverified,
+                strategy: .testDOMInspection,
+                frameResults: records,
+                blockedReasons: [],
+                unverifiedNotes: []
+            )
+        let report = ChromeMV3ContentScriptSmokeReportGenerator.makeReport(
+            gateDecision: decision,
+            frameMatrixResult: matrix,
+            syntheticHTMLFixture: fixture,
+            syntheticWebViewResult:
+                ChromeMV3ContentScriptSmokeReportGenerator
+                .syntheticWebViewResult(
+                    syntheticConfigurationCreated: true,
+                    syntheticConfigurationAttached: true,
+                    syntheticConfigurationUsesSameController: true,
+                    syntheticWebViewCreated: true,
+                    syntheticWebViewUsesSameController: true,
+                    syntheticNavigationAttempted: true,
+                    syntheticHTMLLoaded: true,
+                    userScriptCount: 0,
+                    blockingReasons: [],
+                    warnings: []
+                ),
+            observationResult: observation
+        )
+
+        XCTAssertEqual(
+            report.expandedMatrixResults.map(\.frameDecision.frameID),
+            matrix.allDecisions.map(\.frameID)
+        )
+        let top = try XCTUnwrap(
+            report.expandedMatrixResults.first {
+                $0.frameDecision.frameID == "top"
+            }
+        )
+        XCTAssertEqual(top.fixtureID, decision.input.scenario.fixtureID)
+        XCTAssertEqual(top.runAt, "document_end")
+        XCTAssertEqual(top.world, "MAIN")
+        XCTAssertTrue(top.allFrames)
+        XCTAssertTrue(top.matchAboutBlank)
+        XCTAssertTrue(top.matchOriginAsFallback)
+        XCTAssertEqual(top.expectedEligibility, .eligible)
+        XCTAssertEqual(top.resultClassification, .unverified)
+        XCTAssertEqual(top.runAtClassification.exactRunAtTiming, "unverified")
+        XCTAssertFalse(top.worldClassification.exactWorldExecutionVerified)
+        XCTAssertTrue(top.worldClassification.pageVisibleDOMMarkerExpected)
+
+        let data = try XCTUnwrap(
+            report.expandedMatrixResults.first {
+                $0.frameDecision.frameID == "data"
+            }
+        )
+        XCTAssertEqual(data.expectedEligibility, .eligible)
+        XCTAssertEqual(data.resultClassification, .blocked)
+        XCTAssertTrue(
+            data.observationBlockers
+                .blockedByUnsafeObservationMechanism
+        )
+        XCTAssertTrue(
+            data.observationBlockers.needsManualWebKitVerification
+        )
+    }
+
+    func testRunAtAndWorldClassificationDoNotOverclaimTimingOrWorld() {
+        for runAt in ["document_start", "document_end", "document_idle"] {
+            let classification =
+                ChromeMV3ContentScriptRunAtClassification.classify(
+                    runAt: runAt,
+                    observedMarkerAfterLoad: true
+                )
+            XCTAssertTrue(classification.observedMarkerAfterLoad)
+            XCTAssertEqual(classification.exactRunAtTiming, "unverified")
+            XCTAssertTrue(classification.reason.contains(runAt))
+        }
+
+        let isolated =
+            ChromeMV3ContentScriptWorldBehaviorClassification.classify(
+                declaredWorld: "ISOLATED"
+            )
+        let main =
+            ChromeMV3ContentScriptWorldBehaviorClassification.classify(
+                declaredWorld: "MAIN"
+            )
+        let omitted =
+            ChromeMV3ContentScriptWorldBehaviorClassification.classify(
+                declaredWorld: nil
+            )
+        let unsupported =
+            ChromeMV3ContentScriptWorldBehaviorClassification.classify(
+                declaredWorld: "SIDEWAYS"
+            )
+
+        XCTAssertEqual(isolated.effectiveWorld, "ISOLATED")
+        XCTAssertEqual(main.effectiveWorld, "MAIN")
+        XCTAssertEqual(omitted.effectiveWorld, "ISOLATED")
+        XCTAssertTrue(isolated.testDOMInspectionCanSeeMarker)
+        XCTAssertTrue(main.testDOMInspectionCanSeeMarker)
+        XCTAssertFalse(isolated.exactWorldExecutionVerified)
+        XCTAssertFalse(main.exactWorldExecutionVerified)
+        XCTAssertFalse(unsupported.supportedByCurrentModel)
     }
 
     @MainActor
@@ -509,7 +803,7 @@ final class ChromeMV3ContentScriptSmokeHarnessTests: XCTestCase {
         XCTAssertEqual(report.summary.outcome, .blocked)
         XCTAssertEqual(
             report.nextRecommendedAction,
-            .blockedUntilSafeObservationAvailable
+            .blockedByUnsafeObservationMechanism
         )
         XCTAssertEqual(
             report.frameObservationResults.first { $0.frameID == "top" }?
@@ -619,7 +913,7 @@ final class ChromeMV3ContentScriptSmokeHarnessTests: XCTestCase {
         )
         XCTAssertEqual(
             report.nextRecommendedAction,
-            .blockedUntilSafeObservationAvailable
+            .blockedByUnsafeObservationMechanism
         )
         assertContentScriptRuntimeCountersStayUnavailable(report)
     }
