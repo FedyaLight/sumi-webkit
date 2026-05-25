@@ -44,6 +44,10 @@ final class SumiExtensionsModule {
             ChromeMV3StorageAPIOperationsReport?
         private var lastChromeMV3RuntimeMessagingContractReport:
             ChromeMV3RuntimeMessagingContractReport?
+        private var lastChromeMV3RuntimeMessageDispatcherSkeletonReport:
+            ChromeMV3RuntimeMessageDispatcherSkeletonReport?
+        private var lastChromeMV3NativeMessagingReadinessReport:
+            ChromeMV3NativeMessagingReadinessReport?
         private var lastChromeMV3RuntimeListenerContractReport:
             ChromeMV3RuntimeListenerContractReport?
         private var lastChromeMV3ServiceWorkerLifecycleReport:
@@ -140,6 +144,8 @@ final class SumiExtensionsModule {
                     lastChromeMV3StorageBrokerReadinessReport = nil
                     lastChromeMV3StorageAPIOperationsReport = nil
                     lastChromeMV3RuntimeMessagingContractReport = nil
+                    lastChromeMV3RuntimeMessageDispatcherSkeletonReport = nil
+                    lastChromeMV3NativeMessagingReadinessReport = nil
                     lastChromeMV3RuntimeListenerContractReport = nil
                     lastChromeMV3ServiceWorkerLifecycleReport = nil
                     lastChromeMV3PermissionBrokerReadinessReport = nil
@@ -210,6 +216,10 @@ final class SumiExtensionsModule {
             ChromeMV3StorageAPIOperationsReportSummary?
         let runtimeMessagingContractReportSummary:
             ChromeMV3RuntimeMessagingContractReportSummary?
+        let runtimeMessageDispatcherSkeletonReportSummary:
+            ChromeMV3RuntimeMessageDispatcherSkeletonReportSummary?
+        let nativeMessagingReadinessReportSummary:
+            ChromeMV3NativeMessagingReadinessReportSummary?
         let runtimeListenerContractReportSummary:
             ChromeMV3RuntimeListenerContractReportSummary?
         let serviceWorkerLifecycleReportSummary:
@@ -238,6 +248,11 @@ final class SumiExtensionsModule {
                     lastChromeMV3StorageAPIOperationsReport?.summary
                 runtimeMessagingContractReportSummary =
                     lastChromeMV3RuntimeMessagingContractReport?.summary
+                runtimeMessageDispatcherSkeletonReportSummary =
+                    lastChromeMV3RuntimeMessageDispatcherSkeletonReport?
+                    .summary
+                nativeMessagingReadinessReportSummary =
+                    lastChromeMV3NativeMessagingReadinessReport?.summary
                 runtimeListenerContractReportSummary =
                     lastChromeMV3RuntimeListenerContractReport?.summary
                 serviceWorkerLifecycleReportSummary =
@@ -257,6 +272,8 @@ final class SumiExtensionsModule {
                 storageBrokerReadinessReportSummary = nil
                 storageAPIOperationsReportSummary = nil
                 runtimeMessagingContractReportSummary = nil
+                runtimeMessageDispatcherSkeletonReportSummary = nil
+                nativeMessagingReadinessReportSummary = nil
                 runtimeListenerContractReportSummary = nil
                 serviceWorkerLifecycleReportSummary = nil
                 permissionBrokerReadinessReportSummary = nil
@@ -272,6 +289,8 @@ final class SumiExtensionsModule {
             storageBrokerReadinessReportSummary = nil
             storageAPIOperationsReportSummary = nil
             runtimeMessagingContractReportSummary = nil
+            runtimeMessageDispatcherSkeletonReportSummary = nil
+            nativeMessagingReadinessReportSummary = nil
             runtimeListenerContractReportSummary = nil
             serviceWorkerLifecycleReportSummary = nil
             permissionBrokerReadinessReportSummary = nil
@@ -295,6 +314,10 @@ final class SumiExtensionsModule {
                 storageAPIOperationsReportSummary,
             runtimeMessagingContractReportSummary:
                 runtimeMessagingContractReportSummary,
+            runtimeMessageDispatcherSkeletonReportSummary:
+                runtimeMessageDispatcherSkeletonReportSummary,
+            nativeMessagingReadinessReportSummary:
+                nativeMessagingReadinessReportSummary,
             runtimeListenerContractReportSummary:
                 runtimeListenerContractReportSummary,
             serviceWorkerLifecycleReportSummary:
@@ -819,6 +842,63 @@ final class SumiExtensionsModule {
 
             guard writeReport else { return report }
             return (try? ChromeMV3RuntimeMessagingContractReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3RuntimeMessageDispatcherSkeletonReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            writeReport: Bool = false
+        ) -> ChromeMV3RuntimeMessageDispatcherSkeletonReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let report: ChromeMV3RuntimeMessageDispatcherSkeletonReport
+            do {
+                report = try ChromeMV3RuntimeMessageDispatcherSkeletonReportGenerator
+                    .makeReport(
+                        loadingPrerequisitesReportFrom: rootURL
+                    )
+            } catch {
+                return nil
+            }
+            lastChromeMV3RuntimeMessageDispatcherSkeletonReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3RuntimeMessageDispatcherSkeletonReportWriter
+                .write(
+                    report,
+                    toRewrittenBundleRoot: rootURL
+                )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3NativeMessagingReadinessReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            requestedHostName: String? = nil,
+            lookupPolicy: ChromeMV3NativeHostLookupPolicy = .macOS(),
+            writeReport: Bool = false
+        ) -> ChromeMV3NativeMessagingReadinessReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let report: ChromeMV3NativeMessagingReadinessReport
+            do {
+                report = try ChromeMV3NativeMessagingReadinessReportGenerator
+                    .makeReport(
+                        loadingPrerequisitesReportFrom: rootURL,
+                        requestedHostName: requestedHostName,
+                        lookupPolicy: lookupPolicy
+                    )
+            } catch {
+                return nil
+            }
+            lastChromeMV3NativeMessagingReadinessReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3NativeMessagingReadinessReportWriter.write(
                 report,
                 toRewrittenBundleRoot: rootURL
             )) ?? report
