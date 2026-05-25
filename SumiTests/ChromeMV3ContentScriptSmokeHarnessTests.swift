@@ -231,6 +231,7 @@ final class ChromeMV3ContentScriptSmokeHarnessTests: XCTestCase {
             explicitInternalContentScriptSmokeAllowed: true,
             explicitSyntheticWebViewCreationAllowed: true,
             explicitSyntheticNavigationAllowed: true,
+            explicitTestDOMInspectionAllowed: true,
             candidate: candidate,
             writeReport: true
         )
@@ -280,6 +281,242 @@ final class ChromeMV3ContentScriptSmokeHarnessTests: XCTestCase {
             XCTAssertFalse(decision.jsBridgeAvailableNow)
             XCTAssertFalse(decision.productRuntimeExposed)
         }
+    }
+
+    func testObservationStrategyClassifierBlocksForbiddenStrategies() {
+        let scope =
+            ChromeMV3ContentScriptObservationStrategyScope.contentScriptSmoke(
+                explicitTestDOMInspectionAllowed: true,
+                sameControllerSyntheticConfiguration: true,
+                syntheticNavigationAllowed: true,
+                productNormalTabAttachmentCount: 0
+            )
+        let classifications =
+            ChromeMV3ContentScriptObservationStrategyClassifier
+            .classifyAll(scope: scope)
+
+        XCTAssertEqual(
+            classifications.first {
+                $0.strategy == .blockedRequiresSumiInjection
+            }?.allowedInThisPrompt,
+            false
+        )
+        XCTAssertEqual(
+            classifications.first {
+                $0.strategy == .blockedRequiresScriptMessageHandler
+            }?.allowedInThisPrompt,
+            false
+        )
+        XCTAssertEqual(
+            classifications.first {
+                $0.strategy == .blockedRequiresJSBridge
+            }?.allowedInThisPrompt,
+            false
+        )
+        XCTAssertEqual(
+            classifications.first {
+                $0.strategy == .unsupportedByCurrentSDK
+            }?.allowedInThisPrompt,
+            false
+        )
+        XCTAssertTrue(classifications.allSatisfy {
+            $0.productExposure == false
+        })
+    }
+
+    func testTestDOMInspectionRequiresExplicitDebugInternalSyntheticScope() {
+        let missingFlag =
+            ChromeMV3ContentScriptObservationStrategyClassifier.classify(
+                .testDOMInspection,
+                scope:
+                    ChromeMV3ContentScriptObservationStrategyScope
+                    .contentScriptSmoke(
+                        explicitTestDOMInspectionAllowed: false,
+                        sameControllerSyntheticConfiguration: true,
+                        syntheticNavigationAllowed: true,
+                        productNormalTabAttachmentCount: 0
+                    )
+            )
+        let attachedProductConfigurations = 1
+        var productScope =
+            ChromeMV3ContentScriptObservationStrategyScope.contentScriptSmoke(
+                explicitTestDOMInspectionAllowed: true,
+                sameControllerSyntheticConfiguration: true,
+                syntheticNavigationAllowed: true,
+                productNormalTabAttachmentCount:
+                    attachedProductConfigurations
+            )
+        productScope.internalSyntheticWebViewOnly = false
+        let productPath =
+            ChromeMV3ContentScriptObservationStrategyClassifier.classify(
+                .testDOMInspection,
+                scope: productScope
+            )
+        let allowed =
+            ChromeMV3ContentScriptObservationStrategyClassifier.classify(
+                .testDOMInspection,
+                scope:
+                    ChromeMV3ContentScriptObservationStrategyScope
+                    .contentScriptSmoke(
+                        explicitTestDOMInspectionAllowed: true,
+                        sameControllerSyntheticConfiguration: true,
+                        syntheticNavigationAllowed: true,
+                        productNormalTabAttachmentCount: 0
+                    )
+            )
+
+        XCTAssertFalse(missingFlag.allowedInThisPrompt)
+        XCTAssertTrue(
+            missingFlag.reason
+                .contains("explicit test DOM inspection flag")
+        )
+        XCTAssertFalse(productPath.allowedInThisPrompt)
+        XCTAssertTrue(allowed.allowedInThisPrompt)
+        XCTAssertEqual(allowed.riskLevel, .low)
+    }
+
+    func testMarkerFixtureFactsRemainInertAndPageVisible() {
+        let facts = ChromeMV3ContentScriptMarkerFixtureFacts.inertMarker
+
+        XCTAssertTrue(facts.deterministic)
+        XCTAssertFalse(facts.runtimeMessaging)
+        XCTAssertFalse(facts.serviceWorkerWake)
+        XCTAssertFalse(facts.externalResources)
+        XCTAssertFalse(facts.nativeMessaging)
+        XCTAssertFalse(facts.dynamicCodeExecution)
+        XCTAssertTrue(facts.pageVisibleDOMMarkerExpected)
+        XCTAssertEqual(
+            facts.markerToken,
+            ChromeMV3ContentScriptSmokeFixturePolicy.markerToken
+        )
+    }
+
+    func testFrameObservationModelPreservesEligibilityAndBlockedStates()
+        throws
+    {
+        let root = try makeContentScriptRoot(
+            named: "content-observation-model",
+            manifest: contentScriptManifest(
+                allFrames: true,
+                matchAboutBlank: true
+            )
+        )
+        let matrix = ChromeMV3ContentScriptFrameMatrix.evaluate(
+            scenarioID: "observation-model",
+            manifestSummary: policy(root).manifestSummary
+        )
+        let records =
+            ChromeMV3ContentScriptFrameObservationModel
+            .blockedOrUnverifiedRecords(
+                matrix: matrix,
+                strategy: .testDOMInspection,
+                eligibleState: .blocked,
+                reason: "Observation flag missing."
+            )
+
+        XCTAssertEqual(
+            Set(records.map(\.frameID)),
+            Set(matrix.allDecisions.map(\.frameID))
+        )
+        XCTAssertEqual(
+            records.first { $0.frameID == "top" }?.expectedEligibility,
+            .eligible
+        )
+        XCTAssertEqual(
+            records.first { $0.frameID == "top" }?.observedMarker,
+            .blocked
+        )
+        XCTAssertEqual(
+            records.first { $0.frameID == "about-blank" }?
+                .expectedEligibility,
+            .eligible
+        )
+    }
+
+    @MainActor
+    func testMissingExplicitObservationFlagBlocksObservation() throws {
+        let root = try makeContentScriptRoot(named: "content-observation-flag")
+        let decision = ChromeMV3ContentScriptSmokeGate.evaluate(
+            input: try contentScriptSmokeGateInput(
+                rootURL: root,
+                explicitTestDOMInspectionAllowed: false
+            )
+        )
+        let matrix = ChromeMV3ContentScriptFrameMatrix.evaluate(
+            scenarioID: decision.input.scenario.scenarioID,
+            manifestSummary:
+                decision.input.contentScriptFixturePolicy.manifestSummary
+        )
+        let fixture = ChromeMV3ContentScriptSyntheticHTMLFixture.generate(
+            matrix: matrix
+        )
+        let webViewResult =
+            ChromeMV3ContentScriptSmokeReportGenerator
+            .syntheticWebViewResult(
+                syntheticConfigurationCreated: true,
+                syntheticConfigurationAttached: true,
+                syntheticConfigurationUsesSameController: true,
+                syntheticWebViewCreated: true,
+                syntheticWebViewUsesSameController: true,
+                syntheticNavigationAttempted: true,
+                syntheticHTMLLoaded: true,
+                userScriptCount: 0,
+                blockingReasons: [],
+                warnings: []
+            )
+        let scope =
+            ChromeMV3ContentScriptObservationStrategyScope.contentScriptSmoke(
+                explicitTestDOMInspectionAllowed: false,
+                sameControllerSyntheticConfiguration: true,
+                syntheticNavigationAllowed: true,
+                productNormalTabAttachmentCount: 0
+            )
+        let classifications =
+            ChromeMV3ContentScriptObservationStrategyClassifier.classifyAll(
+                scope: scope
+            )
+        let reason = classifications.first {
+            $0.strategy == .testDOMInspection
+        }?.reason ?? "missing classification"
+        let records =
+            ChromeMV3ContentScriptFrameObservationModel
+            .blockedOrUnverifiedRecords(
+                matrix: matrix,
+                strategy: .testDOMInspection,
+                eligibleState: .blocked,
+                reason: reason
+            )
+        let observation =
+            ChromeMV3ContentScriptSmokeReportGenerator
+            .observationResult(
+                state: .blocked,
+                strategy: .testDOMInspection,
+                frameResults: records,
+                blockedReasons: [reason],
+                unverifiedNotes: []
+            )
+        let report = ChromeMV3ContentScriptSmokeReportGenerator.makeReport(
+            gateDecision: decision,
+            frameMatrixResult: matrix,
+            syntheticHTMLFixture: fixture,
+            syntheticWebViewResult: webViewResult,
+            observationResult: observation,
+            observationStrategyClassifications: classifications
+        )
+
+        XCTAssertTrue(decision.canRunContentScriptSmokeNow)
+        XCTAssertEqual(report.observationResult.state, .blocked)
+        XCTAssertEqual(report.summary.outcome, .blocked)
+        XCTAssertEqual(
+            report.nextRecommendedAction,
+            .blockedUntilSafeObservationAvailable
+        )
+        XCTAssertEqual(
+            report.frameObservationResults.first { $0.frameID == "top" }?
+                .observedMarker,
+            .blocked
+        )
+        assertContentScriptRuntimeCountersStayUnavailable(report)
     }
 
     @MainActor
@@ -373,6 +610,17 @@ final class ChromeMV3ContentScriptSmokeHarnessTests: XCTestCase {
             report
         )
         XCTAssertEqual(report.observationResult.state, .unverified)
+        XCTAssertEqual(report.markerFixtureFacts.deterministic, true)
+        XCTAssertFalse(report.observationStrategyClassifications.isEmpty)
+        XCTAssertEqual(
+            report.frameObservationResults.first { $0.frameID == "top" }?
+                .expectedEligibility,
+            .eligible
+        )
+        XCTAssertEqual(
+            report.nextRecommendedAction,
+            .blockedUntilSafeObservationAvailable
+        )
         assertContentScriptRuntimeCountersStayUnavailable(report)
     }
 
@@ -501,6 +749,7 @@ final class ChromeMV3ContentScriptSmokeHarnessTests: XCTestCase {
         explicitInternalContentScriptSmokeAllowed: Bool = true,
         explicitSyntheticWebViewCreationAllowed: Bool = true,
         explicitSyntheticNavigationAllowed: Bool = true,
+        explicitTestDOMInspectionAllowed: Bool = false,
         loadedContextAvailable: Bool = true,
         sameControllerAvailable: Bool = true
     ) throws -> ChromeMV3ContentScriptSmokeGateInput {
@@ -615,6 +864,8 @@ final class ChromeMV3ContentScriptSmokeHarnessTests: XCTestCase {
                 explicitSyntheticWebViewCreationAllowed,
             explicitSyntheticNavigationAllowed:
                 explicitSyntheticNavigationAllowed,
+            explicitTestDOMInspectionAllowed:
+                explicitTestDOMInspectionAllowed,
             acceptedWebExtensionObjectAvailable: true,
             detachedContextAvailable: true,
             loadedContextAvailable: loadedContextAvailable,
