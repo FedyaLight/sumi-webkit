@@ -1738,6 +1738,8 @@ struct ChromeMV3RuntimeBridgeReadinessReport:
         ChromeMV3PermissionBrokerReadinessReportSummary? = nil
     var permissionLifecycleReportSummary:
         ChromeMV3PermissionLifecycleReportSummary? = nil
+    var permissionsAPIContractReportSummary:
+        ChromeMV3PermissionsAPIContractReportSummary? = nil
     var canCreateContextNow: Bool
     var canLoadContextNow: Bool
     var runtimeLoadable: Bool
@@ -1913,6 +1915,10 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
             ChromeMV3PermissionLifecycleReportGenerator.makeReport(
                 prerequisitesReport: prerequisites
             )
+        let permissionsAPIReport =
+            ChromeMV3PermissionsAPIContractReportGenerator.makeReport(
+                prerequisitesReport: prerequisites
+            )
         let native = nativeMessagingGate(
             prerequisites.nativeMessagingPrerequisites,
             installReport: installReport
@@ -2000,6 +2006,8 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
                 permissionBrokerReport.summary,
             permissionLifecycleReportSummary:
                 permissionLifecycleReport.summary,
+            permissionsAPIContractReportSummary:
+                permissionsAPIReport.summary,
             canCreateContextNow: false,
             canLoadContextNow: false,
             runtimeLoadable: false,

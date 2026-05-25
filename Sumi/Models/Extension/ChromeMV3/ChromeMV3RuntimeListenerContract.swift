@@ -1165,6 +1165,8 @@ struct ChromeMV3RuntimeListenerContractReportSummary:
         ChromeMV3PermissionBrokerReadinessReportSummary? = nil
     var permissionLifecycleReportSummary:
         ChromeMV3PermissionLifecycleReportSummary? = nil
+    var permissionsAPIContractReportSummary:
+        ChromeMV3PermissionsAPIContractReportSummary? = nil
 }
 
 struct ChromeMV3RuntimeListenerContractReport:
@@ -1193,6 +1195,8 @@ struct ChromeMV3RuntimeListenerContractReport:
         ChromeMV3PermissionBrokerReadinessReportSummary? = nil
     var permissionLifecycleReportSummary:
         ChromeMV3PermissionLifecycleReportSummary? = nil
+    var permissionsAPIContractReportSummary:
+        ChromeMV3PermissionsAPIContractReportSummary? = nil
     var canRegisterListenersNow: Bool
     var canResolveReceivingListenersNow: Bool
     var canDispatchMessagesNow: Bool
@@ -1220,7 +1224,9 @@ struct ChromeMV3RuntimeListenerContractReport:
             permissionBrokerReadinessReportSummary:
                 permissionBrokerReadinessReportSummary,
             permissionLifecycleReportSummary:
-                permissionLifecycleReportSummary
+                permissionLifecycleReportSummary,
+            permissionsAPIContractReportSummary:
+                permissionsAPIContractReportSummary
         )
     }
 }
@@ -1269,6 +1275,11 @@ enum ChromeMV3RuntimeListenerContractReportGenerator {
             )
         let lifecycleReport =
             ChromeMV3PermissionLifecycleReportGenerator.makeReport(
+                prerequisitesReport: prerequisites,
+                profileID: profileID
+            )
+        let permissionsAPIReport =
+            ChromeMV3PermissionsAPIContractReportGenerator.makeReport(
                 prerequisitesReport: prerequisites,
                 profileID: profileID
             )
@@ -1375,6 +1386,8 @@ enum ChromeMV3RuntimeListenerContractReportGenerator {
                 permissionReport.summary,
             permissionLifecycleReportSummary:
                 lifecycleReport.summary,
+            permissionsAPIContractReportSummary:
+                permissionsAPIReport.summary,
             canRegisterListenersNow: false,
             canResolveReceivingListenersNow: false,
             canDispatchMessagesNow: false,
@@ -1388,6 +1401,7 @@ enum ChromeMV3RuntimeListenerContractReportGenerator {
                 "Event-surface capability matrix is deterministic.",
                 "Listener registration remains disabled.",
                 "Receiving listener resolution remains diagnostic-only.",
+                "chrome.permissions.onAdded/onRemoved listener availability remains blocked by listener registration and service-worker wake.",
                 "Message dispatch remains disabled.",
                 "Service-worker wake remains disabled.",
                 "Context creation and loading remain disabled.",

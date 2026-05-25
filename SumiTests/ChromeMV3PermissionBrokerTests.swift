@@ -818,6 +818,467 @@ final class ChromeMV3PermissionBrokerTests: XCTestCase {
         XCTAssertEqual(decoded, report)
     }
 
+    func testPermissionsAPIContainsReturnsTrueForDeclaredAPIPermission() {
+        let store = permissionDecisionStore(required: ["tabs"])
+        let result = ChromeMV3PermissionsAPIContractEvaluator.contains(
+            input: permissionsAPIInput(permissions: ["tabs"]),
+            permissionStore: store
+        )
+
+        XCTAssertTrue(result.wouldReturn)
+        XCTAssertFalse(result.runtimeImplementedNow)
+        XCTAssertEqual(
+            result.permissionDecisions.first?.grantSource,
+            .requiredPermission
+        )
+    }
+
+    func testPermissionsAPIContainsReturnsTrueForDeclaredHostOrigin() {
+        let store = permissionDecisionStore(
+            hostPermissions: ["https://example.com/*"]
+        )
+        let result = ChromeMV3PermissionsAPIContractEvaluator.contains(
+            input: permissionsAPIInput(origins: ["https://example.com/login"]),
+            permissionStore: store
+        )
+
+        XCTAssertTrue(result.wouldReturn)
+        XCTAssertTrue(result.originDecisions.first?.hasHostAccess == true)
+    }
+
+    func testPermissionsAPIContainsReturnsFalseForMissingOptionalPermission() {
+        let store = permissionDecisionStore(optional: ["history"])
+        let result = ChromeMV3PermissionsAPIContractEvaluator.contains(
+            input: permissionsAPIInput(permissions: ["history"]),
+            permissionStore: store
+        )
+
+        XCTAssertFalse(result.wouldReturn)
+        XCTAssertEqual(result.permissionDecisions.first?.status, .promptRequired)
+    }
+
+    func testPermissionsAPIContainsReturnsFalseForRevokedOrigin() {
+        let store = permissionDecisionStore(
+            hostPermissions: ["https://example.com/*"],
+            revoked: ["https://example.com/*"]
+        )
+        let result = ChromeMV3PermissionsAPIContractEvaluator.contains(
+            input: permissionsAPIInput(origins: ["https://example.com/login"]),
+            permissionStore: store
+        )
+
+        XCTAssertFalse(result.wouldReturn)
+        XCTAssertEqual(result.originDecisions.first?.status, .revoked)
+        XCTAssertTrue(
+            result.blockedDiagnostics.contains {
+                $0.contains("revoked")
+            }
+        )
+    }
+
+    func testPermissionsAPIGetAllReturnsDeterministicCurrentGrantList()
+        throws
+    {
+        let store = permissionDecisionStore(
+            required: ["tabs", "storage"],
+            optional: ["history"],
+            grantedOptional: ["history"],
+            hostPermissions: ["https://example.com/*"],
+            optionalHostPermissions: ["https://optional.example/*"],
+            grantedOptionalHostPermissions: ["https://optional.example/*"],
+            denied: ["tabs"],
+            deferred: ["storage"],
+            unsupported: ["debugger"]
+        )
+        let result = ChromeMV3PermissionsAPIContractEvaluator.getAll(
+            permissionStore: store
+        )
+        let first = try ChromeMV3DeterministicJSON.encodedData(result)
+        let second = try ChromeMV3DeterministicJSON.encodedData(result)
+
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(result.permissions, ["history"])
+        XCTAssertEqual(
+            result.origins,
+            ["https://example.com/*", "https://optional.example/*"]
+        )
+        XCTAssertEqual(result.excludedDeferredPermissions, ["storage"])
+        XCTAssertFalse(result.runtimeImplementedNow)
+    }
+
+    func testPermissionsAPIRequestClassifiesAlreadyGrantedPermission() {
+        let store = permissionDecisionStore(required: ["tabs"])
+        let result = ChromeMV3PermissionsAPIContractEvaluator.request(
+            input: permissionsAPIInput(
+                userGestureModeled: true,
+                permissions: ["tabs"]
+            ),
+            permissionStore: store
+        )
+
+        XCTAssertEqual(
+            result.itemDecisions.first?.classification,
+            .alreadyGranted
+        )
+        XCTAssertTrue(result.wouldBeAllowedByModel)
+        XCTAssertFalse(result.canPromptUserNow)
+    }
+
+    func testPermissionsAPIRequestClassifiesOptionalPermissionAsPromptRequired()
+    {
+        let store = permissionDecisionStore(optional: ["history"])
+        let result = ChromeMV3PermissionsAPIContractEvaluator.request(
+            input: permissionsAPIInput(
+                sourceContext: .actionPopup,
+                userGestureModeled: true,
+                permissions: ["history"]
+            ),
+            permissionStore: store
+        )
+
+        XCTAssertEqual(
+            result.itemDecisions.first?.classification,
+            .requestableOptionalPermission
+        )
+        XCTAssertTrue(result.wouldRequirePrompt)
+        XCTAssertTrue(result.wouldGrantIfUserAccepted)
+        XCTAssertFalse(result.canPromptUserNow)
+    }
+
+    func testPermissionsAPIRequestClassifiesOptionalOriginAsPromptRequired() {
+        let store = permissionDecisionStore(
+            optionalHostPermissions: ["https://*/*"]
+        )
+        let result = ChromeMV3PermissionsAPIContractEvaluator.request(
+            input: permissionsAPIInput(
+                sourceContext: .actionPopup,
+                userGestureModeled: true,
+                origins: ["https://example.com/"]
+            ),
+            permissionStore: store
+        )
+
+        XCTAssertEqual(
+            result.itemDecisions.first?.classification,
+            .requestableOptionalOrigin
+        )
+        XCTAssertEqual(
+            result.itemDecisions.first?.optionalDeclarationMatched,
+            ["https://*/*"]
+        )
+        XCTAssertTrue(result.wouldRequirePrompt)
+    }
+
+    func testPermissionsAPIRequestRejectsNonOptionalUndeclaredPermission() {
+        let result = ChromeMV3PermissionsAPIContractEvaluator.request(
+            input: permissionsAPIInput(
+                userGestureModeled: true,
+                permissions: ["bookmarks"]
+            ),
+            permissionStore: permissionDecisionStore()
+        )
+
+        XCTAssertEqual(
+            result.itemDecisions.first?.classification,
+            .notDeclaredOptional
+        )
+        XCTAssertTrue(result.wouldBeDeniedByModel)
+    }
+
+    func testPermissionsAPIRequestRejectsMissingUserGesture() {
+        let store = permissionDecisionStore(optional: ["history"])
+        let result = ChromeMV3PermissionsAPIContractEvaluator.request(
+            input: permissionsAPIInput(
+                sourceContext: .actionPopup,
+                userGestureModeled: false,
+                permissions: ["history"]
+            ),
+            permissionStore: store
+        )
+
+        XCTAssertEqual(
+            result.itemDecisions.first?.classification,
+            .missingUserGesture
+        )
+        XCTAssertTrue(result.itemDecisions.first?.missingUserGesture == true)
+        XCTAssertFalse(result.wouldRequirePrompt)
+    }
+
+    func testPermissionsAPIRequestClassifiesUnsupportedAndDeferredPermissions()
+    {
+        let store = permissionDecisionStore(
+            deferred: ["storage"],
+            unsupported: ["debugger"]
+        )
+        let result = ChromeMV3PermissionsAPIContractEvaluator.request(
+            input: permissionsAPIInput(
+                userGestureModeled: true,
+                permissions: ["debugger", "storage"]
+            ),
+            permissionStore: store
+        )
+
+        XCTAssertEqual(
+            result.itemDecisions.map(\.classification),
+            [.unsupportedPermission, .deferredPermission]
+        )
+        XCTAssertTrue(result.wouldBeDeniedByModel)
+    }
+
+    func testPermissionsAPIRemoveRejectsRequiredManifestPermission() {
+        let store = permissionDecisionStore(required: ["tabs"])
+        let result = ChromeMV3PermissionsAPIContractEvaluator.remove(
+            input: permissionsAPIInput(permissions: ["tabs"]),
+            permissionStore: store
+        )
+
+        XCTAssertFalse(result.wouldReturn)
+        XCTAssertEqual(
+            result.itemDecisions.first?.classification,
+            .requiredManifestPermission
+        )
+    }
+
+    func testPermissionsAPIRemoveAllowsOptionalPermissionAndExpiresActiveTab()
+    {
+        let store = permissionDecisionStore(
+            optional: ["history"],
+            grantedOptional: ["history"]
+        )
+        let activeTabStore = ChromeMV3ActiveTabGrantStore
+            .empty(extensionID: "extension-a", profileID: "profile-a")
+            .addingModeledGrant(
+                tabID: 42,
+                url: "https://example.com/login",
+                reason: .testFixture,
+                sequence: 1
+            )
+        let applied = ChromeMV3PermissionsAPIContractEvaluator
+            .applyingRemove(
+                input: permissionsAPIInput(permissions: ["history"]),
+                permissionStore: store,
+                activeTabStore: activeTabStore,
+                sequence: 2
+            )
+
+        XCTAssertTrue(applied.result.wouldReturn)
+        XCTAssertTrue(applied.result.wouldRevokeModeledPermissions)
+        XCTAssertTrue(applied.result.wouldExpireActiveTabGrants)
+        XCTAssertEqual(
+            applied.permissionStore.apiPermissionDecision("history").status,
+            .revoked
+        )
+        XCTAssertFalse(
+            applied.activeTabStore.hasActiveTabGrant(
+                tabID: 42,
+                url: "https://example.com/login"
+            )
+        )
+    }
+
+    func testPermissionsAPIRemoveAllowsOptionalOriginRemoval() {
+        let store = permissionDecisionStore(
+            optionalHostPermissions: ["https://example.com/*"],
+            grantedOptionalHostPermissions: ["https://example.com/*"]
+        )
+        let applied = ChromeMV3PermissionsAPIContractEvaluator
+            .applyingRemove(
+                input: permissionsAPIInput(
+                    origins: ["https://example.com/*"]
+                ),
+                permissionStore: store,
+                activeTabStore:
+                    ChromeMV3ActiveTabGrantStore.empty(
+                        extensionID: "extension-a",
+                        profileID: "profile-a"
+                    ),
+                sequence: 1
+            )
+
+        XCTAssertTrue(applied.result.wouldReturn)
+        XCTAssertEqual(
+            applied.result.itemDecisions.first?.classification,
+            .removedOptionalOrigin
+        )
+        XCTAssertEqual(
+            applied.permissionStore.hostAccessDecision(
+                url: "https://example.com/login"
+            ).status,
+            .revoked
+        )
+    }
+
+    func testPermissionsAPIOnAddedPayloadIsDeterministicButNotDispatched()
+        throws
+    {
+        let store = permissionDecisionStore(optional: ["history"])
+        let request = ChromeMV3PermissionsAPIContractEvaluator.request(
+            input: permissionsAPIInput(
+                sourceContext: .actionPopup,
+                userGestureModeled: true,
+                permissions: ["history"]
+            ),
+            permissionStore: store
+        )
+        let payload = try XCTUnwrap(request.eventPayloadIfAccepted)
+        let first = try ChromeMV3DeterministicJSON.encodedData(payload)
+        let second = try ChromeMV3DeterministicJSON.encodedData(payload)
+
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(payload.eventKind, .onAdded)
+        XCTAssertEqual(payload.permissions, ["history"])
+        XCTAssertFalse(payload.wouldDispatchNow)
+        XCTAssertTrue(payload.listenerRegistrationRequired)
+        XCTAssertTrue(payload.serviceWorkerWakeRequired)
+    }
+
+    func testPermissionsAPIOnRemovedPayloadIsDeterministicButNotDispatched()
+        throws
+    {
+        let store = permissionDecisionStore(
+            optional: ["history"],
+            grantedOptional: ["history"]
+        )
+        let applied = ChromeMV3PermissionsAPIContractEvaluator
+            .applyingRemove(
+                input: permissionsAPIInput(permissions: ["history"]),
+                permissionStore: store,
+                activeTabStore:
+                    ChromeMV3ActiveTabGrantStore.empty(
+                        extensionID: "extension-a",
+                        profileID: "profile-a"
+                    ),
+                sequence: 1
+            )
+        let payload = try XCTUnwrap(applied.result.eventPayloadIfApplied)
+        let first = try ChromeMV3DeterministicJSON.encodedData(payload)
+        let second = try ChromeMV3DeterministicJSON.encodedData(payload)
+
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(payload.eventKind, .onRemoved)
+        XCTAssertEqual(payload.permissions, ["history"])
+        XCTAssertFalse(payload.wouldDispatchNow)
+        XCTAssertFalse(payload.canRegisterListenersNow)
+        XCTAssertFalse(payload.canWakeServiceWorkerNow)
+    }
+
+    func testPermissionsAPIContractReportIsDeterministicAndBlocked()
+        throws
+    {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let report = ChromeMV3PermissionsAPIContractReportGenerator
+            .makeReport(prerequisitesReport: makePrerequisitesReport())
+        let first = try ChromeMV3DeterministicJSON.encodedData(report)
+        let second = try ChromeMV3DeterministicJSON.encodedData(report)
+
+        try ChromeMV3PermissionsAPIContractReportWriter.write(
+            report,
+            toRewrittenBundleRoot: root
+        )
+        let decoded = try JSONDecoder().decode(
+            ChromeMV3PermissionsAPIContractReport.self,
+            from: Data(
+                contentsOf: root.appendingPathComponent(
+                    ChromeMV3PermissionsAPIContractReportWriter.reportFileName
+                )
+            )
+        )
+
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(decoded, report)
+        XCTAssertTrue(report.contractSummary.containsModeled)
+        XCTAssertTrue(report.contractSummary.requestModeled)
+        XCTAssertTrue(report.contractSummary.onAddedModeled)
+        XCTAssertTrue(report.contractSummary.onRemovedModeled)
+        XCTAssertFalse(report.canPromptUserNow)
+        XCTAssertFalse(report.canDispatchPermissionEventNow)
+        XCTAssertFalse(report.canRegisterListenersNow)
+        XCTAssertFalse(report.canWakeServiceWorkerNow)
+        XCTAssertFalse(report.canDispatchMessagesNow)
+        XCTAssertFalse(report.canLoadContextNow)
+        XCTAssertFalse(report.runtimeLoadable)
+        XCTAssertFalse(
+            report.passwordManagerPermissionAPIReadiness
+                .passwordManagerPermissionAPIReady
+        )
+        XCTAssertTrue(
+            report.passwordManagerPermissionAPIReadiness
+                .runtimeMessagingBlockerRemains
+        )
+        XCTAssertTrue(
+            report.passwordManagerPermissionAPIReadiness
+                .nativeMessagingBlockerRemains
+        )
+    }
+
+    @MainActor
+    func testSumiExtensionsModuleWritesPermissionsAPIContractReportOnlyWhenEnabled()
+        throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Chrome MV3 module diagnostics require macOS 15.5.")
+        }
+
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try ChromeMV3RuntimeBridgePrerequisitesReportWriter.write(
+            makePrerequisitesReport(),
+            toRewrittenBundleRoot: root
+        )
+        let reportURL = root.appendingPathComponent(
+            ChromeMV3PermissionsAPIContractReportWriter.reportFileName
+        )
+        let disabledHarness = TestDefaultsHarness()
+        defer { disabledHarness.reset() }
+        let disabledRegistry = SumiModuleRegistry(
+            settingsStore:
+                SumiModuleSettingsStore(userDefaults: disabledHarness.defaults)
+        )
+        let disabledModule = SumiExtensionsModule(
+            moduleRegistry: disabledRegistry,
+            browserConfiguration: BrowserConfiguration()
+        )
+
+        let disabledReport =
+            disabledModule.chromeMV3PermissionsAPIContractReportIfEnabled(
+                fromRewrittenBundleRoot: root,
+                writeReport: true
+            )
+
+        XCTAssertNil(disabledReport)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: reportURL.path))
+
+        let enabledHarness = TestDefaultsHarness()
+        defer { enabledHarness.reset() }
+        let enabledRegistry = SumiModuleRegistry(
+            settingsStore:
+                SumiModuleSettingsStore(userDefaults: enabledHarness.defaults)
+        )
+        enabledRegistry.enable(.extensions)
+        let enabledModule = SumiExtensionsModule(
+            moduleRegistry: enabledRegistry,
+            browserConfiguration: BrowserConfiguration()
+        )
+
+        let enabledReport = try XCTUnwrap(
+            enabledModule.chromeMV3PermissionsAPIContractReportIfEnabled(
+                fromRewrittenBundleRoot: root,
+                writeReport: true
+            )
+        )
+        let diagnostics = enabledModule.chromeMV3InventoryDiagnosticsIfEnabled(
+            rootURL: root
+        )
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: reportURL.path))
+        XCTAssertEqual(
+            diagnostics?.permissionsAPIContractReportSummary,
+            enabledReport.summary
+        )
+        XCTAssertFalse(enabledModule.hasLoadedRuntime)
+    }
+
     @MainActor
     func testSumiExtensionsModuleWritesPermissionReportOnlyWhenEnabled()
         throws
@@ -914,7 +1375,9 @@ final class ChromeMV3PermissionBrokerTests: XCTestCase {
             "canLoad" + "ContextNow\\s*[:=].*" + "tr" + "ue",
             "canDispatch" + "MessagesNow\\s*[:=].*" + "tr" + "ue",
             "canPrompt" + "UserNow\\s*[:=].*" + "tr" + "ue",
+            "canDispatch" + "PermissionEventNow\\s*[:=].*" + "tr" + "ue",
             "password" + "ManagerPermissionReady\\s*[:=].*" + "tr" + "ue",
+            "password" + "ManagerPermissionAPIReady\\s*[:=].*" + "tr" + "ue",
         ] {
             XCTAssertNil(
                 joined.range(
@@ -1004,6 +1467,25 @@ final class ChromeMV3PermissionBrokerTests: XCTestCase {
                 deferredPermissions: deferred,
                 unsupportedPermissions: unsupported
             )
+        )
+    }
+
+    private func permissionsAPIInput(
+        sourceContext: ChromeMV3PermissionsAPIRequestSourceContext =
+            .testFixture,
+        userGestureModeled: Bool = false,
+        extensionModuleEnabled: Bool = true,
+        permissions: [String] = [],
+        origins: [String] = []
+    ) -> ChromeMV3PermissionsAPIRequestInput {
+        ChromeMV3PermissionsAPIRequestInput(
+            extensionID: "extension-a",
+            profileID: "profile-a",
+            sourceContext: sourceContext,
+            userGestureModeled: userGestureModeled,
+            extensionModuleEnabled: extensionModuleEnabled,
+            permissions: permissions,
+            origins: origins
         )
     }
 
