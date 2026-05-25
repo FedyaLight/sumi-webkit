@@ -32,12 +32,16 @@ final class SumiExtensionsModule {
             ChromeMV3ExtensionObjectProbeOwner?
         private var cachedChromeMV3DetachedContextOwner:
             ChromeMV3DetachedContextOwner?
+        private var cachedChromeMV3ControllerLoadOwner:
+            ChromeMV3ControllerLoadOwner?
         private var lastChromeMV3WebKitObjectAcceptanceReport:
             ChromeMV3WebKitObjectAcceptanceReport?
         private var lastChromeMV3ContextReadinessReport:
             ChromeMV3ContextReadinessReport?
         private var lastChromeMV3ContextCreationGateReport:
             ChromeMV3ContextCreationGateReport?
+        private var lastChromeMV3ControllerLoadGateReport:
+            ChromeMV3ControllerLoadGateReport?
         private var lastChromeMV3RuntimeBridgePrerequisitesReport:
             ChromeMV3RuntimeBridgePrerequisitesReport?
         private var lastChromeMV3RuntimeBridgeReadinessReport:
@@ -142,11 +146,13 @@ final class SumiExtensionsModule {
         if isEnabled == false {
             #if DEBUG
                 if #available(macOS 15.5, *) {
+                    tearDownChromeMV3ControllerLoadOwner()
                     tearDownChromeMV3DetachedContextOwner()
                     tearDownChromeMV3ExtensionObjectProbeOwner()
                     lastChromeMV3WebKitObjectAcceptanceReport = nil
                     lastChromeMV3ContextReadinessReport = nil
                     lastChromeMV3ContextCreationGateReport = nil
+                    lastChromeMV3ControllerLoadGateReport = nil
                     lastChromeMV3RuntimeBridgePrerequisitesReport = nil
                     lastChromeMV3RuntimeBridgeReadinessReport = nil
                     lastChromeMV3StorageBrokerReadinessReport = nil
@@ -216,6 +222,7 @@ final class SumiExtensionsModule {
         let objectAcceptanceReport: ChromeMV3WebKitObjectAcceptanceReport?
         let contextReadinessReport: ChromeMV3ContextReadinessReport?
         let contextCreationGateReport: ChromeMV3ContextCreationGateReport?
+        let controllerLoadGateReport: ChromeMV3ControllerLoadGateReport?
         let runtimeBridgePrerequisitesReport:
             ChromeMV3RuntimeBridgePrerequisitesReport?
         let runtimeBridgeReadinessReport:
@@ -252,6 +259,8 @@ final class SumiExtensionsModule {
                     lastChromeMV3ContextReadinessReport
                 contextCreationGateReport =
                     lastChromeMV3ContextCreationGateReport
+                controllerLoadGateReport =
+                    lastChromeMV3ControllerLoadGateReport
                 runtimeBridgePrerequisitesReport =
                     lastChromeMV3RuntimeBridgePrerequisitesReport
                 runtimeBridgeReadinessReport =
@@ -284,6 +293,7 @@ final class SumiExtensionsModule {
                 objectAcceptanceReport = nil
                 contextReadinessReport = nil
                 contextCreationGateReport = nil
+                controllerLoadGateReport = nil
                 runtimeBridgePrerequisitesReport = nil
                 runtimeBridgeReadinessReport = nil
                 storageBrokerReadinessReportSummary = nil
@@ -303,6 +313,7 @@ final class SumiExtensionsModule {
             objectAcceptanceReport = nil
             contextReadinessReport = nil
             contextCreationGateReport = nil
+            controllerLoadGateReport = nil
             runtimeBridgePrerequisitesReport = nil
             runtimeBridgeReadinessReport = nil
             storageBrokerReadinessReportSummary = nil
@@ -325,6 +336,7 @@ final class SumiExtensionsModule {
             extensionObjectAcceptanceReport: objectAcceptanceReport,
             contextReadinessReport: contextReadinessReport,
             contextCreationGateReport: contextCreationGateReport,
+            controllerLoadGateReport: controllerLoadGateReport,
             runtimeBridgePrerequisitesReport:
                 runtimeBridgePrerequisitesReport,
             runtimeBridgeReadinessReport:
@@ -910,7 +922,9 @@ final class SumiExtensionsModule {
                     decision: decision,
                     detachedContextOwnerDiagnostics:
                         cachedChromeMV3DetachedContextOwner?
-                        .diagnostics()
+                        .diagnostics(),
+                    controllerLoadGateReportSummary:
+                        lastChromeMV3ControllerLoadGateReport?.summary
                 )
             lastChromeMV3ContextCreationGateReport = report
 
@@ -990,7 +1004,9 @@ final class SumiExtensionsModule {
             let report = ChromeMV3ContextCreationGateReportGenerator
                 .makeReport(
                     decision: decision,
-                    detachedContextOwnerDiagnostics: diagnostics
+                    detachedContextOwnerDiagnostics: diagnostics,
+                    controllerLoadGateReportSummary:
+                        lastChromeMV3ControllerLoadGateReport?.summary
                 )
             lastChromeMV3ContextCreationGateReport = report
 
@@ -1004,6 +1020,244 @@ final class SumiExtensionsModule {
                     toRewrittenBundleRoot: rootURL
                 )
             }
+            return diagnostics
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3ControllerLoadGateDecisionIfEnabled(
+            explicitInternalControllerLoadProbeAllowed: Bool,
+            candidate: ChromeMV3RewrittenVariantCandidate,
+            objectAcceptanceReport:
+                ChromeMV3WebKitObjectAcceptanceReport? = nil,
+            runtimeBridgeReadinessReport:
+                ChromeMV3RuntimeBridgeReadinessReport? = nil,
+            requestedProductRuntimeExposure: Bool = false,
+            requestedExtensionCodeExecution: Bool = false,
+            requestedUserScriptRegistration: Bool = false,
+            requestedNativeMessagingLaunch: Bool = false,
+            sdkCompatibility: ChromeMV3ControllerLoadSDKCompatibility =
+                .currentAppleSDK
+        ) -> ChromeMV3ControllerLoadGateDecision? {
+            guard isEnabled else { return nil }
+
+            let profileHost = makeChromeMV3ProfileHost(
+                candidateRewrittenVariants: [candidate]
+            ).host
+            let resolvedObjectAcceptanceReport =
+                objectAcceptanceReport
+                    ?? lastChromeMV3WebKitObjectAcceptanceReport
+                    ?? loadChromeMV3WebKitObjectAcceptanceReport(
+                        fromRewrittenBundleRootPath:
+                            candidate.rewrittenVariantRootPath
+                    )
+            let resolvedRuntimeBridgeReadinessReport =
+                runtimeBridgeReadinessReport
+                    ?? lastChromeMV3RuntimeBridgeReadinessReport
+                    ?? loadChromeMV3RuntimeBridgeReadinessReport(
+                        fromRewrittenBundleRootPath:
+                            candidate.rewrittenVariantRootPath
+                    )
+            let probeOwner = cachedChromeMV3ExtensionObjectProbeOwner
+            let probeDiagnostics = probeOwner?.diagnostics()
+            let detachedDiagnostics =
+                cachedChromeMV3DetachedContextOwner?.diagnostics()
+            let emptyControllerDiagnostics =
+                chromeMV3EmptyControllerDiagnosticsIfEnabled(
+                    explicitControllerCreationAllowed: true,
+                    candidateRewrittenVariants: [candidate]
+                )
+            let acceptedObjectAvailable =
+                probeOwner?
+                .hasAcceptedWebExtensionObjectForDetachedContext(
+                    objectAcceptanceReport:
+                        resolvedObjectAcceptanceReport
+                ) ?? false
+            let rootPath = URL(
+                fileURLWithPath: candidate.rewrittenVariantRootPath,
+                isDirectory: true
+            ).standardizedFileURL.path
+            let minimalPolicy = ChromeMV3MinimalInertFixturePolicy.evaluate(
+                generatedRewrittenRootPath: rootPath,
+                acceptedWebExtensionObjectAvailable:
+                    acceptedObjectAvailable,
+                detachedContextCreated:
+                    detachedDiagnostics?.contextObjectCreated ?? false
+            )
+
+            return ChromeMV3ControllerLoadGate.evaluate(
+                input: ChromeMV3ControllerLoadGateInput(
+                    candidateID: candidate.id,
+                    generatedRewrittenRootPath: rootPath,
+                    extensionsModuleEnabled: true,
+                    profileHostModuleState: profileHost.moduleState,
+                    profileIdentifier: profileHost.profileIdentifier,
+                    explicitInternalControllerLoadProbeAllowed:
+                        explicitInternalControllerLoadProbeAllowed,
+                    acceptedWebExtensionObjectAvailable:
+                        acceptedObjectAvailable,
+                    objectProbeDiagnostics: probeDiagnostics,
+                    objectAcceptanceReport:
+                        resolvedObjectAcceptanceReport,
+                    detachedContextOwnerDiagnostics:
+                        detachedDiagnostics,
+                    emptyControllerDiagnostics:
+                        emptyControllerDiagnostics,
+                    liveNormalTabAttachmentSnapshot:
+                        chromeMV3LiveNormalTabAttachmentDiagnosticsSnapshot(),
+                    runtimeBridgeReadinessReport:
+                        resolvedRuntimeBridgeReadinessReport,
+                    minimalInertFixturePolicy: minimalPolicy,
+                    sdkCompatibility: sdkCompatibility,
+                    requestedProductRuntimeExposure:
+                        requestedProductRuntimeExposure,
+                    requestedExtensionCodeExecution:
+                        requestedExtensionCodeExecution,
+                    requestedUserScriptRegistration:
+                        requestedUserScriptRegistration,
+                    requestedNativeMessagingLaunch:
+                        requestedNativeMessagingLaunch
+                )
+            )
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3ControllerLoadGateReportIfEnabled(
+            explicitInternalControllerLoadProbeAllowed: Bool,
+            candidate: ChromeMV3RewrittenVariantCandidate,
+            objectAcceptanceReport:
+                ChromeMV3WebKitObjectAcceptanceReport? = nil,
+            runtimeBridgeReadinessReport:
+                ChromeMV3RuntimeBridgeReadinessReport? = nil,
+            writeReport: Bool = false,
+            sdkCompatibility: ChromeMV3ControllerLoadSDKCompatibility =
+                .currentAppleSDK
+        ) -> ChromeMV3ControllerLoadGateReport? {
+            guard isEnabled else { return nil }
+            guard
+                let decision = chromeMV3ControllerLoadGateDecisionIfEnabled(
+                    explicitInternalControllerLoadProbeAllowed:
+                        explicitInternalControllerLoadProbeAllowed,
+                    candidate: candidate,
+                    objectAcceptanceReport: objectAcceptanceReport,
+                    runtimeBridgeReadinessReport:
+                        runtimeBridgeReadinessReport,
+                    sdkCompatibility: sdkCompatibility
+                )
+            else {
+                return nil
+            }
+
+            let report = ChromeMV3ControllerLoadGateReportGenerator
+                .makeReport(
+                    decision: decision,
+                    loadOwnerDiagnostics:
+                        cachedChromeMV3ControllerLoadOwner?.diagnostics()
+                )
+            lastChromeMV3ControllerLoadGateReport = report
+
+            guard writeReport else { return report }
+            let rootURL = URL(
+                fileURLWithPath: candidate.rewrittenVariantRootPath,
+                isDirectory: true
+            ).standardizedFileURL
+            return (try? ChromeMV3ControllerLoadGateReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        @discardableResult
+        func loadChromeMV3DetachedContextIntoControllerIfEnabled(
+            explicitInternalControllerLoadProbeAllowed: Bool,
+            candidate: ChromeMV3RewrittenVariantCandidate,
+            objectAcceptanceReport:
+                ChromeMV3WebKitObjectAcceptanceReport? = nil,
+            runtimeBridgeReadinessReport:
+                ChromeMV3RuntimeBridgeReadinessReport? = nil,
+            writeReport: Bool = false,
+            sdkCompatibility: ChromeMV3ControllerLoadSDKCompatibility =
+                .currentAppleSDK
+        ) -> ChromeMV3ControllerLoadOwnerDiagnostics? {
+            guard isEnabled else { return nil }
+            guard
+                let decision = chromeMV3ControllerLoadGateDecisionIfEnabled(
+                    explicitInternalControllerLoadProbeAllowed:
+                        explicitInternalControllerLoadProbeAllowed,
+                    candidate: candidate,
+                    objectAcceptanceReport: objectAcceptanceReport,
+                    runtimeBridgeReadinessReport:
+                        runtimeBridgeReadinessReport,
+                    sdkCompatibility: sdkCompatibility
+                )
+            else {
+                return nil
+            }
+
+            let resolvedObjectAcceptanceReport =
+                objectAcceptanceReport
+                    ?? lastChromeMV3WebKitObjectAcceptanceReport
+                    ?? loadChromeMV3WebKitObjectAcceptanceReport(
+                        fromRewrittenBundleRootPath:
+                            candidate.rewrittenVariantRootPath
+                    )
+            let acceptedObject =
+                cachedChromeMV3ExtensionObjectProbeOwner?
+                .acceptedWebExtensionObjectForDetachedContext(
+                    objectAcceptanceReport:
+                        resolvedObjectAcceptanceReport
+                )
+            let owner: ChromeMV3ControllerLoadOwner
+            if let cachedChromeMV3ControllerLoadOwner,
+               cachedChromeMV3ControllerLoadOwner
+                .diagnostics()
+                .gateDecision
+                .input
+                .candidateID == decision.input.candidateID
+            {
+                owner = cachedChromeMV3ControllerLoadOwner
+            } else {
+                cachedChromeMV3ControllerLoadOwner?.tearDown()
+                owner = ChromeMV3ControllerLoadOwner(
+                    gateDecision: decision
+                )
+                cachedChromeMV3ControllerLoadOwner = owner
+            }
+
+            let diagnostics = owner.loadContextIntoControllerIfAllowed(
+                emptyControllerOwner: cachedChromeMV3EmptyControllerOwner,
+                detachedContextOwner: cachedChromeMV3DetachedContextOwner,
+                acceptedWebExtension: acceptedObject
+            )
+            let report = ChromeMV3ControllerLoadGateReportGenerator
+                .makeReport(
+                    decision: decision,
+                    loadOwnerDiagnostics: diagnostics
+                )
+            lastChromeMV3ControllerLoadGateReport = report
+
+            if writeReport {
+                let rootURL = URL(
+                    fileURLWithPath: candidate.rewrittenVariantRootPath,
+                    isDirectory: true
+                ).standardizedFileURL
+                _ = try? ChromeMV3ControllerLoadGateReportWriter.write(
+                    report,
+                    toRewrittenBundleRoot: rootURL
+                )
+            }
+            return diagnostics
+        }
+
+        @available(macOS 15.5, *)
+        @discardableResult
+        func tearDownChromeMV3ControllerLoadIfEnabled()
+            -> ChromeMV3ControllerLoadOwnerDiagnostics?
+        {
+            guard isEnabled else { return nil }
+            let diagnostics =
+                cachedChromeMV3ControllerLoadOwner?.tearDown()
+            cachedChromeMV3ControllerLoadOwner = nil
             return diagnostics
         }
 
@@ -1400,6 +1654,12 @@ final class SumiExtensionsModule {
         trigger: ChromeMV3EmptyControllerTeardownTrigger
     ) -> ChromeMV3EmptyControllerDiagnostics? {
         guard isEnabled else { return nil }
+        #if DEBUG
+            if #available(macOS 15.5, *) {
+                cachedChromeMV3ControllerLoadOwner?.tearDown()
+                cachedChromeMV3ControllerLoadOwner = nil
+            }
+        #endif
         guard let cachedChromeMV3EmptyControllerOwner else {
             guard let decision =
                 chromeMV3ControllerCreationGateDecisionIfEnabled(
@@ -1633,6 +1893,11 @@ final class SumiExtensionsModule {
     }
 
     private func tearDownChromeMV3EmptyControllerOwner() {
+        #if DEBUG
+            if #available(macOS 15.5, *) {
+                tearDownChromeMV3ControllerLoadOwner()
+            }
+        #endif
         let diagnostics = cachedChromeMV3EmptyControllerOwner?
             .tearDown(trigger: .moduleDisable)
         #if DEBUG
@@ -1647,6 +1912,7 @@ final class SumiExtensionsModule {
     #if DEBUG
         @available(macOS 15.5, *)
         private func tearDownChromeMV3ExtensionObjectProbeOwner() {
+            tearDownChromeMV3ControllerLoadOwner()
             tearDownChromeMV3DetachedContextOwner()
             cachedChromeMV3ExtensionObjectProbeOwner?.tearDown()
             cachedChromeMV3ExtensionObjectProbeOwner = nil
@@ -1654,8 +1920,15 @@ final class SumiExtensionsModule {
 
         @available(macOS 15.5, *)
         private func tearDownChromeMV3DetachedContextOwner() {
+            tearDownChromeMV3ControllerLoadOwner()
             cachedChromeMV3DetachedContextOwner?.tearDown()
             cachedChromeMV3DetachedContextOwner = nil
+        }
+
+        @available(macOS 15.5, *)
+        private func tearDownChromeMV3ControllerLoadOwner() {
+            cachedChromeMV3ControllerLoadOwner?.tearDown()
+            cachedChromeMV3ControllerLoadOwner = nil
         }
 
         private func loadChromeMV3WebKitObjectAcceptanceReport(

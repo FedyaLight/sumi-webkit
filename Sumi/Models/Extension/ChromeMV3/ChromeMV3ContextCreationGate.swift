@@ -780,6 +780,8 @@ struct ChromeMV3ContextCreationGateReport:
         ChromeMV3ContextCreationSDKCompatibility
     var detachedContextOwnerDiagnostics:
         ChromeMV3DetachedContextOwnerDiagnostics
+    var controllerLoadGateReportSummary:
+        ChromeMV3ControllerLoadGateReportSummary?
     var runtimeBridgePrerequisitesSummary:
         ChromeMV3ContextCreationRuntimeBridgePrerequisitesSummary
     var canCreateContextObjectNow: Bool
@@ -847,7 +849,9 @@ enum ChromeMV3ContextCreationGateReportGenerator {
     static func makeReport(
         decision: ChromeMV3ContextCreationGateDecision,
         detachedContextOwnerDiagnostics:
-            ChromeMV3DetachedContextOwnerDiagnostics? = nil
+            ChromeMV3DetachedContextOwnerDiagnostics? = nil,
+        controllerLoadGateReportSummary:
+            ChromeMV3ControllerLoadGateReportSummary? = nil
     ) -> ChromeMV3ContextCreationGateReport {
         let input = decision.input
         let ownerDiagnostics = detachedContextOwnerDiagnostics
@@ -907,6 +911,8 @@ enum ChromeMV3ContextCreationGateReportGenerator {
                 .make(liveSnapshot: liveSnapshot),
             sdkCompatibilityStatus: input.sdkCompatibility,
             detachedContextOwnerDiagnostics: ownerDiagnostics,
+            controllerLoadGateReportSummary:
+                controllerLoadGateReportSummary,
             runtimeBridgePrerequisitesSummary: runtimeSummary,
             canCreateContextObjectNow:
                 decision.canCreateContextObjectNow,
