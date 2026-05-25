@@ -94,6 +94,8 @@ struct ChromeMV3ProfileHostDiagnostics: Codable, Equatable, Sendable {
         ChromeMV3RuntimeMinimalSmokeReport?
     var runtimeContentScriptSmokeReport:
         ChromeMV3ContentScriptSmokeReport?
+    var runtimeContentScriptLocalFixtureRunnerReport:
+        ChromeMV3ContentScriptLocalFixtureRunnerReport? = nil
     var runtimeBridgePrerequisitesReport:
         ChromeMV3RuntimeBridgePrerequisitesReport?
     var runtimeBridgeReadinessReport:
@@ -278,6 +280,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
             ChromeMV3RuntimeMinimalSmokeReport? = nil,
         runtimeContentScriptSmokeReport:
             ChromeMV3ContentScriptSmokeReport? = nil,
+        runtimeContentScriptLocalFixtureRunnerReport:
+            ChromeMV3ContentScriptLocalFixtureRunnerReport? = nil,
         runtimeBridgePrerequisitesReport:
             ChromeMV3RuntimeBridgePrerequisitesReport? = nil,
         runtimeBridgeReadinessReport:
@@ -367,6 +371,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
             runtimeMinimalSmokeReport: runtimeMinimalSmokeReport,
             runtimeContentScriptSmokeReport:
                 runtimeContentScriptSmokeReport,
+            runtimeContentScriptLocalFixtureRunnerReport:
+                runtimeContentScriptLocalFixtureRunnerReport,
             runtimeBridgePrerequisitesReport:
                 runtimeBridgePrerequisitesReport,
             runtimeBridgeReadinessReport:

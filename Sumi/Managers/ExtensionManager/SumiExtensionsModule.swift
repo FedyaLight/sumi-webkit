@@ -46,6 +46,8 @@ final class SumiExtensionsModule {
             ChromeMV3RuntimeMinimalSmokeReport?
         private var lastChromeMV3RuntimeContentScriptSmokeReport:
             ChromeMV3ContentScriptSmokeReport?
+        private var lastChromeMV3RuntimeContentScriptLocalFixtureRunnerReport:
+            ChromeMV3ContentScriptLocalFixtureRunnerReport?
         private var lastChromeMV3RuntimeBridgePrerequisitesReport:
             ChromeMV3RuntimeBridgePrerequisitesReport?
         private var lastChromeMV3RuntimeBridgeReadinessReport:
@@ -159,6 +161,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3ControllerLoadGateReport = nil
                     lastChromeMV3RuntimeMinimalSmokeReport = nil
                     lastChromeMV3RuntimeContentScriptSmokeReport = nil
+                    lastChromeMV3RuntimeContentScriptLocalFixtureRunnerReport = nil
                     lastChromeMV3RuntimeBridgePrerequisitesReport = nil
                     lastChromeMV3RuntimeBridgeReadinessReport = nil
                     lastChromeMV3StorageBrokerReadinessReport = nil
@@ -233,6 +236,8 @@ final class SumiExtensionsModule {
             ChromeMV3RuntimeMinimalSmokeReport?
         let runtimeContentScriptSmokeReport:
             ChromeMV3ContentScriptSmokeReport?
+        let runtimeContentScriptLocalFixtureRunnerReport:
+            ChromeMV3ContentScriptLocalFixtureRunnerReport?
         let runtimeBridgePrerequisitesReport:
             ChromeMV3RuntimeBridgePrerequisitesReport?
         let runtimeBridgeReadinessReport:
@@ -275,6 +280,8 @@ final class SumiExtensionsModule {
                     lastChromeMV3RuntimeMinimalSmokeReport
                 runtimeContentScriptSmokeReport =
                     lastChromeMV3RuntimeContentScriptSmokeReport
+                runtimeContentScriptLocalFixtureRunnerReport =
+                    lastChromeMV3RuntimeContentScriptLocalFixtureRunnerReport
                 runtimeBridgePrerequisitesReport =
                     lastChromeMV3RuntimeBridgePrerequisitesReport
                 runtimeBridgeReadinessReport =
@@ -310,6 +317,7 @@ final class SumiExtensionsModule {
                 controllerLoadGateReport = nil
                 runtimeMinimalSmokeReport = nil
                 runtimeContentScriptSmokeReport = nil
+                runtimeContentScriptLocalFixtureRunnerReport = nil
                 runtimeBridgePrerequisitesReport = nil
                 runtimeBridgeReadinessReport = nil
                 storageBrokerReadinessReportSummary = nil
@@ -332,6 +340,7 @@ final class SumiExtensionsModule {
             controllerLoadGateReport = nil
             runtimeMinimalSmokeReport = nil
             runtimeContentScriptSmokeReport = nil
+            runtimeContentScriptLocalFixtureRunnerReport = nil
             runtimeBridgePrerequisitesReport = nil
             runtimeBridgeReadinessReport = nil
             storageBrokerReadinessReportSummary = nil
@@ -358,6 +367,8 @@ final class SumiExtensionsModule {
             runtimeMinimalSmokeReport: runtimeMinimalSmokeReport,
             runtimeContentScriptSmokeReport:
                 runtimeContentScriptSmokeReport,
+            runtimeContentScriptLocalFixtureRunnerReport:
+                runtimeContentScriptLocalFixtureRunnerReport,
             runtimeBridgePrerequisitesReport:
                 runtimeBridgePrerequisitesReport,
             runtimeBridgeReadinessReport:
@@ -1541,6 +1552,113 @@ final class SumiExtensionsModule {
                 )
             }
             return report
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3RuntimeContentScriptLocalFixtureRunnerReportIfEnabled(
+            explicitInternalLocalFixtureRunnerAllowed: Bool,
+            explicitLocalHTTPServerAllowed: Bool,
+            explicitSyntheticWebViewCreationAllowed: Bool,
+            explicitSyntheticNavigationAllowed: Bool,
+            explicitTestDOMInspectionAllowed: Bool,
+            candidate: ChromeMV3RewrittenVariantCandidate,
+            objectAcceptanceReport:
+                ChromeMV3WebKitObjectAcceptanceReport? = nil,
+            runtimeBridgeReadinessReport:
+                ChromeMV3RuntimeBridgeReadinessReport? = nil,
+            writeReport: Bool = false,
+            tearDownLoadedContextAndControllerAfterRun: Bool = true
+        ) async -> ChromeMV3ContentScriptLocalFixtureRunnerReport? {
+            guard isEnabled else { return nil }
+
+            let resolvedObjectAcceptanceReport =
+                objectAcceptanceReport
+                    ?? lastChromeMV3WebKitObjectAcceptanceReport
+                    ?? loadChromeMV3WebKitObjectAcceptanceReport(
+                        fromRewrittenBundleRootPath:
+                            candidate.rewrittenVariantRootPath
+                    )
+            let resolvedRuntimeBridgeReadinessReport =
+                runtimeBridgeReadinessReport
+                    ?? lastChromeMV3RuntimeBridgeReadinessReport
+                    ?? loadChromeMV3RuntimeBridgeReadinessReport(
+                        fromRewrittenBundleRootPath:
+                            candidate.rewrittenVariantRootPath
+                    )
+            let report =
+                await ChromeMV3ContentScriptLocalFixtureRunner.run(
+                    candidate: candidate,
+                    extensionsModuleEnabled: true,
+                    explicitInternalLocalFixtureRunnerAllowed:
+                        explicitInternalLocalFixtureRunnerAllowed,
+                    explicitLocalHTTPServerAllowed:
+                        explicitLocalHTTPServerAllowed,
+                    explicitSyntheticWebViewCreationAllowed:
+                        explicitSyntheticWebViewCreationAllowed,
+                    explicitSyntheticNavigationAllowed:
+                        explicitSyntheticNavigationAllowed,
+                    explicitTestDOMInspectionAllowed:
+                        explicitTestDOMInspectionAllowed,
+                    objectAcceptanceReport:
+                        resolvedObjectAcceptanceReport,
+                    runtimeBridgeReadinessReport:
+                        resolvedRuntimeBridgeReadinessReport,
+                    emptyControllerOwner:
+                        cachedChromeMV3EmptyControllerOwner,
+                    detachedContextOwner:
+                        cachedChromeMV3DetachedContextOwner,
+                    controllerLoadOwner:
+                        cachedChromeMV3ControllerLoadOwner,
+                    liveNormalTabAttachmentSnapshot:
+                        chromeMV3LiveNormalTabAttachmentDiagnosticsSnapshot(),
+                    tearDownLoadedContextAndControllerAfterRun:
+                        tearDownLoadedContextAndControllerAfterRun
+                )
+            lastChromeMV3RuntimeContentScriptLocalFixtureRunnerReport = report
+
+            if var linkedSmokeReport =
+                lastChromeMV3RuntimeContentScriptSmokeReport {
+                linkedSmokeReport.localFixtureRunnerSummary = report.summary
+                lastChromeMV3RuntimeContentScriptSmokeReport =
+                    linkedSmokeReport
+            }
+            if var linkedReadinessReport =
+                lastChromeMV3RuntimeBridgeReadinessReport
+                    ?? resolvedRuntimeBridgeReadinessReport {
+                linkedReadinessReport.contentScriptLocalFixtureRunnerSummary =
+                    report.summary
+                lastChromeMV3RuntimeBridgeReadinessReport =
+                    linkedReadinessReport
+            }
+
+            if tearDownLoadedContextAndControllerAfterRun {
+                cachedChromeMV3ControllerLoadOwner = nil
+                cachedChromeMV3DetachedContextOwner = nil
+                cachedChromeMV3EmptyControllerOwner = nil
+            }
+
+            if writeReport {
+                let rootURL = URL(
+                    fileURLWithPath: candidate.rewrittenVariantRootPath,
+                    isDirectory: true
+                ).standardizedFileURL
+                _ = try? ChromeMV3ContentScriptLocalFixtureRunnerReportWriter
+                    .write(
+                        report,
+                        toRewrittenBundleRoot: rootURL
+                    )
+            }
+            return report
+        }
+
+        @available(macOS 15.5, *)
+        @discardableResult
+        func tearDownChromeMV3RuntimeContentScriptLocalFixtureRunnerIfEnabled()
+            -> ChromeMV3RuntimeMinimalSmokeTeardownResult?
+        {
+            guard isEnabled else { return nil }
+            lastChromeMV3RuntimeContentScriptLocalFixtureRunnerReport = nil
+            return tearDownChromeMV3RuntimeContentScriptSmokeIfEnabled()
         }
 
         @available(macOS 15.5, *)

@@ -2232,6 +2232,8 @@ struct ChromeMV3ContentScriptSmokeReport:
     var frameObservationResults:
         [ChromeMV3ContentScriptFrameMarkerObservation]
     var expandedMatrixResults: [ChromeMV3ContentScriptExpandedMatrixRecord]
+    var localFixtureRunnerSummary:
+        ChromeMV3ContentScriptLocalFixtureRunnerReportSummary? = nil
     var observationResult:
         ChromeMV3ContentScriptSmokeObservationResult
     var nextRecommendedAction:
