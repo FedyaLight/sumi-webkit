@@ -42,6 +42,8 @@ final class SumiExtensionsModule {
             ChromeMV3RuntimeMessagingContractReport?
         private var lastChromeMV3RuntimeListenerContractReport:
             ChromeMV3RuntimeListenerContractReport?
+        private var lastChromeMV3PermissionBrokerReadinessReport:
+            ChromeMV3PermissionBrokerReadinessReport?
     #endif
     weak var browserManager: BrowserManager?
     #if DEBUG
@@ -127,6 +129,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3RuntimeBridgeReadinessReport = nil
                     lastChromeMV3RuntimeMessagingContractReport = nil
                     lastChromeMV3RuntimeListenerContractReport = nil
+                    lastChromeMV3PermissionBrokerReadinessReport = nil
                 }
             #endif
             tearDownChromeMV3EmptyControllerOwner()
@@ -190,6 +193,8 @@ final class SumiExtensionsModule {
             ChromeMV3RuntimeMessagingContractReportSummary?
         let runtimeListenerContractReportSummary:
             ChromeMV3RuntimeListenerContractReportSummary?
+        let permissionBrokerReadinessReportSummary:
+            ChromeMV3PermissionBrokerReadinessReportSummary?
         #if DEBUG
             if #available(macOS 15.5, *) {
                 probeDiagnostics =
@@ -206,6 +211,8 @@ final class SumiExtensionsModule {
                     lastChromeMV3RuntimeMessagingContractReport?.summary
                 runtimeListenerContractReportSummary =
                     lastChromeMV3RuntimeListenerContractReport?.summary
+                permissionBrokerReadinessReportSummary =
+                    lastChromeMV3PermissionBrokerReadinessReport?.summary
             } else {
                 probeDiagnostics = nil
                 objectAcceptanceReport = nil
@@ -214,6 +221,7 @@ final class SumiExtensionsModule {
                 runtimeBridgeReadinessReport = nil
                 runtimeMessagingContractReportSummary = nil
                 runtimeListenerContractReportSummary = nil
+                permissionBrokerReadinessReportSummary = nil
             }
         #else
             probeDiagnostics = nil
@@ -223,6 +231,7 @@ final class SumiExtensionsModule {
             runtimeBridgeReadinessReport = nil
             runtimeMessagingContractReportSummary = nil
             runtimeListenerContractReportSummary = nil
+            permissionBrokerReadinessReportSummary = nil
         #endif
         return chromeMV3ProfileHostIfEnabled(
             candidateRewrittenVariants: candidates
@@ -238,7 +247,9 @@ final class SumiExtensionsModule {
             runtimeMessagingContractReportSummary:
                 runtimeMessagingContractReportSummary,
             runtimeListenerContractReportSummary:
-                runtimeListenerContractReportSummary
+                runtimeListenerContractReportSummary,
+            permissionBrokerReadinessReportSummary:
+                permissionBrokerReadinessReportSummary
         )
     }
 
@@ -727,6 +738,32 @@ final class SumiExtensionsModule {
 
             guard writeReport else { return report }
             return (try? ChromeMV3RuntimeListenerContractReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3PermissionBrokerReadinessReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            writeReport: Bool = false
+        ) -> ChromeMV3PermissionBrokerReadinessReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let report: ChromeMV3PermissionBrokerReadinessReport
+            do {
+                report = try ChromeMV3PermissionBrokerReadinessReportGenerator
+                    .makeReport(
+                        loadingPrerequisitesReportFrom: rootURL
+                    )
+            } catch {
+                return nil
+            }
+            lastChromeMV3PermissionBrokerReadinessReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3PermissionBrokerReadinessReportWriter.write(
                 report,
                 toRewrittenBundleRoot: rootURL
             )) ?? report

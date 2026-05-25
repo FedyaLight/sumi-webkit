@@ -589,7 +589,7 @@ final class ChromeMV3RuntimeListenerContractTests: XCTestCase {
         -> ChromeMV3RuntimeMessagingContract
     {
         ChromeMV3RuntimeMessagingContract(
-            status: .notImplemented,
+            status: .modeled,
             implementedNow: false,
             dispatchImplemented: false,
             listenerDeliveryImplemented: false,
@@ -705,9 +705,9 @@ final class ChromeMV3RuntimeListenerContractTests: XCTestCase {
             hostPermissions: ["https://example.com/*"],
             optionalHostPermissions: [],
             activeTabDeclared: false,
-            permissionBrokerImplemented: false,
-            activeTabImplemented: false,
-            hostPermissionEvaluationImplemented: false,
+            permissionBrokerImplemented: true,
+            activeTabImplemented: true,
+            hostPermissionEvaluationImplemented: true,
             userGestureRequirementModeled: true,
             grantLifetimeRequirement: "Temporary grant.",
             tabNavigationInvalidationRequirement: "Invalidate on navigation.",
@@ -718,7 +718,7 @@ final class ChromeMV3RuntimeListenerContractTests: XCTestCase {
                 "Password-manager host access required.",
             requiredBeforeContentScriptExecution: true,
             requiredBeforePasswordManagerSupport: true,
-            blockers: ["Permission broker is not implemented."],
+            blockers: ["Real permission prompts are not implemented."],
             futureTestsNeeded: []
         )
     }

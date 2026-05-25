@@ -278,8 +278,11 @@ enum ChromeMV3RuntimeEventSurfaceCapabilityStatus:
     case blockedByNoExtensionPageHost
     case blockedByNoPermissionBroker
     case blockedByNoServiceWorkerWake
+    case blockedByMissingActiveTabGrant
+    case blockedByMissingHostAccess
     case deferred
     case modeled
+    case permissionBrokerModeled
     case unsupported
 
     static func < (
@@ -304,15 +307,25 @@ struct ChromeMV3RuntimeEventSurfaceCapability:
     var neededBeforeRuntimeLoadable: Bool
 
     static func matrix(
-        surfaces: [ChromeMV3RuntimeListenerSurface]
+        surfaces: [ChromeMV3RuntimeListenerSurface],
+        permissionBroker: ChromeMV3PermissionBroker? = nil,
+        targetURL: String = "https://example.com/login"
     ) -> [ChromeMV3RuntimeEventSurfaceCapability] {
         surfaces
-            .map(capability(for:))
+            .map {
+                capability(
+                    for: $0,
+                    permissionBroker: permissionBroker,
+                    targetURL: targetURL
+                )
+            }
             .sorted { $0.surface < $1.surface }
     }
 
     private static func capability(
-        for surface: ChromeMV3RuntimeListenerSurface
+        for surface: ChromeMV3RuntimeListenerSurface,
+        permissionBroker: ChromeMV3PermissionBroker?,
+        targetURL: String
     ) -> ChromeMV3RuntimeEventSurfaceCapability {
         var statuses: [ChromeMV3RuntimeEventSurfaceCapabilityStatus] = [
             .modeled,
@@ -330,7 +343,23 @@ struct ChromeMV3RuntimeEventSurfaceCapability:
             statuses.append(.blockedByNoExtensionPageHost)
         }
         if surface.requiresPermissionActiveTabGate {
-            statuses.append(.blockedByNoPermissionBroker)
+            if let permissionBroker {
+                statuses.append(.permissionBrokerModeled)
+                let hostDecision = permissionBroker.hostAccessDecision(
+                    url: targetURL,
+                    tabID: surface.tabID
+                )
+                if hostDecision.hasHostAccess == false {
+                    statuses.append(.blockedByMissingHostAccess)
+                }
+                if permissionBroker.activeTabPermissionDeclared
+                    && hostDecision.allowedByActiveTab == false
+                {
+                    statuses.append(.blockedByMissingActiveTabGrant)
+                }
+            } else {
+                statuses.append(.blockedByNoPermissionBroker)
+            }
         }
         if surface.requiresNativeMessaging {
             statuses.append(.blockedByNativeMessagingDeferred)
@@ -784,23 +813,49 @@ struct ChromeMV3RuntimeContentScriptListenerAvailabilityState:
     Sendable
 {
     var contentScriptsDeclared: Bool
+    var hostAccessRequired: Bool
+    var hostAccessGrantedByBroker: Bool
+    var activeTabGrantAvailable: Bool
+    var permissionBrokerModeled: Bool
     var contentScriptInjectionImplemented: Bool
     var contentScriptListenersModeled: Bool
     var contentScriptListenersAvailableNow: Bool
     var blockers: [String]
 
     static func blocked(
-        contentScriptsDeclared: Bool
+        contentScriptsDeclared: Bool,
+        permissionBroker: ChromeMV3PermissionBroker? = nil,
+        targetURL: String = "https://example.com/login",
+        tabID: Int = 1
     ) -> ChromeMV3RuntimeContentScriptListenerAvailabilityState {
-        ChromeMV3RuntimeContentScriptListenerAvailabilityState(
+        let decision = permissionBroker?.hostAccessDecision(
+            url: targetURL,
+            tabID: tabID
+        )
+        let permissionBlockers: [String]
+        if let decision, decision.hasHostAccess == false {
+            permissionBlockers = [
+                "Content-script listener surface requires host access; broker decision is \(decision.status.rawValue).",
+            ] + decision.diagnostics
+        } else {
+            permissionBlockers = []
+        }
+        return ChromeMV3RuntimeContentScriptListenerAvailabilityState(
             contentScriptsDeclared: contentScriptsDeclared,
+            hostAccessRequired: contentScriptsDeclared,
+            hostAccessGrantedByBroker: decision?.hasHostAccess ?? false,
+            activeTabGrantAvailable:
+                decision?.allowedByActiveTab ?? false,
+            permissionBrokerModeled: permissionBroker != nil,
             contentScriptInjectionImplemented: false,
             contentScriptListenersModeled: true,
             contentScriptListenersAvailableNow: false,
-            blockers: [
-                "Content-script injection is not implemented.",
-                "Content-script listeners are not registered.",
-            ]
+            blockers: Array(Set(
+                [
+                    "Content-script injection is not implemented.",
+                    "Content-script listeners are not registered.",
+                ] + permissionBlockers
+            )).sorted()
         )
     }
 
@@ -809,6 +864,10 @@ struct ChromeMV3RuntimeContentScriptListenerAvailabilityState:
     ) -> ChromeMV3RuntimeContentScriptListenerAvailabilityState {
         ChromeMV3RuntimeContentScriptListenerAvailabilityState(
             contentScriptsDeclared: contentScriptsDeclared,
+            hostAccessRequired: contentScriptsDeclared,
+            hostAccessGrantedByBroker: true,
+            activeTabGrantAvailable: false,
+            permissionBrokerModeled: true,
             contentScriptInjectionImplemented: true,
             contentScriptListenersModeled: true,
             contentScriptListenersAvailableNow: false,
@@ -934,7 +993,8 @@ enum ChromeMV3RuntimeListenerResolver {
                 expected: expected,
                 receivingListenerModeled: receivingListenerModeled,
                 error: error,
-                registry: registry
+                registry: registry,
+                permissionDecision: permissionDecision
             )
         )
     }
@@ -1039,7 +1099,9 @@ enum ChromeMV3RuntimeListenerResolver {
         expected: [ChromeMV3RuntimeListenerSurfaceKind],
         receivingListenerModeled: Bool,
         error: ChromeMV3RuntimeLastErrorCase?,
-        registry: ChromeMV3RuntimeListenerRegistrySnapshot
+        registry: ChromeMV3RuntimeListenerRegistrySnapshot,
+        permissionDecision:
+            ChromeMV3RuntimeMessagingPermissionDecision
     ) -> [String] {
         var diagnostics = [
             "Route \(route.kind.rawValue) listener resolution is modeled only.",
@@ -1048,6 +1110,7 @@ enum ChromeMV3RuntimeListenerResolver {
             "canRegisterListenersNow remains false.",
             "canDispatchMessagesNow remains false.",
             "canWakeServiceWorkerNow remains false.",
+            permissionDecision.diagnosticReason,
         ]
         diagnostics.append(
             receivingListenerModeled
@@ -1060,6 +1123,7 @@ enum ChromeMV3RuntimeListenerResolver {
             )
         }
         diagnostics.append(contentsOf: registry.diagnostics)
+        diagnostics.append(contentsOf: permissionDecision.brokerDiagnostics)
         return Array(Set(diagnostics)).sorted()
     }
 }
@@ -1097,6 +1161,8 @@ struct ChromeMV3RuntimeListenerContractReportSummary:
     var canLoadContextNow: Bool
     var runtimeLoadable: Bool
     var passwordManagerListenerReady: Bool
+    var permissionBrokerReadinessReportSummary:
+        ChromeMV3PermissionBrokerReadinessReportSummary? = nil
 }
 
 struct ChromeMV3RuntimeListenerContractReport:
@@ -1121,6 +1187,8 @@ struct ChromeMV3RuntimeListenerContractReport:
         ChromeMV3RuntimeServiceWorkerEventAvailabilityContract
     var passwordManagerListenerSummary:
         ChromeMV3PasswordManagerListenerSummary
+    var permissionBrokerReadinessReportSummary:
+        ChromeMV3PermissionBrokerReadinessReportSummary? = nil
     var canRegisterListenersNow: Bool
     var canResolveReceivingListenersNow: Bool
     var canDispatchMessagesNow: Bool
@@ -1144,7 +1212,9 @@ struct ChromeMV3RuntimeListenerContractReport:
             canCreateContextNow: false,
             canLoadContextNow: false,
             runtimeLoadable: false,
-            passwordManagerListenerReady: false
+            passwordManagerListenerReady: false,
+            permissionBrokerReadinessReportSummary:
+                permissionBrokerReadinessReportSummary
         )
     }
 }
@@ -1186,12 +1256,25 @@ enum ChromeMV3RuntimeListenerContractReportGenerator {
         profileID: String = "diagnostic-profile"
     ) -> ChromeMV3RuntimeListenerContractReport {
         let extensionID = prerequisites.candidateID
+        let permissionReport =
+            ChromeMV3PermissionBrokerReadinessReportGenerator.makeReport(
+                prerequisitesReport: prerequisites,
+                profileID: profileID
+            )
+        let permissionBroker = ChromeMV3PermissionBroker(
+            state: ChromeMV3PermissionBrokerState.from(
+                manifestFacts: prerequisites.manifestFacts,
+                extensionID: extensionID,
+                profileID: profileID
+            )
+        )
         let surfaces = ChromeMV3RuntimeListenerSurface.allModeledSurfaces(
             extensionID: extensionID,
             profileID: profileID
         )
         let matrix = ChromeMV3RuntimeEventSurfaceCapability.matrix(
-            surfaces: surfaces
+            surfaces: surfaces,
+            permissionBroker: permissionBroker
         )
         let registrations = surfaces
             .map(ChromeMV3RuntimeListenerRegistrationContract.make)
@@ -1216,7 +1299,8 @@ enum ChromeMV3RuntimeListenerContractReportGenerator {
         let contentAvailability =
             ChromeMV3RuntimeContentScriptListenerAvailabilityState.blocked(
                 contentScriptsDeclared:
-                    prerequisites.manifestFacts.contentScriptsPresent
+                    prerequisites.manifestFacts.contentScriptsPresent,
+                permissionBroker: permissionBroker
             )
         let pageAvailability =
             ChromeMV3RuntimeExtensionPageListenerAvailabilityState.blocked(
@@ -1232,7 +1316,7 @@ enum ChromeMV3RuntimeListenerContractReportGenerator {
                 let permission =
                     ChromeMV3RuntimeMessagingPermissionDecision.evaluate(
                         route: route,
-                        snapshot: .empty
+                        permissionBroker: permissionBroker
                     )
                 return ChromeMV3RuntimeListenerResolver.resolve(
                     route: route,
@@ -1270,6 +1354,8 @@ enum ChromeMV3RuntimeListenerContractReportGenerator {
             serviceWorkerEventAvailabilityContract:
                 serviceWorkerAvailability,
             passwordManagerListenerSummary: passwordSummary,
+            permissionBrokerReadinessReportSummary:
+                permissionReport.summary,
             canRegisterListenersNow: false,
             canResolveReceivingListenersNow: false,
             canDispatchMessagesNow: false,
