@@ -36,6 +36,8 @@ final class SumiExtensionsModule {
             ChromeMV3ContextReadinessReport?
         private var lastChromeMV3RuntimeBridgePrerequisitesReport:
             ChromeMV3RuntimeBridgePrerequisitesReport?
+        private var lastChromeMV3RuntimeBridgeReadinessReport:
+            ChromeMV3RuntimeBridgeReadinessReport?
     #endif
     weak var browserManager: BrowserManager?
     #if DEBUG
@@ -118,6 +120,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3WebKitObjectAcceptanceReport = nil
                     lastChromeMV3ContextReadinessReport = nil
                     lastChromeMV3RuntimeBridgePrerequisitesReport = nil
+                    lastChromeMV3RuntimeBridgeReadinessReport = nil
                 }
             #endif
             tearDownChromeMV3EmptyControllerOwner()
@@ -175,6 +178,8 @@ final class SumiExtensionsModule {
         let contextReadinessReport: ChromeMV3ContextReadinessReport?
         let runtimeBridgePrerequisitesReport:
             ChromeMV3RuntimeBridgePrerequisitesReport?
+        let runtimeBridgeReadinessReport:
+            ChromeMV3RuntimeBridgeReadinessReport?
         #if DEBUG
             if #available(macOS 15.5, *) {
                 probeDiagnostics =
@@ -185,17 +190,21 @@ final class SumiExtensionsModule {
                     lastChromeMV3ContextReadinessReport
                 runtimeBridgePrerequisitesReport =
                     lastChromeMV3RuntimeBridgePrerequisitesReport
+                runtimeBridgeReadinessReport =
+                    lastChromeMV3RuntimeBridgeReadinessReport
             } else {
                 probeDiagnostics = nil
                 objectAcceptanceReport = nil
                 contextReadinessReport = nil
                 runtimeBridgePrerequisitesReport = nil
+                runtimeBridgeReadinessReport = nil
             }
         #else
             probeDiagnostics = nil
             objectAcceptanceReport = nil
             contextReadinessReport = nil
             runtimeBridgePrerequisitesReport = nil
+            runtimeBridgeReadinessReport = nil
         #endif
         return chromeMV3ProfileHostIfEnabled(
             candidateRewrittenVariants: candidates
@@ -205,7 +214,9 @@ final class SumiExtensionsModule {
             extensionObjectAcceptanceReport: objectAcceptanceReport,
             contextReadinessReport: contextReadinessReport,
             runtimeBridgePrerequisitesReport:
-                runtimeBridgePrerequisitesReport
+                runtimeBridgePrerequisitesReport,
+            runtimeBridgeReadinessReport:
+                runtimeBridgeReadinessReport
         )
     }
 
@@ -616,6 +627,32 @@ final class SumiExtensionsModule {
 
             guard writeReport else { return report }
             return (try? ChromeMV3RuntimeBridgePrerequisitesReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3RuntimeBridgeReadinessReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            writeReport: Bool = false
+        ) -> ChromeMV3RuntimeBridgeReadinessReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let report: ChromeMV3RuntimeBridgeReadinessReport
+            do {
+                report = try ChromeMV3RuntimeBridgeReadinessReportGenerator
+                    .makeReport(
+                        loadingReportsFrom: rootURL
+                    )
+            } catch {
+                return nil
+            }
+            lastChromeMV3RuntimeBridgeReadinessReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3RuntimeBridgeReadinessReportWriter.write(
                 report,
                 toRewrittenBundleRoot: rootURL
             )) ?? report

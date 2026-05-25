@@ -569,6 +569,277 @@ final class ChromeMV3ContextReadinessReportTests: XCTestCase {
         XCTAssertFalse(module.hasLoadedRuntime)
     }
 
+    @MainActor
+    func testPrerequisiteReportGeneratesRuntimeBridgeReadinessReport()
+        throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Runtime bridge readiness diagnostics require macOS 15.5.")
+        }
+
+        let root = try makeSimpleRewrittenRoot(
+            named: "runtime-readiness-direct",
+            manifest: passwordManagerManifest(),
+            files: passwordManagerFiles()
+        )
+        let runtimeReport = makePasswordManagerRuntimeLoadabilityReport(
+            rootPath: root.path
+        )
+        let contextReport = ChromeMV3ContextReadinessReportGenerator
+            .makeReport(
+                candidate: makeCandidate(rootURL: root),
+                objectAcceptanceReport: makeObjectAcceptanceReport(
+                    rootURL: root,
+                    accepted: true,
+                    runtimeReport: runtimeReport
+                ),
+                emptyControllerDiagnostics:
+                    try makeCreatedEmptyControllerDiagnostics(),
+                runtimeLoadabilityReport: runtimeReport
+            )
+        try ChromeMV3ContextReadinessReportWriter.write(
+            contextReport,
+            toRewrittenBundleRoot: root
+        )
+        let contextReportURL = root.appendingPathComponent(
+            ChromeMV3ContextReadinessReportWriter.reportFileName
+        )
+        let prerequisites =
+            ChromeMV3RuntimeBridgePrerequisitesReportGenerator.makeReport(
+                contextReadinessReport: contextReport,
+                contextReadinessReportPath: contextReportURL.path
+            )
+
+        let readiness = ChromeMV3RuntimeBridgeReadinessReportGenerator
+            .makeReport(
+                prerequisitesReport: prerequisites,
+                prerequisitesReportPath: root
+                    .appendingPathComponent(
+                        ChromeMV3RuntimeBridgePrerequisitesReportWriter
+                            .reportFileName
+                    )
+                    .path,
+                contextReadinessReport: contextReport
+            )
+
+        XCTAssertEqual(readiness.prerequisiteReportID, prerequisites.id)
+        XCTAssertEqual(readiness.candidateID, contextReport.candidateID)
+        XCTAssertEqual(
+            readiness.contextSummary.nextRequiredPromptCategory,
+            .addRuntimeBridgePrerequisites
+        )
+        XCTAssertEqual(
+            readiness.nextRequiredCategory,
+            .diagnosticRuntimePrerequisite
+        )
+        XCTAssertFalse(readiness.canCreateContextNow)
+        XCTAssertFalse(readiness.canLoadContextNow)
+        XCTAssertFalse(readiness.runtimeLoadable)
+    }
+
+    @MainActor
+    func testStorageGateReportsNotRequiredWithoutStorageFeature()
+        throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Runtime bridge readiness diagnostics require macOS 15.5.")
+        }
+
+        let root = try makeSimpleRewrittenRoot(
+            named: "runtime-readiness-no-storage",
+            manifest: minimalManifest(),
+            files: [:]
+        )
+        let contextReport = ChromeMV3ContextReadinessReportGenerator
+            .makeReport(
+                candidate: makeCandidate(rootURL: root),
+                objectAcceptanceReport: makeObjectAcceptanceReport(
+                    rootURL: root,
+                    accepted: true
+                ),
+                emptyControllerDiagnostics:
+                    try makeCreatedEmptyControllerDiagnostics(),
+                runtimeLoadabilityReport: nil
+            )
+        let prerequisites =
+            ChromeMV3RuntimeBridgePrerequisitesReportGenerator.makeReport(
+                contextReadinessReport: contextReport,
+                contextReadinessReportPath: root
+                    .appendingPathComponent(
+                        ChromeMV3ContextReadinessReportWriter.reportFileName
+                    )
+                    .path
+            )
+
+        let readiness = ChromeMV3RuntimeBridgeReadinessReportGenerator
+            .makeReport(
+                prerequisitesReport: prerequisites,
+                prerequisitesReportPath: root
+                    .appendingPathComponent(
+                        ChromeMV3RuntimeBridgePrerequisitesReportWriter
+                            .reportFileName
+                    )
+                    .path,
+                contextReadinessReport: contextReport
+            )
+
+        XCTAssertEqual(readiness.storageGate.status, .notRequired)
+        XCTAssertFalse(readiness.storageGate.extensionRequiresStorage)
+        XCTAssertFalse(readiness.storageGate.storageRuntimeImplemented)
+        XCTAssertFalse(readiness.storageGate.storageReadyForContextLoad)
+        XCTAssertTrue(readiness.storageGate.blockers.isEmpty)
+        XCTAssertTrue(
+            readiness.storageGate.areas.allSatisfy {
+                $0.status == .notRequired
+                    && $0.requiredForCandidate == false
+                    && $0.readyForContextLoad == false
+            }
+        )
+    }
+
+    @MainActor
+    func testSumiExtensionsModuleCanWriteRuntimeBridgeReadinessReportWhenEnabled()
+        throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Runtime bridge readiness diagnostics require macOS 15.5.")
+        }
+
+        let root = try makeSimpleRewrittenRoot(
+            named: "runtime-readiness-module-enabled",
+            manifest: passwordManagerManifest(),
+            files: passwordManagerFiles()
+        )
+        let runtimeReport = makePasswordManagerRuntimeLoadabilityReport(
+            rootPath: root.path
+        )
+        let contextReport = ChromeMV3ContextReadinessReportGenerator
+            .makeReport(
+                candidate: makeCandidate(rootURL: root),
+                objectAcceptanceReport: makeObjectAcceptanceReport(
+                    rootURL: root,
+                    accepted: true,
+                    runtimeReport: runtimeReport
+                ),
+                emptyControllerDiagnostics:
+                    try makeCreatedEmptyControllerDiagnostics(),
+                runtimeLoadabilityReport: runtimeReport
+            )
+        try ChromeMV3ContextReadinessReportWriter.write(
+            contextReport,
+            toRewrittenBundleRoot: root
+        )
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.extensions)
+        let probe = ChromeMV3ContextReadinessModuleProbe()
+        let module = try makeExtensionsModule(
+            registry: registry,
+            probe: probe
+        )
+
+        _ = try XCTUnwrap(
+            module.chromeMV3RuntimeBridgePrerequisitesReportIfEnabled(
+                fromRewrittenBundleRoot: root,
+                writeReport: true
+            )
+        )
+        let report = try XCTUnwrap(
+            module.chromeMV3RuntimeBridgeReadinessReportIfEnabled(
+                fromRewrittenBundleRoot: root,
+                writeReport: true
+            )
+        )
+        let reportURL = root.appendingPathComponent(
+            ChromeMV3RuntimeBridgeReadinessReportWriter.reportFileName
+        )
+        let diagnostics = module.chromeMV3InventoryDiagnosticsIfEnabled(
+            rootURL: root
+        )
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: reportURL.path))
+        XCTAssertFalse(report.runtimeLoadable)
+        XCTAssertFalse(report.canCreateContextNow)
+        XCTAssertFalse(report.canLoadContextNow)
+        XCTAssertEqual(diagnostics?.runtimeBridgeReadinessReport, report)
+        XCTAssertEqual(probe.managerCount, 0)
+        XCTAssertFalse(module.hasLoadedRuntime)
+    }
+
+    @MainActor
+    func testDisabledModuleDoesNotWriteRuntimeBridgeReadinessReport()
+        throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Runtime bridge readiness diagnostics require macOS 15.5.")
+        }
+
+        let root = try makeSimpleRewrittenRoot(
+            named: "runtime-readiness-module-disabled",
+            manifest: passwordManagerManifest(),
+            files: passwordManagerFiles()
+        )
+        let contextReport = ChromeMV3ContextReadinessReportGenerator
+            .makeReport(
+                candidate: makeCandidate(rootURL: root),
+                objectAcceptanceReport: makeObjectAcceptanceReport(
+                    rootURL: root,
+                    accepted: true
+                ),
+                emptyControllerDiagnostics:
+                    try makeCreatedEmptyControllerDiagnostics(),
+                runtimeLoadabilityReport: nil
+            )
+        try ChromeMV3ContextReadinessReportWriter.write(
+            contextReport,
+            toRewrittenBundleRoot: root
+        )
+        let prerequisites =
+            ChromeMV3RuntimeBridgePrerequisitesReportGenerator.makeReport(
+                contextReadinessReport: contextReport,
+                contextReadinessReportPath: root
+                    .appendingPathComponent(
+                        ChromeMV3ContextReadinessReportWriter.reportFileName
+                    )
+                    .path
+            )
+        try ChromeMV3RuntimeBridgePrerequisitesReportWriter.write(
+            prerequisites,
+            toRewrittenBundleRoot: root
+        )
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        let probe = ChromeMV3ContextReadinessModuleProbe()
+        let module = try makeExtensionsModule(
+            registry: registry,
+            probe: probe
+        )
+
+        let report =
+            module.chromeMV3RuntimeBridgeReadinessReportIfEnabled(
+                fromRewrittenBundleRoot: root,
+                writeReport: true
+            )
+
+        XCTAssertNil(report)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(
+                    ChromeMV3RuntimeBridgeReadinessReportWriter
+                        .reportFileName
+                ).path
+            )
+        )
+        XCTAssertEqual(probe.managerCount, 0)
+        XCTAssertFalse(module.hasLoadedRuntime)
+    }
+
     func testReportConsumerBlocksMissingGeneratedContextReadinessReport()
         throws
     {
@@ -1018,6 +1289,14 @@ final class ChromeMV3ContextReadinessReportTests: XCTestCase {
             "action": [
                 "default_popup": "popup.html",
             ],
+        ]
+    }
+
+    private func passwordManagerFiles() -> [String: String] {
+        [
+            "background.js": "chrome.runtime.onMessage.addListener(() => {});\n",
+            "content.js": "chrome.runtime.sendMessage({type: 'probe'});\n",
+            "popup.html": "<!doctype html><title>Popup</title>",
         ]
     }
 
