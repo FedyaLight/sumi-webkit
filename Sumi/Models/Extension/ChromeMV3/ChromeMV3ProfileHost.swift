@@ -90,6 +90,8 @@ struct ChromeMV3ProfileHostDiagnostics: Codable, Equatable, Sendable {
         ChromeMV3RuntimeBridgePrerequisitesReport?
     var runtimeBridgeReadinessReport:
         ChromeMV3RuntimeBridgeReadinessReport?
+    var runtimeMessagingContractReportSummary:
+        ChromeMV3RuntimeMessagingContractReportSummary?
     var preflightResults: [ChromeMV3RuntimePreflightResult]
     var webViewSurfaceMappings: [ChromeMV3WebViewSurfaceMappingDiagnostic]
     var disabledRuntimeInvariantStatus: ChromeMV3DisabledRuntimeInvariantStatus
@@ -244,6 +246,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
             ChromeMV3RuntimeBridgePrerequisitesReport? = nil,
         runtimeBridgeReadinessReport:
             ChromeMV3RuntimeBridgeReadinessReport? = nil,
+        runtimeMessagingContractReportSummary:
+            ChromeMV3RuntimeMessagingContractReportSummary? = nil,
         surfaceMappings: [ChromeMV3WebViewSurfaceMapping] =
             ChromeMV3WebViewSurfaceInventory.currentSumiMappings
     ) -> ChromeMV3ProfileHostDiagnostics {
@@ -306,6 +310,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
                 runtimeBridgePrerequisitesReport,
             runtimeBridgeReadinessReport:
                 runtimeBridgeReadinessReport,
+            runtimeMessagingContractReportSummary:
+                runtimeMessagingContractReportSummary,
             preflightResults: preflightResults.sorted {
                 ($0.candidateID ?? "") < ($1.candidateID ?? "")
             },
