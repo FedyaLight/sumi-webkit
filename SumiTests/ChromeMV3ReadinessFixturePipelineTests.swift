@@ -361,7 +361,7 @@ final class ChromeMV3ReadinessFixturePipelineTests: XCTestCase {
         XCTAssertTrue(
             report.nativeMessagingPrerequisites.nativeMessagingBlocked
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             report.nativeMessagingPrerequisites.hostValidationImplemented
         )
         XCTAssertFalse(

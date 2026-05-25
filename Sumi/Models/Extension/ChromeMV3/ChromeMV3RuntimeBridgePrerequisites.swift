@@ -747,13 +747,13 @@ enum ChromeMV3RuntimeBridgePrerequisitesReportGenerator {
             status: .blocked,
             nativeMessagingDetected: detected,
             nativeMessagingBlocked: true,
-            hostManifestLookupImplemented: false,
-            hostValidationImplemented: false,
+            hostManifestLookupImplemented: true,
+            hostValidationImplemented: true,
             userConsentImplemented: false,
             processLaunchImplemented: false,
             stdioFramingRequired: true,
             inboundHostMessageLimitBytes: 1_048_576,
-            outboundHostMessageLimitBytes: 4_294_967_296,
+            outboundHostMessageLimitBytes: 67_108_864,
             portLifecycleModeled: true,
             hostExitBehaviorModeled: true,
             disabledModuleBehavior:
@@ -764,14 +764,14 @@ enum ChromeMV3RuntimeBridgePrerequisitesReportGenerator {
             futureSecurityReviewRequired: true,
             blockers: uniqueSorted(blockers),
             hostManifestLookupRequirements: [
-                "Resolve user-level and system-level host manifest locations per browser/profile policy.",
-                "Validate host names before lookup.",
-                "Read host manifest JSON without launching the host.",
-                "Reject missing, unreadable, or malformed host manifests with deterministic diagnostics.",
+                "Host names are validated before exact-path lookup.",
+                "User-level and system-level host manifest locations are recorded as future policy inputs.",
+                "Only explicit test roots are read by the current lookup model.",
+                "Missing, unreadable, or malformed host manifests produce deterministic diagnostics.",
             ],
             allowedHostValidationRequirements: [
-                "Validate extension origin against host manifest allowed origins.",
-                "Validate host executable path policy before any future launch.",
+                "Extension origins are evaluated against host manifest allowed origins.",
+                "Host executable path policy is validated without checking launchability.",
                 "Require user consent or enterprise policy before granting native host access.",
                 "Record host exit and malformed frame behavior before exposing a native port.",
             ],
@@ -1731,6 +1731,8 @@ struct ChromeMV3RuntimeBridgeReadinessReport:
     var permissionsActiveTabGate:
         ChromeMV3PermissionsActiveTabReadinessGate
     var nativeMessagingGate: ChromeMV3NativeMessagingReadinessGate
+    var nativeMessagingReadinessReportSummary:
+        ChromeMV3NativeMessagingReadinessReportSummary? = nil
     var serviceWorkerLifecycleGate:
         ChromeMV3ServiceWorkerLifecycleReadinessGate
     var serviceWorkerLifecycleReportSummary:
@@ -1738,6 +1740,8 @@ struct ChromeMV3RuntimeBridgeReadinessReport:
     var passwordManagerGate: ChromeMV3PasswordManagerReadinessGate
     var runtimeMessagingContractReportSummary:
         ChromeMV3RuntimeMessagingContractReportSummary
+    var runtimeMessageDispatcherSkeletonReportSummary:
+        ChromeMV3RuntimeMessageDispatcherSkeletonReportSummary? = nil
     var runtimeListenerContractReportSummary:
         ChromeMV3RuntimeListenerContractReportSummary? = nil
     var permissionBrokerReadinessReportSummary:
@@ -1933,6 +1937,10 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
             prerequisites.nativeMessagingPrerequisites,
             installReport: installReport
         )
+        let nativeMessagingReadinessReport =
+            ChromeMV3NativeMessagingReadinessReportGenerator.makeReport(
+                prerequisitesReport: prerequisites
+            )
         let lifecycle = serviceWorkerLifecycleGate(
             prerequisites.serviceWorkerLifecyclePrerequisites,
             manifestFacts: prerequisites.manifestFacts
@@ -1953,6 +1961,9 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
             ChromeMV3RuntimeMessagingContractReportGenerator.makeReport(
                 prerequisitesReport: prerequisites
             )
+        let dispatcherReport =
+            ChromeMV3RuntimeMessageDispatcherSkeletonReportGenerator
+            .makeReport(prerequisitesReport: prerequisites)
         let listenerContractReport =
             ChromeMV3RuntimeListenerContractReportGenerator.makeReport(
                 prerequisitesReport: prerequisites,
@@ -1961,11 +1972,13 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
         let blockingReasons = uniqueSorted(
             prerequisites.contextReadinessConsumerDiagnostic.blockingReasons
                 + messaging.blockers
+                + dispatcherReport.diagnostics
                 + listenerContractReport.diagnostics
                 + storage.blockers
                 + storageBrokerReport.blockers
                 + permissions.blockers
                 + native.blockers
+                + nativeMessagingReadinessReport.blockers
                 + lifecycle.blockers
                 + password.blockers
                 + [
@@ -2015,12 +2028,16 @@ enum ChromeMV3RuntimeBridgeReadinessReportGenerator {
                 storageBrokerReport.summary.storageAPIOperationsReportSummary,
             permissionsActiveTabGate: permissions,
             nativeMessagingGate: native,
+            nativeMessagingReadinessReportSummary:
+                nativeMessagingReadinessReport.summary,
             serviceWorkerLifecycleGate: lifecycle,
             serviceWorkerLifecycleReportSummary:
                 serviceWorkerLifecycleReport.summary,
             passwordManagerGate: password,
             runtimeMessagingContractReportSummary:
                 messagingContractReport.summary,
+            runtimeMessageDispatcherSkeletonReportSummary:
+                dispatcherReport.summary,
             runtimeListenerContractReportSummary:
                 listenerContractReport.summary,
             permissionBrokerReadinessReportSummary:

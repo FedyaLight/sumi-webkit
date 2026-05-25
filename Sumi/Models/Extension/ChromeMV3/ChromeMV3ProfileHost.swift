@@ -96,6 +96,10 @@ struct ChromeMV3ProfileHostDiagnostics: Codable, Equatable, Sendable {
         ChromeMV3StorageAPIOperationsReportSummary? = nil
     var runtimeMessagingContractReportSummary:
         ChromeMV3RuntimeMessagingContractReportSummary?
+    var runtimeMessageDispatcherSkeletonReportSummary:
+        ChromeMV3RuntimeMessageDispatcherSkeletonReportSummary? = nil
+    var nativeMessagingReadinessReportSummary:
+        ChromeMV3NativeMessagingReadinessReportSummary? = nil
     var runtimeListenerContractReportSummary:
         ChromeMV3RuntimeListenerContractReportSummary? = nil
     var serviceWorkerLifecycleReportSummary:
@@ -266,6 +270,10 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
             ChromeMV3StorageAPIOperationsReportSummary? = nil,
         runtimeMessagingContractReportSummary:
             ChromeMV3RuntimeMessagingContractReportSummary? = nil,
+        runtimeMessageDispatcherSkeletonReportSummary:
+            ChromeMV3RuntimeMessageDispatcherSkeletonReportSummary? = nil,
+        nativeMessagingReadinessReportSummary:
+            ChromeMV3NativeMessagingReadinessReportSummary? = nil,
         runtimeListenerContractReportSummary:
             ChromeMV3RuntimeListenerContractReportSummary? = nil,
         serviceWorkerLifecycleReportSummary:
@@ -344,6 +352,10 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
                 storageAPIOperationsReportSummary,
             runtimeMessagingContractReportSummary:
                 runtimeMessagingContractReportSummary,
+            runtimeMessageDispatcherSkeletonReportSummary:
+                runtimeMessageDispatcherSkeletonReportSummary,
+            nativeMessagingReadinessReportSummary:
+                nativeMessagingReadinessReportSummary,
             runtimeListenerContractReportSummary:
                 runtimeListenerContractReportSummary,
             serviceWorkerLifecycleReportSummary:
