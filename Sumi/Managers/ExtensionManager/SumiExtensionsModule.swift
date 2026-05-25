@@ -42,6 +42,8 @@ final class SumiExtensionsModule {
             ChromeMV3ContextCreationGateReport?
         private var lastChromeMV3ControllerLoadGateReport:
             ChromeMV3ControllerLoadGateReport?
+        private var lastChromeMV3RuntimeMinimalSmokeReport:
+            ChromeMV3RuntimeMinimalSmokeReport?
         private var lastChromeMV3RuntimeBridgePrerequisitesReport:
             ChromeMV3RuntimeBridgePrerequisitesReport?
         private var lastChromeMV3RuntimeBridgeReadinessReport:
@@ -153,6 +155,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3ContextReadinessReport = nil
                     lastChromeMV3ContextCreationGateReport = nil
                     lastChromeMV3ControllerLoadGateReport = nil
+                    lastChromeMV3RuntimeMinimalSmokeReport = nil
                     lastChromeMV3RuntimeBridgePrerequisitesReport = nil
                     lastChromeMV3RuntimeBridgeReadinessReport = nil
                     lastChromeMV3StorageBrokerReadinessReport = nil
@@ -223,6 +226,8 @@ final class SumiExtensionsModule {
         let contextReadinessReport: ChromeMV3ContextReadinessReport?
         let contextCreationGateReport: ChromeMV3ContextCreationGateReport?
         let controllerLoadGateReport: ChromeMV3ControllerLoadGateReport?
+        let runtimeMinimalSmokeReport:
+            ChromeMV3RuntimeMinimalSmokeReport?
         let runtimeBridgePrerequisitesReport:
             ChromeMV3RuntimeBridgePrerequisitesReport?
         let runtimeBridgeReadinessReport:
@@ -261,6 +266,8 @@ final class SumiExtensionsModule {
                     lastChromeMV3ContextCreationGateReport
                 controllerLoadGateReport =
                     lastChromeMV3ControllerLoadGateReport
+                runtimeMinimalSmokeReport =
+                    lastChromeMV3RuntimeMinimalSmokeReport
                 runtimeBridgePrerequisitesReport =
                     lastChromeMV3RuntimeBridgePrerequisitesReport
                 runtimeBridgeReadinessReport =
@@ -294,6 +301,7 @@ final class SumiExtensionsModule {
                 contextReadinessReport = nil
                 contextCreationGateReport = nil
                 controllerLoadGateReport = nil
+                runtimeMinimalSmokeReport = nil
                 runtimeBridgePrerequisitesReport = nil
                 runtimeBridgeReadinessReport = nil
                 storageBrokerReadinessReportSummary = nil
@@ -314,6 +322,7 @@ final class SumiExtensionsModule {
             contextReadinessReport = nil
             contextCreationGateReport = nil
             controllerLoadGateReport = nil
+            runtimeMinimalSmokeReport = nil
             runtimeBridgePrerequisitesReport = nil
             runtimeBridgeReadinessReport = nil
             storageBrokerReadinessReportSummary = nil
@@ -337,6 +346,7 @@ final class SumiExtensionsModule {
             contextReadinessReport: contextReadinessReport,
             contextCreationGateReport: contextCreationGateReport,
             controllerLoadGateReport: controllerLoadGateReport,
+            runtimeMinimalSmokeReport: runtimeMinimalSmokeReport,
             runtimeBridgePrerequisitesReport:
                 runtimeBridgePrerequisitesReport,
             runtimeBridgeReadinessReport:
@@ -1259,6 +1269,110 @@ final class SumiExtensionsModule {
                 cachedChromeMV3ControllerLoadOwner?.tearDown()
             cachedChromeMV3ControllerLoadOwner = nil
             return diagnostics
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3RuntimeMinimalSmokeHarnessReportIfEnabled(
+            explicitInternalSmokeHarnessAllowed: Bool,
+            explicitSyntheticWebViewCreationAllowed: Bool = false,
+            candidate: ChromeMV3RewrittenVariantCandidate,
+            objectAcceptanceReport:
+                ChromeMV3WebKitObjectAcceptanceReport? = nil,
+            runtimeBridgeReadinessReport:
+                ChromeMV3RuntimeBridgeReadinessReport? = nil,
+            writeReport: Bool = false,
+            tearDownLoadedContextAndControllerAfterRun: Bool = true
+        ) -> ChromeMV3RuntimeMinimalSmokeReport? {
+            guard isEnabled else { return nil }
+
+            let resolvedObjectAcceptanceReport =
+                objectAcceptanceReport
+                    ?? lastChromeMV3WebKitObjectAcceptanceReport
+                    ?? loadChromeMV3WebKitObjectAcceptanceReport(
+                        fromRewrittenBundleRootPath:
+                            candidate.rewrittenVariantRootPath
+                    )
+            let resolvedRuntimeBridgeReadinessReport =
+                runtimeBridgeReadinessReport
+                    ?? lastChromeMV3RuntimeBridgeReadinessReport
+                    ?? loadChromeMV3RuntimeBridgeReadinessReport(
+                        fromRewrittenBundleRootPath:
+                            candidate.rewrittenVariantRootPath
+                    )
+            let report = ChromeMV3RuntimeMinimalSmokeHarness.run(
+                candidate: candidate,
+                extensionsModuleEnabled: true,
+                explicitInternalSmokeHarnessAllowed:
+                    explicitInternalSmokeHarnessAllowed,
+                explicitSyntheticWebViewCreationAllowed:
+                    explicitSyntheticWebViewCreationAllowed,
+                objectAcceptanceReport:
+                    resolvedObjectAcceptanceReport,
+                runtimeBridgeReadinessReport:
+                    resolvedRuntimeBridgeReadinessReport,
+                emptyControllerOwner:
+                    cachedChromeMV3EmptyControllerOwner,
+                detachedContextOwner:
+                    cachedChromeMV3DetachedContextOwner,
+                controllerLoadOwner:
+                    cachedChromeMV3ControllerLoadOwner,
+                liveNormalTabAttachmentSnapshot:
+                    chromeMV3LiveNormalTabAttachmentDiagnosticsSnapshot(),
+                tearDownLoadedContextAndControllerAfterRun:
+                    tearDownLoadedContextAndControllerAfterRun,
+                diagnosticsResetForFutureRuns:
+                    tearDownLoadedContextAndControllerAfterRun
+            )
+            lastChromeMV3RuntimeMinimalSmokeReport = report
+
+            if report.teardownResult.diagnosticsResetForFutureRuns {
+                cachedChromeMV3ControllerLoadOwner = nil
+                cachedChromeMV3DetachedContextOwner = nil
+                cachedChromeMV3EmptyControllerOwner = nil
+            }
+
+            if writeReport {
+                let rootURL = URL(
+                    fileURLWithPath: candidate.rewrittenVariantRootPath,
+                    isDirectory: true
+                ).standardizedFileURL
+                _ = try? ChromeMV3RuntimeMinimalSmokeReportWriter.write(
+                    report,
+                    toRewrittenBundleRoot: rootURL
+                )
+            }
+            return report
+        }
+
+        @available(macOS 15.5, *)
+        @discardableResult
+        func tearDownChromeMV3RuntimeMinimalSmokeHarnessIfEnabled()
+            -> ChromeMV3RuntimeMinimalSmokeTeardownResult?
+        {
+            guard isEnabled else { return nil }
+            let loadDiagnostics =
+                cachedChromeMV3ControllerLoadOwner?.tearDown()
+            let detachedDiagnostics =
+                cachedChromeMV3DetachedContextOwner?.tearDown()
+            let controllerDiagnostics =
+                cachedChromeMV3EmptyControllerOwner?.tearDown(
+                    trigger: .explicitReset
+                )
+            cachedChromeMV3ControllerLoadOwner = nil
+            cachedChromeMV3DetachedContextOwner = nil
+            cachedChromeMV3EmptyControllerOwner = nil
+            return ChromeMV3RuntimeMinimalSmokeReportGenerator
+                .teardownResult(
+                    webViewCreated: false,
+                    configurationCreated: false,
+                    syntheticConfigurationAttachedAfterTeardown: false,
+                    loadedOwnerDiagnostics: loadDiagnostics,
+                    detachedContextReleased:
+                        detachedDiagnostics?.state == .released,
+                    controllerOwnerTornDown:
+                        controllerDiagnostics?.controllerState == .tornDown,
+                    diagnosticsResetForFutureRuns: true
+                )
         }
 
         @available(macOS 15.5, *)
