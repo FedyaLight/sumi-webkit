@@ -44,6 +44,8 @@ final class SumiExtensionsModule {
             ChromeMV3ControllerLoadGateReport?
         private var lastChromeMV3RuntimeMinimalSmokeReport:
             ChromeMV3RuntimeMinimalSmokeReport?
+        private var lastChromeMV3RuntimeContentScriptSmokeReport:
+            ChromeMV3ContentScriptSmokeReport?
         private var lastChromeMV3RuntimeBridgePrerequisitesReport:
             ChromeMV3RuntimeBridgePrerequisitesReport?
         private var lastChromeMV3RuntimeBridgeReadinessReport:
@@ -156,6 +158,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3ContextCreationGateReport = nil
                     lastChromeMV3ControllerLoadGateReport = nil
                     lastChromeMV3RuntimeMinimalSmokeReport = nil
+                    lastChromeMV3RuntimeContentScriptSmokeReport = nil
                     lastChromeMV3RuntimeBridgePrerequisitesReport = nil
                     lastChromeMV3RuntimeBridgeReadinessReport = nil
                     lastChromeMV3StorageBrokerReadinessReport = nil
@@ -228,6 +231,8 @@ final class SumiExtensionsModule {
         let controllerLoadGateReport: ChromeMV3ControllerLoadGateReport?
         let runtimeMinimalSmokeReport:
             ChromeMV3RuntimeMinimalSmokeReport?
+        let runtimeContentScriptSmokeReport:
+            ChromeMV3ContentScriptSmokeReport?
         let runtimeBridgePrerequisitesReport:
             ChromeMV3RuntimeBridgePrerequisitesReport?
         let runtimeBridgeReadinessReport:
@@ -268,6 +273,8 @@ final class SumiExtensionsModule {
                     lastChromeMV3ControllerLoadGateReport
                 runtimeMinimalSmokeReport =
                     lastChromeMV3RuntimeMinimalSmokeReport
+                runtimeContentScriptSmokeReport =
+                    lastChromeMV3RuntimeContentScriptSmokeReport
                 runtimeBridgePrerequisitesReport =
                     lastChromeMV3RuntimeBridgePrerequisitesReport
                 runtimeBridgeReadinessReport =
@@ -302,6 +309,7 @@ final class SumiExtensionsModule {
                 contextCreationGateReport = nil
                 controllerLoadGateReport = nil
                 runtimeMinimalSmokeReport = nil
+                runtimeContentScriptSmokeReport = nil
                 runtimeBridgePrerequisitesReport = nil
                 runtimeBridgeReadinessReport = nil
                 storageBrokerReadinessReportSummary = nil
@@ -323,6 +331,7 @@ final class SumiExtensionsModule {
             contextCreationGateReport = nil
             controllerLoadGateReport = nil
             runtimeMinimalSmokeReport = nil
+            runtimeContentScriptSmokeReport = nil
             runtimeBridgePrerequisitesReport = nil
             runtimeBridgeReadinessReport = nil
             storageBrokerReadinessReportSummary = nil
@@ -347,6 +356,8 @@ final class SumiExtensionsModule {
             contextCreationGateReport: contextCreationGateReport,
             controllerLoadGateReport: controllerLoadGateReport,
             runtimeMinimalSmokeReport: runtimeMinimalSmokeReport,
+            runtimeContentScriptSmokeReport:
+                runtimeContentScriptSmokeReport,
             runtimeBridgePrerequisitesReport:
                 runtimeBridgePrerequisitesReport,
             runtimeBridgeReadinessReport:
@@ -1345,8 +1356,120 @@ final class SumiExtensionsModule {
         }
 
         @available(macOS 15.5, *)
+        func chromeMV3RuntimeContentScriptSmokeReportIfEnabled(
+            explicitInternalContentScriptSmokeAllowed: Bool,
+            explicitSyntheticWebViewCreationAllowed: Bool = false,
+            explicitSyntheticNavigationAllowed: Bool = false,
+            candidate: ChromeMV3RewrittenVariantCandidate,
+            objectAcceptanceReport:
+                ChromeMV3WebKitObjectAcceptanceReport? = nil,
+            runtimeBridgeReadinessReport:
+                ChromeMV3RuntimeBridgeReadinessReport? = nil,
+            writeReport: Bool = false,
+            tearDownLoadedContextAndControllerAfterRun: Bool = true
+        ) -> ChromeMV3ContentScriptSmokeReport? {
+            guard isEnabled else { return nil }
+
+            let resolvedObjectAcceptanceReport =
+                objectAcceptanceReport
+                    ?? lastChromeMV3WebKitObjectAcceptanceReport
+                    ?? loadChromeMV3WebKitObjectAcceptanceReport(
+                        fromRewrittenBundleRootPath:
+                            candidate.rewrittenVariantRootPath
+                    )
+            let resolvedRuntimeBridgeReadinessReport =
+                runtimeBridgeReadinessReport
+                    ?? lastChromeMV3RuntimeBridgeReadinessReport
+                    ?? loadChromeMV3RuntimeBridgeReadinessReport(
+                        fromRewrittenBundleRootPath:
+                            candidate.rewrittenVariantRootPath
+                    )
+            let report = ChromeMV3ContentScriptSmokeHarness.run(
+                candidate: candidate,
+                extensionsModuleEnabled: true,
+                explicitInternalContentScriptSmokeAllowed:
+                    explicitInternalContentScriptSmokeAllowed,
+                explicitSyntheticWebViewCreationAllowed:
+                    explicitSyntheticWebViewCreationAllowed,
+                explicitSyntheticNavigationAllowed:
+                    explicitSyntheticNavigationAllowed,
+                objectAcceptanceReport:
+                    resolvedObjectAcceptanceReport,
+                runtimeBridgeReadinessReport:
+                    resolvedRuntimeBridgeReadinessReport,
+                emptyControllerOwner:
+                    cachedChromeMV3EmptyControllerOwner,
+                detachedContextOwner:
+                    cachedChromeMV3DetachedContextOwner,
+                controllerLoadOwner:
+                    cachedChromeMV3ControllerLoadOwner,
+                liveNormalTabAttachmentSnapshot:
+                    chromeMV3LiveNormalTabAttachmentDiagnosticsSnapshot(),
+                tearDownLoadedContextAndControllerAfterRun:
+                    tearDownLoadedContextAndControllerAfterRun
+            )
+            lastChromeMV3RuntimeContentScriptSmokeReport = report
+
+            if report.gateDecision.canRunContentScriptSmokeNow,
+               let minimalReport = lastChromeMV3RuntimeMinimalSmokeReport {
+                var linkedMinimalReport = minimalReport
+                linkedMinimalReport.contentScriptSmokeSummary = report.summary
+                lastChromeMV3RuntimeMinimalSmokeReport = linkedMinimalReport
+            }
+
+            if tearDownLoadedContextAndControllerAfterRun {
+                cachedChromeMV3ControllerLoadOwner = nil
+                cachedChromeMV3DetachedContextOwner = nil
+                cachedChromeMV3EmptyControllerOwner = nil
+            }
+
+            if writeReport {
+                let rootURL = URL(
+                    fileURLWithPath: candidate.rewrittenVariantRootPath,
+                    isDirectory: true
+                ).standardizedFileURL
+                _ = try? ChromeMV3ContentScriptSmokeReportWriter.write(
+                    report,
+                    toRewrittenBundleRoot: rootURL
+                )
+            }
+            return report
+        }
+
+        @available(macOS 15.5, *)
         @discardableResult
         func tearDownChromeMV3RuntimeMinimalSmokeHarnessIfEnabled()
+            -> ChromeMV3RuntimeMinimalSmokeTeardownResult?
+        {
+            guard isEnabled else { return nil }
+            let loadDiagnostics =
+                cachedChromeMV3ControllerLoadOwner?.tearDown()
+            let detachedDiagnostics =
+                cachedChromeMV3DetachedContextOwner?.tearDown()
+            let controllerDiagnostics =
+                cachedChromeMV3EmptyControllerOwner?.tearDown(
+                    trigger: .explicitReset
+                )
+            cachedChromeMV3ControllerLoadOwner = nil
+            cachedChromeMV3DetachedContextOwner = nil
+            cachedChromeMV3EmptyControllerOwner = nil
+            return ChromeMV3RuntimeMinimalSmokeReportGenerator
+                .teardownResult(
+                    webViewCreated: false,
+                    configurationCreated: false,
+                    syntheticConfigurationAttachedAfterTeardown: false,
+                    loadedOwnerDiagnostics: loadDiagnostics,
+                    detachedContextReleased:
+                        detachedDiagnostics?.state == .released,
+                    controllerOwnerTornDown:
+                        controllerDiagnostics?.controllerState == .tornDown,
+                    diagnosticsResetForFutureRuns: true
+                )
+        }
+
+        @available(macOS 15.5, *)
+        @discardableResult
+        func tearDownChromeMV3RuntimeContentScriptSmokeIfEnabled()
             -> ChromeMV3RuntimeMinimalSmokeTeardownResult?
         {
             guard isEnabled else { return nil }
