@@ -151,6 +151,7 @@ enum ChromeMV3ManifestValidator {
                 object["declarative_net_request"]
             ),
             sidePanel: parseSidePanel(object["side_panel"]),
+            oauth2: parseOAuth2(object["oauth2"]),
             commands: parseCommands(object["commands"]),
             minimumChromeVersion: stringValue(object["minimum_chrome_version"]),
             browserSpecificSettings: parseJSONValueObject(
@@ -462,6 +463,14 @@ enum ChromeMV3ManifestValidator {
         guard let object = value as? [String: Any] else { return nil }
         return ChromeMV3SidePanel(
             defaultPath: stringValue(object["default_path"])
+        )
+    }
+
+    private static func parseOAuth2(_ value: Any?) -> ChromeMV3OAuth2? {
+        guard let object = value as? [String: Any] else { return nil }
+        return ChromeMV3OAuth2(
+            clientID: stringValue(object["client_id"]),
+            scopes: stringArray(object["scopes"]).sorted()
         )
     }
 

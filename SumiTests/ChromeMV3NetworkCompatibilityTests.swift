@@ -535,6 +535,7 @@ final class ChromeMV3NetworkCompatibilityTests: XCTestCase {
                     ]
                 ),
             sidePanel: nil,
+            oauth2: nil,
             commands: [:],
             minimumChromeVersion: nil,
             browserSpecificSettings: [:],

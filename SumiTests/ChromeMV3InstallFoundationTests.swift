@@ -234,6 +234,25 @@ final class ChromeMV3InstallFoundationTests: XCTestCase {
         XCTAssertTrue(report.nativeHostAPIs.contains(.sidePanel))
         XCTAssertTrue(report.nativeHostAPIs.contains(.identity))
         XCTAssertTrue(report.needsVerificationAPIs.contains(.offscreen))
+        XCTAssertTrue(report.shimmedAPIs.contains(.sidePanel))
+        XCTAssertTrue(report.shimmedAPIs.contains(.offscreen))
+        XCTAssertTrue(report.shimmedAPIs.contains(.identity))
+        XCTAssertEqual(
+            report.sidePanelOffscreenIdentitySummary.sidePanelDefaultPath,
+            "side-panel.html"
+        )
+        XCTAssertFalse(
+            report.sidePanelOffscreenIdentitySummary
+                .sidePanelAvailableInProduct
+        )
+        XCTAssertFalse(
+            report.sidePanelOffscreenIdentitySummary
+                .offscreenAvailableInProduct
+        )
+        XCTAssertFalse(
+            report.sidePanelOffscreenIdentitySummary
+                .identityExternalAuthNetworkAllowed
+        )
     }
 
     func testDetectsPasswordManagerRelevantManifestFeatures() throws {

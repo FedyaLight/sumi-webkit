@@ -106,6 +106,8 @@ private enum ChromeMV3CapabilityDetection: Sendable {
     case action
     case declarativeNetRequest
     case sidePanel
+    case offscreen
+    case identity
     case devtools
     case enterprise
     case i18n
@@ -137,6 +139,12 @@ private enum ChromeMV3CapabilityDetection: Sendable {
         case .sidePanel:
             return manifest.sidePanel != nil
                 || manifest.declaresPermission("sidePanel")
+        case .offscreen:
+            return manifest.declaresPermission("offscreen")
+        case .identity:
+            return manifest.declaresPermission("identity")
+                || manifest.declaresPermission("identity.email")
+                || manifest.oauth2 != nil
         case .devtools:
             return manifest.devtoolsPage != nil
                 || manifest.topLevelKeys.contains("devtools_page")
@@ -341,31 +349,34 @@ enum ChromeMV3CapabilityClassifier {
         ),
         ChromeMV3CapabilityDefinition(
             api: .sidePanel,
-            statuses: [.nativeHost, .deferred],
+            statuses: [.shim, .nativeHost, .deferred],
             evidence: [
-                chrome("Chrome sidePanel API requires browser UI ownership.", chromeAPIReference + "/sidePanel"),
-                deferred("No Sumi side-panel product/runtime host in this task.")
+                chrome("Chrome sidePanel API requires browser UI ownership and local extension page resources.", chromeAPIReference + "/sidePanel"),
+                sumi("Current compatibility layer can resolve side_panel.default_path and model selected sidePanel methods in internal synthetic scope."),
+                deferred("No Sumi side-panel product UI or normal-tab runtime host is implemented.")
             ],
             detection: .sidePanel
         ),
         ChromeMV3CapabilityDefinition(
             api: .offscreen,
-            statuses: [.deferred, .needsVerification],
+            statuses: [.shim, .deferred, .needsVerification],
             evidence: [
-                chrome("Chrome offscreen API creates bounded offscreen documents.", chromeAPIReference + "/offscreen"),
-                deferred("No hidden offscreen document runtime is allowed by this task."),
+                chrome("Chrome offscreen API creates bounded extension-local offscreen documents with URL, reasons, and justification.", chromeAPIReference + "/offscreen"),
+                sumi("Current compatibility layer validates and records offscreen requests as model-only state."),
+                deferred("No hidden offscreen document product runtime is allowed by this task."),
                 fixture("Verify if a bounded host is ever justified; never emulate persistent background pages.")
             ],
-            detection: .permission("offscreen")
+            detection: .offscreen
         ),
         ChromeMV3CapabilityDefinition(
             api: .identity,
-            statuses: [.nativeHost, .deferred],
+            statuses: [.shim, .nativeHost, .deferred],
             evidence: [
-                chrome("Chrome identity API owns OAuth/token flows.", chromeAPIReference + "/identity"),
-                deferred("Requires product privacy and account-flow design.")
+                chrome("Chrome identity API owns redirect URL generation, OAuth WebAuth flows, token cache, and profile account behavior.", chromeAPIReference + "/identity"),
+                sumi("Current compatibility layer returns deterministic redirect URLs and blocks OAuth/token flows unless explicit synthetic fixtures are configured."),
+                deferred("Requires product privacy and account-flow design before any real OAuth UI or network path.")
             ],
-            detection: .permission("identity")
+            detection: .identity
         ),
         ChromeMV3CapabilityDefinition(
             api: .debugger,

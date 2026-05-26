@@ -410,9 +410,9 @@ private struct RuntimeResourcePlanBuilder {
         for api in [ChromeMV3API.identity, .offscreen, .sidePanel] where installReport.detectedAPIs.contains(api) {
             insertDeferredPlan(
                 api: api,
-                reason: "\(api.rawValue) remains deferred/native-host planning only; no generated runtime template is implemented.",
+                reason: "\(api.rawValue) has internal compatibility diagnostics only; product runtime/UI support remains unavailable and no generated runtime template is implemented.",
                 sourceManifestFields: manifestFields(for: [api]),
-                nativeHostPlanningOnly: true,
+                nativeHostPlanningOnly: false,
                 runtimeTemplateModuleNames: [],
                 fixtureVerificationRequiredLater: installReport.needsVerificationAPIs.contains(api)
             )

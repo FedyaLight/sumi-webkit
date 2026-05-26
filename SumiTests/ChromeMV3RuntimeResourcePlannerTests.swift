@@ -134,7 +134,7 @@ final class ChromeMV3RuntimeResourcePlannerTests: XCTestCase {
         XCTAssertFalse(fixture.plan.runtimeLoadable)
     }
 
-    func testSidePanelOffscreenAndIdentityRemainDeferredPlanningOnly() throws {
+    func testSidePanelOffscreenAndIdentityRemainCompatibilityDiagnosticsOnly() throws {
         let fixture = try plan(for: [
             "manifest_version": 3,
             "name": "Deferred APIs",
@@ -155,14 +155,24 @@ final class ChromeMV3RuntimeResourcePlannerTests: XCTestCase {
         XCTAssertFalse(fixture.plan.requires(.chromeShimServiceWorker))
         XCTAssertFalse(fixture.plan.requires(.serviceWorkerWrapperClassic))
         XCTAssertFalse(fixture.plan.requires(.serviceWorkerWrapperModule))
+        XCTAssertFalse(fixture.plan.executableRuntimeFilesWritten)
+        XCTAssertFalse(fixture.plan.runtimeLoadable)
 
         XCTAssertEqual(
             fixture.plan.deferredCapabilityPlans.map(\.api),
             [.identity, .offscreen, .sidePanel]
         )
         for deferred in fixture.plan.deferredCapabilityPlans {
-            XCTAssertTrue(deferred.nativeHostPlanningOnly)
+            XCTAssertFalse(deferred.nativeHostPlanningOnly)
             XCTAssertEqual(deferred.runtimeTemplateModuleNames, [])
+            XCTAssertTrue(
+                deferred.reason.contains("internal compatibility diagnostics only"),
+                deferred.reason
+            )
+            XCTAssertTrue(
+                deferred.reason.contains("product runtime/UI support remains unavailable"),
+                deferred.reason
+            )
         }
     }
 
