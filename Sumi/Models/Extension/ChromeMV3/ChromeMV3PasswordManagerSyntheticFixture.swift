@@ -400,6 +400,7 @@ struct ChromeMV3PasswordManagerCombinedHarnessConfiguration:
     var passwordManagerSyntheticJSReady: Bool
     var passwordManagerNativeMessagingReady: Bool
     var passwordManagerServiceWorkerReady: Bool
+    var passwordManagerSharedLifecycleReadyInFixture: Bool
     var passwordManagerProductRuntimeReady: Bool
     var normalTabRuntimeBridgeAvailable: Bool
     var runtimeLoadable: Bool
@@ -436,6 +437,7 @@ struct ChromeMV3PasswordManagerCombinedHarnessConfiguration:
             passwordManagerSyntheticJSReady: enabled,
             passwordManagerNativeMessagingReady: false,
             passwordManagerServiceWorkerReady: false,
+            passwordManagerSharedLifecycleReadyInFixture: false,
             passwordManagerProductRuntimeReady: false,
             normalTabRuntimeBridgeAvailable: false,
             runtimeLoadable: false,
@@ -1455,6 +1457,7 @@ struct ChromeMV3PasswordManagerFixtureReportSummary:
     var passwordManagerSyntheticJSReady: Bool
     var passwordManagerNativeMessagingReady: Bool
     var passwordManagerServiceWorkerReady: Bool
+    var passwordManagerSharedLifecycleReadyInFixture: Bool
     var passwordManagerProductRuntimeReady: Bool
     var normalTabRuntimeBridgeAvailable: Bool
     var runtimeLoadable: Bool
@@ -1501,10 +1504,13 @@ struct ChromeMV3PasswordManagerFixtureReport:
         ChromeMV3NativeMessagingImplementationReportSummary?
     var serviceWorkerLifecycleSummary:
         ChromeMV3ServiceWorkerLifecycleReportSummary?
+    var sharedLifecycleSessionSummary:
+        ChromeMV3ServiceWorkerSharedLifecycleSessionReportSummary?
     var passwordManagerSyntheticJSReady: Bool
     var passwordManagerNativeMessagingReady: Bool
     var passwordManagerNativeMessagingReadyInFixture: Bool
     var passwordManagerServiceWorkerReady: Bool
+    var passwordManagerSharedLifecycleReadyInFixture: Bool
     var passwordManagerProductRuntimeReady: Bool
     var normalTabRuntimeBridgeAvailable: Bool
     var runtimeLoadable: Bool
@@ -1523,6 +1529,8 @@ struct ChromeMV3PasswordManagerFixtureReport:
                 passwordManagerNativeMessagingReadyInFixture,
             passwordManagerServiceWorkerReady:
                 passwordManagerServiceWorkerReady,
+            passwordManagerSharedLifecycleReadyInFixture:
+                passwordManagerSharedLifecycleReadyInFixture,
             passwordManagerProductRuntimeReady: false,
             normalTabRuntimeBridgeAvailable: false,
             runtimeLoadable: false
@@ -1577,7 +1585,9 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
         nativeMessagingImplementationSummary:
             ChromeMV3NativeMessagingImplementationReportSummary? = nil,
         serviceWorkerLifecycleSummary:
-            ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
+            ChromeMV3ServiceWorkerLifecycleReportSummary? = nil,
+        sharedLifecycleSessionSummary:
+            ChromeMV3ServiceWorkerSharedLifecycleSessionReportSummary? = nil
     ) -> ChromeMV3PasswordManagerFixtureReport {
         let configuration =
             ChromeMV3PasswordManagerCombinedHarnessConfiguration
@@ -1606,6 +1616,17 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
                 storagePermissionDetected: true,
                 nativeMessagingDetected: true
             )
+        let sharedLifecycleReport =
+            ChromeMV3ServiceWorkerSharedLifecycleSessionReportGenerator
+            .makeReport(
+                extensionID: configuration.extensionID,
+                profileID: configuration.profileID,
+                moduleState: configuration.moduleState,
+                explicitInternalLifecycleAllowed:
+                    configuration.explicitInternalCombinedHarnessAllowed
+            )
+        let sharedSummary =
+            sharedLifecycleSessionSummary ?? sharedLifecycleReport?.summary
         let webKitSummary =
             webKitExecutionSummary ?? .notAttempted()
         let syntheticReady =
@@ -1622,6 +1643,8 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
             (serviceWorkerLifecycleSummary
                 ?? serviceWorkerReport.summary)
             .passwordManagerServiceWorkerReadyInFixture
+                && (sharedSummary?
+                    .passwordManagerSharedLifecycleReadyInFixture == true)
         let reportID = stableIDPasswordManager(
             prefix: "runtime-password-manager-fixture",
             parts: [
@@ -1680,10 +1703,14 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
             serviceWorkerLifecycleSummary:
                 serviceWorkerLifecycleSummary
                     ?? serviceWorkerReport.summary,
+            sharedLifecycleSessionSummary: sharedSummary,
             passwordManagerSyntheticJSReady: syntheticReady,
             passwordManagerNativeMessagingReady: nativeFixtureReady,
             passwordManagerNativeMessagingReadyInFixture: nativeFixtureReady,
             passwordManagerServiceWorkerReady: serviceWorkerFixtureReady,
+            passwordManagerSharedLifecycleReadyInFixture:
+                sharedSummary?
+                .passwordManagerSharedLifecycleReadyInFixture == true,
             passwordManagerProductRuntimeReady: false,
             normalTabRuntimeBridgeAvailable: false,
             runtimeLoadable: false,
@@ -1700,12 +1727,15 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
                         + flows.permissions.diagnostics
                         + nativeReport.diagnostics
                         + serviceWorkerReport.diagnostics
+                        + (sharedLifecycleReport?.diagnostics ?? [])
                         + [
                             "Password-manager synthetic fixture report is deterministic.",
                             nativeFixtureReady
                                 ? "Native messaging fixture flow is internally ready; product native messaging remains unavailable."
                                 : "Native messaging fixture flow is not ready.",
-                            "Service-worker lifecycle is an explicit Prompt 51 blocker.",
+                            serviceWorkerFixtureReady
+                                ? "Password-manager shared lifecycle session flow is ready in internal fixture scope."
+                                : "Password-manager shared lifecycle session flow is not ready.",
                             "Product runtime remains unavailable.",
                         ]
                 )
@@ -1722,6 +1752,15 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
         scripting: ChromeMV3PasswordManagerScriptingFlowResult,
         permissions: ChromeMV3PasswordManagerPermissionActiveTabFlowResult
     ) {
+        let sharedLifecycleSession =
+            ChromeMV3ServiceWorkerSharedLifecycleSessionRegistry()
+            .session(
+                profileID: configuration.profileID,
+                extensionID: configuration.extensionID,
+                moduleState: configuration.moduleState,
+                explicitInternalLifecycleAllowed:
+                    configuration.explicitInternalCombinedHarnessAllowed
+            )
         let permissionOwner = permissionRuntimeOwner(
             configuration: configuration
         )
@@ -1729,13 +1768,16 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
         let tabsHandler = ChromeMV3TabsScriptingJSBridgeHandler(
             configuration: configuration.tabsConfiguration,
             tabRegistry: registry,
-            permissionRuntimeOwner: permissionOwner
+            permissionRuntimeOwner: permissionOwner,
+            sharedLifecycleSession: sharedLifecycleSession
         )
         let storageHandler = ChromeMV3StorageLocalJSBridgeHandler(
-            configuration: configuration.storageConfiguration
+            configuration: configuration.storageConfiguration,
+            sharedLifecycleSession: sharedLifecycleSession
         )
         let runtimeHandler = ChromeMV3RuntimeJSBridgeHandler(
-            configuration: configuration.runtimeConfiguration
+            configuration: configuration.runtimeConfiguration,
+            sharedLifecycleSession: sharedLifecycleSession
         )
 
         let credentialKey = "credential:https://example.com"
@@ -3083,16 +3125,37 @@ enum ChromeMV3PasswordManagerCombinedSyntheticHarness {
         let tabRegistry =
             ChromeMV3PasswordManagerFixtureReportGenerator
             .tabRegistry(configuration: configuration)
+        let sharedLifecycleSession =
+            ChromeMV3ServiceWorkerSharedLifecycleSessionRegistry()
+            .session(
+                profileID: configuration.profileID,
+                extensionID: configuration.extensionID,
+                moduleState: configuration.moduleState,
+                explicitInternalLifecycleAllowed:
+                    configuration.explicitInternalCombinedHarnessAllowed
+            )
+        _ = sharedLifecycleSession?.attachComponent(
+            kind: .passwordManagerCombinedFixture,
+            componentID: "password-manager-webkit-combined-fixture",
+            eventSurfaces: [
+                .passwordManagerDetectFields,
+                .passwordManagerFillFields,
+            ],
+            keepaliveSources: [.longRunningEvent]
+        )
         let runtimeHandler = ChromeMV3RuntimeJSBridgeHandler(
-            configuration: configuration.runtimeConfiguration
+            configuration: configuration.runtimeConfiguration,
+            sharedLifecycleSession: sharedLifecycleSession
         )
         let tabsHandler = ChromeMV3TabsScriptingJSBridgeHandler(
             configuration: configuration.tabsConfiguration,
             tabRegistry: tabRegistry,
-            permissionRuntimeOwner: permissionOwner
+            permissionRuntimeOwner: permissionOwner,
+            sharedLifecycleSession: sharedLifecycleSession
         )
         let storageHandler = ChromeMV3StorageLocalJSBridgeHandler(
-            configuration: configuration.storageConfiguration
+            configuration: configuration.storageConfiguration,
+            sharedLifecycleSession: sharedLifecycleSession
         )
         let fixtureHandler = ChromeMV3PasswordManagerFixtureControlHandler(
             configuration: configuration,

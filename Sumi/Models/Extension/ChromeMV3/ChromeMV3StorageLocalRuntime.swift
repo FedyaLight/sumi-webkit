@@ -165,6 +165,9 @@ final class ChromeMV3StorageLocalRuntimeStateOwner {
     private let operationHandler: ChromeMV3StorageAPIOperationHandler
     private let serviceWorkerLifecycleOwner:
         ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner?
+    private let sharedLifecycleSession:
+        ChromeMV3ServiceWorkerSharedLifecycleSession?
+    private let lifecycleComponentID: String
     private var operationRecords:
         [ChromeMV3StorageLocalRuntimeOperationRecord] = []
     private var onChangedPayloads: [ChromeMV3StorageOnChangedEventPayload] = []
@@ -174,9 +177,14 @@ final class ChromeMV3StorageLocalRuntimeStateOwner {
         configuration: ChromeMV3StorageLocalRuntimeConfiguration =
             .syntheticHarness(),
         persistenceRootURL: URL? = nil,
-        initialValues: [String: ChromeMV3StorageValue] = [:]
+        initialValues: [String: ChromeMV3StorageValue] = [:],
+        sharedLifecycleSession:
+            ChromeMV3ServiceWorkerSharedLifecycleSession? = nil
     ) {
         self.configuration = configuration
+        self.sharedLifecycleSession = sharedLifecycleSession
+        self.lifecycleComponentID =
+            "storage-local-harness:\(configuration.surfaceID)"
         let namespace = ChromeMV3StorageNamespace(
             profileID: configuration.profileID,
             extensionID: configuration.extensionID,
@@ -200,16 +208,26 @@ final class ChromeMV3StorageLocalRuntimeStateOwner {
         if configuration
             .serviceWorkerLifecycleAvailableInInternalFixture
         {
-            let owner = ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner(
-                configuration: .internalFixture(
-                    extensionID: configuration.extensionID,
-                    profileID: configuration.profileID,
-                    moduleState: configuration.moduleState,
-                    explicitInternalLifecycleAllowed:
-                        configuration
-                        .explicitInternalStorageJSBridgeAllowed
+            let owner: ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner
+            if let sharedLifecycleSession {
+                _ = sharedLifecycleSession.attachComponent(
+                    kind: .storageLocalHarness,
+                    componentID: lifecycleComponentID,
+                    eventSurfaces: [.storageOnChanged]
                 )
-            )
+                owner = sharedLifecycleSession.runtimeOwner
+            } else {
+                owner = ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner(
+                    configuration: .internalFixture(
+                        extensionID: configuration.extensionID,
+                        profileID: configuration.profileID,
+                        moduleState: configuration.moduleState,
+                        explicitInternalLifecycleAllowed:
+                            configuration
+                            .explicitInternalStorageJSBridgeAllowed
+                    )
+                )
+            }
             owner.registerListener(
                 event: .storageOnChanged,
                 listenerID: "storage-local-on-changed"
@@ -346,7 +364,14 @@ final class ChromeMV3StorageLocalRuntimeStateOwner {
         operationRecords.removeAll()
         onChangedPayloads.removeAll()
         nextSequence = 0
-        serviceWorkerLifecycleOwner?.tearDownForExtensionDisable()
+        if sharedLifecycleSession != nil {
+            _ = sharedLifecycleSession?.detachComponent(
+                componentID: lifecycleComponentID,
+                reason: .reset
+            )
+        } else {
+            serviceWorkerLifecycleOwner?.tearDownForExtensionDisable()
+        }
     }
 
     private func record(
@@ -440,7 +465,9 @@ final class ChromeMV3StorageLocalRuntimeStateOwner {
                 payload
             ),
             payloadSummary: "storage.onChanged",
-            sourceContext: configuration.sourceContext.runtimeContext
+            sourceContext: configuration.sourceContext.runtimeContext,
+            sourceComponentID: lifecycleComponentID,
+            sourceComponentKind: .storageLocalHarness
         )
     }
 }
@@ -902,13 +929,16 @@ final class ChromeMV3StorageLocalJSBridgeHandler {
     init(
         configuration: ChromeMV3StorageLocalRuntimeConfiguration =
             .syntheticHarness(),
-        runtimeStateOwner: ChromeMV3StorageLocalRuntimeStateOwner? = nil
+        runtimeStateOwner: ChromeMV3StorageLocalRuntimeStateOwner? = nil,
+        sharedLifecycleSession:
+            ChromeMV3ServiceWorkerSharedLifecycleSession? = nil
     ) {
         self.configuration = configuration
         self.runtimeStateOwner =
             runtimeStateOwner
             ?? ChromeMV3StorageLocalRuntimeStateOwner(
-                configuration: configuration
+                configuration: configuration,
+                sharedLifecycleSession: sharedLifecycleSession
             )
     }
 

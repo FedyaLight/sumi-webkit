@@ -78,6 +78,8 @@ final class SumiExtensionsModule {
             ChromeMV3RuntimeListenerContractReport?
         private var lastChromeMV3ServiceWorkerLifecycleReport:
             ChromeMV3ServiceWorkerLifecycleReport?
+        private var lastChromeMV3ServiceWorkerSharedLifecycleSessionReport:
+            ChromeMV3ServiceWorkerSharedLifecycleSessionReport?
         private var lastChromeMV3PermissionBrokerReadinessReport:
             ChromeMV3PermissionBrokerReadinessReport?
         private var lastChromeMV3PermissionLifecycleReport:
@@ -191,6 +193,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3NativeMessagingImplementationReport = nil
                     lastChromeMV3RuntimeListenerContractReport = nil
                     lastChromeMV3ServiceWorkerLifecycleReport = nil
+                    lastChromeMV3ServiceWorkerSharedLifecycleSessionReport = nil
                     lastChromeMV3PermissionBrokerReadinessReport = nil
                     lastChromeMV3PermissionLifecycleReport = nil
                     lastChromeMV3PermissionsAPIContractReport = nil
@@ -2395,6 +2398,41 @@ final class SumiExtensionsModule {
         }
 
         @available(macOS 15.5, *)
+        func chromeMV3ServiceWorkerSharedLifecycleSessionReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            writeReport: Bool = false
+        ) -> ChromeMV3ServiceWorkerSharedLifecycleSessionReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let extensionID =
+                lastChromeMV3RuntimeBridgePrerequisitesReport?.candidateID
+                ?? lastChromeMV3TabsScriptingMVPReport?.extensionID
+                ?? lastChromeMV3RuntimeJSMessagingMVPReport?.extensionID
+                ?? lastChromeMV3JSBridgeContractReport?.extensionID
+                ?? "password-manager-synthetic-extension"
+            let profileID =
+                lastChromeMV3TabsScriptingMVPReport?.profileID
+                ?? lastChromeMV3RuntimeJSMessagingMVPReport?.profileID
+                ?? lastChromeMV3JSBridgeContractReport?.profileID
+                ?? "password-manager-synthetic-profile"
+            guard let report =
+                ChromeMV3ServiceWorkerSharedLifecycleSessionReportGenerator
+                .makeReport(
+                    extensionID: extensionID,
+                    profileID: profileID,
+                    moduleState: .enabled,
+                    explicitInternalLifecycleAllowed: true
+                )
+            else { return nil }
+            lastChromeMV3ServiceWorkerSharedLifecycleSessionReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3ServiceWorkerSharedLifecycleSessionReportWriter
+                .write(report, toRewrittenBundleRoot: rootURL)) ?? report
+        }
+
+        @available(macOS 15.5, *)
         func chromeMV3PermissionBrokerReadinessReportIfEnabled(
             fromRewrittenBundleRoot rootURL: URL,
             writeReport: Bool = false
@@ -2575,7 +2613,10 @@ final class SumiExtensionsModule {
                         lastChromeMV3NativeMessagingImplementationReport?
                         .summary,
                     serviceWorkerLifecycleSummary:
-                        lastChromeMV3ServiceWorkerLifecycleReport?.summary
+                        lastChromeMV3ServiceWorkerLifecycleReport?.summary,
+                    sharedLifecycleSessionSummary:
+                        lastChromeMV3ServiceWorkerSharedLifecycleSessionReport?
+                        .summary
                 )
             lastChromeMV3PasswordManagerFixtureReport = report
 
@@ -2636,7 +2677,10 @@ final class SumiExtensionsModule {
                         lastChromeMV3NativeMessagingImplementationReport?
                         .summary,
                     serviceWorkerLifecycleSummary:
-                        lastChromeMV3ServiceWorkerLifecycleReport?.summary
+                        lastChromeMV3ServiceWorkerLifecycleReport?.summary,
+                    sharedLifecycleSessionSummary:
+                        lastChromeMV3ServiceWorkerSharedLifecycleSessionReport?
+                        .summary
                 )
             lastChromeMV3PasswordManagerFixtureReport = report
 

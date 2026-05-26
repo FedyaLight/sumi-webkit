@@ -1129,15 +1129,23 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
     private(set) var rejectedRequestCount = 0
     private let serviceWorkerLifecycleOwner:
         ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner?
+    private let sharedLifecycleSession:
+        ChromeMV3ServiceWorkerSharedLifecycleSession?
+    private let lifecycleComponentID: String
 
     init(
         configuration: ChromeMV3TabsScriptingJSBridgeConfiguration,
         tabRegistry: ChromeMV3SyntheticTabRegistry? = nil,
         permissionBroker: ChromeMV3PermissionBroker? = nil,
         permissionRuntimeOwner:
-            ChromeMV3PermissionRuntimeStateOwner? = nil
+            ChromeMV3PermissionRuntimeStateOwner? = nil,
+        sharedLifecycleSession:
+            ChromeMV3ServiceWorkerSharedLifecycleSession? = nil
     ) {
         self.configuration = configuration
+        self.sharedLifecycleSession = sharedLifecycleSession
+        self.lifecycleComponentID =
+            "tabs-scripting-harness:\(configuration.surfaceID)"
         self.tabRegistry =
             tabRegistry
             ?? ChromeMV3SyntheticTabRegistry.passwordManagerFixture(
@@ -1159,16 +1167,27 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
                     )
             )
         if configuration.serviceWorkerLifecycleAvailableInInternalFixture {
-            let owner = ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner(
-                configuration: .internalFixture(
-                    extensionID: configuration.extensionID,
-                    profileID: configuration.profileID,
-                    moduleState: configuration.moduleState,
-                    explicitInternalLifecycleAllowed:
-                        configuration
-                        .explicitInternalTabsScriptingJSBridgeAllowed
+            let owner: ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner
+            if let sharedLifecycleSession {
+                _ = sharedLifecycleSession.attachComponent(
+                    kind: .tabsScriptingHarness,
+                    componentID: lifecycleComponentID,
+                    eventSurfaces: [.tabsOnMessage, .tabsOnConnect],
+                    keepaliveSources: [.tabsPort]
                 )
-            )
+                owner = sharedLifecycleSession.runtimeOwner
+            } else {
+                owner = ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner(
+                    configuration: .internalFixture(
+                        extensionID: configuration.extensionID,
+                        profileID: configuration.profileID,
+                        moduleState: configuration.moduleState,
+                        explicitInternalLifecycleAllowed:
+                            configuration
+                            .explicitInternalTabsScriptingJSBridgeAllowed
+                    )
+                )
+            }
             owner.registerListener(
                 event: .tabsOnMessage,
                 listenerID: "tabs-js-tabs-on-message"
@@ -1364,6 +1383,14 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
 
     func tearDown() {
         tabRegistry.tearDown()
+        if sharedLifecycleSession != nil {
+            _ = sharedLifecycleSession?.detachComponent(
+                componentID: lifecycleComponentID,
+                reason: .reset
+            )
+        } else {
+            serviceWorkerLifecycleOwner?.tearDownForExtensionDisable()
+        }
     }
 
     private func permissionsContains(
@@ -1633,7 +1660,9 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
                 listenerEvent: .tabsOnMessage,
                 payload: request.arguments.dropFirst().first,
                 payloadSummary: "tabs.sendMessage",
-                sourceContext: configuration.sourceContext.runtimeContext
+                sourceContext: configuration.sourceContext.runtimeContext,
+                sourceComponentID: lifecycleComponentID,
+                sourceComponentKind: .tabsScriptingHarness
             )
             if let error = dispatcherResult.selectedLastError?.error {
                 rejectedRequestCount += 1
@@ -1732,7 +1761,9 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
                     listenerEvent: .tabsOnConnect,
                     payload: request.arguments.dropFirst().first,
                     payloadSummary: "tabs.connect",
-                    sourceContext: configuration.sourceContext.runtimeContext
+                    sourceContext: configuration.sourceContext.runtimeContext,
+                    sourceComponentID: lifecycleComponentID,
+                    sourceComponentKind: .tabsScriptingHarness
                 )
                 rejectedRequestCount += 1
                 return runtimeError(
@@ -1751,7 +1782,9 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
                 payloadSummary: "tabs.connect",
                 sourceContext: configuration.sourceContext.runtimeContext,
                 keepaliveKind: .tabsPort,
-                portID: preflight.portID
+                portID: preflight.portID,
+                sourceComponentID: lifecycleComponentID,
+                sourceComponentKind: .tabsScriptingHarness
             )
             return response(
                 request: request,
