@@ -80,6 +80,8 @@ final class SumiExtensionsModule {
             ChromeMV3PermissionLifecycleReport?
         private var lastChromeMV3PermissionsAPIContractReport:
             ChromeMV3PermissionsAPIContractReport?
+        private var lastChromeMV3PermissionImplementationReport:
+            ChromeMV3PermissionImplementationReport?
     #endif
     weak var browserManager: BrowserManager?
     #if DEBUG
@@ -184,6 +186,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3PermissionBrokerReadinessReport = nil
                     lastChromeMV3PermissionLifecycleReport = nil
                     lastChromeMV3PermissionsAPIContractReport = nil
+                    lastChromeMV3PermissionImplementationReport = nil
                 }
             #endif
             tearDownChromeMV3EmptyControllerOwner()
@@ -279,6 +282,8 @@ final class SumiExtensionsModule {
             ChromeMV3PermissionLifecycleReportSummary?
         let permissionsAPIContractReportSummary:
             ChromeMV3PermissionsAPIContractReportSummary?
+        let permissionImplementationReportSummary:
+            ChromeMV3PermissionImplementationReportSummary?
         #if DEBUG
             if #available(macOS 15.5, *) {
                 probeDiagnostics =
@@ -330,6 +335,8 @@ final class SumiExtensionsModule {
                     lastChromeMV3PermissionLifecycleReport?.summary
                 permissionsAPIContractReportSummary =
                     lastChromeMV3PermissionsAPIContractReport?.summary
+                permissionImplementationReportSummary =
+                    lastChromeMV3PermissionImplementationReport?.summary
             } else {
                 probeDiagnostics = nil
                 objectAcceptanceReport = nil
@@ -355,6 +362,7 @@ final class SumiExtensionsModule {
                 permissionBrokerReadinessReportSummary = nil
                 permissionLifecycleReportSummary = nil
                 permissionsAPIContractReportSummary = nil
+                permissionImplementationReportSummary = nil
             }
         #else
             probeDiagnostics = nil
@@ -381,6 +389,7 @@ final class SumiExtensionsModule {
             permissionBrokerReadinessReportSummary = nil
             permissionLifecycleReportSummary = nil
             permissionsAPIContractReportSummary = nil
+            permissionImplementationReportSummary = nil
         #endif
         return chromeMV3ProfileHostIfEnabled(
             candidateRewrittenVariants: candidates
@@ -427,7 +436,9 @@ final class SumiExtensionsModule {
             permissionLifecycleReportSummary:
                 permissionLifecycleReportSummary,
             permissionsAPIContractReportSummary:
-                permissionsAPIContractReportSummary
+                permissionsAPIContractReportSummary,
+            permissionImplementationReportSummary:
+                permissionImplementationReportSummary
         )
     }
 
@@ -2312,6 +2323,32 @@ final class SumiExtensionsModule {
 
             guard writeReport else { return report }
             return (try? ChromeMV3PermissionsAPIContractReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3PermissionImplementationReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            writeReport: Bool = false
+        ) -> ChromeMV3PermissionImplementationReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let report: ChromeMV3PermissionImplementationReport
+            do {
+                report = try ChromeMV3PermissionImplementationReportGenerator
+                    .makeReport(
+                        loadingPrerequisitesReportFrom: rootURL
+                    )
+            } catch {
+                return nil
+            }
+            lastChromeMV3PermissionImplementationReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3PermissionImplementationReportWriter.write(
                 report,
                 toRewrittenBundleRoot: rootURL
             )) ?? report

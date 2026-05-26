@@ -15,7 +15,7 @@ final class ChromeMV3TabsScriptingJSMVPTests: XCTestCase {
         super.tearDown()
     }
 
-    func testShimSourceExposesRuntimeTabsAndScriptingOnly() {
+    func testShimSourceExposesRuntimeTabsScriptingAndPermissions() {
         let configuration =
             ChromeMV3TabsScriptingJSBridgeConfiguration.syntheticHarness()
         let source = ChromeMV3TabsScriptingJSShimSource.source(
@@ -28,8 +28,18 @@ final class ChromeMV3TabsScriptingJSMVPTests: XCTestCase {
 
         XCTAssertEqual(
             coverage.exposedChromeNamespaces,
-            ["runtime", "scripting", "tabs"]
+            ["permissions", "runtime", "scripting", "tabs"]
         )
+        XCTAssertEqual(coverage.permissionsMethods.sorted(), [
+            "contains",
+            "getAll",
+            "remove",
+            "request",
+        ])
+        XCTAssertEqual(coverage.permissionsEvents.sorted(), [
+            "onAdded",
+            "onRemoved",
+        ])
         XCTAssertEqual(coverage.tabsMethods.sorted(), [
             "connect",
             "query",
@@ -38,13 +48,14 @@ final class ChromeMV3TabsScriptingJSMVPTests: XCTestCase {
         XCTAssertEqual(coverage.scriptingMethods, ["executeScript"])
         XCTAssertTrue(source.contains("Object.defineProperty(chromeObject, \"tabs\""))
         XCTAssertTrue(source.contains("Object.defineProperty(chromeObject, \"scripting\""))
+        XCTAssertTrue(source.contains("Object.defineProperty(chromeObject, \"permissions\""))
         XCTAssertTrue(source.contains("Object.defineProperty(runtime, \"lastError\""))
         XCTAssertFalse(source.contains("Object.defineProperty(chromeObject, \"storage\""))
-        XCTAssertFalse(source.contains("Object.defineProperty(chromeObject, \"permissions\""))
         XCTAssertFalse(source.contains("Object.defineProperty(chromeObject, \"nativeMessaging\""))
 
         XCTAssertFalse(runtimeOnlySource.contains("Object.defineProperty(chromeObject, \"tabs\""))
         XCTAssertFalse(runtimeOnlySource.contains("Object.defineProperty(chromeObject, \"scripting\""))
+        XCTAssertFalse(runtimeOnlySource.contains("Object.defineProperty(chromeObject, \"permissions\""))
     }
 
     func testSyntheticTabRegistryQueryReturnsOnlyControlledSyntheticTabs() {
@@ -485,11 +496,13 @@ final class ChromeMV3TabsScriptingJSMVPTests: XCTestCase {
         )
         XCTAssertEqual(
             object["exposedNamespaces"] as? [String],
-            ["runtime", "scripting", "tabs"]
+            ["permissions", "runtime", "scripting", "tabs"]
         )
         XCTAssertEqual(object["storageMissing"] as? Bool, true)
-        XCTAssertEqual(object["permissionsMissing"] as? Bool, true)
+        XCTAssertEqual(object["permissionsMissing"] as? Bool, false)
         XCTAssertEqual(object["nativeMessagingMissing"] as? Bool, true)
+        XCTAssertEqual(object["permissionsGetAllOK"] as? Bool, true)
+        XCTAssertEqual(object["permissionsContainsOK"] as? Bool, true)
         XCTAssertEqual(object["tabsQueryCallbackOK"] as? Bool, true)
         XCTAssertEqual(object["tabsQueryPromiseOK"] as? Bool, true)
         XCTAssertEqual(

@@ -992,7 +992,7 @@ enum ChromeMV3PermissionsAPIContractEvaluator {
             origins: uniqueSorted(origins),
             wouldDispatchNow: false,
             listenerRegistrationRequired: true,
-            serviceWorkerWakeRequired: true,
+            serviceWorkerWakeRequired: false,
             canRegisterListenersNow: false,
             canWakeServiceWorkerNow: false,
             runtimeImplementedNow: false,
@@ -1000,7 +1000,7 @@ enum ChromeMV3PermissionsAPIContractEvaluator {
                 "Permission event payload is modeled only.",
                 "No chrome.permissions listener is registered.",
                 "No permission event is dispatched.",
-                "Service-worker wake is not implemented.",
+                "Service-worker wake is not requested by this permission implementation layer.",
                 "No extension context is created or loaded.",
             ],
             serviceWorkerWakePreflight:

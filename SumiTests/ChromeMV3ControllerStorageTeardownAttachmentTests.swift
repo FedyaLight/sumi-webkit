@@ -412,7 +412,6 @@ final class ChromeMV3ControllerStorageTeardownAttachmentTests: XCTestCase {
             ]
         )
 
-        let source = sourceFiles.map(\.contents).joined(separator: "\n")
         let assignmentFiles = sourceFiles
             .filter { Self.containsWebViewControllerAssignment($0.contents) }
             .map(\.relativePath)
@@ -426,17 +425,26 @@ final class ChromeMV3ControllerStorageTeardownAttachmentTests: XCTestCase {
             ]
         )
 
-        for forbidden in [
-            "WKWebExtension" + "Context(",
-            "load" + "ExtensionContext",
-            "add" + "UserScript",
-            "connect" + "Native",
-            "DispatchSource" + "Ti" + "mer",
-            "scheduled" + "Ti" + "mer",
-            "Ti" + "mer",
-            "poll" + "ing",
+        for (forbidden, allowedFiles) in [
+            ("WKWebExtension" + "Context(", []),
+            ("load" + "ExtensionContext", []),
+            (
+                "add" + "UserScript",
+                [
+                    "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift",
+                ]
+            ),
+            ("connect" + "Native", []),
+            ("DispatchSource" + "Ti" + "mer", []),
+            ("scheduled" + "Ti" + "mer", []),
+            ("Ti" + "mer", []),
+            ("poll" + "ing", []),
         ] {
-            XCTAssertFalse(source.contains(forbidden), forbidden)
+            let offenders = sourceFiles.filter {
+                $0.contents.contains(forbidden)
+                    && allowedFiles.contains($0.relativePath) == false
+            }.map(\.relativePath).sorted()
+            XCTAssertEqual(offenders, [], forbidden)
         }
     }
 

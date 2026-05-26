@@ -991,6 +991,14 @@ struct ChromeMV3TabsScriptingJSBridgeHostResponse:
     var promiseWouldReject: Bool
     var runtimeDispatcherResult:
         ChromeMV3RuntimeMessageDispatcherResult?
+    var permissionsContainsResult:
+        ChromeMV3PermissionsAPIContainsResult?
+    var permissionsGetAllResult:
+        ChromeMV3PermissionsAPIGetAllResult?
+    var permissionsRequestResult:
+        ChromeMV3PermissionsAPIRequestResult?
+    var permissionsRemoveResult:
+        ChromeMV3PermissionsAPIRemoveResult?
     var tabRegistrySummary: ChromeMV3SyntheticTabRegistrySummary
     var contentScriptEndpointSummary:
         ChromeMV3SyntheticContentScriptEndpointSummary
@@ -1014,6 +1022,7 @@ struct ChromeMV3TabsScriptingJSBridgeHostResponse:
                 ?? NSNull(),
             "lastErrorMessage": lastErrorMessage ?? NSNull(),
             "lastErrorCode": lastErrorCode ?? NSNull(),
+            "permissionEventPayload": permissionEventFoundationObject,
             "callbackWouldSetLastError": callbackWouldSetLastError,
             "promiseWouldReject": promiseWouldReject,
             "tabsJSBridgeAvailableInSyntheticHarness":
@@ -1029,14 +1038,24 @@ struct ChromeMV3TabsScriptingJSBridgeHostResponse:
             "diagnostics": diagnostics,
         ]
     }
+
+    private var permissionEventFoundationObject: Any {
+        let payload =
+            permissionsRequestResult?.eventPayloadIfAccepted
+            ?? permissionsRemoveResult?.eventPayloadIfApplied
+        guard let payload else { return NSNull() }
+        return ChromeMV3StorageValue.permissionEventPayload(payload)
+            .tabsScriptingFoundationObject
+    }
 }
 
 final class ChromeMV3TabsScriptingJSBridgeHandler {
     let configuration: ChromeMV3TabsScriptingJSBridgeConfiguration
     let tabRegistry: ChromeMV3SyntheticTabRegistry
-    private let permissionBroker: ChromeMV3PermissionBroker
+    private var permissionRuntimeOwner: ChromeMV3PermissionRuntimeStateOwner
     private(set) var handledRequestCount = 0
     private(set) var queryRequestCount = 0
+    private(set) var permissionsRequestCount = 0
     private(set) var sendMessageDispatchCount = 0
     private(set) var modelPortCreateCount = 0
     private(set) var modelPortDisconnectCount = 0
@@ -1047,7 +1066,9 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
     init(
         configuration: ChromeMV3TabsScriptingJSBridgeConfiguration,
         tabRegistry: ChromeMV3SyntheticTabRegistry? = nil,
-        permissionBroker: ChromeMV3PermissionBroker? = nil
+        permissionBroker: ChromeMV3PermissionBroker? = nil,
+        permissionRuntimeOwner:
+            ChromeMV3PermissionRuntimeStateOwner? = nil
     ) {
         self.configuration = configuration
         self.tabRegistry =
@@ -1057,13 +1078,29 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
                 profileID: configuration.profileID,
                 includeProductNormalTab: false
             )
-        self.permissionBroker =
-            permissionBroker
-            ?? ChromeMV3TabsScriptingPermissionFixtures
-            .hostAndScripting(
-                extensionID: configuration.extensionID,
-                profileID: configuration.profileID
+        self.permissionRuntimeOwner =
+            permissionRuntimeOwner
+            ?? permissionBroker.map {
+                ChromeMV3PermissionRuntimeStateOwner(permissionBroker: $0)
+            }
+            ?? ChromeMV3PermissionRuntimeStateOwner(
+                permissionBroker:
+                    ChromeMV3TabsScriptingPermissionFixtures
+                    .hostAndScripting(
+                        extensionID: configuration.extensionID,
+                        profileID: configuration.profileID
+                    )
             )
+    }
+
+    var permissionBroker: ChromeMV3PermissionBroker {
+        permissionRuntimeOwner.permissionBroker
+    }
+
+    var permissionRuntimeSnapshot:
+        ChromeMV3PermissionRuntimeStateOwnerSnapshot
+    {
+        permissionRuntimeOwner.snapshot
     }
 
     func handle(_ body: Any) -> ChromeMV3TabsScriptingJSBridgeHostResponse {
@@ -1107,6 +1144,14 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
         }
 
         switch (request.namespace, request.methodName) {
+        case ("permissions", "contains"):
+            return permissionsContains(request)
+        case ("permissions", "getAll"):
+            return permissionsGetAll(request)
+        case ("permissions", "request"):
+            return permissionsRequest(request)
+        case ("permissions", "remove"):
+            return permissionsRemove(request)
         case ("tabs", "query"):
             return query(request)
         case ("tabs", "sendMessage"):
@@ -1146,7 +1191,9 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
         default:
             rejectedRequestCount += 1
             let namespaceSupported =
-                request.namespace == "tabs" || request.namespace == "scripting"
+                request.namespace == "permissions"
+                    || request.namespace == "tabs"
+                    || request.namespace == "scripting"
             return response(
                 request: request,
                 succeeded: false,
@@ -1169,6 +1216,98 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
 
     func tearDown() {
         tabRegistry.tearDown()
+    }
+
+    private func permissionsContains(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3TabsScriptingJSBridgeHostResponse {
+        permissionsRequestCount += 1
+        switch permissionsInput(request, requiresObjectArgument: true) {
+        case .failure(let error):
+            rejectedRequestCount += 1
+            return invalidArguments(request, error.message)
+        case .success(let input):
+            let result = permissionRuntimeOwner.contains(input: input)
+            return response(
+                request: request,
+                succeeded: true,
+                payload: .bool(result.wouldReturn),
+                permissionsContainsResult: result,
+                diagnostics: result.diagnostics
+            )
+        }
+    }
+
+    private func permissionsGetAll(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3TabsScriptingJSBridgeHostResponse {
+        permissionsRequestCount += 1
+        guard request.arguments.isEmpty else {
+            rejectedRequestCount += 1
+            return invalidArguments(
+                request,
+                "permissions.getAll does not accept arguments."
+            )
+        }
+        let result = permissionRuntimeOwner.getAll()
+        return response(
+            request: request,
+            succeeded: true,
+            payload: .object([
+                "permissions": .array(
+                    result.permissions.map(ChromeMV3StorageValue.string)
+                ),
+                "origins": .array(
+                    result.origins.map(ChromeMV3StorageValue.string)
+                ),
+            ]),
+            permissionsGetAllResult: result,
+            diagnostics: result.diagnostics
+        )
+    }
+
+    private func permissionsRequest(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3TabsScriptingJSBridgeHostResponse {
+        permissionsRequestCount += 1
+        switch permissionsInput(request, requiresObjectArgument: true) {
+        case .failure(let error):
+            rejectedRequestCount += 1
+            return invalidArguments(request, error.message)
+        case .success(let input):
+            let application = permissionRuntimeOwner.request(
+                input: input,
+                modeledPromptResult:
+                    modeledPromptResult(from: request.arguments.first)
+            )
+            return response(
+                request: request,
+                succeeded: true,
+                payload: .bool(application.returnedBoolean),
+                permissionsRequestResult: application.result,
+                diagnostics: application.diagnostics
+            )
+        }
+    }
+
+    private func permissionsRemove(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3TabsScriptingJSBridgeHostResponse {
+        permissionsRequestCount += 1
+        switch permissionsInput(request, requiresObjectArgument: true) {
+        case .failure(let error):
+            rejectedRequestCount += 1
+            return invalidArguments(request, error.message)
+        case .success(let input):
+            let application = permissionRuntimeOwner.remove(input: input)
+            return response(
+                request: request,
+                succeeded: true,
+                payload: .bool(application.returnedBoolean),
+                permissionsRemoveResult: application.result,
+                diagnostics: application.diagnostics
+            )
+        }
     }
 
     private func query(
@@ -1744,6 +1883,94 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
         return .hostPermissionMissing
     }
 
+    private func permissionsInput(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest,
+        requiresObjectArgument: Bool
+    ) -> Result<
+        ChromeMV3PermissionsAPIRequestInput,
+        ChromeMV3TabsScriptingArgumentError
+    > {
+        if requiresObjectArgument {
+            guard request.arguments.count == 1 else {
+                return argumentFailure(
+                    "permissions.\(request.methodName) requires one permissions object."
+                )
+            }
+        }
+        let object = request.arguments.first?.objectValue
+        if requiresObjectArgument, object == nil {
+            return argumentFailure(
+                "permissions.\(request.methodName) argument must be an object."
+            )
+        }
+        let permissions = stringArray(
+            object?["permissions"],
+            fieldName: "permissions"
+        )
+        if let message = permissions.error {
+            return argumentFailure(message)
+        }
+        let origins = stringArray(object?["origins"], fieldName: "origins")
+        if let message = origins.error {
+            return argumentFailure(message)
+        }
+        return .success(
+            ChromeMV3PermissionsAPIRequestInput(
+                extensionID: configuration.extensionID,
+                profileID: configuration.profileID,
+                sourceContext:
+                    configuration.sourceContext.permissionsContext,
+                userGestureModeled:
+                    object?["__sumiUserGestureModeled"]?.boolValue
+                    ?? (configuration.sourceContext == .actionPopup),
+                extensionModuleEnabled:
+                    configuration.moduleState == .enabled,
+                permissions: permissions.values,
+                origins: origins.values
+            )
+        )
+    }
+
+    private func stringArray(
+        _ value: ChromeMV3StorageValue?,
+        fieldName: String
+    ) -> (values: [String], error: String?) {
+        guard let value else { return ([], nil) }
+        guard case .array(let entries) = value else {
+            return ([], "\(fieldName) must be a string array.")
+        }
+        var values: [String] = []
+        for entry in entries {
+            guard let string = entry.stringValue else {
+                return (
+                    [],
+                    "\(fieldName) entries must be strings."
+                )
+            }
+            values.append(string)
+        }
+        return (Array(Set(values)).sorted(), nil)
+    }
+
+    private func modeledPromptResult(
+        from value: ChromeMV3StorageValue?
+    ) -> ChromeMV3ModeledPermissionPromptResult {
+        guard let object = value?.objectValue,
+              let result = object["__sumiModeledPromptResult"]
+        else { return .notProvided }
+        if let bool = result.boolValue {
+            return bool ? .accepted : .denied
+        }
+        switch result.stringValue?.lowercased() {
+        case "accept", "accepted", "grant", "granted", "allow", "allowed":
+            return .accepted
+        case "deny", "denied", "reject", "rejected", "block", "blocked":
+            return .denied
+        default:
+            return .notProvided
+        }
+    }
+
     private func argumentFailure<T>(
         _ message: String
     ) -> Result<T, ChromeMV3TabsScriptingArgumentError> {
@@ -1791,6 +2018,14 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
         lastErrorCode: String? = nil,
         runtimeDispatcherResult:
             ChromeMV3RuntimeMessageDispatcherResult? = nil,
+        permissionsContainsResult:
+            ChromeMV3PermissionsAPIContainsResult? = nil,
+        permissionsGetAllResult:
+            ChromeMV3PermissionsAPIGetAllResult? = nil,
+        permissionsRequestResult:
+            ChromeMV3PermissionsAPIRequestResult? = nil,
+        permissionsRemoveResult:
+            ChromeMV3PermissionsAPIRemoveResult? = nil,
         diagnostics: [String] = []
     ) -> ChromeMV3TabsScriptingJSBridgeHostResponse {
         let invocationMode = request?.invocationMode ?? .promise
@@ -1811,6 +2046,10 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
             promiseWouldReject:
                 invocationMode == .promise && succeeded == false,
             runtimeDispatcherResult: runtimeDispatcherResult,
+            permissionsContainsResult: permissionsContainsResult,
+            permissionsGetAllResult: permissionsGetAllResult,
+            permissionsRequestResult: permissionsRequestResult,
+            permissionsRemoveResult: permissionsRemoveResult,
             tabRegistrySummary: tabRegistry.summary,
             contentScriptEndpointSummary:
                 tabRegistry.contentScriptEndpointSummary,
@@ -1843,6 +2082,8 @@ struct ChromeMV3TabsScriptingJSShimCoverage:
 {
     var exposedChromeNamespaces: [String]
     var runtimeMembers: [String]
+    var permissionsMethods: [String]
+    var permissionsEvents: [String]
     var tabsMethods: [String]
     var scriptingMethods: [String]
     var portMembers: [String]
@@ -1857,8 +2098,15 @@ enum ChromeMV3TabsScriptingJSShimSource {
 
     static var coverage: ChromeMV3TabsScriptingJSShimCoverage {
         ChromeMV3TabsScriptingJSShimCoverage(
-            exposedChromeNamespaces: ["runtime", "scripting", "tabs"],
+            exposedChromeNamespaces: [
+                "permissions",
+                "runtime",
+                "scripting",
+                "tabs",
+            ],
             runtimeMembers: ["lastError"],
+            permissionsMethods: ["contains", "getAll", "remove", "request"],
+            permissionsEvents: ["onAdded", "onRemoved"],
             tabsMethods: ["connect", "query", "sendMessage"],
             scriptingMethods: ["executeScript"],
             portMembers: [
@@ -1874,7 +2122,6 @@ enum ChromeMV3TabsScriptingJSShimSource {
             lastErrorScopedToCallbackTurn: true,
             unsupportedChromeNamespaces: [
                 "nativeMessaging",
-                "permissions",
                 "storage",
             ]
         )
@@ -1899,6 +2146,7 @@ enum ChromeMV3TabsScriptingJSShimSource {
           const bridgeName = config.bridgeMessageHandlerName;
           const chromeObject = {};
           const runtime = {};
+          const permissions = {};
           const tabs = {};
           const scripting = {};
           let lastErrorValue;
@@ -2027,6 +2275,29 @@ enum ChromeMV3TabsScriptingJSShimSource {
             });
           }
 
+          function makePermissionEvent() {
+            const listeners = [];
+            return Object.freeze({
+              addListener(listener) {
+                if (typeof listener === "function" && !listeners.includes(listener)) {
+                  listeners.push(listener);
+                }
+              },
+              removeListener(listener) {
+                const index = listeners.indexOf(listener);
+                if (index >= 0) {
+                  listeners.splice(index, 1);
+                }
+              },
+              hasListener(listener) {
+                return listeners.includes(listener);
+              },
+              hasListeners() {
+                return listeners.length > 0;
+              }
+            });
+          }
+
           function createPort(name, sender) {
             const port = {};
             const state = {
@@ -2085,6 +2356,48 @@ enum ChromeMV3TabsScriptingJSShimSource {
             get() {
               return lastErrorValue;
             },
+            enumerable: true
+          });
+
+          Object.defineProperty(permissions, "contains", {
+            value(permissionsObject, callback) {
+              const cb = typeof callback === "function" ? callback : null;
+              return callbackOrPromise("permissions", "contains", [permissionsObject || {}], cb);
+            },
+            enumerable: true
+          });
+
+          Object.defineProperty(permissions, "getAll", {
+            value(callback) {
+              const cb = typeof callback === "function" ? callback : null;
+              return callbackOrPromise("permissions", "getAll", [], cb);
+            },
+            enumerable: true
+          });
+
+          Object.defineProperty(permissions, "request", {
+            value(permissionsObject, callback) {
+              const cb = typeof callback === "function" ? callback : null;
+              return callbackOrPromise("permissions", "request", [permissionsObject || {}], cb);
+            },
+            enumerable: true
+          });
+
+          Object.defineProperty(permissions, "remove", {
+            value(permissionsObject, callback) {
+              const cb = typeof callback === "function" ? callback : null;
+              return callbackOrPromise("permissions", "remove", [permissionsObject || {}], cb);
+            },
+            enumerable: true
+          });
+
+          Object.defineProperty(permissions, "onAdded", {
+            value: makePermissionEvent(),
+            enumerable: true
+          });
+
+          Object.defineProperty(permissions, "onRemoved", {
+            value: makePermissionEvent(),
             enumerable: true
           });
 
@@ -2166,6 +2479,10 @@ enum ChromeMV3TabsScriptingJSShimSource {
 
           Object.defineProperty(chromeObject, "runtime", {
             value: Object.freeze(runtime),
+            enumerable: true
+          });
+          Object.defineProperty(chromeObject, "permissions", {
+            value: Object.freeze(permissions),
             enumerable: true
           });
           Object.defineProperty(chromeObject, "tabs", {
@@ -3050,8 +3367,12 @@ private final class ChromeMV3TabsScriptingJSSyntheticNavigationObserver:
 enum ChromeMV3TabsScriptingJSSyntheticHarness {
     static let reportVerificationScriptBody = """
     const exposedNamespaces = Object.keys(chrome).sort();
+    const permissionsKeys = Object.keys(chrome.permissions).sort();
     const tabsKeys = Object.keys(chrome.tabs).sort();
     const scriptingKeys = Object.keys(chrome.scripting).sort();
+    const permissionsGetAll = await chrome.permissions.getAll();
+    const permissionsContainsTabs =
+      await chrome.permissions.contains({permissions: ["tabs"]});
     let queryCallbackTabs = null;
     let queryCallbackLastErrorInside = "unset";
     await new Promise((resolve) => {
@@ -3110,11 +3431,14 @@ enum ChromeMV3TabsScriptingJSSyntheticHarness {
     }
     return {
       exposedNamespaces,
+      permissionsKeys,
       tabsKeys,
       scriptingKeys,
       storageMissing: chrome.storage === undefined,
       permissionsMissing: chrome.permissions === undefined,
       nativeMessagingMissing: chrome.nativeMessaging === undefined,
+      permissionsGetAll,
+      permissionsContainsTabs,
       queryCallbackTabs,
       queryPromiseTabs,
       sendPromiseResponse,
@@ -3133,6 +3457,11 @@ enum ChromeMV3TabsScriptingJSSyntheticHarness {
         Array.isArray(queryPromiseTabs)
         && queryPromiseTabs.length === 1
         && queryPromiseTabs[0].id === 1,
+      permissionsGetAllOK:
+        permissionsGetAll
+        && Array.isArray(permissionsGetAll.permissions)
+        && permissionsGetAll.permissions.includes("tabs"),
+      permissionsContainsOK: permissionsContainsTabs === true,
       tabsQueryRedactionOK: false,
       tabsSendMessagePromiseOK:
         sendPromiseResponse
@@ -3176,6 +3505,8 @@ enum ChromeMV3TabsScriptingJSSyntheticHarness {
             .syntheticHarness(),
         tabRegistry: ChromeMV3SyntheticTabRegistry? = nil,
         permissionBroker: ChromeMV3PermissionBroker? = nil,
+        permissionRuntimeOwner:
+            ChromeMV3PermissionRuntimeStateOwner? = nil,
         html: String =
             "<!doctype html><meta charset='utf-8'><title>Tabs Scripting JS MVP</title>"
     ) async -> ChromeMV3TabsScriptingJSSyntheticHarnessResult {
@@ -3189,7 +3520,8 @@ enum ChromeMV3TabsScriptingJSSyntheticHarness {
                 ?? ChromeMV3TabsScriptingPermissionFixtures.hostAndScripting(
                     extensionID: configuration.extensionID,
                     profileID: configuration.profileID
-                )
+                ),
+            permissionRuntimeOwner: permissionRuntimeOwner
         )
         let webViewConfiguration = WKWebViewConfiguration()
         webViewConfiguration.sumiIsNormalTabWebViewConfiguration = false
@@ -3470,6 +3802,26 @@ enum ChromeMV3TabsScriptingPermissionFixtures {
 }
 
 private extension ChromeMV3StorageValue {
+    static func permissionEventPayload(
+        _ payload: ChromeMV3PermissionsAPIEventPayload
+    ) -> ChromeMV3StorageValue {
+        .object([
+            "eventKind": .string(payload.eventKind.rawValue),
+            "source": .string(payload.source.rawValue),
+            "extensionID": .string(payload.extensionID),
+            "profileID": .string(payload.profileID),
+            "permissions": .array(
+                payload.permissions.map(ChromeMV3StorageValue.string)
+            ),
+            "origins": .array(
+                payload.origins.map(ChromeMV3StorageValue.string)
+            ),
+            "wouldDispatchNow": .bool(payload.wouldDispatchNow),
+            "serviceWorkerWakeRequired":
+                .bool(payload.serviceWorkerWakeRequired),
+        ])
+    }
+
     init?(tabsScriptingWebKitValue value: Any) {
         if value is NSNull {
             self = .null
