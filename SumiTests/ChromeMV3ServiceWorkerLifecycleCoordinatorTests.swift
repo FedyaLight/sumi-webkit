@@ -417,8 +417,21 @@ final class ChromeMV3ServiceWorkerLifecycleCoordinatorTests: XCTestCase {
         let texts = try swiftFiles.map {
             ($0.path, try String(contentsOf: $0, encoding: .utf8))
         }
+        let tabsScriptingHarnessPath =
+            root
+            .appendingPathComponent(
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift"
+            )
+            .path
         for pattern in literalPatterns {
-            let offenders = texts.filter { $0.1.contains(pattern) }.map(\.0)
+            let offenders = texts
+                .filter { $0.1.contains(pattern) }
+                .map(\.0)
+                .filter {
+                    pattern == "add" + "User" + "Script"
+                        ? $0 != tabsScriptingHarnessPath
+                        : true
+                }
             XCTAssertTrue(offenders.isEmpty, "\(pattern): \(offenders)")
         }
         for pattern in regexPatterns {

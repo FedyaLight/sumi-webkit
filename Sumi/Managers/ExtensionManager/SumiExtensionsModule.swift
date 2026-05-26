@@ -2098,6 +2098,58 @@ final class SumiExtensionsModule {
         }
 
         @available(macOS 15.5, *)
+        func chromeMV3TabsScriptingWebKitSyntheticHarnessReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            writeReport: Bool = false
+        ) async -> ChromeMV3TabsScriptingMVPReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let extensionID =
+                lastChromeMV3RuntimeBridgePrerequisitesReport?.candidateID
+                ?? lastChromeMV3RuntimeJSMessagingMVPReport?.extensionID
+                ?? lastChromeMV3JSBridgeContractReport?.extensionID
+                ?? "tabs-scripting-js-mvp-extension"
+            let profileID =
+                lastChromeMV3RuntimeJSMessagingMVPReport?.profileID
+                ?? lastChromeMV3JSBridgeContractReport?.profileID
+                ?? "tabs-scripting-js-mvp-profile"
+            let configuration =
+                ChromeMV3TabsScriptingJSBridgeConfiguration.syntheticHarness(
+                    extensionID: extensionID,
+                    profileID: profileID
+                )
+            let result =
+                await ChromeMV3TabsScriptingJSSyntheticHarness.run(
+                    scriptBody:
+                        ChromeMV3TabsScriptingJSSyntheticHarness
+                        .reportVerificationScriptBody,
+                    configuration: configuration
+                )
+            let report = result.report
+            lastChromeMV3TabsScriptingMVPReport = report
+
+            if var linkedReadinessReport =
+                lastChromeMV3RuntimeBridgeReadinessReport {
+                linkedReadinessReport.tabsScriptingMVPSummary =
+                    report.summary
+                lastChromeMV3RuntimeBridgeReadinessReport =
+                    linkedReadinessReport
+            }
+            if var linkedBridgeReport = lastChromeMV3JSBridgeContractReport {
+                linkedBridgeReport.tabsScriptingMVPSummary =
+                    report.summary
+                lastChromeMV3JSBridgeContractReport = linkedBridgeReport
+            }
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3TabsScriptingMVPReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
         @discardableResult
         func tearDownChromeMV3TabsScriptingMVPIfEnabled() -> Bool {
             guard isEnabled else { return false }

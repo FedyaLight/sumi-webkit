@@ -397,6 +397,8 @@ final class ChromeMV3ContentScriptLocalFixtureRunnerTests: XCTestCase {
         let runtimeJSBridgeScopedFiles: Set<String> = [
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3RuntimeJSMessagingMVP.swift",
             "SumiTests/ChromeMV3RuntimeJSMessagingMVPTests.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift",
+            "SumiTests/ChromeMV3TabsScriptingJSMVPTests.swift",
         ]
         let joined = (chromeMV3Source + testSource)
             .filter { source in

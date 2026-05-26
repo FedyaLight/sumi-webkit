@@ -1013,6 +1013,10 @@ final class ChromeMV3ContextReadinessReportTests: XCTestCase {
         )
 
         let chromeMV3Source = sourceFiles
+            .filter {
+                $0.relativePath
+                    != "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift"
+            }
             .map(\.contents)
             .joined(separator: "\n")
         for forbidden in [

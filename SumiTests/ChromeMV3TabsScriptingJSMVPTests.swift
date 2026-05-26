@@ -353,7 +353,7 @@ final class ChromeMV3TabsScriptingJSMVPTests: XCTestCase {
     }
 
     @MainActor
-    func testReportWriterDisabledModuleAndProfileDiagnostics() throws {
+    func testReportWriterDisabledModuleAndProfileDiagnostics() async throws {
         guard #available(macOS 15.5, *) else { return }
         let root = try temporaryDirectory(named: "tabs-scripting-report")
         let disabled = try makeModule(enabled: false)
@@ -362,8 +362,15 @@ final class ChromeMV3TabsScriptingJSMVPTests: XCTestCase {
                 fromRewrittenBundleRoot: root,
                 writeReport: true
             )
+        let disabledWebKitReport =
+            await disabled
+            .chromeMV3TabsScriptingWebKitSyntheticHarnessReportIfEnabled(
+                fromRewrittenBundleRoot: root,
+                writeReport: true
+            )
 
         XCTAssertNil(disabledReport)
+        XCTAssertNil(disabledWebKitReport)
         XCTAssertFalse(
             FileManager.default.fileExists(
                 atPath:
@@ -401,6 +408,27 @@ final class ChromeMV3TabsScriptingJSMVPTests: XCTestCase {
         XCTAssertFalse(decoded.runtimeLoadable)
         XCTAssertFalse(decoded.productRuntimeExposed)
         XCTAssertEqual(diagnostics?.tabsScriptingMVPReport?.id, report.id)
+
+        let maybeWebKitReport =
+            await enabled
+            .chromeMV3TabsScriptingWebKitSyntheticHarnessReportIfEnabled(
+                fromRewrittenBundleRoot: root,
+                writeReport: true
+            )
+        let webKitReport = try XCTUnwrap(maybeWebKitReport)
+        let webKitDecoded = try JSONDecoder().decode(
+            ChromeMV3TabsScriptingMVPReport.self,
+            from: Data(contentsOf: reportURL)
+        )
+        XCTAssertEqual(webKitDecoded.id, webKitReport.id)
+        XCTAssertTrue(
+            webKitDecoded.webKitExecutionSummary
+                .tabsScriptingJSExecutedInWebKitSyntheticHarness
+        )
+        XCTAssertTrue(
+            webKitDecoded.summary
+                .tabsScriptingJSExecutedInWebKitSyntheticHarness
+        )
     }
 
     func testReportIsDeterministicAndCoversRequiredMVPFields() throws {
@@ -413,6 +441,7 @@ final class ChromeMV3TabsScriptingJSMVPTests: XCTestCase {
             try ChromeMV3DeterministicJSON.encodedData(second)
         )
         XCTAssertTrue(first.behaviorSummary.tabsQueryPromiseModeCovered)
+        XCTAssertTrue(first.behaviorSummary.tabsScriptingModelHandlersAvailable)
         XCTAssertTrue(first.behaviorSummary.tabsSendMessageRoutesToDispatcher)
         XCTAssertTrue(first.behaviorSummary.tabsConnectCreatesModelPort)
         XCTAssertTrue(first.behaviorSummary.scriptingExecuteScriptModeled)
@@ -423,6 +452,234 @@ final class ChromeMV3TabsScriptingJSMVPTests: XCTestCase {
         XCTAssertFalse(first.normalTabRuntimeBridgeAvailable)
         XCTAssertFalse(first.scriptingAvailableInProduct)
         XCTAssertFalse(first.runtimeLoadable)
+        XCTAssertTrue(first.summary.tabsScriptingModelHandlersAvailable)
+        XCTAssertTrue(
+            first.summary.tabsScriptingJSBridgeAvailableInSyntheticHarness
+        )
+        XCTAssertFalse(
+            first.summary.tabsScriptingJSExecutedInWebKitSyntheticHarness
+        )
+        XCTAssertEqual(
+            first.webKitExecutionSummary.status,
+            "notAttemptedByModelReportGenerator"
+        )
+    }
+
+    @MainActor
+    func testWebKitSyntheticHarnessExercisesTabsScriptingCalls()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else { return }
+        let result = await ChromeMV3TabsScriptingJSSyntheticHarness.run(
+            scriptBody:
+                ChromeMV3TabsScriptingJSSyntheticHarness
+                .reportVerificationScriptBody
+        )
+
+        XCTAssertTrue(
+            result.scriptEvaluationSucceeded,
+            result.diagnostics.joined(separator: "\n")
+        )
+        let object = try XCTUnwrap(
+            try decodedObject(result.scriptResultJSON)
+        )
+        XCTAssertEqual(
+            object["exposedNamespaces"] as? [String],
+            ["runtime", "scripting", "tabs"]
+        )
+        XCTAssertEqual(object["storageMissing"] as? Bool, true)
+        XCTAssertEqual(object["permissionsMissing"] as? Bool, true)
+        XCTAssertEqual(object["nativeMessagingMissing"] as? Bool, true)
+        XCTAssertEqual(object["tabsQueryCallbackOK"] as? Bool, true)
+        XCTAssertEqual(object["tabsQueryPromiseOK"] as? Bool, true)
+        XCTAssertEqual(
+            object["tabsSendMessagePromiseOK"] as? Bool,
+            true
+        )
+        XCTAssertEqual(
+            object["tabsSendMessageCallbackOK"] as? Bool,
+            true
+        )
+        XCTAssertEqual(
+            object["tabsSendMessageNoReceiverLastErrorOK"] as? Bool,
+            true
+        )
+        XCTAssertEqual(object["tabsConnectOK"] as? Bool, true)
+        XCTAssertEqual(
+            object["tabsConnectDisconnectOK"] as? Bool,
+            true
+        )
+        XCTAssertEqual(
+            object["scriptingExecuteScriptOK"] as? Bool,
+            true
+        )
+        XCTAssertEqual(
+            object["scriptingProductTargetBlockedOK"] as? Bool,
+            true
+        )
+        XCTAssertEqual(
+            object["callbackLastErrorScopedOK"] as? Bool,
+            true
+        )
+        XCTAssertEqual(
+            object["promiseRejectsOnErrorOK"] as? Bool,
+            true
+        )
+        XCTAssertEqual(
+            object["noReceiverInside"] as? String,
+            "Could not establish connection. Receiving end does not exist."
+        )
+        XCTAssertTrue(
+            (object["noReceiverOutside"] as? NSNull) != nil
+                || object["noReceiverOutside"] == nil
+        )
+
+        XCTAssertEqual(result.userScriptCount, 1)
+        XCTAssertEqual(result.scriptMessageHandlerCount, 1)
+        XCTAssertGreaterThanOrEqual(result.queryRequestCount, 2)
+        XCTAssertGreaterThanOrEqual(result.sendMessageDispatchCount, 4)
+        XCTAssertEqual(result.modelPortCreateCount, 1)
+        XCTAssertEqual(result.modelPortDisconnectCount, 1)
+        XCTAssertEqual(result.executeScriptRequestCount, 2)
+        XCTAssertTrue(
+            result.webKitExecutionSummary
+                .tabsScriptingJSExecutedInWebKitSyntheticHarness
+        )
+        XCTAssertTrue(result.webKitExecutionSummary.tabsQueryCallbackExecuted)
+        XCTAssertTrue(result.webKitExecutionSummary.tabsQueryPromiseExecuted)
+        XCTAssertTrue(
+            result.webKitExecutionSummary
+                .tabsSendMessageNoReceiverLastErrorExecuted
+        )
+        XCTAssertTrue(result.webKitExecutionSummary.tabsConnectExecuted)
+        XCTAssertTrue(
+            result.webKitExecutionSummary.scriptingExecuteScriptExecuted
+        )
+        XCTAssertTrue(
+            result.webKitExecutionSummary.scriptingProductTargetBlocked
+        )
+        XCTAssertFalse(result.tabsJSBridgeAvailableInProduct)
+        XCTAssertFalse(result.normalTabRuntimeBridgeAvailable)
+        XCTAssertFalse(result.scriptingAvailableInProduct)
+        XCTAssertFalse(result.runtimeLoadable)
+        XCTAssertEqual(
+            result.tabRegistrySummaryAfterTeardown
+                .controlledSyntheticTabCount,
+            0
+        )
+        XCTAssertEqual(
+            result.contentScriptEndpointSummaryAfterTeardown.endpointCount,
+            0
+        )
+        XCTAssertTrue(
+            result.report.summary
+                .tabsScriptingJSExecutedInWebKitSyntheticHarness
+        )
+    }
+
+    @MainActor
+    func testWebKitSyntheticHarnessTabsQueryPermissionRedactionAndActiveTab()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else { return }
+        let configuration =
+            ChromeMV3TabsScriptingJSBridgeConfiguration.syntheticHarness()
+        let redacted = await ChromeMV3TabsScriptingJSSyntheticHarness.run(
+            scriptBody: """
+            let callbackTabs = null;
+            await new Promise((resolve) => {
+              chrome.tabs.query({active: true}, function(tabs) {
+                callbackTabs = tabs;
+                resolve();
+              });
+            });
+            const promiseTabs = await chrome.tabs.query({active: true});
+            const redacted =
+              Array.isArray(promiseTabs)
+              && promiseTabs.length === 1
+              && promiseTabs[0].url === undefined
+              && promiseTabs[0].title === undefined;
+            return {
+              callbackTabs,
+              promiseTabs,
+              tabsQueryCallbackOK:
+                Array.isArray(callbackTabs) && callbackTabs.length === 1,
+              tabsQueryPromiseOK:
+                Array.isArray(promiseTabs) && promiseTabs.length === 1,
+              tabsQueryRedactionOK: redacted,
+              callbackLastErrorScopedOK: chrome.runtime.lastError === undefined,
+              promiseRejectsOnErrorOK: false
+            };
+            """,
+            configuration: configuration,
+            tabRegistry:
+                ChromeMV3SyntheticTabRegistry.passwordManagerFixture(
+                    extensionID: configuration.extensionID,
+                    profileID: configuration.profileID,
+                    includeProductNormalTab: true
+                ),
+            permissionBroker:
+                ChromeMV3TabsScriptingPermissionFixtures.noHostAccess(
+                    extensionID: configuration.extensionID,
+                    profileID: configuration.profileID
+                )
+        )
+        let activeTab = await ChromeMV3TabsScriptingJSSyntheticHarness.run(
+            scriptBody: """
+            const tabs = await chrome.tabs.query({active: true});
+            return {
+              tab: tabs[0] || null,
+              tabsQueryPromiseOK:
+                Array.isArray(tabs)
+                && tabs.length === 1
+                && tabs[0].url === "https://example.com/login"
+                && tabs[0].title === "Example Login",
+              tabsQueryRedactionOK:
+                Array.isArray(tabs)
+                && tabs.length === 1
+                && tabs[0].url === "https://example.com/login"
+            };
+            """,
+            configuration: configuration,
+            tabRegistry:
+                ChromeMV3SyntheticTabRegistry.passwordManagerFixture(
+                    extensionID: configuration.extensionID,
+                    profileID: configuration.profileID,
+                    includeProductNormalTab: true
+                ),
+            permissionBroker:
+                ChromeMV3TabsScriptingPermissionFixtures.activeTabGrant(
+                    extensionID: configuration.extensionID,
+                    profileID: configuration.profileID
+                )
+        )
+
+        XCTAssertTrue(
+            redacted.scriptEvaluationSucceeded,
+            redacted.diagnostics.joined(separator: "\n")
+        )
+        XCTAssertTrue(
+            activeTab.scriptEvaluationSucceeded,
+            activeTab.diagnostics.joined(separator: "\n")
+        )
+        let redactedObject = try XCTUnwrap(
+            try decodedObject(redacted.scriptResultJSON)
+        )
+        let activeTabObject = try XCTUnwrap(
+            try decodedObject(activeTab.scriptResultJSON)
+        )
+
+        XCTAssertEqual(redactedObject["tabsQueryCallbackOK"] as? Bool, true)
+        XCTAssertEqual(redactedObject["tabsQueryPromiseOK"] as? Bool, true)
+        XCTAssertEqual(redactedObject["tabsQueryRedactionOK"] as? Bool, true)
+        XCTAssertTrue(
+            redacted.webKitExecutionSummary.tabsQueryRedactionExecuted
+        )
+        XCTAssertEqual(activeTabObject["tabsQueryPromiseOK"] as? Bool, true)
+        XCTAssertEqual(activeTabObject["tabsQueryRedactionOK"] as? Bool, true)
+        XCTAssertTrue(
+            activeTab.webKitExecutionSummary.tabsQueryPromiseExecuted
+        )
     }
 
     func testTeardownClearsSyntheticTabAndEndpointState() {
@@ -460,10 +717,43 @@ final class ChromeMV3TabsScriptingJSMVPTests: XCTestCase {
             $0.relativePath
                 == "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift"
         }?.contents ?? ""
+        let browserConfigSource = try String(
+            contentsOf:
+                URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent(
+                    "Sumi/Models/BrowserConfig/BrowserConfig.swift"
+                ),
+            encoding: .utf8
+        )
+        let tabsHarnessAllowlist: Set<String> = [
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3RuntimeJSMessagingMVP.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift",
+            "SumiTests/ChromeMV3RuntimeJSMessagingMVPTests.swift",
+            "SumiTests/ChromeMV3TabsScriptingJSMVPTests.swift",
+        ]
+        let otherChromeMV3Joined = sources
+            .filter { tabsHarnessAllowlist.contains($0.relativePath) == false }
+            .map(\.contents)
+            .joined(separator: "\n")
 
-        XCTAssertFalse(tabsSource.contains("add" + "ScriptMessageHandler"))
-        XCTAssertFalse(tabsSource.contains("WKUser" + "Script("))
-        XCTAssertFalse(tabsSource.contains("addUser" + "Script"))
+        XCTAssertTrue(tabsSource.contains("add" + "ScriptMessageHandler"))
+        XCTAssertTrue(tabsSource.contains("WKUser" + "Script("))
+        XCTAssertTrue(tabsSource.contains("addUser" + "Script"))
+        XCTAssertFalse(
+            otherChromeMV3Joined.contains(
+                ChromeMV3TabsScriptingJSShimSource.bridgeMessageHandlerName
+            )
+        )
+        XCTAssertFalse(
+            browserConfigSource.contains(
+                ChromeMV3TabsScriptingJSShimSource.bridgeMessageHandlerName
+            )
+        )
+        XCTAssertFalse(
+            browserConfigSource.contains("ChromeMV3TabsScriptingJSShimSource")
+        )
         for forbidden in [
             "connect" + "Native",
             "Pro" + "cess(",
@@ -635,6 +925,15 @@ final class ChromeMV3TabsScriptingJSMVPTests: XCTestCase {
     {
         guard case .object(let object) = value else { return nil }
         return object
+    }
+
+    private func decodedObject(_ json: String?) throws -> [String: Any]? {
+        guard let json,
+              let data = json.data(using: .utf8)
+        else {
+            return nil
+        }
+        return try JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 
     private func sourceFiles(

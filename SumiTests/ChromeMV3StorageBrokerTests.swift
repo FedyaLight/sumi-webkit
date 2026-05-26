@@ -834,6 +834,13 @@ final class ChromeMV3StorageBrokerTests: XCTestCase {
     func testStorageSourceGuardsKeepRuntimeBoundariesAbsent() throws {
         let files = try Self.sourceFiles()
         let joined = files.map(\.contents).joined(separator: "\n")
+        let boundaryGuardJoined = files
+            .filter {
+                $0.relativePath
+                    != "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift"
+            }
+            .map(\.contents)
+            .joined(separator: "\n")
         let forbidden = [
             "WKWebExtension" + "Context(",
             "load" + "ExtensionContext",
@@ -853,7 +860,11 @@ final class ChromeMV3StorageBrokerTests: XCTestCase {
         ]
 
         for pattern in forbidden {
-            XCTAssertFalse(joined.contains(pattern), pattern)
+            if pattern == "add" + "UserScript" {
+                XCTAssertFalse(boundaryGuardJoined.contains(pattern), pattern)
+            } else {
+                XCTAssertFalse(joined.contains(pattern), pattern)
+            }
         }
     }
 

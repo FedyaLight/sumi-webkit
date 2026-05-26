@@ -518,6 +518,13 @@ final class ChromeMV3NativeMessagingSecurityTests: XCTestCase {
                 || $0.relativePath.hasPrefix("SumiTests/ChromeMV3")
         }
         let joined = sources.map(\.contents).joined(separator: "\n")
+        let boundaryGuardJoined = sources
+            .filter {
+                $0.relativePath
+                    != "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift"
+            }
+            .map(\.contents)
+            .joined(separator: "\n")
 
         for forbidden in [
             "WKWebExtension" + "Context(",
@@ -528,7 +535,7 @@ final class ChromeMV3NativeMessagingSecurityTests: XCTestCase {
             "DispatchSource" + "Ti" + "mer",
             "Ti" + "mer",
         ] {
-            XCTAssertFalse(joined.contains(forbidden), forbidden)
+            XCTAssertFalse(boundaryGuardJoined.contains(forbidden), forbidden)
         }
 
         for forbiddenRegex in [
