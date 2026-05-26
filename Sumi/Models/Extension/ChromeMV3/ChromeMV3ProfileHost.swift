@@ -126,6 +126,8 @@ struct ChromeMV3ProfileHostDiagnostics: Codable, Equatable, Sendable {
         ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
     var extensionEventAPIsReportSummary:
         ChromeMV3ExtensionEventAPIsReportSummary? = nil
+    var networkCompatibilityReportSummary:
+        ChromeMV3NetworkCompatibilityReportSummary? = nil
     var permissionBrokerReadinessReportSummary:
         ChromeMV3PermissionBrokerReadinessReportSummary? = nil
     var permissionLifecycleReportSummary:
@@ -324,6 +326,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
             ChromeMV3ServiceWorkerLifecycleReportSummary? = nil,
         extensionEventAPIsReportSummary:
             ChromeMV3ExtensionEventAPIsReportSummary? = nil,
+        networkCompatibilityReportSummary:
+            ChromeMV3NetworkCompatibilityReportSummary? = nil,
         permissionBrokerReadinessReportSummary:
             ChromeMV3PermissionBrokerReadinessReportSummary? = nil,
         permissionLifecycleReportSummary:
@@ -427,6 +431,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
                 serviceWorkerLifecycleReportSummary,
             extensionEventAPIsReportSummary:
                 extensionEventAPIsReportSummary,
+            networkCompatibilityReportSummary:
+                networkCompatibilityReportSummary,
             permissionBrokerReadinessReportSummary:
                 permissionBrokerReadinessReportSummary,
             permissionLifecycleReportSummary:

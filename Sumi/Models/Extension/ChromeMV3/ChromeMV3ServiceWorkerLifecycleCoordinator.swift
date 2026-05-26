@@ -169,6 +169,7 @@ enum ChromeMV3ServiceWorkerWakeReason:
     case tabsMessage
     case testFixture
     case webNavigationEvent
+    case webRequestEvent
 
     static func < (
         lhs: ChromeMV3ServiceWorkerWakeReason,

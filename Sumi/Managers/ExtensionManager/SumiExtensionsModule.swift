@@ -92,6 +92,8 @@ final class SumiExtensionsModule {
             ChromeMV3PasswordManagerFixtureReport?
         private var lastChromeMV3ExtensionEventAPIsReport:
             ChromeMV3ExtensionEventAPIsReport?
+        private var lastChromeMV3NetworkCompatibilityReport:
+            ChromeMV3NetworkCompatibilityReport?
     #endif
     weak var browserManager: BrowserManager?
     #if DEBUG
@@ -201,6 +203,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3PermissionsAPIContractReport = nil
                     lastChromeMV3PermissionImplementationReport = nil
                     lastChromeMV3PasswordManagerFixtureReport = nil
+                    lastChromeMV3NetworkCompatibilityReport = nil
                 }
             #endif
             tearDownChromeMV3EmptyControllerOwner()
@@ -294,6 +297,8 @@ final class SumiExtensionsModule {
             ChromeMV3ServiceWorkerLifecycleReportSummary?
         let extensionEventAPIsReportSummary:
             ChromeMV3ExtensionEventAPIsReportSummary?
+        let networkCompatibilityReportSummary:
+            ChromeMV3NetworkCompatibilityReportSummary?
         let permissionBrokerReadinessReportSummary:
             ChromeMV3PermissionBrokerReadinessReportSummary?
         let permissionLifecycleReportSummary:
@@ -351,6 +356,8 @@ final class SumiExtensionsModule {
                     lastChromeMV3ServiceWorkerLifecycleReport?.summary
                 extensionEventAPIsReportSummary =
                     lastChromeMV3ExtensionEventAPIsReport?.summary
+                networkCompatibilityReportSummary =
+                    lastChromeMV3NetworkCompatibilityReport?.summary
                 permissionBrokerReadinessReportSummary =
                     lastChromeMV3PermissionBrokerReadinessReport?.summary
                 permissionLifecycleReportSummary =
@@ -383,6 +390,7 @@ final class SumiExtensionsModule {
                 runtimeListenerContractReportSummary = nil
                 serviceWorkerLifecycleReportSummary = nil
                 extensionEventAPIsReportSummary = nil
+                networkCompatibilityReportSummary = nil
                 permissionBrokerReadinessReportSummary = nil
                 permissionLifecycleReportSummary = nil
                 permissionsAPIContractReportSummary = nil
@@ -412,6 +420,7 @@ final class SumiExtensionsModule {
             runtimeListenerContractReportSummary = nil
             serviceWorkerLifecycleReportSummary = nil
             extensionEventAPIsReportSummary = nil
+            networkCompatibilityReportSummary = nil
             permissionBrokerReadinessReportSummary = nil
             permissionLifecycleReportSummary = nil
             permissionsAPIContractReportSummary = nil
@@ -461,6 +470,8 @@ final class SumiExtensionsModule {
                 serviceWorkerLifecycleReportSummary,
             extensionEventAPIsReportSummary:
                 extensionEventAPIsReportSummary,
+            networkCompatibilityReportSummary:
+                networkCompatibilityReportSummary,
             permissionBrokerReadinessReportSummary:
                 permissionBrokerReadinessReportSummary,
             permissionLifecycleReportSummary:
@@ -2515,6 +2526,56 @@ final class SumiExtensionsModule {
                 report,
                 toRewrittenBundleRoot: rootURL
             )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3NetworkCompatibilityReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            manifest: ChromeMV3Manifest? = nil,
+            writeReport: Bool = false
+        ) -> ChromeMV3NetworkCompatibilityReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let resolvedManifest =
+                manifest
+                ?? (try? ChromeMV3ManifestValidator.validateManifestFile(
+                    at: rootURL.appendingPathComponent("manifest.json")
+                ))
+            let extensionID =
+                lastChromeMV3RuntimeBridgePrerequisitesReport?.candidateID
+                ?? lastChromeMV3TabsScriptingMVPReport?.extensionID
+                ?? lastChromeMV3RuntimeJSMessagingMVPReport?.extensionID
+                ?? lastChromeMV3JSBridgeContractReport?.extensionID
+                ?? "network-compatibility-extension"
+            let profileID =
+                lastChromeMV3TabsScriptingMVPReport?.profileID
+                ?? lastChromeMV3RuntimeJSMessagingMVPReport?.profileID
+                ?? lastChromeMV3JSBridgeContractReport?.profileID
+                ?? "network-compatibility-profile"
+            let report =
+                ChromeMV3NetworkCompatibilityReportGenerator.makeReport(
+                    manifest: resolvedManifest,
+                    generatedBundleRootURL: rootURL,
+                    extensionID: extensionID,
+                    profileID: profileID,
+                    moduleState: .enabled
+                )
+            lastChromeMV3NetworkCompatibilityReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3NetworkCompatibilityReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        @discardableResult
+        func tearDownChromeMV3NetworkCompatibilityIfEnabled() -> Bool {
+            guard isEnabled else { return false }
+            lastChromeMV3NetworkCompatibilityReport = nil
+            return true
         }
 
         @available(macOS 15.5, *)

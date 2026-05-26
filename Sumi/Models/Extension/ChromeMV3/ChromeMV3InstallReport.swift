@@ -30,6 +30,22 @@ struct ChromeMV3PasswordManagerFeatureReport: Codable, Equatable {
     var hostPermissions: Bool
 }
 
+struct ChromeMV3InstallNetworkCompatibilitySummary: Codable, Equatable {
+    var declaresDeclarativeNetRequest: Bool
+    var staticRulesetResourceCount: Int
+    var declaresWebRequest: Bool
+    var declaresWebRequestBlocking: Bool
+    var declaresWebRequestAuthProvider: Bool
+    var hostPermissionCount: Int
+    var dnrAvailableInInternalEvaluator: Bool
+    var dnrAvailableInProduct: Bool
+    var dnrProductEnforcementAvailable: Bool
+    var webRequestAvailableInInternalFixture: Bool
+    var webRequestBlockingAvailableInProduct: Bool
+    var normalTabRuntimeBridgeAvailable: Bool
+    var runtimeLoadable: Bool
+}
+
 struct ChromeMV3ManifestSummary: Codable, Equatable {
     var manifestVersion: Int
     var name: String
@@ -66,6 +82,8 @@ struct ChromeMV3InstallReport: Codable, Equatable {
     var warnings: [ChromeMV3InstallIssue]
     var fatalValidationErrors: [ChromeMV3InstallIssue]
     var passwordManagerFeatures: ChromeMV3PasswordManagerFeatureReport
+    var networkCompatibilitySummary:
+        ChromeMV3InstallNetworkCompatibilitySummary
 
     var isValid: Bool {
         fatalValidationErrors.isEmpty
@@ -112,7 +130,9 @@ enum ChromeMV3InstallReporter {
             capabilityClassifications: classifications,
             warnings: warnings,
             fatalValidationErrors: [],
-            passwordManagerFeatures: passwordManagerFeatures(for: manifest)
+            passwordManagerFeatures: passwordManagerFeatures(for: manifest),
+            networkCompatibilitySummary:
+                networkCompatibilitySummary(for: manifest)
         )
     }
 
@@ -142,7 +162,23 @@ enum ChromeMV3InstallReporter {
                 actionPopup: false,
                 storage: false,
                 hostPermissions: false
-            )
+            ),
+            networkCompatibilitySummary:
+                ChromeMV3InstallNetworkCompatibilitySummary(
+                    declaresDeclarativeNetRequest: false,
+                    staticRulesetResourceCount: 0,
+                    declaresWebRequest: false,
+                    declaresWebRequestBlocking: false,
+                    declaresWebRequestAuthProvider: false,
+                    hostPermissionCount: 0,
+                    dnrAvailableInInternalEvaluator: false,
+                    dnrAvailableInProduct: false,
+                    dnrProductEnforcementAvailable: false,
+                    webRequestAvailableInInternalFixture: false,
+                    webRequestBlockingAvailableInProduct: false,
+                    normalTabRuntimeBridgeAvailable: false,
+                    runtimeLoadable: false
+                )
         )
     }
 
@@ -239,11 +275,57 @@ enum ChromeMV3InstallReporter {
             warnings.append(
                 ChromeMV3InstallIssue(
                     severity: .warning,
-                    code: "webRequestBlockingUnsupported",
-                    message: "Blocking webRequest assumptions are unsupported in this Chrome MV3 foundation.",
+                    code: "webRequestBlockingProductBlocked",
+                    message: "Blocking webRequest assumptions are product-blocked; only synthetic compatibility diagnostics are available.",
                     field: "permissions.webRequestBlocking"
                 )
             )
+        }
+
+        if manifest.declaresPermission("webRequest") {
+            warnings.append(
+                ChromeMV3InstallIssue(
+                    severity: .warning,
+                    code: "webRequestObservableSyntheticOnly",
+                    message: "webRequest is classified for internal synthetic observation only; Sumi does not subscribe to product network events.",
+                    field: "permissions.webRequest"
+                )
+            )
+        }
+
+        if let dnr = manifest.declarativeNetRequest {
+            warnings.append(
+                ChromeMV3InstallIssue(
+                    severity: .warning,
+                    code: "dnrSyntheticEvaluatorOnly",
+                    message: "declarativeNetRequest rules can be parsed/evaluated internally, but product DNR enforcement is unavailable.",
+                    field: "declarative_net_request"
+                )
+            )
+            for (index, resource) in dnr.ruleResources.enumerated() {
+                if resource.id?.isEmpty ?? true {
+                    warnings.append(
+                        ChromeMV3InstallIssue(
+                            severity: .warning,
+                            code: "dnrRulesetMissingID",
+                            message: "DNR static ruleset resource is missing a deterministic id.",
+                            field:
+                                "declarative_net_request.rule_resources[\(index)].id"
+                        )
+                    )
+                }
+                if resource.path?.isEmpty ?? true {
+                    warnings.append(
+                        ChromeMV3InstallIssue(
+                            severity: .warning,
+                            code: "dnrRulesetMissingPath",
+                            message: "DNR static ruleset resource is missing a path.",
+                            field:
+                                "declarative_net_request.rule_resources[\(index)].path"
+                        )
+                    )
+                }
+            }
         }
 
         return warnings
@@ -266,6 +348,38 @@ enum ChromeMV3InstallReporter {
             actionPopup: manifest.action?.defaultPopup != nil,
             storage: manifest.declaresPermission("storage"),
             hostPermissions: manifest.hostPermissions.isEmpty == false
+        )
+    }
+
+    private static func networkCompatibilitySummary(
+        for manifest: ChromeMV3Manifest
+    ) -> ChromeMV3InstallNetworkCompatibilitySummary {
+        let declaresDNR = manifest.declarativeNetRequest != nil
+            || manifest.declaresPermission("declarativeNetRequest")
+            || manifest.declaresPermission("declarativeNetRequestWithHostAccess")
+            || manifest.declaresPermission("declarativeNetRequestFeedback")
+        let declaresWebRequest = manifest.declaresPermission("webRequest")
+        let declaresWebRequestBlocking =
+            manifest.declaresPermission("webRequestBlocking")
+        let declaresWebRequestAuth =
+            manifest.declaresPermission("webRequestAuthProvider")
+        return ChromeMV3InstallNetworkCompatibilitySummary(
+            declaresDeclarativeNetRequest: declaresDNR,
+            staticRulesetResourceCount:
+                manifest.declarativeNetRequest?.ruleResources.count ?? 0,
+            declaresWebRequest: declaresWebRequest,
+            declaresWebRequestBlocking: declaresWebRequestBlocking,
+            declaresWebRequestAuthProvider: declaresWebRequestAuth,
+            hostPermissionCount: manifest.hostPermissions.count,
+            dnrAvailableInInternalEvaluator: declaresDNR,
+            dnrAvailableInProduct: false,
+            dnrProductEnforcementAvailable: false,
+            webRequestAvailableInInternalFixture:
+                declaresWebRequest || declaresWebRequestBlocking
+                    || declaresWebRequestAuth,
+            webRequestBlockingAvailableInProduct: false,
+            normalTabRuntimeBridgeAvailable: false,
+            runtimeLoadable: false
         )
     }
 

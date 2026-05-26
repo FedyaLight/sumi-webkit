@@ -309,7 +309,8 @@ enum ChromeMV3CapabilityClassifier {
             statuses: [.unsupported, .deferred],
             evidence: [
                 chrome("Chrome webRequest and blocking behavior are constrained in MV3.", chromeAPIReference + "/webRequest"),
-                deferred("No blocking webRequest support in this foundation.")
+                sumi("Current network compatibility layer classifies webRequest events for internal synthetic fixtures only."),
+                deferred("No product webRequest blocking, request modification, or product network subscription is implemented.")
             ],
             detection: .anyPermission([
                 "webRequest",
@@ -319,11 +320,12 @@ enum ChromeMV3CapabilityClassifier {
         ),
         ChromeMV3CapabilityDefinition(
             api: .declarativeNetRequest,
-            statuses: [.deferred, .needsVerification],
+            statuses: [.shim, .deferred, .needsVerification],
             evidence: [
                 chrome("Chrome declarativeNetRequest has Chrome-specific rule semantics.", chromeAPIReference + "/declarativeNetRequest"),
-                deferred("Possible content-rule-list mapping is not implemented or proven."),
-                fixture("Verify rule compatibility before claiming any subset.")
+                sumi("Current network compatibility layer parses static rulesets and evaluates static/dynamic/session rules in internal synthetic scope only."),
+                deferred("Possible content-rule-list or adblock-rust mapping is not implemented or proven."),
+                fixture("Verify rule compatibility before claiming any product enforcement subset.")
             ],
             detection: .declarativeNetRequest
         ),

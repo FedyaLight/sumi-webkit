@@ -29,6 +29,7 @@ enum ChromeMV3ServiceWorkerSharedLifecycleComponentKind:
     case storageLocalHarness
     case tabsScriptingHarness
     case webNavigationHarness
+    case webRequestHarness
 
     static func < (
         lhs: ChromeMV3ServiceWorkerSharedLifecycleComponentKind,
@@ -650,6 +651,19 @@ enum ChromeMV3ServiceWorkerSharedLifecycleSessionReportGenerator {
                 .webNavigationOnReferenceFragmentUpdated,
             ]
         )
+        let webRequest = session.attachComponent(
+            kind: .webRequestHarness,
+            componentID: "web-request-harness",
+            eventSurfaces: [
+                .webRequestOnBeforeRequest,
+                .webRequestOnBeforeSendHeaders,
+                .webRequestOnSendHeaders,
+                .webRequestOnHeadersReceived,
+                .webRequestOnResponseStarted,
+                .webRequestOnCompleted,
+                .webRequestOnErrorOccurred,
+            ]
+        )
         let tabs = session.attachComponent(
             kind: .tabsScriptingHarness,
             componentID: "tabs-scripting-harness",
@@ -707,6 +721,7 @@ enum ChromeMV3ServiceWorkerSharedLifecycleSessionReportGenerator {
             .contextMenusOnClicked,
             .webNavigationOnCommitted,
             .webNavigationOnCompleted,
+            .webRequestOnBeforeRequest,
             .passwordManagerDetectFields,
             .passwordManagerFillFields,
         ] {
@@ -803,6 +818,14 @@ enum ChromeMV3ServiceWorkerSharedLifecycleSessionReportGenerator {
             sourceComponentID: webNavigation.componentID,
             sourceComponentKind: .webNavigationHarness,
             payloadSummary: "webNavigation.onCompleted",
+            sourceContext: .serviceWorker
+        )
+        _ = session.routeEvent(
+            reason: .webRequestEvent,
+            listenerEvent: .webRequestOnBeforeRequest,
+            sourceComponentID: webRequest.componentID,
+            sourceComponentKind: .webRequestHarness,
+            payloadSummary: "webRequest.onBeforeRequest synthetic",
             sourceContext: .serviceWorker
         )
         let nativePort = session.routeEvent(
@@ -925,7 +948,7 @@ enum ChromeMV3ServiceWorkerSharedLifecycleSessionReportGenerator {
                 uniqueSortedSharedLifecycle(
                     summary.diagnostics
                         + [
-                            "Shared lifecycle report routed runtime, tabs, storage, permissions, native messaging, contextMenus, alarms, webNavigation, and password-manager events through one queue.",
+                            "Shared lifecycle report routed runtime, tabs, storage, permissions, native messaging, contextMenus, alarms, webNavigation, webRequest, and password-manager events through one queue.",
                             "Idle release and hard-timeout transitions were triggered explicitly by tests/fixtures.",
                             "Native Port keepalive was recorded as shared session state; lifecycle code did not launch a process.",
                         ]

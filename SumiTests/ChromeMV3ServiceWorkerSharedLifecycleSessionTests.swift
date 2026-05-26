@@ -777,6 +777,7 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSessionTests: XCTestCase {
             .contextMenusOnClicked,
             .webNavigationOnCommitted,
             .webNavigationOnCompleted,
+            .webRequestOnBeforeRequest,
             .passwordManagerDetectFields,
             .passwordManagerFillFields,
         ] {
@@ -821,6 +822,16 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSessionTests: XCTestCase {
                 .webNavigationOnHistoryStateUpdated,
                 .webNavigationOnReferenceFragmentUpdated,
             ]
+        case .webRequestHarness:
+            return [
+                .webRequestOnBeforeRequest,
+                .webRequestOnBeforeSendHeaders,
+                .webRequestOnSendHeaders,
+                .webRequestOnHeadersReceived,
+                .webRequestOnResponseStarted,
+                .webRequestOnCompleted,
+                .webRequestOnErrorOccurred,
+            ]
         }
     }
 
@@ -838,7 +849,7 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSessionTests: XCTestCase {
             return [.tabsPort]
         case .contentScriptSyntheticEndpoint, .extensionPageHostHarness,
              .alarmsHarness, .contextMenusHarness, .permissionsHarness,
-             .storageLocalHarness, .webNavigationHarness:
+             .storageLocalHarness, .webNavigationHarness, .webRequestHarness:
             return []
         }
     }
