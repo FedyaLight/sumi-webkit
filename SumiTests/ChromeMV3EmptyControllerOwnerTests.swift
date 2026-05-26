@@ -325,6 +325,7 @@ final class ChromeMV3EmptyControllerOwnerTests: XCTestCase {
                 "add" + "UserScript",
                 [
                     "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift",
+                    "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift",
                 ]
             ),
             ("connect" + "Native", []),

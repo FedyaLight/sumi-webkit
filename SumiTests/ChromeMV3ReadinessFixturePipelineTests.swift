@@ -797,6 +797,8 @@ final class ChromeMV3ReadinessFixturePipelineTests: XCTestCase {
             .filter {
                 $0.relativePath
                     != "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift"
+                    && $0.relativePath
+                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift"
             }
             .map(\.contents)
             .joined(separator: "\n")
