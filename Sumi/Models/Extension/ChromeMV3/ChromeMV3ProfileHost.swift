@@ -100,6 +100,8 @@ struct ChromeMV3ProfileHostDiagnostics: Codable, Equatable, Sendable {
         ChromeMV3ExtensionPageHostReport? = nil
     var runtimeJSMessagingMVPReport:
         ChromeMV3RuntimeJSMessagingMVPReport? = nil
+    var tabsScriptingMVPReport:
+        ChromeMV3TabsScriptingMVPReport? = nil
     var runtimeBridgePrerequisitesReport:
         ChromeMV3RuntimeBridgePrerequisitesReport?
     var runtimeBridgeReadinessReport:
@@ -290,6 +292,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
             ChromeMV3ExtensionPageHostReport? = nil,
         runtimeJSMessagingMVPReport:
             ChromeMV3RuntimeJSMessagingMVPReport? = nil,
+        tabsScriptingMVPReport:
+            ChromeMV3TabsScriptingMVPReport? = nil,
         runtimeBridgePrerequisitesReport:
             ChromeMV3RuntimeBridgePrerequisitesReport? = nil,
         runtimeBridgeReadinessReport:
@@ -385,6 +389,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
                 runtimeExtensionPageHostReport,
             runtimeJSMessagingMVPReport:
                 runtimeJSMessagingMVPReport,
+            tabsScriptingMVPReport:
+                tabsScriptingMVPReport,
             runtimeBridgePrerequisitesReport:
                 runtimeBridgePrerequisitesReport,
             runtimeBridgeReadinessReport:

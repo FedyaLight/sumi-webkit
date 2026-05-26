@@ -2664,6 +2664,8 @@ struct ChromeMV3JSBridgeContractReportSummary:
         ChromeMV3ExtensionPageHostReportSummary? = nil
     var runtimeJSMessagingMVPSummary:
         ChromeMV3RuntimeJSMessagingMVPReportSummary? = nil
+    var tabsScriptingMVPSummary:
+        ChromeMV3TabsScriptingMVPReportSummary? = nil
 }
 
 struct ChromeMV3JSBridgeContractReport:
@@ -2698,6 +2700,8 @@ struct ChromeMV3JSBridgeContractReport:
         ChromeMV3ExtensionPageHostReportSummary? = nil
     var runtimeJSMessagingMVPSummary:
         ChromeMV3RuntimeJSMessagingMVPReportSummary? = nil
+    var tabsScriptingMVPSummary:
+        ChromeMV3TabsScriptingMVPReportSummary? = nil
     var documentationSources: [ChromeMV3ManifestRewritePreviewSource]
     var diagnostics: [String]
     var blockers: [String]
@@ -2720,7 +2724,9 @@ struct ChromeMV3JSBridgeContractReport:
             passwordManagerRuntimeBridgeReady: false,
             extensionPageHostSummary: extensionPageHostSummary,
             runtimeJSMessagingMVPSummary:
-                runtimeJSMessagingMVPSummary
+                runtimeJSMessagingMVPSummary,
+            tabsScriptingMVPSummary:
+                tabsScriptingMVPSummary
         )
     }
 }

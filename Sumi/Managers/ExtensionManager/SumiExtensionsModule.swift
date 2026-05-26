@@ -52,6 +52,8 @@ final class SumiExtensionsModule {
             ChromeMV3ExtensionPageHostReport?
         private var lastChromeMV3RuntimeJSMessagingMVPReport:
             ChromeMV3RuntimeJSMessagingMVPReport?
+        private var lastChromeMV3TabsScriptingMVPReport:
+            ChromeMV3TabsScriptingMVPReport?
         private var lastChromeMV3RuntimeBridgePrerequisitesReport:
             ChromeMV3RuntimeBridgePrerequisitesReport?
         private var lastChromeMV3RuntimeBridgeReadinessReport:
@@ -168,6 +170,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3RuntimeContentScriptLocalFixtureRunnerReport = nil
                     lastChromeMV3RuntimeExtensionPageHostReport = nil
                     lastChromeMV3RuntimeJSMessagingMVPReport = nil
+                    lastChromeMV3TabsScriptingMVPReport = nil
                     lastChromeMV3RuntimeBridgePrerequisitesReport = nil
                     lastChromeMV3RuntimeBridgeReadinessReport = nil
                     lastChromeMV3StorageBrokerReadinessReport = nil
@@ -248,6 +251,8 @@ final class SumiExtensionsModule {
             ChromeMV3ExtensionPageHostReport?
         let runtimeJSMessagingMVPReport:
             ChromeMV3RuntimeJSMessagingMVPReport?
+        let tabsScriptingMVPReport:
+            ChromeMV3TabsScriptingMVPReport?
         let runtimeBridgePrerequisitesReport:
             ChromeMV3RuntimeBridgePrerequisitesReport?
         let runtimeBridgeReadinessReport:
@@ -296,6 +301,8 @@ final class SumiExtensionsModule {
                     lastChromeMV3RuntimeExtensionPageHostReport
                 runtimeJSMessagingMVPReport =
                     lastChromeMV3RuntimeJSMessagingMVPReport
+                tabsScriptingMVPReport =
+                    lastChromeMV3TabsScriptingMVPReport
                 runtimeBridgePrerequisitesReport =
                     lastChromeMV3RuntimeBridgePrerequisitesReport
                 runtimeBridgeReadinessReport =
@@ -334,6 +341,7 @@ final class SumiExtensionsModule {
                 runtimeContentScriptLocalFixtureRunnerReport = nil
                 runtimeExtensionPageHostReport = nil
                 runtimeJSMessagingMVPReport = nil
+                tabsScriptingMVPReport = nil
                 runtimeBridgePrerequisitesReport = nil
                 runtimeBridgeReadinessReport = nil
                 storageBrokerReadinessReportSummary = nil
@@ -359,6 +367,7 @@ final class SumiExtensionsModule {
             runtimeContentScriptLocalFixtureRunnerReport = nil
             runtimeExtensionPageHostReport = nil
             runtimeJSMessagingMVPReport = nil
+            tabsScriptingMVPReport = nil
             runtimeBridgePrerequisitesReport = nil
             runtimeBridgeReadinessReport = nil
             storageBrokerReadinessReportSummary = nil
@@ -391,6 +400,8 @@ final class SumiExtensionsModule {
                 runtimeExtensionPageHostReport,
             runtimeJSMessagingMVPReport:
                 runtimeJSMessagingMVPReport,
+            tabsScriptingMVPReport:
+                tabsScriptingMVPReport,
             runtimeBridgePrerequisitesReport:
                 runtimeBridgePrerequisitesReport,
             runtimeBridgeReadinessReport:
@@ -852,6 +863,8 @@ final class SumiExtensionsModule {
             var linkedReport = report
             linkedReport.runtimeJSMessagingMVPSummary =
                 lastChromeMV3RuntimeJSMessagingMVPReport?.summary
+            linkedReport.tabsScriptingMVPSummary =
+                lastChromeMV3TabsScriptingMVPReport?.summary
             lastChromeMV3RuntimeBridgeReadinessReport = linkedReport
 
             guard writeReport else { return linkedReport }
@@ -1980,6 +1993,8 @@ final class SumiExtensionsModule {
             var linkedReport = report
             linkedReport.runtimeJSMessagingMVPSummary =
                 lastChromeMV3RuntimeJSMessagingMVPReport?.summary
+            linkedReport.tabsScriptingMVPSummary =
+                lastChromeMV3TabsScriptingMVPReport?.summary
             lastChromeMV3JSBridgeContractReport = linkedReport
 
             guard writeReport else { return linkedReport }
@@ -2036,6 +2051,58 @@ final class SumiExtensionsModule {
                 report,
                 toRewrittenBundleRoot: rootURL
             )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3TabsScriptingMVPReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            writeReport: Bool = false
+        ) -> ChromeMV3TabsScriptingMVPReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let extensionID =
+                lastChromeMV3RuntimeBridgePrerequisitesReport?.candidateID
+                ?? lastChromeMV3RuntimeJSMessagingMVPReport?.extensionID
+                ?? lastChromeMV3JSBridgeContractReport?.extensionID
+                ?? "tabs-scripting-js-mvp-extension"
+            let profileID =
+                lastChromeMV3RuntimeJSMessagingMVPReport?.profileID
+                ?? lastChromeMV3JSBridgeContractReport?.profileID
+                ?? "tabs-scripting-js-mvp-profile"
+            let report =
+                ChromeMV3TabsScriptingMVPReportGenerator.makeReport(
+                    extensionID: extensionID,
+                    profileID: profileID
+                )
+            lastChromeMV3TabsScriptingMVPReport = report
+
+            if var linkedReadinessReport =
+                lastChromeMV3RuntimeBridgeReadinessReport {
+                linkedReadinessReport.tabsScriptingMVPSummary =
+                    report.summary
+                lastChromeMV3RuntimeBridgeReadinessReport =
+                    linkedReadinessReport
+            }
+            if var linkedBridgeReport = lastChromeMV3JSBridgeContractReport {
+                linkedBridgeReport.tabsScriptingMVPSummary =
+                    report.summary
+                lastChromeMV3JSBridgeContractReport = linkedBridgeReport
+            }
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3TabsScriptingMVPReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        @discardableResult
+        func tearDownChromeMV3TabsScriptingMVPIfEnabled() -> Bool {
+            guard isEnabled else { return false }
+            lastChromeMV3TabsScriptingMVPReport = nil
+            return true
         }
 
         @available(macOS 15.5, *)
