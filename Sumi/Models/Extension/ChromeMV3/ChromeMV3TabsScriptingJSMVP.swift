@@ -2198,6 +2198,7 @@ struct ChromeMV3TabsScriptingMVPBehaviorSummary:
     Equatable,
     Sendable
 {
+    var tabsScriptingModelHandlersAvailable: Bool
     var tabsQueryCallbackModeCovered: Bool
     var tabsQueryPromiseModeCovered: Bool
     var tabsQueryRedactionCovered: Bool
@@ -2212,6 +2213,134 @@ struct ChromeMV3TabsScriptingMVPBehaviorSummary:
     var noServiceWorkerWake: Bool
 }
 
+struct ChromeMV3TabsScriptingWebKitExecutionSummary:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var status: String
+    var tabsScriptingModelHandlersAvailable: Bool
+    var tabsScriptingJSBridgeAvailableInSyntheticHarness: Bool
+    var tabsScriptingJSExecutedInWebKitSyntheticHarness: Bool
+    var tabsQueryCallbackExecuted: Bool
+    var tabsQueryPromiseExecuted: Bool
+    var tabsQueryRedactionExecuted: Bool
+    var tabsSendMessageCallbackExecuted: Bool
+    var tabsSendMessagePromiseExecuted: Bool
+    var tabsSendMessageNoReceiverLastErrorExecuted: Bool
+    var tabsConnectExecuted: Bool
+    var tabsConnectDisconnectExecuted: Bool
+    var scriptingExecuteScriptExecuted: Bool
+    var scriptingProductTargetBlocked: Bool
+    var callbackLastErrorScoped: Bool
+    var promiseRejectsOnError: Bool
+    var tabsJSBridgeAvailableInProduct: Bool
+    var normalTabRuntimeBridgeAvailable: Bool
+    var scriptingAvailableInProduct: Bool
+    var runtimeLoadable: Bool
+    var diagnostics: [String]
+
+    static func notAttempted(
+        tabsScriptingModelHandlersAvailable: Bool,
+        tabsScriptingJSBridgeAvailableInSyntheticHarness: Bool
+    ) -> ChromeMV3TabsScriptingWebKitExecutionSummary {
+        ChromeMV3TabsScriptingWebKitExecutionSummary(
+            status: "notAttemptedByModelReportGenerator",
+            tabsScriptingModelHandlersAvailable:
+                tabsScriptingModelHandlersAvailable,
+            tabsScriptingJSBridgeAvailableInSyntheticHarness:
+                tabsScriptingJSBridgeAvailableInSyntheticHarness,
+            tabsScriptingJSExecutedInWebKitSyntheticHarness: false,
+            tabsQueryCallbackExecuted: false,
+            tabsQueryPromiseExecuted: false,
+            tabsQueryRedactionExecuted: false,
+            tabsSendMessageCallbackExecuted: false,
+            tabsSendMessagePromiseExecuted: false,
+            tabsSendMessageNoReceiverLastErrorExecuted: false,
+            tabsConnectExecuted: false,
+            tabsConnectDisconnectExecuted: false,
+            scriptingExecuteScriptExecuted: false,
+            scriptingProductTargetBlocked: false,
+            callbackLastErrorScoped: false,
+            promiseRejectsOnError: false,
+            tabsJSBridgeAvailableInProduct: false,
+            normalTabRuntimeBridgeAvailable: false,
+            scriptingAvailableInProduct: false,
+            runtimeLoadable: false,
+            diagnostics: [
+                "WebKit-executed tabs/scripting synthetic harness was not run by this model-only report generator.",
+                "Model handler availability is reported separately from WebKit JS execution.",
+            ]
+        )
+    }
+
+    static func fromWebKitScriptResult(
+        json: String?,
+        scriptEvaluationSucceeded: Bool,
+        tabsScriptingModelHandlersAvailable: Bool,
+        tabsScriptingJSBridgeAvailableInSyntheticHarness: Bool,
+        diagnostics: [String]
+    ) -> ChromeMV3TabsScriptingWebKitExecutionSummary {
+        let object = decodedObject(json)
+        func bool(_ key: String) -> Bool {
+            object?[key] as? Bool ?? false
+        }
+        return ChromeMV3TabsScriptingWebKitExecutionSummary(
+            status:
+                scriptEvaluationSucceeded
+                    ? "executedInWebKitSyntheticHarness"
+                    : "blockedOrFailedInWebKitSyntheticHarness",
+            tabsScriptingModelHandlersAvailable:
+                tabsScriptingModelHandlersAvailable,
+            tabsScriptingJSBridgeAvailableInSyntheticHarness:
+                tabsScriptingJSBridgeAvailableInSyntheticHarness,
+            tabsScriptingJSExecutedInWebKitSyntheticHarness:
+                scriptEvaluationSucceeded,
+            tabsQueryCallbackExecuted: bool("tabsQueryCallbackOK"),
+            tabsQueryPromiseExecuted: bool("tabsQueryPromiseOK"),
+            tabsQueryRedactionExecuted: bool("tabsQueryRedactionOK"),
+            tabsSendMessageCallbackExecuted:
+                bool("tabsSendMessageCallbackOK"),
+            tabsSendMessagePromiseExecuted:
+                bool("tabsSendMessagePromiseOK"),
+            tabsSendMessageNoReceiverLastErrorExecuted:
+                bool("tabsSendMessageNoReceiverLastErrorOK"),
+            tabsConnectExecuted: bool("tabsConnectOK"),
+            tabsConnectDisconnectExecuted: bool("tabsConnectDisconnectOK"),
+            scriptingExecuteScriptExecuted:
+                bool("scriptingExecuteScriptOK"),
+            scriptingProductTargetBlocked:
+                bool("scriptingProductTargetBlockedOK"),
+            callbackLastErrorScoped: bool("callbackLastErrorScopedOK"),
+            promiseRejectsOnError: bool("promiseRejectsOnErrorOK"),
+            tabsJSBridgeAvailableInProduct: false,
+            normalTabRuntimeBridgeAvailable: false,
+            scriptingAvailableInProduct: false,
+            runtimeLoadable: false,
+            diagnostics:
+                uniqueSortedTabsScripting(
+                    diagnostics
+                        + [
+                            scriptEvaluationSucceeded
+                                ? "tabs/scripting JS calls were executed by WebKit in the controlled synthetic harness."
+                                : "tabs/scripting WebKit synthetic harness produced a deterministic blocked/failed diagnostic.",
+                            "WebKit JS execution status is not inferred from model handler success.",
+                        ]
+                )
+        )
+    }
+
+    private static func decodedObject(_ json: String?) -> [String: Any]? {
+        guard let json,
+              let data = json.data(using: .utf8)
+        else { return nil }
+        guard let value = try? JSONSerialization.jsonObject(with: data) else {
+            return nil
+        }
+        return value as? [String: Any]
+    }
+}
+
 struct ChromeMV3TabsScriptingMVPReportSummary:
     Codable,
     Equatable,
@@ -2219,6 +2348,9 @@ struct ChromeMV3TabsScriptingMVPReportSummary:
 {
     var reportID: String
     var reportFileName: String
+    var tabsScriptingModelHandlersAvailable: Bool
+    var tabsScriptingJSBridgeAvailableInSyntheticHarness: Bool
+    var tabsScriptingJSExecutedInWebKitSyntheticHarness: Bool
     var tabsJSBridgeAvailableInSyntheticHarness: Bool
     var tabsJSBridgeAvailableInProduct: Bool
     var normalTabRuntimeBridgeAvailable: Bool
@@ -2249,6 +2381,8 @@ struct ChromeMV3TabsScriptingMVPReport:
     var contentScriptEndpointSummary:
         ChromeMV3SyntheticContentScriptEndpointSummary
     var behaviorSummary: ChromeMV3TabsScriptingMVPBehaviorSummary
+    var webKitExecutionSummary:
+        ChromeMV3TabsScriptingWebKitExecutionSummary
     var tabsQueryCases:
         [ChromeMV3TabsScriptingJSBridgeHostResponse]
     var tabsSendMessageCases:
@@ -2276,6 +2410,14 @@ struct ChromeMV3TabsScriptingMVPReport:
         ChromeMV3TabsScriptingMVPReportSummary(
             reportID: id,
             reportFileName: reportFileName,
+            tabsScriptingModelHandlersAvailable:
+                behaviorSummary.tabsScriptingModelHandlersAvailable,
+            tabsScriptingJSBridgeAvailableInSyntheticHarness:
+                webKitExecutionSummary
+                .tabsScriptingJSBridgeAvailableInSyntheticHarness,
+            tabsScriptingJSExecutedInWebKitSyntheticHarness:
+                webKitExecutionSummary
+                .tabsScriptingJSExecutedInWebKitSyntheticHarness,
             tabsJSBridgeAvailableInSyntheticHarness:
                 tabsJSBridgeAvailableInSyntheticHarness,
             tabsJSBridgeAvailableInProduct: false,
@@ -2330,7 +2472,9 @@ enum ChromeMV3TabsScriptingMVPReportGenerator {
     static func makeReport(
         extensionID: String = "tabs-scripting-js-mvp-extension",
         profileID: String = "tabs-scripting-js-mvp-profile",
-        moduleState: ChromeMV3ProfileHostModuleState = .enabled
+        moduleState: ChromeMV3ProfileHostModuleState = .enabled,
+        webKitExecutionSummary:
+            ChromeMV3TabsScriptingWebKitExecutionSummary? = nil
     ) -> ChromeMV3TabsScriptingMVPReport {
         let configuration = ChromeMV3TabsScriptingJSBridgeConfiguration
             .syntheticHarness(
@@ -2567,7 +2711,16 @@ enum ChromeMV3TabsScriptingMVPReportGenerator {
                         profileID: configuration.profileID
                     )
             ).redactionDecisions
+        let modelHandlersAvailable =
+            queryCallback.succeeded
+                && queryPromise.succeeded
+                && sendMessage.runtimeDispatcherResult?.modelHandlerInvoked
+                    == true
+                && connect.succeeded
+                && execute.succeeded
         let behavior = ChromeMV3TabsScriptingMVPBehaviorSummary(
+            tabsScriptingModelHandlersAvailable:
+                modelHandlersAvailable,
             tabsQueryCallbackModeCovered: queryCallback.succeeded,
             tabsQueryPromiseModeCovered: queryPromise.succeeded,
             tabsQueryRedactionCovered:
@@ -2598,12 +2751,21 @@ enum ChromeMV3TabsScriptingMVPReportGenerator {
                     $0.serviceWorkerWakeAvailable == false
                 }
         )
+        let resolvedWebKitExecutionSummary =
+            webKitExecutionSummary
+            ?? ChromeMV3TabsScriptingWebKitExecutionSummary.notAttempted(
+                tabsScriptingModelHandlersAvailable:
+                    modelHandlersAvailable,
+                tabsScriptingJSBridgeAvailableInSyntheticHarness:
+                    configuration.tabsJSBridgeAvailableInSyntheticHarness
+            )
         let reportID = stableIDTabsScripting(
             prefix: "runtime-tabs-scripting-mvp",
             parts: [
                 configuration.extensionID,
                 configuration.profileID,
                 allResponses.map(\.bridgeCallID).joined(separator: "|"),
+                resolvedWebKitExecutionSummary.status,
             ]
         )
         return ChromeMV3TabsScriptingMVPReport(
@@ -2626,6 +2788,7 @@ enum ChromeMV3TabsScriptingMVPReportGenerator {
             contentScriptEndpointSummary:
                 registry.contentScriptEndpointSummary,
             behaviorSummary: behavior,
+            webKitExecutionSummary: resolvedWebKitExecutionSummary,
             tabsQueryCases: queryCases,
             tabsSendMessageCases: sendCases,
             tabsConnectCases: connectCases,
@@ -2651,9 +2814,11 @@ enum ChromeMV3TabsScriptingMVPReportGenerator {
             diagnostics:
                 uniqueSortedTabsScripting(
                     allResponses.flatMap(\.diagnostics)
+                        + resolvedWebKitExecutionSummary.diagnostics
                         + registry.summary.diagnostics
                         + [
                             "tabs/scripting MVP report is deterministic.",
+                            "tabsScriptingModelHandlersAvailable is separate from tabsScriptingJSExecutedInWebKitSyntheticHarness.",
                             "No normal-tab bridge is installed.",
                             "No service-worker wake, native messaging, product UI, or broad scripting support is added.",
                         ]
@@ -2771,6 +2936,445 @@ enum ChromeMV3TabsScriptingMVPReportGenerator {
     }
 }
 
+#if DEBUG
+import WebKit
+
+@available(macOS 15.5, *)
+@MainActor
+private final class ChromeMV3TabsScriptingJSScriptMessageHandler:
+    NSObject,
+    WKScriptMessageHandlerWithReply
+{
+    let handler: ChromeMV3TabsScriptingJSBridgeHandler
+
+    init(handler: ChromeMV3TabsScriptingJSBridgeHandler) {
+        self.handler = handler
+    }
+
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) async -> (Any?, String?) {
+        _ = userContentController
+        let response = handler.handle(message.body)
+        return (response.foundationObject, nil)
+    }
+}
+
+struct ChromeMV3TabsScriptingJSSyntheticHarnessResult:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var scriptEvaluationSucceeded: Bool
+    var scriptResultJSON: String?
+    var report: ChromeMV3TabsScriptingMVPReport
+    var webKitExecutionSummary:
+        ChromeMV3TabsScriptingWebKitExecutionSummary
+    var tabRegistrySummary:
+        ChromeMV3SyntheticTabRegistrySummary
+    var contentScriptEndpointSummary:
+        ChromeMV3SyntheticContentScriptEndpointSummary
+    var tabRegistrySummaryAfterTeardown:
+        ChromeMV3SyntheticTabRegistrySummary
+    var contentScriptEndpointSummaryAfterTeardown:
+        ChromeMV3SyntheticContentScriptEndpointSummary
+    var handledRequestCount: Int
+    var queryRequestCount: Int
+    var sendMessageDispatchCount: Int
+    var modelPortCreateCount: Int
+    var modelPortDisconnectCount: Int
+    var executeScriptRequestCount: Int
+    var userScriptCount: Int
+    var scriptMessageHandlerCount: Int
+    var syntheticWebViewCreated: Bool
+    var tabsScriptingJSBridgeAvailableInSyntheticHarness: Bool
+    var tabsJSBridgeAvailableInProduct: Bool
+    var normalTabRuntimeBridgeAvailable: Bool
+    var scriptingAvailableInProduct: Bool
+    var runtimeLoadable: Bool
+    var diagnostics: [String]
+}
+
+@available(macOS 15.5, *)
+@MainActor
+private final class ChromeMV3TabsScriptingJSSyntheticNavigationObserver:
+    NSObject,
+    WKNavigationDelegate
+{
+    private var continuation:
+        CheckedContinuation<Result<Void, Error>, Never>?
+
+    func wait() async -> Result<Void, Error> {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFinish navigation: WKNavigation!
+    ) {
+        _ = webView
+        _ = navigation
+        finish(.success(()))
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFail navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        _ = webView
+        _ = navigation
+        finish(.failure(error))
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        _ = webView
+        _ = navigation
+        finish(.failure(error))
+    }
+
+    private func finish(_ result: Result<Void, Error>) {
+        continuation?.resume(returning: result)
+        continuation = nil
+    }
+}
+
+@available(macOS 15.5, *)
+enum ChromeMV3TabsScriptingJSSyntheticHarness {
+    static let reportVerificationScriptBody = """
+    const exposedNamespaces = Object.keys(chrome).sort();
+    const tabsKeys = Object.keys(chrome.tabs).sort();
+    const scriptingKeys = Object.keys(chrome.scripting).sort();
+    let queryCallbackTabs = null;
+    let queryCallbackLastErrorInside = "unset";
+    await new Promise((resolve) => {
+      chrome.tabs.query({active: true}, function(tabs) {
+        queryCallbackTabs = tabs;
+        queryCallbackLastErrorInside = chrome.runtime.lastError || null;
+        resolve();
+      });
+    });
+    const queryCallbackLastErrorOutside = chrome.runtime.lastError || null;
+    const queryPromiseTabs = await chrome.tabs.query({active: true});
+    const sendPromiseResponse = await chrome.tabs.sendMessage(
+      1,
+      {type: "promise"},
+      {frameId: 0}
+    );
+    let sendCallbackResponse = null;
+    let sendCallbackLastErrorInside = "unset";
+    await new Promise((resolve) => {
+      chrome.tabs.sendMessage(1, {type: "callback"}, {frameId: 0}, function(response) {
+        sendCallbackResponse = response;
+        sendCallbackLastErrorInside = chrome.runtime.lastError || null;
+        resolve();
+      });
+    });
+    let noReceiverInside = null;
+    let noReceiverArgCount = -1;
+    await new Promise((resolve) => {
+      chrome.tabs.sendMessage(7, {type: "missing"}, {frameId: 0}, function() {
+        noReceiverArgCount = arguments.length;
+        noReceiverInside = chrome.runtime.lastError && chrome.runtime.lastError.message;
+        resolve();
+      });
+    });
+    const noReceiverOutside = chrome.runtime.lastError || null;
+    const port = chrome.tabs.connect(1, {name: "content", frameId: 0});
+    let disconnectSeen = false;
+    port.onDisconnect.addListener(() => {
+      disconnectSeen = true;
+    });
+    await chrome.tabs.sendMessage(1, {type: "after-connect"}, {frameId: 0});
+    port.disconnect();
+    const executeResult = await chrome.scripting.executeScript({
+      target: {tabId: 1, frameIds: [0]},
+      func: () => document.title,
+      args: []
+    });
+    let productBlockedMessage = null;
+    try {
+      await chrome.scripting.executeScript({
+        target: {tabId: 99},
+        func: () => location.href
+      });
+    } catch (error) {
+      productBlockedMessage = error && error.message;
+    }
+    return {
+      exposedNamespaces,
+      tabsKeys,
+      scriptingKeys,
+      storageMissing: chrome.storage === undefined,
+      permissionsMissing: chrome.permissions === undefined,
+      nativeMessagingMissing: chrome.nativeMessaging === undefined,
+      queryCallbackTabs,
+      queryPromiseTabs,
+      sendPromiseResponse,
+      sendCallbackResponse,
+      noReceiverInside,
+      noReceiverOutside,
+      productBlockedMessage,
+      executeResult,
+      tabsQueryCallbackOK:
+        Array.isArray(queryCallbackTabs)
+        && queryCallbackTabs.length === 1
+        && queryCallbackTabs[0].id === 1
+        && queryCallbackLastErrorInside === null
+        && queryCallbackLastErrorOutside === null,
+      tabsQueryPromiseOK:
+        Array.isArray(queryPromiseTabs)
+        && queryPromiseTabs.length === 1
+        && queryPromiseTabs[0].id === 1,
+      tabsQueryRedactionOK: false,
+      tabsSendMessagePromiseOK:
+        sendPromiseResponse
+        && sendPromiseResponse.target === "syntheticContentScriptModel"
+        && sendPromiseResponse.tabId === 1,
+      tabsSendMessageCallbackOK:
+        sendCallbackResponse
+        && sendCallbackResponse.target === "syntheticContentScriptModel"
+        && sendCallbackLastErrorInside === null,
+      tabsSendMessageNoReceiverLastErrorOK:
+        noReceiverInside === "Could not establish connection. Receiving end does not exist."
+        && noReceiverArgCount === 0
+        && noReceiverOutside === null,
+      tabsConnectOK:
+        port.name === "content"
+        && typeof port.postMessage === "function"
+        && typeof port.disconnect === "function",
+      tabsConnectDisconnectOK: disconnectSeen === true,
+      scriptingExecuteScriptOK:
+        Array.isArray(executeResult)
+        && executeResult.length === 1
+        && executeResult[0].frameId === 0
+        && executeResult[0].result
+        && executeResult[0].result.source === "controlledSyntheticModel",
+      scriptingProductTargetBlockedOK:
+        typeof productBlockedMessage === "string"
+        && productBlockedMessage.length > 0,
+      callbackLastErrorScopedOK:
+        noReceiverInside === "Could not establish connection. Receiving end does not exist."
+        && noReceiverOutside === null,
+      promiseRejectsOnErrorOK:
+        typeof productBlockedMessage === "string"
+        && productBlockedMessage.length > 0
+    };
+    """
+
+    @MainActor
+    static func run(
+        scriptBody: String,
+        configuration: ChromeMV3TabsScriptingJSBridgeConfiguration =
+            .syntheticHarness(),
+        tabRegistry: ChromeMV3SyntheticTabRegistry? = nil,
+        permissionBroker: ChromeMV3PermissionBroker? = nil,
+        html: String =
+            "<!doctype html><meta charset='utf-8'><title>Tabs Scripting JS MVP</title>"
+    ) async -> ChromeMV3TabsScriptingJSSyntheticHarnessResult {
+        let resolvedRegistry =
+            tabRegistry
+            ?? defaultTabRegistry(configuration: configuration)
+        let bridgeHandler = ChromeMV3TabsScriptingJSBridgeHandler(
+            configuration: configuration,
+            tabRegistry: resolvedRegistry,
+            permissionBroker: permissionBroker
+                ?? ChromeMV3TabsScriptingPermissionFixtures.hostAndScripting(
+                    extensionID: configuration.extensionID,
+                    profileID: configuration.profileID
+                )
+        )
+        let webViewConfiguration = WKWebViewConfiguration()
+        webViewConfiguration.sumiIsNormalTabWebViewConfiguration = false
+        let scriptHandler = ChromeMV3TabsScriptingJSScriptMessageHandler(
+            handler: bridgeHandler
+        )
+        webViewConfiguration.userContentController.addScriptMessageHandler(
+            scriptHandler,
+            contentWorld: .page,
+            name: ChromeMV3TabsScriptingJSShimSource
+                .bridgeMessageHandlerName
+        )
+        let shimSource = ChromeMV3TabsScriptingJSShimSource.source(
+            configuration: configuration
+        )
+        let userScript = WKUserScript(
+            source: shimSource,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        )
+        webViewConfiguration.userContentController.addUserScript(userScript)
+
+        let webView = WKWebView(
+            frame: .zero,
+            configuration: webViewConfiguration
+        )
+        let observer = ChromeMV3TabsScriptingJSSyntheticNavigationObserver()
+        webView.navigationDelegate = observer
+        _ = webView.loadHTMLString(html, baseURL: nil)
+        let navigationResult = await observer.wait()
+        var diagnostics: [String] = [
+            "Synthetic WKWebView is hidden and is not registered as a product tab.",
+            "tabs/scripting shim is installed as a WKUserScript only on this controlled synthetic harness configuration.",
+            "tabs/scripting bridge handler is installed only on the synthetic harness WKUserContentController.",
+        ]
+        if case .failure(let error) = navigationResult {
+            diagnostics.append(error.localizedDescription)
+        }
+
+        var scriptSucceeded = false
+        var resultJSON: String?
+        if case .success = navigationResult {
+            do {
+                let result = try await webView.callAsyncJavaScript(
+                    scriptBody,
+                    arguments: [:],
+                    in: nil,
+                    contentWorld: .page
+                )
+                resultJSON = ChromeMV3StorageValue(
+                    tabsScriptingWebKitValue: result ?? NSNull()
+                )
+                .flatMap { try? $0.canonicalJSONString() }
+                scriptSucceeded = true
+            } catch {
+                diagnostics.append(error.localizedDescription)
+            }
+        }
+
+        let modelReport = ChromeMV3TabsScriptingMVPReportGenerator.makeReport(
+            extensionID: configuration.extensionID,
+            profileID: configuration.profileID,
+            moduleState: configuration.moduleState
+        )
+        let webKitSummary =
+            ChromeMV3TabsScriptingWebKitExecutionSummary
+            .fromWebKitScriptResult(
+                json: resultJSON,
+                scriptEvaluationSucceeded: scriptSucceeded,
+                tabsScriptingModelHandlersAvailable:
+                    modelReport.behaviorSummary
+                    .tabsScriptingModelHandlersAvailable,
+                tabsScriptingJSBridgeAvailableInSyntheticHarness:
+                    configuration.tabsJSBridgeAvailableInSyntheticHarness,
+                diagnostics: diagnostics
+            )
+        let report = ChromeMV3TabsScriptingMVPReportGenerator.makeReport(
+            extensionID: configuration.extensionID,
+            profileID: configuration.profileID,
+            moduleState: configuration.moduleState,
+            webKitExecutionSummary: webKitSummary
+        )
+        let registrySummary = bridgeHandler.tabRegistry.summary
+        let endpointSummary =
+            bridgeHandler.tabRegistry.contentScriptEndpointSummary
+        let handledRequestCount = bridgeHandler.handledRequestCount
+        let queryRequestCount = bridgeHandler.queryRequestCount
+        let sendMessageDispatchCount =
+            bridgeHandler.sendMessageDispatchCount
+        let modelPortCreateCount = bridgeHandler.modelPortCreateCount
+        let modelPortDisconnectCount =
+            bridgeHandler.modelPortDisconnectCount
+        let executeScriptRequestCount =
+            bridgeHandler.executeScriptRequestCount
+        let userScriptCount =
+            webViewConfiguration.userContentController.userScripts.count
+
+        webView.navigationDelegate = nil
+        webViewConfiguration.userContentController
+            .removeScriptMessageHandler(
+                forName:
+                    ChromeMV3TabsScriptingJSShimSource
+                    .bridgeMessageHandlerName,
+                contentWorld: .page
+            )
+        webViewConfiguration.userContentController.removeAllUserScripts()
+        bridgeHandler.tearDown()
+        let teardownRegistrySummary = bridgeHandler.tabRegistry.summary
+        let teardownEndpointSummary =
+            bridgeHandler.tabRegistry.contentScriptEndpointSummary
+
+        return ChromeMV3TabsScriptingJSSyntheticHarnessResult(
+            scriptEvaluationSucceeded: scriptSucceeded,
+            scriptResultJSON: resultJSON,
+            report: report,
+            webKitExecutionSummary: webKitSummary,
+            tabRegistrySummary: registrySummary,
+            contentScriptEndpointSummary: endpointSummary,
+            tabRegistrySummaryAfterTeardown: teardownRegistrySummary,
+            contentScriptEndpointSummaryAfterTeardown:
+                teardownEndpointSummary,
+            handledRequestCount: handledRequestCount,
+            queryRequestCount: queryRequestCount,
+            sendMessageDispatchCount: sendMessageDispatchCount,
+            modelPortCreateCount: modelPortCreateCount,
+            modelPortDisconnectCount: modelPortDisconnectCount,
+            executeScriptRequestCount: executeScriptRequestCount,
+            userScriptCount: userScriptCount,
+            scriptMessageHandlerCount: 1,
+            syntheticWebViewCreated: true,
+            tabsScriptingJSBridgeAvailableInSyntheticHarness:
+                configuration.tabsJSBridgeAvailableInSyntheticHarness,
+            tabsJSBridgeAvailableInProduct: false,
+            normalTabRuntimeBridgeAvailable: false,
+            scriptingAvailableInProduct: false,
+            runtimeLoadable: false,
+            diagnostics:
+                uniqueSortedTabsScripting(
+                    diagnostics
+                        + webKitSummary.diagnostics
+                        + registrySummary.diagnostics
+                        + endpointSummary.diagnostics
+                )
+        )
+    }
+
+    private static func defaultTabRegistry(
+        configuration: ChromeMV3TabsScriptingJSBridgeConfiguration
+    ) -> ChromeMV3SyntheticTabRegistry {
+        let registry =
+            ChromeMV3SyntheticTabRegistry.passwordManagerFixture(
+                extensionID: configuration.extensionID,
+                profileID: configuration.profileID,
+                includeProductNormalTab: true
+            )
+        registry.register(
+            ChromeMV3SyntheticTabRecord(
+                id: 7,
+                profileID: configuration.profileID,
+                url: "https://example.com/no-listener",
+                title: "No Listener",
+                active: false,
+                index: 2,
+                frames: [
+                    ChromeMV3SyntheticTabFrameRecord(
+                        frameID: 0,
+                        documentID: "document-no-listener",
+                        url: "https://example.com/no-listener",
+                        staticContentScriptEndpointRegistered: false,
+                        connectEndpointRegistered: false,
+                        diagnostics: [
+                            "Missing endpoint fixture drives WebKit lastError callback coverage.",
+                        ]
+                    ),
+                ],
+                diagnostics: [
+                    "Controlled synthetic tab has no content-script receiver.",
+                ]
+            )
+        )
+        return registry
+    }
+}
+#endif
+
 enum ChromeMV3TabsScriptingPermissionFixtures {
     static func hostAndScripting(
         extensionID: String,
@@ -2866,6 +3470,42 @@ enum ChromeMV3TabsScriptingPermissionFixtures {
 }
 
 private extension ChromeMV3StorageValue {
+    init?(tabsScriptingWebKitValue value: Any) {
+        if value is NSNull {
+            self = .null
+        } else if let string = value as? String {
+            self = .string(string)
+        } else if let bool = value as? Bool {
+            self = .bool(bool)
+        } else if let number = value as? NSNumber {
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                self = .bool(number.boolValue)
+            } else {
+                self = .number(number.doubleValue)
+            }
+        } else if let array = value as? [Any] {
+            var values: [ChromeMV3StorageValue] = []
+            for entry in array {
+                guard let converted = ChromeMV3StorageValue(
+                    tabsScriptingWebKitValue: entry
+                ) else { return nil }
+                values.append(converted)
+            }
+            self = .array(values)
+        } else if let object = value as? [String: Any] {
+            var converted: [String: ChromeMV3StorageValue] = [:]
+            for (key, entry) in object {
+                guard let value = ChromeMV3StorageValue(
+                    tabsScriptingWebKitValue: entry
+                ) else { return nil }
+                converted[key] = value
+            }
+            self = .object(converted)
+        } else {
+            return nil
+        }
+    }
+
     var objectValue: [String: ChromeMV3StorageValue]? {
         guard case .object(let object) = self else { return nil }
         return object

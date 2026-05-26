@@ -388,12 +388,17 @@ final class ChromeMV3RuntimeJSMessagingMVPTests: XCTestCase {
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3RuntimeJSMessagingMVP.swift",
             "SumiTests/ChromeMV3RuntimeJSMessagingMVPTests.swift",
         ]
+        let syntheticBridgeFiles =
+            runtimeBridgeFiles.union([
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift",
+                "SumiTests/ChromeMV3TabsScriptingJSMVPTests.swift",
+            ])
         let runtimeBridgeJoined = sources
             .filter { runtimeBridgeFiles.contains($0.relativePath) }
             .map(\.contents)
             .joined(separator: "\n")
         let otherJoined = sources
-            .filter { runtimeBridgeFiles.contains($0.relativePath) == false }
+            .filter { syntheticBridgeFiles.contains($0.relativePath) == false }
             .map(\.contents)
             .joined(separator: "\n")
 

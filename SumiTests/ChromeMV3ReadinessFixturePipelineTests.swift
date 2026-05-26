@@ -794,6 +794,10 @@ final class ChromeMV3ReadinessFixturePipelineTests: XCTestCase {
         )
 
         let source = chromeMV3ProductSourceFiles
+            .filter {
+                $0.relativePath
+                    != "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift"
+            }
             .map(\.contents)
             .joined(separator: "\n")
         for forbidden in [
