@@ -439,6 +439,30 @@ final class ChromeMV3ServiceWorkerLifecycleCoordinatorTests: XCTestCase {
                 "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift"
             )
             .path
+        let runtimeJSMessagingHarnessPath =
+            root
+            .appendingPathComponent(
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3RuntimeJSMessagingMVP.swift"
+            )
+            .path
+        let runtimeJSMessagingHarnessTestsPath =
+            root
+            .appendingPathComponent(
+                "SumiTests/ChromeMV3RuntimeJSMessagingMVPTests.swift"
+            )
+            .path
+        let nativeMessagingInternalRuntimePath =
+            root
+            .appendingPathComponent(
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift"
+            )
+            .path
+        let nativeMessagingInternalRuntimeTestsPath =
+            root
+            .appendingPathComponent(
+                "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift"
+            )
+            .path
         for pattern in literalPatterns {
             let offenders = texts
                 .filter { $0.1.contains(pattern) }
@@ -448,6 +472,15 @@ final class ChromeMV3ServiceWorkerLifecycleCoordinatorTests: XCTestCase {
                         ? $0 != tabsScriptingHarnessPath
                             && $0 != storageLocalSyntheticHarnessPath
                             && $0 != passwordManagerSyntheticHarnessPath
+                        : pattern == "connect" + "Native"
+                            ? $0 != runtimeJSMessagingHarnessPath
+                                && $0 != runtimeJSMessagingHarnessTestsPath
+                                && $0 != passwordManagerSyntheticHarnessPath
+                                && $0 != nativeMessagingInternalRuntimePath
+                                && $0 != nativeMessagingInternalRuntimeTestsPath
+                        : pattern == "Pro" + "cess" + "("
+                            ? $0 != nativeMessagingInternalRuntimePath
+                                && $0 != nativeMessagingInternalRuntimeTestsPath
                         : true
                 }
             XCTAssertTrue(offenders.isEmpty, "\(pattern): \(offenders)")

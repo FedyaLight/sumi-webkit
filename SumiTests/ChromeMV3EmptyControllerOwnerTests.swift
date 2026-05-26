@@ -329,7 +329,14 @@ final class ChromeMV3EmptyControllerOwnerTests: XCTestCase {
                     "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift",
                 ]
             ),
-            ("connect" + "Native", []),
+            (
+                "connect" + "Native",
+                [
+                    "Sumi/Models/Extension/ChromeMV3/ChromeMV3RuntimeJSMessagingMVP.swift",
+                    "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift",
+                    "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift",
+                ]
+            ),
             ("DispatchSource" + "Ti" + "mer", []),
             ("Ti" + "mer", []),
         ] {

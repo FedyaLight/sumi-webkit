@@ -391,33 +391,20 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         replyHandler: @escaping (Any?, (any Error)?) -> Void
     ) {
         let applicationId = applicationIdentifier ?? ""
-
-        let browserSupportDirectory = ExtensionUtils.applicationSupportRoot()
-        let appBundleURL = Bundle.main.bundleURL
-        guard NativeMessagingHandler.resolveManifestURL(
-            applicationId: applicationId,
-            browserSupportDirectory: browserSupportDirectory,
-            appBundleURL: appBundleURL
-        ) != nil else {
-            replyHandler(
-                nil,
-                NSError(
-                    domain: "ExtensionManager.NativeMessaging",
-                    code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Native messaging host \(applicationId) is not registered"]
-                )
+        _ = controller
+        _ = message
+        _ = extensionContext
+        replyHandler(
+            nil,
+            NSError(
+                domain: "ExtensionManager.NativeMessaging",
+                code: 50,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Product native messaging is unavailable; \(applicationId) can only be exercised by DEBUG/internal fixture diagnostics.",
+                ]
             )
-            return
-        }
-
-        let handler = NativeMessagingHandler(
-            applicationId: applicationId,
-            browserSupportDirectory: browserSupportDirectory,
-            appBundleURL: appBundleURL
         )
-        handler.sendMessage(message) { response, error in
-            replyHandler(response, error)
-        }
     }
 
     func webExtensionController(
@@ -426,28 +413,20 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping ((any Error)?) -> Void
     ) {
-        guard let applicationId = port.applicationIdentifier else {
-            completionHandler(nil)
-            return
-        }
-        let extensionId = self.extensionID(for: extensionContext)
-
-        let handler = NativeMessagingHandler(
-            applicationId: applicationId,
-            browserSupportDirectory: ExtensionUtils.applicationSupportRoot(),
-            appBundleURL: Bundle.main.bundleURL
+        _ = controller
+        _ = extensionContext
+        let applicationId = port.applicationIdentifier ?? "unknown"
+        port.disconnect()
+        completionHandler(
+            NSError(
+                domain: "ExtensionManager.NativeMessaging",
+                code: 50,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Product native messaging Port is unavailable; \(applicationId) can only be exercised by DEBUG/internal fixture diagnostics.",
+                ]
+            )
         )
-
-        let portID = ObjectIdentifier(port)
-        nativeMessagePortHandlers[portID] = handler
-        if let extensionId {
-            nativeMessagePortExtensionIDs[portID] = extensionId
-        }
-        handler.connect(port: port) { [weak self] in
-            self?.nativeMessagePortHandlers.removeValue(forKey: portID)
-            self?.nativeMessagePortExtensionIDs.removeValue(forKey: portID)
-        }
-        completionHandler(nil)
     }
 
     func webExtensionController(

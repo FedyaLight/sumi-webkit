@@ -482,6 +482,8 @@ final class ChromeMV3ExtensionPageHostHarnessTests: XCTestCase {
                 "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift",
                 "SumiTests/ChromeMV3StorageLocalRuntimeTests.swift",
                 "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift",
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift",
+                "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift",
             ])
         let joined = sources
             .filter {
@@ -526,7 +528,6 @@ final class ChromeMV3ExtensionPageHostHarnessTests: XCTestCase {
             .joined(separator: "\n")
         XCTAssertTrue(scopedJoined.contains("add" + "ScriptMessageHandler"))
         XCTAssertFalse(scopedJoined.contains("WKUser" + "Script("))
-        XCTAssertFalse(scopedJoined.contains("connect" + "Native"))
         XCTAssertFalse(scopedJoined.contains("Pro" + "cess("))
     }
 

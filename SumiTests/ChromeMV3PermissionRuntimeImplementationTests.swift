@@ -838,6 +838,14 @@ final class ChromeMV3PermissionRuntimeImplementationTests: XCTestCase {
             encoding: .utf8
         )
         let swiftFiles = try productionSwiftFiles(under: productionRoot)
+            .filter {
+                $0.lastPathComponent
+                    != "ChromeMV3RuntimeJSMessagingMVP.swift"
+                    && $0.lastPathComponent
+                    != "ChromeMV3PasswordManagerSyntheticFixture.swift"
+                    && $0.lastPathComponent
+                    != "ChromeMV3NativeMessagingInternalRuntime.swift"
+            }
             + [extensionModule]
         let source = try swiftFiles.map {
             try String(contentsOf: $0, encoding: .utf8)
@@ -859,7 +867,7 @@ final class ChromeMV3PermissionRuntimeImplementationTests: XCTestCase {
             "activeTabAvailableInProduct.*" + positiveBooleanLiteral,
             "normalTabRuntimeBridgeAvailable.*" + positiveBooleanLiteral,
             "serviceWorkerWakeAvailable.*" + positiveBooleanLiteral,
-            "nativeMessagingAvailable.*" + positiveBooleanLiteral,
+            "nativeMessagingAvailableInProduct.*" + positiveBooleanLiteral,
             "productRuntimeExposed.*" + positiveBooleanLiteral,
         ]
 

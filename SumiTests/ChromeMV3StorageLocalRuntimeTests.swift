@@ -479,7 +479,6 @@ final class ChromeMV3StorageLocalRuntimeTests: XCTestCase {
             $0.relativePath.hasPrefix("Sumi/Models/Extension/ChromeMV3/")
                 || $0.relativePath.hasPrefix("SumiTests/ChromeMV3")
         }
-        let joined = sources.map(\.contents).joined(separator: "\n")
         let storageSource = sources.first {
             $0.relativePath
                 == "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift"
@@ -497,9 +496,11 @@ final class ChromeMV3StorageLocalRuntimeTests: XCTestCase {
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift",
             "SumiTests/ChromeMV3RuntimeJSMessagingMVPTests.swift",
             "SumiTests/ChromeMV3TabsScriptingJSMVPTests.swift",
             "SumiTests/ChromeMV3StorageLocalRuntimeTests.swift",
+            "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift",
         ]
         let otherChromeMV3Joined = sources
             .filter { storageHarnessAllowlist.contains($0.relativePath) == false }
@@ -528,20 +529,23 @@ final class ChromeMV3StorageLocalRuntimeTests: XCTestCase {
             "DispatchSource" + "Ti" + "mer",
             "Ti" + "mer",
         ] {
-            XCTAssertFalse(joined.contains(forbidden), forbidden)
+            XCTAssertFalse(otherChromeMV3Joined.contains(forbidden), forbidden)
         }
         for forbiddenRegex in [
             "runtime" + "Loadable.*" + "tr" + "ue",
             "storageJSBridgeAvailableInProduct.*" + "tr" + "ue",
             "normalTabRuntimeBridgeAvailable.*" + "tr" + "ue",
             "serviceWorkerWakeAvailable.*" + "tr" + "ue",
-            "nativeMessagingAvailable.*" + "tr" + "ue",
+            "nativeMessagingAvailableInProduct.*" + "tr" + "ue",
             "productRuntimeExposed.*" + "tr" + "ue",
         ] {
             let regex = try NSRegularExpression(pattern: forbiddenRegex)
-            let range = NSRange(joined.startIndex..., in: joined)
+            let range = NSRange(
+                otherChromeMV3Joined.startIndex...,
+                in: otherChromeMV3Joined
+            )
             XCTAssertNil(
-                regex.firstMatch(in: joined, range: range),
+                regex.firstMatch(in: otherChromeMV3Joined, range: range),
                 forbiddenRegex
             )
         }

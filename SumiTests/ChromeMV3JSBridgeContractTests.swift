@@ -713,7 +713,21 @@ final class ChromeMV3JSBridgeContractTests: XCTestCase {
             $0.relativePath.hasPrefix("Sumi/Models/Extension/ChromeMV3/")
                 || $0.relativePath.hasPrefix("SumiTests/ChromeMV3")
         }
-        let joined = sources.map(\.contents).joined(separator: "\n")
+        let syntheticBridgeFiles: Set<String> = [
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3RuntimeJSMessagingMVP.swift",
+            "SumiTests/ChromeMV3RuntimeJSMessagingMVPTests.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift",
+            "SumiTests/ChromeMV3TabsScriptingJSMVPTests.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift",
+            "SumiTests/ChromeMV3StorageLocalRuntimeTests.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift",
+            "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift",
+        ]
+        let boundaryGuardJoined = sources
+            .filter { syntheticBridgeFiles.contains($0.relativePath) == false }
+            .map(\.contents)
+            .joined(separator: "\n")
 
         for forbidden in [
             "WKWebExtension" + "Context(",
@@ -726,7 +740,7 @@ final class ChromeMV3JSBridgeContractTests: XCTestCase {
             "DispatchSource" + "Ti" + "mer",
             "Ti" + "mer",
         ] {
-            XCTAssertFalse(joined.contains(forbidden), forbidden)
+            XCTAssertFalse(boundaryGuardJoined.contains(forbidden), forbidden)
         }
 
         for forbiddenRegex in [
@@ -739,7 +753,7 @@ final class ChromeMV3JSBridgeContractTests: XCTestCase {
             "password" + "ManagerRuntimeBridgeReady\\s*[:=].*" + "tr" + "ue",
         ] {
             XCTAssertNil(
-                joined.range(
+                boundaryGuardJoined.range(
                     of: forbiddenRegex,
                     options: .regularExpression
                 ),

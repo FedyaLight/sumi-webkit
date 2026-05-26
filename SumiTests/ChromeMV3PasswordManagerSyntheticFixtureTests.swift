@@ -69,7 +69,7 @@ final class ChromeMV3PasswordManagerSyntheticFixtureTests: XCTestCase {
             object(manifest.manifestValue)?["manifest_version"] == .number(3)
         })
         XCTAssertTrue(native.nativeMessagingRequired)
-        XCTAssertEqual(native.expectedReadinessClassification, .blocked)
+        XCTAssertEqual(native.expectedReadinessClassification, .partial)
         XCTAssertEqual(native.facts.nativeHostName, "com.sumi.synthetic_password_manager")
         XCTAssertTrue(serviceWorker.serviceWorkerRequired)
         XCTAssertEqual(serviceWorker.expectedReadinessClassification, .blocked)
@@ -130,7 +130,10 @@ final class ChromeMV3PasswordManagerSyntheticFixtureTests: XCTestCase {
             report.permissionActiveTabResult
                 .requestWithoutModeledPromptReturnsProductUIUnavailable
         )
-        XCTAssertEqual(report.nativeMessagingBlocker.nextBlockerPrompt, "Prompt 50")
+        XCTAssertEqual(
+            report.nativeMessagingBlocker.nextBlockerPrompt,
+            "Native messaging fixture implementation required"
+        )
         XCTAssertFalse(report.nativeMessagingBlocker.canConnectNativeNow)
         XCTAssertFalse(report.nativeMessagingBlocker.processLaunchAllowedNow)
         XCTAssertEqual(report.serviceWorkerLifecycleBlocker.nextBlockerPrompt, "Prompt 51")
@@ -150,6 +153,53 @@ final class ChromeMV3PasswordManagerSyntheticFixtureTests: XCTestCase {
         XCTAssertEqual(readinessByAPI["storage.local"]?.classification, .ready)
         XCTAssertEqual(readinessByAPI["nativeMessaging"]?.classification, .blocked)
         XCTAssertEqual(readinessByAPI["serviceWorkerLifecycle"]?.classification, .blocked)
+    }
+
+    func testNativeMessagingImplementationSummaryMakesFixtureInternallyReady()
+        throws
+    {
+        let root = try temporaryDirectory(named: "native-fixture-ready")
+        let nativeReport =
+            try ChromeMV3NativeMessagingImplementationReportGenerator
+            .makeReport(
+                extensionID: "abcdefghijklmnopabcdefghijklmnop",
+                profileID: "password-manager-native-profile",
+                fixtureHostRootURL: root
+            )
+
+        let report = ChromeMV3PasswordManagerFixtureReportGenerator
+            .makeReport(
+                extensionID: "abcdefghijklmnopabcdefghijklmnop",
+                profileID: "password-manager-native-profile",
+                nativeMessagingImplementationSummary: nativeReport.summary
+            )
+        let readinessByAPI = Dictionary(
+            uniqueKeysWithValues: report.apiReadinessMatrix.map {
+                ($0.api, $0)
+            }
+        )
+
+        XCTAssertTrue(report.passwordManagerNativeMessagingReady)
+        XCTAssertTrue(report.passwordManagerNativeMessagingReadyInFixture)
+        XCTAssertTrue(report.nativeMessagingBlocker.canConnectNativeNow)
+        XCTAssertTrue(report.nativeMessagingBlocker.processLaunchAllowedNow)
+        XCTAssertTrue(
+            report.nativeMessagingBlocker
+                .nativeMessagingAvailableInInternalFixture
+        )
+        XCTAssertTrue(
+            report.nativeMessagingBlocker
+                .processLaunchAllowedForFixtureHost
+        )
+        XCTAssertFalse(report.nativeMessagingBlocker.nativeMessagingAvailableInProduct)
+        XCTAssertFalse(report.nativeMessagingBlocker.processLaunchAllowedInProduct)
+        XCTAssertFalse(report.passwordManagerProductRuntimeReady)
+        XCTAssertEqual(report.nativeMessagingBlocker.nextBlockerPrompt, "Prompt 51")
+        XCTAssertEqual(readinessByAPI["nativeMessaging"]?.classification, .partial)
+        XCTAssertEqual(
+            report.nativeMessagingImplementationSummary,
+            nativeReport.summary
+        )
     }
 
     func testCombinedShimSourceLoadsOnlyControlledNamespacesAndProductFlagsStayFalse() {
@@ -293,7 +343,6 @@ final class ChromeMV3PasswordManagerSyntheticFixtureTests: XCTestCase {
         )
 
         for forbidden in [
-            "connect" + "Native",
             "Process" + "(",
             "DispatchSource" + "Ti" + "mer",
             "Ti" + "mer" + "(",
