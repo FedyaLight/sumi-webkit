@@ -91,11 +91,13 @@ enum ChromeMV3JSBridgeNamespace:
     Comparable,
     Sendable
 {
+    case declarativeNetRequest
     case nativeMessaging
     case permissions
     case runtime
     case storage
     case tabs
+    case webRequest
     case unsupported
 
     static func < (
@@ -604,6 +606,16 @@ enum ChromeMV3JSBridgeArgumentNormalizer {
                 permissionState:
                     environment.nativeMessagingPermissionState,
                 productPolicy: environment.nativeProductPolicy
+            )
+        case .declarativeNetRequest, .webRequest:
+            return invalid(
+                target: apiTarget(request: request),
+                status: .argumentUnsupported,
+                issue: issue(
+                    .unsupportedVariant,
+                    index: nil,
+                    "\(request.namespace.rawValue) is modeled by the network compatibility layer and is not routed through the generic bridge contract."
+                )
             )
         case .unsupported:
             return invalid(
@@ -1720,6 +1732,15 @@ enum ChromeMV3JSBridgeContractRouter {
                 normalization: normalization,
                 environment: environment
             )
+        case .declarativeNetRequest, .webRequest:
+            return failure(
+                request: request,
+                routeResult: nil,
+                code: .apiContractNotImplemented,
+                diagnostics: [
+                    "\(request.namespace.rawValue) uses the network compatibility bridge; product JS bridge exposure remains unavailable.",
+                ]
+            )
         case .unsupported:
             return failure(
                 request: request,
@@ -2368,6 +2389,121 @@ enum ChromeMV3JSBridgeMethodCapabilityMatrix {
         }
         capabilities.append(
             contentsOf: [
+                method(
+                    namespace: .declarativeNetRequest,
+                    methodName: "getEnabledRulesets",
+                    modeledNow: true,
+                    routed: true,
+                    requiresContext: false,
+                    requiresServiceWorkerWake: false,
+                    requiresPermission: true,
+                    requiresStorageBroker: false,
+                    requiresNativeHost: false,
+                    blockers: [
+                        "DNR JS bridge is internal synthetic-only.",
+                        "Product DNR enforcement is unavailable.",
+                    ]
+                ),
+                method(
+                    namespace: .declarativeNetRequest,
+                    methodName: "updateEnabledRulesets",
+                    modeledNow: true,
+                    routed: true,
+                    requiresContext: false,
+                    requiresServiceWorkerWake: false,
+                    requiresPermission: true,
+                    requiresStorageBroker: false,
+                    requiresNativeHost: false,
+                    blockers: [
+                        "DNR enabled ruleset state is internal synthetic-only.",
+                        "Product DNR enforcement is unavailable.",
+                    ]
+                ),
+                method(
+                    namespace: .declarativeNetRequest,
+                    methodName: "getDynamicRules",
+                    modeledNow: true,
+                    routed: true,
+                    requiresContext: false,
+                    requiresServiceWorkerWake: false,
+                    requiresPermission: true,
+                    requiresStorageBroker: false,
+                    requiresNativeHost: false,
+                    blockers: [
+                        "DNR dynamic rules are stored only in internal synthetic state.",
+                    ]
+                ),
+                method(
+                    namespace: .declarativeNetRequest,
+                    methodName: "updateDynamicRules",
+                    modeledNow: true,
+                    routed: true,
+                    requiresContext: false,
+                    requiresServiceWorkerWake: false,
+                    requiresPermission: true,
+                    requiresStorageBroker: false,
+                    requiresNativeHost: false,
+                    blockers: [
+                        "DNR dynamic rule mutation is internal synthetic-only.",
+                    ]
+                ),
+                method(
+                    namespace: .declarativeNetRequest,
+                    methodName: "getSessionRules",
+                    modeledNow: true,
+                    routed: true,
+                    requiresContext: false,
+                    requiresServiceWorkerWake: false,
+                    requiresPermission: true,
+                    requiresStorageBroker: false,
+                    requiresNativeHost: false,
+                    blockers: [
+                        "DNR session rules are stored only in internal synthetic state.",
+                    ]
+                ),
+                method(
+                    namespace: .declarativeNetRequest,
+                    methodName: "updateSessionRules",
+                    modeledNow: true,
+                    routed: true,
+                    requiresContext: false,
+                    requiresServiceWorkerWake: false,
+                    requiresPermission: true,
+                    requiresStorageBroker: false,
+                    requiresNativeHost: false,
+                    blockers: [
+                        "DNR session rule mutation is internal synthetic-only.",
+                    ]
+                ),
+                method(
+                    namespace: .declarativeNetRequest,
+                    methodName: "testMatchOutcome",
+                    modeledNow: true,
+                    routed: true,
+                    requiresContext: false,
+                    requiresServiceWorkerWake: false,
+                    requiresPermission: true,
+                    requiresStorageBroker: false,
+                    requiresNativeHost: false,
+                    blockers: [
+                        "DNR matching is synthetic and never applied to product network traffic.",
+                    ]
+                ),
+                method(
+                    namespace: .webRequest,
+                    methodName: "onBeforeRequest.addListener",
+                    modeledNow: true,
+                    routed: true,
+                    requiresContext: false,
+                    requiresServiceWorkerWake: true,
+                    requiresPermission: true,
+                    requiresStorageBroker: false,
+                    requiresNativeHost: false,
+                    blockers: [
+                        "webRequest listeners are internal synthetic-only.",
+                        "Product webRequest blocking is unavailable.",
+                    ]
+                ),
                 method(
                     namespace: .runtime,
                     methodName: "sendMessage",

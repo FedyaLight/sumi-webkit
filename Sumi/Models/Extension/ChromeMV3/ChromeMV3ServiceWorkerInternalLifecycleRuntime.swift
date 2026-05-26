@@ -84,6 +84,13 @@ enum ChromeMV3ServiceWorkerSyntheticListenerEvent:
     case webNavigationOnErrorOccurred
     case webNavigationOnHistoryStateUpdated
     case webNavigationOnReferenceFragmentUpdated
+    case webRequestOnBeforeRequest
+    case webRequestOnBeforeSendHeaders
+    case webRequestOnCompleted
+    case webRequestOnErrorOccurred
+    case webRequestOnHeadersReceived
+    case webRequestOnResponseStarted
+    case webRequestOnSendHeaders
 
     static func < (
         lhs: ChromeMV3ServiceWorkerSyntheticListenerEvent,
@@ -111,7 +118,11 @@ enum ChromeMV3ServiceWorkerSyntheticListenerEvent:
              .webNavigationOnCommitted, .webNavigationOnCompleted,
              .webNavigationOnDOMContentLoaded, .webNavigationOnErrorOccurred,
              .webNavigationOnHistoryStateUpdated,
-             .webNavigationOnReferenceFragmentUpdated:
+             .webNavigationOnReferenceFragmentUpdated,
+             .webRequestOnBeforeRequest, .webRequestOnBeforeSendHeaders,
+             .webRequestOnCompleted, .webRequestOnErrorOccurred,
+             .webRequestOnHeadersReceived, .webRequestOnResponseStarted,
+             .webRequestOnSendHeaders:
             return .serviceWorkerLifecycleEventListener
         }
     }
@@ -1129,6 +1140,8 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
             return .alarmsOnAlarm
         case .webNavigationEvent:
             return .webNavigationOnCommitted
+        case .webRequestEvent:
+            return .webRequestOnBeforeRequest
         case .installOrUpdateEvent, .testFixture:
             return .testFixture
         }
