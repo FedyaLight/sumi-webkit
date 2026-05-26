@@ -29,6 +29,9 @@ struct ChromeMV3PermissionsJSBridgeConfiguration:
     var activeTabAvailableInProduct: Bool
     var normalTabRuntimeBridgeAvailable: Bool
     var serviceWorkerWakeAvailable: Bool
+    var serviceWorkerLifecycleAvailableInInternalFixture: Bool
+    var serviceWorkerWakeAvailableInProduct: Bool
+    var serviceWorkerPermanentBackgroundAvailable: Bool
     var nativeMessagingAvailable: Bool
     var runtimeLoadable: Bool
     var diagnostics: [String]
@@ -76,6 +79,9 @@ struct ChromeMV3PermissionsJSBridgeConfiguration:
             activeTabAvailableInProduct: false,
             normalTabRuntimeBridgeAvailable: false,
             serviceWorkerWakeAvailable: false,
+            serviceWorkerLifecycleAvailableInInternalFixture: allowed,
+            serviceWorkerWakeAvailableInProduct: false,
+            serviceWorkerPermanentBackgroundAvailable: false,
             nativeMessagingAvailable: false,
             runtimeLoadable: false,
             diagnostics:
@@ -438,8 +444,13 @@ struct ChromeMV3PermissionsJSBridgeHostResponse:
     var activeTabAvailableInProduct: Bool
     var normalTabRuntimeBridgeAvailable: Bool
     var serviceWorkerWakeAvailable: Bool
+    var serviceWorkerLifecycleAvailableInInternalFixture: Bool
+    var serviceWorkerWakeAvailableInProduct: Bool
+    var serviceWorkerPermanentBackgroundAvailable: Bool
     var nativeMessagingAvailable: Bool
     var runtimeLoadable: Bool
+    var serviceWorkerLifecycleWakeResult:
+        ChromeMV3ServiceWorkerInternalWakeResult?
     var diagnostics: [String]
 
     var foundationObject: [String: Any] {
@@ -467,7 +478,15 @@ struct ChromeMV3PermissionsJSBridgeHostResponse:
             "normalTabRuntimeBridgeAvailable":
                 normalTabRuntimeBridgeAvailable,
             "serviceWorkerWakeAvailable": serviceWorkerWakeAvailable,
+            "serviceWorkerLifecycleAvailableInInternalFixture":
+                serviceWorkerLifecycleAvailableInInternalFixture,
+            "serviceWorkerWakeAvailableInProduct":
+                serviceWorkerWakeAvailableInProduct,
+            "serviceWorkerPermanentBackgroundAvailable":
+                serviceWorkerPermanentBackgroundAvailable,
             "nativeMessagingAvailable": nativeMessagingAvailable,
+            "serviceWorkerLifecycleWakeResult":
+                serviceWorkerLifecycleWakeResultFoundationObject,
             "runtimeLoadable": runtimeLoadable,
             "diagnostics": diagnostics,
         ]
@@ -479,12 +498,24 @@ struct ChromeMV3PermissionsJSBridgeHostResponse:
             permissionEventPayload
         ).permissionsJSFoundationObject
     }
+
+    private var serviceWorkerLifecycleWakeResultFoundationObject: Any {
+        guard let serviceWorkerLifecycleWakeResult,
+              let data = try? JSONEncoder().encode(
+                serviceWorkerLifecycleWakeResult
+              ),
+              let object = try? JSONSerialization.jsonObject(with: data)
+        else { return NSNull() }
+        return object
+    }
 }
 
 final class ChromeMV3PermissionsJSBridgeHandler {
     let configuration: ChromeMV3PermissionsJSBridgeConfiguration
     private var permissionRuntimeOwner:
         ChromeMV3PermissionRuntimeStateOwner
+    private let serviceWorkerLifecycleOwner:
+        ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner?
     private(set) var handledRequestCount = 0
     private(set) var permissionsRequestCount = 0
     private(set) var rejectedRequestCount = 0
@@ -499,6 +530,31 @@ final class ChromeMV3PermissionsJSBridgeHandler {
             permissionRuntimeOwner
             ?? ChromeMV3PermissionsJSBridgeHandler
             .defaultPermissionRuntimeOwner(configuration: configuration)
+        if configuration
+            .serviceWorkerLifecycleAvailableInInternalFixture
+        {
+            let owner = ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner(
+                configuration: .internalFixture(
+                    extensionID: configuration.extensionID,
+                    profileID: configuration.profileID,
+                    moduleState: configuration.moduleState,
+                    explicitInternalLifecycleAllowed:
+                        configuration
+                        .explicitInternalPermissionsJSBridgeAllowed
+                )
+            )
+            owner.registerListener(
+                event: .permissionsOnAdded,
+                listenerID: "permissions-js-on-added"
+            )
+            owner.registerListener(
+                event: .permissionsOnRemoved,
+                listenerID: "permissions-js-on-removed"
+            )
+            self.serviceWorkerLifecycleOwner = owner
+        } else {
+            self.serviceWorkerLifecycleOwner = nil
+        }
     }
 
     var permissionRuntimeSnapshot:
@@ -592,6 +648,7 @@ final class ChromeMV3PermissionsJSBridgeHandler {
     func tearDown() {
         permissionRuntimeOwner =
             Self.defaultPermissionRuntimeOwner(configuration: configuration)
+        serviceWorkerLifecycleOwner?.tearDownForExtensionDisable()
     }
 
     private func permissionsContains(
@@ -664,15 +721,33 @@ final class ChromeMV3PermissionsJSBridgeHandler {
             let alreadyGranted = application.result.wouldBeAllowedByModel
             let success = alreadyGranted || allowedByPromptModel
             if success {
+                let eventPayload =
+                    promptResult == .accepted
+                        ? application.result.eventPayloadIfAccepted
+                        : nil
+                let lifecycleResult:
+                    ChromeMV3ServiceWorkerInternalWakeResult?
+                if let eventPayload {
+                    lifecycleResult = serviceWorkerLifecycleOwner?.requestWake(
+                        reason: .permissionsChanged,
+                        listenerEvent: .permissionsOnAdded,
+                        payload:
+                            ChromeMV3StorageValue
+                            .permissionsJSEventPayload(eventPayload),
+                        payloadSummary: "permissions.onAdded",
+                        sourceContext:
+                            configuration.sourceContext.runtimeContext
+                    )
+                } else {
+                    lifecycleResult = nil
+                }
                 return response(
                     request: request,
                     succeeded: true,
                     payload: .bool(application.returnedBoolean),
-                    permissionEventPayload:
-                        promptResult == .accepted
-                            ? application.result.eventPayloadIfAccepted
-                            : nil,
+                    permissionEventPayload: eventPayload,
                     permissionsRequestResult: application.result,
+                    serviceWorkerLifecycleWakeResult: lifecycleResult,
                     diagnostics: application.diagnostics
                 )
             }
@@ -704,6 +779,25 @@ final class ChromeMV3PermissionsJSBridgeHandler {
         case .success(let input):
             let application = permissionRuntimeOwner.remove(input: input)
             if application.returnedBoolean {
+                let lifecycleResult:
+                    ChromeMV3ServiceWorkerInternalWakeResult?
+                if let eventPayload =
+                    application.result.eventPayloadIfApplied
+                {
+                    lifecycleResult =
+                        serviceWorkerLifecycleOwner?.requestWake(
+                        reason: .permissionsChanged,
+                        listenerEvent: .permissionsOnRemoved,
+                        payload:
+                            ChromeMV3StorageValue
+                            .permissionsJSEventPayload(eventPayload),
+                        payloadSummary: "permissions.onRemoved",
+                        sourceContext:
+                            configuration.sourceContext.runtimeContext
+                    )
+                } else {
+                    lifecycleResult = nil
+                }
                 return response(
                     request: request,
                     succeeded: true,
@@ -711,6 +805,7 @@ final class ChromeMV3PermissionsJSBridgeHandler {
                     permissionEventPayload:
                         application.result.eventPayloadIfApplied,
                     permissionsRemoveResult: application.result,
+                    serviceWorkerLifecycleWakeResult: lifecycleResult,
                     diagnostics: application.diagnostics
                 )
             }
@@ -931,6 +1026,8 @@ final class ChromeMV3PermissionsJSBridgeHandler {
             ChromeMV3PermissionsAPIRequestResult? = nil,
         permissionsRemoveResult:
             ChromeMV3PermissionsAPIRemoveResult? = nil,
+        serviceWorkerLifecycleWakeResult:
+            ChromeMV3ServiceWorkerInternalWakeResult? = nil,
         diagnostics: [String] = []
     ) -> ChromeMV3PermissionsJSBridgeHostResponse {
         let invocationMode = request?.invocationMode ?? .promise
@@ -964,12 +1061,20 @@ final class ChromeMV3PermissionsJSBridgeHandler {
             activeTabAvailableInProduct: false,
             normalTabRuntimeBridgeAvailable: false,
             serviceWorkerWakeAvailable: false,
+            serviceWorkerLifecycleAvailableInInternalFixture:
+                configuration
+                .serviceWorkerLifecycleAvailableInInternalFixture,
+            serviceWorkerWakeAvailableInProduct: false,
+            serviceWorkerPermanentBackgroundAvailable: false,
             nativeMessagingAvailable: false,
             runtimeLoadable: false,
+            serviceWorkerLifecycleWakeResult:
+                serviceWorkerLifecycleWakeResult,
             diagnostics:
                 uniqueSortedPermissionsJS(
                     configuration.diagnostics
                         + diagnostics
+                        + (serviceWorkerLifecycleWakeResult?.diagnostics ?? [])
                         + [
                             "permissions JS bridge handler is DEBUG/internal and synthetic-surface gated.",
                             "No product permission UI is displayed.",

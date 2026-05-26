@@ -152,6 +152,387 @@ final class ChromeMV3ServiceWorkerLifecycleCoordinatorTests: XCTestCase {
         XCTAssertFalse(policy.launchesHostNow)
     }
 
+    func testInternalLifecycleOwnerStartsStoppedAndScoped() {
+        let owner = makeInternalLifecycleOwner()
+        let snapshot = owner.snapshot
+
+        XCTAssertEqual(snapshot.currentState, .stopped)
+        XCTAssertNil(snapshot.currentSessionID)
+        XCTAssertEqual(snapshot.extensionID, "extension-a")
+        XCTAssertEqual(snapshot.profileID, "profile-a")
+        XCTAssertTrue(
+            snapshot.serviceWorkerLifecycleAvailableInInternalFixture
+        )
+        XCTAssertFalse(snapshot.serviceWorkerWakeAvailableInProduct)
+        XCTAssertFalse(snapshot.serviceWorkerPermanentBackgroundAvailable)
+        XCTAssertFalse(snapshot.runtimeLoadable)
+    }
+
+    func testInternalRuntimeMessageWakeDispatchesSyntheticListener() {
+        let owner = makeInternalLifecycleOwner()
+        owner.registerListener(
+            event: .runtimeOnMessage,
+            listenerID: "runtime-on-message"
+        )
+
+        let result = owner.requestWake(
+            reason: .runtimeMessage,
+            payload: .object(["type": .string("fixture-message")]),
+            payloadSummary: "runtime message fixture",
+            sourceContext: .contentScript
+        )
+        let snapshot = owner.snapshot
+
+        XCTAssertTrue(result.wakeAccepted)
+        XCTAssertTrue(result.queued)
+        XCTAssertTrue(result.dispatched)
+        XCTAssertFalse(result.blocked)
+        XCTAssertEqual(result.listenerEvent, .runtimeOnMessage)
+        XCTAssertEqual(snapshot.events.count, 1)
+        XCTAssertEqual(snapshot.events.first?.sequence, 1)
+        XCTAssertEqual(snapshot.events.first?.status, .dispatched)
+        XCTAssertEqual(snapshot.dispatchedEventCount, 1)
+        XCTAssertEqual(snapshot.currentState, .idleEligible)
+    }
+
+    func testInternalRuntimeMessageWakeBlockedInProductScope() {
+        let owner = makeInternalLifecycleOwner()
+        owner.registerListener(
+            event: .runtimeOnMessage,
+            listenerID: "runtime-on-message"
+        )
+
+        let result = owner.requestWake(
+            reason: .runtimeMessage,
+            payloadSummary: "product runtime message",
+            sourceContext: .contentScript,
+            scope: .product
+        )
+
+        XCTAssertFalse(result.wakeAccepted)
+        XCTAssertTrue(result.blocked)
+        XCTAssertEqual(result.scope, .product)
+        XCTAssertTrue(
+            result.blockers.contains(
+                "Product service-worker wake remains unavailable."
+            )
+        )
+        XCTAssertEqual(owner.snapshot.currentState, .blocked)
+    }
+
+    func testInternalStorageChangedWakeRequiresListener() {
+        let blockedOwner = makeInternalLifecycleOwner()
+        let blocked = blockedOwner.requestWake(
+            reason: .storageChanged,
+            listenerEvent: .storageOnChanged,
+            payloadSummary: "storage change without listener",
+            sourceContext: .serviceWorker
+        )
+
+        XCTAssertFalse(blocked.wakeAccepted)
+        XCTAssertTrue(blocked.blocked)
+        XCTAssertEqual(
+            blocked.lastErrorMessage,
+            "Could not establish connection. Receiving end does not exist."
+        )
+
+        let owner = makeInternalLifecycleOwner()
+        owner.registerListener(
+            event: .storageOnChanged,
+            listenerID: "storage-on-changed"
+        )
+        let accepted = owner.requestWake(
+            reason: .storageChanged,
+            listenerEvent: .storageOnChanged,
+            payloadSummary: "storage change with listener",
+            sourceContext: .serviceWorker
+        )
+
+        XCTAssertTrue(accepted.wakeAccepted)
+        XCTAssertTrue(accepted.dispatched)
+        XCTAssertEqual(accepted.listenerEvent, .storageOnChanged)
+    }
+
+    func testInternalPermissionsChangedWakeRequiresListener() {
+        let blockedOwner = makeInternalLifecycleOwner()
+        let blocked = blockedOwner.requestWake(
+            reason: .permissionsChanged,
+            listenerEvent: .permissionsOnAdded,
+            payloadSummary: "permissions change without listener",
+            sourceContext: .serviceWorker
+        )
+
+        XCTAssertFalse(blocked.wakeAccepted)
+        XCTAssertTrue(blocked.blocked)
+        XCTAssertTrue(
+            blocked.blockers.contains(
+                "No synthetic/model listener is registered."
+            )
+        )
+
+        let owner = makeInternalLifecycleOwner()
+        owner.registerListener(
+            event: .permissionsOnAdded,
+            listenerID: "permissions-on-added"
+        )
+        let accepted = owner.requestWake(
+            reason: .permissionsChanged,
+            listenerEvent: .permissionsOnAdded,
+            payloadSummary: "permissions change with listener",
+            sourceContext: .serviceWorker
+        )
+
+        XCTAssertTrue(accepted.wakeAccepted)
+        XCTAssertTrue(accepted.dispatched)
+        XCTAssertEqual(accepted.listenerEvent, .permissionsOnAdded)
+    }
+
+    func testInternalNativeMessagingConnectRecordsPortKeepalive() {
+        let owner = makeInternalLifecycleOwner()
+        owner.registerListener(
+            event: .nativePortOnMessage,
+            listenerID: "native-port-on-message"
+        )
+
+        let result = owner.requestWake(
+            reason: .nativeMessagingConnect,
+            listenerEvent: .nativePortOnMessage,
+            payloadSummary: "native Port connect",
+            sourceContext: .serviceWorker,
+            keepaliveKind: .nativeMessagingPort,
+            portID: "native-port-a"
+        )
+        let snapshot = owner.snapshot
+
+        XCTAssertTrue(result.wakeAccepted)
+        XCTAssertEqual(result.keepaliveRecord?.kind, .nativeMessagingPort)
+        XCTAssertEqual(result.keepaliveRecord?.portID, "native-port-a")
+        XCTAssertTrue(
+            result.keepaliveRecord?.nativeHostLaunchOwnedElsewhere ?? false
+        )
+        XCTAssertTrue(snapshot.nativePortKeepaliveAvailableInFixture)
+        XCTAssertEqual(snapshot.activeKeepaliveRecords.count, 1)
+        XCTAssertEqual(snapshot.currentState, .runningInSyntheticFixture)
+    }
+
+    func testInternalEventQueueDispatchesDeterministically() {
+        let owner = makeInternalLifecycleOwner()
+        owner.registerListener(
+            event: .runtimeOnMessage,
+            listenerID: "listener-b"
+        )
+        owner.registerListener(
+            event: .runtimeOnMessage,
+            listenerID: "listener-a"
+        )
+
+        let first = owner.requestWake(
+            reason: .runtimeMessage,
+            payloadSummary: "first runtime message",
+            sourceContext: .contentScript
+        )
+        let second = owner.requestWake(
+            reason: .runtimeMessage,
+            payloadSummary: "second runtime message",
+            sourceContext: .contentScript
+        )
+        let snapshot = owner.snapshot
+
+        XCTAssertTrue(first.dispatched)
+        XCTAssertTrue(second.dispatched)
+        XCTAssertEqual(snapshot.events.map(\.sequence), [1, 2])
+        XCTAssertEqual(snapshot.events.map(\.status), [
+            .dispatched,
+            .dispatched,
+        ])
+        XCTAssertEqual(snapshot.events.first?.dispatchedListenerID, "listener-b")
+    }
+
+    func testInternalNoListenerMapsToNoReceivingEnd() {
+        let owner = makeInternalLifecycleOwner()
+
+        let result = owner.requestWake(
+            reason: .runtimeMessage,
+            payloadSummary: "message without listener",
+            sourceContext: .contentScript
+        )
+        let snapshot = owner.snapshot
+
+        XCTAssertFalse(result.wakeAccepted)
+        XCTAssertTrue(result.blocked)
+        XCTAssertEqual(
+            result.lastErrorMessage,
+            "Could not establish connection. Receiving end does not exist."
+        )
+        XCTAssertEqual(snapshot.blockedEventCount, 1)
+        XCTAssertEqual(snapshot.events.first?.status, .blocked)
+    }
+
+    func testInternalIdleReleaseRequiresExplicitTriggerAndNoKeepalive() {
+        let owner = makeInternalLifecycleOwner()
+        owner.registerListener(
+            event: .runtimeOnConnect,
+            listenerID: "runtime-on-connect"
+        )
+        let port = owner.requestWake(
+            reason: .runtimeConnect,
+            listenerEvent: .runtimeOnConnect,
+            payloadSummary: "runtime Port",
+            sourceContext: .contentScript,
+            keepaliveKind: .runtimePort,
+            portID: "runtime-port-a"
+        )
+
+        XCTAssertEqual(owner.snapshot.currentState, .runningInSyntheticFixture)
+        let deferred = owner.triggerIdleRelease()
+        XCTAssertFalse(deferred.wakeAccepted)
+        XCTAssertTrue(deferred.blocked)
+
+        XCTAssertTrue(
+            owner.disconnectKeepalive(
+                keepaliveID: port.keepaliveRecord?.keepaliveID,
+                reason: .reset
+            )
+        )
+        XCTAssertEqual(owner.snapshot.currentState, .idleEligible)
+        let released = owner.triggerIdleRelease()
+
+        XCTAssertTrue(released.wakeAccepted)
+        XCTAssertEqual(owner.snapshot.currentState, .stoppedAfterIdle)
+        XCTAssertNil(owner.snapshot.currentSessionID)
+    }
+
+    func testInternalHardTimeoutStopsAndDisconnectsKeepalives() {
+        let owner = makeInternalLifecycleOwner()
+        owner.registerListener(
+            event: .nativePortOnMessage,
+            listenerID: "native-port-on-message"
+        )
+        _ = owner.requestWake(
+            reason: .nativeMessagingConnect,
+            listenerEvent: .nativePortOnMessage,
+            payloadSummary: "native Port connect",
+            sourceContext: .serviceWorker,
+            keepaliveKind: .nativeMessagingPort,
+            portID: "native-port-a"
+        )
+
+        let timeout = owner.triggerHardTimeout()
+        let snapshot = owner.snapshot
+
+        XCTAssertTrue(timeout.wakeAccepted)
+        XCTAssertTrue(timeout.dropped)
+        XCTAssertEqual(snapshot.currentState, .stoppedAfterHardTimeout)
+        XCTAssertTrue(snapshot.activeKeepaliveRecords.isEmpty)
+        XCTAssertTrue(
+            snapshot.allKeepaliveRecords.allSatisfy {
+                $0.disconnected
+                    && $0.disconnectReason == .hardTimeout
+                    && $0.nativeHostTerminationRequiredOnTeardown == false
+            }
+        )
+    }
+
+    func testInternalRuntimePortKeepaliveDefersIdleUntilDisconnect() {
+        let owner = makeInternalLifecycleOwner()
+        owner.registerListener(
+            event: .runtimeOnConnect,
+            listenerID: "runtime-on-connect"
+        )
+        let result = owner.requestWake(
+            reason: .runtimeConnect,
+            listenerEvent: .runtimeOnConnect,
+            payloadSummary: "runtime Port",
+            sourceContext: .contentScript,
+            keepaliveKind: .runtimePort,
+            portID: "runtime-port-a"
+        )
+
+        XCTAssertEqual(result.keepaliveRecord?.kind, .runtimePort)
+        XCTAssertEqual(owner.snapshot.currentState, .runningInSyntheticFixture)
+        XCTAssertFalse(owner.triggerIdleRelease().wakeAccepted)
+        XCTAssertTrue(
+            owner.disconnectKeepalive(
+                portID: "runtime-port-a",
+                reason: .reset
+            )
+        )
+        XCTAssertEqual(owner.snapshot.currentState, .idleEligible)
+    }
+
+    func testInternalNativePortKeepaliveDisconnectClearsHostRequirement() {
+        let owner = makeInternalLifecycleOwner()
+        owner.registerListener(
+            event: .nativePortOnMessage,
+            listenerID: "native-port-on-message"
+        )
+        let result = owner.requestWake(
+            reason: .nativeMessagingConnect,
+            listenerEvent: .nativePortOnMessage,
+            payloadSummary: "native Port connect",
+            sourceContext: .serviceWorker,
+            keepaliveKind: .nativeMessagingPort,
+            portID: "native-port-a"
+        )
+
+        XCTAssertTrue(result.keepaliveRecord?.active ?? false)
+        XCTAssertTrue(
+            result.keepaliveRecord?.nativeHostTerminationRequiredOnTeardown
+                ?? false
+        )
+        XCTAssertTrue(
+            owner.disconnectKeepalive(
+                portID: "native-port-a",
+                reason: .reset
+            )
+        )
+        let record = owner.snapshot.allKeepaliveRecords.first
+
+        XCTAssertFalse(record?.active ?? true)
+        XCTAssertTrue(record?.disconnected ?? false)
+        XCTAssertFalse(
+            record?.nativeHostTerminationRequiredOnTeardown ?? true
+        )
+    }
+
+    func testInternalLifecycleTeardownClearsStateForDisableAndProfileClose() {
+        let disabledOwner = makeInternalLifecycleOwner()
+        disabledOwner.registerListener(
+            event: .runtimeOnMessage,
+            listenerID: "runtime-on-message"
+        )
+        _ = disabledOwner.requestWake(
+            reason: .runtimeMessage,
+            payloadSummary: "runtime message",
+            sourceContext: .contentScript
+        )
+        disabledOwner.tearDownForExtensionDisable()
+        let disabled = disabledOwner.snapshot
+
+        XCTAssertEqual(disabled.currentState, .stopped)
+        XCTAssertTrue(disabled.events.isEmpty)
+        XCTAssertTrue(disabled.activeKeepaliveRecords.isEmpty)
+        XCTAssertEqual(disabled.listenerRegistrySummary.totalListenerCount, 0)
+
+        let profileOwner = makeInternalLifecycleOwner()
+        profileOwner.registerListener(
+            event: .storageOnChanged,
+            listenerID: "storage-on-changed"
+        )
+        _ = profileOwner.requestWake(
+            reason: .storageChanged,
+            listenerEvent: .storageOnChanged,
+            payloadSummary: "storage change",
+            sourceContext: .serviceWorker
+        )
+        profileOwner.tearDownForProfileClose()
+        let profile = profileOwner.snapshot
+
+        XCTAssertEqual(profile.currentState, .stopped)
+        XCTAssertTrue(profile.events.isEmpty)
+        XCTAssertEqual(profile.listenerRegistrySummary.totalListenerCount, 0)
+    }
+
     func testPermanentBackgroundIsRejectedByCoordinatorDiagnostics() {
         let coordinator = ChromeMV3ServiceWorkerLifecycleCoordinator.blocked(
             extensionID: "extension-a",
@@ -285,7 +666,7 @@ final class ChromeMV3ServiceWorkerLifecycleCoordinatorTests: XCTestCase {
         XCTAssertFalse(payload.canWakeServiceWorkerNow)
     }
 
-    func testPasswordManagerFixtureReportsServiceWorkerBlockers() {
+    func testPasswordManagerFixtureReportsInternalLifecycleReadiness() {
         let report = ChromeMV3ServiceWorkerLifecycleReportGenerator.makeReport(
             extensionID: "password-manager-fixture",
             profileID: "profile-a",
@@ -296,17 +677,27 @@ final class ChromeMV3ServiceWorkerLifecycleCoordinatorTests: XCTestCase {
         )
         let password = report.passwordManagerServiceWorkerSummary
 
-        XCTAssertFalse(password.passwordManagerServiceWorkerReady)
+        XCTAssertTrue(password.passwordManagerServiceWorkerReady)
+        XCTAssertTrue(password.passwordManagerServiceWorkerReadyInFixture)
         XCTAssertTrue(
             password.contentScriptMessageRequiresServiceWorkerWake
         )
         XCTAssertTrue(password.popupMessageRequiresServiceWorkerWake)
         XCTAssertTrue(password.storageOnChangedMayRequireServiceWorkerWake)
-        XCTAssertTrue(
+        XCTAssertFalse(
             password.nativeMessagingPortWouldAffectKeepaliveButBlocked
         )
-        XCTAssertFalse(password.runtimePortKeepaliveImplemented)
-        XCTAssertTrue(password.idleUnloadPolicyModeledButNotActive)
+        XCTAssertTrue(password.runtimePortKeepaliveImplemented)
+        XCTAssertFalse(password.idleUnloadPolicyModeledButNotActive)
+        XCTAssertTrue(report.passwordManagerServiceWorkerReadyInFixture)
+        XCTAssertFalse(report.passwordManagerProductRuntimeReady)
+        XCTAssertTrue(
+            report.summary.serviceWorkerLifecycleAvailableInInternalFixture
+        )
+        XCTAssertFalse(report.summary.serviceWorkerWakeAvailableInProduct)
+        XCTAssertFalse(
+            report.summary.serviceWorkerPermanentBackgroundAvailable
+        )
     }
 
     func testLifecycleReportKeepsRuntimeFlagsFalse() {
@@ -329,6 +720,11 @@ final class ChromeMV3ServiceWorkerLifecycleCoordinatorTests: XCTestCase {
         XCTAssertFalse(report.summary.canOpenPortNow)
         XCTAssertFalse(report.summary.canLoadContextNow)
         XCTAssertFalse(report.summary.runtimeLoadable)
+        XCTAssertTrue(report.serviceWorkerLifecycleAvailableInInternalFixture)
+        XCTAssertFalse(report.serviceWorkerWakeAvailableInProduct)
+        XCTAssertFalse(report.serviceWorkerPermanentBackgroundAvailable)
+        XCTAssertTrue(report.nativePortKeepaliveAvailableInFixture)
+        XCTAssertFalse(report.passwordManagerProductRuntimeReady)
     }
 
     func testLifecycleReportWriterWritesDeterministicJSON() throws {
@@ -406,11 +802,11 @@ final class ChromeMV3ServiceWorkerLifecycleCoordinatorTests: XCTestCase {
         ]
         let regexPatterns = [
             "runtimeLoadable.*" + "tr" + "ue",
-            "canCreateContextNow.*" + "tr" + "ue",
-            "canLoadContextNow.*" + "tr" + "ue",
-            "canWakeServiceWorkerNow.*" + "tr" + "ue",
-            "canDispatchEventsNow.*" + "tr" + "ue",
-            "passwordManagerServiceWorkerReady.*" + "tr" + "ue",
+            "serviceWorkerWakeAvailableInProduct.*" + "tr" + "ue",
+            "serviceWorkerPermanentBackgroundAvailable.*" + "tr" + "ue",
+            "passwordManagerProductRuntimeReady.*" + "tr" + "ue",
+            "normalTabRuntimeBridgeAvailable.*" + "tr" + "ue",
+            "productRuntimeExposed.*" + "tr" + "ue",
         ]
 
         let swiftFiles = try targets.flatMap(swiftFiles)
@@ -505,6 +901,18 @@ final class ChromeMV3ServiceWorkerLifecycleCoordinatorTests: XCTestCase {
             withIntermediateDirectories: true
         )
         return directory
+    }
+
+    private func makeInternalLifecycleOwner()
+        -> ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner
+    {
+        ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner(
+            configuration: .internalFixture(
+                extensionID: "extension-a",
+                profileID: "profile-a",
+                nativePortKeepaliveAvailableInFixture: true
+            )
+        )
     }
 
     private func repositoryRoot() -> URL {

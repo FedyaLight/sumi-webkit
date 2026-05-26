@@ -72,7 +72,7 @@ final class ChromeMV3PasswordManagerSyntheticFixtureTests: XCTestCase {
         XCTAssertEqual(native.expectedReadinessClassification, .partial)
         XCTAssertEqual(native.facts.nativeHostName, "com.sumi.synthetic_password_manager")
         XCTAssertTrue(serviceWorker.serviceWorkerRequired)
-        XCTAssertEqual(serviceWorker.expectedReadinessClassification, .blocked)
+        XCTAssertEqual(serviceWorker.expectedReadinessClassification, .partial)
         XCTAssertTrue(activeTab.hostPermissionRequirements.contains("temporary activeTab grant for example.com"))
         XCTAssertFalse(activeTab.nativeMessagingRequired)
         XCTAssertFalse(activeTab.serviceWorkerRequired)
@@ -101,7 +101,7 @@ final class ChromeMV3PasswordManagerSyntheticFixtureTests: XCTestCase {
 
         XCTAssertTrue(report.passwordManagerSyntheticJSReady)
         XCTAssertFalse(report.passwordManagerNativeMessagingReady)
-        XCTAssertFalse(report.passwordManagerServiceWorkerReady)
+        XCTAssertTrue(report.passwordManagerServiceWorkerReady)
         XCTAssertFalse(report.passwordManagerProductRuntimeReady)
         XCTAssertFalse(report.normalTabRuntimeBridgeAvailable)
         XCTAssertFalse(report.runtimeLoadable)
@@ -136,9 +136,16 @@ final class ChromeMV3PasswordManagerSyntheticFixtureTests: XCTestCase {
         )
         XCTAssertFalse(report.nativeMessagingBlocker.canConnectNativeNow)
         XCTAssertFalse(report.nativeMessagingBlocker.processLaunchAllowedNow)
-        XCTAssertEqual(report.serviceWorkerLifecycleBlocker.nextBlockerPrompt, "Prompt 51")
+        XCTAssertEqual(
+            report.serviceWorkerLifecycleBlocker.nextBlockerPrompt,
+            "Product service-worker runtime remains unavailable"
+        )
         XCTAssertFalse(report.serviceWorkerLifecycleBlocker.serviceWorkerWakeAvailable)
         XCTAssertFalse(report.serviceWorkerLifecycleBlocker.portKeepaliveProductReady)
+        XCTAssertTrue(
+            report.serviceWorkerLifecycleBlocker
+                .passwordManagerServiceWorkerReady
+        )
 
         let readinessByAPI = Dictionary(
             uniqueKeysWithValues: report.apiReadinessMatrix.map {
@@ -152,7 +159,7 @@ final class ChromeMV3PasswordManagerSyntheticFixtureTests: XCTestCase {
         XCTAssertEqual(readinessByAPI["activeTab"]?.classification, .ready)
         XCTAssertEqual(readinessByAPI["storage.local"]?.classification, .ready)
         XCTAssertEqual(readinessByAPI["nativeMessaging"]?.classification, .blocked)
-        XCTAssertEqual(readinessByAPI["serviceWorkerLifecycle"]?.classification, .blocked)
+        XCTAssertEqual(readinessByAPI["serviceWorkerLifecycle"]?.classification, .partial)
     }
 
     func testNativeMessagingImplementationSummaryMakesFixtureInternallyReady()

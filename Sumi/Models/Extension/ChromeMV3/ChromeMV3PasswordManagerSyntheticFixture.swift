@@ -240,9 +240,9 @@ enum ChromeMV3PasswordManagerFixtureManifestCatalog {
         case .serviceWorkerRequired:
             facts.backgroundServiceWorker = "service-worker.js"
             workerRequired = true
-            readiness = .blocked
+            readiness = .partial
             diagnostics.append(
-                "Service-worker wake/keepalive is blocked until Prompt 51."
+                "Service-worker wake/keepalive is internally fixture-testable and remains blocked for product."
             )
         }
 
@@ -1521,7 +1521,8 @@ struct ChromeMV3PasswordManagerFixtureReport:
                 passwordManagerSyntheticJSReady,
             passwordManagerNativeMessagingReady:
                 passwordManagerNativeMessagingReadyInFixture,
-            passwordManagerServiceWorkerReady: false,
+            passwordManagerServiceWorkerReady:
+                passwordManagerServiceWorkerReady,
             passwordManagerProductRuntimeReady: false,
             normalTabRuntimeBridgeAvailable: false,
             runtimeLoadable: false
@@ -1617,6 +1618,10 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
         let nativeFixtureReady =
             nativeMessagingImplementationSummary?
             .passwordManagerNativeMessagingReadyInFixture == true
+        let serviceWorkerFixtureReady =
+            (serviceWorkerLifecycleSummary
+                ?? serviceWorkerReport.summary)
+            .passwordManagerServiceWorkerReadyInFixture
         let reportID = stableIDPasswordManager(
             prefix: "runtime-password-manager-fixture",
             parts: [
@@ -1624,6 +1629,7 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
                 configuration.profileID,
                 syntheticReady.description,
                 nativeFixtureReady.description,
+                serviceWorkerFixtureReady.description,
                 webKitSummary.status,
             ]
         )
@@ -1654,10 +1660,14 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
                     implementationSummary: nativeMessagingImplementationSummary
                 ),
             serviceWorkerLifecycleBlocker:
-                serviceWorkerBlocker(from: serviceWorkerReport),
+                serviceWorkerBlocker(
+                    from: serviceWorkerReport,
+                    summary: serviceWorkerLifecycleSummary
+                ),
             apiReadinessMatrix: readinessMatrix(
                 syntheticReady: syntheticReady,
-                nativeFixtureReady: nativeFixtureReady
+                nativeFixtureReady: nativeFixtureReady,
+                serviceWorkerFixtureReady: serviceWorkerFixtureReady
             ),
             runtimeJSMessagingMVPSummary: runtimeJSMessagingMVPSummary,
             tabsScriptingMVPSummary: tabsScriptingMVPSummary,
@@ -1673,7 +1683,7 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
             passwordManagerSyntheticJSReady: syntheticReady,
             passwordManagerNativeMessagingReady: nativeFixtureReady,
             passwordManagerNativeMessagingReadyInFixture: nativeFixtureReady,
-            passwordManagerServiceWorkerReady: false,
+            passwordManagerServiceWorkerReady: serviceWorkerFixtureReady,
             passwordManagerProductRuntimeReady: false,
             normalTabRuntimeBridgeAvailable: false,
             runtimeLoadable: false,
@@ -2063,7 +2073,8 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
 
     private static func readinessMatrix(
         syntheticReady: Bool,
-        nativeFixtureReady: Bool
+        nativeFixtureReady: Bool,
+        serviceWorkerFixtureReady: Bool
     ) -> [ChromeMV3PasswordManagerAPIReadinessEntry] {
         [
             entry("runtime", .ready, synthetic: syntheticReady),
@@ -2082,9 +2093,13 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
             ),
             entry(
                 "serviceWorkerLifecycle",
-                .blocked,
-                synthetic: false,
-                blockers: ["Blocked until Prompt 51."]
+                serviceWorkerFixtureReady ? .partial : .blocked,
+                synthetic: serviceWorkerFixtureReady,
+                blockers: serviceWorkerFixtureReady
+                    ? [
+                        "Internal lifecycle fixture is not product service-worker runtime.",
+                    ]
+                    : ["Internal lifecycle fixture did not complete."]
             ),
         ]
     }
@@ -2147,16 +2162,30 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
     }
 
     private static func serviceWorkerBlocker(
-        from report: ChromeMV3ServiceWorkerLifecycleReport
+        from report: ChromeMV3ServiceWorkerLifecycleReport,
+        summary: ChromeMV3ServiceWorkerLifecycleReportSummary?
     ) -> ChromeMV3PasswordManagerServiceWorkerBlockerFlow {
-        ChromeMV3PasswordManagerServiceWorkerBlockerFlow(
+        let fixtureReady =
+            summary?.passwordManagerServiceWorkerReadyInFixture
+            ?? report.summary.passwordManagerServiceWorkerReadyInFixture
+        return ChromeMV3PasswordManagerServiceWorkerBlockerFlow(
             serviceWorkerScriptDeclared:
                 report.lifecycleStateSummary.serviceWorkerScriptDeclared,
             serviceWorkerWakeAvailable: false,
             portKeepaliveProductReady: false,
-            passwordManagerServiceWorkerReady: false,
-            nextBlockerPrompt: "Prompt 51",
-            diagnostics: report.diagnostics + report.blockers
+            passwordManagerServiceWorkerReady: fixtureReady,
+            nextBlockerPrompt:
+                fixtureReady
+                    ? "Product service-worker runtime remains unavailable"
+                    : "Prompt 52",
+            diagnostics:
+                report.diagnostics
+                    + report.blockers
+                    + [
+                        fixtureReady
+                            ? "Password-manager service-worker dependency is ready only inside the synthetic lifecycle fixture."
+                            : "Password-manager service-worker dependency remains blocked in fixture diagnostics.",
+                    ]
         )
     }
 
