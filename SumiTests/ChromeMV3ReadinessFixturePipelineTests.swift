@@ -796,11 +796,17 @@ final class ChromeMV3ReadinessFixturePipelineTests: XCTestCase {
         let source = chromeMV3ProductSourceFiles
             .filter {
                 $0.relativePath
-                    != "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift"
+                    != "Sumi/Models/Extension/ChromeMV3/ChromeMV3RuntimeJSMessagingMVP.swift"
+                    && $0.relativePath
+                        != "SumiTests/ChromeMV3RuntimeJSMessagingMVPTests.swift"
+                    && $0.relativePath
+                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift"
                     && $0.relativePath
                         != "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift"
                     && $0.relativePath
                         != "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift"
+                    && $0.relativePath
+                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift"
             }
             .map(\.contents)
             .joined(separator: "\n")

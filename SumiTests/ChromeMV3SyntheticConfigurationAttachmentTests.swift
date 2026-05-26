@@ -408,7 +408,17 @@ final class ChromeMV3SyntheticConfigurationAttachmentTests: XCTestCase {
             ]
         )
 
-        let source = sourceFiles.map(\.contents).joined(separator: "\n")
+        let syntheticBridgeScopedFiles: Set<String> = [
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3RuntimeJSMessagingMVP.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift",
+        ]
+        let source = sourceFiles
+            .filter { syntheticBridgeScopedFiles.contains($0.relativePath) == false }
+            .map(\.contents)
+            .joined(separator: "\n")
         for forbidden in [
             "WKWebExtension" + "Context(",
             "load" + "ExtensionContext",

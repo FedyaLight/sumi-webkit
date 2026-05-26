@@ -4,7 +4,7 @@
 //
 //  DEBUG/internal runtime-only chrome.runtime JavaScript bridge MVP for
 //  controlled synthetic extension surfaces. This is not product Chrome MV3
-//  runtime support, not normal-tab content-script support, not native
+//  runtime support, not normal-tab content-script support, not product native
 //  messaging, and not a service-worker lifecycle implementation.
 //
 
@@ -87,6 +87,12 @@ struct ChromeMV3RuntimeJSBridgeConfiguration:
     var normalTabRuntimeBridgeAvailable: Bool
     var serviceWorkerWakeAvailable: Bool
     var nativeMessagingAvailable: Bool
+    var nativeMessagingAvailableInInternalFixture: Bool
+    var nativeMessagingAvailableInProduct: Bool
+    var explicitInternalNativeMessagingBridgeAllowed: Bool
+    var nativeMessagingFixtureHostRootPaths: [String]
+    var nativeMessagingPermissionState:
+        ChromeMV3NativeMessagingPermissionState
     var runtimeLoadable: Bool
     var diagnostics: [String]
 
@@ -103,7 +109,11 @@ struct ChromeMV3RuntimeJSBridgeConfiguration:
         extensionBaseURLString: String? =
             "chrome-extension://runtime-js-mvp-extension/",
         moduleState: ChromeMV3ProfileHostModuleState = .enabled,
-        explicitInternalRuntimeJSBridgeAllowed: Bool = true
+        explicitInternalRuntimeJSBridgeAllowed: Bool = true,
+        explicitInternalNativeMessagingBridgeAllowed: Bool = false,
+        nativeMessagingFixtureHostRootPaths: [String] = [],
+        nativeMessagingPermissionState:
+            ChromeMV3NativeMessagingPermissionState = .missing
     ) -> ChromeMV3RuntimeJSBridgeConfiguration {
         let normalizedExtensionID = normalized(
             extensionID,
@@ -115,6 +125,16 @@ struct ChromeMV3RuntimeJSBridgeConfiguration:
         )
         let allowed = explicitInternalRuntimeJSBridgeAllowed
             && moduleState == .enabled
+        let normalizedFixtureRoots =
+            nativeMessagingFixtureHostRootPaths.map {
+                URL(fileURLWithPath: $0, isDirectory: true)
+                    .standardizedFileURL
+                    .path
+            }.sorted()
+        let internalNativeMessagingAllowed =
+            allowed
+                && explicitInternalNativeMessagingBridgeAllowed
+                && normalizedFixtureRoots.isEmpty == false
         return ChromeMV3RuntimeJSBridgeConfiguration(
             extensionID: normalizedExtensionID,
             profileID: normalizedProfileID,
@@ -129,13 +149,23 @@ struct ChromeMV3RuntimeJSBridgeConfiguration:
             normalTabRuntimeBridgeAvailable: false,
             serviceWorkerWakeAvailable: false,
             nativeMessagingAvailable: false,
+            nativeMessagingAvailableInInternalFixture:
+                internalNativeMessagingAllowed,
+            nativeMessagingAvailableInProduct: false,
+            explicitInternalNativeMessagingBridgeAllowed:
+                explicitInternalNativeMessagingBridgeAllowed,
+            nativeMessagingFixtureHostRootPaths: normalizedFixtureRoots,
+            nativeMessagingPermissionState: nativeMessagingPermissionState,
             runtimeLoadable: false,
             diagnostics:
                 uniqueSorted([
                     "Runtime-only JS bridge is confined to a DEBUG/internal synthetic surface.",
                     "Product runtime exposure remains unavailable.",
                     "Normal-tab runtime bridge remains unavailable.",
-                    "Service-worker wake and native messaging remain unavailable.",
+                    internalNativeMessagingAllowed
+                        ? "Internal fixture native messaging is available only for explicit fixture roots."
+                        : "Service-worker wake and native messaging remain unavailable.",
+                    "Product native messaging remains unavailable.",
                     "runtimeLoadable remains false.",
                 ])
         )
@@ -471,6 +501,8 @@ struct ChromeMV3RuntimeJSBridgeHostResponse:
     var normalTabRuntimeBridgeAvailable: Bool
     var serviceWorkerWakeAvailable: Bool
     var nativeMessagingAvailable: Bool
+    var nativeMessagingAvailableInInternalFixture: Bool
+    var nativeMessagingAvailableInProduct: Bool
     var runtimeLoadable: Bool
     var diagnostics: [String]
 
@@ -497,6 +529,10 @@ struct ChromeMV3RuntimeJSBridgeHostResponse:
                 normalTabRuntimeBridgeAvailable,
             "serviceWorkerWakeAvailable": serviceWorkerWakeAvailable,
             "nativeMessagingAvailable": nativeMessagingAvailable,
+            "nativeMessagingAvailableInInternalFixture":
+                nativeMessagingAvailableInInternalFixture,
+            "nativeMessagingAvailableInProduct":
+                nativeMessagingAvailableInProduct,
             "runtimeLoadable": runtimeLoadable,
             "diagnostics": diagnostics,
         ]
@@ -511,7 +547,13 @@ final class ChromeMV3RuntimeJSBridgeHandler {
     private(set) var modelPortCreateCount = 0
     private(set) var modelPortDisconnectCount = 0
     private(set) var modelPortPostMessageCount = 0
+    private(set) var nativeSendMessageCount = 0
+    private(set) var nativePortCreateCount = 0
+    private(set) var nativePortDisconnectCount = 0
+    private(set) var nativePortPostMessageCount = 0
     private(set) var rejectedRequestCount = 0
+    private let nativeMessagingRuntimeOwner:
+        ChromeMV3NativeMessagingRuntimeOwner?
 
     init(configuration: ChromeMV3RuntimeJSBridgeConfiguration) {
         self.configuration = configuration
@@ -519,6 +561,25 @@ final class ChromeMV3RuntimeJSBridgeHandler {
             ChromeMV3RuntimeJSSyntheticListenerRegistry(
                 configuration: configuration
             )
+        if configuration.nativeMessagingAvailableInInternalFixture {
+            self.nativeMessagingRuntimeOwner =
+                ChromeMV3NativeMessagingRuntimeOwner(
+                    configuration: .internalFixture(
+                        extensionID: configuration.extensionID,
+                        profileID: configuration.profileID,
+                        fixtureHostRootPaths:
+                            configuration.nativeMessagingFixtureHostRootPaths,
+                        moduleState: configuration.moduleState,
+                        explicitInternalNativeMessagingBridgeAllowed:
+                            configuration
+                            .explicitInternalNativeMessagingBridgeAllowed,
+                        permissionState:
+                            configuration.nativeMessagingPermissionState
+                    )
+                )
+        } else {
+            self.nativeMessagingRuntimeOwner = nil
+        }
     }
 
     func handle(_ body: Any) -> ChromeMV3RuntimeJSBridgeHostResponse {
@@ -579,8 +640,12 @@ final class ChromeMV3RuntimeJSBridgeHandler {
         switch request.methodName {
         case "sendMessage":
             return routeRuntimeMethod(request)
+        case "sendNativeMessage":
+            return routeSendNativeMessage(request)
         case "connect":
             return routeConnect(request)
+        case "connectNative":
+            return routeConnectNative(request)
         case "onMessage.addListener":
             return registerListener(request, eventName: .onMessage)
         case "onMessage.removeListener":
@@ -621,6 +686,12 @@ final class ChromeMV3RuntimeJSBridgeHandler {
                     "Port.postMessage is model-only; native/runtime delivery is not available.",
                 ]
             )
+        case "NativePort.disconnect":
+            nativePortDisconnectCount += 1
+            return routeNativePortDisconnect(request)
+        case "NativePort.postMessage":
+            nativePortPostMessageCount += 1
+            return routeNativePortPostMessage(request)
         default:
             rejectedRequestCount += 1
             return response(
@@ -640,6 +711,7 @@ final class ChromeMV3RuntimeJSBridgeHandler {
 
     func tearDown() {
         listenerRegistry.tearDown()
+        _ = nativeMessagingRuntimeOwner?.tearDownForExtensionDisable()
     }
 
     private func routeRuntimeMethod(
@@ -735,6 +807,218 @@ final class ChromeMV3RuntimeJSBridgeHandler {
                             "The JS shim creates only a synthetic model Port object.",
                         ]
                 )
+        )
+    }
+
+    private func routeSendNativeMessage(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3RuntimeJSBridgeHostResponse {
+        nativeSendMessageCount += 1
+        guard let owner = nativeMessagingRuntimeOwner else {
+            rejectedRequestCount += 1
+            return nativeUnavailableResponse(request)
+        }
+        guard let hostName = request.arguments.first?.stringValue,
+              let message = request.arguments.dropFirst().first
+        else {
+            rejectedRequestCount += 1
+            return response(
+                request: request,
+                succeeded: false,
+                lastErrorMessage:
+                    ChromeMV3NativeMessagingRuntimeErrorCode
+                    .invalidArguments.lastErrorMessage,
+                lastErrorCode:
+                    ChromeMV3NativeMessagingRuntimeErrorCode
+                    .invalidArguments.rawValue,
+                diagnostics: [
+                    "sendNativeMessage requires a host name and JSON-compatible message.",
+                ]
+            )
+        }
+        let result = owner.sendNativeMessage(
+            hostName: hostName,
+            message: message
+        )
+        if result.succeeded == false {
+            rejectedRequestCount += 1
+        }
+        return response(
+            request: request,
+            succeeded: result.succeeded,
+            payload: result.response,
+            lastErrorMessage: result.lastErrorMessage,
+            lastErrorCode: result.lastErrorCode?.rawValue,
+            diagnostics:
+                uniqueSorted(
+                    result.diagnostics
+                        + [
+                            "sendNativeMessage executed only through the internal fixture native messaging owner.",
+                        ]
+                )
+        )
+    }
+
+    private func routeConnectNative(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3RuntimeJSBridgeHostResponse {
+        nativePortCreateCount += 1
+        guard let owner = nativeMessagingRuntimeOwner else {
+            rejectedRequestCount += 1
+            return nativeUnavailableResponse(request)
+        }
+        guard let hostName = request.arguments.first?.stringValue else {
+            rejectedRequestCount += 1
+            return response(
+                request: request,
+                succeeded: false,
+                lastErrorMessage:
+                    ChromeMV3NativeMessagingRuntimeErrorCode
+                    .invalidArguments.lastErrorMessage,
+                lastErrorCode:
+                    ChromeMV3NativeMessagingRuntimeErrorCode
+                    .invalidArguments.rawValue,
+                diagnostics: [
+                    "connectNative requires a native host name.",
+                ]
+            )
+        }
+        let result = owner.connectNative(hostName: hostName)
+        if result.succeeded == false {
+            rejectedRequestCount += 1
+        }
+        return response(
+            request: request,
+            succeeded: result.succeeded,
+            payload: .object([
+                "portID": .string(result.portID ?? ""),
+                "hostName": .string(hostName),
+                "processLaunchAllowedForFixtureHost":
+                    .bool(
+                        result.launchPolicy
+                            .processLaunchAllowedForFixtureHost
+                    ),
+                "processLaunchAllowedInProduct": .bool(false),
+                "nativeMessagingAvailableInProduct": .bool(false),
+                "runtimeLoadable": .bool(false),
+            ]),
+            lastErrorMessage: result.lastErrorMessage,
+            lastErrorCode: result.lastErrorCode?.rawValue,
+            diagnostics:
+                uniqueSorted(
+                    result.diagnostics
+                        + [
+                            "connectNative opened only an internal fixture native Port.",
+                            "No service-worker keepalive parity is claimed.",
+                        ]
+                )
+        )
+    }
+
+    private func routeNativePortPostMessage(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3RuntimeJSBridgeHostResponse {
+        guard let owner = nativeMessagingRuntimeOwner else {
+            rejectedRequestCount += 1
+            return nativeUnavailableResponse(request)
+        }
+        guard let portID = request.portID,
+              let message = request.arguments.first
+        else {
+            rejectedRequestCount += 1
+            return response(
+                request: request,
+                succeeded: false,
+                lastErrorMessage:
+                    ChromeMV3NativeMessagingRuntimeErrorCode
+                    .invalidArguments.lastErrorMessage,
+                lastErrorCode:
+                    ChromeMV3NativeMessagingRuntimeErrorCode
+                    .invalidArguments.rawValue,
+                diagnostics: [
+                    "NativePort.postMessage requires a portID and message.",
+                ]
+            )
+        }
+        let result = owner.postMessage(portID: portID, message: message)
+        if result.succeeded == false {
+            rejectedRequestCount += 1
+        }
+        return response(
+            request: request,
+            succeeded: result.succeeded,
+            payload: .object([
+                "portID": .string(portID),
+                "message": result.response ?? .null,
+                "disconnectReason":
+                    .string(
+                        result.lifecycle.disconnectReason?.rawValue ?? ""
+                    ),
+                "runtimeLoadable": .bool(false),
+            ]),
+            lastErrorMessage: result.lastErrorMessage,
+            lastErrorCode: result.lastErrorCode?.rawValue,
+            diagnostics: result.diagnostics
+        )
+    }
+
+    private func routeNativePortDisconnect(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3RuntimeJSBridgeHostResponse {
+        guard let owner = nativeMessagingRuntimeOwner else {
+            rejectedRequestCount += 1
+            return nativeUnavailableResponse(request)
+        }
+        guard let portID = request.portID else {
+            rejectedRequestCount += 1
+            return response(
+                request: request,
+                succeeded: false,
+                lastErrorMessage:
+                    ChromeMV3NativeMessagingRuntimeErrorCode
+                    .invalidArguments.lastErrorMessage,
+                lastErrorCode:
+                    ChromeMV3NativeMessagingRuntimeErrorCode
+                    .invalidArguments.rawValue,
+                diagnostics: [
+                    "NativePort.disconnect requires a portID.",
+                ]
+            )
+        }
+        let result = owner.disconnect(
+            portID: portID,
+            reason: .nativeHostExited
+        )
+        return response(
+            request: request,
+            succeeded: true,
+            payload: .object([
+                "portID": .string(portID),
+                "disconnected": .bool(result.disconnected),
+                "activePortCountAfterDisconnect":
+                    .number(Double(result.activePortCountAfterDisconnect)),
+                "runtimeLoadable": .bool(false),
+            ]),
+            diagnostics: result.diagnostics
+        )
+    }
+
+    private func nativeUnavailableResponse(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3RuntimeJSBridgeHostResponse {
+        response(
+            request: request,
+            succeeded: false,
+            lastErrorMessage:
+                ChromeMV3NativeMessagingRuntimeErrorCode
+                .fixtureGateDisabled.lastErrorMessage,
+            lastErrorCode:
+                ChromeMV3NativeMessagingRuntimeErrorCode
+                .fixtureGateDisabled.rawValue,
+            diagnostics: [
+                "Native messaging is available only in explicit DEBUG/internal fixture scope.",
+                "Product native messaging remains unavailable.",
+            ]
         )
     }
 
@@ -905,6 +1189,10 @@ final class ChromeMV3RuntimeJSBridgeHandler {
                 configuration.serviceWorkerWakeAvailable,
             nativeMessagingAvailable:
                 configuration.nativeMessagingAvailable,
+            nativeMessagingAvailableInInternalFixture:
+                configuration.nativeMessagingAvailableInInternalFixture,
+            nativeMessagingAvailableInProduct:
+                configuration.nativeMessagingAvailableInProduct,
             runtimeLoadable: false,
             diagnostics:
                 uniqueSorted(
@@ -912,7 +1200,8 @@ final class ChromeMV3RuntimeJSBridgeHandler {
                         + diagnostics
                         + [
                             "Runtime JS bridge handler is runtime-only.",
-                            "No tabs, storage, permissions, scripting, or native messaging JS namespace is exposed.",
+                            "No tabs, storage, permissions, scripting, or nativeMessaging namespace is exposed by this runtime-only shim.",
+                            "Product native messaging remains unavailable.",
                         ]
                 )
         )
@@ -940,7 +1229,12 @@ enum ChromeMV3RuntimeJSShimSource {
     static var coverage: ChromeMV3RuntimeJSShimCoverage {
         ChromeMV3RuntimeJSShimCoverage(
             exposedChromeNamespaces: ["runtime"],
-            runtimeMethods: ["connect", "sendMessage"],
+            runtimeMethods: [
+                "connect",
+                "connectNative",
+                "sendMessage",
+                "sendNativeMessage",
+            ],
             runtimeEvents: ["onConnect", "onMessage"],
             portMembers: [
                 "disconnect",
@@ -1190,14 +1484,16 @@ enum ChromeMV3RuntimeJSShimSource {
             });
           }
 
-          function createPort(name, sender) {
+          function createPort(name, sender, options) {
             const port = {};
+            const nativePort = !!(options && options.nativePort);
             const state = {
               id: null,
               disconnected: false,
               peer: null,
               onMessage: makePortEvent(),
-              onDisconnect: makePortEvent()
+              onDisconnect: makePortEvent(),
+              readyPromise: null
             };
             Object.defineProperty(port, "name", {
               value: name || "",
@@ -1223,9 +1519,41 @@ enum ChromeMV3RuntimeJSShimSource {
                   throw new Error("Attempting to use a disconnected port object");
                 }
                 const safeMessage = toJSONCompatible(message);
-                bridgePost("Port.postMessage", "fireAndForget", [safeMessage], {
-                  portID: state.id
-                }).catch(() => undefined);
+                const deliver = () => {
+                  if (state.disconnected) {
+                    return Promise.resolve({
+                      succeeded: false,
+                      lastErrorMessage: "Native messaging port is closed."
+                    });
+                  }
+                  return bridgePost(
+                    nativePort ? "NativePort.postMessage" : "Port.postMessage",
+                    "fireAndForget",
+                    [safeMessage],
+                    {
+                    portID: state.id
+                    }
+                  );
+                };
+                const delivery = nativePort && state.readyPromise
+                  ? state.readyPromise.then(deliver)
+                  : deliver();
+                delivery.then((response) => {
+                  if (nativePort && response && response.succeeded) {
+                    const payload = response.resultPayload || {};
+                    if (Object.prototype.hasOwnProperty.call(payload, "message")) {
+                      state.onMessage.dispatch(payload.message, port);
+                    }
+                  } else if (nativePort && response && !response.succeeded) {
+                    state.disconnected = true;
+                    state.onDisconnect.dispatch(port);
+                  }
+                }).catch(() => {
+                  if (nativePort) {
+                    state.disconnected = true;
+                    state.onDisconnect.dispatch(port);
+                  }
+                });
                 if (state.peer && !state.peer.disconnected) {
                   state.peer.onMessage.dispatch(safeMessage, state.peer.port);
                 }
@@ -1238,9 +1566,14 @@ enum ChromeMV3RuntimeJSShimSource {
                   return;
                 }
                 state.disconnected = true;
-                bridgePost("Port.disconnect", "fireAndForget", [], {
+                bridgePost(
+                  nativePort ? "NativePort.disconnect" : "Port.disconnect",
+                  "fireAndForget",
+                  [],
+                  {
                   portID: state.id
-                }).catch(() => undefined);
+                  }
+                ).catch(() => undefined);
                 state.onDisconnect.dispatch(port);
                 if (state.peer && !state.peer.disconnected) {
                   state.peer.disconnected = true;
@@ -1324,6 +1657,42 @@ enum ChromeMV3RuntimeJSShimSource {
             enumerable: true
           });
 
+          Object.defineProperty(runtime, "sendNativeMessage", {
+            value(application, message, callback) {
+              const cb = typeof callback === "function" ? callback : null;
+              let bridgeArgs;
+              try {
+                bridgeArgs = [application, message].map(toJSONCompatible);
+              } catch (error) {
+                const lastError = "Invalid Chrome MV3 JavaScript bridge arguments.";
+                if (cb) {
+                  invokeCallback(cb, lastError, []);
+                  return undefined;
+                }
+                return Promise.reject(new Error(lastError));
+              }
+              const mode = cb ? "callback" : "promise";
+              const promise = bridgePost("sendNativeMessage", mode, bridgeArgs);
+              if (cb) {
+                promise.then((response) => {
+                  if (response.succeeded) {
+                    invokeCallback(cb, null, [response.resultPayload]);
+                  } else {
+                    invokeCallback(cb, response.lastErrorMessage, []);
+                  }
+                });
+                return undefined;
+              }
+              return promise.then((response) => {
+                if (response.succeeded) {
+                  return response.resultPayload;
+                }
+                return rejectFromResponse(response);
+              });
+            },
+            enumerable: true
+          });
+
           Object.defineProperty(runtime, "connect", {
             value() {
               const parsed = parseConnectArgs(arguments);
@@ -1362,6 +1731,44 @@ enum ChromeMV3RuntimeJSShimSource {
                   senderState.onDisconnect.dispatch(port);
                 });
               pendingRegistrations.push(connectPromise.catch(() => undefined));
+              return port;
+            },
+            enumerable: true
+          });
+
+          Object.defineProperty(runtime, "connectNative", {
+            value(application) {
+              const port = createPort("", null, { nativePort: true });
+              const state = portState.get(port);
+              nextPortNumber += 1;
+              state.id = [
+                config.surfaceID,
+                "pending-native-port",
+                String(nextPortNumber)
+              ].join(":");
+              state.readyPromise = bridgePost(
+                "connectNative",
+                "fireAndForget",
+                [toJSONCompatible(application)]
+              )
+                .then((response) => {
+                  if (!response.succeeded) {
+                    state.disconnected = true;
+                    state.onDisconnect.dispatch(port);
+                    return response;
+                  }
+                  const payload = response.resultPayload || {};
+                  state.id = payload.portID || state.id;
+                  return response;
+                })
+                .catch(() => {
+                  state.disconnected = true;
+                  state.onDisconnect.dispatch(port);
+                  return {
+                    succeeded: false,
+                    lastErrorMessage: "Native messaging port is closed."
+                  };
+                });
               return port;
             },
             enumerable: true
@@ -1631,9 +2038,12 @@ enum ChromeMV3RuntimeJSMessagingMVPReportGenerator {
             profileID: configuration.profileID,
             shimCoverage: ChromeMV3RuntimeJSShimSource.coverage,
             bridgeHandlerCoveredMethods: [
+                "NativePort.disconnect",
+                "NativePort.postMessage",
                 "Port.disconnect",
                 "Port.postMessage",
                 "connect",
+                "connectNative",
                 "onConnect.addListener",
                 "onConnect.hasListener",
                 "onConnect.removeListener",
@@ -1641,6 +2051,7 @@ enum ChromeMV3RuntimeJSMessagingMVPReportGenerator {
                 "onMessage.hasListener",
                 "onMessage.removeListener",
                 "sendMessage",
+                "sendNativeMessage",
             ],
             listenerRegistrySummary: handler.listenerRegistry.summary,
             behaviorSummary: behavior,
@@ -2063,6 +2474,11 @@ private extension ChromeMV3StorageValue {
     var objectValue: [String: ChromeMV3StorageValue]? {
         guard case .object(let object) = self else { return nil }
         return object
+    }
+
+    var stringValue: String? {
+        guard case .string(let value) = self else { return nil }
+        return value
     }
 }
 

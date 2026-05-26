@@ -526,6 +526,8 @@ final class ChromeMV3NativeMessagingSecurityTests: XCTestCase {
                         != "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift"
                     && $0.relativePath
                         != "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift"
+                    && $0.relativePath
+                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift"
             }
             .map(\.contents)
             .joined(separator: "\n")
@@ -534,7 +536,6 @@ final class ChromeMV3NativeMessagingSecurityTests: XCTestCase {
             "WKWebExtension" + "Context(",
             "load" + "ExtensionContext",
             "add" + "UserScript",
-            "connect" + "Native",
             "Pro" + "cess(",
             "DispatchSource" + "Ti" + "mer",
             "Ti" + "mer",

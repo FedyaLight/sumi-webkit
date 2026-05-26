@@ -72,6 +72,8 @@ final class SumiExtensionsModule {
             ChromeMV3JSBridgeContractReport?
         private var lastChromeMV3NativeMessagingReadinessReport:
             ChromeMV3NativeMessagingReadinessReport?
+        private var lastChromeMV3NativeMessagingImplementationReport:
+            ChromeMV3NativeMessagingImplementationReport?
         private var lastChromeMV3RuntimeListenerContractReport:
             ChromeMV3RuntimeListenerContractReport?
         private var lastChromeMV3ServiceWorkerLifecycleReport:
@@ -186,6 +188,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3RuntimeMessageDispatcherSkeletonReport = nil
                     lastChromeMV3JSBridgeContractReport = nil
                     lastChromeMV3NativeMessagingReadinessReport = nil
+                    lastChromeMV3NativeMessagingImplementationReport = nil
                     lastChromeMV3RuntimeListenerContractReport = nil
                     lastChromeMV3ServiceWorkerLifecycleReport = nil
                     lastChromeMV3PermissionBrokerReadinessReport = nil
@@ -2258,6 +2261,14 @@ final class SumiExtensionsModule {
         }
 
         @available(macOS 15.5, *)
+        @discardableResult
+        func tearDownChromeMV3NativeMessagingImplementationIfEnabled() -> Bool {
+            guard isEnabled else { return false }
+            lastChromeMV3NativeMessagingImplementationReport = nil
+            return true
+        }
+
+        @available(macOS 15.5, *)
         func chromeMV3NativeMessagingReadinessReportIfEnabled(
             fromRewrittenBundleRoot rootURL: URL,
             requestedHostName: String? = nil,
@@ -2285,6 +2296,50 @@ final class SumiExtensionsModule {
                 report,
                 toRewrittenBundleRoot: rootURL
             )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3NativeMessagingImplementationReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            fixtureHostRootURL: URL? = nil,
+            writeReport: Bool = false
+        ) -> ChromeMV3NativeMessagingImplementationReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let extensionID =
+                lastChromeMV3RuntimeBridgePrerequisitesReport?.candidateID
+                ?? lastChromeMV3RuntimeJSMessagingMVPReport?.extensionID
+                ?? lastChromeMV3JSBridgeContractReport?.extensionID
+                ?? "abcdefghijklmnopabcdefghijklmnop"
+            let profileID =
+                lastChromeMV3RuntimeJSMessagingMVPReport?.profileID
+                ?? lastChromeMV3JSBridgeContractReport?.profileID
+                ?? "native-messaging-fixture-profile"
+            let fixtureRoot =
+                (fixtureHostRootURL ?? rootURL.appendingPathComponent(
+                    "NativeMessagingFixtureHosts",
+                    isDirectory: true
+                )).standardizedFileURL
+            let report: ChromeMV3NativeMessagingImplementationReport
+            do {
+                report = try ChromeMV3NativeMessagingImplementationReportGenerator
+                    .makeReport(
+                        extensionID: extensionID,
+                        profileID: profileID,
+                        fixtureHostRootURL: fixtureRoot
+                    )
+            } catch {
+                return nil
+            }
+            lastChromeMV3NativeMessagingImplementationReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3NativeMessagingImplementationReportWriter
+                .write(
+                    report,
+                    toRewrittenBundleRoot: rootURL
+                )) ?? report
         }
 
         @available(macOS 15.5, *)
@@ -2516,6 +2571,9 @@ final class SumiExtensionsModule {
                         .summary,
                     nativeMessagingReadinessSummary:
                         lastChromeMV3NativeMessagingReadinessReport?.summary,
+                    nativeMessagingImplementationSummary:
+                        lastChromeMV3NativeMessagingImplementationReport?
+                        .summary,
                     serviceWorkerLifecycleSummary:
                         lastChromeMV3ServiceWorkerLifecycleReport?.summary
                 )
@@ -2574,6 +2632,9 @@ final class SumiExtensionsModule {
                         .summary,
                     nativeMessagingReadinessSummary:
                         lastChromeMV3NativeMessagingReadinessReport?.summary,
+                    nativeMessagingImplementationSummary:
+                        lastChromeMV3NativeMessagingImplementationReport?
+                        .summary,
                     serviceWorkerLifecycleSummary:
                         lastChromeMV3ServiceWorkerLifecycleReport?.summary
                 )

@@ -436,7 +436,14 @@ final class ChromeMV3ControllerStorageTeardownAttachmentTests: XCTestCase {
                     "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift",
                 ]
             ),
-            ("connect" + "Native", []),
+            (
+                "connect" + "Native",
+                [
+                    "Sumi/Models/Extension/ChromeMV3/ChromeMV3RuntimeJSMessagingMVP.swift",
+                    "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift",
+                    "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift",
+                ]
+            ),
             ("DispatchSource" + "Ti" + "mer", []),
             ("scheduled" + "Ti" + "mer", []),
             ("Ti" + "mer", []),

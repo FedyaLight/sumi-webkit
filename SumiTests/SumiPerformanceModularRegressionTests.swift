@@ -671,12 +671,29 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let nativeMessagingSource = try Self.source(
             named: "Sumi/Managers/ExtensionManager/NativeMessagingHandler.swift"
         )
-        XCTAssertTrue(delegateSource.contains("NativeMessagingHandler("))
-        XCTAssertTrue(nativeMessagingSource.contains("DispatchSource.makeReadSource"))
-        XCTAssertTrue(nativeMessagingSource.contains("DispatchSource.makeWriteSource"))
+        XCTAssertFalse(delegateSource.contains("NativeMessagingHandler("))
+        XCTAssertTrue(
+            delegateSource.contains(
+                "Product native messaging is unavailable"
+            )
+        )
+        XCTAssertTrue(
+            nativeMessagingSource.contains(
+                "Product native messaging remains unavailable"
+            )
+        )
+        XCTAssertTrue(
+            nativeMessagingSource.contains(
+                "ChromeMV3NativeMessagingInternalRuntime.swift"
+            )
+        )
+        let processCallToken = "Process" + "("
         assertSourceExcludes(
             nativeMessagingSource,
             [
+                processCallToken,
+                "NativeMessagingProcessSession",
+                "DispatchSource",
                 "readDataToEndOfFile",
                 "readData(ofLength",
                 "availableData",

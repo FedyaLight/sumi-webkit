@@ -4,8 +4,8 @@
 //
 //  DEBUG/internal password-manager-class Chrome MV3 synthetic fixture suite.
 //  This is not product password-manager support, not product normal-tab
-//  runtime support, not native messaging, and not service-worker lifecycle
-//  support.
+//  runtime support, not product native messaging, and not service-worker
+//  lifecycle support.
 //
 
 import CryptoKit
@@ -210,8 +210,10 @@ enum ChromeMV3PasswordManagerFixtureManifestCatalog {
             facts.permissions = (basePermissions + ["nativeMessaging"]).sorted()
             facts.nativeHostName = "com.sumi.synthetic_password_manager"
             nativeRequired = true
-            readiness = .blocked
-            diagnostics.append("nativeMessaging is blocked until Prompt 50.")
+            readiness = .partial
+            diagnostics.append(
+                "nativeMessaging is internally fixture-testable but remains blocked for product."
+            )
         case .hostPermissions:
             facts.hostPermissions = ["https://example.com/*"]
             facts.optionalHostPermissions = []
@@ -1321,7 +1323,12 @@ struct ChromeMV3PasswordManagerNativeMessagingBlockerFlow:
     var hostLookupStatus: ChromeMV3NativeHostLookupStatus
     var canConnectNativeNow: Bool
     var processLaunchAllowedNow: Bool
+    var nativeMessagingAvailableInInternalFixture: Bool
+    var processLaunchAllowedForFixtureHost: Bool
+    var nativeMessagingAvailableInProduct: Bool
+    var processLaunchAllowedInProduct: Bool
     var passwordManagerNativeMessagingReady: Bool
+    var passwordManagerNativeMessagingReadyInFixture: Bool
     var nextBlockerPrompt: String
     var diagnostics: [String]
 }
@@ -1490,10 +1497,13 @@ struct ChromeMV3PasswordManagerFixtureReport:
         ChromeMV3StorageLocalImplementationReportSummary?
     var nativeMessagingReadinessSummary:
         ChromeMV3NativeMessagingReadinessReportSummary?
+    var nativeMessagingImplementationSummary:
+        ChromeMV3NativeMessagingImplementationReportSummary?
     var serviceWorkerLifecycleSummary:
         ChromeMV3ServiceWorkerLifecycleReportSummary?
     var passwordManagerSyntheticJSReady: Bool
     var passwordManagerNativeMessagingReady: Bool
+    var passwordManagerNativeMessagingReadyInFixture: Bool
     var passwordManagerServiceWorkerReady: Bool
     var passwordManagerProductRuntimeReady: Bool
     var normalTabRuntimeBridgeAvailable: Bool
@@ -1509,7 +1519,8 @@ struct ChromeMV3PasswordManagerFixtureReport:
             reportFileName: reportFileName,
             passwordManagerSyntheticJSReady:
                 passwordManagerSyntheticJSReady,
-            passwordManagerNativeMessagingReady: false,
+            passwordManagerNativeMessagingReady:
+                passwordManagerNativeMessagingReadyInFixture,
             passwordManagerServiceWorkerReady: false,
             passwordManagerProductRuntimeReady: false,
             normalTabRuntimeBridgeAvailable: false,
@@ -1562,6 +1573,8 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
             ChromeMV3StorageLocalImplementationReportSummary? = nil,
         nativeMessagingReadinessSummary:
             ChromeMV3NativeMessagingReadinessReportSummary? = nil,
+        nativeMessagingImplementationSummary:
+            ChromeMV3NativeMessagingImplementationReportSummary? = nil,
         serviceWorkerLifecycleSummary:
             ChromeMV3ServiceWorkerLifecycleReportSummary? = nil
     ) -> ChromeMV3PasswordManagerFixtureReport {
@@ -1601,12 +1614,16 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
                 && flows.content.detectFieldsSucceeded
                 && flows.content.fillFieldsSucceeded
                 && flows.permissions.activeTabGrantAllowsTemporaryAccess
+        let nativeFixtureReady =
+            nativeMessagingImplementationSummary?
+            .passwordManagerNativeMessagingReadyInFixture == true
         let reportID = stableIDPasswordManager(
             prefix: "runtime-password-manager-fixture",
             parts: [
                 configuration.extensionID,
                 configuration.profileID,
                 syntheticReady.description,
+                nativeFixtureReady.description,
                 webKitSummary.status,
             ]
         )
@@ -1632,11 +1649,15 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
             scriptingResult: flows.scripting,
             permissionActiveTabResult: flows.permissions,
             nativeMessagingBlocker:
-                nativeBlocker(from: nativeReport),
+                nativeBlocker(
+                    from: nativeReport,
+                    implementationSummary: nativeMessagingImplementationSummary
+                ),
             serviceWorkerLifecycleBlocker:
                 serviceWorkerBlocker(from: serviceWorkerReport),
             apiReadinessMatrix: readinessMatrix(
-                syntheticReady: syntheticReady
+                syntheticReady: syntheticReady,
+                nativeFixtureReady: nativeFixtureReady
             ),
             runtimeJSMessagingMVPSummary: runtimeJSMessagingMVPSummary,
             tabsScriptingMVPSummary: tabsScriptingMVPSummary,
@@ -1644,11 +1665,14 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
                 storageLocalImplementationSummary,
             nativeMessagingReadinessSummary:
                 nativeMessagingReadinessSummary ?? nativeReport.summary,
+            nativeMessagingImplementationSummary:
+                nativeMessagingImplementationSummary,
             serviceWorkerLifecycleSummary:
                 serviceWorkerLifecycleSummary
                     ?? serviceWorkerReport.summary,
             passwordManagerSyntheticJSReady: syntheticReady,
-            passwordManagerNativeMessagingReady: false,
+            passwordManagerNativeMessagingReady: nativeFixtureReady,
+            passwordManagerNativeMessagingReadyInFixture: nativeFixtureReady,
             passwordManagerServiceWorkerReady: false,
             passwordManagerProductRuntimeReady: false,
             normalTabRuntimeBridgeAvailable: false,
@@ -1668,7 +1692,9 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
                         + serviceWorkerReport.diagnostics
                         + [
                             "Password-manager synthetic fixture report is deterministic.",
-                            "Native messaging is an explicit Prompt 50 blocker.",
+                            nativeFixtureReady
+                                ? "Native messaging fixture flow is internally ready; product native messaging remains unavailable."
+                                : "Native messaging fixture flow is not ready.",
                             "Service-worker lifecycle is an explicit Prompt 51 blocker.",
                             "Product runtime remains unavailable.",
                         ]
@@ -2036,7 +2062,8 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
     }
 
     private static func readinessMatrix(
-        syntheticReady: Bool
+        syntheticReady: Bool,
+        nativeFixtureReady: Bool
     ) -> [ChromeMV3PasswordManagerAPIReadinessEntry] {
         [
             entry("runtime", .ready, synthetic: syntheticReady),
@@ -2047,9 +2074,11 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
             entry("storage.local", .ready, synthetic: syntheticReady),
             entry(
                 "nativeMessaging",
-                .blocked,
-                synthetic: false,
-                blockers: ["Blocked until Prompt 50."]
+                nativeFixtureReady ? .partial : .blocked,
+                synthetic: nativeFixtureReady,
+                blockers: [
+                    "Internal fixture native messaging is separate from product native messaging.",
+                ]
             ),
             entry(
                 "serviceWorkerLifecycle",
@@ -2076,18 +2105,44 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
     }
 
     private static func nativeBlocker(
-        from report: ChromeMV3NativeMessagingReadinessReport
+        from report: ChromeMV3NativeMessagingReadinessReport,
+        implementationSummary:
+            ChromeMV3NativeMessagingImplementationReportSummary?
     ) -> ChromeMV3PasswordManagerNativeMessagingBlockerFlow {
-        ChromeMV3PasswordManagerNativeMessagingBlockerFlow(
+        let fixtureReady =
+            implementationSummary?
+            .passwordManagerNativeMessagingReadyInFixture == true
+        return ChromeMV3PasswordManagerNativeMessagingBlockerFlow(
             nativeMessagingPermissionDetected:
                 report.nativeMessagingPermissionDetected,
             requestedHostName: report.requestedHostName,
             hostLookupStatus: report.hostLookupResult.status,
-            canConnectNativeNow: false,
-            processLaunchAllowedNow: false,
-            passwordManagerNativeMessagingReady: false,
-            nextBlockerPrompt: "Prompt 50",
-            diagnostics: report.diagnostics
+            canConnectNativeNow: fixtureReady,
+            processLaunchAllowedNow: fixtureReady,
+            nativeMessagingAvailableInInternalFixture:
+                implementationSummary?
+                .nativeMessagingAvailableInInternalFixture == true,
+            processLaunchAllowedForFixtureHost:
+                implementationSummary?
+                .processLaunchAllowedForFixtureHost == true,
+            nativeMessagingAvailableInProduct: false,
+            processLaunchAllowedInProduct: false,
+            passwordManagerNativeMessagingReady: fixtureReady,
+            passwordManagerNativeMessagingReadyInFixture: fixtureReady,
+            nextBlockerPrompt:
+                fixtureReady
+                    ? "Prompt 51"
+                    : "Native messaging fixture implementation required",
+            diagnostics:
+                uniqueSortedPasswordManager(
+                    report.diagnostics
+                        + [
+                            fixtureReady
+                                ? "sendNativeMessage/connectNative fixture exchange succeeded."
+                                : "sendNativeMessage/connectNative fixture exchange has not succeeded.",
+                            "Product native messaging remains unavailable.",
+                        ]
+                )
         )
     }
 
