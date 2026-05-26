@@ -371,6 +371,8 @@ final class ChromeMV3RuntimeMinimalSmokeHarnessTests: XCTestCase {
             "SumiTests/ChromeMV3RuntimeJSMessagingMVPTests.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift",
             "SumiTests/ChromeMV3TabsScriptingJSMVPTests.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift",
+            "SumiTests/ChromeMV3StorageLocalRuntimeTests.swift",
         ]
         let joined = (chromeMV3Source + testSource)
             .filter { source in

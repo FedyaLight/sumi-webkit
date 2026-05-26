@@ -62,6 +62,8 @@ final class SumiExtensionsModule {
             ChromeMV3StorageBrokerReadinessReport?
         private var lastChromeMV3StorageAPIOperationsReport:
             ChromeMV3StorageAPIOperationsReport?
+        private var lastChromeMV3StorageLocalImplementationReport:
+            ChromeMV3StorageLocalImplementationReport?
         private var lastChromeMV3RuntimeMessagingContractReport:
             ChromeMV3RuntimeMessagingContractReport?
         private var lastChromeMV3RuntimeMessageDispatcherSkeletonReport:
@@ -177,6 +179,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3RuntimeBridgeReadinessReport = nil
                     lastChromeMV3StorageBrokerReadinessReport = nil
                     lastChromeMV3StorageAPIOperationsReport = nil
+                    lastChromeMV3StorageLocalImplementationReport = nil
                     lastChromeMV3RuntimeMessagingContractReport = nil
                     lastChromeMV3RuntimeMessageDispatcherSkeletonReport = nil
                     lastChromeMV3JSBridgeContractReport = nil
@@ -264,6 +267,8 @@ final class SumiExtensionsModule {
             ChromeMV3StorageBrokerReadinessReportSummary?
         let storageAPIOperationsReportSummary:
             ChromeMV3StorageAPIOperationsReportSummary?
+        let storageLocalImplementationReportSummary:
+            ChromeMV3StorageLocalImplementationReportSummary?
         let runtimeMessagingContractReportSummary:
             ChromeMV3RuntimeMessagingContractReportSummary?
         let runtimeMessageDispatcherSkeletonReportSummary:
@@ -316,6 +321,8 @@ final class SumiExtensionsModule {
                     lastChromeMV3StorageBrokerReadinessReport?.summary
                 storageAPIOperationsReportSummary =
                     lastChromeMV3StorageAPIOperationsReport?.summary
+                storageLocalImplementationReportSummary =
+                    lastChromeMV3StorageLocalImplementationReport?.summary
                 runtimeMessagingContractReportSummary =
                     lastChromeMV3RuntimeMessagingContractReport?.summary
                 runtimeMessageDispatcherSkeletonReportSummary =
@@ -353,6 +360,7 @@ final class SumiExtensionsModule {
                 runtimeBridgeReadinessReport = nil
                 storageBrokerReadinessReportSummary = nil
                 storageAPIOperationsReportSummary = nil
+                storageLocalImplementationReportSummary = nil
                 runtimeMessagingContractReportSummary = nil
                 runtimeMessageDispatcherSkeletonReportSummary = nil
                 jsBridgeContractReportSummary = nil
@@ -380,6 +388,7 @@ final class SumiExtensionsModule {
             runtimeBridgeReadinessReport = nil
             storageBrokerReadinessReportSummary = nil
             storageAPIOperationsReportSummary = nil
+            storageLocalImplementationReportSummary = nil
             runtimeMessagingContractReportSummary = nil
             runtimeMessageDispatcherSkeletonReportSummary = nil
             jsBridgeContractReportSummary = nil
@@ -419,6 +428,8 @@ final class SumiExtensionsModule {
                 storageBrokerReadinessReportSummary,
             storageAPIOperationsReportSummary:
                 storageAPIOperationsReportSummary,
+            storageLocalImplementationReportSummary:
+                storageLocalImplementationReportSummary,
             runtimeMessagingContractReportSummary:
                 runtimeMessagingContractReportSummary,
             runtimeMessageDispatcherSkeletonReportSummary:
@@ -1932,6 +1943,32 @@ final class SumiExtensionsModule {
         }
 
         @available(macOS 15.5, *)
+        func chromeMV3StorageLocalImplementationReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            writeReport: Bool = false
+        ) -> ChromeMV3StorageLocalImplementationReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let report: ChromeMV3StorageLocalImplementationReport
+            do {
+                report = try ChromeMV3StorageLocalImplementationReportGenerator
+                    .makeReport(
+                        loadingPrerequisitesReportFrom: rootURL
+                    )
+            } catch {
+                return nil
+            }
+            lastChromeMV3StorageLocalImplementationReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3StorageLocalImplementationReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
         func chromeMV3RuntimeMessagingContractReportIfEnabled(
             fromRewrittenBundleRoot rootURL: URL,
             writeReport: Bool = false
@@ -2161,10 +2198,59 @@ final class SumiExtensionsModule {
         }
 
         @available(macOS 15.5, *)
+        func chromeMV3StorageLocalWebKitSyntheticHarnessReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            writeReport: Bool = false
+        ) async -> ChromeMV3StorageLocalImplementationReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let extensionID =
+                lastChromeMV3RuntimeBridgePrerequisitesReport?.candidateID
+                ?? lastChromeMV3TabsScriptingMVPReport?.extensionID
+                ?? lastChromeMV3RuntimeJSMessagingMVPReport?.extensionID
+                ?? lastChromeMV3JSBridgeContractReport?.extensionID
+                ?? "storage-local-js-mvp-extension"
+            let profileID =
+                lastChromeMV3TabsScriptingMVPReport?.profileID
+                ?? lastChromeMV3RuntimeJSMessagingMVPReport?.profileID
+                ?? lastChromeMV3JSBridgeContractReport?.profileID
+                ?? "storage-local-js-mvp-profile"
+            let configuration =
+                ChromeMV3StorageLocalRuntimeConfiguration.syntheticHarness(
+                    extensionID: extensionID,
+                    profileID: profileID
+                )
+            let result =
+                await ChromeMV3StorageLocalJSSyntheticHarness.run(
+                    scriptBody:
+                        ChromeMV3StorageLocalJSSyntheticHarness
+                        .reportVerificationScriptBody,
+                    configuration: configuration
+                )
+            let report = result.report
+            lastChromeMV3StorageLocalImplementationReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3StorageLocalImplementationReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
         @discardableResult
         func tearDownChromeMV3TabsScriptingMVPIfEnabled() -> Bool {
             guard isEnabled else { return false }
             lastChromeMV3TabsScriptingMVPReport = nil
+            return true
+        }
+
+        @available(macOS 15.5, *)
+        @discardableResult
+        func tearDownChromeMV3StorageLocalImplementationIfEnabled() -> Bool {
+            guard isEnabled else { return false }
+            lastChromeMV3StorageLocalImplementationReport = nil
             return true
         }
 

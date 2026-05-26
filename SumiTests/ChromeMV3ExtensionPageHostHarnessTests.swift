@@ -479,6 +479,8 @@ final class ChromeMV3ExtensionPageHostHarnessTests: XCTestCase {
             runtimeJSBridgeScopedFiles.union([
                 "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift",
                 "SumiTests/ChromeMV3TabsScriptingJSMVPTests.swift",
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift",
+                "SumiTests/ChromeMV3StorageLocalRuntimeTests.swift",
             ])
         let joined = sources
             .filter {
