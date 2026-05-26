@@ -743,6 +743,7 @@ final class ChromeMV3TabsScriptingJSMVPTests: XCTestCase {
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3RuntimeJSMessagingMVP.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionEventAPIsRuntime.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift",
             "SumiTests/ChromeMV3RuntimeJSMessagingMVPTests.swift",
             "SumiTests/ChromeMV3TabsScriptingJSMVPTests.swift",

@@ -90,6 +90,8 @@ final class SumiExtensionsModule {
             ChromeMV3PermissionImplementationReport?
         private var lastChromeMV3PasswordManagerFixtureReport:
             ChromeMV3PasswordManagerFixtureReport?
+        private var lastChromeMV3ExtensionEventAPIsReport:
+            ChromeMV3ExtensionEventAPIsReport?
     #endif
     weak var browserManager: BrowserManager?
     #if DEBUG
@@ -290,6 +292,8 @@ final class SumiExtensionsModule {
             ChromeMV3RuntimeListenerContractReportSummary?
         let serviceWorkerLifecycleReportSummary:
             ChromeMV3ServiceWorkerLifecycleReportSummary?
+        let extensionEventAPIsReportSummary:
+            ChromeMV3ExtensionEventAPIsReportSummary?
         let permissionBrokerReadinessReportSummary:
             ChromeMV3PermissionBrokerReadinessReportSummary?
         let permissionLifecycleReportSummary:
@@ -345,6 +349,8 @@ final class SumiExtensionsModule {
                     lastChromeMV3RuntimeListenerContractReport?.summary
                 serviceWorkerLifecycleReportSummary =
                     lastChromeMV3ServiceWorkerLifecycleReport?.summary
+                extensionEventAPIsReportSummary =
+                    lastChromeMV3ExtensionEventAPIsReport?.summary
                 permissionBrokerReadinessReportSummary =
                     lastChromeMV3PermissionBrokerReadinessReport?.summary
                 permissionLifecycleReportSummary =
@@ -376,6 +382,7 @@ final class SumiExtensionsModule {
                 nativeMessagingReadinessReportSummary = nil
                 runtimeListenerContractReportSummary = nil
                 serviceWorkerLifecycleReportSummary = nil
+                extensionEventAPIsReportSummary = nil
                 permissionBrokerReadinessReportSummary = nil
                 permissionLifecycleReportSummary = nil
                 permissionsAPIContractReportSummary = nil
@@ -404,6 +411,7 @@ final class SumiExtensionsModule {
             nativeMessagingReadinessReportSummary = nil
             runtimeListenerContractReportSummary = nil
             serviceWorkerLifecycleReportSummary = nil
+            extensionEventAPIsReportSummary = nil
             permissionBrokerReadinessReportSummary = nil
             permissionLifecycleReportSummary = nil
             permissionsAPIContractReportSummary = nil
@@ -451,6 +459,8 @@ final class SumiExtensionsModule {
                 runtimeListenerContractReportSummary,
             serviceWorkerLifecycleReportSummary:
                 serviceWorkerLifecycleReportSummary,
+            extensionEventAPIsReportSummary:
+                extensionEventAPIsReportSummary,
             permissionBrokerReadinessReportSummary:
                 permissionBrokerReadinessReportSummary,
             permissionLifecycleReportSummary:
@@ -2433,6 +2443,89 @@ final class SumiExtensionsModule {
         }
 
         @available(macOS 15.5, *)
+        func chromeMV3ExtensionEventAPIsReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            writeReport: Bool = false
+        ) -> ChromeMV3ExtensionEventAPIsReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let extensionID =
+                lastChromeMV3RuntimeBridgePrerequisitesReport?.candidateID
+                ?? lastChromeMV3TabsScriptingMVPReport?.extensionID
+                ?? lastChromeMV3RuntimeJSMessagingMVPReport?.extensionID
+                ?? lastChromeMV3JSBridgeContractReport?.extensionID
+                ?? "extension-event-apis-mvp-extension"
+            let profileID =
+                lastChromeMV3TabsScriptingMVPReport?.profileID
+                ?? lastChromeMV3RuntimeJSMessagingMVPReport?.profileID
+                ?? lastChromeMV3JSBridgeContractReport?.profileID
+                ?? "extension-event-apis-mvp-profile"
+            let report =
+                ChromeMV3ExtensionEventAPIsReportGenerator.makeReport(
+                    extensionID: extensionID,
+                    profileID: profileID,
+                    moduleState: .enabled
+                )
+            lastChromeMV3ExtensionEventAPIsReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3ExtensionEventAPIsReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3ExtensionEventAPIsWebKitSyntheticHarnessReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            writeReport: Bool = false
+        ) async -> ChromeMV3ExtensionEventAPIsReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let extensionID =
+                lastChromeMV3RuntimeBridgePrerequisitesReport?.candidateID
+                ?? lastChromeMV3TabsScriptingMVPReport?.extensionID
+                ?? lastChromeMV3RuntimeJSMessagingMVPReport?.extensionID
+                ?? lastChromeMV3JSBridgeContractReport?.extensionID
+                ?? "extension-event-apis-mvp-extension"
+            let profileID =
+                lastChromeMV3TabsScriptingMVPReport?.profileID
+                ?? lastChromeMV3RuntimeJSMessagingMVPReport?.profileID
+                ?? lastChromeMV3JSBridgeContractReport?.profileID
+                ?? "extension-event-apis-mvp-profile"
+            let configuration =
+                ChromeMV3ExtensionEventAPIsConfiguration.syntheticHarness(
+                    extensionID: extensionID,
+                    profileID: profileID
+                )
+            let result =
+                await ChromeMV3ExtensionEventAPIsSyntheticHarness.run(
+                    scriptBody:
+                        ChromeMV3ExtensionEventAPIsSyntheticHarness
+                        .reportVerificationScriptBody,
+                    configuration: configuration
+                )
+            let report = result.report
+            lastChromeMV3ExtensionEventAPIsReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3ExtensionEventAPIsReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        @discardableResult
+        func tearDownChromeMV3ExtensionEventAPIsIfEnabled() -> Bool {
+            guard isEnabled else { return false }
+            lastChromeMV3ExtensionEventAPIsReport = nil
+            return true
+        }
+
+        @available(macOS 15.5, *)
         func chromeMV3PermissionBrokerReadinessReportIfEnabled(
             fromRewrittenBundleRoot rootURL: URL,
             writeReport: Bool = false
@@ -2616,7 +2709,9 @@ final class SumiExtensionsModule {
                         lastChromeMV3ServiceWorkerLifecycleReport?.summary,
                     sharedLifecycleSessionSummary:
                         lastChromeMV3ServiceWorkerSharedLifecycleSessionReport?
-                        .summary
+                        .summary,
+                    extensionEventAPIsSummary:
+                        lastChromeMV3ExtensionEventAPIsReport?.summary
                 )
             lastChromeMV3PasswordManagerFixtureReport = report
 
@@ -2680,7 +2775,9 @@ final class SumiExtensionsModule {
                         lastChromeMV3ServiceWorkerLifecycleReport?.summary,
                     sharedLifecycleSessionSummary:
                         lastChromeMV3ServiceWorkerSharedLifecycleSessionReport?
-                        .summary
+                        .summary,
+                    extensionEventAPIsSummary:
+                        lastChromeMV3ExtensionEventAPIsReport?.summary
                 )
             lastChromeMV3PasswordManagerFixtureReport = report
 

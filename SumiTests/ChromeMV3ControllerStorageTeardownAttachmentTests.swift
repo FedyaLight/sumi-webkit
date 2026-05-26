@@ -434,6 +434,7 @@ final class ChromeMV3ControllerStorageTeardownAttachmentTests: XCTestCase {
                     "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift",
                     "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift",
                     "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionEventAPIsRuntime.swift",
                 ]
             ),
             (
@@ -441,6 +442,7 @@ final class ChromeMV3ControllerStorageTeardownAttachmentTests: XCTestCase {
                 [
                     "Sumi/Models/Extension/ChromeMV3/ChromeMV3RuntimeJSMessagingMVP.swift",
                     "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionEventAPIsRuntime.swift",
                     "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift",
                 ]
             ),

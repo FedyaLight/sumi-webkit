@@ -1506,6 +1506,8 @@ struct ChromeMV3PasswordManagerFixtureReport:
         ChromeMV3ServiceWorkerLifecycleReportSummary?
     var sharedLifecycleSessionSummary:
         ChromeMV3ServiceWorkerSharedLifecycleSessionReportSummary?
+    var extensionEventAPIsSummary:
+        ChromeMV3ExtensionEventAPIsReportSummary?
     var passwordManagerSyntheticJSReady: Bool
     var passwordManagerNativeMessagingReady: Bool
     var passwordManagerNativeMessagingReadyInFixture: Bool
@@ -1587,7 +1589,9 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
         serviceWorkerLifecycleSummary:
             ChromeMV3ServiceWorkerLifecycleReportSummary? = nil,
         sharedLifecycleSessionSummary:
-            ChromeMV3ServiceWorkerSharedLifecycleSessionReportSummary? = nil
+            ChromeMV3ServiceWorkerSharedLifecycleSessionReportSummary? = nil,
+        extensionEventAPIsSummary:
+            ChromeMV3ExtensionEventAPIsReportSummary? = nil
     ) -> ChromeMV3PasswordManagerFixtureReport {
         let configuration =
             ChromeMV3PasswordManagerCombinedHarnessConfiguration
@@ -1704,6 +1708,7 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
                 serviceWorkerLifecycleSummary
                     ?? serviceWorkerReport.summary,
             sharedLifecycleSessionSummary: sharedSummary,
+            extensionEventAPIsSummary: extensionEventAPIsSummary,
             passwordManagerSyntheticJSReady: syntheticReady,
             passwordManagerNativeMessagingReady: nativeFixtureReady,
             passwordManagerNativeMessagingReadyInFixture: nativeFixtureReady,
@@ -1728,6 +1733,11 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
                         + nativeReport.diagnostics
                         + serviceWorkerReport.diagnostics
                         + (sharedLifecycleReport?.diagnostics ?? [])
+                        + [
+                            extensionEventAPIsSummary == nil
+                                ? "contextMenus, alarms, and webNavigation are irrelevant/deferred for the password-manager fixture unless an event API report is linked."
+                                : "Linked event API report is internal synthetic coverage only and not product runtime readiness.",
+                        ]
                         + [
                             "Password-manager synthetic fixture report is deterministic.",
                             nativeFixtureReady
@@ -2125,6 +2135,30 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
             entry("permissions", .ready, synthetic: syntheticReady),
             entry("activeTab", .ready, synthetic: syntheticReady),
             entry("storage.local", .ready, synthetic: syntheticReady),
+            entry(
+                "contextMenus",
+                .partial,
+                synthetic: true,
+                blockers: [
+                    "Internal synthetic contextMenus MVP is not product context menu UI.",
+                ]
+            ),
+            entry(
+                "alarms",
+                .partial,
+                synthetic: true,
+                blockers: [
+                    "Internal alarms MVP uses explicit fixture triggers only.",
+                ]
+            ),
+            entry(
+                "webNavigation",
+                .partial,
+                synthetic: true,
+                blockers: [
+                    "Internal webNavigation MVP consumes synthetic navigation fixtures only.",
+                ]
+            ),
             entry(
                 "nativeMessaging",
                 nativeFixtureReady ? .partial : .blocked,
