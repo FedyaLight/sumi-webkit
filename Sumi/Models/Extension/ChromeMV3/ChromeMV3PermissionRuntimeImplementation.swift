@@ -1321,6 +1321,10 @@ struct ChromeMV3PermissionImplementationReportSummary:
     var activeTabAvailableInProduct: Bool
     var normalTabRuntimeBridgeAvailable: Bool
     var runtimeLoadable: Bool
+    var permissionRuntimeStateAvailable: Bool
+    var permissionsModelHandlersAvailable: Bool
+    var permissionsJSBridgeAvailableInSyntheticHarness: Bool
+    var permissionsJSExecutedInWebKitSyntheticHarness: Bool
     var chromePermissionsRuntimeMutationsCovered: Bool
     var activeTabLifecycleCovered: Bool
     var tabsQueryPermissionCovered: Bool
@@ -1359,6 +1363,9 @@ struct ChromeMV3PermissionImplementationReport:
         [ChromeMV3PermissionRuntimeRequestApplication]
     var chromePermissionsRemoveResults:
         [ChromeMV3PermissionRuntimeRemoveApplication]
+    var permissionsJSShimCoverage: ChromeMV3PermissionsJSShimCoverage
+    var permissionsWebKitExecutionSummary:
+        ChromeMV3PermissionsWebKitExecutionSummary
     var tabsQueryRedactionResults:
         [ChromeMV3SyntheticTabRedactionDecision]
     var tabsSendMessagePermissionResults:
@@ -1370,6 +1377,10 @@ struct ChromeMV3PermissionImplementationReport:
     var webKitSyntheticTabsScriptingPermissionVerificationStatus: String
     var eventDiagnostics: [ChromeMV3PermissionRuntimeEventRecord]
     var permissionImplementationAvailableInInternalRuntime: Bool
+    var permissionRuntimeStateAvailable: Bool
+    var permissionsModelHandlersAvailable: Bool
+    var permissionsJSBridgeAvailableInSyntheticHarness: Bool
+    var permissionsJSExecutedInWebKitSyntheticHarness: Bool
     var permissionUIAvailableInProduct: Bool
     var activeTabAvailableInProduct: Bool
     var normalTabRuntimeBridgeAvailable: Bool
@@ -1390,6 +1401,13 @@ struct ChromeMV3PermissionImplementationReport:
             activeTabAvailableInProduct: false,
             normalTabRuntimeBridgeAvailable: false,
             runtimeLoadable: false,
+            permissionRuntimeStateAvailable: true,
+            permissionsModelHandlersAvailable: true,
+            permissionsJSBridgeAvailableInSyntheticHarness:
+                permissionsJSBridgeAvailableInSyntheticHarness,
+            permissionsJSExecutedInWebKitSyntheticHarness:
+                permissionsWebKitExecutionSummary
+                .permissionsJSExecutedInWebKitSyntheticHarness,
             chromePermissionsRuntimeMutationsCovered:
                 chromePermissionsRequestResults.contains {
                     $0.returnedBoolean
@@ -1474,10 +1492,17 @@ enum ChromeMV3PermissionImplementationReportGenerator {
         extensionID: String = "permission-runtime-fixture-extension",
         profileID: String = "permission-runtime-fixture-profile",
         webKitSyntheticPermissionVerificationStatus: String =
-            "notRunBySynchronousPermissionImplementationReport"
+            "notRunBySynchronousPermissionImplementationReport",
+        permissionsWebKitExecutionSummary:
+            ChromeMV3PermissionsWebKitExecutionSummary? = nil
     ) -> ChromeMV3PermissionImplementationReport {
         let configuration =
             ChromeMV3TabsScriptingJSBridgeConfiguration.syntheticHarness(
+                extensionID: extensionID,
+                profileID: profileID
+            )
+        let permissionsConfiguration =
+            ChromeMV3PermissionsJSBridgeConfiguration.syntheticHarness(
                 extensionID: extensionID,
                 profileID: profileID
             )
@@ -1749,6 +1774,15 @@ enum ChromeMV3PermissionImplementationReportGenerator {
             + deniedOwner.transactionRecords
         let allDiffs = owner.permissionDiffs + activeTabOwner.permissionDiffs
             + deniedOwner.permissionDiffs
+        let resolvedPermissionsWebKitExecutionSummary =
+            permissionsWebKitExecutionSummary
+            ?? ChromeMV3PermissionsWebKitExecutionSummary.notAttempted(
+                permissionRuntimeStateAvailable: true,
+                permissionsModelHandlersAvailable: true,
+                permissionsJSBridgeAvailableInSyntheticHarness:
+                    permissionsConfiguration
+                    .permissionsJSBridgeAvailableInSyntheticHarness
+            )
         let reportID = ChromeMV3PermissionRuntimeStableID.make(
             prefix: "runtime-permission-implementation",
             parts: [
@@ -1758,6 +1792,7 @@ enum ChromeMV3PermissionImplementationReportGenerator {
                 finalSnapshot.activeTabStore.storeID,
                 allTransactions.map(\.id).joined(separator: ","),
                 webKitSyntheticPermissionVerificationStatus,
+                resolvedPermissionsWebKitExecutionSummary.status,
             ]
         )
 
@@ -1791,6 +1826,10 @@ enum ChromeMV3PermissionImplementationReportGenerator {
             chromePermissionsGetAllResults: [getAllAfterGrant],
             chromePermissionsRequestResults: chromeRequests,
             chromePermissionsRemoveResults: chromeRemoves,
+            permissionsJSShimCoverage:
+                ChromeMV3PermissionsJSShimSource.coverage,
+            permissionsWebKitExecutionSummary:
+                resolvedPermissionsWebKitExecutionSummary,
             tabsQueryRedactionResults: redactions,
             tabsSendMessagePermissionResults: [
                 sendAfterGrant,
@@ -1819,6 +1858,14 @@ enum ChromeMV3PermissionImplementationReportGenerator {
                     return $0.id < $1.id
                 },
             permissionImplementationAvailableInInternalRuntime: true,
+            permissionRuntimeStateAvailable: true,
+            permissionsModelHandlersAvailable: true,
+            permissionsJSBridgeAvailableInSyntheticHarness:
+                permissionsConfiguration
+                .permissionsJSBridgeAvailableInSyntheticHarness,
+            permissionsJSExecutedInWebKitSyntheticHarness:
+                resolvedPermissionsWebKitExecutionSummary
+                .permissionsJSExecutedInWebKitSyntheticHarness,
             permissionUIAvailableInProduct: false,
             activeTabAvailableInProduct: false,
             normalTabRuntimeBridgeAvailable: false,
@@ -1829,6 +1876,7 @@ enum ChromeMV3PermissionImplementationReportGenerator {
             documentationSources: documentationSources(),
             diagnostics: [
                 "Internal permission runtime state owner executed contains/getAll/request/remove against deterministic state.",
+                "permissionsJSExecutedInWebKitSyntheticHarness is tracked separately from model handler coverage.",
                 "tabs.query, tabs.sendMessage, tabs.connect, and scripting.executeScript were evaluated against updated permission state.",
                 "activeTab grants were created from a modeled user gesture and expired through lifecycle state.",
                 "Product permission UI, product activeTab, product normal-tab runtime, service-worker wake, native messaging, and runtime loadability remain unavailable.",
@@ -1987,6 +2035,11 @@ enum ChromeMV3PermissionImplementationReportGenerator {
                 note: "Defines contains, getAll, request, remove, and onAdded/onRemoved."
             ),
             source(
+                title: "Chrome runtime API",
+                url: "https://developer.chrome.com/docs/extensions/reference/api/runtime",
+                note: "Defines runtime.lastError and callback/Promise runtime API behavior used by the synthetic permissions shim."
+            ),
+            source(
                 title: "Chrome declare permissions",
                 url: "https://developer.chrome.com/docs/extensions/develop/concepts/declare-permissions",
                 note: "Defines required, optional, host, and optional host permission declarations."
@@ -2005,6 +2058,12 @@ enum ChromeMV3PermissionImplementationReportGenerator {
                 title: "Chrome activeTab",
                 url: "https://developer.chrome.com/docs/extensions/develop/concepts/activeTab",
                 note: "Defines user-gesture temporary host access and revocation on navigation or tab close."
+            ),
+            ChromeMV3ManifestRewritePreviewSource(
+                kind: .currentSumiCode,
+                title: "Local WebKit SDK headers",
+                url: nil,
+                note: "MacOSX WebKit headers document WKUserScript, WKScriptMessageHandlerWithReply, WKContentWorld, WKWebViewConfiguration, and callAsyncJavaScript usage confined to the controlled synthetic harness."
             ),
         ]
     }

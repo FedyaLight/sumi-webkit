@@ -133,6 +133,132 @@ final class ChromeMV3PermissionRuntimeImplementationTests: XCTestCase {
         )
     }
 
+    func testPermissionsOnlyShimSourceAndBridgeHandlerAreSyntheticOnly()
+        throws
+    {
+        let configuration =
+            ChromeMV3PermissionsJSBridgeConfiguration.syntheticHarness(
+                extensionID: extensionID,
+                profileID: profileID
+            )
+        let source = ChromeMV3PermissionsJSShimSource.source(
+            configuration: configuration
+        )
+        let coverage = ChromeMV3PermissionsJSShimSource.coverage
+
+        XCTAssertEqual(
+            coverage.exposedChromeNamespaces,
+            ["permissions", "runtime"]
+        )
+        XCTAssertEqual(
+            coverage.runtimeMembers,
+            ["lastError"]
+        )
+        XCTAssertEqual(
+            coverage.permissionsMethods.sorted(),
+            ["contains", "getAll", "remove", "request"]
+        )
+        XCTAssertEqual(
+            coverage.permissionsEvents.sorted(),
+            ["onAdded", "onRemoved"]
+        )
+        XCTAssertTrue(
+            source.contains("Object.defineProperty(chromeObject, \"permissions\"")
+        )
+        XCTAssertTrue(
+            source.contains("Object.defineProperty(runtime, \"lastError\"")
+        )
+        XCTAssertFalse(
+            source.contains("Object.defineProperty(chromeObject, \"tabs\"")
+        )
+        XCTAssertFalse(
+            source.contains("Object.defineProperty(chromeObject, \"scripting\"")
+        )
+        XCTAssertFalse(
+            source.contains("Object.defineProperty(chromeObject, \"storage\"")
+        )
+        XCTAssertFalse(
+            source.contains("Object.defineProperty(chromeObject, \"nativeMessaging\"")
+        )
+
+        let handler = ChromeMV3PermissionsJSBridgeHandler(
+            configuration: configuration,
+            permissionRuntimeOwner: permissionOwner(
+                optionalAPIPermissions: ["history", "topSites"],
+                optionalHostPermissions: ["https://example.com/*"]
+            )
+        )
+        let accepted = handler.handle(
+            request(
+                namespace: "permissions",
+                methodName: "request",
+                arguments: [
+                    .object([
+                        "permissions": .array([.string("history")]),
+                        "__sumiUserGestureModeled": .bool(true),
+                        "__sumiModeledPromptResult": .string("accepted"),
+                    ]),
+                ]
+            )
+        )
+        let contains = handler.handle(
+            request(
+                namespace: "permissions",
+                methodName: "contains",
+                arguments: [
+                    .object([
+                        "permissions": .array([.string("history")]),
+                    ]),
+                ]
+            )
+        )
+        let promptRequired = handler.handle(
+            request(
+                namespace: "permissions",
+                methodName: "request",
+                arguments: [
+                    .object([
+                        "permissions": .array([.string("topSites")]),
+                        "__sumiUserGestureModeled": .bool(true),
+                    ]),
+                ]
+            )
+        )
+        let removeRequired = handler.handle(
+            request(
+                namespace: "permissions",
+                methodName: "remove",
+                invocationMode: .callback,
+                arguments: [
+                    .object([
+                        "permissions": .array([.string("tabs")]),
+                    ]),
+                ]
+            )
+        )
+
+        XCTAssertTrue(accepted.succeeded)
+        XCTAssertEqual(accepted.resultPayload, .bool(true))
+        XCTAssertEqual(
+            accepted.permissionEventPayload?.eventKind,
+            .onAdded
+        )
+        XCTAssertTrue(contains.succeeded)
+        XCTAssertEqual(contains.resultPayload, .bool(true))
+        XCTAssertFalse(promptRequired.succeeded)
+        XCTAssertEqual(promptRequired.lastErrorCode, "productUIUnavailable")
+        XCTAssertTrue(promptRequired.promiseWouldReject)
+        XCTAssertFalse(removeRequired.succeeded)
+        XCTAssertEqual(
+            removeRequired.lastErrorCode,
+            "requiredManifestPermission"
+        )
+        XCTAssertTrue(removeRequired.callbackWouldSetLastError)
+        XCTAssertFalse(removeRequired.permissionUIAvailableInProduct)
+        XCTAssertFalse(removeRequired.normalTabRuntimeBridgeAvailable)
+        XCTAssertFalse(removeRequired.runtimeLoadable)
+    }
+
     func testOptionalHostGrantAndRevokeControlsTabsQueryAndMessaging()
         throws
     {
@@ -457,8 +583,127 @@ final class ChromeMV3PermissionRuntimeImplementationTests: XCTestCase {
     }
 
     @MainActor
+    func testWebKitSyntheticHarnessExercisesChromePermissionsCalls()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else { return }
+        let configuration =
+            ChromeMV3PermissionsJSBridgeConfiguration.syntheticHarness(
+                extensionID: extensionID,
+                profileID: profileID
+            )
+        let result = await ChromeMV3PermissionsJSSyntheticHarness.run(
+            scriptBody:
+                ChromeMV3PermissionsJSSyntheticHarness
+                .reportVerificationScriptBody,
+            configuration: configuration
+        )
+
+        XCTAssertTrue(
+            result.scriptEvaluationSucceeded,
+            result.diagnostics.joined(separator: "\n")
+        )
+        let object = try XCTUnwrap(try decodedObject(result.scriptResultJSON))
+        XCTAssertEqual(
+            object["exposedNamespaces"] as? [String],
+            ["permissions", "runtime"]
+        )
+        XCTAssertEqual(object["tabsMissing"] as? Bool, true)
+        XCTAssertEqual(object["scriptingMissing"] as? Bool, true)
+        XCTAssertEqual(object["storageMissing"] as? Bool, true)
+        XCTAssertEqual(object["nativeMessagingMissing"] as? Bool, true)
+        XCTAssertEqual(object["containsCallbackOK"] as? Bool, true)
+        XCTAssertEqual(object["containsPromiseOK"] as? Bool, true)
+        XCTAssertEqual(
+            object["containsMissingOptionalFalseOK"] as? Bool,
+            true
+        )
+        XCTAssertEqual(
+            object["containsOriginAfterGrantOK"] as? Bool,
+            true
+        )
+        XCTAssertEqual(
+            object["containsRevokedOptionalFalseOK"] as? Bool,
+            true
+        )
+        XCTAssertEqual(object["getAllCallbackOK"] as? Bool, true)
+        XCTAssertEqual(object["getAllPromiseOK"] as? Bool, true)
+        XCTAssertEqual(
+            object["requestAcceptedPermissionOK"] as? Bool,
+            true
+        )
+        XCTAssertEqual(object["requestAcceptedOriginOK"] as? Bool, true)
+        XCTAssertEqual(object["requestDeniedModeledOK"] as? Bool, true)
+        XCTAssertEqual(
+            object["requestWithoutPromptRejectedOK"] as? Bool,
+            true
+        )
+        XCTAssertEqual(object["requestUndeclaredRejectedOK"] as? Bool, true)
+        XCTAssertEqual(object["removeOptionalPermissionOK"] as? Bool, true)
+        XCTAssertEqual(object["removeOptionalOriginOK"] as? Bool, true)
+        XCTAssertEqual(
+            object["removeRequiredCallbackLastErrorOK"] as? Bool,
+            true
+        )
+        XCTAssertEqual(object["lastErrorScopedOK"] as? Bool, true)
+        XCTAssertEqual(object["onAddedPayloadOK"] as? Bool, true)
+        XCTAssertEqual(object["onRemovedPayloadOK"] as? Bool, true)
+
+        XCTAssertEqual(result.userScriptCount, 1)
+        XCTAssertEqual(result.scriptMessageHandlerCount, 1)
+        XCTAssertGreaterThanOrEqual(result.permissionsRequestCount, 14)
+        XCTAssertGreaterThanOrEqual(result.rejectedRequestCount, 3)
+        XCTAssertTrue(
+            result.webKitExecutionSummary
+                .permissionsJSExecutedInWebKitSyntheticHarness
+        )
+        XCTAssertTrue(result.webKitExecutionSummary.containsCallbackExecuted)
+        XCTAssertTrue(result.webKitExecutionSummary.containsPromiseExecuted)
+        XCTAssertTrue(result.webKitExecutionSummary.getAllCallbackExecuted)
+        XCTAssertTrue(result.webKitExecutionSummary.getAllPromiseExecuted)
+        XCTAssertTrue(
+            result.webKitExecutionSummary
+                .requestAcceptedModeledPermissionExecuted
+        )
+        XCTAssertTrue(
+            result.webKitExecutionSummary
+                .requestAcceptedModeledOriginExecuted
+        )
+        XCTAssertTrue(
+            result.webKitExecutionSummary
+                .requestWithoutModeledPromptRejected
+        )
+        XCTAssertTrue(
+            result.webKitExecutionSummary
+                .removeRequiredPermissionRejected
+        )
+        XCTAssertTrue(result.webKitExecutionSummary.onAddedPayloadGenerated)
+        XCTAssertTrue(result.webKitExecutionSummary.onRemovedPayloadGenerated)
+        XCTAssertFalse(result.permissionUIAvailableInProduct)
+        XCTAssertFalse(result.activeTabAvailableInProduct)
+        XCTAssertFalse(result.permissionsJSBridgeAvailableInProduct)
+        XCTAssertFalse(result.normalTabRuntimeBridgeAvailable)
+        XCTAssertFalse(result.serviceWorkerWakeAvailable)
+        XCTAssertFalse(result.nativeMessagingAvailable)
+        XCTAssertFalse(result.runtimeLoadable)
+        XCTAssertEqual(
+            result.permissionRuntimeSnapshotAfterTeardown.transactionRecords
+                .count,
+            0
+        )
+        XCTAssertTrue(
+            result.report
+                .permissionsJSExecutedInWebKitSyntheticHarness
+        )
+        XCTAssertTrue(
+            result.report.summary
+                .permissionsJSExecutedInWebKitSyntheticHarness
+        )
+    }
+
+    @MainActor
     func testImplementationReportIsDeterministicWritableAndDisabledModuleBlocks()
-        throws
+        async throws
     {
         guard #available(macOS 15.5, *) else { return }
         let report = ChromeMV3PermissionImplementationReportGenerator
@@ -490,6 +735,22 @@ final class ChromeMV3PermissionRuntimeImplementationTests: XCTestCase {
         XCTAssertTrue(
             report.summary.permissionImplementationAvailableInInternalRuntime
         )
+        XCTAssertTrue(report.summary.permissionRuntimeStateAvailable)
+        XCTAssertTrue(report.summary.permissionsModelHandlersAvailable)
+        XCTAssertTrue(
+            report.summary.permissionsJSBridgeAvailableInSyntheticHarness
+        )
+        XCTAssertFalse(
+            report.summary.permissionsJSExecutedInWebKitSyntheticHarness
+        )
+        XCTAssertEqual(
+            report.permissionsWebKitExecutionSummary.status,
+            "notAttemptedByModelReportGenerator"
+        )
+        XCTAssertEqual(
+            report.permissionsJSShimCoverage.permissionsMethods.sorted(),
+            ["contains", "getAll", "remove", "request"]
+        )
         XCTAssertFalse(report.permissionUIAvailableInProduct)
         XCTAssertFalse(report.activeTabAvailableInProduct)
         XCTAssertFalse(report.normalTabRuntimeBridgeAvailable)
@@ -517,6 +778,46 @@ final class ChromeMV3PermissionRuntimeImplementationTests: XCTestCase {
                 writeReport: true
             )
         )
+        let disabledWebKitReport =
+            await module
+            .chromeMV3PermissionsWebKitSyntheticHarnessReportIfEnabled(
+                fromRewrittenBundleRoot: root,
+                writeReport: true
+            )
+        XCTAssertNil(disabledWebKitReport)
+
+        let enabledSuiteName =
+            "ChromeMV3PermissionRuntimeImplementationTests.enabled.\(UUID().uuidString)"
+        let enabledDefaults = try XCTUnwrap(
+            UserDefaults(suiteName: enabledSuiteName)
+        )
+        defer {
+            enabledDefaults.removePersistentDomain(forName: enabledSuiteName)
+        }
+        let enabledModule = SumiExtensionsModule(
+            moduleRegistry:
+                SumiModuleRegistry(
+                    settingsStore: SumiModuleSettingsStore(
+                        userDefaults: enabledDefaults
+                    )
+                )
+        )
+        enabledModule.setEnabled(true)
+        let maybeWebKitReport =
+            await enabledModule
+            .chromeMV3PermissionsWebKitSyntheticHarnessReportIfEnabled(
+                fromRewrittenBundleRoot: root,
+                writeReport: true
+            )
+        let webKitReport = try XCTUnwrap(maybeWebKitReport)
+        XCTAssertTrue(
+            webKitReport
+                .permissionsJSExecutedInWebKitSyntheticHarness
+        )
+        XCTAssertTrue(
+            webKitReport.summary
+                .permissionsJSExecutedInWebKitSyntheticHarness
+        )
     }
 
     func testSourceLevelGuardsKeepProductBoundariesBlocked() throws {
@@ -528,6 +829,13 @@ final class ChromeMV3PermissionRuntimeImplementationTests: XCTestCase {
         )
         let extensionModule = root.appendingPathComponent(
             "Sumi/Managers/ExtensionManager/SumiExtensionsModule.swift"
+        )
+        let browserConfigSource = try String(
+            contentsOf:
+                root.appendingPathComponent(
+                    "Sumi/Models/BrowserConfig/BrowserConfig.swift"
+                ),
+            encoding: .utf8
         )
         let swiftFiles = try productionSwiftFiles(under: productionRoot)
             + [extensionModule]
@@ -546,6 +854,8 @@ final class ChromeMV3PermissionRuntimeImplementationTests: XCTestCase {
             clock,
             "runtimeLoadable.*" + positiveBooleanLiteral,
             "permissionUIAvailableInProduct.*" + positiveBooleanLiteral,
+            "permissionsJSBridgeAvailableInProduct.*"
+                + positiveBooleanLiteral,
             "activeTabAvailableInProduct.*" + positiveBooleanLiteral,
             "normalTabRuntimeBridgeAvailable.*" + positiveBooleanLiteral,
             "serviceWorkerWakeAvailable.*" + positiveBooleanLiteral,
@@ -559,6 +869,14 @@ final class ChromeMV3PermissionRuntimeImplementationTests: XCTestCase {
                 pattern
             )
         }
+        XCTAssertFalse(
+            browserConfigSource.contains(
+                ChromeMV3PermissionsJSShimSource.bridgeMessageHandlerName
+            )
+        )
+        XCTAssertFalse(
+            browserConfigSource.contains("ChromeMV3PermissionsJSShimSource")
+        )
     }
 
     private func permissionOwner(
