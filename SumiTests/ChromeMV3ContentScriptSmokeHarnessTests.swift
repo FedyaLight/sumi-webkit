@@ -926,7 +926,16 @@ final class ChromeMV3ContentScriptSmokeHarnessTests: XCTestCase {
         let testSource = try Self.sourceFiles(in: [
             "SumiTests",
         ]).filter { $0.relativePath.contains("ChromeMV3") }
+        let runtimeJSBridgeScopedFiles: Set<String> = [
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3RuntimeJSMessagingMVP.swift",
+            "SumiTests/ChromeMV3RuntimeJSMessagingMVPTests.swift",
+        ]
         let joined = (chromeMV3Source + testSource)
+            .filter { source in
+                runtimeJSBridgeScopedFiles.contains {
+                    source.relativePath.hasSuffix($0)
+                } == false
+            }
             .map(\.contents)
             .joined(separator: "\n")
 

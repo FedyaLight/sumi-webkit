@@ -50,6 +50,8 @@ final class SumiExtensionsModule {
             ChromeMV3ContentScriptLocalFixtureRunnerReport?
         private var lastChromeMV3RuntimeExtensionPageHostReport:
             ChromeMV3ExtensionPageHostReport?
+        private var lastChromeMV3RuntimeJSMessagingMVPReport:
+            ChromeMV3RuntimeJSMessagingMVPReport?
         private var lastChromeMV3RuntimeBridgePrerequisitesReport:
             ChromeMV3RuntimeBridgePrerequisitesReport?
         private var lastChromeMV3RuntimeBridgeReadinessReport:
@@ -165,6 +167,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3RuntimeContentScriptSmokeReport = nil
                     lastChromeMV3RuntimeContentScriptLocalFixtureRunnerReport = nil
                     lastChromeMV3RuntimeExtensionPageHostReport = nil
+                    lastChromeMV3RuntimeJSMessagingMVPReport = nil
                     lastChromeMV3RuntimeBridgePrerequisitesReport = nil
                     lastChromeMV3RuntimeBridgeReadinessReport = nil
                     lastChromeMV3StorageBrokerReadinessReport = nil
@@ -243,6 +246,8 @@ final class SumiExtensionsModule {
             ChromeMV3ContentScriptLocalFixtureRunnerReport?
         let runtimeExtensionPageHostReport:
             ChromeMV3ExtensionPageHostReport?
+        let runtimeJSMessagingMVPReport:
+            ChromeMV3RuntimeJSMessagingMVPReport?
         let runtimeBridgePrerequisitesReport:
             ChromeMV3RuntimeBridgePrerequisitesReport?
         let runtimeBridgeReadinessReport:
@@ -289,6 +294,8 @@ final class SumiExtensionsModule {
                     lastChromeMV3RuntimeContentScriptLocalFixtureRunnerReport
                 runtimeExtensionPageHostReport =
                     lastChromeMV3RuntimeExtensionPageHostReport
+                runtimeJSMessagingMVPReport =
+                    lastChromeMV3RuntimeJSMessagingMVPReport
                 runtimeBridgePrerequisitesReport =
                     lastChromeMV3RuntimeBridgePrerequisitesReport
                 runtimeBridgeReadinessReport =
@@ -326,6 +333,7 @@ final class SumiExtensionsModule {
                 runtimeContentScriptSmokeReport = nil
                 runtimeContentScriptLocalFixtureRunnerReport = nil
                 runtimeExtensionPageHostReport = nil
+                runtimeJSMessagingMVPReport = nil
                 runtimeBridgePrerequisitesReport = nil
                 runtimeBridgeReadinessReport = nil
                 storageBrokerReadinessReportSummary = nil
@@ -350,6 +358,7 @@ final class SumiExtensionsModule {
             runtimeContentScriptSmokeReport = nil
             runtimeContentScriptLocalFixtureRunnerReport = nil
             runtimeExtensionPageHostReport = nil
+            runtimeJSMessagingMVPReport = nil
             runtimeBridgePrerequisitesReport = nil
             runtimeBridgeReadinessReport = nil
             storageBrokerReadinessReportSummary = nil
@@ -380,6 +389,8 @@ final class SumiExtensionsModule {
                 runtimeContentScriptLocalFixtureRunnerReport,
             runtimeExtensionPageHostReport:
                 runtimeExtensionPageHostReport,
+            runtimeJSMessagingMVPReport:
+                runtimeJSMessagingMVPReport,
             runtimeBridgePrerequisitesReport:
                 runtimeBridgePrerequisitesReport,
             runtimeBridgeReadinessReport:
@@ -838,13 +849,16 @@ final class SumiExtensionsModule {
             } catch {
                 return nil
             }
-            lastChromeMV3RuntimeBridgeReadinessReport = report
+            var linkedReport = report
+            linkedReport.runtimeJSMessagingMVPSummary =
+                lastChromeMV3RuntimeJSMessagingMVPReport?.summary
+            lastChromeMV3RuntimeBridgeReadinessReport = linkedReport
 
-            guard writeReport else { return report }
+            guard writeReport else { return linkedReport }
             return (try? ChromeMV3RuntimeBridgeReadinessReportWriter.write(
-                report,
+                linkedReport,
                 toRewrittenBundleRoot: rootURL
-            )) ?? report
+            )) ?? linkedReport
         }
 
         @available(macOS 15.5, *)
@@ -1721,18 +1735,22 @@ final class SumiExtensionsModule {
                     tearDownLoadedContextAndControllerAfterRun:
                         tearDownLoadedContextAndControllerAfterRun
                 )
-            lastChromeMV3RuntimeExtensionPageHostReport = report
+            var linkedPageReport = report
+            linkedPageReport.runtimeJSMessagingMVPSummary =
+                lastChromeMV3RuntimeJSMessagingMVPReport?.summary
+            lastChromeMV3RuntimeExtensionPageHostReport = linkedPageReport
 
             if var linkedReadinessReport =
                 lastChromeMV3RuntimeBridgeReadinessReport
                     ?? resolvedRuntimeBridgeReadinessReport {
                 linkedReadinessReport.extensionPageHostSummary =
-                    report.summary
+                    linkedPageReport.summary
                 lastChromeMV3RuntimeBridgeReadinessReport =
                     linkedReadinessReport
             }
             if var linkedBridgeReport = lastChromeMV3JSBridgeContractReport {
-                linkedBridgeReport.extensionPageHostSummary = report.summary
+                linkedBridgeReport.extensionPageHostSummary =
+                    linkedPageReport.summary
                 lastChromeMV3JSBridgeContractReport = linkedBridgeReport
             }
 
@@ -1748,11 +1766,11 @@ final class SumiExtensionsModule {
                     isDirectory: true
                 ).standardizedFileURL
                 _ = try? ChromeMV3ExtensionPageHostReportWriter.write(
-                    report,
+                    linkedPageReport,
                     toRewrittenBundleRoot: rootURL
                 )
             }
-            return report
+            return linkedPageReport
         }
 
         @available(macOS 15.5, *)
@@ -1959,10 +1977,62 @@ final class SumiExtensionsModule {
             } catch {
                 return nil
             }
-            lastChromeMV3JSBridgeContractReport = report
+            var linkedReport = report
+            linkedReport.runtimeJSMessagingMVPSummary =
+                lastChromeMV3RuntimeJSMessagingMVPReport?.summary
+            lastChromeMV3JSBridgeContractReport = linkedReport
+
+            guard writeReport else { return linkedReport }
+            return (try? ChromeMV3JSBridgeContractReportWriter.write(
+                linkedReport,
+                toRewrittenBundleRoot: rootURL
+            )) ?? linkedReport
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3RuntimeJSMessagingMVPReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            writeReport: Bool = false
+        ) -> ChromeMV3RuntimeJSMessagingMVPReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let extensionID =
+                lastChromeMV3RuntimeBridgePrerequisitesReport?.candidateID
+                ?? lastChromeMV3JSBridgeContractReport?.extensionID
+                ?? "runtime-js-mvp-extension"
+            let profileID =
+                lastChromeMV3JSBridgeContractReport?.profileID
+                ?? "runtime-js-mvp-profile"
+            let report =
+                ChromeMV3RuntimeJSMessagingMVPReportGenerator.makeReport(
+                    extensionID: extensionID,
+                    profileID: profileID
+                )
+            lastChromeMV3RuntimeJSMessagingMVPReport = report
+
+            if var linkedReadinessReport =
+                lastChromeMV3RuntimeBridgeReadinessReport {
+                linkedReadinessReport.runtimeJSMessagingMVPSummary =
+                    report.summary
+                lastChromeMV3RuntimeBridgeReadinessReport =
+                    linkedReadinessReport
+            }
+            if var linkedBridgeReport = lastChromeMV3JSBridgeContractReport {
+                linkedBridgeReport.runtimeJSMessagingMVPSummary =
+                    report.summary
+                lastChromeMV3JSBridgeContractReport = linkedBridgeReport
+            }
+            if var linkedExtensionPageReport =
+                lastChromeMV3RuntimeExtensionPageHostReport {
+                linkedExtensionPageReport.runtimeJSMessagingMVPSummary =
+                    report.summary
+                lastChromeMV3RuntimeExtensionPageHostReport =
+                    linkedExtensionPageReport
+            }
 
             guard writeReport else { return report }
-            return (try? ChromeMV3JSBridgeContractReportWriter.write(
+            return (try? ChromeMV3RuntimeJSMessagingMVPReportWriter.write(
                 report,
                 toRewrittenBundleRoot: rootURL
             )) ?? report

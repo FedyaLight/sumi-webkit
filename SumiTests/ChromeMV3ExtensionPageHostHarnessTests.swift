@@ -471,7 +471,16 @@ final class ChromeMV3ExtensionPageHostHarnessTests: XCTestCase {
             $0.relativePath.hasPrefix("Sumi/Models/Extension/ChromeMV3/")
                 || $0.relativePath.hasPrefix("SumiTests/ChromeMV3")
         }
-        let joined = sources.map(\.contents).joined(separator: "\n")
+        let runtimeJSBridgeScopedFiles: Set<String> = [
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3RuntimeJSMessagingMVP.swift",
+            "SumiTests/ChromeMV3RuntimeJSMessagingMVPTests.swift",
+        ]
+        let joined = sources
+            .filter {
+                runtimeJSBridgeScopedFiles.contains($0.relativePath) == false
+            }
+            .map(\.contents)
+            .joined(separator: "\n")
 
         for forbidden in [
             "WKUser" + "Script(",
@@ -502,6 +511,15 @@ final class ChromeMV3ExtensionPageHostHarnessTests: XCTestCase {
                 forbiddenRegex
             )
         }
+
+        let scopedJoined = sources
+            .filter { runtimeJSBridgeScopedFiles.contains($0.relativePath) }
+            .map(\.contents)
+            .joined(separator: "\n")
+        XCTAssertTrue(scopedJoined.contains("add" + "ScriptMessageHandler"))
+        XCTAssertFalse(scopedJoined.contains("WKUser" + "Script("))
+        XCTAssertFalse(scopedJoined.contains("connect" + "Native"))
+        XCTAssertFalse(scopedJoined.contains("Pro" + "cess("))
     }
 
     private func fixturePolicy(

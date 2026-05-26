@@ -1033,7 +1033,10 @@ enum ChromeMV3RuntimeMessageDispatcher {
         switch route {
         case .runtimeSendMessage, .tabsSendMessage,
              .contentScriptToServiceWorker,
-             .actionPopupToServiceWorker, .serviceWorkerToTab:
+             .extensionPageToServiceWorker,
+             .actionPopupToServiceWorker,
+             .optionsPageToServiceWorker,
+             .serviceWorkerToTab:
             return true
         default:
             return false
@@ -1327,7 +1330,9 @@ enum ChromeMV3RuntimeMessageDispatcherSkeletonReportGenerator {
             .runtimeSendMessage,
             .tabsSendMessage,
             .contentScriptToServiceWorker,
+            .extensionPageToServiceWorker,
             .actionPopupToServiceWorker,
+            .optionsPageToServiceWorker,
             .serviceWorkerToTab,
         ]
         let oneShotResults = oneShotRoutes.map {

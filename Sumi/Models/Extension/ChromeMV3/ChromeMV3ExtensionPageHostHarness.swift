@@ -1530,6 +1530,8 @@ struct ChromeMV3ExtensionPageHostReportSummary:
     var runtimeLoadable: Bool
     var productUIExposed: Bool
     var jsBridgeAvailableNow: Bool
+    var runtimeJSMessagingMVPSummary:
+        ChromeMV3RuntimeJSMessagingMVPReportSummary? = nil
 }
 
 struct ChromeMV3ExtensionPageHostReport:
@@ -1564,6 +1566,8 @@ struct ChromeMV3ExtensionPageHostReport:
     var chromeRuntimeAvailableNow: Bool
     var jsBridgeAvailableNow: Bool
     var productUIExposed: Bool
+    var runtimeJSMessagingMVPSummary:
+        ChromeMV3RuntimeJSMessagingMVPReportSummary? = nil
     var whyProductSupportRemainsDisabled: [String]
     var blockedOrUnverifiedReasons: [String]
     var warnings: [String]
@@ -1587,7 +1591,9 @@ struct ChromeMV3ExtensionPageHostReport:
             observationState: observationResult.state,
             runtimeLoadable: false,
             productUIExposed: false,
-            jsBridgeAvailableNow: false
+            jsBridgeAvailableNow: false,
+            runtimeJSMessagingMVPSummary:
+                runtimeJSMessagingMVPSummary
         )
     }
 }
