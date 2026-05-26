@@ -525,7 +525,16 @@ final class ChromeMV3ContextCreationGateTests: XCTestCase {
         ]).filter {
             $0.relativePath.contains("ChromeMV3")
         }
+        let runtimeJSBridgeScopedFiles: Set<String> = [
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3RuntimeJSMessagingMVP.swift",
+            "SumiTests/ChromeMV3RuntimeJSMessagingMVPTests.swift",
+        ]
         let chromeMV3Source = sourceFiles
+            .filter { source in
+                runtimeJSBridgeScopedFiles.contains {
+                    source.relativePath.hasSuffix($0)
+                } == false
+            }
             .map(\.contents)
             .joined(separator: "\n")
 

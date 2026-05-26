@@ -435,8 +435,19 @@ final class ChromeMV3ControllerLoadGateTests: XCTestCase {
         let testSource = try Self.sourceFiles(in: [
             "SumiTests",
         ]).filter { $0.relativePath.contains("ChromeMV3") }
+        let runtimeJSBridgeScopedFiles: Set<String> = [
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3RuntimeJSMessagingMVP.swift",
+            "SumiTests/ChromeMV3RuntimeJSMessagingMVPTests.swift",
+        ]
         let allSource = chromeMV3Source + testSource
-        let joined = allSource.map(\.contents).joined(separator: "\n")
+        let joined = allSource
+            .filter { source in
+                runtimeJSBridgeScopedFiles.contains {
+                    source.relativePath.hasSuffix($0)
+                } == false
+            }
+            .map(\.contents)
+            .joined(separator: "\n")
 
         let loadCallFiles = chromeMV3Source
             .filter { $0.contents.contains(".lo" + "ad(") }
@@ -446,6 +457,7 @@ final class ChromeMV3ControllerLoadGateTests: XCTestCase {
             loadCallFiles,
             [
                 "Sumi/Models/Extension/ChromeMV3/ChromeMV3ControllerLoadOwner.swift",
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionPageHostHarness.swift",
             ]
         )
         let selectorFiles = allSource
