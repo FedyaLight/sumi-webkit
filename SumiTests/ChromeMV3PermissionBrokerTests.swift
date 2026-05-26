@@ -1129,7 +1129,7 @@ final class ChromeMV3PermissionBrokerTests: XCTestCase {
         XCTAssertEqual(payload.permissions, ["history"])
         XCTAssertFalse(payload.wouldDispatchNow)
         XCTAssertTrue(payload.listenerRegistrationRequired)
-        XCTAssertTrue(payload.serviceWorkerWakeRequired)
+        XCTAssertFalse(payload.serviceWorkerWakeRequired)
     }
 
     func testPermissionsAPIOnRemovedPayloadIsDeterministicButNotDispatched()

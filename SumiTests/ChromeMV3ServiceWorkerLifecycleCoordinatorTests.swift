@@ -272,11 +272,15 @@ final class ChromeMV3ServiceWorkerLifecycleCoordinatorTests: XCTestCase {
             origins: []
         )
 
-        XCTAssertTrue(payload.serviceWorkerWakeRequired)
+        XCTAssertFalse(payload.serviceWorkerWakeRequired)
         XCTAssertFalse(payload.wouldDispatchNow)
         XCTAssertEqual(
             payload.serviceWorkerWakePreflight?.request.reason,
             .permissionsChanged
+        )
+        XCTAssertFalse(
+            payload.serviceWorkerWakePreflight?.canWakeServiceWorkerNow
+                ?? true
         )
         XCTAssertFalse(payload.canWakeServiceWorkerNow)
     }

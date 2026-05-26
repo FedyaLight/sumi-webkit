@@ -869,7 +869,9 @@ enum ChromeMV3JSBridgeArgumentNormalizer {
                 extensionID: request.extensionID,
                 profileID: request.profileID,
                 sourceContext: request.sourceContext.permissionsContext,
-                userGestureModeled: request.sourceContext == .actionPopup,
+                userGestureModeled:
+                    object["__sumiUserGestureModeled"]?.boolValue
+                    ?? (request.sourceContext == .actionPopup),
                 extensionModuleEnabled: true,
                 permissions: permissions.values,
                 origins: origins.values
@@ -1710,7 +1712,7 @@ enum ChromeMV3JSBridgeContractRouter {
             return routePermissions(
                 request,
                 normalization: normalization,
-                environment: environment
+                environment: &environment
             )
         case .nativeMessaging:
             return routeNativeMessaging(
@@ -1855,8 +1857,12 @@ enum ChromeMV3JSBridgeContractRouter {
     private static func routePermissions(
         _ request: ChromeMV3JSBridgeRequestEnvelope,
         normalization: ChromeMV3JSBridgeArgumentNormalization,
-        environment: ChromeMV3JSBridgeContractEnvironment
+        environment: inout ChromeMV3JSBridgeContractEnvironment
     ) -> ChromeMV3JSBridgeResponseEnvelope {
+        var runtimeOwner = ChromeMV3PermissionRuntimeStateOwner(
+            permissionStore: environment.permissionStore,
+            activeTabStore: environment.activeTabStore
+        )
         switch request.methodName {
         case "contains":
             guard let input = normalization.permissionsInput else {
@@ -1866,11 +1872,7 @@ enum ChromeMV3JSBridgeContractRouter {
                     code: .invalidArguments
                 )
             }
-            let result = ChromeMV3PermissionsAPIContractEvaluator.contains(
-                input: input,
-                permissionStore: environment.permissionStore,
-                activeTabStore: environment.activeTabStore
-            )
+            let result = runtimeOwner.contains(input: input)
             return success(
                 request: request,
                 routeResult: routeResult(
@@ -1882,9 +1884,7 @@ enum ChromeMV3JSBridgeContractRouter {
                 diagnostics: result.diagnostics
             )
         case "getAll":
-            let result = ChromeMV3PermissionsAPIContractEvaluator.getAll(
-                permissionStore: environment.permissionStore
-            )
+            let result = runtimeOwner.getAll()
             return success(
                 request: request,
                 routeResult: routeResult(
@@ -1910,20 +1910,23 @@ enum ChromeMV3JSBridgeContractRouter {
                     code: .invalidArguments
                 )
             }
-            let result = ChromeMV3PermissionsAPIContractEvaluator.request(
+            let application = runtimeOwner.request(
                 input: input,
-                permissionStore: environment.permissionStore,
-                activeTabStore: environment.activeTabStore
+                modeledPromptResult: modeledPermissionPromptResult(
+                    from: request
+                )
             )
+            environment.permissionStore = application.permissionStore
+            environment.activeTabStore = application.activeTabStore
             return success(
                 request: request,
                 routeResult: routeResult(
                     normalization: normalization,
-                    permissionsRequestResult: result,
-                    diagnostics: result.diagnostics
+                    permissionsRequestResult: application.result,
+                    diagnostics: application.diagnostics
                 ),
-                payload: .bool(result.wouldBeAllowedByModel),
-                diagnostics: result.diagnostics
+                payload: .bool(application.returnedBoolean),
+                diagnostics: application.diagnostics
             )
         case "remove":
             guard let input = normalization.permissionsInput else {
@@ -1933,20 +1936,18 @@ enum ChromeMV3JSBridgeContractRouter {
                     code: .invalidArguments
                 )
             }
-            let result = ChromeMV3PermissionsAPIContractEvaluator.remove(
-                input: input,
-                permissionStore: environment.permissionStore,
-                activeTabStore: environment.activeTabStore
-            )
+            let application = runtimeOwner.remove(input: input)
+            environment.permissionStore = application.permissionStore
+            environment.activeTabStore = application.activeTabStore
             return success(
                 request: request,
                 routeResult: routeResult(
                     normalization: normalization,
-                    permissionsRemoveResult: result,
-                    diagnostics: result.diagnostics
+                    permissionsRemoveResult: application.result,
+                    diagnostics: application.diagnostics
                 ),
-                payload: .bool(result.wouldReturn),
-                diagnostics: result.diagnostics
+                payload: .bool(application.returnedBoolean),
+                diagnostics: application.diagnostics
             )
         default:
             return failure(
@@ -1954,6 +1955,25 @@ enum ChromeMV3JSBridgeContractRouter {
                 routeResult: routeResult(normalization: normalization),
                 code: .methodUnsupported
             )
+        }
+    }
+
+    private static func modeledPermissionPromptResult(
+        from request: ChromeMV3JSBridgeRequestEnvelope
+    ) -> ChromeMV3ModeledPermissionPromptResult {
+        guard let object = request.rawArguments.first?.objectValue,
+              let value = object["__sumiModeledPromptResult"]
+        else { return .notProvided }
+        if let bool = value.boolValue {
+            return bool ? .accepted : .denied
+        }
+        switch value.stringValue?.lowercased() {
+        case "accept", "accepted", "grant", "granted", "allow", "allowed":
+            return .accepted
+        case "deny", "denied", "reject", "rejected", "block", "blocked":
+            return .denied
+        default:
+            return .notProvided
         }
     }
 
@@ -3126,6 +3146,11 @@ private extension ChromeMV3StorageValue {
     var stringValue: String? {
         guard case .string(let string) = self else { return nil }
         return string
+    }
+
+    var boolValue: Bool? {
+        guard case .bool(let value) = self else { return nil }
+        return value
     }
 
     var intValue: Int? {

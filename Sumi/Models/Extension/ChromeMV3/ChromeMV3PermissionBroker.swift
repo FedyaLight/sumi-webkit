@@ -416,6 +416,7 @@ enum ChromeMV3ActiveTabGrantReason:
     case actionClick
     case contextMenu
     case command
+    case extensionPageHostFixture
     case testFixture
     case futureUserGesture
 }
@@ -427,6 +428,7 @@ enum ChromeMV3ActiveTabExpiryTrigger:
     Comparable,
     Sendable
 {
+    case explicitReset
     case tabClose
     case tabNavigation
     case profileClose
@@ -3418,7 +3420,7 @@ enum ChromeMV3PermissionBrokerReadinessReportGenerator {
                 ChromeMV3ActiveTabExpiryTrigger.allCases.sorted(),
             diagnostics: [
                 "activeTab grants are tab-scoped and origin-scoped unless a fixture uses an exact URL scope.",
-                "activeTab expiry triggers are modeled for navigation, tab close, profile close, extension disable, and permission revoke.",
+                "activeTab expiry triggers are modeled for navigation, tab close, profile close, extension disable, permission revoke, and explicit reset.",
             ]
         )
     }
