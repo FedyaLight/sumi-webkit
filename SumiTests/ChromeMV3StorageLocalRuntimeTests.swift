@@ -496,6 +496,7 @@ final class ChromeMV3StorageLocalRuntimeTests: XCTestCase {
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3RuntimeJSMessagingMVP.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift",
             "SumiTests/ChromeMV3RuntimeJSMessagingMVPTests.swift",
             "SumiTests/ChromeMV3TabsScriptingJSMVPTests.swift",
             "SumiTests/ChromeMV3StorageLocalRuntimeTests.swift",

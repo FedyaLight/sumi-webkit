@@ -888,7 +888,43 @@ final class ChromeMV3SyntheticTabRegistry {
             ChromeMV3RuntimeModelHandlerOutcome? =
                 .response(
                     .object([
+                        "detectedFields": .object([
+                            "formId": .string("synthetic-login-form"),
+                            "loginPageURL": .string("https://example.com/login"),
+                            "password": .object([
+                                "autocomplete": .string("current-password"),
+                                "fieldId": .string("password"),
+                                "name": .string("password"),
+                                "selector": .string("#password"),
+                                "type": .string("password"),
+                            ]),
+                            "submit": .object([
+                                "buttonId": .string("submit-login"),
+                                "selector": .string("#submit-login"),
+                                "type": .string("submit"),
+                            ]),
+                            "username": .object([
+                                "autocomplete": .string("username"),
+                                "fieldId": .string("username"),
+                                "name": .string("username"),
+                                "selector": .string("#username"),
+                                "type": .string("email"),
+                            ]),
+                        ]),
+                        "fillResult": .object([
+                            "fieldsFilled": .array([
+                                .string("username"),
+                                .string("password"),
+                            ]),
+                            "formId": .string("synthetic-login-form"),
+                            "submitted": .bool(false),
+                            "success": .bool(true),
+                        ]),
                         "ok": .bool(true),
+                        "supportedCommands": .array([
+                            .string("detectFields"),
+                            .string("fillFields"),
+                        ]),
                         "target": .string("syntheticContentScriptModel"),
                     ])
                 )
@@ -1103,6 +1139,54 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
         permissionRuntimeOwner.snapshot
     }
 
+    @discardableResult
+    func grantActiveTabFromGesture(
+        tabID: Int,
+        url: String,
+        reason: ChromeMV3ActiveTabGrantReason = .testFixture,
+        userGestureModeled: Bool = true,
+        sequence: Int = 1
+    ) -> ChromeMV3ActiveTabRuntimeGrantResult {
+        permissionRuntimeOwner.grantActiveTabFromGesture(
+            ChromeMV3ActiveTabGestureEvent(
+                extensionID: configuration.extensionID,
+                profileID: configuration.profileID,
+                tabID: tabID,
+                url: url,
+                reason: reason,
+                userGestureModeled: userGestureModeled,
+                sequence: sequence
+            )
+        )
+    }
+
+    @discardableResult
+    func expireActiveTabForNavigation(
+        tabID: Int,
+        oldURL: String,
+        newURL: String,
+        sequence: Int = 2
+    ) -> ChromeMV3PermissionRuntimeLifecycleApplication {
+        permissionRuntimeOwner.applyLifecycleEvent(
+            ChromeMV3PermissionLifecycleEvent(
+                kind: .tabNavigated,
+                extensionID: configuration.extensionID,
+                profileID: configuration.profileID,
+                tabID: tabID,
+                oldURL: oldURL,
+                newURL: newURL,
+                sequence: sequence
+            )
+        )
+    }
+
+    @discardableResult
+    func resetActiveTabGrants(
+        sequence: Int = 3
+    ) -> ChromeMV3PermissionRuntimeLifecycleApplication {
+        permissionRuntimeOwner.resetActiveTabGrants(sequence: sequence)
+    }
+
     func handle(_ body: Any) -> ChromeMV3TabsScriptingJSBridgeHostResponse {
         handledRequestCount += 1
         switch ChromeMV3RuntimeJSBridgeHostRequest.parse(body) {
@@ -1275,11 +1359,36 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
             rejectedRequestCount += 1
             return invalidArguments(request, error.message)
         case .success(let input):
+            let promptResult = modeledPromptResult(
+                from: request.arguments.first
+            )
             let application = permissionRuntimeOwner.request(
                 input: input,
-                modeledPromptResult:
-                    modeledPromptResult(from: request.arguments.first)
+                modeledPromptResult: promptResult
             )
+            let alreadyGranted = application.result.wouldBeAllowedByModel
+            let allowedByPromptModel =
+                application.result.wouldGrantIfUserAccepted
+                    && (promptResult == .accepted || promptResult == .denied)
+            guard alreadyGranted || allowedByPromptModel else {
+                rejectedRequestCount += 1
+                let failure = permissionsRequestFailure(
+                    for: application.result
+                )
+                return response(
+                    request: request,
+                    succeeded: false,
+                    payload: .bool(false),
+                    lastErrorMessage: failure.message,
+                    lastErrorCode: failure.code,
+                    permissionsRequestResult: application.result,
+                    diagnostics:
+                        uniqueSortedTabsScripting(
+                            application.diagnostics
+                                + failure.diagnostics
+                        )
+                )
+            }
             return response(
                 request: request,
                 succeeded: true,
@@ -1288,6 +1397,56 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
                 diagnostics: application.diagnostics
             )
         }
+    }
+
+    private func permissionsRequestFailure(
+        for result: ChromeMV3PermissionsAPIRequestResult
+    ) -> (code: String, message: String, diagnostics: [String]) {
+        let classifications = result.itemDecisions.map(\.classification)
+        if result.wouldRequirePrompt {
+            return (
+                "productUIUnavailable",
+                "Permission promptRequired, but product permission UI is unavailable in the internal synthetic harness.",
+                [
+                    "Request requires a permission prompt.",
+                    "permissionUIAvailableInProduct remains false.",
+                    "Provide an explicit modeled prompt result in internal tests.",
+                ]
+            )
+        }
+        if classifications.contains(.missingUserGesture) {
+            return (
+                "promptRequiredUserGestureMissing",
+                "chrome.permissions.request requires a modeled user gesture before prompting.",
+                ["Request was blocked because no modeled user gesture was supplied."]
+            )
+        }
+        if classifications.contains(.notDeclaredOptional) {
+            return (
+                "permissionNotDeclaredOptional",
+                "Requested permission or origin is not declared optional.",
+                ["Only declared optional permissions can be granted by this synthetic bridge."]
+            )
+        }
+        if classifications.contains(.unsupportedPermission) {
+            return (
+                "unsupportedPermission",
+                "Requested permission or origin is unsupported by the modeled contract.",
+                ["Unsupported permission request was rejected deterministically."]
+            )
+        }
+        if classifications.contains(.deniedByPolicy) {
+            return (
+                "permissionDenied",
+                "Requested permission is denied by the internal permission state.",
+                ["Denied permission request was rejected deterministically."]
+            )
+        }
+        return (
+            "permissionRequestRejected",
+            "chrome.permissions.request was rejected by internal permission state.",
+            ["Permission request was not grantable by the synthetic bridge."]
+        )
     }
 
     private func permissionsRemove(

@@ -933,6 +933,7 @@ final class ChromeMV3ContentScriptSmokeHarnessTests: XCTestCase {
             "SumiTests/ChromeMV3TabsScriptingJSMVPTests.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift",
             "SumiTests/ChromeMV3StorageLocalRuntimeTests.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift",
         ]
         let joined = (chromeMV3Source + testSource)
             .filter { source in

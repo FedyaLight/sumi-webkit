@@ -442,6 +442,7 @@ final class ChromeMV3ControllerLoadGateTests: XCTestCase {
             "SumiTests/ChromeMV3TabsScriptingJSMVPTests.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift",
             "SumiTests/ChromeMV3StorageLocalRuntimeTests.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift",
         ]
         let allSource = chromeMV3Source + testSource
         let joined = allSource

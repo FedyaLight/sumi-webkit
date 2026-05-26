@@ -743,6 +743,7 @@ final class ChromeMV3TabsScriptingJSMVPTests: XCTestCase {
         let tabsHarnessAllowlist: Set<String> = [
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3RuntimeJSMessagingMVP.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift",
             "SumiTests/ChromeMV3RuntimeJSMessagingMVPTests.swift",
             "SumiTests/ChromeMV3TabsScriptingJSMVPTests.swift",
         ]

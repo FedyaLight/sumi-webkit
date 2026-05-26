@@ -532,6 +532,7 @@ final class ChromeMV3ContextCreationGateTests: XCTestCase {
             "SumiTests/ChromeMV3TabsScriptingJSMVPTests.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift",
             "SumiTests/ChromeMV3StorageLocalRuntimeTests.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift",
         ]
         let chromeMV3Source = sourceFiles
             .filter { source in

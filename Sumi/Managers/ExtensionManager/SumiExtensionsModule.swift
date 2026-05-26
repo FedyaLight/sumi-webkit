@@ -84,6 +84,8 @@ final class SumiExtensionsModule {
             ChromeMV3PermissionsAPIContractReport?
         private var lastChromeMV3PermissionImplementationReport:
             ChromeMV3PermissionImplementationReport?
+        private var lastChromeMV3PasswordManagerFixtureReport:
+            ChromeMV3PasswordManagerFixtureReport?
     #endif
     weak var browserManager: BrowserManager?
     #if DEBUG
@@ -190,6 +192,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3PermissionLifecycleReport = nil
                     lastChromeMV3PermissionsAPIContractReport = nil
                     lastChromeMV3PermissionImplementationReport = nil
+                    lastChromeMV3PasswordManagerFixtureReport = nil
                 }
             #endif
             tearDownChromeMV3EmptyControllerOwner()
@@ -2479,6 +2482,116 @@ final class SumiExtensionsModule {
                 report,
                 toRewrittenBundleRoot: rootURL
             )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3PasswordManagerFixtureReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            writeReport: Bool = false
+        ) -> ChromeMV3PasswordManagerFixtureReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let extensionID =
+                lastChromeMV3RuntimeBridgePrerequisitesReport?.candidateID
+                ?? lastChromeMV3TabsScriptingMVPReport?.extensionID
+                ?? lastChromeMV3RuntimeJSMessagingMVPReport?.extensionID
+                ?? lastChromeMV3JSBridgeContractReport?.extensionID
+                ?? "password-manager-synthetic-extension"
+            let profileID =
+                lastChromeMV3TabsScriptingMVPReport?.profileID
+                ?? lastChromeMV3RuntimeJSMessagingMVPReport?.profileID
+                ?? lastChromeMV3JSBridgeContractReport?.profileID
+                ?? "password-manager-synthetic-profile"
+            let report =
+                ChromeMV3PasswordManagerFixtureReportGenerator.makeReport(
+                    extensionID: extensionID,
+                    profileID: profileID,
+                    runtimeJSMessagingMVPSummary:
+                        lastChromeMV3RuntimeJSMessagingMVPReport?.summary,
+                    tabsScriptingMVPSummary:
+                        lastChromeMV3TabsScriptingMVPReport?.summary,
+                    storageLocalImplementationSummary:
+                        lastChromeMV3StorageLocalImplementationReport?
+                        .summary,
+                    nativeMessagingReadinessSummary:
+                        lastChromeMV3NativeMessagingReadinessReport?.summary,
+                    serviceWorkerLifecycleSummary:
+                        lastChromeMV3ServiceWorkerLifecycleReport?.summary
+                )
+            lastChromeMV3PasswordManagerFixtureReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3PasswordManagerFixtureReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3PasswordManagerCombinedSyntheticHarnessReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            writeReport: Bool = false
+        ) async -> ChromeMV3PasswordManagerFixtureReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let extensionID =
+                lastChromeMV3RuntimeBridgePrerequisitesReport?.candidateID
+                ?? lastChromeMV3TabsScriptingMVPReport?.extensionID
+                ?? lastChromeMV3RuntimeJSMessagingMVPReport?.extensionID
+                ?? lastChromeMV3JSBridgeContractReport?.extensionID
+                ?? "password-manager-synthetic-extension"
+            let profileID =
+                lastChromeMV3TabsScriptingMVPReport?.profileID
+                ?? lastChromeMV3RuntimeJSMessagingMVPReport?.profileID
+                ?? lastChromeMV3JSBridgeContractReport?.profileID
+                ?? "password-manager-synthetic-profile"
+            let configuration =
+                ChromeMV3PasswordManagerCombinedHarnessConfiguration
+                .syntheticHarness(
+                    extensionID: extensionID,
+                    profileID: profileID
+                )
+            let result =
+                await ChromeMV3PasswordManagerCombinedSyntheticHarness.run(
+                    scriptBody:
+                        ChromeMV3PasswordManagerCombinedSyntheticHarness
+                        .reportVerificationScriptBody,
+                    configuration: configuration
+                )
+            let report =
+                ChromeMV3PasswordManagerFixtureReportGenerator.makeReport(
+                    extensionID: extensionID,
+                    profileID: profileID,
+                    webKitExecutionSummary: result.webKitExecutionSummary,
+                    runtimeJSMessagingMVPSummary:
+                        lastChromeMV3RuntimeJSMessagingMVPReport?.summary,
+                    tabsScriptingMVPSummary:
+                        lastChromeMV3TabsScriptingMVPReport?.summary,
+                    storageLocalImplementationSummary:
+                        lastChromeMV3StorageLocalImplementationReport?
+                        .summary,
+                    nativeMessagingReadinessSummary:
+                        lastChromeMV3NativeMessagingReadinessReport?.summary,
+                    serviceWorkerLifecycleSummary:
+                        lastChromeMV3ServiceWorkerLifecycleReport?.summary
+                )
+            lastChromeMV3PasswordManagerFixtureReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3PasswordManagerFixtureReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
+        @discardableResult
+        func tearDownChromeMV3PasswordManagerFixtureIfEnabled() -> Bool {
+            guard isEnabled else { return false }
+            lastChromeMV3PasswordManagerFixtureReport = nil
+            return true
         }
 
         @available(macOS 15.5, *)
