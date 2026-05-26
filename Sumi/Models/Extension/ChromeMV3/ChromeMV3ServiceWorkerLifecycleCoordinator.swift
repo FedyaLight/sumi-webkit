@@ -152,9 +152,12 @@ enum ChromeMV3ServiceWorkerWakeReason:
     Sendable
 {
     case actionClicked
+    case actionPopupEvent
     case alarm
+    case alarmPlaceholder
     case installOrUpdateEvent
     case nativeMessagingConnect
+    case nativeMessagingMessage
     case permissionsChanged
     case runtimeConnect
     case runtimeMessage
@@ -243,6 +246,7 @@ struct ChromeMV3ServiceWorkerWakeRequest:
             targetListenerSurface.rawValue,
         ].joined(separator: "|")
         let native = reason == .nativeMessagingConnect
+            || reason == .nativeMessagingMessage
         let blockers = uniqueSortedBlockers(
             [
                 extensionModuleEnabled
@@ -1133,6 +1137,7 @@ struct ChromeMV3PasswordManagerServiceWorkerSummary:
     var runtimePortKeepaliveImplemented: Bool
     var idleUnloadPolicyModeledButNotActive: Bool
     var passwordManagerServiceWorkerReady: Bool
+    var passwordManagerServiceWorkerReadyInFixture: Bool
     var blockers: [String]
 }
 
@@ -1152,6 +1157,12 @@ struct ChromeMV3ServiceWorkerLifecycleReportSummary:
     var canLoadContextNow: Bool
     var runtimeLoadable: Bool
     var passwordManagerServiceWorkerReady: Bool
+    var serviceWorkerLifecycleAvailableInInternalFixture: Bool
+    var serviceWorkerWakeAvailableInProduct: Bool
+    var serviceWorkerPermanentBackgroundAvailable: Bool
+    var nativePortKeepaliveAvailableInFixture: Bool
+    var passwordManagerServiceWorkerReadyInFixture: Bool
+    var passwordManagerProductRuntimeReady: Bool
 }
 
 struct ChromeMV3ServiceWorkerLifecycleReport:
@@ -1166,6 +1177,8 @@ struct ChromeMV3ServiceWorkerLifecycleReport:
     var profileID: String
     var lifecycleStateSummary:
         ChromeMV3ServiceWorkerLifecycleStateSnapshot
+    var internalLifecycleSnapshot:
+        ChromeMV3ServiceWorkerInternalLifecycleSnapshot
     var wakeRequestCoverage: [ChromeMV3ServiceWorkerWakeRequest]
     var wakePreflightCoverage: [ChromeMV3ServiceWorkerWakePreflight]
     var pendingEventQueueSnapshot:
@@ -1199,6 +1212,12 @@ struct ChromeMV3ServiceWorkerLifecycleReport:
     var canOpenPortNow: Bool
     var canLoadContextNow: Bool
     var runtimeLoadable: Bool
+    var serviceWorkerLifecycleAvailableInInternalFixture: Bool
+    var serviceWorkerWakeAvailableInProduct: Bool
+    var serviceWorkerPermanentBackgroundAvailable: Bool
+    var nativePortKeepaliveAvailableInFixture: Bool
+    var passwordManagerServiceWorkerReadyInFixture: Bool
+    var passwordManagerProductRuntimeReady: Bool
     var documentationSources: [ChromeMV3ManifestRewritePreviewSource]
     var diagnostics: [String]
     var blockers: [String]
@@ -1216,7 +1235,17 @@ struct ChromeMV3ServiceWorkerLifecycleReport:
             canOpenPortNow: false,
             canLoadContextNow: false,
             runtimeLoadable: false,
-            passwordManagerServiceWorkerReady: false
+            passwordManagerServiceWorkerReady:
+                passwordManagerServiceWorkerReadyInFixture,
+            serviceWorkerLifecycleAvailableInInternalFixture:
+                serviceWorkerLifecycleAvailableInInternalFixture,
+            serviceWorkerWakeAvailableInProduct: false,
+            serviceWorkerPermanentBackgroundAvailable: false,
+            nativePortKeepaliveAvailableInFixture:
+                nativePortKeepaliveAvailableInFixture,
+            passwordManagerServiceWorkerReadyInFixture:
+                passwordManagerServiceWorkerReadyInFixture,
+            passwordManagerProductRuntimeReady: false
         )
     }
 }
@@ -1364,6 +1393,13 @@ enum ChromeMV3ServiceWorkerLifecycleReportGenerator {
             eventID: nil,
             message: "Disabled extension cleanup requires no worker wake."
         )
+        let internalLifecycle = internalFixtureLifecycleSnapshot(
+            extensionID: coordinator.lifecycleState.extensionID,
+            profileID: coordinator.lifecycleState.profileID,
+            passwordManagerLikeFixtureDetected:
+                passwordManagerLikeFixtureDetected,
+            nativeMessagingDetected: nativeMessagingDetected
+        )
         let keepalive = ChromeMV3ServiceWorkerKeepaliveSource.allModeled(
             extensionID: coordinator.lifecycleState.extensionID,
             profileID: coordinator.lifecycleState.profileID
@@ -1371,7 +1407,8 @@ enum ChromeMV3ServiceWorkerLifecycleReportGenerator {
         let password = passwordManagerSummary(
             fixtureDetected: passwordManagerLikeFixtureDetected,
             storagePermissionDetected: storagePermissionDetected,
-            nativeMessagingDetected: nativeMessagingDetected
+            nativeMessagingDetected: nativeMessagingDetected,
+            internalLifecycle: internalLifecycle
         )
         let blockers = uniqueSorted(
             coordinator.lifecycleState.blockers
@@ -1399,6 +1436,7 @@ enum ChromeMV3ServiceWorkerLifecycleReportGenerator {
             extensionID: coordinator.lifecycleState.extensionID,
             profileID: coordinator.lifecycleState.profileID,
             lifecycleStateSummary: coordinator.lifecycleState,
+            internalLifecycleSnapshot: internalLifecycle,
             wakeRequestCoverage: requests.sorted { $0.reason < $1.reason },
             wakePreflightCoverage:
                 preflights.sorted { $0.request.reason < $1.request.reason },
@@ -1416,14 +1454,15 @@ enum ChromeMV3ServiceWorkerLifecycleReportGenerator {
                 storageOnChangedReferencesWakePreflight: true,
                 permissionEventsReferenceWakePreflight: true,
                 portLifecycleReferencesKeepalivePolicy: true,
-                dispatchImplementedNow: false,
+                dispatchImplementedNow:
+                    internalLifecycle.dispatchedEventCount > 0,
                 diagnostics: [
                     "Messaging routes can carry wake preflight diagnostics.",
                     "Listener resolution can reference lifecycle availability.",
                     "storage.onChanged payloads can carry wake preflight diagnostics.",
                     "chrome.permissions events can carry wake preflight diagnostics.",
                     "Port contracts can carry keepalive source diagnostics.",
-                    "No dispatch, wake, or Port opening is implemented.",
+                    "Internal fixture dispatch is implemented through synthetic/model listener boundaries.",
                 ]
             ),
             messagingReportSummary: messagingReportSummary,
@@ -1444,11 +1483,21 @@ enum ChromeMV3ServiceWorkerLifecycleReportGenerator {
             canOpenPortNow: false,
             canLoadContextNow: false,
             runtimeLoadable: false,
+            serviceWorkerLifecycleAvailableInInternalFixture:
+                internalLifecycle
+                .serviceWorkerLifecycleAvailableInInternalFixture,
+            serviceWorkerWakeAvailableInProduct: false,
+            serviceWorkerPermanentBackgroundAvailable: false,
+            nativePortKeepaliveAvailableInFixture:
+                internalLifecycle.nativePortKeepaliveAvailableInFixture,
+            passwordManagerServiceWorkerReadyInFixture:
+                password.passwordManagerServiceWorkerReadyInFixture,
+            passwordManagerProductRuntimeReady: false,
             documentationSources: documentationSources(),
             diagnostics: [
-                "Service-worker lifecycle coordinator skeleton exists.",
-                "Wake requests, pending events, policies, keepalive sources, and diagnostics are deterministic.",
-                "Service-worker execution is not implemented.",
+                "Service-worker lifecycle coordinator keeps product wake unavailable.",
+                "Internal lifecycle fixture owner records controlled wakes, queue dispatch, keepalive, idle release, and hard-timeout results.",
+                "Synthetic/model dispatch is not product service-worker execution.",
                 "Context loading remains blocked.",
                 "Runtime support is not claimed.",
             ],
@@ -1529,22 +1578,30 @@ enum ChromeMV3ServiceWorkerLifecycleReportGenerator {
             .make(
                 extensionID: extensionID,
                 profileID: profileID,
-                reason: .actionClicked,
+                reason: .actionPopupEvent,
                 sourceContext: .actionPopup,
                 targetListenerSurface: .serviceWorkerLifecycleEventListener,
-                eventSeed: "action-clicked"
+                eventSeed: "action-popup-event"
             ),
             .make(
                 extensionID: extensionID,
                 profileID: profileID,
-                reason: .alarm,
+                reason: .alarmPlaceholder,
                 sourceContext: .serviceWorker,
                 targetListenerSurface: .serviceWorkerLifecycleEventListener,
-                eventSeed: "alarm"
+                eventSeed: "alarm-placeholder"
             ),
             .nativeMessagingConnect(
                 extensionID: extensionID,
                 profileID: profileID
+            ),
+            .make(
+                extensionID: extensionID,
+                profileID: profileID,
+                reason: .nativeMessagingMessage,
+                sourceContext: .serviceWorker,
+                targetListenerSurface: .nativeMessagingPortListener,
+                eventSeed: "native-messaging-message"
             ),
             .make(
                 extensionID: extensionID,
@@ -1568,21 +1625,42 @@ enum ChromeMV3ServiceWorkerLifecycleReportGenerator {
     private static func passwordManagerSummary(
         fixtureDetected: Bool,
         storagePermissionDetected: Bool,
-        nativeMessagingDetected: Bool
+        nativeMessagingDetected: Bool,
+        internalLifecycle: ChromeMV3ServiceWorkerInternalLifecycleSnapshot
     ) -> ChromeMV3PasswordManagerServiceWorkerSummary {
+        let lifecycleReady =
+            fixtureDetected
+                && internalLifecycle
+                    .serviceWorkerLifecycleAvailableInInternalFixture
+                && internalLifecycle.wakeResults.contains {
+                    $0.reason == .runtimeMessage && $0.wakeAccepted
+                }
+                && internalLifecycle.wakeResults.contains {
+                    $0.reason == .storageChanged && $0.wakeAccepted
+                }
+                && internalLifecycle.wakeResults.contains {
+                    $0.reason == .permissionsChanged && $0.wakeAccepted
+                }
+                && (nativeMessagingDetected == false
+                    || internalLifecycle.wakeResults.contains {
+                        $0.reason == .nativeMessagingConnect
+                            && $0.wakeAccepted
+                    })
         let blockers = uniqueSorted(
             [
                 "Password-manager content script message requires service-worker wake.",
                 "Password-manager popup message requires service-worker wake.",
                 storagePermissionDetected
-                    ? "storage.onChanged may require service-worker wake."
+                    ? "storage.onChanged is routed through the internal lifecycle fixture."
                     : "storage.onChanged remains non-dispatchable.",
                 nativeMessagingDetected
-                    ? "Native messaging Port would affect keepalive but is blocked."
+                    ? "Native messaging Port keepalive is recorded in the internal fixture."
                     : "Native messaging remains blocked when requested.",
-                "Runtime Port keepalive is not implemented.",
-                "Idle and unload policy is modeled but not active.",
-                "passwordManagerServiceWorkerReady remains false.",
+                "Runtime Port keepalive is test-scoped in the internal fixture.",
+                "Idle and hard-timeout policy require explicit fixture triggers.",
+                lifecycleReady
+                    ? "passwordManagerServiceWorkerReadyInFixture is true for synthetic lifecycle flow."
+                    : "passwordManagerServiceWorkerReadyInFixture remains false.",
             ] + (fixtureDetected
                 ? []
                 : [
@@ -1593,12 +1671,155 @@ enum ChromeMV3ServiceWorkerLifecycleReportGenerator {
             contentScriptMessageRequiresServiceWorkerWake: true,
             popupMessageRequiresServiceWorkerWake: true,
             storageOnChangedMayRequireServiceWorkerWake: true,
-            nativeMessagingPortWouldAffectKeepaliveButBlocked: true,
-            runtimePortKeepaliveImplemented: false,
-            idleUnloadPolicyModeledButNotActive: true,
-            passwordManagerServiceWorkerReady: false,
+            nativeMessagingPortWouldAffectKeepaliveButBlocked:
+                nativeMessagingDetected
+                    && internalLifecycle.nativePortKeepaliveAvailableInFixture
+                    == false,
+            runtimePortKeepaliveImplemented:
+                internalLifecycle.allKeepaliveRecords.contains {
+                    $0.kind == .runtimePort
+                },
+            idleUnloadPolicyModeledButNotActive: false,
+            passwordManagerServiceWorkerReady: lifecycleReady,
+            passwordManagerServiceWorkerReadyInFixture: lifecycleReady,
             blockers: blockers
         )
+    }
+
+    private static func internalFixtureLifecycleSnapshot(
+        extensionID: String,
+        profileID: String,
+        passwordManagerLikeFixtureDetected: Bool,
+        nativeMessagingDetected: Bool
+    ) -> ChromeMV3ServiceWorkerInternalLifecycleSnapshot {
+        let owner = ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner(
+            configuration: .internalFixture(
+                extensionID: extensionID,
+                profileID: profileID,
+                nativePortKeepaliveAvailableInFixture: true
+            )
+        )
+        owner.registerListener(
+            event: .runtimeOnMessage,
+            listenerID: "runtime-on-message"
+        )
+        owner.registerListener(
+            event: .runtimeOnConnect,
+            listenerID: "runtime-on-connect"
+        )
+        owner.registerListener(
+            event: .storageOnChanged,
+            listenerID: "storage-on-changed"
+        )
+        owner.registerListener(
+            event: .permissionsOnAdded,
+            listenerID: "permissions-on-added"
+        )
+        owner.registerListener(
+            event: .permissionsOnRemoved,
+            listenerID: "permissions-on-removed"
+        )
+        owner.registerListener(
+            event: .nativePortOnMessage,
+            listenerID: "native-port-on-message"
+        )
+        owner.registerListener(
+            event: .nativePortOnDisconnect,
+            listenerID: "native-port-on-disconnect"
+        )
+        owner.registerListener(
+            event: .alarmsOnAlarm,
+            listenerID: "alarms-on-alarm"
+        )
+        owner.registerListener(
+            event: .actionPopupEvent,
+            listenerID: "action-popup-event"
+        )
+        owner.registerListener(
+            event: .testFixture,
+            listenerID: "test-fixture"
+        )
+
+        _ = owner.requestWake(
+            reason: .runtimeMessage,
+            payload: .object(["type": .string("passwordManagerLookup")]),
+            payloadSummary: "password manager runtime message",
+            sourceContext: .contentScript
+        )
+        let runtimePort = owner.requestWake(
+            reason: .runtimeConnect,
+            payloadSummary: "password manager runtime Port",
+            sourceContext: .contentScript,
+            keepaliveKind: .runtimePort,
+            portID: "password-manager-runtime-port"
+        )
+        if let keepaliveID = runtimePort.keepaliveRecord?.keepaliveID {
+            _ = owner.disconnectKeepalive(
+                keepaliveID: keepaliveID,
+                reason: .reset
+            )
+        }
+        _ = owner.requestWake(
+            reason: .storageChanged,
+            payload: .object(["areaName": .string("local")]),
+            payloadSummary: "password manager storage.onChanged",
+            sourceContext: .serviceWorker
+        )
+        _ = owner.requestWake(
+            reason: .permissionsChanged,
+            listenerEvent: .permissionsOnAdded,
+            payload: .object(["permissions": .array([.string("storage")])]),
+            payloadSummary: "password manager permissions.onAdded",
+            sourceContext: .serviceWorker
+        )
+        if nativeMessagingDetected {
+            let native = owner.requestWake(
+                reason: .nativeMessagingConnect,
+                listenerEvent: .nativePortOnMessage,
+                payloadSummary: "password manager native Port connect",
+                sourceContext: .serviceWorker,
+                keepaliveKind: .nativeMessagingPort,
+                portID: "password-manager-native-port"
+            )
+            if let keepaliveID = native.keepaliveRecord?.keepaliveID {
+                _ = owner.disconnectKeepalive(
+                    keepaliveID: keepaliveID,
+                    reason: .reset
+                )
+            }
+            _ = owner.requestWake(
+                reason: .nativeMessagingMessage,
+                listenerEvent: .nativePortOnMessage,
+                payload: .object(["type": .string("nativeResponse")]),
+                payloadSummary: "password manager native Port message",
+                sourceContext: .serviceWorker
+            )
+        }
+        _ = owner.requestWake(
+            reason: .actionPopupEvent,
+            listenerEvent: .actionPopupEvent,
+            payloadSummary: "action popup event",
+            sourceContext: .actionPopup
+        )
+        _ = owner.requestWake(
+            reason: .alarmPlaceholder,
+            listenerEvent: .alarmsOnAlarm,
+            payloadSummary: "alarm placeholder",
+            sourceContext: .serviceWorker
+        )
+        _ = owner.triggerIdleRelease()
+        _ = owner.requestWake(
+            reason: .testFixture,
+            listenerEvent: .testFixture,
+            payloadSummary:
+                passwordManagerLikeFixtureDetected
+                    ? "password manager lifecycle hard-timeout fixture"
+                    : "generic lifecycle hard-timeout fixture",
+            sourceContext: .unknown,
+            keepaliveKind: .longRunningEvent
+        )
+        _ = owner.triggerHardTimeout()
+        return owner.snapshot
     }
 
     private static func documentationSources()

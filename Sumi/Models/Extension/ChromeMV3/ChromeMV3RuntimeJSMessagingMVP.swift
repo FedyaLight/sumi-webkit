@@ -86,6 +86,10 @@ struct ChromeMV3RuntimeJSBridgeConfiguration:
     var runtimeJSBridgeAvailableInProduct: Bool
     var normalTabRuntimeBridgeAvailable: Bool
     var serviceWorkerWakeAvailable: Bool
+    var serviceWorkerLifecycleAvailableInInternalFixture: Bool
+    var serviceWorkerWakeAvailableInProduct: Bool
+    var serviceWorkerPermanentBackgroundAvailable: Bool
+    var nativePortKeepaliveAvailableInFixture: Bool
     var nativeMessagingAvailable: Bool
     var nativeMessagingAvailableInInternalFixture: Bool
     var nativeMessagingAvailableInProduct: Bool
@@ -148,6 +152,11 @@ struct ChromeMV3RuntimeJSBridgeConfiguration:
             runtimeJSBridgeAvailableInProduct: false,
             normalTabRuntimeBridgeAvailable: false,
             serviceWorkerWakeAvailable: false,
+            serviceWorkerLifecycleAvailableInInternalFixture: allowed,
+            serviceWorkerWakeAvailableInProduct: false,
+            serviceWorkerPermanentBackgroundAvailable: false,
+            nativePortKeepaliveAvailableInFixture:
+                internalNativeMessagingAllowed,
             nativeMessagingAvailable: false,
             nativeMessagingAvailableInInternalFixture:
                 internalNativeMessagingAllowed,
@@ -244,7 +253,7 @@ final class ChromeMV3RuntimeJSSyntheticListenerRegistry {
             diagnostics: [
                 "Listener registration is scoped to the synthetic runtime JS bridge surface.",
                 "No product normal-tab listener is registered.",
-                "No service worker is woken.",
+                "Product service-worker wake remains unavailable.",
             ]
         )
         registrations[eventName, default: [:]][normalizedListenerID] =
@@ -503,7 +512,13 @@ struct ChromeMV3RuntimeJSBridgeHostResponse:
     var nativeMessagingAvailable: Bool
     var nativeMessagingAvailableInInternalFixture: Bool
     var nativeMessagingAvailableInProduct: Bool
+    var serviceWorkerLifecycleAvailableInInternalFixture: Bool
+    var serviceWorkerWakeAvailableInProduct: Bool
+    var serviceWorkerPermanentBackgroundAvailable: Bool
+    var nativePortKeepaliveAvailableInFixture: Bool
     var runtimeLoadable: Bool
+    var serviceWorkerLifecycleWakeResult:
+        ChromeMV3ServiceWorkerInternalWakeResult?
     var diagnostics: [String]
 
     var foundationObject: [String: Any] {
@@ -528,14 +543,34 @@ struct ChromeMV3RuntimeJSBridgeHostResponse:
             "normalTabRuntimeBridgeAvailable":
                 normalTabRuntimeBridgeAvailable,
             "serviceWorkerWakeAvailable": serviceWorkerWakeAvailable,
+            "serviceWorkerLifecycleAvailableInInternalFixture":
+                serviceWorkerLifecycleAvailableInInternalFixture,
+            "serviceWorkerWakeAvailableInProduct":
+                serviceWorkerWakeAvailableInProduct,
+            "serviceWorkerPermanentBackgroundAvailable":
+                serviceWorkerPermanentBackgroundAvailable,
+            "nativePortKeepaliveAvailableInFixture":
+                nativePortKeepaliveAvailableInFixture,
             "nativeMessagingAvailable": nativeMessagingAvailable,
             "nativeMessagingAvailableInInternalFixture":
                 nativeMessagingAvailableInInternalFixture,
             "nativeMessagingAvailableInProduct":
                 nativeMessagingAvailableInProduct,
+            "serviceWorkerLifecycleWakeResult":
+                serviceWorkerLifecycleWakeResultFoundationObject,
             "runtimeLoadable": runtimeLoadable,
             "diagnostics": diagnostics,
         ]
+    }
+
+    private var serviceWorkerLifecycleWakeResultFoundationObject: Any {
+        guard let serviceWorkerLifecycleWakeResult,
+              let data = try? JSONEncoder().encode(
+                serviceWorkerLifecycleWakeResult
+              ),
+              let object = try? JSONSerialization.jsonObject(with: data)
+        else { return NSNull() }
+        return object
     }
 }
 
@@ -554,6 +589,8 @@ final class ChromeMV3RuntimeJSBridgeHandler {
     private(set) var rejectedRequestCount = 0
     private let nativeMessagingRuntimeOwner:
         ChromeMV3NativeMessagingRuntimeOwner?
+    private let serviceWorkerLifecycleOwner:
+        ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner?
 
     init(configuration: ChromeMV3RuntimeJSBridgeConfiguration) {
         self.configuration = configuration
@@ -579,6 +616,34 @@ final class ChromeMV3RuntimeJSBridgeHandler {
                 )
         } else {
             self.nativeMessagingRuntimeOwner = nil
+        }
+        if configuration.serviceWorkerLifecycleAvailableInInternalFixture {
+            self.serviceWorkerLifecycleOwner =
+                ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner(
+                    configuration: .internalFixture(
+                        extensionID: configuration.extensionID,
+                        profileID: configuration.profileID,
+                        moduleState: configuration.moduleState,
+                        explicitInternalLifecycleAllowed:
+                            configuration
+                            .explicitInternalRuntimeJSBridgeAllowed,
+                        nativePortKeepaliveAvailableInFixture:
+                            configuration
+                            .nativePortKeepaliveAvailableInFixture
+                    )
+                )
+            if configuration.nativeMessagingAvailableInInternalFixture {
+                self.serviceWorkerLifecycleOwner?.registerListener(
+                    event: .nativePortOnMessage,
+                    listenerID: "runtime-js-native-port-on-message"
+                )
+                self.serviceWorkerLifecycleOwner?.registerListener(
+                    event: .nativePortOnDisconnect,
+                    listenerID: "runtime-js-native-port-on-disconnect"
+                )
+            }
+        } else {
+            self.serviceWorkerLifecycleOwner = nil
         }
     }
 
@@ -660,16 +725,26 @@ final class ChromeMV3RuntimeJSBridgeHandler {
             return hasListener(request, eventName: .onConnect)
         case "Port.disconnect":
             modelPortDisconnectCount += 1
+            let disconnected =
+                serviceWorkerLifecycleOwner?.disconnectKeepalive(
+                    portID: request.portID,
+                    reason: .reset
+                ) ?? false
             return response(
                 request: request,
                 succeeded: true,
                 payload: .object([
                     "portID": .string(request.portID ?? "unknown-port"),
                     "disconnectReason": .string("disconnectCalled"),
+                    "serviceWorkerKeepaliveDisconnected":
+                        .bool(disconnected),
                     "runtimeLoadable": .bool(false),
                 ]),
                 diagnostics: [
                     "Model Port disconnect was recorded without opening a native or runtime Port.",
+                    disconnected
+                        ? "Internal fixture runtime Port keepalive was released."
+                        : "No internal fixture runtime Port keepalive matched the disconnect.",
                 ]
             )
         case "Port.postMessage":
@@ -712,12 +787,20 @@ final class ChromeMV3RuntimeJSBridgeHandler {
     func tearDown() {
         listenerRegistry.tearDown()
         _ = nativeMessagingRuntimeOwner?.tearDownForExtensionDisable()
+        serviceWorkerLifecycleOwner?.tearDownForExtensionDisable()
     }
 
     private func routeRuntimeMethod(
         _ request: ChromeMV3RuntimeJSBridgeHostRequest
     ) -> ChromeMV3RuntimeJSBridgeHostResponse {
         sendMessageDispatchCount += 1
+        let lifecycleResult = serviceWorkerLifecycleOwner?.requestWake(
+            reason: .runtimeMessage,
+            listenerEvent: .runtimeOnMessage,
+            payload: request.arguments.first,
+            payloadSummary: "runtime.sendMessage",
+            sourceContext: configuration.sourceContext.runtimeContext
+        )
         let bridgeResponse = routeThroughJSBridgeContract(request)
         let runtimeResult =
             bridgeResponse.routeResult?.runtimeDispatcherResult
@@ -731,6 +814,7 @@ final class ChromeMV3RuntimeJSBridgeHandler {
                 lastErrorMessage: lastError.message,
                 lastErrorCode: lastError.code,
                 runtimeDispatcherResult: runtimeResult,
+                serviceWorkerLifecycleWakeResult: lifecycleResult,
                 diagnostics:
                     uniqueSorted(
                         bridgeResponse.diagnostics
@@ -745,6 +829,7 @@ final class ChromeMV3RuntimeJSBridgeHandler {
             succeeded: true,
             payload: bridgeResponse.resultPayload ?? .null,
             runtimeDispatcherResult: runtimeResult,
+            serviceWorkerLifecycleWakeResult: lifecycleResult,
             diagnostics:
                 uniqueSorted(
                     bridgeResponse.diagnostics
@@ -762,6 +847,13 @@ final class ChromeMV3RuntimeJSBridgeHandler {
         let runtimeResult =
             bridgeResponse.routeResult?.runtimeDispatcherResult
         guard let preflight = runtimeResult?.modelPortPreflight else {
+            let lifecycleResult = serviceWorkerLifecycleOwner?.requestWake(
+                reason: .runtimeConnect,
+                listenerEvent: .runtimeOnConnect,
+                payload: request.arguments.first,
+                payloadSummary: "runtime.connect",
+                sourceContext: configuration.sourceContext.runtimeContext
+            )
             let lastError = preferredLastError(bridgeResponse: bridgeResponse)
             rejectedRequestCount += 1
             return response(
@@ -775,10 +867,20 @@ final class ChromeMV3RuntimeJSBridgeHandler {
                     lastError?.code
                     ?? ChromeMV3JSBridgeErrorCode.invalidArguments.rawValue,
                 runtimeDispatcherResult: runtimeResult,
+                serviceWorkerLifecycleWakeResult: lifecycleResult,
                 diagnostics: bridgeResponse.diagnostics
             )
         }
         modelPortCreateCount += 1
+        let lifecycleResult = serviceWorkerLifecycleOwner?.requestWake(
+            reason: .runtimeConnect,
+            listenerEvent: .runtimeOnConnect,
+            payload: request.arguments.first,
+            payloadSummary: "runtime.connect",
+            sourceContext: configuration.sourceContext.runtimeContext,
+            keepaliveKind: .runtimePort,
+            portID: preflight.portID
+        )
         return response(
             request: request,
             succeeded: true,
@@ -799,6 +901,7 @@ final class ChromeMV3RuntimeJSBridgeHandler {
                 "runtimeLoadable": .bool(false),
             ]),
             runtimeDispatcherResult: runtimeResult,
+            serviceWorkerLifecycleWakeResult: lifecycleResult,
             diagnostics:
                 uniqueSorted(
                     bridgeResponse.diagnostics
@@ -887,6 +990,17 @@ final class ChromeMV3RuntimeJSBridgeHandler {
         if result.succeeded == false {
             rejectedRequestCount += 1
         }
+        let lifecycleResult = result.succeeded
+            ? serviceWorkerLifecycleOwner?.requestWake(
+                reason: .nativeMessagingConnect,
+                listenerEvent: .nativePortOnMessage,
+                payload: .string(hostName),
+                payloadSummary: "runtime.connectNative",
+                sourceContext: configuration.sourceContext.runtimeContext,
+                keepaliveKind: .nativeMessagingPort,
+                portID: result.portID
+            )
+            : nil
         return response(
             request: request,
             succeeded: result.succeeded,
@@ -904,6 +1018,7 @@ final class ChromeMV3RuntimeJSBridgeHandler {
             ]),
             lastErrorMessage: result.lastErrorMessage,
             lastErrorCode: result.lastErrorCode?.rawValue,
+            serviceWorkerLifecycleWakeResult: lifecycleResult,
             diagnostics:
                 uniqueSorted(
                     result.diagnostics
@@ -944,6 +1059,16 @@ final class ChromeMV3RuntimeJSBridgeHandler {
         if result.succeeded == false {
             rejectedRequestCount += 1
         }
+        let lifecycleResult = result.succeeded
+            ? serviceWorkerLifecycleOwner?.requestWake(
+                reason: .nativeMessagingMessage,
+                listenerEvent: .nativePortOnMessage,
+                payload: message,
+                payloadSummary: "NativePort.postMessage",
+                sourceContext: configuration.sourceContext.runtimeContext,
+                portID: portID
+            )
+            : nil
         return response(
             request: request,
             succeeded: result.succeeded,
@@ -958,6 +1083,7 @@ final class ChromeMV3RuntimeJSBridgeHandler {
             ]),
             lastErrorMessage: result.lastErrorMessage,
             lastErrorCode: result.lastErrorCode?.rawValue,
+            serviceWorkerLifecycleWakeResult: lifecycleResult,
             diagnostics: result.diagnostics
         )
     }
@@ -989,6 +1115,11 @@ final class ChromeMV3RuntimeJSBridgeHandler {
             portID: portID,
             reason: .nativeHostExited
         )
+        let keepaliveDisconnected =
+            serviceWorkerLifecycleOwner?.disconnectKeepalive(
+                portID: portID,
+                reason: .reset
+            ) ?? false
         return response(
             request: request,
             succeeded: true,
@@ -997,9 +1128,19 @@ final class ChromeMV3RuntimeJSBridgeHandler {
                 "disconnected": .bool(result.disconnected),
                 "activePortCountAfterDisconnect":
                     .number(Double(result.activePortCountAfterDisconnect)),
+                "serviceWorkerKeepaliveDisconnected":
+                    .bool(keepaliveDisconnected),
                 "runtimeLoadable": .bool(false),
             ]),
-            diagnostics: result.diagnostics
+            diagnostics:
+                uniqueSorted(
+                    result.diagnostics
+                        + [
+                            keepaliveDisconnected
+                                ? "Internal fixture native Port keepalive was released."
+                                : "No internal fixture native Port keepalive matched the disconnect.",
+                        ]
+                )
         )
     }
 
@@ -1047,6 +1188,12 @@ final class ChromeMV3RuntimeJSBridgeHandler {
             eventName: eventName,
             listenerID: listenerID
         )
+        serviceWorkerLifecycleOwner?.registerListener(
+            event: eventName == .onMessage
+                ? .runtimeOnMessage
+                : .runtimeOnConnect,
+            listenerID: listenerID
+        )
         return response(
             request: request,
             succeeded: true,
@@ -1067,6 +1214,14 @@ final class ChromeMV3RuntimeJSBridgeHandler {
         let removed = request.listenerID.map {
             listenerRegistry.remove(eventName: eventName, listenerID: $0)
         } ?? false
+        if removed, let listenerID = request.listenerID {
+            _ = serviceWorkerLifecycleOwner?.listenerRegistry.remove(
+                event: eventName == .onMessage
+                    ? .runtimeOnMessage
+                    : .runtimeOnConnect,
+                listenerID: listenerID
+            )
+        }
         return response(
             request: request,
             succeeded: true,
@@ -1156,6 +1311,8 @@ final class ChromeMV3RuntimeJSBridgeHandler {
         lastErrorCode: String? = nil,
         runtimeDispatcherResult:
             ChromeMV3RuntimeMessageDispatcherResult? = nil,
+        serviceWorkerLifecycleWakeResult:
+            ChromeMV3ServiceWorkerInternalWakeResult? = nil,
         diagnostics: [String] = []
     ) -> ChromeMV3RuntimeJSBridgeHostResponse {
         let invocationMode = request?.invocationMode ?? .promise
@@ -1193,11 +1350,21 @@ final class ChromeMV3RuntimeJSBridgeHandler {
                 configuration.nativeMessagingAvailableInInternalFixture,
             nativeMessagingAvailableInProduct:
                 configuration.nativeMessagingAvailableInProduct,
+            serviceWorkerLifecycleAvailableInInternalFixture:
+                configuration
+                .serviceWorkerLifecycleAvailableInInternalFixture,
+            serviceWorkerWakeAvailableInProduct: false,
+            serviceWorkerPermanentBackgroundAvailable: false,
+            nativePortKeepaliveAvailableInFixture:
+                configuration.nativePortKeepaliveAvailableInFixture,
             runtimeLoadable: false,
+            serviceWorkerLifecycleWakeResult:
+                serviceWorkerLifecycleWakeResult,
             diagnostics:
                 uniqueSorted(
                     configuration.diagnostics
                         + diagnostics
+                        + (serviceWorkerLifecycleWakeResult?.diagnostics ?? [])
                         + [
                             "Runtime JS bridge handler is runtime-only.",
                             "No tabs, storage, permissions, scripting, or nativeMessaging namespace is exposed by this runtime-only shim.",

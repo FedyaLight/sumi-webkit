@@ -68,6 +68,9 @@ struct ChromeMV3TabsScriptingJSBridgeConfiguration:
     var normalTabRuntimeBridgeAvailable: Bool
     var scriptingAvailableInProduct: Bool
     var serviceWorkerWakeAvailable: Bool
+    var serviceWorkerLifecycleAvailableInInternalFixture: Bool
+    var serviceWorkerWakeAvailableInProduct: Bool
+    var serviceWorkerPermanentBackgroundAvailable: Bool
     var nativeMessagingAvailable: Bool
     var runtimeLoadable: Bool
     var diagnostics: [String]
@@ -114,6 +117,9 @@ struct ChromeMV3TabsScriptingJSBridgeConfiguration:
             normalTabRuntimeBridgeAvailable: false,
             scriptingAvailableInProduct: false,
             serviceWorkerWakeAvailable: false,
+            serviceWorkerLifecycleAvailableInInternalFixture: allowed,
+            serviceWorkerWakeAvailableInProduct: false,
+            serviceWorkerPermanentBackgroundAvailable: false,
             nativeMessagingAvailable: false,
             runtimeLoadable: false,
             diagnostics:
@@ -1043,8 +1049,13 @@ struct ChromeMV3TabsScriptingJSBridgeHostResponse:
     var normalTabRuntimeBridgeAvailable: Bool
     var scriptingAvailableInProduct: Bool
     var serviceWorkerWakeAvailable: Bool
+    var serviceWorkerLifecycleAvailableInInternalFixture: Bool
+    var serviceWorkerWakeAvailableInProduct: Bool
+    var serviceWorkerPermanentBackgroundAvailable: Bool
     var nativeMessagingAvailable: Bool
     var runtimeLoadable: Bool
+    var serviceWorkerLifecycleWakeResult:
+        ChromeMV3ServiceWorkerInternalWakeResult?
     var diagnostics: [String]
 
     var foundationObject: [String: Any] {
@@ -1069,10 +1080,28 @@ struct ChromeMV3TabsScriptingJSBridgeHostResponse:
                 normalTabRuntimeBridgeAvailable,
             "scriptingAvailableInProduct": scriptingAvailableInProduct,
             "serviceWorkerWakeAvailable": serviceWorkerWakeAvailable,
+            "serviceWorkerLifecycleAvailableInInternalFixture":
+                serviceWorkerLifecycleAvailableInInternalFixture,
+            "serviceWorkerWakeAvailableInProduct":
+                serviceWorkerWakeAvailableInProduct,
+            "serviceWorkerPermanentBackgroundAvailable":
+                serviceWorkerPermanentBackgroundAvailable,
             "nativeMessagingAvailable": nativeMessagingAvailable,
+            "serviceWorkerLifecycleWakeResult":
+                serviceWorkerLifecycleWakeResultFoundationObject,
             "runtimeLoadable": runtimeLoadable,
             "diagnostics": diagnostics,
         ]
+    }
+
+    private var serviceWorkerLifecycleWakeResultFoundationObject: Any {
+        guard let serviceWorkerLifecycleWakeResult,
+              let data = try? JSONEncoder().encode(
+                serviceWorkerLifecycleWakeResult
+              ),
+              let object = try? JSONSerialization.jsonObject(with: data)
+        else { return NSNull() }
+        return object
     }
 
     private var permissionEventFoundationObject: Any {
@@ -1098,6 +1127,8 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
     private(set) var modelPortPostMessageCount = 0
     private(set) var executeScriptRequestCount = 0
     private(set) var rejectedRequestCount = 0
+    private let serviceWorkerLifecycleOwner:
+        ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner?
 
     init(
         configuration: ChromeMV3TabsScriptingJSBridgeConfiguration,
@@ -1127,6 +1158,29 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
                         profileID: configuration.profileID
                     )
             )
+        if configuration.serviceWorkerLifecycleAvailableInInternalFixture {
+            let owner = ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner(
+                configuration: .internalFixture(
+                    extensionID: configuration.extensionID,
+                    profileID: configuration.profileID,
+                    moduleState: configuration.moduleState,
+                    explicitInternalLifecycleAllowed:
+                        configuration
+                        .explicitInternalTabsScriptingJSBridgeAllowed
+                )
+            )
+            owner.registerListener(
+                event: .tabsOnMessage,
+                listenerID: "tabs-js-tabs-on-message"
+            )
+            owner.registerListener(
+                event: .tabsOnConnect,
+                listenerID: "tabs-js-tabs-on-connect"
+            )
+            self.serviceWorkerLifecycleOwner = owner
+        } else {
+            self.serviceWorkerLifecycleOwner = nil
+        }
     }
 
     var permissionBroker: ChromeMV3PermissionBroker {
@@ -1244,16 +1298,26 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
             return connect(request)
         case ("tabs", "Port.disconnect"):
             modelPortDisconnectCount += 1
+            let disconnected =
+                serviceWorkerLifecycleOwner?.disconnectKeepalive(
+                    portID: request.portID,
+                    reason: .reset
+                ) ?? false
             return response(
                 request: request,
                 succeeded: true,
                 payload: .object([
                     "portID": .string(request.portID ?? "unknown-port"),
                     "disconnectReason": .string("disconnectCalled"),
+                    "serviceWorkerKeepaliveDisconnected":
+                        .bool(disconnected),
                     "runtimeLoadable": .bool(false),
                 ]),
                 diagnostics: [
                     "Synthetic tabs Port disconnect was recorded without opening a native or runtime Port.",
+                    disconnected
+                        ? "Internal fixture tabs Port keepalive was released."
+                        : "No internal fixture tabs Port keepalive matched the disconnect.",
                 ]
             )
         case ("tabs", "Port.postMessage"):
@@ -1564,12 +1628,20 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
                 route: route,
                 expectsResponse: true
             )
+            let lifecycleResult = serviceWorkerLifecycleOwner?.requestWake(
+                reason: .tabsMessage,
+                listenerEvent: .tabsOnMessage,
+                payload: request.arguments.dropFirst().first,
+                payloadSummary: "tabs.sendMessage",
+                sourceContext: configuration.sourceContext.runtimeContext
+            )
             if let error = dispatcherResult.selectedLastError?.error {
                 rejectedRequestCount += 1
                 return runtimeError(
                     request,
                     error,
                     runtimeDispatcherResult: dispatcherResult,
+                    serviceWorkerLifecycleWakeResult: lifecycleResult,
                     diagnostics: dispatcherResult.diagnostics
                 )
             }
@@ -1578,6 +1650,7 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
                 succeeded: true,
                 payload: dispatcherResult.responsePayload ?? .null,
                 runtimeDispatcherResult: dispatcherResult,
+                serviceWorkerLifecycleWakeResult: lifecycleResult,
                 diagnostics:
                     uniqueSortedTabsScripting(
                         dispatcherResult.diagnostics
@@ -1654,15 +1727,32 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
                 expectsResponse: false
             )
             guard let preflight = dispatcherResult.modelPortPreflight else {
+                let lifecycleResult = serviceWorkerLifecycleOwner?.requestWake(
+                    reason: .tabsConnect,
+                    listenerEvent: .tabsOnConnect,
+                    payload: request.arguments.dropFirst().first,
+                    payloadSummary: "tabs.connect",
+                    sourceContext: configuration.sourceContext.runtimeContext
+                )
                 rejectedRequestCount += 1
                 return runtimeError(
                     request,
                     .routeNotImplemented,
                     runtimeDispatcherResult: dispatcherResult,
+                    serviceWorkerLifecycleWakeResult: lifecycleResult,
                     diagnostics: dispatcherResult.diagnostics
                 )
             }
             modelPortCreateCount += 1
+            let lifecycleResult = serviceWorkerLifecycleOwner?.requestWake(
+                reason: .tabsConnect,
+                listenerEvent: .tabsOnConnect,
+                payload: request.arguments.dropFirst().first,
+                payloadSummary: "tabs.connect",
+                sourceContext: configuration.sourceContext.runtimeContext,
+                keepaliveKind: .tabsPort,
+                portID: preflight.portID
+            )
             return response(
                 request: request,
                 succeeded: true,
@@ -1679,6 +1769,7 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
                     "runtimeLoadable": .bool(false),
                 ]),
                 runtimeDispatcherResult: dispatcherResult,
+                serviceWorkerLifecycleWakeResult: lifecycleResult,
                 diagnostics:
                     uniqueSortedTabsScripting(
                         dispatcherResult.diagnostics
@@ -2155,6 +2246,8 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
         _ error: ChromeMV3RuntimeLastErrorCase,
         runtimeDispatcherResult:
             ChromeMV3RuntimeMessageDispatcherResult? = nil,
+        serviceWorkerLifecycleWakeResult:
+            ChromeMV3ServiceWorkerInternalWakeResult? = nil,
         diagnostics: [String] = []
     ) -> ChromeMV3TabsScriptingJSBridgeHostResponse {
         let contract = ChromeMV3RuntimeLastErrorContract.contract(for: error)
@@ -2164,6 +2257,8 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
             lastErrorMessage: contract.futureLastErrorMessage,
             lastErrorCode: error.rawValue,
             runtimeDispatcherResult: runtimeDispatcherResult,
+            serviceWorkerLifecycleWakeResult:
+                serviceWorkerLifecycleWakeResult,
             diagnostics: contract.diagnostics + diagnostics
         )
     }
@@ -2185,6 +2280,8 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
             ChromeMV3PermissionsAPIRequestResult? = nil,
         permissionsRemoveResult:
             ChromeMV3PermissionsAPIRemoveResult? = nil,
+        serviceWorkerLifecycleWakeResult:
+            ChromeMV3ServiceWorkerInternalWakeResult? = nil,
         diagnostics: [String] = []
     ) -> ChromeMV3TabsScriptingJSBridgeHostResponse {
         let invocationMode = request?.invocationMode ?? .promise
@@ -2218,12 +2315,20 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
             normalTabRuntimeBridgeAvailable: false,
             scriptingAvailableInProduct: false,
             serviceWorkerWakeAvailable: false,
+            serviceWorkerLifecycleAvailableInInternalFixture:
+                configuration
+                .serviceWorkerLifecycleAvailableInInternalFixture,
+            serviceWorkerWakeAvailableInProduct: false,
+            serviceWorkerPermanentBackgroundAvailable: false,
             nativeMessagingAvailable: false,
             runtimeLoadable: false,
+            serviceWorkerLifecycleWakeResult:
+                serviceWorkerLifecycleWakeResult,
             diagnostics:
                 uniqueSortedTabsScripting(
                     configuration.diagnostics
                         + diagnostics
+                        + (serviceWorkerLifecycleWakeResult?.diagnostics ?? [])
                         + [
                             "tabs/scripting JS bridge handler is DEBUG/internal and synthetic-surface gated.",
                             "No product normal-tab bridge is installed.",

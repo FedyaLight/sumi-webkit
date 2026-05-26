@@ -28,6 +28,9 @@ struct ChromeMV3StorageLocalRuntimeConfiguration:
     var storageJSBridgeAvailableInProduct: Bool
     var normalTabRuntimeBridgeAvailable: Bool
     var serviceWorkerWakeAvailable: Bool
+    var serviceWorkerLifecycleAvailableInInternalFixture: Bool
+    var serviceWorkerWakeAvailableInProduct: Bool
+    var serviceWorkerPermanentBackgroundAvailable: Bool
     var nativeMessagingAvailable: Bool
     var runtimeLoadable: Bool
     var diagnostics: [String]
@@ -78,6 +81,9 @@ struct ChromeMV3StorageLocalRuntimeConfiguration:
             storageJSBridgeAvailableInProduct: false,
             normalTabRuntimeBridgeAvailable: false,
             serviceWorkerWakeAvailable: false,
+            serviceWorkerLifecycleAvailableInInternalFixture: allowed,
+            serviceWorkerWakeAvailableInProduct: false,
+            serviceWorkerPermanentBackgroundAvailable: false,
             nativeMessagingAvailable: false,
             runtimeLoadable: false,
             diagnostics:
@@ -113,6 +119,9 @@ struct ChromeMV3StorageLocalRuntimeStateSummary:
     var storageJSBridgeAvailableInProduct: Bool
     var normalTabRuntimeBridgeAvailable: Bool
     var serviceWorkerWakeAvailable: Bool
+    var serviceWorkerLifecycleAvailableInInternalFixture: Bool
+    var serviceWorkerWakeAvailableInProduct: Bool
+    var serviceWorkerPermanentBackgroundAvailable: Bool
     var runtimeLoadable: Bool
 }
 
@@ -132,6 +141,8 @@ struct ChromeMV3StorageLocalRuntimeOperationRecord:
     var resultPayload: ChromeMV3StorageValue?
     var onChangedPayload:
         ChromeMV3StorageOnChangedEventPayload?
+    var serviceWorkerLifecycleWakeResult:
+        ChromeMV3ServiceWorkerInternalWakeResult?
     var diagnostics: [String]
 }
 
@@ -152,6 +163,8 @@ final class ChromeMV3StorageLocalRuntimeStateOwner {
     let configuration: ChromeMV3StorageLocalRuntimeConfiguration
     private var broker: ChromeMV3StorageBroker
     private let operationHandler: ChromeMV3StorageAPIOperationHandler
+    private let serviceWorkerLifecycleOwner:
+        ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner?
     private var operationRecords:
         [ChromeMV3StorageLocalRuntimeOperationRecord] = []
     private var onChangedPayloads: [ChromeMV3StorageOnChangedEventPayload] = []
@@ -184,6 +197,27 @@ final class ChromeMV3StorageLocalRuntimeStateOwner {
                     ? .enabledModelTestFixture
                     : .disabledModule
         )
+        if configuration
+            .serviceWorkerLifecycleAvailableInInternalFixture
+        {
+            let owner = ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner(
+                configuration: .internalFixture(
+                    extensionID: configuration.extensionID,
+                    profileID: configuration.profileID,
+                    moduleState: configuration.moduleState,
+                    explicitInternalLifecycleAllowed:
+                        configuration
+                        .explicitInternalStorageJSBridgeAllowed
+                )
+            )
+            owner.registerListener(
+                event: .storageOnChanged,
+                listenerID: "storage-local-on-changed"
+            )
+            self.serviceWorkerLifecycleOwner = owner
+        } else {
+            self.serviceWorkerLifecycleOwner = nil
+        }
     }
 
     var snapshot: ChromeMV3StorageLocalRuntimeStateOwnerSnapshot {
@@ -198,7 +232,7 @@ final class ChromeMV3StorageLocalRuntimeStateOwner {
                     + [
                         "Internal storage.local runtime state is owned by one profile/extension namespace owner.",
                         "No product WebView configuration is touched.",
-                        "No service worker is woken for storage.onChanged.",
+                        "Product service-worker wake remains unavailable for storage.onChanged.",
                     ]
             )
         )
@@ -224,6 +258,11 @@ final class ChromeMV3StorageLocalRuntimeStateOwner {
             storageJSBridgeAvailableInProduct: false,
             normalTabRuntimeBridgeAvailable: false,
             serviceWorkerWakeAvailable: false,
+            serviceWorkerLifecycleAvailableInInternalFixture:
+                configuration
+                .serviceWorkerLifecycleAvailableInInternalFixture,
+            serviceWorkerWakeAvailableInProduct: false,
+            serviceWorkerPermanentBackgroundAvailable: false,
             runtimeLoadable: false
         )
     }
@@ -286,6 +325,7 @@ final class ChromeMV3StorageLocalRuntimeStateOwner {
             lastErrorCode: code,
             resultPayload: nil,
             onChangedPayload: nil,
+            serviceWorkerLifecycleWakeResult: nil,
             diagnostics:
                 uniqueSortedStorageLocal(
                     diagnostics
@@ -306,6 +346,7 @@ final class ChromeMV3StorageLocalRuntimeStateOwner {
         operationRecords.removeAll()
         onChangedPayloads.removeAll()
         nextSequence = 0
+        serviceWorkerLifecycleOwner?.tearDownForExtensionDisable()
     }
 
     private func record(
@@ -316,6 +357,9 @@ final class ChromeMV3StorageLocalRuntimeStateOwner {
         nextSequence += 1
         let payload = resultPayload(from: envelope)
         let syntheticOnChanged = syntheticOnChangedPayload(from: envelope)
+        let lifecycleWake = serviceWorkerLifecycleWake(
+            from: syntheticOnChanged
+        )
         if let syntheticOnChanged {
             onChangedPayloads.append(syntheticOnChanged)
         }
@@ -333,9 +377,11 @@ final class ChromeMV3StorageLocalRuntimeStateOwner {
                 envelope.futureLastErrorContract?.code.rawValue,
             resultPayload: payload,
             onChangedPayload: syntheticOnChanged,
+            serviceWorkerLifecycleWakeResult: lifecycleWake,
             diagnostics:
                 uniqueSortedStorageLocal(
                     envelope.diagnostics
+                        + (lifecycleWake?.diagnostics ?? [])
                         + [
                             "storage.local operation was routed through the internal runtime state owner.",
                             "Product storage bridge remains unavailable.",
@@ -376,10 +422,25 @@ final class ChromeMV3StorageLocalRuntimeStateOwner {
             serviceWorkerWakeRequired: false,
             blockers: [
                 "Synthetic storage.onChanged dispatch is in-page only for the controlled WebKit harness.",
-                "No service worker is woken.",
+                "Product service-worker wake remains unavailable.",
                 "No product normal-tab listener is registered.",
             ],
             serviceWorkerWakePreflight: nil
+        )
+    }
+
+    private func serviceWorkerLifecycleWake(
+        from payload: ChromeMV3StorageOnChangedEventPayload?
+    ) -> ChromeMV3ServiceWorkerInternalWakeResult? {
+        guard let payload else { return nil }
+        return serviceWorkerLifecycleOwner?.requestWake(
+            reason: .storageChanged,
+            listenerEvent: .storageOnChanged,
+            payload: ChromeMV3StorageValue.storageLocalOnChangedPayload(
+                payload
+            ),
+            payloadSummary: "storage.onChanged",
+            sourceContext: configuration.sourceContext.runtimeContext
         )
     }
 }
@@ -769,8 +830,13 @@ struct ChromeMV3StorageLocalJSBridgeHostResponse:
     var storageJSBridgeAvailableInProduct: Bool
     var normalTabRuntimeBridgeAvailable: Bool
     var serviceWorkerWakeAvailable: Bool
+    var serviceWorkerLifecycleAvailableInInternalFixture: Bool
+    var serviceWorkerWakeAvailableInProduct: Bool
+    var serviceWorkerPermanentBackgroundAvailable: Bool
     var nativeMessagingAvailable: Bool
     var runtimeLoadable: Bool
+    var serviceWorkerLifecycleWakeResult:
+        ChromeMV3ServiceWorkerInternalWakeResult?
     var diagnostics: [String]
 
     var foundationObject: [String: Any] {
@@ -796,7 +862,15 @@ struct ChromeMV3StorageLocalJSBridgeHostResponse:
             "normalTabRuntimeBridgeAvailable":
                 normalTabRuntimeBridgeAvailable,
             "serviceWorkerWakeAvailable": serviceWorkerWakeAvailable,
+            "serviceWorkerLifecycleAvailableInInternalFixture":
+                serviceWorkerLifecycleAvailableInInternalFixture,
+            "serviceWorkerWakeAvailableInProduct":
+                serviceWorkerWakeAvailableInProduct,
+            "serviceWorkerPermanentBackgroundAvailable":
+                serviceWorkerPermanentBackgroundAvailable,
             "nativeMessagingAvailable": nativeMessagingAvailable,
+            "serviceWorkerLifecycleWakeResult":
+                serviceWorkerLifecycleWakeResultFoundationObject,
             "runtimeLoadable": runtimeLoadable,
             "diagnostics": diagnostics,
         ]
@@ -805,6 +879,16 @@ struct ChromeMV3StorageLocalJSBridgeHostResponse:
     private var onChangedPayloadFoundationObject: Any {
         guard let onChangedPayload else { return NSNull() }
         return onChangedPayload.storageLocalRuntimeFoundationObject
+    }
+
+    private var serviceWorkerLifecycleWakeResultFoundationObject: Any {
+        guard let serviceWorkerLifecycleWakeResult,
+              let data = try? JSONEncoder().encode(
+                serviceWorkerLifecycleWakeResult
+              ),
+              let object = try? JSONSerialization.jsonObject(with: data)
+        else { return NSNull() }
+        return object
     }
 }
 
@@ -1204,12 +1288,21 @@ final class ChromeMV3StorageLocalJSBridgeHandler {
             storageJSBridgeAvailableInProduct: false,
             normalTabRuntimeBridgeAvailable: false,
             serviceWorkerWakeAvailable: false,
+            serviceWorkerLifecycleAvailableInInternalFixture:
+                configuration
+                .serviceWorkerLifecycleAvailableInInternalFixture,
+            serviceWorkerWakeAvailableInProduct: false,
+            serviceWorkerPermanentBackgroundAvailable: false,
             nativeMessagingAvailable: false,
             runtimeLoadable: false,
+            serviceWorkerLifecycleWakeResult:
+                record.serviceWorkerLifecycleWakeResult,
             diagnostics:
                 uniqueSortedStorageLocal(
                     diagnostics
                         + configuration.diagnostics
+                        + (record.serviceWorkerLifecycleWakeResult?
+                            .diagnostics ?? [])
                         + [
                             "storage.local JS bridge response is synthetic-harness scoped.",
                             "Product storage bridge remains unavailable.",
@@ -2348,8 +2441,15 @@ enum ChromeMV3StorageLocalJSSyntheticHarness {
                 storageJSBridgeAvailableInProduct: false,
                 normalTabRuntimeBridgeAvailable: false,
                 serviceWorkerWakeAvailable: false,
+                serviceWorkerLifecycleAvailableInInternalFixture:
+                    configuration
+                    .serviceWorkerLifecycleAvailableInInternalFixture,
+                serviceWorkerWakeAvailableInProduct: false,
+                serviceWorkerPermanentBackgroundAvailable: false,
                 nativeMessagingAvailable: false,
                 runtimeLoadable: false,
+                serviceWorkerLifecycleWakeResult:
+                    $0.serviceWorkerLifecycleWakeResult,
                 diagnostics: $0.diagnostics
             )
         }
@@ -2479,6 +2579,19 @@ private extension ChromeMV3StorageChangeRecord {
 }
 
 private extension ChromeMV3StorageValue {
+    static func storageLocalOnChangedPayload(
+        _ payload: ChromeMV3StorageOnChangedEventPayload
+    ) -> ChromeMV3StorageValue {
+        .object([
+            "areaName": .string(payload.areaName),
+            "changedKeys": .array(
+                payload.changedKeys.map(ChromeMV3StorageValue.string)
+            ),
+            "extensionID": .string(payload.extensionID),
+            "profileID": .string(payload.profileID),
+        ])
+    }
+
     init?(storageLocalWebKitValue value: Any) {
         if value is NSNull {
             self = .null
