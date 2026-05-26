@@ -516,6 +516,9 @@ final class ChromeMV3PermissionsJSBridgeHandler {
         ChromeMV3PermissionRuntimeStateOwner
     private let serviceWorkerLifecycleOwner:
         ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner?
+    private let sharedLifecycleSession:
+        ChromeMV3ServiceWorkerSharedLifecycleSession?
+    private let lifecycleComponentID: String
     private(set) var handledRequestCount = 0
     private(set) var permissionsRequestCount = 0
     private(set) var rejectedRequestCount = 0
@@ -523,9 +526,14 @@ final class ChromeMV3PermissionsJSBridgeHandler {
     init(
         configuration: ChromeMV3PermissionsJSBridgeConfiguration,
         permissionRuntimeOwner:
-            ChromeMV3PermissionRuntimeStateOwner? = nil
+            ChromeMV3PermissionRuntimeStateOwner? = nil,
+        sharedLifecycleSession:
+            ChromeMV3ServiceWorkerSharedLifecycleSession? = nil
     ) {
         self.configuration = configuration
+        self.sharedLifecycleSession = sharedLifecycleSession
+        self.lifecycleComponentID =
+            "permissions-harness:\(configuration.surfaceID)"
         self.permissionRuntimeOwner =
             permissionRuntimeOwner
             ?? ChromeMV3PermissionsJSBridgeHandler
@@ -533,16 +541,29 @@ final class ChromeMV3PermissionsJSBridgeHandler {
         if configuration
             .serviceWorkerLifecycleAvailableInInternalFixture
         {
-            let owner = ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner(
-                configuration: .internalFixture(
-                    extensionID: configuration.extensionID,
-                    profileID: configuration.profileID,
-                    moduleState: configuration.moduleState,
-                    explicitInternalLifecycleAllowed:
-                        configuration
-                        .explicitInternalPermissionsJSBridgeAllowed
+            let owner: ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner
+            if let sharedLifecycleSession {
+                _ = sharedLifecycleSession.attachComponent(
+                    kind: .permissionsHarness,
+                    componentID: lifecycleComponentID,
+                    eventSurfaces: [
+                        .permissionsOnAdded,
+                        .permissionsOnRemoved,
+                    ]
                 )
-            )
+                owner = sharedLifecycleSession.runtimeOwner
+            } else {
+                owner = ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner(
+                    configuration: .internalFixture(
+                        extensionID: configuration.extensionID,
+                        profileID: configuration.profileID,
+                        moduleState: configuration.moduleState,
+                        explicitInternalLifecycleAllowed:
+                            configuration
+                            .explicitInternalPermissionsJSBridgeAllowed
+                    )
+                )
+            }
             owner.registerListener(
                 event: .permissionsOnAdded,
                 listenerID: "permissions-js-on-added"
@@ -648,7 +669,14 @@ final class ChromeMV3PermissionsJSBridgeHandler {
     func tearDown() {
         permissionRuntimeOwner =
             Self.defaultPermissionRuntimeOwner(configuration: configuration)
-        serviceWorkerLifecycleOwner?.tearDownForExtensionDisable()
+        if sharedLifecycleSession != nil {
+            _ = sharedLifecycleSession?.detachComponent(
+                componentID: lifecycleComponentID,
+                reason: .reset
+            )
+        } else {
+            serviceWorkerLifecycleOwner?.tearDownForExtensionDisable()
+        }
     }
 
     private func permissionsContains(
@@ -736,7 +764,9 @@ final class ChromeMV3PermissionsJSBridgeHandler {
                             .permissionsJSEventPayload(eventPayload),
                         payloadSummary: "permissions.onAdded",
                         sourceContext:
-                            configuration.sourceContext.runtimeContext
+                            configuration.sourceContext.runtimeContext,
+                        sourceComponentID: lifecycleComponentID,
+                        sourceComponentKind: .permissionsHarness
                     )
                 } else {
                     lifecycleResult = nil
@@ -793,7 +823,9 @@ final class ChromeMV3PermissionsJSBridgeHandler {
                             .permissionsJSEventPayload(eventPayload),
                         payloadSummary: "permissions.onRemoved",
                         sourceContext:
-                            configuration.sourceContext.runtimeContext
+                            configuration.sourceContext.runtimeContext,
+                        sourceComponentID: lifecycleComponentID,
+                        sourceComponentKind: .permissionsHarness
                     )
                 } else {
                     lifecycleResult = nil

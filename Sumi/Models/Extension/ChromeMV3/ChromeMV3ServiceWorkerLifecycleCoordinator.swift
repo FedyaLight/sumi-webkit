@@ -159,6 +159,8 @@ enum ChromeMV3ServiceWorkerWakeReason:
     case nativeMessagingConnect
     case nativeMessagingMessage
     case permissionsChanged
+    case passwordManagerDetectFields
+    case passwordManagerFillFields
     case runtimeConnect
     case runtimeMessage
     case storageChanged

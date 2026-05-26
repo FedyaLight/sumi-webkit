@@ -591,13 +591,26 @@ final class ChromeMV3RuntimeJSBridgeHandler {
         ChromeMV3NativeMessagingRuntimeOwner?
     private let serviceWorkerLifecycleOwner:
         ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner?
+    private let sharedLifecycleSession:
+        ChromeMV3ServiceWorkerSharedLifecycleSession?
+    private let lifecycleComponentID: String
+    private let nativeLifecycleComponentID: String
 
-    init(configuration: ChromeMV3RuntimeJSBridgeConfiguration) {
+    init(
+        configuration: ChromeMV3RuntimeJSBridgeConfiguration,
+        sharedLifecycleSession:
+            ChromeMV3ServiceWorkerSharedLifecycleSession? = nil
+    ) {
         self.configuration = configuration
         self.listenerRegistry =
             ChromeMV3RuntimeJSSyntheticListenerRegistry(
                 configuration: configuration
             )
+        self.sharedLifecycleSession = sharedLifecycleSession
+        self.lifecycleComponentID =
+            "runtime-js-harness:\(configuration.surfaceID)"
+        self.nativeLifecycleComponentID =
+            "native-messaging-fixture-runtime:\(configuration.surfaceID)"
         if configuration.nativeMessagingAvailableInInternalFixture {
             self.nativeMessagingRuntimeOwner =
                 ChromeMV3NativeMessagingRuntimeOwner(
@@ -618,8 +631,29 @@ final class ChromeMV3RuntimeJSBridgeHandler {
             self.nativeMessagingRuntimeOwner = nil
         }
         if configuration.serviceWorkerLifecycleAvailableInInternalFixture {
-            self.serviceWorkerLifecycleOwner =
-                ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner(
+            if let sharedLifecycleSession {
+                _ = sharedLifecycleSession.attachComponent(
+                    kind: .runtimeJSHarness,
+                    componentID: lifecycleComponentID,
+                    eventSurfaces: [.runtimeOnMessage, .runtimeOnConnect],
+                    keepaliveSources: [.runtimePort, .pendingResponse]
+                )
+                if configuration.nativeMessagingAvailableInInternalFixture {
+                    _ = sharedLifecycleSession.attachComponent(
+                        kind: .nativeMessagingFixtureRuntime,
+                        componentID: nativeLifecycleComponentID,
+                        eventSurfaces: [
+                            .nativePortOnMessage,
+                            .nativePortOnDisconnect,
+                        ],
+                        keepaliveSources: [.nativeMessagingPort]
+                    )
+                }
+                self.serviceWorkerLifecycleOwner =
+                    sharedLifecycleSession.runtimeOwner
+            } else {
+                self.serviceWorkerLifecycleOwner =
+                    ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner(
                     configuration: .internalFixture(
                         extensionID: configuration.extensionID,
                         profileID: configuration.profileID,
@@ -632,6 +666,7 @@ final class ChromeMV3RuntimeJSBridgeHandler {
                             .nativePortKeepaliveAvailableInFixture
                     )
                 )
+            }
             if configuration.nativeMessagingAvailableInInternalFixture {
                 self.serviceWorkerLifecycleOwner?.registerListener(
                     event: .nativePortOnMessage,
@@ -787,7 +822,18 @@ final class ChromeMV3RuntimeJSBridgeHandler {
     func tearDown() {
         listenerRegistry.tearDown()
         _ = nativeMessagingRuntimeOwner?.tearDownForExtensionDisable()
-        serviceWorkerLifecycleOwner?.tearDownForExtensionDisable()
+        if sharedLifecycleSession != nil {
+            _ = sharedLifecycleSession?.detachComponent(
+                componentID: lifecycleComponentID,
+                reason: .reset
+            )
+            _ = sharedLifecycleSession?.detachComponent(
+                componentID: nativeLifecycleComponentID,
+                reason: .reset
+            )
+        } else {
+            serviceWorkerLifecycleOwner?.tearDownForExtensionDisable()
+        }
     }
 
     private func routeRuntimeMethod(
@@ -799,7 +845,9 @@ final class ChromeMV3RuntimeJSBridgeHandler {
             listenerEvent: .runtimeOnMessage,
             payload: request.arguments.first,
             payloadSummary: "runtime.sendMessage",
-            sourceContext: configuration.sourceContext.runtimeContext
+            sourceContext: configuration.sourceContext.runtimeContext,
+            sourceComponentID: lifecycleComponentID,
+            sourceComponentKind: .runtimeJSHarness
         )
         let bridgeResponse = routeThroughJSBridgeContract(request)
         let runtimeResult =
@@ -852,7 +900,9 @@ final class ChromeMV3RuntimeJSBridgeHandler {
                 listenerEvent: .runtimeOnConnect,
                 payload: request.arguments.first,
                 payloadSummary: "runtime.connect",
-                sourceContext: configuration.sourceContext.runtimeContext
+                sourceContext: configuration.sourceContext.runtimeContext,
+                sourceComponentID: lifecycleComponentID,
+                sourceComponentKind: .runtimeJSHarness
             )
             let lastError = preferredLastError(bridgeResponse: bridgeResponse)
             rejectedRequestCount += 1
@@ -879,7 +929,9 @@ final class ChromeMV3RuntimeJSBridgeHandler {
             payloadSummary: "runtime.connect",
             sourceContext: configuration.sourceContext.runtimeContext,
             keepaliveKind: .runtimePort,
-            portID: preflight.portID
+            portID: preflight.portID,
+            sourceComponentID: lifecycleComponentID,
+            sourceComponentKind: .runtimeJSHarness
         )
         return response(
             request: request,
@@ -998,7 +1050,15 @@ final class ChromeMV3RuntimeJSBridgeHandler {
                 payloadSummary: "runtime.connectNative",
                 sourceContext: configuration.sourceContext.runtimeContext,
                 keepaliveKind: .nativeMessagingPort,
-                portID: result.portID
+                portID: result.portID,
+                sourceComponentID:
+                    sharedLifecycleSession == nil
+                        ? lifecycleComponentID
+                        : nativeLifecycleComponentID,
+                sourceComponentKind:
+                    sharedLifecycleSession == nil
+                        ? .runtimeJSHarness
+                        : .nativeMessagingFixtureRuntime
             )
             : nil
         return response(
@@ -1066,7 +1126,15 @@ final class ChromeMV3RuntimeJSBridgeHandler {
                 payload: message,
                 payloadSummary: "NativePort.postMessage",
                 sourceContext: configuration.sourceContext.runtimeContext,
-                portID: portID
+                portID: portID,
+                sourceComponentID:
+                    sharedLifecycleSession == nil
+                        ? lifecycleComponentID
+                        : nativeLifecycleComponentID,
+                sourceComponentKind:
+                    sharedLifecycleSession == nil
+                        ? .runtimeJSHarness
+                        : .nativeMessagingFixtureRuntime
             )
             : nil
         return response(

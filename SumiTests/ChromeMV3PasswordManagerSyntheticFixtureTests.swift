@@ -102,10 +102,25 @@ final class ChromeMV3PasswordManagerSyntheticFixtureTests: XCTestCase {
         XCTAssertTrue(report.passwordManagerSyntheticJSReady)
         XCTAssertFalse(report.passwordManagerNativeMessagingReady)
         XCTAssertTrue(report.passwordManagerServiceWorkerReady)
+        XCTAssertTrue(report.passwordManagerSharedLifecycleReadyInFixture)
         XCTAssertFalse(report.passwordManagerProductRuntimeReady)
         XCTAssertFalse(report.normalTabRuntimeBridgeAvailable)
         XCTAssertFalse(report.runtimeLoadable)
         XCTAssertFalse(report.productRuntimeExposed)
+        XCTAssertNotNil(report.sharedLifecycleSessionSummary)
+        XCTAssertTrue(
+            report.sharedLifecycleSessionSummary?
+                .sharedLifecycleSessionAvailableInInternalFixture == true
+        )
+        XCTAssertTrue(
+            report.sharedLifecycleSessionSummary?
+                .nativeMessagingSessionParticipation == true
+        )
+        XCTAssertEqual(
+            report.sharedLifecycleSessionSummary?
+                .serviceWorkerWakeAvailableInProduct,
+            false
+        )
 
         XCTAssertTrue(report.storageFlowResult.setSucceeded)
         XCTAssertTrue(report.storageFlowResult.readBackSucceeded)
@@ -300,6 +315,9 @@ final class ChromeMV3PasswordManagerSyntheticFixtureTests: XCTestCase {
         XCTAssertEqual(result.tabRegistrySummaryAfterTeardown.controlledSyntheticTabCount, 0)
         XCTAssertEqual(result.storageStateSummaryAfterTeardown.keyCount, 0)
         XCTAssertTrue(result.report.passwordManagerSyntheticJSReady)
+        XCTAssertTrue(
+            result.report.passwordManagerSharedLifecycleReadyInFixture
+        )
         XCTAssertFalse(result.report.passwordManagerProductRuntimeReady)
     }
 

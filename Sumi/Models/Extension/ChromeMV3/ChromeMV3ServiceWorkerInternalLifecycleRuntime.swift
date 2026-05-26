@@ -68,6 +68,8 @@ enum ChromeMV3ServiceWorkerSyntheticListenerEvent:
     case nativePortOnMessage
     case permissionsOnAdded
     case permissionsOnRemoved
+    case passwordManagerDetectFields
+    case passwordManagerFillFields
     case runtimeOnConnect
     case runtimeOnMessage
     case storageOnChanged
@@ -95,7 +97,8 @@ enum ChromeMV3ServiceWorkerSyntheticListenerEvent:
         case .nativePortOnMessage, .nativePortOnDisconnect:
             return .nativeMessagingPortListener
         case .actionPopupEvent, .alarmsOnAlarm, .permissionsOnAdded,
-             .permissionsOnRemoved, .storageOnChanged, .testFixture:
+             .permissionsOnRemoved, .passwordManagerDetectFields,
+             .passwordManagerFillFields, .storageOnChanged, .testFixture:
             return .serviceWorkerLifecycleEventListener
         }
     }
@@ -464,6 +467,9 @@ struct ChromeMV3ServiceWorkerInternalEventEnvelope:
     var listenerEvent: ChromeMV3ServiceWorkerSyntheticListenerEvent
     var listenerSurface: ChromeMV3RuntimeListenerSurfaceKind
     var sourceContext: ChromeMV3RuntimeMessagingContextKind
+    var sourceComponentID: String?
+    var sourceComponentKind:
+        ChromeMV3ServiceWorkerSharedLifecycleComponentKind?
     var payloadSummary: String
     var payload: ChromeMV3StorageValue?
     var status: ChromeMV3ServiceWorkerInternalEventStatus
@@ -498,6 +504,9 @@ struct ChromeMV3ServiceWorkerInternalWakeResult:
     var scope: ChromeMV3ServiceWorkerLifecycleExecutionScope
     var reason: ChromeMV3ServiceWorkerWakeReason
     var listenerEvent: ChromeMV3ServiceWorkerSyntheticListenerEvent
+    var sourceComponentID: String?
+    var sourceComponentKind:
+        ChromeMV3ServiceWorkerSharedLifecycleComponentKind?
     var wakeAccepted: Bool
     var queued: Bool
     var dispatched: Bool
@@ -524,6 +533,7 @@ struct ChromeMV3ServiceWorkerInternalLifecycleConfiguration:
     var serviceWorkerPermanentBackgroundAvailable: Bool
     var nativePortKeepaliveAvailableInFixture: Bool
     var runtimeLoadable: Bool
+    var fixedLifecycleSessionID: String?
     var diagnostics: [String]
 
     static func internalFixture(
@@ -531,7 +541,8 @@ struct ChromeMV3ServiceWorkerInternalLifecycleConfiguration:
         profileID: String = "synthetic-profile",
         moduleState: ChromeMV3ProfileHostModuleState = .enabled,
         explicitInternalLifecycleAllowed: Bool = true,
-        nativePortKeepaliveAvailableInFixture: Bool = true
+        nativePortKeepaliveAvailableInFixture: Bool = true,
+        fixedLifecycleSessionID: String? = nil
     ) -> ChromeMV3ServiceWorkerInternalLifecycleConfiguration {
         let normalizedExtensionID = normalizedInternalLifecycle(
             extensionID,
@@ -556,6 +567,7 @@ struct ChromeMV3ServiceWorkerInternalLifecycleConfiguration:
             nativePortKeepaliveAvailableInFixture:
                 internalAvailable && nativePortKeepaliveAvailableInFixture,
             runtimeLoadable: false,
+            fixedLifecycleSessionID: fixedLifecycleSessionID,
             diagnostics:
                 uniqueSortedInternalLifecycle([
                     "Internal lifecycle fixture is explicit-gate and module-state controlled.",
@@ -707,7 +719,10 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
         extensionID: String? = nil,
         profileID: String? = nil,
         keepaliveKind: ChromeMV3ServiceWorkerInternalKeepaliveKind? = nil,
-        portID: String? = nil
+        portID: String? = nil,
+        sourceComponentID: String? = nil,
+        sourceComponentKind:
+            ChromeMV3ServiceWorkerSharedLifecycleComponentKind? = nil
     ) -> ChromeMV3ServiceWorkerInternalWakeResult {
         let targetExtensionID = extensionID ?? configuration.extensionID
         let targetProfileID = profileID ?? configuration.profileID
@@ -754,6 +769,8 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
                 reason: reason,
                 listenerEvent: event,
                 sourceContext: sourceContext,
+                sourceComponentID: sourceComponentID,
+                sourceComponentKind: sourceComponentKind,
                 payload: payload,
                 payloadSummary: payloadSummary,
                 status: .blocked,
@@ -766,6 +783,8 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
                 eventID: eventID,
                 reason: reason,
                 listenerEvent: event,
+                sourceComponentID: sourceComponentID,
+                sourceComponentKind: sourceComponentKind,
                 scope: scope,
                 wakeAccepted: false,
                 queued: false,
@@ -797,6 +816,8 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
             reason: reason,
             listenerEvent: event,
             sourceContext: sourceContext,
+            sourceComponentID: sourceComponentID,
+            sourceComponentKind: sourceComponentKind,
             payload: payload,
             payloadSummary: payloadSummary,
             status: .queued,
@@ -854,6 +875,8 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
             eventID: eventID,
             reason: reason,
             listenerEvent: event,
+            sourceComponentID: sourceComponentID,
+            sourceComponentKind: sourceComponentKind,
             scope: scope,
             wakeAccepted: true,
             queued: true,
@@ -935,6 +958,8 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
                 eventID: eventID,
                 reason: .testFixture,
                 listenerEvent: .testFixture,
+                sourceComponentID: nil,
+                sourceComponentKind: nil,
                 scope: .internalFixture,
                 wakeAccepted: false,
                 queued: false,
@@ -967,6 +992,8 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
             eventID: eventID,
             reason: .testFixture,
             listenerEvent: .testFixture,
+            sourceComponentID: nil,
+            sourceComponentKind: nil,
             scope: .internalFixture,
             wakeAccepted: true,
             queued: false,
@@ -1024,6 +1051,8 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
             eventID: eventID,
             reason: .testFixture,
             listenerEvent: .testFixture,
+            sourceComponentID: nil,
+            sourceComponentKind: nil,
             scope: .internalFixture,
             wakeAccepted: true,
             queued: false,
@@ -1075,6 +1104,10 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
             return .permissionsOnAdded
         case .nativeMessagingConnect, .nativeMessagingMessage:
             return .nativePortOnMessage
+        case .passwordManagerDetectFields:
+            return .passwordManagerDetectFields
+        case .passwordManagerFillFields:
+            return .passwordManagerFillFields
         case .actionClicked, .actionPopupEvent:
             return .actionPopupEvent
         case .alarm, .alarmPlaceholder:
@@ -1101,6 +1134,9 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
                     String(sessionSequence),
                 ]
             )
+            if let fixed = configuration.fixedLifecycleSessionID {
+                currentSessionID = fixed
+            }
             transition(to: .wakeRequested, reason: reason)
             transition(to: .starting, reason: reason)
             transition(to: .runningInSyntheticFixture, reason: reason)
@@ -1130,6 +1166,9 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
         reason: ChromeMV3ServiceWorkerWakeReason,
         listenerEvent: ChromeMV3ServiceWorkerSyntheticListenerEvent,
         sourceContext: ChromeMV3RuntimeMessagingContextKind,
+        sourceComponentID: String?,
+        sourceComponentKind:
+            ChromeMV3ServiceWorkerSharedLifecycleComponentKind?,
         payload: ChromeMV3StorageValue?,
         payloadSummary: String,
         status: ChromeMV3ServiceWorkerInternalEventStatus,
@@ -1145,6 +1184,8 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
             listenerEvent: listenerEvent,
             listenerSurface: listenerEvent.listenerSurface,
             sourceContext: sourceContext,
+            sourceComponentID: sourceComponentID,
+            sourceComponentKind: sourceComponentKind,
             payloadSummary: payloadSummary,
             payload: payload,
             status: status,
@@ -1208,6 +1249,9 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
         eventID: String,
         reason: ChromeMV3ServiceWorkerWakeReason,
         listenerEvent: ChromeMV3ServiceWorkerSyntheticListenerEvent,
+        sourceComponentID: String?,
+        sourceComponentKind:
+            ChromeMV3ServiceWorkerSharedLifecycleComponentKind?,
         scope: ChromeMV3ServiceWorkerLifecycleExecutionScope,
         wakeAccepted: Bool,
         queued: Bool,
@@ -1228,6 +1272,8 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
             scope: scope,
             reason: reason,
             listenerEvent: listenerEvent,
+            sourceComponentID: sourceComponentID,
+            sourceComponentKind: sourceComponentKind,
             wakeAccepted: wakeAccepted,
             queued: queued,
             dispatched: dispatched,
