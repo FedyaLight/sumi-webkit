@@ -1004,6 +1004,7 @@ final class ChromeMV3NormalTabConfigurationAttachmentTests: XCTestCase {
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionEventAPIsRuntime.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift",
         ]
         let source = chromeMV3Source

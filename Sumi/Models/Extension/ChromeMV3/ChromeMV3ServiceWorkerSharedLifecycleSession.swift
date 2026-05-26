@@ -19,6 +19,8 @@ enum ChromeMV3ServiceWorkerSharedLifecycleComponentKind:
     Sendable
 {
     case contentScriptSyntheticEndpoint
+    case alarmsHarness
+    case contextMenusHarness
     case extensionPageHostHarness
     case nativeMessagingFixtureRuntime
     case passwordManagerCombinedFixture
@@ -26,6 +28,7 @@ enum ChromeMV3ServiceWorkerSharedLifecycleComponentKind:
     case runtimeJSHarness
     case storageLocalHarness
     case tabsScriptingHarness
+    case webNavigationHarness
 
     static func < (
         lhs: ChromeMV3ServiceWorkerSharedLifecycleComponentKind,
@@ -624,6 +627,29 @@ enum ChromeMV3ServiceWorkerSharedLifecycleSessionReportGenerator {
             eventSurfaces: [.runtimeOnMessage, .runtimeOnConnect],
             keepaliveSources: [.runtimePort, .pendingResponse]
         )
+        let contextMenus = session.attachComponent(
+            kind: .contextMenusHarness,
+            componentID: "context-menus-harness",
+            eventSurfaces: [.contextMenusOnClicked]
+        )
+        let alarms = session.attachComponent(
+            kind: .alarmsHarness,
+            componentID: "alarms-harness",
+            eventSurfaces: [.alarmsOnAlarm]
+        )
+        let webNavigation = session.attachComponent(
+            kind: .webNavigationHarness,
+            componentID: "web-navigation-harness",
+            eventSurfaces: [
+                .webNavigationOnBeforeNavigate,
+                .webNavigationOnCommitted,
+                .webNavigationOnCompleted,
+                .webNavigationOnDOMContentLoaded,
+                .webNavigationOnErrorOccurred,
+                .webNavigationOnHistoryStateUpdated,
+                .webNavigationOnReferenceFragmentUpdated,
+            ]
+        )
         let tabs = session.attachComponent(
             kind: .tabsScriptingHarness,
             componentID: "tabs-scripting-harness",
@@ -678,6 +704,9 @@ enum ChromeMV3ServiceWorkerSharedLifecycleSessionReportGenerator {
             .nativePortOnDisconnect,
             .actionPopupEvent,
             .alarmsOnAlarm,
+            .contextMenusOnClicked,
+            .webNavigationOnCommitted,
+            .webNavigationOnCompleted,
             .passwordManagerDetectFields,
             .passwordManagerFillFields,
         ] {
@@ -744,6 +773,38 @@ enum ChromeMV3ServiceWorkerSharedLifecycleSessionReportGenerator {
             payloadSummary: "permissions.onRemoved",
             sourceContext: .serviceWorker
         )
+        _ = session.routeEvent(
+            reason: .contextMenusClicked,
+            listenerEvent: .contextMenusOnClicked,
+            sourceComponentID: contextMenus.componentID,
+            sourceComponentKind: .contextMenusHarness,
+            payloadSummary: "contextMenus.onClicked",
+            sourceContext: .serviceWorker
+        )
+        _ = session.routeEvent(
+            reason: .alarm,
+            listenerEvent: .alarmsOnAlarm,
+            sourceComponentID: alarms.componentID,
+            sourceComponentKind: .alarmsHarness,
+            payloadSummary: "alarms.onAlarm",
+            sourceContext: .serviceWorker
+        )
+        _ = session.routeEvent(
+            reason: .webNavigationEvent,
+            listenerEvent: .webNavigationOnCommitted,
+            sourceComponentID: webNavigation.componentID,
+            sourceComponentKind: .webNavigationHarness,
+            payloadSummary: "webNavigation.onCommitted",
+            sourceContext: .serviceWorker
+        )
+        _ = session.routeEvent(
+            reason: .webNavigationEvent,
+            listenerEvent: .webNavigationOnCompleted,
+            sourceComponentID: webNavigation.componentID,
+            sourceComponentKind: .webNavigationHarness,
+            payloadSummary: "webNavigation.onCompleted",
+            sourceContext: .serviceWorker
+        )
         let nativePort = session.routeEvent(
             reason: .nativeMessagingConnect,
             sourceComponentID: native.componentID,
@@ -774,15 +835,6 @@ enum ChromeMV3ServiceWorkerSharedLifecycleSessionReportGenerator {
             payloadSummary: "passwordManager.fillFields",
             sourceContext: .contentScript
         )
-        _ = session.routeEvent(
-            reason: .alarmPlaceholder,
-            listenerEvent: .alarmsOnAlarm,
-            sourceComponentID: runtime.componentID,
-            sourceComponentKind: .runtimeJSHarness,
-            payloadSummary: "alarm placeholder",
-            sourceContext: .serviceWorker
-        )
-
         let listenerSummaryBeforeHardTimeout =
             session.runtimeOwner.listenerRegistry.summary
         let blockedIdle = session.triggerIdleRelease()
@@ -873,7 +925,7 @@ enum ChromeMV3ServiceWorkerSharedLifecycleSessionReportGenerator {
                 uniqueSortedSharedLifecycle(
                     summary.diagnostics
                         + [
-                            "Shared lifecycle report routed runtime, tabs, storage, permissions, native messaging, alarm placeholder, and password-manager events through one queue.",
+                            "Shared lifecycle report routed runtime, tabs, storage, permissions, native messaging, contextMenus, alarms, webNavigation, and password-manager events through one queue.",
                             "Idle release and hard-timeout transitions were triggered explicitly by tests/fixtures.",
                             "Native Port keepalive was recorded as shared session state; lifecycle code did not launch a process.",
                         ]

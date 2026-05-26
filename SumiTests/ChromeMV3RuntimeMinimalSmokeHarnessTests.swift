@@ -374,6 +374,7 @@ final class ChromeMV3RuntimeMinimalSmokeHarnessTests: XCTestCase {
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift",
             "SumiTests/ChromeMV3StorageLocalRuntimeTests.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionEventAPIsRuntime.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift",
             "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift",
         ]

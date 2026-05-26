@@ -774,6 +774,9 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSessionTests: XCTestCase {
             .nativePortOnDisconnect,
             .actionPopupEvent,
             .alarmsOnAlarm,
+            .contextMenusOnClicked,
+            .webNavigationOnCommitted,
+            .webNavigationOnCompleted,
             .passwordManagerDetectFields,
             .passwordManagerFillFields,
         ] {
@@ -790,6 +793,10 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSessionTests: XCTestCase {
         switch kind {
         case .contentScriptSyntheticEndpoint:
             return [.tabsOnMessage, .tabsOnConnect]
+        case .alarmsHarness:
+            return [.alarmsOnAlarm]
+        case .contextMenusHarness:
+            return [.contextMenusOnClicked]
         case .extensionPageHostHarness:
             return [.actionPopupEvent]
         case .nativeMessagingFixtureRuntime:
@@ -804,6 +811,16 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSessionTests: XCTestCase {
             return [.storageOnChanged]
         case .tabsScriptingHarness:
             return [.tabsOnMessage, .tabsOnConnect]
+        case .webNavigationHarness:
+            return [
+                .webNavigationOnBeforeNavigate,
+                .webNavigationOnCommitted,
+                .webNavigationOnCompleted,
+                .webNavigationOnDOMContentLoaded,
+                .webNavigationOnErrorOccurred,
+                .webNavigationOnHistoryStateUpdated,
+                .webNavigationOnReferenceFragmentUpdated,
+            ]
         }
     }
 
@@ -820,7 +837,8 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSessionTests: XCTestCase {
         case .tabsScriptingHarness:
             return [.tabsPort]
         case .contentScriptSyntheticEndpoint, .extensionPageHostHarness,
-             .permissionsHarness, .storageLocalHarness:
+             .alarmsHarness, .contextMenusHarness, .permissionsHarness,
+             .storageLocalHarness, .webNavigationHarness:
             return []
         }
     }

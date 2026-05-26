@@ -64,6 +64,7 @@ enum ChromeMV3ServiceWorkerSyntheticListenerEvent:
 {
     case actionPopupEvent
     case alarmsOnAlarm
+    case contextMenusOnClicked
     case nativePortOnDisconnect
     case nativePortOnMessage
     case permissionsOnAdded
@@ -76,6 +77,13 @@ enum ChromeMV3ServiceWorkerSyntheticListenerEvent:
     case tabsOnConnect
     case tabsOnMessage
     case testFixture
+    case webNavigationOnBeforeNavigate
+    case webNavigationOnCommitted
+    case webNavigationOnCompleted
+    case webNavigationOnDOMContentLoaded
+    case webNavigationOnErrorOccurred
+    case webNavigationOnHistoryStateUpdated
+    case webNavigationOnReferenceFragmentUpdated
 
     static func < (
         lhs: ChromeMV3ServiceWorkerSyntheticListenerEvent,
@@ -96,9 +104,14 @@ enum ChromeMV3ServiceWorkerSyntheticListenerEvent:
             return .tabsConnectContentScript
         case .nativePortOnMessage, .nativePortOnDisconnect:
             return .nativeMessagingPortListener
-        case .actionPopupEvent, .alarmsOnAlarm, .permissionsOnAdded,
-             .permissionsOnRemoved, .passwordManagerDetectFields,
-             .passwordManagerFillFields, .storageOnChanged, .testFixture:
+        case .actionPopupEvent, .alarmsOnAlarm, .contextMenusOnClicked,
+             .permissionsOnAdded, .permissionsOnRemoved,
+             .passwordManagerDetectFields, .passwordManagerFillFields,
+             .storageOnChanged, .testFixture, .webNavigationOnBeforeNavigate,
+             .webNavigationOnCommitted, .webNavigationOnCompleted,
+             .webNavigationOnDOMContentLoaded, .webNavigationOnErrorOccurred,
+             .webNavigationOnHistoryStateUpdated,
+             .webNavigationOnReferenceFragmentUpdated:
             return .serviceWorkerLifecycleEventListener
         }
     }
@@ -1110,8 +1123,12 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
             return .passwordManagerFillFields
         case .actionClicked, .actionPopupEvent:
             return .actionPopupEvent
+        case .contextMenusClicked:
+            return .contextMenusOnClicked
         case .alarm, .alarmPlaceholder:
             return .alarmsOnAlarm
+        case .webNavigationEvent:
+            return .webNavigationOnCommitted
         case .installOrUpdateEvent, .testFixture:
             return .testFixture
         }

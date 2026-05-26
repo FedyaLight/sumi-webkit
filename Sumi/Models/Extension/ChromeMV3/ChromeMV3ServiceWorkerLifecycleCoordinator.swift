@@ -155,6 +155,7 @@ enum ChromeMV3ServiceWorkerWakeReason:
     case actionPopupEvent
     case alarm
     case alarmPlaceholder
+    case contextMenusClicked
     case installOrUpdateEvent
     case nativeMessagingConnect
     case nativeMessagingMessage
@@ -167,6 +168,7 @@ enum ChromeMV3ServiceWorkerWakeReason:
     case tabsConnect
     case tabsMessage
     case testFixture
+    case webNavigationEvent
 
     static func < (
         lhs: ChromeMV3ServiceWorkerWakeReason,
