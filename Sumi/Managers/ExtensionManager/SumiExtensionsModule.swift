@@ -2355,6 +2355,47 @@ final class SumiExtensionsModule {
         }
 
         @available(macOS 15.5, *)
+        func chromeMV3PermissionsWebKitSyntheticHarnessReportIfEnabled(
+            fromRewrittenBundleRoot rootURL: URL,
+            writeReport: Bool = false
+        ) async -> ChromeMV3PermissionImplementationReport? {
+            guard isEnabled else { return nil }
+
+            let rootURL = rootURL.standardizedFileURL
+            let extensionID =
+                lastChromeMV3RuntimeBridgePrerequisitesReport?.candidateID
+                ?? lastChromeMV3TabsScriptingMVPReport?.extensionID
+                ?? lastChromeMV3RuntimeJSMessagingMVPReport?.extensionID
+                ?? lastChromeMV3JSBridgeContractReport?.extensionID
+                ?? "permissions-js-mvp-extension"
+            let profileID =
+                lastChromeMV3TabsScriptingMVPReport?.profileID
+                ?? lastChromeMV3RuntimeJSMessagingMVPReport?.profileID
+                ?? lastChromeMV3JSBridgeContractReport?.profileID
+                ?? "permissions-js-mvp-profile"
+            let configuration =
+                ChromeMV3PermissionsJSBridgeConfiguration.syntheticHarness(
+                    extensionID: extensionID,
+                    profileID: profileID
+                )
+            let result =
+                await ChromeMV3PermissionsJSSyntheticHarness.run(
+                    scriptBody:
+                        ChromeMV3PermissionsJSSyntheticHarness
+                        .reportVerificationScriptBody,
+                    configuration: configuration
+                )
+            let report = result.report
+            lastChromeMV3PermissionImplementationReport = report
+
+            guard writeReport else { return report }
+            return (try? ChromeMV3PermissionImplementationReportWriter.write(
+                report,
+                toRewrittenBundleRoot: rootURL
+            )) ?? report
+        }
+
+        @available(macOS 15.5, *)
         @discardableResult
         func runChromeMV3ExtensionObjectProbeIfEnabled(
             explicitInternalExtensionObjectProbeAllowed: Bool,

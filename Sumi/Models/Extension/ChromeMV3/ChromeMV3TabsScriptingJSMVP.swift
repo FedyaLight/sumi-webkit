@@ -3705,6 +3705,422 @@ enum ChromeMV3TabsScriptingJSSyntheticHarness {
         return registry
     }
 }
+
+@available(macOS 15.5, *)
+@MainActor
+private final class ChromeMV3PermissionsJSScriptMessageHandler:
+    NSObject,
+    WKScriptMessageHandlerWithReply
+{
+    let handler: ChromeMV3PermissionsJSBridgeHandler
+
+    init(handler: ChromeMV3PermissionsJSBridgeHandler) {
+        self.handler = handler
+    }
+
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) async -> (Any?, String?) {
+        _ = userContentController
+        let response = handler.handle(message.body)
+        return (response.foundationObject, nil)
+    }
+}
+
+struct ChromeMV3PermissionsJSSyntheticHarnessResult:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var scriptEvaluationSucceeded: Bool
+    var scriptResultJSON: String?
+    var report: ChromeMV3PermissionImplementationReport
+    var webKitExecutionSummary:
+        ChromeMV3PermissionsWebKitExecutionSummary
+    var permissionRuntimeSnapshot:
+        ChromeMV3PermissionRuntimeStateOwnerSnapshot
+    var permissionRuntimeSnapshotAfterTeardown:
+        ChromeMV3PermissionRuntimeStateOwnerSnapshot
+    var handledRequestCount: Int
+    var permissionsRequestCount: Int
+    var rejectedRequestCount: Int
+    var userScriptCount: Int
+    var scriptMessageHandlerCount: Int
+    var syntheticWebViewCreated: Bool
+    var permissionsJSBridgeAvailableInSyntheticHarness: Bool
+    var permissionsJSBridgeAvailableInProduct: Bool
+    var permissionUIAvailableInProduct: Bool
+    var activeTabAvailableInProduct: Bool
+    var normalTabRuntimeBridgeAvailable: Bool
+    var serviceWorkerWakeAvailable: Bool
+    var nativeMessagingAvailable: Bool
+    var runtimeLoadable: Bool
+    var diagnostics: [String]
+}
+
+@available(macOS 15.5, *)
+enum ChromeMV3PermissionsJSSyntheticHarness {
+    static let reportVerificationScriptBody = """
+    const exposedNamespaces = Object.keys(chrome).sort();
+    const permissionsKeys = Object.keys(chrome.permissions).sort();
+    const runtimeKeys = Object.keys(chrome.runtime).sort();
+    const addedPayloads = [];
+    const removedPayloads = [];
+    chrome.permissions.onAdded.addListener((payload) => {
+      addedPayloads.push(payload);
+    });
+    chrome.permissions.onRemoved.addListener((payload) => {
+      removedPayloads.push(payload);
+    });
+
+    let containsCallbackResult = null;
+    let containsCallbackLastErrorInside = "unset";
+    await new Promise((resolve) => {
+      chrome.permissions.contains({permissions: ["tabs"]}, function(result) {
+        containsCallbackResult = result;
+        containsCallbackLastErrorInside = chrome.runtime.lastError || null;
+        resolve();
+      });
+    });
+    const containsCallbackLastErrorOutside = chrome.runtime.lastError || null;
+    const containsPromiseResult =
+      await chrome.permissions.contains({permissions: ["tabs"]});
+    const containsMissingBefore =
+      await chrome.permissions.contains({permissions: ["bookmarks"]});
+
+    let getAllCallbackResult = null;
+    let getAllCallbackLastErrorInside = "unset";
+    await new Promise((resolve) => {
+      chrome.permissions.getAll(function(result) {
+        getAllCallbackResult = result;
+        getAllCallbackLastErrorInside = chrome.runtime.lastError || null;
+        resolve();
+      });
+    });
+    const getAllCallbackLastErrorOutside = chrome.runtime.lastError || null;
+    const getAllInitial = await chrome.permissions.getAll();
+
+    const acceptedPermission = await chrome.permissions.request({
+      permissions: ["history"],
+      __sumiUserGestureModeled: true,
+      __sumiModeledPromptResult: "accepted"
+    });
+    const acceptedOrigin = await chrome.permissions.request({
+      origins: ["https://example.com/"],
+      __sumiUserGestureModeled: true,
+      __sumiModeledPromptResult: "accepted"
+    });
+    const containsOriginAfterGrant =
+      await chrome.permissions.contains({origins: ["https://example.com/"]});
+    const getAllAfterGrant = await chrome.permissions.getAll();
+
+    const deniedModeled = await chrome.permissions.request({
+      permissions: ["bookmarks"],
+      __sumiUserGestureModeled: true,
+      __sumiModeledPromptResult: "denied"
+    });
+    const containsBookmarksAfterDenied =
+      await chrome.permissions.contains({permissions: ["bookmarks"]});
+
+    let promptRejectedMessage = null;
+    try {
+      await chrome.permissions.request({
+        permissions: ["topSites"],
+        __sumiUserGestureModeled: true
+      });
+    } catch (error) {
+      promptRejectedMessage = error && error.message;
+    }
+
+    let undeclaredRejectedMessage = null;
+    try {
+      await chrome.permissions.request({
+        permissions: ["downloads"],
+        __sumiUserGestureModeled: true,
+        __sumiModeledPromptResult: "accepted"
+      });
+    } catch (error) {
+      undeclaredRejectedMessage = error && error.message;
+    }
+
+    const removedPermission =
+      await chrome.permissions.remove({permissions: ["history"]});
+    const containsHistoryAfterRemove =
+      await chrome.permissions.contains({permissions: ["history"]});
+    const removedOrigin =
+      await chrome.permissions.remove({origins: ["https://example.com/"]});
+    const containsOriginAfterRemove =
+      await chrome.permissions.contains({origins: ["https://example.com/"]});
+
+    let removeRequiredInside = null;
+    let removeRequiredArgCount = -1;
+    await new Promise((resolve) => {
+      chrome.permissions.remove({permissions: ["tabs"]}, function() {
+        removeRequiredArgCount = arguments.length;
+        removeRequiredInside =
+          chrome.runtime.lastError && chrome.runtime.lastError.message;
+        resolve();
+      });
+    });
+    const removeRequiredOutside = chrome.runtime.lastError || null;
+    const getAllAfterRemove = await chrome.permissions.getAll();
+
+    const initialRequiredPermissionsOK =
+      Array.isArray(getAllInitial.permissions)
+      && getAllInitial.permissions.join("|") === "activeTab|scripting|tabs";
+    const callbackRequiredPermissionsOK =
+      getAllCallbackResult
+      && Array.isArray(getAllCallbackResult.permissions)
+      && getAllCallbackResult.permissions.join("|") === "activeTab|scripting|tabs";
+    const grantedPermissionVisible =
+      getAllAfterGrant.permissions.includes("history");
+    const grantedOriginVisible =
+      getAllAfterGrant.origins.includes("https://example.com/");
+    const historyRemoved =
+      !getAllAfterRemove.permissions.includes("history");
+    const originRemoved =
+      !getAllAfterRemove.origins.includes("https://example.com/");
+    const addedHistoryPayload = addedPayloads.some((payload) => {
+      return Array.isArray(payload.permissions)
+        && payload.permissions.includes("history");
+    });
+    const addedOriginPayload = addedPayloads.some((payload) => {
+      return Array.isArray(payload.origins)
+        && payload.origins.includes("https://example.com/");
+    });
+    const removedHistoryPayload = removedPayloads.some((payload) => {
+      return Array.isArray(payload.permissions)
+        && payload.permissions.includes("history");
+    });
+    const removedOriginPayload = removedPayloads.some((payload) => {
+      return Array.isArray(payload.origins)
+        && payload.origins.includes("https://example.com/");
+    });
+
+    return {
+      exposedNamespaces,
+      permissionsKeys,
+      runtimeKeys,
+      tabsMissing: chrome.tabs === undefined,
+      scriptingMissing: chrome.scripting === undefined,
+      storageMissing: chrome.storage === undefined,
+      nativeMessagingMissing: chrome.nativeMessaging === undefined,
+      containsCallbackResult,
+      containsPromiseResult,
+      getAllInitial,
+      getAllAfterGrant,
+      getAllAfterRemove,
+      promptRejectedMessage,
+      undeclaredRejectedMessage,
+      removeRequiredInside,
+      removeRequiredOutside,
+      removeRequiredArgCount,
+      addedPayloads,
+      removedPayloads,
+      containsCallbackOK:
+        containsCallbackResult === true
+        && containsCallbackLastErrorInside === null
+        && containsCallbackLastErrorOutside === null,
+      containsPromiseOK: containsPromiseResult === true,
+      containsMissingOptionalFalseOK:
+        containsMissingBefore === false
+        && containsBookmarksAfterDenied === false,
+      containsOriginAfterGrantOK:
+        containsOriginAfterGrant === true && grantedOriginVisible,
+      containsRevokedOptionalFalseOK:
+        containsHistoryAfterRemove === false
+        && containsOriginAfterRemove === false,
+      getAllCallbackOK:
+        callbackRequiredPermissionsOK
+        && getAllCallbackLastErrorInside === null
+        && getAllCallbackLastErrorOutside === null,
+      getAllPromiseOK: initialRequiredPermissionsOK,
+      requestAcceptedPermissionOK:
+        acceptedPermission === true && grantedPermissionVisible,
+      requestAcceptedOriginOK:
+        acceptedOrigin === true && containsOriginAfterGrant === true,
+      requestDeniedModeledOK:
+        deniedModeled === false && containsBookmarksAfterDenied === false,
+      requestWithoutPromptRejectedOK:
+        typeof promptRejectedMessage === "string"
+        && promptRejectedMessage.includes("product permission UI"),
+      requestUndeclaredRejectedOK:
+        typeof undeclaredRejectedMessage === "string"
+        && undeclaredRejectedMessage.includes("not declared optional"),
+      removeOptionalPermissionOK:
+        removedPermission === true
+        && containsHistoryAfterRemove === false
+        && historyRemoved,
+      removeOptionalOriginOK:
+        removedOrigin === true
+        && containsOriginAfterRemove === false
+        && originRemoved,
+      removeRequiredCallbackLastErrorOK:
+        removeRequiredInside === "Required manifest permissions cannot be removed."
+        && removeRequiredArgCount === 0
+        && removeRequiredOutside === null,
+      callbackModeOK:
+        containsCallbackResult === true
+        && removeRequiredArgCount === 0,
+      promiseModeOK:
+        containsPromiseResult === true
+        && acceptedPermission === true,
+      lastErrorScopedOK:
+        removeRequiredInside === "Required manifest permissions cannot be removed."
+        && removeRequiredOutside === null,
+      onAddedPayloadOK:
+        addedHistoryPayload && addedOriginPayload,
+      onRemovedPayloadOK:
+        removedHistoryPayload && removedOriginPayload
+    };
+    """
+
+    @MainActor
+    static func run(
+        scriptBody: String,
+        configuration: ChromeMV3PermissionsJSBridgeConfiguration =
+            .syntheticHarness(),
+        permissionRuntimeOwner:
+            ChromeMV3PermissionRuntimeStateOwner? = nil,
+        html: String =
+            "<!doctype html><meta charset='utf-8'><title>Permissions JS MVP</title>"
+    ) async -> ChromeMV3PermissionsJSSyntheticHarnessResult {
+        let bridgeHandler = ChromeMV3PermissionsJSBridgeHandler(
+            configuration: configuration,
+            permissionRuntimeOwner: permissionRuntimeOwner
+        )
+        let webViewConfiguration = WKWebViewConfiguration()
+        webViewConfiguration.sumiIsNormalTabWebViewConfiguration = false
+        let scriptHandler = ChromeMV3PermissionsJSScriptMessageHandler(
+            handler: bridgeHandler
+        )
+        webViewConfiguration.userContentController.addScriptMessageHandler(
+            scriptHandler,
+            contentWorld: .page,
+            name:
+                ChromeMV3PermissionsJSShimSource
+                .bridgeMessageHandlerName
+        )
+        let shimSource = ChromeMV3PermissionsJSShimSource.source(
+            configuration: configuration
+        )
+        let userScript = WKUserScript(
+            source: shimSource,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        )
+        webViewConfiguration.userContentController.addUserScript(userScript)
+
+        let webView = WKWebView(
+            frame: .zero,
+            configuration: webViewConfiguration
+        )
+        let observer = ChromeMV3TabsScriptingJSSyntheticNavigationObserver()
+        webView.navigationDelegate = observer
+        _ = webView.loadHTMLString(html, baseURL: nil)
+        let navigationResult = await observer.wait()
+        var diagnostics: [String] = [
+            "Synthetic WKWebView is hidden and is not registered as a product tab.",
+            "permissions shim is installed as a WKUserScript only on this controlled synthetic harness configuration.",
+            "permissions bridge handler is installed only on the synthetic harness WKUserContentController.",
+            "Product permission UI and product normal-tab runtime bridge remain unavailable.",
+        ]
+        if case .failure(let error) = navigationResult {
+            diagnostics.append(error.localizedDescription)
+        }
+
+        var scriptSucceeded = false
+        var resultJSON: String?
+        if case .success = navigationResult {
+            do {
+                let result = try await webView.callAsyncJavaScript(
+                    scriptBody,
+                    arguments: [:],
+                    in: nil,
+                    contentWorld: .page
+                )
+                resultJSON = ChromeMV3StorageValue(
+                    tabsScriptingWebKitValue: result ?? NSNull()
+                )
+                .flatMap { try? $0.canonicalJSONString() }
+                scriptSucceeded = true
+            } catch {
+                diagnostics.append(error.localizedDescription)
+            }
+        }
+
+        let runtimeSnapshot = bridgeHandler.permissionRuntimeSnapshot
+        let webKitSummary =
+            ChromeMV3PermissionsWebKitExecutionSummary
+            .fromWebKitScriptResult(
+                json: resultJSON,
+                scriptEvaluationSucceeded: scriptSucceeded,
+                permissionRuntimeStateAvailable: true,
+                permissionsModelHandlersAvailable:
+                    bridgeHandler.permissionsRequestCount > 0,
+                permissionsJSBridgeAvailableInSyntheticHarness:
+                    configuration
+                    .permissionsJSBridgeAvailableInSyntheticHarness,
+                diagnostics: diagnostics
+            )
+        let report = ChromeMV3PermissionImplementationReportGenerator
+            .makeReport(
+                extensionID: configuration.extensionID,
+                profileID: configuration.profileID,
+                webKitSyntheticPermissionVerificationStatus:
+                    webKitSummary.status,
+                permissionsWebKitExecutionSummary: webKitSummary
+            )
+        let handledRequestCount = bridgeHandler.handledRequestCount
+        let permissionsRequestCount = bridgeHandler.permissionsRequestCount
+        let rejectedRequestCount = bridgeHandler.rejectedRequestCount
+        let userScriptCount =
+            webViewConfiguration.userContentController.userScripts.count
+
+        webView.navigationDelegate = nil
+        webViewConfiguration.userContentController
+            .removeScriptMessageHandler(
+                forName:
+                    ChromeMV3PermissionsJSShimSource
+                    .bridgeMessageHandlerName,
+                contentWorld: .page
+            )
+        webViewConfiguration.userContentController.removeAllUserScripts()
+        bridgeHandler.tearDown()
+        let teardownSnapshot = bridgeHandler.permissionRuntimeSnapshot
+
+        return ChromeMV3PermissionsJSSyntheticHarnessResult(
+            scriptEvaluationSucceeded: scriptSucceeded,
+            scriptResultJSON: resultJSON,
+            report: report,
+            webKitExecutionSummary: webKitSummary,
+            permissionRuntimeSnapshot: runtimeSnapshot,
+            permissionRuntimeSnapshotAfterTeardown: teardownSnapshot,
+            handledRequestCount: handledRequestCount,
+            permissionsRequestCount: permissionsRequestCount,
+            rejectedRequestCount: rejectedRequestCount,
+            userScriptCount: userScriptCount,
+            scriptMessageHandlerCount: 1,
+            syntheticWebViewCreated: true,
+            permissionsJSBridgeAvailableInSyntheticHarness:
+                configuration.permissionsJSBridgeAvailableInSyntheticHarness,
+            permissionsJSBridgeAvailableInProduct: false,
+            permissionUIAvailableInProduct: false,
+            activeTabAvailableInProduct: false,
+            normalTabRuntimeBridgeAvailable: false,
+            serviceWorkerWakeAvailable: false,
+            nativeMessagingAvailable: false,
+            runtimeLoadable: false,
+            diagnostics:
+                uniqueSortedTabsScripting(
+                    diagnostics
+                        + webKitSummary.diagnostics
+                        + runtimeSnapshot.diagnostics
+                )
+        )
+    }
+}
 #endif
 
 enum ChromeMV3TabsScriptingPermissionFixtures {
