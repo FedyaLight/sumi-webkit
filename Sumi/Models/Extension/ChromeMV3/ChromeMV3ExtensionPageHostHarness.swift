@@ -19,6 +19,7 @@ enum ChromeMV3ExtensionPageKind:
     case actionPopup
     case optionsPage
     case optionsUI
+    case sidePanel
     case extensionPageFixture
 
     static func < (
@@ -87,6 +88,7 @@ struct ChromeMV3ExtensionPageDeclarationModel:
     var actionDefaultPopupDeclared: Bool
     var optionsPageDeclared: Bool
     var optionsUIPageDeclared: Bool
+    var sidePanelDefaultPathDeclared: Bool
     var extensionPageFixtureDeclared: Bool
     var warnings: [String]
 }
@@ -186,6 +188,21 @@ enum ChromeMV3ExtensionPageDeclarationReader {
                 )
             )
         }
+        if
+            let sidePanel = manifestObject["side_panel"] as? [String: Any],
+            let defaultPath = stringValue(sidePanel["default_path"])
+        {
+            declarations.append(
+                declaration(
+                    kind: .sidePanel,
+                    field: "side_panel.default_path",
+                    path: defaultPath,
+                    rootURL: rootURL,
+                    manifestURL: manifestURL,
+                    fileManager: fileManager
+                )
+            )
+        }
         if let fixture = extensionPageFixturePath {
             declarations.append(
                 declaration(
@@ -235,6 +252,8 @@ enum ChromeMV3ExtensionPageDeclarationReader {
                 sorted.contains { $0.kind == .optionsPage },
             optionsUIPageDeclared:
                 sorted.contains { $0.kind == .optionsUI },
+            sidePanelDefaultPathDeclared:
+                sorted.contains { $0.kind == .sidePanel },
             extensionPageFixtureDeclared:
                 sorted.contains { $0.kind == .extensionPageFixture },
             warnings: uniqueSorted(warnings)
@@ -886,7 +905,7 @@ enum ChromeMV3ExtensionPageFixturePolicyBlocker:
     var reason: String {
         switch self {
         case .noExtensionPageDeclaration:
-            return "No action/options extension page declaration was selected."
+            return "No extension page declaration was selected."
         case .unsafePagePath:
             return "The selected extension page path is unsafe."
         case .missingPageResource:
@@ -1021,7 +1040,7 @@ enum ChromeMV3ExtensionPageFixturePolicy {
         }
 
         warnings.append(
-            "This policy validates only deterministic extension-owned page fixtures; it does not expose action popup or options UI in product."
+            "This policy validates only deterministic extension-owned page fixtures; it does not expose action popup, options UI, or side panel UI in product."
         )
 
         let uniqueBlockers = Array(Set(blockers)).sorted {

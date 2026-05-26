@@ -70,6 +70,7 @@ struct ChromeMV3Manifest: Codable, Equatable {
     var externallyConnectable: ChromeMV3ExternallyConnectable?
     var declarativeNetRequest: ChromeMV3DeclarativeNetRequest?
     var sidePanel: ChromeMV3SidePanel?
+    var oauth2: ChromeMV3OAuth2?
     var commands: [String: ChromeMV3Command]
     var minimumChromeVersion: String?
     var browserSpecificSettings: [String: JSONValue]
@@ -144,6 +145,11 @@ struct ChromeMV3DeclarativeNetRequestRuleResource: Codable, Equatable {
 
 struct ChromeMV3SidePanel: Codable, Equatable {
     var defaultPath: String?
+}
+
+struct ChromeMV3OAuth2: Codable, Equatable {
+    var clientID: String?
+    var scopes: [String]
 }
 
 struct ChromeMV3Command: Codable, Equatable {

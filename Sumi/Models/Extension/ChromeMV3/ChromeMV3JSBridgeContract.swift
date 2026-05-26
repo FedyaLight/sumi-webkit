@@ -92,9 +92,12 @@ enum ChromeMV3JSBridgeNamespace:
     Sendable
 {
     case declarativeNetRequest
+    case identity
     case nativeMessaging
+    case offscreen
     case permissions
     case runtime
+    case sidePanel
     case storage
     case tabs
     case webRequest
@@ -225,10 +228,14 @@ enum ChromeMV3JSBridgeErrorCode:
     case methodUnsupported
     case namespaceUnsupported
     case nativeMessagingBlocked
+    case offscreenProductRuntimeBlocked
     case permissionDenied
+    case productBlocked
+    case productUIUnavailable
     case runtimeDispatchUnavailable
     case serviceWorkerWakeUnavailable
     case storageAreaUnavailable
+    case syntheticFixtureUnavailable
     case unsupportedAPI
 
     static func < (
@@ -256,14 +263,22 @@ enum ChromeMV3JSBridgeErrorCode:
             return "Chrome MV3 JavaScript bridge namespace is unsupported."
         case .nativeMessagingBlocked:
             return "Chrome MV3 native messaging is blocked by host preflight."
+        case .offscreenProductRuntimeBlocked:
+            return "Chrome MV3 offscreen product runtime is unavailable."
         case .permissionDenied:
             return "Chrome MV3 bridge request is blocked by modeled permission state."
+        case .productBlocked:
+            return "Chrome MV3 API is blocked by product compatibility policy."
+        case .productUIUnavailable:
+            return "Chrome MV3 product UI is unavailable for this API."
         case .runtimeDispatchUnavailable:
             return "Chrome MV3 runtime dispatch is unavailable outside model routing."
         case .serviceWorkerWakeUnavailable:
             return "Chrome MV3 service-worker wake is unavailable."
         case .storageAreaUnavailable:
             return "Chrome MV3 storage area is unavailable for this modeled request."
+        case .syntheticFixtureUnavailable:
+            return "Chrome MV3 synthetic fixture response is unavailable."
         case .unsupportedAPI:
             return "Chrome MV3 API is unsupported by the bridge contract."
         }
@@ -434,6 +449,8 @@ struct ChromeMV3JSBridgeRouteResult:
         ChromeMV3PermissionsAPIRemoveResult?
     var nativeMessagingPreflight:
         ChromeMV3NativeMessagingOperationPreflight?
+    var sidePanelOffscreenIdentityResponse:
+        ChromeMV3SidePanelOffscreenIdentityBridgeResponse?
     var routedToHostModel: Bool
     var openedRuntimePortNow: Bool
     var openedNativePortNow: Bool
@@ -478,6 +495,8 @@ struct ChromeMV3JSBridgeContractEnvironment: Sendable {
     var nativeProductPolicy: ChromeMV3NativeMessagingProductPolicy
     var nativeMessagingPermissionState:
         ChromeMV3NativeMessagingPermissionState
+    var sidePanelOffscreenIdentityRuntime:
+        ChromeMV3SidePanelOffscreenIdentityRuntimeStateOwner
 
     var permissionBroker: ChromeMV3PermissionBroker {
         permissionStore.permissionBroker(activeTabStore: activeTabStore)
@@ -570,7 +589,17 @@ struct ChromeMV3JSBridgeContractEnvironment: Sendable {
             nativeMessagingPermissionState:
                 nativeMessagingPermissionDetected
                     ? .grantedByManifest
-                    : .missing
+                    : .missing,
+            sidePanelOffscreenIdentityRuntime:
+                ChromeMV3SidePanelOffscreenIdentityRuntimeStateOwner(
+                    configuration:
+                        ChromeMV3SidePanelOffscreenIdentityConfiguration
+                        .syntheticHarness(
+                            extensionID: normalizedExtensionID,
+                            profileID: normalizedProfileID,
+                            moduleState: moduleState
+                        )
+                )
         )
     }
 }
@@ -606,6 +635,17 @@ enum ChromeMV3JSBridgeArgumentNormalizer {
                 permissionState:
                     environment.nativeMessagingPermissionState,
                 productPolicy: environment.nativeProductPolicy
+            )
+        case .sidePanel, .offscreen, .identity:
+            return normalized(
+                target: apiTarget(request: request),
+                payload: [
+                    "namespace": .string(request.namespace.rawValue),
+                    "methodName": .string(request.methodName),
+                ],
+                diagnostics: [
+                    "\(request.namespace.rawValue).\(request.methodName) is normalized for the sidePanel/offscreen/identity compatibility model.",
+                ]
             )
         case .declarativeNetRequest, .webRequest:
             return invalid(
@@ -1732,6 +1772,12 @@ enum ChromeMV3JSBridgeContractRouter {
                 normalization: normalization,
                 environment: environment
             )
+        case .sidePanel, .offscreen, .identity:
+            return routeSidePanelOffscreenIdentity(
+                request,
+                normalization: normalization,
+                environment: &environment
+            )
         case .declarativeNetRequest, .webRequest:
             return failure(
                 request: request,
@@ -2034,6 +2080,46 @@ enum ChromeMV3JSBridgeContractRouter {
         )
     }
 
+    private static func routeSidePanelOffscreenIdentity(
+        _ request: ChromeMV3JSBridgeRequestEnvelope,
+        normalization: ChromeMV3JSBridgeArgumentNormalization,
+        environment: inout ChromeMV3JSBridgeContractEnvironment
+    ) -> ChromeMV3JSBridgeResponseEnvelope {
+        let compatibilityRequest =
+            ChromeMV3SidePanelOffscreenIdentityBridgeRequest(
+                envelope: request
+            )
+        let compatibilityResponse =
+            environment.sidePanelOffscreenIdentityRuntime.handle(
+                compatibilityRequest
+            )
+        let result = routeResult(
+            normalization: normalization,
+            sidePanelOffscreenIdentityResponse:
+                compatibilityResponse,
+            diagnostics: compatibilityResponse.diagnostics
+        )
+        if compatibilityResponse.succeeded {
+            return success(
+                request: request,
+                routeResult: result,
+                payload: compatibilityResponse.resultPayload,
+                diagnostics: compatibilityResponse.diagnostics
+            )
+        }
+
+        return failure(
+            request: request,
+            routeResult: result,
+            code:
+                ChromeMV3JSBridgeErrorCode(
+                    rawValue: compatibilityResponse.lastErrorCode ?? ""
+                ) ?? .productBlocked,
+            payload: compatibilityResponse.resultPayload,
+            diagnostics: compatibilityResponse.diagnostics
+        )
+    }
+
     private static func success(
         request: ChromeMV3JSBridgeRequestEnvelope,
         routeResult: ChromeMV3JSBridgeRouteResult,
@@ -2126,6 +2212,8 @@ enum ChromeMV3JSBridgeContractRouter {
             ChromeMV3PermissionsAPIRemoveResult? = nil,
         nativeMessagingPreflight:
             ChromeMV3NativeMessagingOperationPreflight? = nil,
+        sidePanelOffscreenIdentityResponse:
+            ChromeMV3SidePanelOffscreenIdentityBridgeResponse? = nil,
         diagnostics: [String] = []
     ) -> ChromeMV3JSBridgeRouteResult {
         ChromeMV3JSBridgeRouteResult(
@@ -2137,6 +2225,8 @@ enum ChromeMV3JSBridgeContractRouter {
             permissionsRequestResult: permissionsRequestResult,
             permissionsRemoveResult: permissionsRemoveResult,
             nativeMessagingPreflight: nativeMessagingPreflight,
+            sidePanelOffscreenIdentityResponse:
+                sidePanelOffscreenIdentityResponse,
             routedToHostModel:
                 runtimeDispatcherResult != nil
                     || storageOperationResult != nil
@@ -2144,7 +2234,8 @@ enum ChromeMV3JSBridgeContractRouter {
                     || permissionsGetAllResult != nil
                     || permissionsRequestResult != nil
                     || permissionsRemoveResult != nil
-                    || nativeMessagingPreflight != nil,
+                    || nativeMessagingPreflight != nil
+                    || sidePanelOffscreenIdentityResponse != nil,
             openedRuntimePortNow: false,
             openedNativePortNow: false,
             dispatchedStorageOnChangedNow: false,
@@ -2502,6 +2593,180 @@ enum ChromeMV3JSBridgeMethodCapabilityMatrix {
                     blockers: [
                         "webRequest listeners are internal synthetic-only.",
                         "Product webRequest blocking is unavailable.",
+                    ]
+                ),
+                method(
+                    namespace: .sidePanel,
+                    methodName: "setOptions",
+                    modeledNow: true,
+                    routed: true,
+                    requiresContext: false,
+                    requiresServiceWorkerWake: false,
+                    requiresPermission: true,
+                    requiresStorageBroker: false,
+                    requiresNativeHost: false,
+                    blockers: [
+                        "sidePanel.setOptions mutates internal synthetic state only.",
+                        "Product side panel UI is unavailable.",
+                    ]
+                ),
+                method(
+                    namespace: .sidePanel,
+                    methodName: "getOptions",
+                    modeledNow: true,
+                    routed: true,
+                    requiresContext: false,
+                    requiresServiceWorkerWake: false,
+                    requiresPermission: true,
+                    requiresStorageBroker: false,
+                    requiresNativeHost: false,
+                    blockers: [
+                        "sidePanel.getOptions reads internal synthetic state only.",
+                    ]
+                ),
+                method(
+                    namespace: .sidePanel,
+                    methodName: "setPanelBehavior",
+                    modeledNow: true,
+                    routed: true,
+                    requiresContext: false,
+                    requiresServiceWorkerWake: false,
+                    requiresPermission: true,
+                    requiresStorageBroker: false,
+                    requiresNativeHost: false,
+                    blockers: [
+                        "sidePanel.setPanelBehavior mutates internal synthetic state only.",
+                        "Product action-click side panel behavior is unavailable.",
+                    ]
+                ),
+                method(
+                    namespace: .sidePanel,
+                    methodName: "open",
+                    modeledNow: true,
+                    routed: true,
+                    requiresContext: false,
+                    requiresServiceWorkerWake: false,
+                    requiresPermission: true,
+                    requiresStorageBroker: false,
+                    requiresNativeHost: false,
+                    blockers: [
+                        "sidePanel.open requires product side panel UI in Chrome.",
+                        "Sumi returns a product UI unavailable diagnostic unless an explicit internal host fixture is configured.",
+                    ]
+                ),
+                method(
+                    namespace: .offscreen,
+                    methodName: "createDocument",
+                    modeledNow: true,
+                    routed: true,
+                    requiresContext: false,
+                    requiresServiceWorkerWake: false,
+                    requiresPermission: true,
+                    requiresStorageBroker: false,
+                    requiresNativeHost: false,
+                    blockers: [
+                        "offscreen.createDocument validates and records model-only document state.",
+                        "Product hidden offscreen WebView runtime is unavailable.",
+                    ]
+                ),
+                method(
+                    namespace: .offscreen,
+                    methodName: "closeDocument",
+                    modeledNow: true,
+                    routed: true,
+                    requiresContext: false,
+                    requiresServiceWorkerWake: false,
+                    requiresPermission: true,
+                    requiresStorageBroker: false,
+                    requiresNativeHost: false,
+                    blockers: [
+                        "offscreen.closeDocument clears model-only state.",
+                    ]
+                ),
+                method(
+                    namespace: .offscreen,
+                    methodName: "hasDocument",
+                    modeledNow: true,
+                    routed: true,
+                    requiresContext: false,
+                    requiresServiceWorkerWake: false,
+                    requiresPermission: true,
+                    requiresStorageBroker: false,
+                    requiresNativeHost: false,
+                    blockers: [
+                        "offscreen.hasDocument reads model-only state.",
+                    ]
+                ),
+                method(
+                    namespace: .identity,
+                    methodName: "getRedirectURL",
+                    modeledNow: true,
+                    routed: true,
+                    requiresContext: false,
+                    requiresServiceWorkerWake: false,
+                    requiresPermission: true,
+                    requiresStorageBroker: false,
+                    requiresNativeHost: false,
+                    blockers: [
+                        "identity.getRedirectURL returns a deterministic synthetic chromiumapp.org URL.",
+                    ]
+                ),
+                method(
+                    namespace: .identity,
+                    methodName: "launchWebAuthFlow",
+                    modeledNow: true,
+                    routed: true,
+                    requiresContext: false,
+                    requiresServiceWorkerWake: false,
+                    requiresPermission: true,
+                    requiresStorageBroker: false,
+                    requiresNativeHost: false,
+                    blockers: [
+                        "identity.launchWebAuthFlow is blocked unless an explicit synthetic auth fixture response is configured.",
+                        "External auth network and product OAuth UI are unavailable.",
+                    ]
+                ),
+                method(
+                    namespace: .identity,
+                    methodName: "getAuthToken",
+                    modeledNow: true,
+                    routed: true,
+                    requiresContext: false,
+                    requiresServiceWorkerWake: false,
+                    requiresPermission: true,
+                    requiresStorageBroker: false,
+                    requiresNativeHost: false,
+                    blockers: [
+                        "identity.getAuthToken is blocked unless an explicit synthetic token fixture is configured.",
+                        "No real token cache or account provider is used.",
+                    ]
+                ),
+                method(
+                    namespace: .identity,
+                    methodName: "removeCachedAuthToken",
+                    modeledNow: true,
+                    routed: true,
+                    requiresContext: false,
+                    requiresServiceWorkerWake: false,
+                    requiresPermission: true,
+                    requiresStorageBroker: false,
+                    requiresNativeHost: false,
+                    blockers: [
+                        "identity.removeCachedAuthToken clears only synthetic in-memory fixture state.",
+                    ]
+                ),
+                method(
+                    namespace: .identity,
+                    methodName: "clearAllCachedAuthTokens",
+                    modeledNow: true,
+                    routed: true,
+                    requiresContext: false,
+                    requiresServiceWorkerWake: false,
+                    requiresPermission: true,
+                    requiresStorageBroker: false,
+                    requiresNativeHost: false,
+                    blockers: [
+                        "identity.clearAllCachedAuthTokens clears only synthetic in-memory fixture state.",
                     ]
                 ),
                 method(

@@ -128,6 +128,8 @@ struct ChromeMV3ProfileHostDiagnostics: Codable, Equatable, Sendable {
         ChromeMV3ExtensionEventAPIsReportSummary? = nil
     var networkCompatibilityReportSummary:
         ChromeMV3NetworkCompatibilityReportSummary? = nil
+    var sidePanelOffscreenIdentityReportSummary:
+        ChromeMV3SidePanelOffscreenIdentityReportSummary? = nil
     var permissionBrokerReadinessReportSummary:
         ChromeMV3PermissionBrokerReadinessReportSummary? = nil
     var permissionLifecycleReportSummary:
@@ -328,6 +330,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
             ChromeMV3ExtensionEventAPIsReportSummary? = nil,
         networkCompatibilityReportSummary:
             ChromeMV3NetworkCompatibilityReportSummary? = nil,
+        sidePanelOffscreenIdentityReportSummary:
+            ChromeMV3SidePanelOffscreenIdentityReportSummary? = nil,
         permissionBrokerReadinessReportSummary:
             ChromeMV3PermissionBrokerReadinessReportSummary? = nil,
         permissionLifecycleReportSummary:
@@ -433,6 +437,8 @@ struct ChromeMV3ProfileHost: Codable, Equatable, Sendable {
                 extensionEventAPIsReportSummary,
             networkCompatibilityReportSummary:
                 networkCompatibilityReportSummary,
+            sidePanelOffscreenIdentityReportSummary:
+                sidePanelOffscreenIdentityReportSummary,
             permissionBrokerReadinessReportSummary:
                 permissionBrokerReadinessReportSummary,
             permissionLifecycleReportSummary:

@@ -46,6 +46,25 @@ struct ChromeMV3InstallNetworkCompatibilitySummary: Codable, Equatable {
     var runtimeLoadable: Bool
 }
 
+struct ChromeMV3InstallSidePanelOffscreenIdentitySummary: Codable, Equatable {
+    var declaresSidePanelManifestKey: Bool
+    var declaresSidePanelPermission: Bool
+    var sidePanelDefaultPath: String?
+    var declaresOffscreenPermission: Bool
+    var declaresIdentityPermission: Bool
+    var declaresIdentityEmailPermission: Bool
+    var oauth2Scopes: [String]
+    var sidePanelAvailableInInternalFixture: Bool
+    var sidePanelAvailableInProduct: Bool
+    var offscreenAvailableInInternalFixture: Bool
+    var offscreenAvailableInProduct: Bool
+    var identityAvailableInInternalFixture: Bool
+    var identityAvailableInProduct: Bool
+    var identityExternalAuthNetworkAllowed: Bool
+    var normalTabRuntimeBridgeAvailable: Bool
+    var runtimeLoadable: Bool
+}
+
 struct ChromeMV3ManifestSummary: Codable, Equatable {
     var manifestVersion: Int
     var name: String
@@ -84,6 +103,8 @@ struct ChromeMV3InstallReport: Codable, Equatable {
     var passwordManagerFeatures: ChromeMV3PasswordManagerFeatureReport
     var networkCompatibilitySummary:
         ChromeMV3InstallNetworkCompatibilitySummary
+    var sidePanelOffscreenIdentitySummary:
+        ChromeMV3InstallSidePanelOffscreenIdentitySummary
 
     var isValid: Bool {
         fatalValidationErrors.isEmpty
@@ -132,7 +153,9 @@ enum ChromeMV3InstallReporter {
             fatalValidationErrors: [],
             passwordManagerFeatures: passwordManagerFeatures(for: manifest),
             networkCompatibilitySummary:
-                networkCompatibilitySummary(for: manifest)
+                networkCompatibilitySummary(for: manifest),
+            sidePanelOffscreenIdentitySummary:
+                sidePanelOffscreenIdentitySummary(for: manifest)
         )
     }
 
@@ -176,6 +199,25 @@ enum ChromeMV3InstallReporter {
                     dnrProductEnforcementAvailable: false,
                     webRequestAvailableInInternalFixture: false,
                     webRequestBlockingAvailableInProduct: false,
+                    normalTabRuntimeBridgeAvailable: false,
+                    runtimeLoadable: false
+                ),
+            sidePanelOffscreenIdentitySummary:
+                ChromeMV3InstallSidePanelOffscreenIdentitySummary(
+                    declaresSidePanelManifestKey: false,
+                    declaresSidePanelPermission: false,
+                    sidePanelDefaultPath: nil,
+                    declaresOffscreenPermission: false,
+                    declaresIdentityPermission: false,
+                    declaresIdentityEmailPermission: false,
+                    oauth2Scopes: [],
+                    sidePanelAvailableInInternalFixture: false,
+                    sidePanelAvailableInProduct: false,
+                    offscreenAvailableInInternalFixture: false,
+                    offscreenAvailableInProduct: false,
+                    identityAvailableInInternalFixture: false,
+                    identityAvailableInProduct: false,
+                    identityExternalAuthNetworkAllowed: false,
                     normalTabRuntimeBridgeAvailable: false,
                     runtimeLoadable: false
                 )
@@ -328,6 +370,44 @@ enum ChromeMV3InstallReporter {
             }
         }
 
+        if manifest.sidePanel != nil || manifest.declaresPermission("sidePanel") {
+            warnings.append(
+                ChromeMV3InstallIssue(
+                    severity: .warning,
+                    code: "sidePanelCompatibilitySyntheticOnly",
+                    message: "sidePanel is classified for internal compatibility diagnostics only; product side panel UI is unavailable.",
+                    field: manifest.sidePanel != nil
+                        ? "side_panel"
+                        : "permissions.sidePanel"
+                )
+            )
+        }
+
+        if manifest.declaresPermission("offscreen") {
+            warnings.append(
+                ChromeMV3InstallIssue(
+                    severity: .warning,
+                    code: "offscreenRuntimeProductBlocked",
+                    message: "offscreen documents are modeled for diagnostics only; product hidden offscreen WebView runtime is unavailable.",
+                    field: "permissions.offscreen"
+                )
+            )
+        }
+
+        if manifest.declaresPermission("identity")
+            || manifest.declaresPermission("identity.email")
+            || manifest.oauth2 != nil
+        {
+            warnings.append(
+                ChromeMV3InstallIssue(
+                    severity: .warning,
+                    code: "identityOAuthProductBlocked",
+                    message: "identity OAuth/token flows are blocked unless an explicit internal synthetic fixture is configured; external auth network is unavailable.",
+                    field: manifest.oauth2 != nil ? "oauth2" : "permissions.identity"
+                )
+            )
+        }
+
         return warnings
     }
 
@@ -378,6 +458,37 @@ enum ChromeMV3InstallReporter {
                 declaresWebRequest || declaresWebRequestBlocking
                     || declaresWebRequestAuth,
             webRequestBlockingAvailableInProduct: false,
+            normalTabRuntimeBridgeAvailable: false,
+            runtimeLoadable: false
+        )
+    }
+
+    private static func sidePanelOffscreenIdentitySummary(
+        for manifest: ChromeMV3Manifest
+    ) -> ChromeMV3InstallSidePanelOffscreenIdentitySummary {
+        let sidePanelDetected =
+            manifest.sidePanel != nil || manifest.declaresPermission("sidePanel")
+        let offscreenDetected = manifest.declaresPermission("offscreen")
+        let identityDetected =
+            manifest.declaresPermission("identity")
+                || manifest.declaresPermission("identity.email")
+                || manifest.oauth2 != nil
+        return ChromeMV3InstallSidePanelOffscreenIdentitySummary(
+            declaresSidePanelManifestKey: manifest.sidePanel != nil,
+            declaresSidePanelPermission: manifest.declaresPermission("sidePanel"),
+            sidePanelDefaultPath: manifest.sidePanel?.defaultPath,
+            declaresOffscreenPermission: offscreenDetected,
+            declaresIdentityPermission: manifest.declaresPermission("identity"),
+            declaresIdentityEmailPermission:
+                manifest.declaresPermission("identity.email"),
+            oauth2Scopes: manifest.oauth2?.scopes ?? [],
+            sidePanelAvailableInInternalFixture: sidePanelDetected,
+            sidePanelAvailableInProduct: false,
+            offscreenAvailableInInternalFixture: offscreenDetected,
+            offscreenAvailableInProduct: false,
+            identityAvailableInInternalFixture: identityDetected,
+            identityAvailableInProduct: false,
+            identityExternalAuthNetworkAllowed: false,
             normalTabRuntimeBridgeAvailable: false,
             runtimeLoadable: false
         )
