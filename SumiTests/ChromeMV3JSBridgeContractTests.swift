@@ -487,10 +487,10 @@ final class ChromeMV3JSBridgeContractTests: XCTestCase {
             connect.routeResult?.nativeMessagingPreflight?.operationKind,
             .longLivedNativePort
         )
-        XCTAssertFalse(
-            connect.routeResult?.nativeMessagingPreflight?
-                .processLaunchAllowedNow ?? true
-        )
+        let processLaunchAllowedNow = connect.routeResult?.nativeMessagingPreflight?
+            .processLaunchAllowedNow
+        XCTAssertNotNil(processLaunchAllowedNow)
+        XCTAssertEqual(processLaunchAllowedNow, false)
         XCTAssertFalse(send.succeeded)
         XCTAssertEqual(
             send.routeResult?.nativeMessagingPreflight?.operationKind,

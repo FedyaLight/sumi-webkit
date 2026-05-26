@@ -433,6 +433,12 @@ final class ChromeMV3ServiceWorkerLifecycleCoordinatorTests: XCTestCase {
                 "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift"
             )
             .path
+        let passwordManagerSyntheticHarnessPath =
+            root
+            .appendingPathComponent(
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift"
+            )
+            .path
         for pattern in literalPatterns {
             let offenders = texts
                 .filter { $0.1.contains(pattern) }
@@ -441,6 +447,7 @@ final class ChromeMV3ServiceWorkerLifecycleCoordinatorTests: XCTestCase {
                     pattern == "add" + "User" + "Script"
                         ? $0 != tabsScriptingHarnessPath
                             && $0 != storageLocalSyntheticHarnessPath
+                            && $0 != passwordManagerSyntheticHarnessPath
                         : true
                 }
             XCTAssertTrue(offenders.isEmpty, "\(pattern): \(offenders)")

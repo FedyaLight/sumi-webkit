@@ -481,6 +481,7 @@ final class ChromeMV3ExtensionPageHostHarnessTests: XCTestCase {
                 "SumiTests/ChromeMV3TabsScriptingJSMVPTests.swift",
                 "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift",
                 "SumiTests/ChromeMV3StorageLocalRuntimeTests.swift",
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift",
             ])
         let joined = sources
             .filter {
