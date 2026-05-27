@@ -31,7 +31,11 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         XCTAssertFalse(gate.managerAvailableInPublicProduct)
         XCTAssertFalse(gate.runtimeActionsAvailable)
         XCTAssertFalse(gate.webStoreInstallAvailable)
-        XCTAssertFalse(gate.localArchiveImportAvailable)
+        #if DEBUG
+            XCTAssertTrue(gate.localArchiveImportAvailable)
+        #else
+            XCTAssertFalse(gate.localArchiveImportAvailable)
+        #endif
         XCTAssertTrue(gate.diagnostics.contains {
             $0.code == .runtimeActionsUnavailable
         })
@@ -39,7 +43,7 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
             $0.code == .chromeWebStoreInstallDeferred
         })
         XCTAssertTrue(gate.diagnostics.contains {
-            $0.code == .zipImportDeferred
+            $0.code == .crxImportDeferred
         })
     }
 
@@ -183,10 +187,7 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
                 }
         })
         XCTAssertTrue(detail.actions.contains {
-            $0.action == .importZipArchive && !$0.available
-                && $0.unavailableDiagnostics.contains {
-                    $0.code == .zipImportDeferred
-                }
+            $0.action == .importZipArchive && $0.available
         })
     }
 
@@ -261,34 +262,25 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         let module = try makeModule(enabled: true)
 
         let zip = module.chromeMV3ImportLocalArchiveThroughManager(
+            rootURL: root,
             sourceURL: root.appendingPathComponent("local.zip")
         )
         let crx = module.chromeMV3ImportLocalArchiveThroughManager(
+            rootURL: root,
             sourceURL: root.appendingPathComponent("local.crx")
         )
         let webStore = module
-            .chromeMV3ChromeWebStoreInstallDiagnosticThroughManager()
+            .chromeMV3ChromeWebStoreInstallDiagnosticThroughManager(rootURL: root)
 
-        XCTAssertEqual(zip.status, .deferred)
+        XCTAssertEqual(zip.status, .failed)
         XCTAssertEqual(zip.action, .importZipArchive)
-        XCTAssertTrue(zip.blockedDiagnostics.contains {
-            $0.code == .zipImportDeferred
-        })
-        XCTAssertTrue(zip.blockedDiagnostics.contains {
-            $0.code == .archiveExtractionPolicyMissing
-        })
+        XCTAssertEqual(zip.packageIntakeReport?.sourceKind, .localZip)
+        XCTAssertEqual(zip.packageIntakeReport?.preflightResult.status, .failed)
 
-        XCTAssertEqual(crx.status, .deferred)
+        XCTAssertEqual(crx.status, .blocked)
         XCTAssertEqual(crx.action, .importCRXArchive)
-        XCTAssertTrue(crx.blockedDiagnostics.contains {
-            $0.code == .crxImportDeferred
-        })
-        XCTAssertTrue(crx.blockedDiagnostics.contains {
-            $0.code == .crxSignatureVerificationRequired
-        })
-        XCTAssertTrue(crx.blockedDiagnostics.contains {
-            $0.code == .packageTrustBoundaryUnresolved
-        })
+        XCTAssertEqual(crx.packageIntakeReport?.sourceKind, .localCrx)
+        XCTAssertTrue(crx.packageIntakeReport?.trustResult.importAllowed == false)
 
         XCTAssertEqual(webStore.status, .deferred)
         XCTAssertEqual(webStore.action, .chromeWebStoreInstall)
