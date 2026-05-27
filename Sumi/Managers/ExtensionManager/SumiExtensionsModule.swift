@@ -3278,6 +3278,324 @@ final class SumiExtensionsModule {
         }
     #endif
 
+    func chromeMV3ExtensionManagerGate() -> ChromeMV3ExtensionManagerGate {
+        ChromeMV3ExtensionManagerGate.evaluate(moduleEnabled: isEnabled)
+    }
+
+    func chromeMV3ExtensionManagerListViewModelIfEnabled(
+        rootURL: URL,
+        now: Date = Date()
+    ) -> ChromeMV3ExtensionManagerListViewModel? {
+        guard isEnabled else { return nil }
+        return ChromeMV3ExtensionManagerViewModelBuilder.makeListViewModel(
+            rootURL: rootURL,
+            gate: chromeMV3ExtensionManagerGate(),
+            now: now
+        )
+    }
+
+    func chromeMV3ExtensionManagerDetailViewModelIfEnabled(
+        rootURL: URL,
+        profileID: String,
+        extensionID: String
+    ) -> ChromeMV3ExtensionManagerDetailViewModel? {
+        guard isEnabled else { return nil }
+        return ChromeMV3ExtensionManagerViewModelBuilder.makeDetailViewModel(
+            rootURL: rootURL,
+            profileID: profileID,
+            extensionID: extensionID,
+            gate: chromeMV3ExtensionManagerGate()
+        )
+    }
+
+    func chromeMV3InstallUnpackedThroughManager(
+        rootURL: URL,
+        sourceURL: URL,
+        profileID: String? = nil,
+        enableInternal: Bool = false
+    ) -> ChromeMV3ExtensionManagerActionResult {
+        let gate = chromeMV3ExtensionManagerGate()
+        guard gate.managerAvailableInDeveloperPreview else {
+            return ChromeMV3ExtensionManagerActionResult.blocked(
+                action: .installUnpacked,
+                diagnostics: gate.diagnostics
+            )
+        }
+        let result = ChromeMV3ExtensionManagerActionRunner.installUnpacked(
+            rootURL: rootURL,
+            sourceURL: sourceURL,
+            profileID: resolvedChromeMV3ManagerProfileID(profileID),
+            enableInternal: enableInternal,
+            gate: gate,
+            runtimeDiagnostics:
+                chromeMV3ExtensionManagerRuntimeDiagnosticsSnapshot()
+        )
+        #if DEBUG
+            lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
+        #endif
+        return result
+    }
+
+    func chromeMV3ImportLocalArchiveThroughManager(
+        sourceURL: URL
+    ) -> ChromeMV3ExtensionManagerActionResult {
+        let gate = chromeMV3ExtensionManagerGate()
+        guard gate.managerAvailableInDeveloperPreview else {
+            let action: ChromeMV3ExtensionManagerActionKind =
+                sourceURL.pathExtension.lowercased() == "crx"
+                    ? .importCRXArchive : .importZipArchive
+            return ChromeMV3ExtensionManagerActionResult.blocked(
+                action: action,
+                diagnostics: gate.diagnostics
+            )
+        }
+        return ChromeMV3ExtensionManagerActionRunner.importLocalArchive(
+            sourceURL: sourceURL,
+            gate: gate
+        )
+    }
+
+    func chromeMV3UpdateUnpackedThroughManager(
+        rootURL: URL,
+        profileID: String,
+        extensionID: String,
+        sourceURL: URL
+    ) -> ChromeMV3ExtensionManagerActionResult {
+        let gate = chromeMV3ExtensionManagerGate()
+        guard gate.managerAvailableInDeveloperPreview else {
+            return ChromeMV3ExtensionManagerActionResult.blocked(
+                action: .updateFromUnpacked,
+                diagnostics: gate.diagnostics
+            )
+        }
+        let result = ChromeMV3ExtensionManagerActionRunner.updateFromUnpacked(
+            rootURL: rootURL,
+            profileID: profileID,
+            extensionID: extensionID,
+            sourceURL: sourceURL,
+            gate: gate,
+            runtimeDiagnostics:
+                chromeMV3ExtensionManagerRuntimeDiagnosticsSnapshot()
+        )
+        #if DEBUG
+            lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
+        #endif
+        return result
+    }
+
+    func chromeMV3SetInternalExtensionEnabledThroughManager(
+        _ enabled: Bool,
+        rootURL: URL,
+        profileID: String,
+        extensionID: String
+    ) -> ChromeMV3ExtensionManagerActionResult {
+        let gate = chromeMV3ExtensionManagerGate()
+        guard gate.managerAvailableInDeveloperPreview else {
+            return ChromeMV3ExtensionManagerActionResult.blocked(
+                action: enabled ? .enableInternal : .disableInternal,
+                diagnostics: gate.diagnostics
+            )
+        }
+        let result = ChromeMV3ExtensionManagerActionRunner.setInternalEnabled(
+            enabled,
+            rootURL: rootURL,
+            profileID: profileID,
+            extensionID: extensionID,
+            gate: gate
+        )
+        #if DEBUG
+            lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
+        #endif
+        return result
+    }
+
+    func chromeMV3RebuildThroughManager(
+        rootURL: URL,
+        profileID: String,
+        extensionID: String
+    ) -> ChromeMV3ExtensionManagerActionResult {
+        let gate = chromeMV3ExtensionManagerGate()
+        guard gate.managerAvailableInDeveloperPreview else {
+            return ChromeMV3ExtensionManagerActionResult.blocked(
+                action: .rebuild,
+                diagnostics: gate.diagnostics
+            )
+        }
+        let result = ChromeMV3ExtensionManagerActionRunner.rebuild(
+            rootURL: rootURL,
+            profileID: profileID,
+            extensionID: extensionID,
+            gate: gate,
+            runtimeDiagnostics:
+                chromeMV3ExtensionManagerRuntimeDiagnosticsSnapshot()
+        )
+        #if DEBUG
+            lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
+        #endif
+        return result
+    }
+
+    func chromeMV3RetryDiagnosticsThroughManager(
+        rootURL: URL,
+        profileID: String,
+        extensionID: String
+    ) -> ChromeMV3ExtensionManagerActionResult {
+        let gate = chromeMV3ExtensionManagerGate()
+        guard gate.managerAvailableInDeveloperPreview else {
+            return ChromeMV3ExtensionManagerActionResult.blocked(
+                action: .retryDiagnostics,
+                diagnostics: gate.diagnostics
+            )
+        }
+        let result = ChromeMV3ExtensionManagerActionRunner.rebuild(
+            rootURL: rootURL,
+            profileID: profileID,
+            extensionID: extensionID,
+            action: .retryDiagnostics,
+            gate: gate,
+            runtimeDiagnostics:
+                chromeMV3ExtensionManagerRuntimeDiagnosticsSnapshot()
+        )
+        #if DEBUG
+            lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
+        #endif
+        return result
+    }
+
+    func chromeMV3RunDiagnosticsThroughManager(
+        rootURL: URL,
+        profileID: String,
+        extensionID: String
+    ) -> ChromeMV3ExtensionManagerActionResult {
+        let gate = chromeMV3ExtensionManagerGate()
+        guard gate.managerAvailableInDeveloperPreview else {
+            return ChromeMV3ExtensionManagerActionResult.blocked(
+                action: .runDiagnostics,
+                diagnostics: gate.diagnostics
+            )
+        }
+        let result = ChromeMV3ExtensionManagerActionRunner.runDiagnostics(
+            rootURL: rootURL,
+            profileID: profileID,
+            extensionID: extensionID,
+            gate: gate,
+            runtimeDiagnostics:
+                chromeMV3ExtensionManagerRuntimeDiagnosticsSnapshot()
+        )
+        #if DEBUG
+            lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
+        #endif
+        return result
+    }
+
+    func chromeMV3RecoverThroughManager(
+        rootURL: URL,
+        profileID: String,
+        extensionID: String
+    ) -> ChromeMV3ExtensionManagerActionResult {
+        let gate = chromeMV3ExtensionManagerGate()
+        guard gate.managerAvailableInDeveloperPreview else {
+            return ChromeMV3ExtensionManagerActionResult.blocked(
+                action: .recover,
+                diagnostics: gate.diagnostics
+            )
+        }
+        tearDownChromeMV3ManagerRuntimeOwners()
+        let result = ChromeMV3ExtensionManagerActionRunner.recover(
+            rootURL: rootURL,
+            profileID: profileID,
+            extensionID: extensionID,
+            gate: gate
+        )
+        #if DEBUG
+            lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
+        #endif
+        return result
+    }
+
+    func chromeMV3UninstallThroughManager(
+        rootURL: URL,
+        profileID: String,
+        extensionID: String
+    ) -> ChromeMV3ExtensionManagerActionResult {
+        let gate = chromeMV3ExtensionManagerGate()
+        guard gate.managerAvailableInDeveloperPreview else {
+            return ChromeMV3ExtensionManagerActionResult.blocked(
+                action: .uninstall,
+                diagnostics: gate.diagnostics
+            )
+        }
+        tearDownChromeMV3ManagerRuntimeOwners()
+        let result = ChromeMV3ExtensionManagerActionRunner.uninstall(
+            rootURL: rootURL,
+            profileID: profileID,
+            extensionID: extensionID,
+            gate: gate
+        )
+        #if DEBUG
+            lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
+        #endif
+        return result
+    }
+
+    func chromeMV3ResetThroughManager(
+        rootURL: URL,
+        profileID: String,
+        extensionID: String
+    ) -> ChromeMV3ExtensionManagerActionResult {
+        let gate = chromeMV3ExtensionManagerGate()
+        guard gate.managerAvailableInDeveloperPreview else {
+            return ChromeMV3ExtensionManagerActionResult.blocked(
+                action: .reset,
+                diagnostics: gate.diagnostics
+            )
+        }
+        tearDownChromeMV3ManagerRuntimeOwners()
+        let result = ChromeMV3ExtensionManagerActionRunner.reset(
+            rootURL: rootURL,
+            profileID: profileID,
+            extensionID: extensionID,
+            gate: gate
+        )
+        #if DEBUG
+            lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
+        #endif
+        return result
+    }
+
+    func chromeMV3ExportDiagnosticsJSONThroughManager(
+        rootURL: URL,
+        profileID: String,
+        extensionID: String
+    ) -> ChromeMV3ExtensionManagerActionResult {
+        guard isEnabled else {
+            return ChromeMV3ExtensionManagerActionResult.blocked(
+                action: .exportDiagnosticsJSON,
+                diagnostics: [.moduleDisabled]
+            )
+        }
+        return ChromeMV3ExtensionManagerActionRunner
+            .exportDiagnosticsJSON(
+                rootURL: rootURL,
+                profileID: profileID,
+                extensionID: extensionID
+            )
+    }
+
+    func chromeMV3ChromeWebStoreInstallDiagnosticThroughManager()
+        -> ChromeMV3ExtensionManagerActionResult
+    {
+        let gate = chromeMV3ExtensionManagerGate()
+        guard gate.managerAvailableInDeveloperPreview else {
+            return ChromeMV3ExtensionManagerActionResult.blocked(
+                action: .chromeWebStoreInstall,
+                diagnostics: gate.diagnostics
+            )
+        }
+        return ChromeMV3ExtensionManagerActionRunner
+            .chromeWebStoreInstallDeferred()
+    }
+
     @discardableResult
     func tearDownChromeMV3EmptyControllerOwnerIfEnabled(
         trigger: ChromeMV3EmptyControllerTeardownTrigger
@@ -3483,6 +3801,38 @@ final class SumiExtensionsModule {
 
     func closeAllOptionsWindowsIfLoaded() {
         cachedManager?.closeAllOptionsWindows()
+    }
+
+    private func resolvedChromeMV3ManagerProfileID(
+        _ profileID: String?
+    ) -> String {
+        if let profileID, profileID.isEmpty == false {
+            return profileID
+        }
+        return browserManager?.currentProfile?.id.uuidString
+            ?? initialProfileProvider()?.id.uuidString
+            ?? "internal-debug-profile"
+    }
+
+    private func chromeMV3ExtensionManagerRuntimeDiagnosticsSnapshot()
+        -> ChromeMV3LifecycleRuntimeDiagnosticsSnapshot
+    {
+        #if DEBUG
+            return chromeMV3LifecycleRuntimeDiagnosticsSnapshot()
+        #else
+            return .none
+        #endif
+    }
+
+    private func tearDownChromeMV3ManagerRuntimeOwners() {
+        #if DEBUG
+            if #available(macOS 15.5, *) {
+                tearDownChromeMV3ControllerLoadOwner()
+                tearDownChromeMV3DetachedContextOwner()
+                tearDownChromeMV3ExtensionObjectProbeOwner()
+            }
+        #endif
+        tearDownChromeMV3EmptyControllerOwner()
     }
 
     private func managerIfNeededForNormalTabRuntime() -> ExtensionManager? {
