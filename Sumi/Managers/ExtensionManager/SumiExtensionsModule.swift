@@ -3171,6 +3171,30 @@ final class SumiExtensionsModule {
                 )
         }
 
+        func chromeMV3ProductEnablementPreflightIfEnabled(
+            rootURL: URL,
+            profileID: String,
+            extensionID: String,
+            gateSet: ChromeMV3ProductRuntimeGateSet? = nil
+        ) -> ChromeMV3ProductEnablementPreflightSection? {
+            guard isEnabled else { return nil }
+            let registry = ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
+            let record = registry.loadLifecycleRecord(
+                profileID: profileID,
+                extensionID: extensionID
+            )
+            let report = registry.latestEndToEndDiagnosticsReport(
+                profileID: profileID,
+                extensionID: extensionID
+            )
+            guard record != nil || report != nil else { return nil }
+            return ChromeMV3ProductEnablementPreflightSection.make(
+                report: report,
+                lifecycleRecord: record,
+                gateSet: gateSet
+            )
+        }
+
         func chromeMV3ExportCompatibilityReportJSONIfEnabled(
             rootURL: URL,
             profileID: String,
