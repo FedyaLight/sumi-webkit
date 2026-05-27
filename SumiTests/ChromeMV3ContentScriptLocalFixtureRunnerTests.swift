@@ -403,6 +403,7 @@ final class ChromeMV3ContentScriptLocalFixtureRunnerTests: XCTestCase {
             "SumiTests/ChromeMV3StorageLocalRuntimeTests.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionEventAPIsRuntime.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3SidePanelOffscreenIdentitySyntheticWebKitHarness.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift",
             "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift",
         ]

@@ -460,6 +460,303 @@ final class ChromeMV3SidePanelOffscreenIdentityCompatibilityTests:
     }
 
     @MainActor
+    func testWebKitExecutedSyntheticSidePanelOffscreenIdentityFixtureReport()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip(
+                "sidePanel/offscreen/identity synthetic WebKit harness requires macOS 15.5."
+            )
+        }
+        let root = try makeExtensionRoot(
+            named: "webkit-full-fixture",
+            manifest: [
+                "manifest_version": 3,
+                "name": "WebKit Full Fixture",
+                "version": "1.0",
+                "permissions": ["sidePanel", "offscreen", "identity"],
+                "side_panel": ["default_path": "default.html"],
+                "oauth2": [
+                    "client_id": "synthetic-client",
+                    "scopes": ["email"],
+                ],
+            ],
+            resources: [
+                "default.html": pageHTML(title: "Default"),
+                "tab.html": pageHTML(title: "Tab"),
+                "offscreen.html": pageHTML(title: "Offscreen"),
+            ]
+        )
+        let manifest = try validateManifest(root: root)
+        let fixture = ChromeMV3IdentitySyntheticFixture.testOnly(
+            authFlowRedirectURL:
+                "https://sidepanel-offscreen-identity-extension.chromiumapp.org/callback#ok",
+            authToken: "synthetic-token",
+            grantedScopes: ["email"]
+        )
+        let result =
+            await ChromeMV3SidePanelOffscreenIdentityJSSyntheticHarness.run(
+                scriptBody:
+                    ChromeMV3SidePanelOffscreenIdentityJSSyntheticHarness
+                    .fullFixtureVerificationScript,
+                configuration: .syntheticHarness(
+                    generatedBundleRootPath: root.path,
+                    defaultSidePanelPath: "default.html",
+                    syntheticIdentityFixture: fixture
+                ),
+                manifest: manifest,
+                generatedBundleRootURL: root
+        )
+        let script = try decodedScriptResult(result)
+
+        XCTAssertTrue(
+            result.scriptEvaluationSucceeded,
+            result.diagnostics.joined(separator: "\n")
+        )
+        XCTAssertTrue(bool(script["sidePanelOptionsOK"]))
+        XCTAssertTrue(bool(script["offscreenModelOK"]))
+        XCTAssertTrue(bool(script["redirectURLOK"]))
+        XCTAssertTrue(bool(script["syntheticIdentityFixtureResponseUsed"]))
+        XCTAssertTrue(bool(script["blockedDiagnosticsOK"]))
+        XCTAssertTrue(bool(script["lastErrorScopedOK"]))
+        XCTAssertTrue(
+            result.sidePanelBehaviorSummary.openPanelOnActionClick,
+            result.scriptResultJSON ?? result.diagnostics.joined(separator: "\n")
+        )
+        XCTAssertFalse(
+            result.offscreenLifecycleSummary
+                .productHiddenWebViewRuntimeCreated
+        )
+        XCTAssertFalse(
+            result.offscreenLifecycleSummaryAfterTeardown.hasDocumentResult
+        )
+        XCTAssertEqual(result.userScriptCountBeforeTeardown, 1)
+        XCTAssertEqual(result.userScriptCountAfterTeardown, 0)
+        XCTAssertTrue(result.scriptMessageHandlerRemoved)
+        XCTAssertTrue(result.syntheticWebViewCreated)
+        XCTAssertGreaterThan(result.handledRequestCount, 0)
+        XCTAssertGreaterThan(result.rejectedRequestCount, 0)
+
+        let summary = result.webKitSyntheticJSExecutionSummary
+        XCTAssertTrue(summary.sidePanelJSExecutedInWebKitSyntheticHarness)
+        XCTAssertTrue(summary.offscreenJSExecutedInWebKitSyntheticHarness)
+        XCTAssertTrue(summary.identityJSExecutedInWebKitSyntheticHarness)
+        XCTAssertTrue(summary.callbackModeExecutedInWebKitSyntheticHarness)
+        XCTAssertTrue(summary.promiseModeExecutedInWebKitSyntheticHarness)
+        XCTAssertTrue(
+            summary.lastErrorScopedToCallbackTurnInWebKitSyntheticHarness
+        )
+        XCTAssertTrue(
+            summary
+                .deterministicBlockedDiagnosticsVerifiedInWebKitSyntheticHarness
+        )
+        XCTAssertTrue(summary.syntheticIdentityFixtureResponseUsed)
+
+        XCTAssertTrue(result.report.sidePanelJSExecutedInWebKitSyntheticHarness)
+        XCTAssertTrue(result.report.offscreenJSExecutedInWebKitSyntheticHarness)
+        XCTAssertTrue(result.report.identityJSExecutedInWebKitSyntheticHarness)
+        XCTAssertFalse(result.report.sidePanelAvailableInProduct)
+        XCTAssertFalse(result.report.offscreenAvailableInProduct)
+        XCTAssertFalse(result.report.identityAvailableInProduct)
+        XCTAssertFalse(result.report.identityExternalAuthNetworkAllowed)
+        XCTAssertFalse(result.report.normalTabRuntimeBridgeAvailable)
+        XCTAssertFalse(result.report.runtimeLoadable)
+        XCTAssertFalse(result.report.productRuntimeExposed)
+        XCTAssertFalse(
+            result.report.identitySyntheticFixtureStatus
+                .tokenValueStoredInReport
+        )
+
+        let sidePanelOpen = try coverage(
+            result.report.sidePanelJSMethodCoverage,
+            methodName: "open"
+        )
+        XCTAssertTrue(sidePanelOpen.webKitSyntheticJSCallbackExecuted)
+        XCTAssertTrue(sidePanelOpen.webKitSyntheticJSPromiseExecuted)
+        XCTAssertTrue(sidePanelOpen.webKitSyntheticJSLastErrorVerified)
+        let offscreenCreate = try coverage(
+            result.report.offscreenJSMethodCoverage,
+            methodName: "createDocument"
+        )
+        XCTAssertTrue(offscreenCreate.webKitSyntheticJSCallbackExecuted)
+        XCTAssertTrue(offscreenCreate.webKitSyntheticJSPromiseExecuted)
+        XCTAssertTrue(offscreenCreate.webKitSyntheticJSLastErrorVerified)
+        let identityToken = try coverage(
+            result.report.identityAPISupportMatrix,
+            methodName: "getAuthToken"
+        )
+        XCTAssertTrue(identityToken.webKitSyntheticJSCallbackExecuted)
+        XCTAssertTrue(identityToken.webKitSyntheticJSPromiseExecuted)
+        XCTAssertTrue(identityToken.webKitSyntheticJSLastErrorVerified)
+
+        try ChromeMV3SidePanelOffscreenIdentityCompatibilityReportWriter.write(
+            result.report,
+            toRewrittenBundleRoot: root
+        )
+        let decoded = try JSONDecoder().decode(
+            ChromeMV3SidePanelOffscreenIdentityCompatibilityReport.self,
+            from:
+                Data(
+                    contentsOf:
+                        root.appendingPathComponent(result.report.reportFileName)
+                )
+        )
+        XCTAssertEqual(decoded, result.report)
+        let reportJSON = String(
+            data: try ChromeMV3DeterministicJSON.encodedData(decoded),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertTrue(
+            reportJSON
+                .contains("sidePanelJSExecutedInWebKitSyntheticHarness")
+        )
+        XCTAssertFalse(reportJSON.contains("synthetic-token"))
+    }
+
+    @MainActor
+    func testWebKitExecutedSyntheticIdentityBlockedWithoutFixture()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip(
+                "sidePanel/offscreen/identity synthetic WebKit harness requires macOS 15.5."
+            )
+        }
+        let root = try makeExtensionRoot(
+            named: "webkit-identity-blocked",
+            manifest: [
+                "manifest_version": 3,
+                "name": "Identity Blocked",
+                "version": "1.0",
+                "permissions": ["identity"],
+            ],
+            resources: [:]
+        )
+        let result =
+            await ChromeMV3SidePanelOffscreenIdentityJSSyntheticHarness.run(
+                scriptBody:
+                    ChromeMV3SidePanelOffscreenIdentityJSSyntheticHarness
+                    .blockedIdentityVerificationScript,
+                configuration: .syntheticHarness(
+                    generatedBundleRootPath: root.path
+                ),
+                manifest: try validateManifest(root: root),
+                generatedBundleRootURL: root
+            )
+        let script = try decodedScriptResult(result)
+
+        XCTAssertTrue(result.scriptEvaluationSucceeded)
+        XCTAssertTrue(bool(script["redirectURLOK"]))
+        XCTAssertTrue(bool(script["blockedDiagnosticsOK"]))
+        XCTAssertTrue(bool(script["lastErrorScopedOK"]))
+        XCTAssertFalse(
+            result.webKitSyntheticJSExecutionSummary
+                .syntheticIdentityFixtureResponseUsed
+        )
+        XCTAssertFalse(result.identityExternalAuthNetworkAllowed)
+        XCTAssertFalse(result.report.identityExternalAuthNetworkAllowed)
+        XCTAssertFalse(result.report.identityAvailableInProduct)
+    }
+
+    @MainActor
+    func testWebKitExecutedSyntheticIdentityRemoveCachedTokenClearsFixtureCache()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip(
+                "sidePanel/offscreen/identity synthetic WebKit harness requires macOS 15.5."
+            )
+        }
+        let root = try makeExtensionRoot(
+            named: "webkit-identity-remove",
+            manifest: [
+                "manifest_version": 3,
+                "name": "Identity Remove",
+                "version": "1.0",
+                "permissions": ["identity"],
+            ],
+            resources: [:]
+        )
+        let fixture = ChromeMV3IdentitySyntheticFixture.testOnly(
+            authToken: "synthetic-token",
+            grantedScopes: ["email"]
+        )
+        let result =
+            await ChromeMV3SidePanelOffscreenIdentityJSSyntheticHarness.run(
+                scriptBody:
+                    ChromeMV3SidePanelOffscreenIdentityJSSyntheticHarness
+                    .removeCachedTokenVerificationScript,
+                configuration: .syntheticHarness(
+                    generatedBundleRootPath: root.path,
+                    syntheticIdentityFixture: fixture
+                ),
+                manifest: try validateManifest(root: root),
+                generatedBundleRootURL: root
+            )
+        let script = try decodedScriptResult(result)
+
+        XCTAssertTrue(result.scriptEvaluationSucceeded)
+        XCTAssertTrue(bool(script["removeCachedAuthTokenClearedSyntheticCache"]))
+        XCTAssertTrue(bool(script["blockedDiagnosticsOK"]))
+        XCTAssertTrue(bool(script["lastErrorScopedOK"]))
+        XCTAssertFalse(result.report.identityExternalAuthNetworkAllowed)
+        XCTAssertFalse(
+            String(
+                data: try ChromeMV3DeterministicJSON.encodedData(
+                    result.report
+                ),
+                encoding: .utf8
+            )?.contains("synthetic-token") ?? true
+        )
+    }
+
+    @MainActor
+    func testDisabledConfigurationBlocksWebKitSyntheticHarnessCreation()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip(
+                "sidePanel/offscreen/identity synthetic WebKit harness requires macOS 15.5."
+            )
+        }
+        let root = try makeExtensionRoot(
+            named: "webkit-disabled",
+            manifest: [
+                "manifest_version": 3,
+                "name": "Disabled",
+                "version": "1.0",
+                "permissions": ["sidePanel", "offscreen", "identity"],
+            ],
+            resources: [:]
+        )
+        let result =
+            await ChromeMV3SidePanelOffscreenIdentityJSSyntheticHarness.run(
+                scriptBody:
+                    ChromeMV3SidePanelOffscreenIdentityJSSyntheticHarness
+                    .fullFixtureVerificationScript,
+                configuration: .syntheticHarness(
+                    generatedBundleRootPath: root.path,
+                    moduleState: .disabled,
+                    explicitInternalCompatibilityBridgeAllowed: false
+                ),
+                manifest: try validateManifest(root: root),
+                generatedBundleRootURL: root
+            )
+
+        XCTAssertFalse(result.syntheticWebViewCreated)
+        XCTAssertFalse(result.scriptEvaluationSucceeded)
+        XCTAssertEqual(result.handledRequestCount, 0)
+        XCTAssertEqual(result.userScriptCountBeforeTeardown, 0)
+        XCTAssertFalse(result.report.sidePanelJSExecutedInWebKitSyntheticHarness)
+        XCTAssertFalse(result.report.offscreenJSExecutedInWebKitSyntheticHarness)
+        XCTAssertFalse(result.report.identityJSExecutedInWebKitSyntheticHarness)
+        XCTAssertFalse(result.report.sidePanelAvailableInProduct)
+        XCTAssertFalse(result.report.offscreenAvailableInProduct)
+        XCTAssertFalse(result.report.identityAvailableInProduct)
+        XCTAssertFalse(result.report.runtimeLoadable)
+    }
+
+    @MainActor
     func testDisabledModuleBlocksCompatibilityReportAndEnabledLinksDiagnostics()
         throws
     {
@@ -561,6 +858,38 @@ final class ChromeMV3SidePanelOffscreenIdentityCompatibilityTests:
                 forbiddenRegex
             )
         }
+
+        let sidePanelOffscreenIdentityFiles = sources.filter {
+            $0.relativePath.contains("SidePanelOffscreenIdentity")
+        }
+        let webKitUsageFiles = sidePanelOffscreenIdentityFiles
+            .filter {
+                $0.contents.contains("WKWeb" + "View")
+                    || $0.contents.contains("WKUser" + "Script")
+                    || $0.contents.contains("add" + "UserScript")
+                    || $0.contents.contains("add" + "ScriptMessageHandler")
+                    || $0.contents.contains("callAsync" + "JavaScript")
+            }
+            .map(\.relativePath)
+        XCTAssertEqual(
+            Set(webKitUsageFiles),
+            [
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3SidePanelOffscreenIdentitySyntheticWebKitHarness.swift",
+            ]
+        )
+
+        let browserConfig = try sourceFile(
+            "Sumi/Models/BrowserConfig/BrowserConfig.swift"
+        )
+        XCTAssertFalse(
+            browserConfig.contains(
+                ChromeMV3SidePanelOffscreenIdentityJSShimSource
+                    .bridgeMessageHandlerName
+            )
+        )
+        XCTAssertFalse(browserConfig.contains("chrome.sidePanel"))
+        XCTAssertFalse(browserConfig.contains("chrome.offscreen"))
+        XCTAssertFalse(browserConfig.contains("chrome.identity"))
     }
 
     private func stateOwner(
@@ -617,6 +946,38 @@ final class ChromeMV3SidePanelOffscreenIdentityCompatibilityTests:
         try ChromeMV3ManifestValidator.validateManifestFile(
             at: root.appendingPathComponent("manifest.json")
         )
+    }
+
+    private func decodedScriptResult(
+        _ result:
+            ChromeMV3SidePanelOffscreenIdentityJSSyntheticHarnessResult
+    ) throws -> [String: ChromeMV3StorageValue] {
+        let json = try XCTUnwrap(result.scriptResultJSON)
+        let value = try JSONDecoder().decode(
+            ChromeMV3StorageValue.self,
+            from: Data(json.utf8)
+        )
+        return try XCTUnwrap(object(value))
+    }
+
+    private func coverage(
+        _ coverage:
+            [ChromeMV3SidePanelOffscreenIdentityMethodCoverage],
+        methodName: String
+    ) throws -> ChromeMV3SidePanelOffscreenIdentityMethodCoverage {
+        try XCTUnwrap(coverage.first { $0.methodName == methodName })
+    }
+
+    private func object(
+        _ value: ChromeMV3StorageValue?
+    ) -> [String: ChromeMV3StorageValue]? {
+        guard case .object(let object)? = value else { return nil }
+        return object
+    }
+
+    private func bool(_ value: ChromeMV3StorageValue?) -> Bool {
+        guard case .bool(let bool)? = value else { return false }
+        return bool
     }
 
     private func makeExtensionRoot(
@@ -723,5 +1084,15 @@ final class ChromeMV3SidePanelOffscreenIdentityCompatibilityTests:
             }
         }
         return files
+    }
+
+    private func sourceFile(_ relativePath: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: root.appendingPathComponent(relativePath),
+            encoding: .utf8
+        )
     }
 }

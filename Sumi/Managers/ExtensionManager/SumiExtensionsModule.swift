@@ -2587,6 +2587,9 @@ final class SumiExtensionsModule {
             manifest: ChromeMV3Manifest? = nil,
             syntheticIdentityFixture:
                 ChromeMV3IdentitySyntheticFixture = .none,
+            webKitSyntheticJSExecutionSummary:
+                ChromeMV3SidePanelOffscreenIdentityWebKitSyntheticJSExecutionSummary
+                = .notRun,
             writeReport: Bool = false
         ) -> ChromeMV3SidePanelOffscreenIdentityCompatibilityReport? {
             guard isEnabled else { return nil }
@@ -2616,7 +2619,9 @@ final class SumiExtensionsModule {
                     extensionID: extensionID,
                     profileID: profileID,
                     moduleState: .enabled,
-                    syntheticIdentityFixture: syntheticIdentityFixture
+                    syntheticIdentityFixture: syntheticIdentityFixture,
+                    webKitSyntheticJSExecutionSummary:
+                        webKitSyntheticJSExecutionSummary
                 )
             lastChromeMV3SidePanelOffscreenIdentityReport = report
 
