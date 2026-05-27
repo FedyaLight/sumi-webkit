@@ -7,6 +7,7 @@
 
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum SettingsViewStateDeferral {
     static func schedule(_ mutation: @escaping @MainActor () -> Void) {
@@ -67,6 +68,10 @@ struct SumiExtensionsSettingsPane: View {
     @State private var statusMessage: String?
     @State private var extensionPendingRemoval: InstalledExtension?
     @State private var extensionOperationTasks: [String: Task<Void, Never>] = [:]
+    @State private var chromeMV3ManagerListViewModel:
+        ChromeMV3ExtensionManagerListViewModel?
+    @State private var chromeMV3ManagerDetailViewModel:
+        ChromeMV3ExtensionManagerDetailViewModel?
 
     var body: some View {
         @Bindable var sumiSettings = sumiSettingsModel
@@ -83,15 +88,13 @@ struct SumiExtensionsSettingsPane: View {
             switch sumiSettings.extensionsSettingsSubPane {
             case .extensions:
                 SumiSettingsModuleToggleGate(descriptor: .extensions) {
-                    if let extensionManager = browserManager.extensionsModule.managerIfEnabled() {
-                        extensionsBody(
-                            extensionManager: extensionManager,
-                            installedExtensions: extensionSurfaceStore.installedExtensions
-                        )
+                    chromeMV3ManagerBody
+                        .onAppear {
+                            refreshChromeMV3Manager()
+                        }
                         .onDisappear {
                             cancelExtensionPaneTasks()
                         }
-                    }
                 }
             case .userScripts:
                 SumiSettingsModuleToggleGate(descriptor: .userScripts) {
@@ -125,6 +128,276 @@ struct SumiExtensionsSettingsPane: View {
         } message: {
             Text(extensionPendingRemoval?.name ?? "")
         }
+    }
+
+    private var chromeMV3ManagerRootURL: URL {
+        ChromeMV3ExtensionManagerStoreLocation.defaultRootURL()
+    }
+
+    private var chromeMV3ManagerBody: some View {
+        let list = chromeMV3ManagerListViewModel
+            ?? browserManager.extensionsModule
+                .chromeMV3ExtensionManagerListViewModelIfEnabled(
+                    rootURL: chromeMV3ManagerRootURL
+                )
+            ?? ChromeMV3ExtensionManagerViewModelBuilder.makeListViewModel(
+                rootURL: chromeMV3ManagerRootURL,
+                gate: browserManager.extensionsModule.chromeMV3ExtensionManagerGate()
+            )
+
+        return VStack(alignment: .leading, spacing: 12) {
+            ChromeMV3ExtensionManagerView(
+                listViewModel: list,
+                selectedDetail: chromeMV3ManagerDetailViewModel,
+                onLoadUnpacked: { loadChromeMV3UnpackedFolder() },
+                onImportArchive: { importChromeMV3LocalArchive() },
+                onSelectExtension: { profileID, extensionID in
+                    selectChromeMV3Extension(
+                        profileID: profileID,
+                        extensionID: extensionID
+                    )
+                },
+                onRunAction: { action, profileID, extensionID in
+                    runChromeMV3ManagerAction(
+                        action,
+                        profileID: profileID,
+                        extensionID: extensionID
+                    )
+                },
+                onCopyDiagnosticsJSON: { profileID, extensionID in
+                    copyChromeMV3DiagnosticsJSON(
+                        profileID: profileID,
+                        extensionID: extensionID
+                    )
+                }
+            )
+
+            if let statusMessage {
+                Text(statusMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func refreshChromeMV3Manager() {
+        chromeMV3ManagerListViewModel = browserManager.extensionsModule
+            .chromeMV3ExtensionManagerListViewModelIfEnabled(
+                rootURL: chromeMV3ManagerRootURL
+            )
+        if let selected = chromeMV3ManagerDetailViewModel {
+            chromeMV3ManagerDetailViewModel = browserManager.extensionsModule
+                .chromeMV3ExtensionManagerDetailViewModelIfEnabled(
+                    rootURL: chromeMV3ManagerRootURL,
+                    profileID: selected.listItem.profileID,
+                    extensionID: selected.listItem.extensionID
+                )
+        } else if let first = chromeMV3ManagerListViewModel?.items.first {
+            selectChromeMV3Extension(
+                profileID: first.profileID,
+                extensionID: first.extensionID
+            )
+        }
+    }
+
+    private func selectChromeMV3Extension(
+        profileID: String,
+        extensionID: String
+    ) {
+        chromeMV3ManagerDetailViewModel = browserManager.extensionsModule
+            .chromeMV3ExtensionManagerDetailViewModelIfEnabled(
+                rootURL: chromeMV3ManagerRootURL,
+                profileID: profileID,
+                extensionID: extensionID
+            )
+    }
+
+    private func loadChromeMV3UnpackedFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Load Unpacked"
+        guard panel.runModal() == .OK, let sourceURL = panel.url else { return }
+
+        do {
+            let rootURL = try ChromeMV3ExtensionManagerStoreLocation
+                .ensureDefaultRootURL()
+            let result = browserManager.extensionsModule
+                .chromeMV3InstallUnpackedThroughManager(
+                    rootURL: rootURL,
+                    sourceURL: sourceURL
+                )
+            applyChromeMV3ManagerResult(result)
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    private func importChromeMV3LocalArchive() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [
+            UTType.zip,
+            UTType(filenameExtension: "crx"),
+        ].compactMap { $0 }
+        panel.prompt = "Inspect"
+        guard panel.runModal() == .OK, let sourceURL = panel.url else { return }
+
+        let result = browserManager.extensionsModule
+            .chromeMV3ImportLocalArchiveThroughManager(sourceURL: sourceURL)
+        applyChromeMV3ManagerResult(result)
+    }
+
+    private func runChromeMV3ManagerAction(
+        _ action: ChromeMV3ExtensionManagerActionKind,
+        profileID: String,
+        extensionID: String
+    ) {
+        guard profileID.isEmpty == false, extensionID.isEmpty == false else {
+            if action == .chromeWebStoreInstall {
+                applyChromeMV3ManagerResult(
+                    browserManager.extensionsModule
+                        .chromeMV3ChromeWebStoreInstallDiagnosticThroughManager()
+                )
+            }
+            return
+        }
+
+        let rootURL = chromeMV3ManagerRootURL
+        let result: ChromeMV3ExtensionManagerActionResult
+        switch action {
+        case .enableInternal:
+            result = browserManager.extensionsModule
+                .chromeMV3SetInternalExtensionEnabledThroughManager(
+                    true,
+                    rootURL: rootURL,
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+        case .disableInternal:
+            result = browserManager.extensionsModule
+                .chromeMV3SetInternalExtensionEnabledThroughManager(
+                    false,
+                    rootURL: rootURL,
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+        case .rebuild:
+            result = browserManager.extensionsModule
+                .chromeMV3RebuildThroughManager(
+                    rootURL: rootURL,
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+        case .retryDiagnostics:
+            result = browserManager.extensionsModule
+                .chromeMV3RetryDiagnosticsThroughManager(
+                    rootURL: rootURL,
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+        case .runDiagnostics:
+            result = browserManager.extensionsModule
+                .chromeMV3RunDiagnosticsThroughManager(
+                    rootURL: rootURL,
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+        case .recover:
+            result = browserManager.extensionsModule
+                .chromeMV3RecoverThroughManager(
+                    rootURL: rootURL,
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+        case .uninstall:
+            result = browserManager.extensionsModule
+                .chromeMV3UninstallThroughManager(
+                    rootURL: rootURL,
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+        case .reset:
+            result = browserManager.extensionsModule
+                .chromeMV3ResetThroughManager(
+                    rootURL: rootURL,
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+        case .chromeWebStoreInstall:
+            result = browserManager.extensionsModule
+                .chromeMV3ChromeWebStoreInstallDiagnosticThroughManager()
+        case .updateFromUnpacked:
+            updateChromeMV3FromUnpackedFolder(
+                profileID: profileID,
+                extensionID: extensionID
+            )
+            return
+        case .exportDiagnosticsJSON:
+            copyChromeMV3DiagnosticsJSON(
+                profileID: profileID,
+                extensionID: extensionID
+            )
+            return
+        case .installUnpacked, .importZipArchive, .importCRXArchive:
+            return
+        }
+        applyChromeMV3ManagerResult(result)
+    }
+
+    private func updateChromeMV3FromUnpackedFolder(
+        profileID: String,
+        extensionID: String
+    ) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Update"
+        guard panel.runModal() == .OK, let sourceURL = panel.url else { return }
+        let result = browserManager.extensionsModule
+            .chromeMV3UpdateUnpackedThroughManager(
+                rootURL: chromeMV3ManagerRootURL,
+                profileID: profileID,
+                extensionID: extensionID,
+                sourceURL: sourceURL
+            )
+        applyChromeMV3ManagerResult(result)
+    }
+
+    private func copyChromeMV3DiagnosticsJSON(
+        profileID: String,
+        extensionID: String
+    ) {
+        let result = browserManager.extensionsModule
+            .chromeMV3ExportDiagnosticsJSONThroughManager(
+                rootURL: chromeMV3ManagerRootURL,
+                profileID: profileID,
+                extensionID: extensionID
+            )
+        if let json = result.diagnosticsJSON {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(json, forType: .string)
+        }
+        applyChromeMV3ManagerResult(result)
+    }
+
+    private func applyChromeMV3ManagerResult(
+        _ result: ChromeMV3ExtensionManagerActionResult
+    ) {
+        statusMessage = (
+            result.diagnostics.first
+                ?? result.blockedDiagnostics.first?.message
+                ?? result.status.rawValue
+        )
+        if result.action == .uninstall && result.succeeded {
+            chromeMV3ManagerDetailViewModel = nil
+        }
+        refreshChromeMV3Manager()
     }
 
     private var extensionRemovalBinding: Binding<Bool> {
