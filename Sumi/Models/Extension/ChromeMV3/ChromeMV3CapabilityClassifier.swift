@@ -352,7 +352,7 @@ enum ChromeMV3CapabilityClassifier {
             statuses: [.shim, .nativeHost, .deferred],
             evidence: [
                 chrome("Chrome sidePanel API requires browser UI ownership and local extension page resources.", chromeAPIReference + "/sidePanel"),
-                sumi("Current compatibility layer can resolve side_panel.default_path and model selected sidePanel methods in internal synthetic scope."),
+                sumi("Current compatibility layer can resolve side_panel.default_path, model selected sidePanel methods, and run WebKit-executed synthetic JS only in a gated internal harness."),
                 deferred("No Sumi side-panel product UI or normal-tab runtime host is implemented.")
             ],
             detection: .sidePanel
@@ -362,7 +362,7 @@ enum ChromeMV3CapabilityClassifier {
             statuses: [.shim, .deferred, .needsVerification],
             evidence: [
                 chrome("Chrome offscreen API creates bounded extension-local offscreen documents with URL, reasons, and justification.", chromeAPIReference + "/offscreen"),
-                sumi("Current compatibility layer validates and records offscreen requests as model-only state."),
+                sumi("Current compatibility layer validates offscreen requests, records model-only state, and verifies synthetic JS calls in a gated WebKit harness."),
                 deferred("No hidden offscreen document product runtime is allowed by this task."),
                 fixture("Verify if a bounded host is ever justified; never emulate persistent background pages.")
             ],
@@ -373,7 +373,7 @@ enum ChromeMV3CapabilityClassifier {
             statuses: [.shim, .nativeHost, .deferred],
             evidence: [
                 chrome("Chrome identity API owns redirect URL generation, OAuth WebAuth flows, token cache, and profile account behavior.", chromeAPIReference + "/identity"),
-                sumi("Current compatibility layer returns deterministic redirect URLs and blocks OAuth/token flows unless explicit synthetic fixtures are configured."),
+                sumi("Current compatibility layer returns deterministic redirect URLs and verifies identity JS calls in WebKit with blocked defaults and explicit synthetic fixtures only."),
                 deferred("Requires product privacy and account-flow design before any real OAuth UI or network path.")
             ],
             detection: .identity

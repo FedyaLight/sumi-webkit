@@ -841,6 +841,12 @@ final class ChromeMV3ServiceWorkerLifecycleCoordinatorTests: XCTestCase {
                 "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionEventAPIsRuntime.swift"
             )
             .path
+        let sidePanelOffscreenIdentitySyntheticHarnessPath =
+            root
+            .appendingPathComponent(
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3SidePanelOffscreenIdentitySyntheticWebKitHarness.swift"
+            )
+            .path
         let runtimeJSMessagingHarnessPath =
             root
             .appendingPathComponent(
@@ -875,6 +881,8 @@ final class ChromeMV3ServiceWorkerLifecycleCoordinatorTests: XCTestCase {
                             && $0 != storageLocalSyntheticHarnessPath
                             && $0 != passwordManagerSyntheticHarnessPath
                             && $0 != extensionEventAPIsSyntheticHarnessPath
+                            && $0
+                                != sidePanelOffscreenIdentitySyntheticHarnessPath
                         : pattern == "connect" + "Native"
                             ? $0 != runtimeJSMessagingHarnessPath
                                 && $0 != runtimeJSMessagingHarnessTestsPath

@@ -44,11 +44,16 @@ struct ChromeMV3SidePanelOffscreenIdentityMethodCoverage:
     var methodName: String
     var supportStatus:
         ChromeMV3SidePanelOffscreenIdentitySupportStatus
+    var modelCoverageAvailable: Bool
+    var bridgeCoverageAvailable: Bool
     var availableInInternalFixture: Bool
     var availableInProduct: Bool
     var callbackModeModeled: Bool
     var promiseModeModeled: Bool
     var lastErrorModeled: Bool
+    var webKitSyntheticJSCallbackExecuted: Bool
+    var webKitSyntheticJSPromiseExecuted: Bool
+    var webKitSyntheticJSLastErrorVerified: Bool
     var diagnostics: [String]
 }
 
@@ -488,6 +493,7 @@ struct ChromeMV3SidePanelOffscreenIdentityBridgeResponse:
     var bridgeCallID: String
     var namespace: String
     var methodName: String
+    var invocationMode: ChromeMV3JSBridgeInvocationMode
     var succeeded: Bool
     var resultPayload: ChromeMV3StorageValue?
     var lastErrorMessage: String?
@@ -511,6 +517,7 @@ struct ChromeMV3SidePanelOffscreenIdentityBridgeResponse:
             "bridgeCallID": bridgeCallID,
             "namespace": namespace,
             "methodName": methodName,
+            "invocationMode": invocationMode.rawValue,
             "succeeded": succeeded,
             "resultPayload":
                 resultPayload?.sidePanelOffscreenIdentityFoundationObject
@@ -586,6 +593,10 @@ struct ChromeMV3SidePanelOffscreenIdentityRuntimeStateOwner: Sendable {
                 "No product hidden WebView, service-worker wake, or recurring work is created.",
             ]
         )
+    }
+
+    var sidePanelBehaviorSummary: ChromeMV3SidePanelBehavior {
+        panelBehavior
     }
 
     mutating func handle(
@@ -1373,6 +1384,7 @@ struct ChromeMV3SidePanelOffscreenIdentityRuntimeStateOwner: Sendable {
             bridgeCallID: request.bridgeCallID,
             namespace: request.namespace,
             methodName: request.methodName,
+            invocationMode: request.invocationMode,
             succeeded: succeeded,
             resultPayload: payload,
             lastErrorMessage: succeeded ? nil : code?.lastErrorMessage,
@@ -1426,6 +1438,54 @@ extension ChromeMV3OffscreenDocumentRecord {
 }
 
 private extension ChromeMV3StorageValue {
+    init?(sidePanelOffscreenIdentityWebKitValue value: Any) {
+        if value is NSNull {
+            self = .null
+            return
+        }
+        if let number = value as? NSNumber {
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                self = .bool(number.boolValue)
+            } else {
+                let double = number.doubleValue
+                guard double.isFinite else { return nil }
+                self = .number(double)
+            }
+            return
+        }
+        if let string = value as? String {
+            self = .string(string)
+            return
+        }
+        if let array = value as? [Any] {
+            var values: [ChromeMV3StorageValue] = []
+            for item in array {
+                guard let converted = ChromeMV3StorageValue(
+                    sidePanelOffscreenIdentityWebKitValue: item
+                ) else {
+                    return nil
+                }
+                values.append(converted)
+            }
+            self = .array(values)
+            return
+        }
+        if let object = value as? [String: Any] {
+            var values: [String: ChromeMV3StorageValue] = [:]
+            for (key, item) in object {
+                guard let converted = ChromeMV3StorageValue(
+                    sidePanelOffscreenIdentityWebKitValue: item
+                ) else {
+                    return nil
+                }
+                values[key] = converted
+            }
+            self = .object(values)
+            return
+        }
+        return nil
+    }
+
     var soiObjectValue: [String: ChromeMV3StorageValue]? {
         guard case .object(let object) = self else { return nil }
         return object
@@ -1483,7 +1543,196 @@ struct ChromeMV3SidePanelOffscreenIdentityJSShimCoverage:
     var productExposureNow: Bool
 }
 
+struct ChromeMV3SidePanelOffscreenIdentityWebKitSyntheticJSExecutionSummary:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var scriptEvaluationSucceeded: Bool
+    var sidePanelJSExecutedInWebKitSyntheticHarness: Bool
+    var offscreenJSExecutedInWebKitSyntheticHarness: Bool
+    var identityJSExecutedInWebKitSyntheticHarness: Bool
+    var sidePanelExecutedMethods: [String]
+    var offscreenExecutedMethods: [String]
+    var identityExecutedMethods: [String]
+    var callbackExecutedMethodKeys: [String]
+    var promiseExecutedMethodKeys: [String]
+    var lastErrorVerifiedMethodKeys: [String]
+    var callbackModeExecutedInWebKitSyntheticHarness: Bool
+    var promiseModeExecutedInWebKitSyntheticHarness: Bool
+    var lastErrorScopedToCallbackTurnInWebKitSyntheticHarness: Bool
+    var deterministicBlockedDiagnosticsVerifiedInWebKitSyntheticHarness: Bool
+    var syntheticIdentityFixtureResponseUsed: Bool
+    var sidePanelAvailableInProduct: Bool
+    var offscreenAvailableInProduct: Bool
+    var identityAvailableInProduct: Bool
+    var identityExternalAuthNetworkAllowed: Bool
+    var normalTabRuntimeBridgeAvailable: Bool
+    var runtimeLoadable: Bool
+    var productRuntimeExposed: Bool
+    var diagnostics: [String]
+
+    static let notRun =
+        ChromeMV3SidePanelOffscreenIdentityWebKitSyntheticJSExecutionSummary(
+            scriptEvaluationSucceeded: false,
+            sidePanelJSExecutedInWebKitSyntheticHarness: false,
+            offscreenJSExecutedInWebKitSyntheticHarness: false,
+            identityJSExecutedInWebKitSyntheticHarness: false,
+            sidePanelExecutedMethods: [],
+            offscreenExecutedMethods: [],
+            identityExecutedMethods: [],
+            callbackExecutedMethodKeys: [],
+            promiseExecutedMethodKeys: [],
+            lastErrorVerifiedMethodKeys: [],
+            callbackModeExecutedInWebKitSyntheticHarness: false,
+            promiseModeExecutedInWebKitSyntheticHarness: false,
+            lastErrorScopedToCallbackTurnInWebKitSyntheticHarness: false,
+            deterministicBlockedDiagnosticsVerifiedInWebKitSyntheticHarness:
+                false,
+            syntheticIdentityFixtureResponseUsed: false,
+            sidePanelAvailableInProduct: false,
+            offscreenAvailableInProduct: false,
+            identityAvailableInProduct: false,
+            identityExternalAuthNetworkAllowed: false,
+            normalTabRuntimeBridgeAvailable: false,
+            runtimeLoadable: false,
+            productRuntimeExposed: false,
+            diagnostics: [
+                "WebKit-executed synthetic JS harness has not run for this report.",
+            ]
+        )
+
+    static func fromWebKitScriptResult(
+        json: String?,
+        scriptEvaluationSucceeded: Bool,
+        responses: [ChromeMV3SidePanelOffscreenIdentityBridgeResponse],
+        syntheticIdentityFixture:
+            ChromeMV3IdentitySyntheticFixture,
+        diagnostics: [String]
+    ) -> ChromeMV3SidePanelOffscreenIdentityWebKitSyntheticJSExecutionSummary {
+        let decoded = json.flatMap {
+            try? JSONDecoder().decode(
+                ChromeMV3StorageValue.self,
+                from: Data($0.utf8)
+            )
+        }
+        let object = decoded?.soiObjectValue ?? [:]
+        let sidePanelMethods = uniqueSortedSOI(
+            responses
+                .filter { $0.namespace == "sidePanel" }
+                .map(\.methodName)
+                + stringArraySOI(object["sidePanelMethodsExecuted"])
+        )
+        let offscreenMethods = uniqueSortedSOI(
+            responses
+                .filter { $0.namespace == "offscreen" }
+                .map(\.methodName)
+                + stringArraySOI(object["offscreenMethodsExecuted"])
+        )
+        let identityMethods = uniqueSortedSOI(
+            responses
+                .filter { $0.namespace == "identity" }
+                .map(\.methodName)
+                + stringArraySOI(object["identityMethodsExecuted"])
+        )
+        let callbackExecuted =
+            responses.contains { $0.invocationMode == .callback }
+            || object["callbackModeExecuted"]?.soiBoolValue == true
+        let promiseExecuted =
+            responses.contains { $0.invocationMode == .promise }
+            || object["promiseModeExecuted"]?.soiBoolValue == true
+        let callbackMethodKeys = uniqueSortedSOI(
+            responses
+                .filter { $0.invocationMode == .callback }
+                .map { "\($0.namespace).\($0.methodName)" }
+                + stringArraySOI(object["callbackExecutedMethodKeys"])
+        )
+        let promiseMethodKeys = uniqueSortedSOI(
+            responses
+                .filter { $0.invocationMode == .promise }
+                .map { "\($0.namespace).\($0.methodName)" }
+                + stringArraySOI(object["promiseExecutedMethodKeys"])
+        )
+        let lastErrorMethodKeys = uniqueSortedSOI(
+            responses
+                .filter { $0.succeeded == false }
+                .map { "\($0.namespace).\($0.methodName)" }
+                + stringArraySOI(object["lastErrorVerifiedMethodKeys"])
+        )
+        let lastErrorScoped =
+            object["lastErrorScopedOK"]?.soiBoolValue == true
+        let blockedDiagnostics =
+            object["blockedDiagnosticsOK"]?.soiBoolValue == true
+        let fixtureUsedByResponse =
+            syntheticIdentityFixture.configuredForTestOnly
+            && responses.contains {
+                $0.namespace == "identity"
+                    && $0.succeeded
+                    && ($0.methodName == "launchWebAuthFlow"
+                        || $0.methodName == "getAuthToken")
+            }
+        let fixtureUsed =
+            object["syntheticIdentityFixtureResponseUsed"]?.soiBoolValue
+                == true
+            || fixtureUsedByResponse
+        let sidePanelComplete =
+            ["getOptions", "open", "setOptions", "setPanelBehavior"]
+                .allSatisfy { sidePanelMethods.contains($0) }
+        let offscreenComplete =
+            ["closeDocument", "createDocument", "hasDocument"]
+                .allSatisfy { offscreenMethods.contains($0) }
+        let identityComplete =
+            [
+                "clearAllCachedAuthTokens",
+                "getAuthToken",
+                "getRedirectURL",
+                "launchWebAuthFlow",
+                "removeCachedAuthToken",
+            ].allSatisfy { identityMethods.contains($0) }
+
+        return ChromeMV3SidePanelOffscreenIdentityWebKitSyntheticJSExecutionSummary(
+            scriptEvaluationSucceeded: scriptEvaluationSucceeded,
+            sidePanelJSExecutedInWebKitSyntheticHarness:
+                scriptEvaluationSucceeded && sidePanelComplete,
+            offscreenJSExecutedInWebKitSyntheticHarness:
+                scriptEvaluationSucceeded && offscreenComplete,
+            identityJSExecutedInWebKitSyntheticHarness:
+                scriptEvaluationSucceeded && identityComplete,
+            sidePanelExecutedMethods: sidePanelMethods,
+            offscreenExecutedMethods: offscreenMethods,
+            identityExecutedMethods: identityMethods,
+            callbackExecutedMethodKeys: callbackMethodKeys,
+            promiseExecutedMethodKeys: promiseMethodKeys,
+            lastErrorVerifiedMethodKeys: lastErrorMethodKeys,
+            callbackModeExecutedInWebKitSyntheticHarness: callbackExecuted,
+            promiseModeExecutedInWebKitSyntheticHarness: promiseExecuted,
+            lastErrorScopedToCallbackTurnInWebKitSyntheticHarness:
+                lastErrorScoped,
+            deterministicBlockedDiagnosticsVerifiedInWebKitSyntheticHarness:
+                blockedDiagnostics,
+            syntheticIdentityFixtureResponseUsed: fixtureUsed,
+            sidePanelAvailableInProduct: false,
+            offscreenAvailableInProduct: false,
+            identityAvailableInProduct: false,
+            identityExternalAuthNetworkAllowed: false,
+            normalTabRuntimeBridgeAvailable: false,
+            runtimeLoadable: false,
+            productRuntimeExposed: false,
+            diagnostics: uniqueSortedSOI(
+                diagnostics
+                    + [
+                        "WebKit-executed synthetic JS status is derived from a controlled DEBUG/internal harness result.",
+                        "Product sidePanel UI, product offscreen runtime, identity network, normal-tab runtime, and runtimeLoadable remain unavailable.",
+                    ]
+            )
+        )
+    }
+}
+
 enum ChromeMV3SidePanelOffscreenIdentityJSShimSource {
+    static let bridgeMessageHandlerName =
+        "sumiChromeMV3SidePanelOffscreenIdentity"
+
     static var coverage:
         ChromeMV3SidePanelOffscreenIdentityJSShimCoverage
     {
@@ -1513,6 +1762,385 @@ enum ChromeMV3SidePanelOffscreenIdentityJSShimSource {
             productExposureNow: false
         )
     }
+
+    static func source(
+        configuration: ChromeMV3SidePanelOffscreenIdentityConfiguration
+    ) -> String {
+        let configJSON = jsonString([
+            "extensionID": configuration.extensionID,
+            "profileID": configuration.profileID,
+            "bridgeMessageHandlerName": bridgeMessageHandlerName,
+        ])
+        return """
+        (() => {
+          "use strict";
+          const config = \(configJSON);
+          const bridgeName = config.bridgeMessageHandlerName;
+          const chromeObject = {};
+          const runtime = {};
+          const sidePanel = {};
+          const offscreen = {};
+          const identity = {};
+          let lastErrorValue;
+          let nextBridgeCallNumber = 0;
+
+          function unavailableResponse(namespace, methodName) {
+            return {
+              bridgeCallID: "sidepanel-offscreen-identity-js-unavailable",
+              namespace,
+              methodName,
+              invocationMode: "promise",
+              succeeded: false,
+              resultPayload: null,
+              lastErrorMessage:
+                "sidePanel/offscreen/identity JS bridge handler is unavailable.",
+              lastErrorCode: "jsBridgeUnavailable",
+              callbackWouldSetLastError: false,
+              promiseWouldReject: false,
+              sidePanelAvailableInProduct: false,
+              offscreenAvailableInProduct: false,
+              identityAvailableInProduct: false,
+              identityExternalAuthNetworkAllowed: false,
+              normalTabRuntimeBridgeAvailable: false,
+              runtimeLoadable: false,
+              productRuntimeExposed: false,
+              diagnostics: [
+                "sidePanel/offscreen/identity JS bridge handler is unavailable."
+              ]
+            };
+          }
+
+          function bridgePost(namespace, methodName, invocationMode, args) {
+            const handler = globalThis.webkit
+              && globalThis.webkit.messageHandlers
+              && globalThis.webkit.messageHandlers[bridgeName];
+            if (!handler || typeof handler.postMessage !== "function") {
+              return Promise.resolve(unavailableResponse(namespace, methodName));
+            }
+            nextBridgeCallNumber += 1;
+            return handler.postMessage({
+              namespace,
+              methodName,
+              invocationMode,
+              extensionID: config.extensionID,
+              profileID: config.profileID,
+              bridgeCallID: [
+                "sidepanel-offscreen-identity-js",
+                namespace,
+                methodName,
+                String(nextBridgeCallNumber)
+              ].join("-"),
+              arguments: args || []
+            });
+          }
+
+          function toJSONCompatible(value) {
+            if (value === undefined || typeof value === "function") {
+              return null;
+            }
+            return JSON.parse(JSON.stringify(value));
+          }
+
+          function splitCallback(argsLike) {
+            const args = Array.prototype.slice.call(argsLike);
+            const callback =
+              typeof args[args.length - 1] === "function" ? args.pop() : null;
+            return {
+              callback,
+              args: args.map(toJSONCompatible)
+            };
+          }
+
+          function callbackArguments(response) {
+            if (!response || !response.succeeded) {
+              return [];
+            }
+            if (
+              response.resultPayload === null
+              || response.resultPayload === undefined
+            ) {
+              return [];
+            }
+            return [response.resultPayload];
+          }
+
+          function invokeCallback(callback, response) {
+            lastErrorValue = response && response.succeeded === false
+              ? { message: response.lastErrorMessage || "Chrome MV3 API failed." }
+              : undefined;
+            try {
+              callback.apply(undefined, callbackArguments(response));
+            } finally {
+              lastErrorValue = undefined;
+            }
+          }
+
+          function rejectFromResponse(response) {
+            return Promise.reject(
+              new Error(
+                response.lastErrorMessage
+                || "sidePanel/offscreen/identity bridge call failed."
+              )
+            );
+          }
+
+          function invoke(namespace, methodName, argsLike) {
+            const parsed = splitCallback(argsLike);
+            const invocationMode = parsed.callback ? "callback" : "promise";
+            const result = bridgePost(
+              namespace,
+              methodName,
+              invocationMode,
+              parsed.args
+            ).then((response) => {
+              if (parsed.callback) {
+                invokeCallback(parsed.callback, response);
+                return undefined;
+              }
+              if (!response || response.succeeded === false) {
+                return rejectFromResponse(response || {});
+              }
+              return response.resultPayload === null
+                ? undefined
+                : response.resultPayload;
+            });
+            if (parsed.callback) {
+              result.catch((error) => {
+                invokeCallback(parsed.callback, {
+                  succeeded: false,
+                  lastErrorMessage:
+                    error && error.message
+                      ? error.message
+                      : "Chrome MV3 API failed."
+                });
+              });
+              return undefined;
+            }
+            return result;
+          }
+
+          function redirectURL(path) {
+            const raw = typeof path === "string" ? path.trim() : "";
+            const suffix = raw.replace(/^\\/+|\\/+$/g, "");
+            return "https://" + config.extensionID + ".chromiumapp.org/"
+              + suffix;
+          }
+
+          Object.defineProperty(runtime, "id", {
+            value: config.extensionID,
+            enumerable: true
+          });
+          Object.defineProperty(runtime, "lastError", {
+            get() {
+              return lastErrorValue;
+            },
+            enumerable: true
+          });
+
+          Object.defineProperty(sidePanel, "setOptions", {
+            value: function setOptions() {
+              return invoke("sidePanel", "setOptions", arguments);
+            },
+            enumerable: true
+          });
+          Object.defineProperty(sidePanel, "getOptions", {
+            value: function getOptions() {
+              return invoke("sidePanel", "getOptions", arguments);
+            },
+            enumerable: true
+          });
+          Object.defineProperty(sidePanel, "setPanelBehavior", {
+            value: function setPanelBehavior() {
+              return invoke("sidePanel", "setPanelBehavior", arguments);
+            },
+            enumerable: true
+          });
+          Object.defineProperty(sidePanel, "open", {
+            value: function open() {
+              return invoke("sidePanel", "open", arguments);
+            },
+            enumerable: true
+          });
+
+          Object.defineProperty(offscreen, "createDocument", {
+            value: function createDocument() {
+              return invoke("offscreen", "createDocument", arguments);
+            },
+            enumerable: true
+          });
+          Object.defineProperty(offscreen, "hasDocument", {
+            value: function hasDocument() {
+              return invoke("offscreen", "hasDocument", arguments);
+            },
+            enumerable: true
+          });
+          Object.defineProperty(offscreen, "closeDocument", {
+            value: function closeDocument() {
+              return invoke("offscreen", "closeDocument", arguments);
+            },
+            enumerable: true
+          });
+
+          Object.defineProperty(identity, "getRedirectURL", {
+            value: function getRedirectURL(path) {
+              return redirectURL(path);
+            },
+            enumerable: true
+          });
+          Object.defineProperty(identity, "launchWebAuthFlow", {
+            value: function launchWebAuthFlow() {
+              return invoke("identity", "launchWebAuthFlow", arguments);
+            },
+            enumerable: true
+          });
+          Object.defineProperty(identity, "getAuthToken", {
+            value: function getAuthToken() {
+              return invoke("identity", "getAuthToken", arguments);
+            },
+            enumerable: true
+          });
+          Object.defineProperty(identity, "removeCachedAuthToken", {
+            value: function removeCachedAuthToken() {
+              return invoke("identity", "removeCachedAuthToken", arguments);
+            },
+            enumerable: true
+          });
+          Object.defineProperty(identity, "clearAllCachedAuthTokens", {
+            value: function clearAllCachedAuthTokens() {
+              return invoke("identity", "clearAllCachedAuthTokens", arguments);
+            },
+            enumerable: true
+          });
+
+          Object.defineProperty(chromeObject, "runtime", {
+            value: Object.freeze(runtime),
+            enumerable: true
+          });
+          Object.defineProperty(chromeObject, "sidePanel", {
+            value: Object.freeze(sidePanel),
+            enumerable: true
+          });
+          Object.defineProperty(chromeObject, "offscreen", {
+            value: Object.freeze(offscreen),
+            enumerable: true
+          });
+          Object.defineProperty(chromeObject, "identity", {
+            value: Object.freeze(identity),
+            enumerable: true
+          });
+          Object.defineProperty(globalThis, "chrome", {
+            value: Object.freeze(chromeObject),
+            configurable: true
+          });
+        })();
+        """
+    }
+
+    private static func jsonString(_ object: [String: String]) -> String {
+        let data = (try? JSONSerialization.data(
+            withJSONObject: object,
+            options: [.sortedKeys]
+        )) ?? Data("{}".utf8)
+        return String(data: data, encoding: .utf8) ?? "{}"
+    }
+}
+
+final class ChromeMV3SidePanelOffscreenIdentityJSBridgeHandler {
+    private(set) var runtimeStateOwner:
+        ChromeMV3SidePanelOffscreenIdentityRuntimeStateOwner
+    private(set) var handledRequestCount = 0
+    private(set) var rejectedRequestCount = 0
+    private(set) var handledResponses:
+        [ChromeMV3SidePanelOffscreenIdentityBridgeResponse] = []
+
+    init(
+        runtimeStateOwner:
+            ChromeMV3SidePanelOffscreenIdentityRuntimeStateOwner
+    ) {
+        self.runtimeStateOwner = runtimeStateOwner
+    }
+
+    convenience init(
+        configuration: ChromeMV3SidePanelOffscreenIdentityConfiguration
+    ) {
+        self.init(
+            runtimeStateOwner:
+                ChromeMV3SidePanelOffscreenIdentityRuntimeStateOwner(
+                    configuration: configuration
+                )
+        )
+    }
+
+    func handle(
+        _ body: Any
+    ) -> ChromeMV3SidePanelOffscreenIdentityBridgeResponse {
+        handledRequestCount += 1
+        let request = makeRequest(from: body)
+        let response = runtimeStateOwner.handle(request)
+        handledResponses.append(response)
+        if response.succeeded == false {
+            rejectedRequestCount += 1
+        }
+        return response
+    }
+
+    @discardableResult
+    func tearDown() -> ChromeMV3SidePanelOffscreenIdentityBridgeResponse {
+        let response = runtimeStateOwner.handle(
+            ChromeMV3SidePanelOffscreenIdentityBridgeRequest(
+                namespace: "offscreen",
+                methodName: "closeDocument",
+                invocationMode: .fireAndForget,
+                diagnostics: [
+                    "Synthetic WebKit harness teardown closes model-only offscreen state.",
+                ]
+            )
+        )
+        handledResponses.append(response)
+        return response
+    }
+
+    private func makeRequest(
+        from body: Any
+    ) -> ChromeMV3SidePanelOffscreenIdentityBridgeRequest {
+        guard let object = body as? [String: Any] else {
+            return ChromeMV3SidePanelOffscreenIdentityBridgeRequest(
+                namespace: "unsupported",
+                methodName: "invalidMessageBody",
+                invocationMode: .promise,
+                diagnostics: [
+                    "Synthetic JS bridge message body was not a dictionary.",
+                ]
+            )
+        }
+        let namespace = object["namespace"] as? String ?? "unsupported"
+        let methodName = object["methodName"] as? String
+            ?? "unsupportedMethod"
+        let mode = ChromeMV3JSBridgeInvocationMode(
+            rawValue: object["invocationMode"] as? String ?? ""
+        ) ?? .promise
+        let bridgeCallID = object["bridgeCallID"] as? String
+        let rawArguments = object["arguments"] as? [Any] ?? []
+        let arguments = rawArguments.compactMap {
+            ChromeMV3StorageValue(
+                sidePanelOffscreenIdentityWebKitValue: $0
+            )
+        }
+        let allArgumentsConverted = arguments.count == rawArguments.count
+        return ChromeMV3SidePanelOffscreenIdentityBridgeRequest(
+            bridgeCallID: bridgeCallID,
+            namespace: namespace,
+            methodName: methodName,
+            invocationMode: mode,
+            arguments: arguments,
+            diagnostics: allArgumentsConverted
+                ? ["Request originated from the synthetic WebKit JS shim."]
+                : [
+                    "Request originated from the synthetic WebKit JS shim.",
+                    "One or more JS arguments were not JSON-compatible and were dropped.",
+                ]
+        )
+    }
 }
 
 struct ChromeMV3SidePanelOffscreenIdentityReportSummary:
@@ -1529,6 +2157,9 @@ struct ChromeMV3SidePanelOffscreenIdentityReportSummary:
     var identityAvailableInInternalFixture: Bool
     var identityAvailableInProduct: Bool
     var identityExternalAuthNetworkAllowed: Bool
+    var sidePanelJSExecutedInWebKitSyntheticHarness: Bool
+    var offscreenJSExecutedInWebKitSyntheticHarness: Bool
+    var identityJSExecutedInWebKitSyntheticHarness: Bool
     var normalTabRuntimeBridgeAvailable: Bool
     var runtimeLoadable: Bool
 }
@@ -1563,11 +2194,16 @@ struct ChromeMV3SidePanelOffscreenIdentityCompatibilityReport:
         ChromeMV3IdentitySyntheticFixtureStatus
     var jsShimCoverage:
         ChromeMV3SidePanelOffscreenIdentityJSShimCoverage
+    var webKitSyntheticJSExecutionSummary:
+        ChromeMV3SidePanelOffscreenIdentityWebKitSyntheticJSExecutionSummary
     var productBlockers: [String]
+    var sidePanelJSExecutedInWebKitSyntheticHarness: Bool
     var sidePanelAvailableInInternalFixture: Bool
     var sidePanelAvailableInProduct: Bool
+    var offscreenJSExecutedInWebKitSyntheticHarness: Bool
     var offscreenAvailableInInternalFixture: Bool
     var offscreenAvailableInProduct: Bool
+    var identityJSExecutedInWebKitSyntheticHarness: Bool
     var identityAvailableInInternalFixture: Bool
     var identityAvailableInProduct: Bool
     var identityExternalAuthNetworkAllowed: Bool
@@ -1592,6 +2228,12 @@ struct ChromeMV3SidePanelOffscreenIdentityCompatibilityReport:
                 identityAvailableInInternalFixture,
             identityAvailableInProduct: false,
             identityExternalAuthNetworkAllowed: false,
+            sidePanelJSExecutedInWebKitSyntheticHarness:
+                sidePanelJSExecutedInWebKitSyntheticHarness,
+            offscreenJSExecutedInWebKitSyntheticHarness:
+                offscreenJSExecutedInWebKitSyntheticHarness,
+            identityJSExecutedInWebKitSyntheticHarness:
+                identityJSExecutedInWebKitSyntheticHarness,
             normalTabRuntimeBridgeAvailable: false,
             runtimeLoadable: false
         )
@@ -1636,7 +2278,10 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
         profileID: String = "sidepanel-offscreen-identity-profile",
         moduleState: ChromeMV3ProfileHostModuleState = .enabled,
         syntheticIdentityFixture:
-            ChromeMV3IdentitySyntheticFixture = .none
+            ChromeMV3IdentitySyntheticFixture = .none,
+        webKitSyntheticJSExecutionSummary:
+            ChromeMV3SidePanelOffscreenIdentityWebKitSyntheticJSExecutionSummary
+            = .notRun
     ) -> ChromeMV3SidePanelOffscreenIdentityCompatibilityReport {
         let rootURL = rootURL.standardizedFileURL
         let apiDetection = apiDetectionSummary(
@@ -1687,11 +2332,23 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
                 rootURL.path,
                 apiDetection.sidePanelDefaultPath ?? "",
                 String(apiDetection.offscreenPermissionDeclared),
-                String(apiDetection.identityPermissionDeclared),
-                String(fixtureStatus.authFlowResponseConfigured),
-                String(fixtureStatus.authTokenConfigured),
-            ]
-        )
+            String(apiDetection.identityPermissionDeclared),
+            String(fixtureStatus.authFlowResponseConfigured),
+            String(fixtureStatus.authTokenConfigured),
+            String(
+                webKitSyntheticJSExecutionSummary
+                    .sidePanelJSExecutedInWebKitSyntheticHarness
+            ),
+            String(
+                webKitSyntheticJSExecutionSummary
+                    .offscreenJSExecutedInWebKitSyntheticHarness
+            ),
+            String(
+                webKitSyntheticJSExecutionSummary
+                    .identityJSExecutedInWebKitSyntheticHarness
+            ),
+        ]
+    )
         let sidePanelInternal =
             moduleState == .enabled
             && (apiDetection.sidePanelDeclaredByManifestKey
@@ -1709,7 +2366,7 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
                 || apiDetection.identityAPIUsedInSource)
 
         return ChromeMV3SidePanelOffscreenIdentityCompatibilityReport(
-            schemaVersion: 1,
+            schemaVersion: 2,
             id: reportID,
             reportFileName:
                 ChromeMV3SidePanelOffscreenIdentityCompatibilityReportWriter
@@ -1719,30 +2376,48 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
             apiDetection: apiDetection,
             sidePanelManifestResourceSummary: sidePanelSummary,
             sidePanelJSMethodCoverage:
-                sidePanelMethodCoverage(internalAvailable: sidePanelInternal),
+                sidePanelMethodCoverage(
+                    internalAvailable: sidePanelInternal,
+                    webKitSummary: webKitSyntheticJSExecutionSummary
+                ),
             offscreenReasonSupportMatrix:
                 ChromeMV3OffscreenReason.allCases.map {
                     ChromeMV3SidePanelOffscreenIdentityRuntimeStateOwner
                         .reasonSupport(rawReason: $0.rawValue)
                 }.sorted { $0.rawReason < $1.rawReason },
             offscreenJSMethodCoverage:
-                offscreenMethodCoverage(internalAvailable: offscreenInternal),
+                offscreenMethodCoverage(
+                    internalAvailable: offscreenInternal,
+                    webKitSummary: webKitSyntheticJSExecutionSummary
+                ),
             offscreenLifecycleSummary:
                 stateOwner.offscreenLifecycleSummary,
             identityManifestSummary: identitySummary,
             identityAPISupportMatrix:
                 identityMethodCoverage(
                     internalAvailable: identityInternal,
-                    fixture: syntheticIdentityFixture
+                    fixture: syntheticIdentityFixture,
+                    webKitSummary: webKitSyntheticJSExecutionSummary
                 ),
             identitySyntheticFixtureStatus: fixtureStatus,
             jsShimCoverage:
                 ChromeMV3SidePanelOffscreenIdentityJSShimSource.coverage,
+            webKitSyntheticJSExecutionSummary:
+                webKitSyntheticJSExecutionSummary,
             productBlockers: productBlockers,
+            sidePanelJSExecutedInWebKitSyntheticHarness:
+                webKitSyntheticJSExecutionSummary
+                .sidePanelJSExecutedInWebKitSyntheticHarness,
             sidePanelAvailableInInternalFixture: sidePanelInternal,
             sidePanelAvailableInProduct: false,
+            offscreenJSExecutedInWebKitSyntheticHarness:
+                webKitSyntheticJSExecutionSummary
+                .offscreenJSExecutedInWebKitSyntheticHarness,
             offscreenAvailableInInternalFixture: offscreenInternal,
             offscreenAvailableInProduct: false,
+            identityJSExecutedInWebKitSyntheticHarness:
+                webKitSyntheticJSExecutionSummary
+                .identityJSExecutedInWebKitSyntheticHarness,
             identityAvailableInInternalFixture: identityInternal,
             identityAvailableInProduct: false,
             identityExternalAuthNetworkAllowed: false,
@@ -1756,7 +2431,11 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
                     + sidePanelSummary.blockingReasons
                     + productBlockers
                     + [
-                        "Compatibility report is deterministic and non-executing.",
+                        "Compatibility model and product blockers remain deterministic.",
+                        webKitSyntheticJSExecutionSummary
+                            .scriptEvaluationSucceeded
+                            ? "A controlled DEBUG/internal WebKit synthetic JS harness result is attached."
+                            : "No WebKit synthetic JS harness result is attached.",
                         "No product sidePanel, offscreen, identity, normal-tab runtime, or external auth path was added.",
                     ]
             )
@@ -1946,7 +2625,9 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
     }
 
     private static func sidePanelMethodCoverage(
-        internalAvailable: Bool
+        internalAvailable: Bool,
+        webKitSummary:
+            ChromeMV3SidePanelOffscreenIdentityWebKitSyntheticJSExecutionSummary
     ) -> [ChromeMV3SidePanelOffscreenIdentityMethodCoverage] {
         [
             method(
@@ -1954,6 +2635,7 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
                 methodName: "getOptions",
                 status: .internalSyntheticOnly,
                 internalAvailable: internalAvailable,
+                webKitSummary: webKitSummary,
                 diagnostics: ["Reads internal synthetic sidePanel state."]
             ),
             method(
@@ -1961,6 +2643,7 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
                 methodName: "setOptions",
                 status: .internalSyntheticOnly,
                 internalAvailable: internalAvailable,
+                webKitSummary: webKitSummary,
                 diagnostics: ["Mutates internal synthetic sidePanel state."]
             ),
             method(
@@ -1968,6 +2651,7 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
                 methodName: "setPanelBehavior",
                 status: .internalSyntheticOnly,
                 internalAvailable: internalAvailable,
+                webKitSummary: webKitSummary,
                 diagnostics: ["Mutates internal synthetic panel behavior state."]
             ),
             method(
@@ -1975,6 +2659,7 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
                 methodName: "open",
                 status: .productUIUnavailable,
                 internalAvailable: internalAvailable,
+                webKitSummary: webKitSummary,
                 diagnostics: [
                     "Returns product UI unavailable unless an explicit internal sidePanel host fixture is configured.",
                 ]
@@ -1983,7 +2668,9 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
     }
 
     private static func offscreenMethodCoverage(
-        internalAvailable: Bool
+        internalAvailable: Bool,
+        webKitSummary:
+            ChromeMV3SidePanelOffscreenIdentityWebKitSyntheticJSExecutionSummary
     ) -> [ChromeMV3SidePanelOffscreenIdentityMethodCoverage] {
         [
             method(
@@ -1991,6 +2678,7 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
                 methodName: "createDocument",
                 status: .internalSyntheticOnly,
                 internalAvailable: internalAvailable,
+                webKitSummary: webKitSummary,
                 diagnostics: ["Validates URL, reasons, and justification before model-only creation."]
             ),
             method(
@@ -1998,6 +2686,7 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
                 methodName: "hasDocument",
                 status: .internalSyntheticOnly,
                 internalAvailable: internalAvailable,
+                webKitSummary: webKitSummary,
                 diagnostics: ["Reads model-only offscreen document state."]
             ),
             method(
@@ -2005,6 +2694,7 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
                 methodName: "closeDocument",
                 status: .internalSyntheticOnly,
                 internalAvailable: internalAvailable,
+                webKitSummary: webKitSummary,
                 diagnostics: ["Clears model-only offscreen document state."]
             ),
         ].sorted { $0.methodName < $1.methodName }
@@ -2012,7 +2702,9 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
 
     private static func identityMethodCoverage(
         internalAvailable: Bool,
-        fixture: ChromeMV3IdentitySyntheticFixture
+        fixture: ChromeMV3IdentitySyntheticFixture,
+        webKitSummary:
+            ChromeMV3SidePanelOffscreenIdentityWebKitSyntheticJSExecutionSummary
     ) -> [ChromeMV3SidePanelOffscreenIdentityMethodCoverage] {
         [
             method(
@@ -2020,6 +2712,7 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
                 methodName: "getRedirectURL",
                 status: .internalSyntheticOnly,
                 internalAvailable: internalAvailable,
+                webKitSummary: webKitSummary,
                 diagnostics: ["Returns deterministic synthetic chromiumapp.org redirect URLs."]
             ),
             method(
@@ -2031,6 +2724,7 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
                         ? .syntheticFixtureOnly
                         : .productBlocked,
                 internalAvailable: internalAvailable,
+                webKitSummary: webKitSummary,
                 diagnostics: [
                     "Blocked unless an explicit test-only synthetic auth flow response is configured.",
                     "External auth network is unavailable.",
@@ -2045,6 +2739,7 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
                         ? .syntheticFixtureOnly
                         : .productBlocked,
                 internalAvailable: internalAvailable,
+                webKitSummary: webKitSummary,
                 diagnostics: [
                     "Blocked unless an explicit test-only synthetic token is configured.",
                     "No real token storage is used.",
@@ -2055,6 +2750,7 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
                 methodName: "removeCachedAuthToken",
                 status: .internalSyntheticOnly,
                 internalAvailable: internalAvailable,
+                webKitSummary: webKitSummary,
                 diagnostics: ["Clears only synthetic in-memory fixture token state."]
             ),
             method(
@@ -2062,6 +2758,7 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
                 methodName: "clearAllCachedAuthTokens",
                 status: .internalSyntheticOnly,
                 internalAvailable: internalAvailable,
+                webKitSummary: webKitSummary,
                 diagnostics: ["Clears only synthetic in-memory fixture token state."]
             ),
         ].sorted { $0.methodName < $1.methodName }
@@ -2072,23 +2769,51 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
         methodName: String,
         status: ChromeMV3SidePanelOffscreenIdentitySupportStatus,
         internalAvailable: Bool,
+        webKitSummary:
+            ChromeMV3SidePanelOffscreenIdentityWebKitSyntheticJSExecutionSummary,
         diagnostics: [String]
     ) -> ChromeMV3SidePanelOffscreenIdentityMethodCoverage {
-        ChromeMV3SidePanelOffscreenIdentityMethodCoverage(
+        let executedMethods: [String]
+        switch namespace {
+        case "sidePanel":
+            executedMethods = webKitSummary.sidePanelExecutedMethods
+        case "offscreen":
+            executedMethods = webKitSummary.offscreenExecutedMethods
+        case "identity":
+            executedMethods = webKitSummary.identityExecutedMethods
+        default:
+            executedMethods = []
+        }
+        let methodExecuted = executedMethods.contains(methodName)
+        let methodKey = "\(namespace).\(methodName)"
+        return ChromeMV3SidePanelOffscreenIdentityMethodCoverage(
             namespace: namespace,
             methodName: methodName,
             supportStatus: status,
+            modelCoverageAvailable: true,
+            bridgeCoverageAvailable: internalAvailable,
             availableInInternalFixture: internalAvailable,
             availableInProduct: false,
             callbackModeModeled: true,
             promiseModeModeled: true,
             lastErrorModeled: true,
+            webKitSyntheticJSCallbackExecuted:
+                webKitSummary.callbackExecutedMethodKeys.contains(methodKey),
+            webKitSyntheticJSPromiseExecuted:
+                webKitSummary.promiseExecutedMethodKeys.contains(methodKey),
+            webKitSyntheticJSLastErrorVerified:
+                webKitSummary.lastErrorVerifiedMethodKeys.contains(methodKey)
+                && webKitSummary
+                    .lastErrorScopedToCallbackTurnInWebKitSyntheticHarness,
             diagnostics:
                 uniqueSortedSOI(
                     diagnostics
                         + [
                             "Product availability remains false.",
                             "Callback, Promise, and runtime.lastError behavior are modeled deterministically.",
+                            methodExecuted
+                                ? "Method was executed by a controlled WebKit synthetic JS harness."
+                                : "Method has not been executed by a WebKit synthetic JS harness in this report.",
                         ]
                 )
         )
@@ -2169,6 +2894,16 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
                 note: "Defines getRedirectURL, launchWebAuthFlow, getAuthToken, removeCachedAuthToken, clearAllCachedAuthTokens, redirect URL format, and token-cache semantics."
             ),
             source(
+                title: "chrome.runtime.lastError",
+                url: "https://developer.chrome.com/docs/extensions/reference/api/runtime#property-lastError",
+                note: "Defines callback-scoped lastError behavior and Promise error separation used by the synthetic shim diagnostics."
+            ),
+            source(
+                title: "Apple WebKit synthetic script APIs",
+                url: "https://developer.apple.com/documentation/webkit/wkscriptmessagehandlerwithreply",
+                note: "Local Apple WebKit SDK headers checked for user-script injection, content worlds, script-message reply handlers, async JS evaluation, and handler teardown boundaries."
+            ),
+            source(
                 title: "Current Sumi extension page host harness",
                 url: nil,
                 note: "The existing DEBUG/internal extension page resolver and host policy are reused for sidePanel.default_path diagnostics only."
@@ -2181,8 +2916,14 @@ enum ChromeMV3SidePanelOffscreenIdentityCompatibilityReportGenerator {
         url: String?,
         note: String
     ) -> ChromeMV3WebKitObjectAcceptanceDocumentationSource {
-        ChromeMV3WebKitObjectAcceptanceDocumentationSource(
-            kind: url == nil ? "currentSumiCode" : "chromeDocumentation",
+        let kind: String
+        if let url, url.contains("developer.apple.com") {
+            kind = "appleDocumentation"
+        } else {
+            kind = url == nil ? "currentSumiCode" : "chromeDocumentation"
+        }
+        return ChromeMV3WebKitObjectAcceptanceDocumentationSource(
+            kind: kind,
             title: title,
             url: url,
             note: note
@@ -2205,6 +2946,13 @@ private func uniqueSortedSOI<T: Hashable & Comparable>(
     _ values: [T]
 ) -> [T] {
     Array(Set(values)).sorted()
+}
+
+private func stringArraySOI(
+    _ value: ChromeMV3StorageValue?
+) -> [String] {
+    guard case .array(let values)? = value else { return [] }
+    return values.compactMap(\.soiStringValue).sorted()
 }
 
 private func normalizedSOI(

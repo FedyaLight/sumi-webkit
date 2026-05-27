@@ -55,10 +55,13 @@ struct ChromeMV3InstallSidePanelOffscreenIdentitySummary: Codable, Equatable {
     var declaresIdentityEmailPermission: Bool
     var oauth2Scopes: [String]
     var sidePanelAvailableInInternalFixture: Bool
+    var sidePanelJSExecutedInWebKitSyntheticHarness: Bool
     var sidePanelAvailableInProduct: Bool
     var offscreenAvailableInInternalFixture: Bool
+    var offscreenJSExecutedInWebKitSyntheticHarness: Bool
     var offscreenAvailableInProduct: Bool
     var identityAvailableInInternalFixture: Bool
+    var identityJSExecutedInWebKitSyntheticHarness: Bool
     var identityAvailableInProduct: Bool
     var identityExternalAuthNetworkAllowed: Bool
     var normalTabRuntimeBridgeAvailable: Bool
@@ -210,13 +213,16 @@ enum ChromeMV3InstallReporter {
                     declaresOffscreenPermission: false,
                     declaresIdentityPermission: false,
                     declaresIdentityEmailPermission: false,
-                    oauth2Scopes: [],
-                    sidePanelAvailableInInternalFixture: false,
-                    sidePanelAvailableInProduct: false,
-                    offscreenAvailableInInternalFixture: false,
-                    offscreenAvailableInProduct: false,
-                    identityAvailableInInternalFixture: false,
-                    identityAvailableInProduct: false,
+            oauth2Scopes: [],
+            sidePanelAvailableInInternalFixture: false,
+            sidePanelJSExecutedInWebKitSyntheticHarness: false,
+            sidePanelAvailableInProduct: false,
+            offscreenAvailableInInternalFixture: false,
+            offscreenJSExecutedInWebKitSyntheticHarness: false,
+            offscreenAvailableInProduct: false,
+            identityAvailableInInternalFixture: false,
+            identityJSExecutedInWebKitSyntheticHarness: false,
+            identityAvailableInProduct: false,
                     identityExternalAuthNetworkAllowed: false,
                     normalTabRuntimeBridgeAvailable: false,
                     runtimeLoadable: false
@@ -483,10 +489,13 @@ enum ChromeMV3InstallReporter {
                 manifest.declaresPermission("identity.email"),
             oauth2Scopes: manifest.oauth2?.scopes ?? [],
             sidePanelAvailableInInternalFixture: sidePanelDetected,
+            sidePanelJSExecutedInWebKitSyntheticHarness: false,
             sidePanelAvailableInProduct: false,
             offscreenAvailableInInternalFixture: offscreenDetected,
+            offscreenJSExecutedInWebKitSyntheticHarness: false,
             offscreenAvailableInProduct: false,
             identityAvailableInInternalFixture: identityDetected,
+            identityJSExecutedInWebKitSyntheticHarness: false,
             identityAvailableInProduct: false,
             identityExternalAuthNetworkAllowed: false,
             normalTabRuntimeBridgeAvailable: false,
