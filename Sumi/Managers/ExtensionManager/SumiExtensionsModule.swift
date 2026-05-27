@@ -3150,6 +3150,72 @@ final class SumiExtensionsModule {
             return report
         }
 
+        func chromeMV3ListInternalCompatibilityDiagnosticsIfEnabled(
+            rootURL: URL
+        ) -> [ChromeMV3CompatibilityReportViewModel]? {
+            guard isEnabled else { return nil }
+            return ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
+                .listCompatibilityReportViewModels()
+        }
+
+        func chromeMV3CompatibilityReportViewModelIfEnabled(
+            rootURL: URL,
+            profileID: String,
+            extensionID: String
+        ) -> ChromeMV3CompatibilityReportViewModel? {
+            guard isEnabled else { return nil }
+            return ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
+                .compatibilityReportViewModel(
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+        }
+
+        func chromeMV3ExportCompatibilityReportJSONIfEnabled(
+            rootURL: URL,
+            profileID: String,
+            extensionID: String
+        ) -> String? {
+            guard isEnabled else { return nil }
+            return ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
+                .exportLatestEndToEndDiagnosticsJSON(
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+        }
+
+        func chromeMV3RunArtifactCleanupIfEnabled(
+            rootURL: URL,
+            profileID: String,
+            extensionID: String
+        ) -> ChromeMV3ArtifactCleanupReport? {
+            guard isEnabled else { return nil }
+            if #available(macOS 15.5, *) {
+                tearDownChromeMV3ControllerLoadOwner()
+                tearDownChromeMV3DetachedContextOwner()
+                tearDownChromeMV3ExtensionObjectProbeOwner()
+            }
+            tearDownChromeMV3EmptyControllerOwner()
+            return ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
+                .runArtifactCleanup(
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+        }
+
+        func chromeMV3RunFinalFoundationReadinessReportIfEnabled(
+            rootURL: URL,
+            profileID: String,
+            extensionID: String
+        ) -> ChromeMV3FoundationReadinessReport? {
+            guard isEnabled else { return nil }
+            return ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
+                .writeFoundationReadinessReport(
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+        }
+
         func chromeMV3WriteInternalCrashMarkerIfEnabled(
             rootURL: URL,
             profileID: String,
