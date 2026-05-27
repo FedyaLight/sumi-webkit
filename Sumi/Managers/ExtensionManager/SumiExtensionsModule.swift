@@ -21,12 +21,18 @@ final class SumiExtensionsModule {
         WKWebsiteDataStore,
         UUID
     ) -> ChromeMV3EmptyControllerOwner?
+    private let chromeMV3PopupOptionsWebViewFactory:
+        @MainActor () -> ChromeMV3PopupOptionsWebViewFactory
 
     let surfaceStore: BrowserExtensionSurfaceStore
 
     private var cachedManager: ExtensionManager?
     private var cachedChromeMV3EmptyControllerOwner:
         ChromeMV3EmptyControllerOwner?
+    private var cachedChromeMV3PopupOptionsHostController:
+        ChromeMV3ProductPopupOptionsHostController?
+    private var lastChromeMV3PopupOptionsRunResult:
+        ChromeMV3ProductPopupOptionsRunResult?
     #if DEBUG
         private var cachedChromeMV3ExtensionObjectProbeOwner:
             ChromeMV3ExtensionObjectProbeOwner?
@@ -144,6 +150,10 @@ final class SumiExtensionsModule {
                 controllerIdentifier: $2
             )
         },
+        chromeMV3PopupOptionsWebViewFactory:
+            @escaping @MainActor () -> ChromeMV3PopupOptionsWebViewFactory = {
+                ChromeMV3ProductPopupOptionsWKWebViewFactory()
+            },
         surfaceStore: BrowserExtensionSurfaceStore? = nil
     ) {
         self.moduleRegistry = moduleRegistry
@@ -153,6 +163,8 @@ final class SumiExtensionsModule {
         self.managerFactory = managerFactory
         self.chromeMV3EmptyControllerOwnerFactory =
             chromeMV3EmptyControllerOwnerFactory
+        self.chromeMV3PopupOptionsWebViewFactory =
+            chromeMV3PopupOptionsWebViewFactory
         self.surfaceStore = surfaceStore ?? BrowserExtensionSurfaceStore(
             extensionManager: nil
         )
@@ -212,6 +224,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3EndToEndInstallDiagnosticsReport = nil
                 }
             #endif
+            tearDownChromeMV3PopupOptionsHostController(reason: .moduleDisabled)
             tearDownChromeMV3EmptyControllerOwner()
             tearDownLoadedRuntime(reason: "SumiExtensionsModule.setEnabled(false)")
         }
@@ -3300,12 +3313,22 @@ final class SumiExtensionsModule {
         extensionID: String
     ) -> ChromeMV3ExtensionManagerDetailViewModel? {
         guard isEnabled else { return nil }
-        return ChromeMV3ExtensionManagerViewModelBuilder.makeDetailViewModel(
+        var detail = ChromeMV3ExtensionManagerViewModelBuilder.makeDetailViewModel(
             rootURL: rootURL,
             profileID: profileID,
             extensionID: extensionID,
             gate: chromeMV3ExtensionManagerGate()
         )
+        if
+            lastChromeMV3PopupOptionsRunResult?.launchRecord?.profileID
+                == profileID,
+            lastChromeMV3PopupOptionsRunResult?.launchRecord?.extensionID
+                == extensionID
+        {
+            detail?.popupOptionsLaunchState.lastRunResult =
+                lastChromeMV3PopupOptionsRunResult
+        }
+        return detail
     }
 
     func chromeMV3InstallUnpackedThroughManager(
@@ -3449,6 +3472,13 @@ final class SumiExtensionsModule {
             extensionID: extensionID,
             gate: gate
         )
+        if enabled == false {
+            _ = cachedChromeMV3PopupOptionsHostController?.close(
+                profileID: profileID,
+                extensionID: extensionID,
+                reason: .disabledWhileOpen
+            )
+        }
         #if DEBUG
             lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
         #endif
@@ -3572,6 +3602,11 @@ final class SumiExtensionsModule {
             )
         }
         tearDownChromeMV3ManagerRuntimeOwners()
+        _ = cachedChromeMV3PopupOptionsHostController?.close(
+            profileID: profileID,
+            extensionID: extensionID,
+            reason: .uninstalledWhileOpen
+        )
         let result = ChromeMV3ExtensionManagerActionRunner.uninstall(
             rootURL: rootURL,
             profileID: profileID,
@@ -3597,6 +3632,11 @@ final class SumiExtensionsModule {
             )
         }
         tearDownChromeMV3ManagerRuntimeOwners()
+        _ = cachedChromeMV3PopupOptionsHostController?.close(
+            profileID: profileID,
+            extensionID: extensionID,
+            reason: .resetWhileOpen
+        )
         let result = ChromeMV3ExtensionManagerActionRunner.reset(
             rootURL: rootURL,
             profileID: profileID,
@@ -3607,6 +3647,128 @@ final class SumiExtensionsModule {
             lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
         #endif
         return result
+    }
+
+    func chromeMV3OpenActionPopupThroughManager(
+        rootURL: URL,
+        profileID: String,
+        extensionID: String
+    ) -> ChromeMV3ExtensionManagerActionResult {
+        openChromeMV3PopupOptionsThroughManager(
+            rootURL: rootURL,
+            profileID: profileID,
+            extensionID: extensionID,
+            surface: .actionPopup,
+            action: .openActionPopup
+        )
+    }
+
+    func chromeMV3OpenOptionsThroughManager(
+        rootURL: URL,
+        profileID: String,
+        extensionID: String
+    ) -> ChromeMV3ExtensionManagerActionResult {
+        let state = ChromeMV3ProductPopupOptionsLaunchPlanner.makeLaunchState(
+            rootURL: rootURL,
+            profileID: profileID,
+            extensionID: extensionID,
+            managerGate: chromeMV3ExtensionManagerGate(),
+            moduleEnabled: isEnabled,
+            lastRunResult: lastChromeMV3PopupOptionsRunResult
+        )
+        guard let primary = state.primaryOptions else {
+            let result = ChromeMV3ProductPopupOptionsRunResult.blocked(
+                requestedSurface: nil,
+                launchRecord: nil,
+                diagnostics: [
+                    ChromeMV3PopupOptionsBlocker.noOptionsPageDeclared.reason,
+                ]
+            )
+            lastChromeMV3PopupOptionsRunResult = result
+            return .popupOptions(action: .openOptions, result: result)
+        }
+        return openChromeMV3PopupOptions(
+            primary,
+            action: .openOptions
+        )
+    }
+
+    func chromeMV3ClosePopupOptionsThroughManager(
+        profileID: String,
+        extensionID: String
+    ) -> ChromeMV3ExtensionManagerActionResult {
+        guard isEnabled else {
+            return ChromeMV3ExtensionManagerActionResult.blocked(
+                action: .closePopupOptions,
+                diagnostics: [.moduleDisabled]
+            )
+        }
+        let result = cachedChromeMV3PopupOptionsHostController?.close(
+            profileID: profileID,
+            extensionID: extensionID,
+            reason: .userClosed
+        ) ?? ChromeMV3ProductPopupOptionsRunResult(
+            status: .succeeded,
+            requestedSurface: nil,
+            launchRecord: nil,
+            lifecycleEvents: [],
+            webViewCreated: false,
+            webViewReleased: false,
+            scriptHandlersRemoved: false,
+            normalTabAttached: false,
+            contentScriptsInjectedIntoProductPages: false,
+            serviceWorkerWakeAttempted: false,
+            nativeHostLaunchAttempted: false,
+            diagnostics: ["No popup/options WebView session was active."]
+        )
+        lastChromeMV3PopupOptionsRunResult = result
+        return .popupOptions(action: .closePopupOptions, result: result)
+    }
+
+    private func openChromeMV3PopupOptionsThroughManager(
+        rootURL: URL,
+        profileID: String,
+        extensionID: String,
+        surface: ChromeMV3ProductPopupOptionsSurface,
+        action: ChromeMV3ExtensionManagerActionKind
+    ) -> ChromeMV3ExtensionManagerActionResult {
+        let state = ChromeMV3ProductPopupOptionsLaunchPlanner.makeLaunchState(
+            rootURL: rootURL,
+            profileID: profileID,
+            extensionID: extensionID,
+            managerGate: chromeMV3ExtensionManagerGate(),
+            moduleEnabled: isEnabled,
+            lastRunResult: lastChromeMV3PopupOptionsRunResult
+        )
+        let launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord
+        switch surface {
+        case .actionPopup:
+            launchRecord = state.actionPopup
+        case .optionsPage:
+            launchRecord = state.optionsPages.first {
+                $0.surface == .optionsPage
+            } ?? state.actionPopup
+        case .optionsUI:
+            launchRecord = state.optionsPages.first {
+                $0.surface == .optionsUI
+            } ?? state.actionPopup
+        }
+        return openChromeMV3PopupOptions(launchRecord, action: action)
+    }
+
+    private func openChromeMV3PopupOptions(
+        _ launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord,
+        action: ChromeMV3ExtensionManagerActionKind
+    ) -> ChromeMV3ExtensionManagerActionResult {
+        guard isEnabled else {
+            return ChromeMV3ExtensionManagerActionResult.blocked(
+                action: action,
+                diagnostics: [.moduleDisabled]
+            )
+        }
+        let result = chromeMV3PopupOptionsHostController().open(launchRecord)
+        lastChromeMV3PopupOptionsRunResult = result
+        return .popupOptions(action: action, result: result)
     }
 
     func chromeMV3ExportDiagnosticsJSONThroughManager(
@@ -3856,6 +4018,34 @@ final class SumiExtensionsModule {
 
     func closeAllOptionsWindowsIfLoaded() {
         cachedManager?.closeAllOptionsWindows()
+    }
+
+    var chromeMV3PopupOptionsActiveSessionCountForTesting: Int {
+        cachedChromeMV3PopupOptionsHostController?.activeSessionCount ?? 0
+    }
+
+    private func chromeMV3PopupOptionsHostController()
+        -> ChromeMV3ProductPopupOptionsHostController
+    {
+        if let cachedChromeMV3PopupOptionsHostController {
+            return cachedChromeMV3PopupOptionsHostController
+        }
+        let controller = ChromeMV3ProductPopupOptionsHostController(
+            factory: chromeMV3PopupOptionsWebViewFactory()
+        )
+        cachedChromeMV3PopupOptionsHostController = controller
+        return controller
+    }
+
+    private func tearDownChromeMV3PopupOptionsHostController(
+        reason: ChromeMV3ProductPopupOptionsTeardownReason
+    ) {
+        let result = cachedChromeMV3PopupOptionsHostController?
+            .closeAll(reason: reason)
+        if let result {
+            lastChromeMV3PopupOptionsRunResult = result
+        }
+        cachedChromeMV3PopupOptionsHostController = nil
     }
 
     private func resolvedChromeMV3ManagerProfileID(

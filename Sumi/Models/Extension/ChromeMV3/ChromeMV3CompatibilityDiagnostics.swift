@@ -132,6 +132,13 @@ struct ChromeMV3DiagnosticsProductExposureFlags:
     var developerPreviewLifecycleAvailable: Bool
     var internalSyntheticRuntimeDiagnosticsAvailable: Bool
     var productRuntimeAvailable: Bool
+    var actionPopupUIAvailableInDeveloperPreview: Bool
+    var actionPopupUIAvailableInPublicProduct: Bool
+    var optionsUIAvailableInDeveloperPreview: Bool
+    var optionsUIAvailableInPublicProduct: Bool
+    var popupOptionsRuntimeAllowed: Bool
+    var popupOptionsBridgeAllowed: Bool
+    var popupOptionsProductBlockedReason: String?
     var normalTabRuntimeBridgeAvailable: Bool
     var runtimeLoadable: Bool
     var productExtensionUIAvailable: Bool
@@ -141,7 +148,12 @@ struct ChromeMV3DiagnosticsProductExposureFlags:
     static func internalDeveloperPreview(
         diagnosticsUIAvailable: Bool,
         lifecycleAvailable: Bool,
-        syntheticDiagnosticsAvailable: Bool
+        syntheticDiagnosticsAvailable: Bool,
+        popupOptionsGate:
+            ChromeMV3ProductPopupOptionsUIGateRecord =
+                ChromeMV3ProductPopupOptionsUIGateRecord.evaluate(
+                    moduleEnabled: false
+                )
     ) -> ChromeMV3DiagnosticsProductExposureFlags {
         ChromeMV3DiagnosticsProductExposureFlags(
             internalDiagnosticsUIAvailable: diagnosticsUIAvailable,
@@ -149,6 +161,20 @@ struct ChromeMV3DiagnosticsProductExposureFlags:
             internalSyntheticRuntimeDiagnosticsAvailable:
                 syntheticDiagnosticsAvailable,
             productRuntimeAvailable: false,
+            actionPopupUIAvailableInDeveloperPreview:
+                popupOptionsGate.actionPopupUIAvailableInDeveloperPreview,
+            actionPopupUIAvailableInPublicProduct:
+                popupOptionsGate.actionPopupUIAvailableInPublicProduct,
+            optionsUIAvailableInDeveloperPreview:
+                popupOptionsGate.optionsUIAvailableInDeveloperPreview,
+            optionsUIAvailableInPublicProduct:
+                popupOptionsGate.optionsUIAvailableInPublicProduct,
+            popupOptionsRuntimeAllowed:
+                popupOptionsGate.popupOptionsRuntimeAllowed,
+            popupOptionsBridgeAllowed:
+                popupOptionsGate.popupOptionsBridgeAllowed,
+            popupOptionsProductBlockedReason:
+                popupOptionsGate.popupOptionsProductBlockedReason,
             normalTabRuntimeBridgeAvailable: false,
             runtimeLoadable: false,
             productExtensionUIAvailable: false,
@@ -324,7 +350,14 @@ struct ChromeMV3CompatibilityReportViewModel:
                     .extensionInstalledInInternalRegistry,
                 syntheticDiagnosticsAvailable:
                     report.lifecycleAvailability
-                    .internalSyntheticRuntimeDiagnosticsAvailable
+                    .internalSyntheticRuntimeDiagnosticsAvailable,
+                popupOptionsGate:
+                    ChromeMV3ProductPopupOptionsUIGateRecord.evaluate(
+                        moduleEnabled:
+                            report.lifecycleAvailability
+                            .extensionInstalledInInternalRegistry,
+                        lifecycleRecord: lifecycleRecord
+                    )
             )
         let productEnablementPreflight =
             ChromeMV3ProductEnablementPreflightSection.make(
@@ -409,6 +442,12 @@ struct ChromeMV3ProductRuntimeHardeningGuardReport:
     Sendable
 {
     var productRuntimeAvailable: Bool
+    var actionPopupUIAvailableInDeveloperPreview: Bool
+    var actionPopupUIAvailableInPublicProduct: Bool
+    var optionsUIAvailableInDeveloperPreview: Bool
+    var optionsUIAvailableInPublicProduct: Bool
+    var popupOptionsRuntimeAllowed: Bool
+    var popupOptionsBridgeAllowed: Bool
     var normalTabRuntimeBridgeAvailable: Bool
     var runtimeLoadable: Bool
     var productExtensionUIAvailable: Bool
@@ -422,6 +461,12 @@ struct ChromeMV3ProductRuntimeHardeningGuardReport:
 
     static let blocked = ChromeMV3ProductRuntimeHardeningGuardReport(
         productRuntimeAvailable: false,
+        actionPopupUIAvailableInDeveloperPreview: false,
+        actionPopupUIAvailableInPublicProduct: false,
+        optionsUIAvailableInDeveloperPreview: false,
+        optionsUIAvailableInPublicProduct: false,
+        popupOptionsRuntimeAllowed: false,
+        popupOptionsBridgeAllowed: false,
         normalTabRuntimeBridgeAvailable: false,
         runtimeLoadable: false,
         productExtensionUIAvailable: false,
@@ -702,6 +747,12 @@ struct ChromeMV3FoundationPhaseStatus:
     var internalDeveloperPreviewReady: Bool
     var readinessLevel: ChromeMV3CompatibilityReadinessLevel
     var productRuntimeAvailable: Bool
+    var actionPopupUIAvailableInDeveloperPreview: Bool
+    var actionPopupUIAvailableInPublicProduct: Bool
+    var optionsUIAvailableInDeveloperPreview: Bool
+    var optionsUIAvailableInPublicProduct: Bool
+    var popupOptionsRuntimeAllowed: Bool
+    var popupOptionsBridgeAllowed: Bool
     var normalTabRuntimeBridgeAvailable: Bool
     var runtimeLoadable: Bool
     var productExtensionUIAvailable: Bool
@@ -728,6 +779,17 @@ struct ChromeMV3FoundationPhaseStatus:
             internalDeveloperPreviewReady: ready,
             readinessLevel: level,
             productRuntimeAvailable: false,
+            actionPopupUIAvailableInDeveloperPreview:
+                viewModel?.productFlags
+                    .actionPopupUIAvailableInDeveloperPreview ?? false,
+            actionPopupUIAvailableInPublicProduct: false,
+            optionsUIAvailableInDeveloperPreview:
+                viewModel?.productFlags
+                    .optionsUIAvailableInDeveloperPreview ?? false,
+            optionsUIAvailableInPublicProduct: false,
+            popupOptionsRuntimeAllowed:
+                viewModel?.productFlags.popupOptionsRuntimeAllowed ?? false,
+            popupOptionsBridgeAllowed: false,
             normalTabRuntimeBridgeAvailable: false,
             runtimeLoadable: false,
             productExtensionUIAvailable: false,
