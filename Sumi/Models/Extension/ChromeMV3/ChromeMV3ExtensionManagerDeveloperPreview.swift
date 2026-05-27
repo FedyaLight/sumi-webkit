@@ -49,6 +49,9 @@ enum ChromeMV3ExtensionManagerActionKind:
     case recover
     case uninstall
     case reset
+    case openActionPopup
+    case openOptions
+    case closePopupOptions
     case exportDiagnosticsJSON
     case chromeWebStoreInstall
 
@@ -100,6 +103,12 @@ enum ChromeMV3ExtensionManagerBlockedDiagnosticCode:
     case chromeWebStoreInterceptionForbidden
     case remoteCRXDownloadForbidden
     case webStorePageInjectionForbidden
+    case actionPopupUnavailable
+    case optionsUIUnavailable
+    case popupOptionsProductGateBlocked
+    case popupOptionsExtensionDisabled
+    case popupOptionsResourceBlocked
+    case toolbarActionUIDeferred
 
     static func < (
         lhs: ChromeMV3ExtensionManagerBlockedDiagnosticCode,
@@ -381,6 +390,48 @@ extension ChromeMV3ExtensionManagerBlockedDiagnostic {
             remediation: "Keep Web Store diagnostics report-only and avoid page scripts."
         ),
     ]
+
+    static let actionPopupUnavailable = make(
+        .actionPopupUnavailable,
+        severity: .productBlocked,
+        message: "The action popup cannot open through the developer-preview product UI gate.",
+        remediation: "Check action.default_popup, generated bundle availability, extension enabled state, and popup resource validation."
+    )
+
+    static let optionsUIUnavailable = make(
+        .optionsUIUnavailable,
+        severity: .productBlocked,
+        message: "The options page cannot open through the developer-preview product UI gate.",
+        remediation: "Check options_page/options_ui.page, generated bundle availability, extension enabled state, and options resource validation."
+    )
+
+    static let popupOptionsProductGateBlocked = make(
+        .popupOptionsProductGateBlocked,
+        severity: .productBlocked,
+        message: "Popup/options product UI is gated to explicit internal developer preview.",
+        remediation: "Keep public product availability false and open only from the developer-preview manager."
+    )
+
+    static let popupOptionsExtensionDisabled = make(
+        .popupOptionsExtensionDisabled,
+        severity: .productBlocked,
+        message: "The internal extension record is disabled; popup/options UI will not create a WebView.",
+        remediation: "Enable the internal extension record before opening popup/options pages."
+    )
+
+    static let popupOptionsResourceBlocked = make(
+        .popupOptionsResourceBlocked,
+        severity: .fatalRuntime,
+        message: "Popup/options resource validation failed.",
+        remediation: "Fix missing, unsafe, remote, or dynamic popup/options resources before opening the UI."
+    )
+
+    static let toolbarActionUIDeferred = make(
+        .toolbarActionUIDeferred,
+        severity: .deferred,
+        message: "The extension toolbar action placeholder is deferred in this build.",
+        remediation: "Use the Extension Manager detail controls; do not expose a public extension toolbar claim."
+    )
 }
 
 enum ChromeMV3ExtensionManagerStoreLocation {
@@ -557,6 +608,7 @@ struct ChromeMV3ExtensionManagerDetailViewModel:
     var exactProductPreflightBlockers:
         [ChromeMV3ProductRuntimePreflightBlocker]
     var packageIntakeReport: ChromeMV3PackageIntakeReport?
+    var popupOptionsLaunchState: ChromeMV3ProductPopupOptionsLaunchState
     var actions: [ChromeMV3ExtensionManagerActionDescriptor]
     var diagnosticsReportPath: String?
     var diagnosticsJSONAvailable: Bool
@@ -572,6 +624,7 @@ struct ChromeMV3ExtensionManagerActionResult:
     var lifecycleOperationResult: ChromeMV3LifecycleOperationResult?
     var report: ChromeMV3EndToEndInstallDiagnosticsReport?
     var packageIntakeReport: ChromeMV3PackageIntakeReport?
+    var popupOptionsRunResult: ChromeMV3ProductPopupOptionsRunResult?
     var diagnosticsJSON: String?
     var blockedDiagnostics: [ChromeMV3ExtensionManagerBlockedDiagnostic]
     var diagnostics: [String]
@@ -597,6 +650,7 @@ struct ChromeMV3ExtensionManagerActionResult:
             lifecycleOperationResult: result,
             report: result.report,
             packageIntakeReport: packageIntakeReport,
+            popupOptionsRunResult: nil,
             diagnosticsJSON: nil,
             blockedDiagnostics: [],
             diagnostics: result.diagnostics,
@@ -620,6 +674,7 @@ struct ChromeMV3ExtensionManagerActionResult:
             lifecycleOperationResult: nil,
             report: nil,
             packageIntakeReport: nil,
+            popupOptionsRunResult: nil,
             diagnosticsJSON: nil,
             blockedDiagnostics: diagnostics.sorted { $0.code < $1.code },
             diagnostics: diagnostics.map(\.message).sorted(),
@@ -642,6 +697,7 @@ struct ChromeMV3ExtensionManagerActionResult:
             lifecycleOperationResult: nil,
             report: report,
             packageIntakeReport: nil,
+            popupOptionsRunResult: nil,
             diagnosticsJSON: nil,
             blockedDiagnostics: [],
             diagnostics: [
@@ -667,6 +723,7 @@ struct ChromeMV3ExtensionManagerActionResult:
             lifecycleOperationResult: nil,
             report: nil,
             packageIntakeReport: nil,
+            popupOptionsRunResult: nil,
             diagnosticsJSON: json,
             blockedDiagnostics: [],
             diagnostics: [
@@ -694,6 +751,7 @@ struct ChromeMV3ExtensionManagerActionResult:
             lifecycleOperationResult: nil,
             report: nil,
             packageIntakeReport: report,
+            popupOptionsRunResult: nil,
             diagnosticsJSON: nil,
             blockedDiagnostics: [],
             diagnostics: (
@@ -708,6 +766,75 @@ struct ChromeMV3ExtensionManagerActionResult:
             serviceWorkerWakeAttempted: false,
             nativeHostLaunchAttempted: false
         )
+    }
+
+    static func popupOptions(
+        action: ChromeMV3ExtensionManagerActionKind,
+        result: ChromeMV3ProductPopupOptionsRunResult
+    ) -> ChromeMV3ExtensionManagerActionResult {
+        ChromeMV3ExtensionManagerActionResult(
+            action: action,
+            status: {
+                switch result.status {
+                case .succeeded:
+                    return .succeeded
+                case .blocked:
+                    return .blocked
+                case .failed:
+                    return .failed
+                }
+            }(),
+            lifecycleOperationResult: nil,
+            report: nil,
+            packageIntakeReport: nil,
+            popupOptionsRunResult: result,
+            diagnosticsJSON: nil,
+            blockedDiagnostics: popupOptionsDiagnostics(
+                action: action,
+                result: result
+            ),
+            diagnostics: result.diagnostics,
+            productFlags: .unavailable,
+            mutatedLifecycle: false,
+            runtimeAttachmentAttempted: false,
+            runtimeObjectsCreated: false,
+            serviceWorkerWakeAttempted: result.serviceWorkerWakeAttempted,
+            nativeHostLaunchAttempted: result.nativeHostLaunchAttempted
+        )
+    }
+
+    private static func popupOptionsDiagnostics(
+        action: ChromeMV3ExtensionManagerActionKind,
+        result: ChromeMV3ProductPopupOptionsRunResult
+    ) -> [ChromeMV3ExtensionManagerBlockedDiagnostic] {
+        guard result.status != .succeeded else { return [] }
+        var diagnostics: [ChromeMV3ExtensionManagerBlockedDiagnostic] = []
+        switch action {
+        case .openActionPopup:
+            diagnostics.append(.actionPopupUnavailable)
+        case .openOptions:
+            diagnostics.append(.optionsUIUnavailable)
+        case .closePopupOptions:
+            break
+        default:
+            break
+        }
+        let blockers = result.launchRecord?.blockers ?? []
+        if blockers.contains(.extensionDisabled) {
+            diagnostics.append(.popupOptionsExtensionDisabled)
+        }
+        if blockers.contains(.productGateBlocked)
+            || blockers.contains(.developerPreviewGateBlocked)
+        {
+            diagnostics.append(.popupOptionsProductGateBlocked)
+        }
+        if blockers.contains(.unsafePagePath)
+            || blockers.contains(.missingPageResource)
+            || blockers.contains(.unsafePageHTML)
+        {
+            diagnostics.append(.popupOptionsResourceBlocked)
+        }
+        return diagnostics.sorted { $0.code < $1.code }
     }
 }
 
@@ -789,6 +916,15 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
             report: report,
             gate: gate
         )
+        let popupOptions = ChromeMV3ProductPopupOptionsLaunchPlanner
+            .makeLaunchState(
+                rootURL: rootURL,
+                profileID: record.profileID,
+                extensionID: record.extensionID,
+                managerGate: gate,
+                moduleEnabled: gate.managerAvailableInDeveloperPreview
+                    || gate.installActionsAvailable
+            )
 
         return ChromeMV3ExtensionManagerDetailViewModel(
             gate: gate,
@@ -812,10 +948,12 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
                 preflight.normalTabPreflight.blockers,
             packageIntakeReport:
                 ChromeMV3PackageIntakeService.latestReport(rootURL: rootURL),
+            popupOptionsLaunchState: popupOptions,
             actions: actionDescriptors(
                 gate: gate,
                 record: record,
-                report: report
+                report: report,
+                popupOptionsLaunchState: popupOptions
             ),
             diagnosticsReportPath: record.reportPaths.compatibilityReportPath,
             diagnosticsJSONAvailable:
@@ -942,7 +1080,9 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
     static func actionDescriptors(
         gate: ChromeMV3ExtensionManagerGate,
         record: ChromeMV3ExtensionLifecycleRecord?,
-        report: ChromeMV3EndToEndInstallDiagnosticsReport?
+        report: ChromeMV3EndToEndInstallDiagnosticsReport?,
+        popupOptionsLaunchState:
+            ChromeMV3ProductPopupOptionsLaunchState? = nil
     ) -> [ChromeMV3ExtensionManagerActionDescriptor] {
         let installed = record != nil && record?.lifecycleState != .uninstalled
         let enabled = record?.runtimeState.internalRuntimeEnabled == true
@@ -953,7 +1093,8 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
                 gate: gate,
                 installed: installed,
                 enabled: enabled,
-                reportAvailable: report != nil
+                reportAvailable: report != nil,
+                popupOptionsLaunchState: popupOptionsLaunchState
             )
         }
     }
@@ -963,7 +1104,9 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
         gate: ChromeMV3ExtensionManagerGate,
         installed: Bool,
         enabled: Bool,
-        reportAvailable: Bool
+        reportAvailable: Bool,
+        popupOptionsLaunchState:
+            ChromeMV3ProductPopupOptionsLaunchState?
     ) -> ChromeMV3ExtensionManagerActionDescriptor {
         let runtimeAction = action == .chromeWebStoreInstall
         let mutates = mutatesLifecycle(action)
@@ -1028,6 +1171,33 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
         if action == .exportDiagnosticsJSON && reportAvailable == false {
             unavailable.append(.recordMissing)
         }
+        if action == .openActionPopup {
+            if enabled == false && installed {
+                unavailable.append(.popupOptionsExtensionDisabled)
+            }
+            if popupOptionsLaunchState?.actionPopup.canOpen != true {
+                unavailable.append(.actionPopupUnavailable)
+                appendPopupOptionsResourceDiagnostic(
+                    popupOptionsLaunchState?.actionPopup,
+                    to: &unavailable
+                )
+            }
+        }
+        if action == .openOptions {
+            if enabled == false && installed {
+                unavailable.append(.popupOptionsExtensionDisabled)
+            }
+            if popupOptionsLaunchState?.primaryOptions?.canOpen != true {
+                unavailable.append(.optionsUIUnavailable)
+                appendPopupOptionsResourceDiagnostic(
+                    popupOptionsLaunchState?.primaryOptions,
+                    to: &unavailable
+                )
+            }
+        }
+        if action == .closePopupOptions && installed == false {
+            unavailable.append(.recordMissing)
+        }
 
         return ChromeMV3ExtensionManagerActionDescriptor(
             action: action,
@@ -1039,6 +1209,28 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
         )
     }
 
+    private static func appendPopupOptionsResourceDiagnostic(
+        _ record: ChromeMV3ProductPopupOptionsLaunchRecord?,
+        to diagnostics: inout [ChromeMV3ExtensionManagerBlockedDiagnostic]
+    ) {
+        guard let blockers = record?.blockers else {
+            diagnostics.append(.popupOptionsProductGateBlocked)
+            return
+        }
+        if blockers.contains(.productGateBlocked)
+            || blockers.contains(.developerPreviewGateBlocked)
+        {
+            diagnostics.append(.popupOptionsProductGateBlocked)
+        }
+        if blockers.contains(.unsafePagePath)
+            || blockers.contains(.missingPageResource)
+            || blockers.contains(.unsafePageHTML)
+            || blockers.contains(.bridgeUnavailableForPageAPI)
+        {
+            diagnostics.append(.popupOptionsResourceBlocked)
+        }
+    }
+
     private static func mutatesLifecycle(
         _ action: ChromeMV3ExtensionManagerActionKind
     ) -> Bool {
@@ -1048,7 +1240,8 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
              .runDiagnostics, .recover, .uninstall, .reset,
              .importZipArchive:
             return true
-        case .importCRXArchive, .exportDiagnosticsJSON,
+        case .importCRXArchive, .openActionPopup, .openOptions,
+             .closePopupOptions, .exportDiagnosticsJSON,
              .chromeWebStoreInstall:
             return false
         }
@@ -1060,7 +1253,8 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
         switch action {
         case .enableInternal, .disableInternal, .updateFromUnpacked,
              .rebuild, .retryDiagnostics, .runDiagnostics, .recover,
-             .uninstall, .reset, .exportDiagnosticsJSON:
+             .uninstall, .reset, .openActionPopup, .openOptions,
+             .closePopupOptions, .exportDiagnosticsJSON:
             return true
         case .installUnpacked, .importZipArchive, .importCRXArchive,
              .chromeWebStoreInstall:
@@ -1096,6 +1290,12 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
             return "Uninstall"
         case .reset:
             return "Reset Internal State"
+        case .openActionPopup:
+            return "Open Action Popup"
+        case .openOptions:
+            return "Open Options"
+        case .closePopupOptions:
+            return "Close Popup/Options"
         case .exportDiagnosticsJSON:
             return "Copy Diagnostics JSON"
         case .chromeWebStoreInstall:
@@ -1600,6 +1800,7 @@ struct ChromeMV3ExtensionManagerView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         detailSummary(selectedDetail)
                         preflightSummary(selectedDetail)
+                        popupOptionsSummary(selectedDetail)
                         blockerSummary(selectedDetail)
                         detailActions(selectedDetail)
                     }
@@ -1676,6 +1877,88 @@ struct ChromeMV3ExtensionManagerView: View {
             }
         }
 
+        private func popupOptionsSummary(
+            _ detail: ChromeMV3ExtensionManagerDetailViewModel
+        ) -> some View {
+            let popup = detail.popupOptionsLaunchState.actionPopup
+            let options = detail.popupOptionsLaunchState.primaryOptions
+            return VStack(alignment: .leading, spacing: 8) {
+                Text("Popup and Options")
+                    .font(.callout.weight(.semibold))
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 150), spacing: 8)],
+                    alignment: .leading,
+                    spacing: 8
+                ) {
+                    fact(
+                        "Action Popup",
+                        popup.canOpen ? "launchable" : popup.resourceValidationState.rawValue
+                    )
+                    fact(
+                        "Options",
+                        options?.canOpen == true
+                            ? "launchable"
+                            : (options?.resourceValidationState.rawValue
+                                ?? "missingDeclaration")
+                    )
+                    fact(
+                        "Bridge",
+                        popup.gateRecord.popupOptionsBridgeAllowed
+                            ? "limited" : "blocked"
+                    )
+                    fact(
+                        "Toolbar",
+                        detail.popupOptionsLaunchState.toolbarActionUIDeferred
+                            ? "deferred" : "available"
+                    )
+                }
+                HStack(spacing: 8) {
+                    Button {
+                        onRunAction?(
+                            .openActionPopup,
+                            detail.listItem.profileID,
+                            detail.listItem.extensionID
+                        )
+                    } label: {
+                        Label("Open Popup", systemImage: "rectangle.on.rectangle")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!popup.canOpen)
+
+                    Button {
+                        onRunAction?(
+                            .openOptions,
+                            detail.listItem.profileID,
+                            detail.listItem.extensionID
+                        )
+                    } label: {
+                        Label("Open Options", systemImage: "slider.horizontal.3")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(options?.canOpen != true)
+
+                    Button {
+                        onRunAction?(
+                            .closePopupOptions,
+                            detail.listItem.profileID,
+                            detail.listItem.extensionID
+                        )
+                    } label: {
+                        Label("Close", systemImage: "xmark.circle")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                if let reason = (popup.blockingReasons
+                    + (options?.blockingReasons ?? [])).first
+                {
+                    Text(reason)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+
         private func detailActions(
             _ detail: ChromeMV3ExtensionManagerDetailViewModel
         ) -> some View {
@@ -1692,6 +1975,9 @@ struct ChromeMV3ExtensionManagerView: View {
                             && $0.action != .importZipArchive
                             && $0.action != .importCRXArchive
                             && $0.action != .chromeWebStoreInstall
+                            && $0.action != .openActionPopup
+                            && $0.action != .openOptions
+                            && $0.action != .closePopupOptions
                     }) { descriptor in
                         Button(descriptor.title) {
                             if descriptor.action == .exportDiagnosticsJSON {

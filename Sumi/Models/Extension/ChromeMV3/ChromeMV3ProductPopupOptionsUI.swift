@@ -1,0 +1,1404 @@
+//
+//  ChromeMV3ProductPopupOptionsUI.swift
+//  Sumi
+//
+//  Developer-preview product UI plumbing for extension-owned action popup and
+//  options pages. This layer does not attach normal tabs, inject content
+//  scripts, expose a normal-tab bridge, wake service workers, launch native
+//  hosts, or make generated bundles globally runtime-loadable.
+//
+
+import Foundation
+
+#if canImport(WebKit)
+import WebKit
+#endif
+
+enum ChromeMV3ProductPopupOptionsSurface:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case actionPopup
+    case optionsPage
+    case optionsUI
+
+    static func < (
+        lhs: ChromeMV3ProductPopupOptionsSurface,
+        rhs: ChromeMV3ProductPopupOptionsSurface
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+
+    var pageKind: ChromeMV3ExtensionPageKind {
+        switch self {
+        case .actionPopup:
+            return .actionPopup
+        case .optionsPage:
+            return .optionsPage
+        case .optionsUI:
+            return .optionsUI
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .actionPopup:
+            return "Action Popup"
+        case .optionsPage:
+            return "Options Page"
+        case .optionsUI:
+            return "Embedded Options"
+        }
+    }
+}
+
+enum ChromeMV3PopupOptionsResourceValidationState:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case notEvaluated
+    case valid
+    case missingDeclaration
+    case missingResource
+    case unsafePath
+    case unsafeHTML
+    case generatedBundleMissing
+
+    static func < (
+        lhs: ChromeMV3PopupOptionsResourceValidationState,
+        rhs: ChromeMV3PopupOptionsResourceValidationState
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3PopupOptionsProductGateState:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case blocked
+    case developerPreviewAllowed
+    case extensionDisabled
+    case publicProductBlocked
+
+    static func < (
+        lhs: ChromeMV3PopupOptionsProductGateState,
+        rhs: ChromeMV3PopupOptionsProductGateState
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3PopupOptionsHostCreationState:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case notRequested
+    case blocked
+    case created
+    case failed
+    case tornDown
+
+    static func < (
+        lhs: ChromeMV3PopupOptionsHostCreationState,
+        rhs: ChromeMV3PopupOptionsHostCreationState
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3PopupOptionsBridgeAvailabilityState:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case notRequired
+    case unavailable
+    case limitedAllowed
+    case blocked
+
+    static func < (
+        lhs: ChromeMV3PopupOptionsBridgeAvailabilityState,
+        rhs: ChromeMV3PopupOptionsBridgeAvailabilityState
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3PopupOptionsLifecycleState:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case notOpened
+    case opened
+    case loaded
+    case failed
+    case closed
+    case disabledWhileOpen
+    case uninstalledWhileOpen
+    case resetWhileOpen
+    case teardownComplete
+
+    static func < (
+        lhs: ChromeMV3PopupOptionsLifecycleState,
+        rhs: ChromeMV3PopupOptionsLifecycleState
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3PopupOptionsLifecycleEvent:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case opened
+    case loaded
+    case failed
+    case closed
+    case disabledWhileOpen
+    case uninstalledWhileOpen
+    case resetWhileOpen
+    case teardownComplete
+
+    static func < (
+        lhs: ChromeMV3PopupOptionsLifecycleEvent,
+        rhs: ChromeMV3PopupOptionsLifecycleEvent
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3PopupOptionsBlocker:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case moduleDisabled
+    case developerPreviewGateBlocked
+    case publicProductBlocked
+    case recordMissing
+    case extensionUninstalled
+    case extensionDisabled
+    case generatedBundleMissing
+    case generatedRewrittenBundleMissing
+    case noActionDeclared
+    case actionDeclaredWithoutPopup
+    case noOptionsPageDeclared
+    case unsafePagePath
+    case missingPageResource
+    case unsafePageHTML
+    case productGateBlocked
+    case bridgeUnavailableForPageAPI
+    case normalTabRuntimeUnavailable
+    case contentScriptAttachmentUnavailable
+    case serviceWorkerWakeBlocked
+    case nativeMessagingBlocked
+    case hostCreationFailed
+
+    static func < (
+        lhs: ChromeMV3PopupOptionsBlocker,
+        rhs: ChromeMV3PopupOptionsBlocker
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+
+    var reason: String {
+        switch self {
+        case .moduleDisabled:
+            return "The extensions module is disabled."
+        case .developerPreviewGateBlocked:
+            return "Popup/options UI requires the internal developer-preview manager gate."
+        case .publicProductBlocked:
+            return "Popup/options UI is not available in the public product gate."
+        case .recordMissing:
+            return "The internal MV3 lifecycle record is missing."
+        case .extensionUninstalled:
+            return "The internal MV3 extension record is uninstalled."
+        case .extensionDisabled:
+            return "The internal MV3 extension record is disabled."
+        case .generatedBundleMissing:
+            return "No active generated bundle version is available."
+        case .generatedRewrittenBundleMissing:
+            return "The active generated rewritten bundle is missing."
+        case .noActionDeclared:
+            return "The manifest does not declare an action."
+        case .actionDeclaredWithoutPopup:
+            return "The manifest declares an action without action.default_popup."
+        case .noOptionsPageDeclared:
+            return "The manifest does not declare options_page or options_ui.page."
+        case .unsafePagePath:
+            return "The declared popup/options page path is unsafe."
+        case .missingPageResource:
+            return "The declared popup/options page resource is missing."
+        case .unsafePageHTML:
+            return "The popup/options HTML or linked resources failed validation."
+        case .productGateBlocked:
+            return "Popup/options product UI gates did not pass."
+        case .bridgeUnavailableForPageAPI:
+            return "The page references extension APIs, but the popup/options bridge is not enabled."
+        case .normalTabRuntimeUnavailable:
+            return "Normal-tab runtime remains unavailable."
+        case .contentScriptAttachmentUnavailable:
+            return "Product content-script attachment remains unavailable."
+        case .serviceWorkerWakeBlocked:
+            return "Service-worker wake is not allowed from popup/options in this phase."
+        case .nativeMessagingBlocked:
+            return "Native messaging is not allowed from popup/options in this phase."
+        case .hostCreationFailed:
+            return "The controlled popup/options WebKit host failed to create."
+        }
+    }
+}
+
+struct ChromeMV3ProductPopupOptionsUIGateRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var actionPopupUIAvailableInDeveloperPreview: Bool
+    var actionPopupUIAvailableInPublicProduct: Bool
+    var optionsUIAvailableInDeveloperPreview: Bool
+    var optionsUIAvailableInPublicProduct: Bool
+    var popupOptionsRuntimeAllowed: Bool
+    var popupOptionsBridgeAllowed: Bool
+    var popupOptionsProductBlockedReason: String?
+    var normalTabRuntimeBridgeAvailable: Bool
+    var contentScriptAttachmentAvailable: Bool
+    var runtimeLoadable: Bool
+    var toolbarActionUIDeferred: Bool
+    var diagnostics: [String]
+
+    static func evaluate(
+        moduleEnabled: Bool,
+        managerGate: ChromeMV3ExtensionManagerGate? = nil,
+        lifecycleRecord: ChromeMV3ExtensionLifecycleRecord? = nil
+    ) -> ChromeMV3ProductPopupOptionsUIGateRecord {
+        #if DEBUG
+            let developerPreviewGate =
+                moduleEnabled
+                    && (
+                        managerGate?.managerAvailableInDeveloperPreview
+                            ?? ChromeMV3InternalDiagnosticsGate.uiAvailable
+                    )
+        #else
+            let developerPreviewGate = false
+        #endif
+        let installed = lifecycleRecord?.lifecycleState != .uninstalled
+        let enabled =
+            lifecycleRecord?.runtimeState.internalRuntimeEnabled ?? false
+        let developerPreviewAvailable =
+            developerPreviewGate && (lifecycleRecord == nil || installed)
+        let runtimeAllowed = developerPreviewAvailable && enabled
+        var diagnostics: [String] = []
+        if moduleEnabled == false {
+            diagnostics.append(
+                "The extensions module is disabled; popup/options UI gates are closed."
+            )
+        }
+        if developerPreviewGate == false {
+            diagnostics.append(
+                "Developer-preview manager gate is closed for popup/options UI."
+            )
+        }
+        if let lifecycleRecord, lifecycleRecord.lifecycleState == .uninstalled {
+            diagnostics.append(
+                "The lifecycle record is uninstalled; popup/options UI cannot open."
+            )
+        }
+        if lifecycleRecord != nil && enabled == false {
+            diagnostics.append(
+                "The lifecycle record is disabled; popup/options UI cannot open."
+            )
+        }
+        diagnostics.append(
+            "Public product popup/options UI remains unavailable."
+        )
+        diagnostics.append(
+            "Normal-tab runtime bridge and content-script attachment remain unavailable."
+        )
+
+        return ChromeMV3ProductPopupOptionsUIGateRecord(
+            actionPopupUIAvailableInDeveloperPreview:
+                developerPreviewAvailable,
+            actionPopupUIAvailableInPublicProduct: false,
+            optionsUIAvailableInDeveloperPreview:
+                developerPreviewAvailable,
+            optionsUIAvailableInPublicProduct: false,
+            popupOptionsRuntimeAllowed: runtimeAllowed,
+            popupOptionsBridgeAllowed: false,
+            popupOptionsProductBlockedReason:
+                "Public product popup/options support remains gated to internal developer preview.",
+            normalTabRuntimeBridgeAvailable: false,
+            contentScriptAttachmentAvailable: false,
+            runtimeLoadable: false,
+            toolbarActionUIDeferred: true,
+            diagnostics: uniqueSortedPopupOptions(diagnostics)
+        )
+    }
+}
+
+struct ChromeMV3PopupOptionsAPISurfaceAvailability:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var implementedNamespaces: [String]
+    var exposedNamespaces: [String]
+    var blockedNamespaces: [String]
+    var pageReferencesExtensionAPI: Bool
+    var runtimeAvailable: Bool
+    var storageLocalAvailable: Bool
+    var permissionsAvailable: Bool
+    var tabsAvailable: Bool
+    var scriptingAvailable: Bool
+    var nativeMessagingAvailable: Bool
+    var serviceWorkerWakeAllowed: Bool
+    var diagnostics: [String]
+
+    static func make(
+        report: ChromeMV3EndToEndInstallDiagnosticsReport?,
+        gateRecord: ChromeMV3ProductPopupOptionsUIGateRecord,
+        pageReferencesExtensionAPI: Bool
+    ) -> ChromeMV3PopupOptionsAPISurfaceAvailability {
+        let reportNames = Set(
+            report?.internalSyntheticReadinessSummary
+                .syntheticAPIReportsAvailable ?? []
+        )
+        var implemented: [String] = []
+        if reportNames.contains("chrome.runtime") {
+            implemented.append("runtime")
+        }
+        if reportNames.contains("chrome.storage.local") {
+            implemented.append("storage.local")
+        }
+        if reportNames.contains("chrome.permissions") {
+            implemented.append("permissions")
+        }
+        if reportNames.contains("chrome.tabs/chrome.scripting") {
+            implemented.append(contentsOf: ["tabs", "scripting"])
+        }
+
+        let exposed = gateRecord.popupOptionsBridgeAllowed
+            ? implemented
+            : []
+        let blocked = pageReferencesExtensionAPI
+            ? Array(Set(implemented + ["runtime"])).sorted()
+            : []
+        var diagnostics: [String] = []
+        if pageReferencesExtensionAPI {
+            diagnostics.append(
+                "The page references extension APIs; bridge exposure is blocked in this phase."
+            )
+        }
+        diagnostics.append(
+            "Native messaging, service-worker wake, tabs, and scripting are not exposed from popup/options product UI."
+        )
+
+        return ChromeMV3PopupOptionsAPISurfaceAvailability(
+            implementedNamespaces: uniqueSortedPopupOptions(implemented),
+            exposedNamespaces: uniqueSortedPopupOptions(exposed),
+            blockedNamespaces: uniqueSortedPopupOptions(blocked),
+            pageReferencesExtensionAPI: pageReferencesExtensionAPI,
+            runtimeAvailable: exposed.contains("runtime"),
+            storageLocalAvailable: exposed.contains("storage.local"),
+            permissionsAvailable: exposed.contains("permissions"),
+            tabsAvailable: false,
+            scriptingAvailable: false,
+            nativeMessagingAvailable: false,
+            serviceWorkerWakeAllowed: false,
+            diagnostics: uniqueSortedPopupOptions(diagnostics)
+        )
+    }
+}
+
+struct ChromeMV3ProductPopupOptionsLaunchRecord:
+    Identifiable,
+    Codable,
+    Equatable,
+    Sendable
+{
+    var id: String {
+        [
+            profileID,
+            extensionID,
+            surface.rawValue,
+            generatedBundleVersionID ?? "no-version",
+            declaredPath ?? "no-path",
+        ].joined(separator: ":")
+    }
+
+    var extensionID: String
+    var profileID: String
+    var surface: ChromeMV3ProductPopupOptionsSurface
+    var popupPath: String?
+    var optionsPagePath: String?
+    var optionsUIPagePath: String?
+    var optionsUIOpenInTab: Bool?
+    var declaredPath: String?
+    var normalizedPath: String?
+    var generatedBundleVersionID: String?
+    var generatedBundleRootPath: String?
+    var generatedRewrittenBundlePath: String?
+    var generatedResourcePath: String?
+    var resourceValidationState:
+        ChromeMV3PopupOptionsResourceValidationState
+    var productGateState: ChromeMV3PopupOptionsProductGateState
+    var hostCreationState: ChromeMV3PopupOptionsHostCreationState
+    var bridgeAPIAvailabilityState:
+        ChromeMV3PopupOptionsBridgeAvailabilityState
+    var lifecycleState: ChromeMV3PopupOptionsLifecycleState
+    var lifecycleEvents: [ChromeMV3PopupOptionsLifecycleEvent]
+    var gateRecord: ChromeMV3ProductPopupOptionsUIGateRecord
+    var resourceResolution: ChromeMV3ExtensionPageResourceResolution?
+    var apiSurface: ChromeMV3PopupOptionsAPISurfaceAvailability
+    var blockers: [ChromeMV3PopupOptionsBlocker]
+    var blockingReasons: [String]
+    var diagnostics: [String]
+
+    var canOpen: Bool {
+        blockers.isEmpty
+            && productGateState == .developerPreviewAllowed
+            && resourceValidationState == .valid
+    }
+}
+
+struct ChromeMV3ProductPopupOptionsLaunchState:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var gateRecord: ChromeMV3ProductPopupOptionsUIGateRecord
+    var actionPopup: ChromeMV3ProductPopupOptionsLaunchRecord
+    var optionsPages: [ChromeMV3ProductPopupOptionsLaunchRecord]
+    var primaryOptions:
+        ChromeMV3ProductPopupOptionsLaunchRecord?
+    var toolbarActionUIDeferred: Bool
+    var lastRunResult: ChromeMV3ProductPopupOptionsRunResult?
+}
+
+enum ChromeMV3ProductPopupOptionsLaunchPlanner {
+    static func makeLaunchState(
+        rootURL: URL,
+        profileID: String,
+        extensionID: String,
+        managerGate: ChromeMV3ExtensionManagerGate,
+        moduleEnabled: Bool,
+        lastRunResult: ChromeMV3ProductPopupOptionsRunResult? = nil,
+        fileManager: FileManager = .default
+    ) -> ChromeMV3ProductPopupOptionsLaunchState {
+        let registry = ChromeMV3ExtensionLifecycleRegistry(
+            rootURL: rootURL,
+            fileManager: fileManager
+        )
+        let record = registry.loadLifecycleRecord(
+            profileID: profileID,
+            extensionID: extensionID
+        )
+        let report = registry.latestEndToEndDiagnosticsReport(
+            profileID: profileID,
+            extensionID: extensionID
+        )
+        let gate = ChromeMV3ProductPopupOptionsUIGateRecord.evaluate(
+            moduleEnabled: moduleEnabled,
+            managerGate: managerGate,
+            lifecycleRecord: record
+        )
+        let action = launchRecord(
+            rootURL: rootURL,
+            profileID: profileID,
+            extensionID: extensionID,
+            surface: .actionPopup,
+            gateRecord: gate,
+            lifecycleRecord: record,
+            report: report,
+            fileManager: fileManager
+        )
+        let optionsRecords = [
+            launchRecord(
+                rootURL: rootURL,
+                profileID: profileID,
+                extensionID: extensionID,
+                surface: .optionsPage,
+                gateRecord: gate,
+                lifecycleRecord: record,
+                report: report,
+                fileManager: fileManager
+            ),
+            launchRecord(
+                rootURL: rootURL,
+                profileID: profileID,
+                extensionID: extensionID,
+                surface: .optionsUI,
+                gateRecord: gate,
+                lifecycleRecord: record,
+                report: report,
+                fileManager: fileManager
+            ),
+        ]
+        return ChromeMV3ProductPopupOptionsLaunchState(
+            gateRecord: gate,
+            actionPopup: action,
+            optionsPages: optionsRecords,
+            primaryOptions:
+                optionsRecords.first { $0.surface == .optionsUI && $0.canOpen }
+                    ?? optionsRecords.first {
+                        $0.surface == .optionsPage && $0.canOpen
+                    }
+                    ?? optionsRecords.first { $0.surface == .optionsUI }
+                    ?? optionsRecords.first,
+            toolbarActionUIDeferred: gate.toolbarActionUIDeferred,
+            lastRunResult: lastRunResult
+        )
+    }
+
+    static func launchRecord(
+        rootURL: URL,
+        profileID: String,
+        extensionID: String,
+        surface: ChromeMV3ProductPopupOptionsSurface,
+        gateRecord: ChromeMV3ProductPopupOptionsUIGateRecord,
+        lifecycleRecord: ChromeMV3ExtensionLifecycleRecord?,
+        report: ChromeMV3EndToEndInstallDiagnosticsReport?,
+        fileManager: FileManager = .default
+    ) -> ChromeMV3ProductPopupOptionsLaunchRecord {
+        var blockers: [ChromeMV3PopupOptionsBlocker] = []
+        var diagnostics: [String] = gateRecord.diagnostics
+        var declaration: ChromeMV3ExtensionPageDeclaration?
+        var resolution: ChromeMV3ExtensionPageResourceResolution?
+        var validation: ChromeMV3PopupOptionsResourceValidationState =
+            .notEvaluated
+        var manifestFacts = ChromeMV3PopupOptionsManifestFacts.empty
+        var activeVersion: ChromeMV3GeneratedBundleVersionRecord?
+        var generatedRootPath: String?
+
+        if gateRecord.actionPopupUIAvailableInPublicProduct == false
+            || gateRecord.optionsUIAvailableInPublicProduct == false
+        {
+            diagnostics.append(
+                ChromeMV3PopupOptionsBlocker.publicProductBlocked.reason
+            )
+        }
+        if gateRecord.normalTabRuntimeBridgeAvailable == false {
+            diagnostics.append(
+                ChromeMV3PopupOptionsBlocker.normalTabRuntimeUnavailable.reason
+            )
+        }
+        if gateRecord.contentScriptAttachmentAvailable == false {
+            diagnostics.append(
+                ChromeMV3PopupOptionsBlocker
+                    .contentScriptAttachmentUnavailable.reason
+            )
+        }
+
+        guard let lifecycleRecord else {
+            blockers.append(.recordMissing)
+            return record(
+                profileID: profileID,
+                extensionID: extensionID,
+                surface: surface,
+                gateRecord: gateRecord,
+                validation: .missingDeclaration,
+                productGate: .blocked,
+                blockers: blockers,
+                diagnostics: diagnostics,
+                manifestFacts: manifestFacts,
+                activeVersion: nil,
+                generatedRootPath: nil,
+                declaration: nil,
+                resolution: nil,
+                apiSurface: .make(
+                    report: report,
+                    gateRecord: gateRecord,
+                    pageReferencesExtensionAPI: false
+                )
+            )
+        }
+
+        if lifecycleRecord.lifecycleState == .uninstalled {
+            blockers.append(.extensionUninstalled)
+        }
+        if lifecycleRecord.runtimeState.internalRuntimeEnabled == false {
+            blockers.append(.extensionDisabled)
+        }
+        if gateRecord.popupOptionsRuntimeAllowed == false {
+            blockers.append(.productGateBlocked)
+        }
+
+        activeVersion = activeGeneratedVersion(in: lifecycleRecord)
+        if activeVersion == nil {
+            blockers.append(.generatedBundleMissing)
+            validation = .generatedBundleMissing
+        }
+        if let version = activeVersion {
+            generatedRootPath = version.generatedBundleRootPath
+            if let generatedRootPath,
+               directoryExists(
+                URL(fileURLWithPath: generatedRootPath, isDirectory: true),
+                fileManager: fileManager
+               )
+            {
+                let model = ChromeMV3ExtensionPageDeclarationReader.read(
+                    generatedRewrittenRootPath: generatedRootPath,
+                    fileManager: fileManager
+                )
+                manifestFacts = manifestFactsFromManifest(
+                    model.manifestPath
+                )
+                declaration = model.declarations.first {
+                    $0.kind == surface.pageKind
+                }
+                if let declaration {
+                    resolution = ChromeMV3ExtensionPageResourceResolver
+                        .resolve(declaration: declaration)
+                    validation = validationState(
+                        declaration: declaration,
+                        resolution: resolution
+                    )
+                } else {
+                    validation = .missingDeclaration
+                }
+            } else {
+                blockers.append(.generatedRewrittenBundleMissing)
+                validation = .generatedBundleMissing
+            }
+        }
+
+        appendDeclarationBlockers(
+            surface: surface,
+            manifestFacts: manifestFacts,
+            declaration: declaration,
+            validation: validation,
+            blockers: &blockers
+        )
+
+        let pageReferencesAPI = pageReferencesExtensionAPI(
+            resolution: resolution
+        )
+        let apiSurface = ChromeMV3PopupOptionsAPISurfaceAvailability.make(
+            report: report,
+            gateRecord: gateRecord,
+            pageReferencesExtensionAPI: pageReferencesAPI
+        )
+        if pageReferencesAPI && gateRecord.popupOptionsBridgeAllowed == false {
+            blockers.append(.bridgeUnavailableForPageAPI)
+        }
+        if manifestFacts.permissions.contains("nativeMessaging") {
+            diagnostics.append(
+                ChromeMV3PopupOptionsBlocker.nativeMessagingBlocked.reason
+            )
+        }
+        if manifestFacts.backgroundServiceWorkerPath != nil {
+            diagnostics.append(
+                ChromeMV3PopupOptionsBlocker.serviceWorkerWakeBlocked.reason
+            )
+        }
+        blockers = uniqueBlockers(blockers)
+        let productGate: ChromeMV3PopupOptionsProductGateState
+        if blockers.contains(.extensionDisabled) {
+            productGate = .extensionDisabled
+        } else if gateRecord.popupOptionsRuntimeAllowed
+                    && blockers.contains(.productGateBlocked) == false
+                    && blockers.contains(.developerPreviewGateBlocked) == false
+        {
+            productGate = .developerPreviewAllowed
+        } else {
+            productGate = .blocked
+        }
+
+        return record(
+            profileID: lifecycleRecord.profileID,
+            extensionID: lifecycleRecord.extensionID,
+            surface: surface,
+            gateRecord: gateRecord,
+            validation: validation,
+            productGate: productGate,
+            blockers: blockers,
+            diagnostics: diagnostics,
+            manifestFacts: manifestFacts,
+            activeVersion: activeVersion,
+            generatedRootPath: generatedRootPath,
+            declaration: declaration,
+            resolution: resolution,
+            apiSurface: apiSurface
+        )
+    }
+
+    private static func record(
+        profileID: String,
+        extensionID: String,
+        surface: ChromeMV3ProductPopupOptionsSurface,
+        gateRecord: ChromeMV3ProductPopupOptionsUIGateRecord,
+        validation: ChromeMV3PopupOptionsResourceValidationState,
+        productGate: ChromeMV3PopupOptionsProductGateState,
+        blockers: [ChromeMV3PopupOptionsBlocker],
+        diagnostics: [String],
+        manifestFacts: ChromeMV3PopupOptionsManifestFacts,
+        activeVersion: ChromeMV3GeneratedBundleVersionRecord?,
+        generatedRootPath: String?,
+        declaration: ChromeMV3ExtensionPageDeclaration?,
+        resolution: ChromeMV3ExtensionPageResourceResolution?,
+        apiSurface: ChromeMV3PopupOptionsAPISurfaceAvailability
+    ) -> ChromeMV3ProductPopupOptionsLaunchRecord {
+        let unique = uniqueBlockers(blockers)
+        let bridgeState: ChromeMV3PopupOptionsBridgeAvailabilityState
+        if apiSurface.pageReferencesExtensionAPI
+            && gateRecord.popupOptionsBridgeAllowed == false
+        {
+            bridgeState = .blocked
+        } else if gateRecord.popupOptionsBridgeAllowed {
+            bridgeState = .limitedAllowed
+        } else if apiSurface.pageReferencesExtensionAPI {
+            bridgeState = .unavailable
+        } else {
+            bridgeState = .notRequired
+        }
+        return ChromeMV3ProductPopupOptionsLaunchRecord(
+            extensionID: extensionID,
+            profileID: profileID,
+            surface: surface,
+            popupPath: manifestFacts.actionDefaultPopupPath,
+            optionsPagePath: manifestFacts.optionsPagePath,
+            optionsUIPagePath: manifestFacts.optionsUIPagePath,
+            optionsUIOpenInTab: manifestFacts.optionsUIOpenInTab,
+            declaredPath: declaration?.declaredPath,
+            normalizedPath: declaration?.normalizedPath,
+            generatedBundleVersionID: activeVersion?.id,
+            generatedBundleRootPath: activeVersion?.generatedBundleRootPath,
+            generatedRewrittenBundlePath: generatedRootPath,
+            generatedResourcePath: declaration?.generatedResourcePath,
+            resourceValidationState: validation,
+            productGateState: productGate,
+            hostCreationState:
+                unique.isEmpty ? .notRequested : .blocked,
+            bridgeAPIAvailabilityState: bridgeState,
+            lifecycleState: .notOpened,
+            lifecycleEvents: [],
+            gateRecord: gateRecord,
+            resourceResolution: resolution,
+            apiSurface: apiSurface,
+            blockers: unique,
+            blockingReasons: unique.map(\.reason).sorted(),
+            diagnostics: uniqueSortedPopupOptions(
+                diagnostics + apiSurface.diagnostics
+            )
+        )
+    }
+
+    private static func appendDeclarationBlockers(
+        surface: ChromeMV3ProductPopupOptionsSurface,
+        manifestFacts: ChromeMV3PopupOptionsManifestFacts,
+        declaration: ChromeMV3ExtensionPageDeclaration?,
+        validation: ChromeMV3PopupOptionsResourceValidationState,
+        blockers: inout [ChromeMV3PopupOptionsBlocker]
+    ) {
+        if declaration == nil {
+            switch surface {
+            case .actionPopup:
+                if manifestFacts.actionDeclared {
+                    blockers.append(.actionDeclaredWithoutPopup)
+                } else {
+                    blockers.append(.noActionDeclared)
+                }
+            case .optionsPage, .optionsUI:
+                blockers.append(.noOptionsPageDeclared)
+            }
+        }
+        switch validation {
+        case .unsafePath:
+            blockers.append(.unsafePagePath)
+        case .missingResource:
+            blockers.append(.missingPageResource)
+        case .unsafeHTML:
+            blockers.append(.unsafePageHTML)
+        case .generatedBundleMissing:
+            blockers.append(.generatedBundleMissing)
+        case .notEvaluated, .valid, .missingDeclaration:
+            break
+        }
+    }
+
+    private static func validationState(
+        declaration: ChromeMV3ExtensionPageDeclaration,
+        resolution: ChromeMV3ExtensionPageResourceResolution?
+    ) -> ChromeMV3PopupOptionsResourceValidationState {
+        switch declaration.pathSafety {
+        case .unsafe:
+            return .unsafePath
+        case .missing:
+            return .missingResource
+        case .safe:
+            break
+        }
+        guard let resolution else { return .notEvaluated }
+        if resolution.resourceSafeForExtensionPageHost {
+            return .valid
+        }
+        if resolution.htmlPageExists == false {
+            return .missingResource
+        }
+        return .unsafeHTML
+    }
+
+    private static func activeGeneratedVersion(
+        in record: ChromeMV3ExtensionLifecycleRecord
+    ) -> ChromeMV3GeneratedBundleVersionRecord? {
+        guard let activeID = record.activeGeneratedVersionID else {
+            return nil
+        }
+        return record.generatedBundleVersions.first { $0.id == activeID }
+    }
+
+    private static func pageReferencesExtensionAPI(
+        resolution: ChromeMV3ExtensionPageResourceResolution?
+    ) -> Bool {
+        guard let path = resolution?.declaration.generatedResourcePath,
+              let html = try? String(contentsOfFile: path, encoding: .utf8)
+        else { return false }
+        let lowered = html.lowercased()
+        return lowered.contains("chrome.")
+            || lowered.contains("browser.")
+            || lowered.contains("runtime.")
+    }
+
+    private static func manifestFactsFromManifest(
+        _ manifestPath: String
+    ) -> ChromeMV3PopupOptionsManifestFacts {
+        guard
+            let data = try? Data(
+                contentsOf: URL(fileURLWithPath: manifestPath)
+            ),
+            let object = try? JSONSerialization.jsonObject(with: data)
+                as? [String: Any]
+        else { return .empty }
+        let action = object["action"] as? [String: Any]
+        let optionsUI = object["options_ui"] as? [String: Any]
+        let background = object["background"] as? [String: Any]
+        return ChromeMV3PopupOptionsManifestFacts(
+            actionDeclared: action != nil,
+            actionDefaultPopupPath: action?["default_popup"] as? String,
+            optionsPagePath: object["options_page"] as? String,
+            optionsUIPagePath: optionsUI?["page"] as? String,
+            optionsUIOpenInTab: optionsUI?["open_in_tab"] as? Bool,
+            permissions: object["permissions"] as? [String] ?? [],
+            optionalPermissions:
+                object["optional_permissions"] as? [String] ?? [],
+            backgroundServiceWorkerPath:
+                background?["service_worker"] as? String
+        )
+    }
+
+    private static func directoryExists(
+        _ url: URL,
+        fileManager: FileManager
+    ) -> Bool {
+        var isDirectory: ObjCBool = false
+        return fileManager.fileExists(
+            atPath: url.path,
+            isDirectory: &isDirectory
+        ) && isDirectory.boolValue
+    }
+}
+
+private struct ChromeMV3PopupOptionsManifestFacts {
+    var actionDeclared: Bool
+    var actionDefaultPopupPath: String?
+    var optionsPagePath: String?
+    var optionsUIPagePath: String?
+    var optionsUIOpenInTab: Bool?
+    var permissions: [String]
+    var optionalPermissions: [String]
+    var backgroundServiceWorkerPath: String?
+
+    static let empty = ChromeMV3PopupOptionsManifestFacts(
+        actionDeclared: false,
+        actionDefaultPopupPath: nil,
+        optionsPagePath: nil,
+        optionsUIPagePath: nil,
+        optionsUIOpenInTab: nil,
+        permissions: [],
+        optionalPermissions: [],
+        backgroundServiceWorkerPath: nil
+    )
+}
+
+enum ChromeMV3ProductPopupOptionsRunStatus:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case succeeded
+    case blocked
+    case failed
+
+    static func < (
+        lhs: ChromeMV3ProductPopupOptionsRunStatus,
+        rhs: ChromeMV3ProductPopupOptionsRunStatus
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3ProductPopupOptionsTeardownReason:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case userClosed
+    case disabledWhileOpen
+    case uninstalledWhileOpen
+    case resetWhileOpen
+    case moduleDisabled
+
+    static func < (
+        lhs: ChromeMV3ProductPopupOptionsTeardownReason,
+        rhs: ChromeMV3ProductPopupOptionsTeardownReason
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+
+    var lifecycleEvent: ChromeMV3PopupOptionsLifecycleEvent {
+        switch self {
+        case .userClosed, .moduleDisabled:
+            return .closed
+        case .disabledWhileOpen:
+            return .disabledWhileOpen
+        case .uninstalledWhileOpen:
+            return .uninstalledWhileOpen
+        case .resetWhileOpen:
+            return .resetWhileOpen
+        }
+    }
+
+    var lifecycleState: ChromeMV3PopupOptionsLifecycleState {
+        switch self {
+        case .userClosed, .moduleDisabled:
+            return .closed
+        case .disabledWhileOpen:
+            return .disabledWhileOpen
+        case .uninstalledWhileOpen:
+            return .uninstalledWhileOpen
+        case .resetWhileOpen:
+            return .resetWhileOpen
+        }
+    }
+}
+
+struct ChromeMV3ProductPopupOptionsRunResult:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var status: ChromeMV3ProductPopupOptionsRunStatus
+    var requestedSurface: ChromeMV3ProductPopupOptionsSurface?
+    var launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord?
+    var lifecycleEvents: [ChromeMV3PopupOptionsLifecycleEvent]
+    var webViewCreated: Bool
+    var webViewReleased: Bool
+    var scriptHandlersRemoved: Bool
+    var normalTabAttached: Bool
+    var contentScriptsInjectedIntoProductPages: Bool
+    var serviceWorkerWakeAttempted: Bool
+    var nativeHostLaunchAttempted: Bool
+    var diagnostics: [String]
+
+    static func blocked(
+        requestedSurface: ChromeMV3ProductPopupOptionsSurface?,
+        launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord?,
+        diagnostics: [String]
+    ) -> ChromeMV3ProductPopupOptionsRunResult {
+        ChromeMV3ProductPopupOptionsRunResult(
+            status: .blocked,
+            requestedSurface: requestedSurface,
+            launchRecord: launchRecord,
+            lifecycleEvents: [],
+            webViewCreated: false,
+            webViewReleased: false,
+            scriptHandlersRemoved: false,
+            normalTabAttached: false,
+            contentScriptsInjectedIntoProductPages: false,
+            serviceWorkerWakeAttempted: false,
+            nativeHostLaunchAttempted: false,
+            diagnostics: uniqueSortedPopupOptions(diagnostics)
+        )
+    }
+}
+
+@MainActor
+protocol ChromeMV3PopupOptionsWebViewHandle: AnyObject {
+    func tearDown()
+}
+
+@MainActor
+protocol ChromeMV3PopupOptionsWebViewFactory: AnyObject {
+    func createWebView(
+        loadFileURL: URL,
+        allowingReadAccessTo readAccessURL: URL
+    ) throws -> ChromeMV3PopupOptionsWebViewHandle
+}
+
+@MainActor
+final class ChromeMV3ProductPopupOptionsHostController {
+    private struct ActiveSession {
+        var launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord
+        var handle: ChromeMV3PopupOptionsWebViewHandle
+    }
+
+    private let factory: ChromeMV3PopupOptionsWebViewFactory
+    private var sessions: [String: ActiveSession] = [:]
+
+    init(factory: ChromeMV3PopupOptionsWebViewFactory) {
+        self.factory = factory
+    }
+
+    var activeSessionCount: Int {
+        sessions.count
+    }
+
+    func hasActiveSession(
+        profileID: String,
+        extensionID: String,
+        surface: ChromeMV3ProductPopupOptionsSurface? = nil
+    ) -> Bool {
+        sessions.keys.contains {
+            matchesSessionKey(
+                $0,
+                profileID: profileID,
+                extensionID: extensionID,
+                surface: surface
+            )
+        }
+    }
+
+    func open(
+        _ launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord
+    ) -> ChromeMV3ProductPopupOptionsRunResult {
+        guard launchRecord.canOpen else {
+            return .blocked(
+                requestedSurface: launchRecord.surface,
+                launchRecord: launchRecord,
+                diagnostics: launchRecord.blockingReasons
+            )
+        }
+        guard let resourcePath = launchRecord.generatedResourcePath,
+              let rootPath = launchRecord.generatedRewrittenBundlePath
+        else {
+            var blocked = launchRecord
+            blocked.hostCreationState = .blocked
+            blocked.lifecycleState = .failed
+            blocked.lifecycleEvents = [.failed]
+            blocked.blockers = uniqueBlockers(
+                blocked.blockers + [.generatedRewrittenBundleMissing]
+            )
+            blocked.blockingReasons = blocked.blockers.map(\.reason).sorted()
+            return .blocked(
+                requestedSurface: launchRecord.surface,
+                launchRecord: blocked,
+                diagnostics: blocked.blockingReasons
+            )
+        }
+
+        let fileURL = URL(fileURLWithPath: resourcePath)
+        let readAccessURL = URL(fileURLWithPath: rootPath, isDirectory: true)
+        let key = sessionKey(for: launchRecord)
+        if sessions[key] != nil {
+            _ = close(
+                profileID: launchRecord.profileID,
+                extensionID: launchRecord.extensionID,
+                surface: launchRecord.surface,
+                reason: .userClosed
+            )
+        }
+
+        do {
+            let handle = try factory.createWebView(
+                loadFileURL: fileURL,
+                allowingReadAccessTo: readAccessURL
+            )
+            var opened = launchRecord
+            opened.hostCreationState = .created
+            opened.lifecycleState = .loaded
+            opened.lifecycleEvents = [.opened, .loaded]
+            sessions[key] = ActiveSession(
+                launchRecord: opened,
+                handle: handle
+            )
+            return ChromeMV3ProductPopupOptionsRunResult(
+                status: .succeeded,
+                requestedSurface: opened.surface,
+                launchRecord: opened,
+                lifecycleEvents: opened.lifecycleEvents,
+                webViewCreated: true,
+                webViewReleased: false,
+                scriptHandlersRemoved: false,
+                normalTabAttached: false,
+                contentScriptsInjectedIntoProductPages: false,
+                serviceWorkerWakeAttempted: false,
+                nativeHostLaunchAttempted: false,
+                diagnostics: [
+                    "Popup/options WebView was created only after explicit developer-preview launch gates passed.",
+                    "No normal tab was attached and no content scripts were injected.",
+                ]
+            )
+        } catch {
+            var failed = launchRecord
+            failed.hostCreationState = .failed
+            failed.lifecycleState = .failed
+            failed.lifecycleEvents = [.failed]
+            failed.blockers = uniqueBlockers(
+                failed.blockers + [.hostCreationFailed]
+            )
+            failed.blockingReasons = failed.blockers.map(\.reason).sorted()
+            failed.diagnostics = uniqueSortedPopupOptions(
+                failed.diagnostics + [error.localizedDescription]
+            )
+            return ChromeMV3ProductPopupOptionsRunResult(
+                status: .failed,
+                requestedSurface: failed.surface,
+                launchRecord: failed,
+                lifecycleEvents: failed.lifecycleEvents,
+                webViewCreated: false,
+                webViewReleased: false,
+                scriptHandlersRemoved: false,
+                normalTabAttached: false,
+                contentScriptsInjectedIntoProductPages: false,
+                serviceWorkerWakeAttempted: false,
+                nativeHostLaunchAttempted: false,
+                diagnostics: failed.diagnostics
+            )
+        }
+    }
+
+    @discardableResult
+    func close(
+        profileID: String,
+        extensionID: String,
+        surface: ChromeMV3ProductPopupOptionsSurface? = nil,
+        reason: ChromeMV3ProductPopupOptionsTeardownReason
+    ) -> ChromeMV3ProductPopupOptionsRunResult {
+        let keys = sessions.keys.filter {
+            matchesSessionKey(
+                $0,
+                profileID: profileID,
+                extensionID: extensionID,
+                surface: surface
+            )
+        }
+        guard keys.isEmpty == false else {
+            return ChromeMV3ProductPopupOptionsRunResult(
+                status: .succeeded,
+                requestedSurface: surface,
+                launchRecord: nil,
+                lifecycleEvents: [],
+                webViewCreated: false,
+                webViewReleased: false,
+                scriptHandlersRemoved: false,
+                normalTabAttached: false,
+                contentScriptsInjectedIntoProductPages: false,
+                serviceWorkerWakeAttempted: false,
+                nativeHostLaunchAttempted: false,
+                diagnostics: [
+                    "No popup/options WebView session was active.",
+                ]
+            )
+        }
+
+        var lastRecord: ChromeMV3ProductPopupOptionsLaunchRecord?
+        for key in keys {
+            guard let session = sessions.removeValue(forKey: key) else {
+                continue
+            }
+            session.handle.tearDown()
+            var closed = session.launchRecord
+            closed.hostCreationState = .tornDown
+            closed.lifecycleState = .teardownComplete
+            closed.lifecycleEvents.append(reason.lifecycleEvent)
+            closed.lifecycleEvents.append(.teardownComplete)
+            lastRecord = closed
+        }
+
+        return ChromeMV3ProductPopupOptionsRunResult(
+            status: .succeeded,
+            requestedSurface: surface ?? lastRecord?.surface,
+            launchRecord: lastRecord,
+            lifecycleEvents:
+                lastRecord?.lifecycleEvents
+                    ?? [reason.lifecycleEvent, .teardownComplete],
+            webViewCreated: false,
+            webViewReleased: true,
+            scriptHandlersRemoved: true,
+            normalTabAttached: false,
+            contentScriptsInjectedIntoProductPages: false,
+            serviceWorkerWakeAttempted: false,
+            nativeHostLaunchAttempted: false,
+            diagnostics: [
+                "Popup/options WebView teardown completed.",
+                "No script message handlers, native hosts, service-worker sessions, or normal-tab attachments were retained.",
+            ]
+        )
+    }
+
+    @discardableResult
+    func closeAll(
+        reason: ChromeMV3ProductPopupOptionsTeardownReason
+    ) -> ChromeMV3ProductPopupOptionsRunResult {
+        let keys = Array(sessions.keys)
+        guard keys.isEmpty == false else {
+            return ChromeMV3ProductPopupOptionsRunResult(
+                status: .succeeded,
+                requestedSurface: nil,
+                launchRecord: nil,
+                lifecycleEvents: [],
+                webViewCreated: false,
+                webViewReleased: false,
+                scriptHandlersRemoved: false,
+                normalTabAttached: false,
+                contentScriptsInjectedIntoProductPages: false,
+                serviceWorkerWakeAttempted: false,
+                nativeHostLaunchAttempted: false,
+                diagnostics: ["No popup/options WebView session was active."]
+            )
+        }
+        var last: ChromeMV3ProductPopupOptionsRunResult?
+        for key in keys {
+            guard let parsed = parseSessionKey(key) else { continue }
+            last = close(
+                profileID: parsed.profileID,
+                extensionID: parsed.extensionID,
+                surface: parsed.surface,
+                reason: reason
+            )
+        }
+        return last ?? ChromeMV3ProductPopupOptionsRunResult(
+            status: .succeeded,
+            requestedSurface: nil,
+            launchRecord: nil,
+            lifecycleEvents: [reason.lifecycleEvent, .teardownComplete],
+            webViewCreated: false,
+            webViewReleased: true,
+            scriptHandlersRemoved: true,
+            normalTabAttached: false,
+            contentScriptsInjectedIntoProductPages: false,
+            serviceWorkerWakeAttempted: false,
+            nativeHostLaunchAttempted: false,
+            diagnostics: ["Popup/options WebView teardown completed."]
+        )
+    }
+
+    private func sessionKey(
+        for record: ChromeMV3ProductPopupOptionsLaunchRecord
+    ) -> String {
+        [
+            record.profileID,
+            record.extensionID,
+            record.surface.rawValue,
+        ].joined(separator: "\u{1f}")
+    }
+
+    private func matchesSessionKey(
+        _ key: String,
+        profileID: String,
+        extensionID: String,
+        surface: ChromeMV3ProductPopupOptionsSurface?
+    ) -> Bool {
+        guard let parsed = parseSessionKey(key) else { return false }
+        return parsed.profileID == profileID
+            && parsed.extensionID == extensionID
+            && (surface == nil || parsed.surface == surface)
+    }
+
+    private func parseSessionKey(
+        _ key: String
+    ) -> (
+        profileID: String,
+        extensionID: String,
+        surface: ChromeMV3ProductPopupOptionsSurface
+    )? {
+        let parts = key.split(separator: "\u{1f}", omittingEmptySubsequences: false)
+            .map(String.init)
+        guard parts.count == 3,
+              let surface = ChromeMV3ProductPopupOptionsSurface(
+                rawValue: parts[2]
+              )
+        else { return nil }
+        return (parts[0], parts[1], surface)
+    }
+}
+
+#if canImport(WebKit)
+@MainActor
+final class ChromeMV3ProductPopupOptionsWKWebViewFactory:
+    ChromeMV3PopupOptionsWebViewFactory
+{
+    func createWebView(
+        loadFileURL: URL,
+        allowingReadAccessTo readAccessURL: URL
+    ) throws -> ChromeMV3PopupOptionsWebViewHandle {
+        ChromeMV3ProductPopupOptionsWKWebViewHandle(
+            loadFileURL: loadFileURL,
+            readAccessURL: readAccessURL
+        )
+    }
+}
+
+@MainActor
+private final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
+    ChromeMV3PopupOptionsWebViewHandle
+{
+    private var webView: WKWebView?
+
+    init(loadFileURL: URL, readAccessURL: URL) {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.loadFileURL(
+            loadFileURL,
+            allowingReadAccessTo: readAccessURL
+        )
+        self.webView = webView
+    }
+
+    func tearDown() {
+        webView?.stopLoading()
+        webView?.navigationDelegate = nil
+        webView?.uiDelegate = nil
+        webView?.removeFromSuperview()
+        webView = nil
+    }
+}
+#endif
+
+private func uniqueBlockers(
+    _ blockers: [ChromeMV3PopupOptionsBlocker]
+) -> [ChromeMV3PopupOptionsBlocker] {
+    Array(Set(blockers)).sorted()
+}
+
+private func uniqueSortedPopupOptions(_ values: [String]) -> [String] {
+    Array(Set(values)).sorted()
+}

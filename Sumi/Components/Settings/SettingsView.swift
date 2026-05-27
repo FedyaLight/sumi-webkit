@@ -338,6 +338,26 @@ struct SumiExtensionsSettingsPane: View {
                 .chromeMV3ChromeWebStoreInstallDiagnosticThroughManager(
                     rootURL: chromeMV3ManagerRootURL
                 )
+        case .openActionPopup:
+            result = browserManager.extensionsModule
+                .chromeMV3OpenActionPopupThroughManager(
+                    rootURL: rootURL,
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+        case .openOptions:
+            result = browserManager.extensionsModule
+                .chromeMV3OpenOptionsThroughManager(
+                    rootURL: rootURL,
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+        case .closePopupOptions:
+            result = browserManager.extensionsModule
+                .chromeMV3ClosePopupOptionsThroughManager(
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
         case .updateFromUnpacked:
             updateChromeMV3FromUnpackedFolder(
                 profileID: profileID,
