@@ -96,6 +96,8 @@ final class SumiExtensionsModule {
             ChromeMV3NetworkCompatibilityReport?
         private var lastChromeMV3SidePanelOffscreenIdentityReport:
             ChromeMV3SidePanelOffscreenIdentityCompatibilityReport?
+        private var lastChromeMV3EndToEndInstallDiagnosticsReport:
+            ChromeMV3EndToEndInstallDiagnosticsReport?
     #endif
     weak var browserManager: BrowserManager?
     #if DEBUG
@@ -207,6 +209,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3PasswordManagerFixtureReport = nil
                     lastChromeMV3NetworkCompatibilityReport = nil
                     lastChromeMV3SidePanelOffscreenIdentityReport = nil
+                    lastChromeMV3EndToEndInstallDiagnosticsReport = nil
                 }
             #endif
             tearDownChromeMV3EmptyControllerOwner()
@@ -3023,6 +3026,166 @@ final class SumiExtensionsModule {
             cachedChromeMV3DetachedContextOwner = nil
             return diagnostics
         }
+
+        func chromeMV3ImportInternalExtensionIfEnabled(
+            rootURL: URL,
+            sourceURL: URL,
+            profileID: String = "internal-debug-profile",
+            enableInternal: Bool = false
+        ) -> ChromeMV3LifecycleOperationResult? {
+            guard isEnabled else { return nil }
+            let result = ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
+                .installUnpackedExtension(
+                    at: sourceURL,
+                    profileID: profileID,
+                    enableInternal: enableInternal,
+                    runtimeDiagnostics:
+                        chromeMV3LifecycleRuntimeDiagnosticsSnapshot()
+                )
+            lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
+            return result
+        }
+
+        func chromeMV3RebuildInternalExtensionIfEnabled(
+            rootURL: URL,
+            profileID: String,
+            extensionID: String
+        ) -> ChromeMV3LifecycleOperationResult? {
+            guard isEnabled else { return nil }
+            let result = ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
+                .rebuildExtension(
+                    profileID: profileID,
+                    extensionID: extensionID,
+                    runtimeDiagnostics:
+                        chromeMV3LifecycleRuntimeDiagnosticsSnapshot()
+                )
+            lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
+            return result
+        }
+
+        func chromeMV3UpdateInternalExtensionIfEnabled(
+            rootURL: URL,
+            profileID: String,
+            extensionID: String,
+            sourceURL: URL
+        ) -> ChromeMV3LifecycleOperationResult? {
+            guard isEnabled else { return nil }
+            let result = ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
+                .updateExtension(
+                    profileID: profileID,
+                    extensionID: extensionID,
+                    from: sourceURL,
+                    runtimeDiagnostics:
+                        chromeMV3LifecycleRuntimeDiagnosticsSnapshot()
+                )
+            lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
+            return result
+        }
+
+        func chromeMV3UninstallInternalExtensionIfEnabled(
+            rootURL: URL,
+            profileID: String,
+            extensionID: String
+        ) -> ChromeMV3LifecycleOperationResult? {
+            guard isEnabled else { return nil }
+            if #available(macOS 15.5, *) {
+                tearDownChromeMV3ControllerLoadOwner()
+                tearDownChromeMV3DetachedContextOwner()
+                tearDownChromeMV3ExtensionObjectProbeOwner()
+            }
+            tearDownChromeMV3EmptyControllerOwner()
+            let result = ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
+                .uninstallExtension(profileID: profileID, extensionID: extensionID)
+            lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
+            return result
+        }
+
+        func chromeMV3ResetInternalExtensionStateIfEnabled(
+            rootURL: URL,
+            profileID: String,
+            extensionID: String
+        ) -> ChromeMV3LifecycleOperationResult? {
+            guard isEnabled else { return nil }
+            if #available(macOS 15.5, *) {
+                tearDownChromeMV3ControllerLoadOwner()
+                tearDownChromeMV3DetachedContextOwner()
+            }
+            tearDownChromeMV3EmptyControllerOwner()
+            let result = ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
+                .resetExtensionState(profileID: profileID, extensionID: extensionID)
+            lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
+            return result
+        }
+
+        func chromeMV3RunEndToEndDiagnosticsIfEnabled(
+            rootURL: URL,
+            profileID: String,
+            extensionID: String
+        ) -> ChromeMV3EndToEndInstallDiagnosticsReport? {
+            guard isEnabled else { return nil }
+            let report = ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
+                .writeEndToEndDiagnostics(
+                    profileID: profileID,
+                    extensionID: extensionID,
+                    runtimeDiagnostics:
+                        chromeMV3LifecycleRuntimeDiagnosticsSnapshot()
+                )
+            lastChromeMV3EndToEndInstallDiagnosticsReport = report
+            return report
+        }
+
+        func chromeMV3LatestEndToEndDiagnosticsReportIfEnabled(
+            rootURL: URL,
+            profileID: String,
+            extensionID: String
+        ) -> ChromeMV3EndToEndInstallDiagnosticsReport? {
+            guard isEnabled else { return nil }
+            let report = ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
+                .latestEndToEndDiagnosticsReport(
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+            lastChromeMV3EndToEndInstallDiagnosticsReport =
+                report ?? lastChromeMV3EndToEndInstallDiagnosticsReport
+            return report
+        }
+
+        func chromeMV3WriteInternalCrashMarkerIfEnabled(
+            rootURL: URL,
+            profileID: String,
+            extensionID: String,
+            reason: String,
+            lifecycleSessionLeftActive: Bool = true,
+            nativeFixturePortLeftOpen: Bool = false
+        ) -> ChromeMV3LifecycleOperationResult? {
+            guard isEnabled else { return nil }
+            return ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
+                .writeCrashMarker(
+                    profileID: profileID,
+                    extensionID: extensionID,
+                    reason: reason,
+                    lifecycleSessionLeftActive: lifecycleSessionLeftActive,
+                    nativeFixturePortLeftOpen: nativeFixturePortLeftOpen
+                )
+        }
+
+        func chromeMV3RecoverInternalExtensionsIfEnabled(
+            rootURL: URL,
+            profileID: String,
+            extensionID: String
+        ) -> ChromeMV3LifecycleOperationResult? {
+            guard isEnabled else { return nil }
+            if #available(macOS 15.5, *) {
+                tearDownChromeMV3ControllerLoadOwner()
+                tearDownChromeMV3DetachedContextOwner()
+                tearDownChromeMV3ExtensionObjectProbeOwner()
+            }
+            tearDownChromeMV3EmptyControllerOwner()
+            let result = ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
+                .runRecoveryScan(profileID: profileID, extensionID: extensionID)
+            lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
+            return result
+        }
     #endif
 
     @discardableResult
@@ -3305,6 +3468,52 @@ final class SumiExtensionsModule {
         private func tearDownChromeMV3ControllerLoadOwner() {
             cachedChromeMV3ControllerLoadOwner?.tearDown()
             cachedChromeMV3ControllerLoadOwner = nil
+        }
+
+        private func chromeMV3LifecycleRuntimeDiagnosticsSnapshot()
+            -> ChromeMV3LifecycleRuntimeDiagnosticsSnapshot
+        {
+            ChromeMV3LifecycleRuntimeDiagnosticsSnapshot(
+                WebKitObjectDiagnosticsAvailable:
+                    lastChromeMV3WebKitObjectAcceptanceReport != nil,
+                contextCreationGateDiagnosticsAvailable:
+                    lastChromeMV3ContextCreationGateReport != nil,
+                controllerLoadGateDiagnosticsAvailable:
+                    lastChromeMV3ControllerLoadGateReport != nil,
+                runtimeBridgeReadinessDiagnosticsAvailable:
+                    lastChromeMV3RuntimeBridgeReadinessReport != nil,
+                runtimeJSMessagingDiagnosticsAvailable:
+                    lastChromeMV3RuntimeJSMessagingMVPReport != nil,
+                tabsScriptingDiagnosticsAvailable:
+                    lastChromeMV3TabsScriptingMVPReport != nil,
+                permissionsDiagnosticsAvailable:
+                    lastChromeMV3PermissionImplementationReport != nil
+                        || lastChromeMV3PermissionLifecycleReport != nil
+                        || lastChromeMV3PermissionsAPIContractReport != nil,
+                storageDiagnosticsAvailable:
+                    lastChromeMV3StorageLocalImplementationReport != nil
+                        || lastChromeMV3StorageAPIOperationsReport != nil
+                        || lastChromeMV3StorageBrokerReadinessReport != nil,
+                nativeMessagingDiagnosticsAvailable:
+                    lastChromeMV3NativeMessagingReadinessReport != nil
+                        || lastChromeMV3NativeMessagingImplementationReport != nil,
+                serviceWorkerDiagnosticsAvailable:
+                    lastChromeMV3ServiceWorkerLifecycleReport != nil
+                        || lastChromeMV3ServiceWorkerSharedLifecycleSessionReport
+                            != nil,
+                eventAPIDiagnosticsAvailable:
+                    lastChromeMV3ExtensionEventAPIsReport != nil,
+                networkDiagnosticsAvailable:
+                    lastChromeMV3NetworkCompatibilityReport != nil,
+                sidePanelOffscreenIdentityDiagnosticsAvailable:
+                    lastChromeMV3SidePanelOffscreenIdentityReport != nil,
+                passwordManagerDiagnosticsAvailable:
+                    lastChromeMV3PasswordManagerFixtureReport != nil,
+                diagnostics: [
+                    "SumiExtensionsModule supplied DEBUG/internal diagnostic availability only.",
+                    "Product normal-tab runtime remains unavailable.",
+                ]
+            )
         }
 
         private func loadChromeMV3WebKitObjectAcceptanceReport(
