@@ -172,7 +172,7 @@ struct ChromeMV3ExtensionManagerDocumentationSource:
             title: "Chromium CRX3 package format",
             url: "https://chromium.googlesource.com/chromium/src/+/HEAD/components/crx_file/crx3.proto",
             boundary: "CRX signature validation",
-            finding: "CRX3 includes magic/version/header/archive fields and signatures over signed header data plus archive; Sumi does not parse or verify those signatures in this prompt."
+            finding: "CRX3 includes magic/version/header/archive fields and signatures over signed header data plus archive; Sumi parses the header/payload preflight and still blocks import until verifier and trust policy exist."
         ),
         ChromeMV3ExtensionManagerDocumentationSource(
             title: "Chrome alternative installation methods",
@@ -227,12 +227,9 @@ struct ChromeMV3ExtensionManagerGate: Codable, Equatable {
             diagnostics.append(.moduleDisabled)
         }
         if developerPreviewAvailable == false {
-            diagnostics.append(.developerPreviewUnavailable)
+        diagnostics.append(.developerPreviewUnavailable)
         }
-        diagnostics.append(
-            contentsOf: ChromeMV3ExtensionManagerBlockedDiagnostic
-                .archiveImportDeferred
-        )
+        diagnostics.append(.crxImportBlocked)
         diagnostics.append(
             contentsOf: ChromeMV3ExtensionManagerBlockedDiagnostic
                 .chromeWebStoreDeferred
@@ -245,7 +242,7 @@ struct ChromeMV3ExtensionManagerGate: Codable, Equatable {
             installActionsAvailable: developerPreviewAvailable,
             runtimeActionsAvailable: false,
             webStoreInstallAvailable: false,
-            localArchiveImportAvailable: false,
+            localArchiveImportAvailable: developerPreviewAvailable,
             developerPreviewOnly: true,
             diagnostics: uniqueDiagnostics(diagnostics),
             documentationSources:
@@ -306,8 +303,8 @@ extension ChromeMV3ExtensionManagerBlockedDiagnostic {
         make(
             .zipImportDeferred,
             severity: .deferred,
-            message: "Local .zip import is deferred because controlled extraction, traversal rejection, and symlink policy are not implemented in this prompt.",
-            remediation: "Extract the extension yourself and use Load Unpacked, or add a scoped archive intake implementation in a future prompt.",
+            message: "Local .zip import is available only through controlled package intake in the internal developer-preview manager.",
+            remediation: "Use Import ZIP so Sumi can preflight entries, reject unsafe archives, extract under the staging root, and validate MV3 before lifecycle promotion.",
             documentationURL:
                 "https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked"
         ),
@@ -340,6 +337,15 @@ extension ChromeMV3ExtensionManagerBlockedDiagnostic {
             remediation: "Keep archives blocked until provenance, signing, extraction, and user-consent policy are explicit."
         ),
     ]
+
+    static let crxImportBlocked = make(
+        .crxImportDeferred,
+        severity: .deferred,
+        message: "Local .crx import is parser/preflight-only because CRX3 signature verification and package trust policy are not implemented.",
+        remediation: "Use the CRX preflight diagnostic for metadata only; do not extract or install CRX payloads until verifier policy exists.",
+        documentationURL:
+            "https://chromium.googlesource.com/chromium/src/+/HEAD/components/crx_file/crx3.proto"
+    )
 
     static let chromeWebStoreDeferred: [ChromeMV3ExtensionManagerBlockedDiagnostic] = [
         make(
@@ -482,6 +488,7 @@ struct ChromeMV3ExtensionManagerListViewModel:
         [ChromeMV3ExtensionManagerBlockedDiagnostic]
     var chromeWebStoreDiagnostics:
         [ChromeMV3ExtensionManagerBlockedDiagnostic]
+    var packageIntakeReport: ChromeMV3PackageIntakeReport?
     var documentationSources: [ChromeMV3ExtensionManagerDocumentationSource]
 }
 
@@ -549,6 +556,7 @@ struct ChromeMV3ExtensionManagerDetailViewModel:
     var exactCompatibilityBlockers: [ChromeMV3APIBlockerRecord]
     var exactProductPreflightBlockers:
         [ChromeMV3ProductRuntimePreflightBlocker]
+    var packageIntakeReport: ChromeMV3PackageIntakeReport?
     var actions: [ChromeMV3ExtensionManagerActionDescriptor]
     var diagnosticsReportPath: String?
     var diagnosticsJSONAvailable: Bool
@@ -563,6 +571,7 @@ struct ChromeMV3ExtensionManagerActionResult:
     var status: ChromeMV3ExtensionManagerActionStatus
     var lifecycleOperationResult: ChromeMV3LifecycleOperationResult?
     var report: ChromeMV3EndToEndInstallDiagnosticsReport?
+    var packageIntakeReport: ChromeMV3PackageIntakeReport?
     var diagnosticsJSON: String?
     var blockedDiagnostics: [ChromeMV3ExtensionManagerBlockedDiagnostic]
     var diagnostics: [String]
@@ -579,13 +588,15 @@ struct ChromeMV3ExtensionManagerActionResult:
 
     static func fromLifecycle(
         action: ChromeMV3ExtensionManagerActionKind,
-        result: ChromeMV3LifecycleOperationResult
+        result: ChromeMV3LifecycleOperationResult,
+        packageIntakeReport: ChromeMV3PackageIntakeReport? = nil
     ) -> ChromeMV3ExtensionManagerActionResult {
         ChromeMV3ExtensionManagerActionResult(
             action: action,
             status: result.succeeded ? .succeeded : .failed,
             lifecycleOperationResult: result,
             report: result.report,
+            packageIntakeReport: packageIntakeReport,
             diagnosticsJSON: nil,
             blockedDiagnostics: [],
             diagnostics: result.diagnostics,
@@ -608,6 +619,7 @@ struct ChromeMV3ExtensionManagerActionResult:
             status: status,
             lifecycleOperationResult: nil,
             report: nil,
+            packageIntakeReport: nil,
             diagnosticsJSON: nil,
             blockedDiagnostics: diagnostics.sorted { $0.code < $1.code },
             diagnostics: diagnostics.map(\.message).sorted(),
@@ -629,6 +641,7 @@ struct ChromeMV3ExtensionManagerActionResult:
             status: report == nil ? .failed : .succeeded,
             lifecycleOperationResult: nil,
             report: report,
+            packageIntakeReport: nil,
             diagnosticsJSON: nil,
             blockedDiagnostics: [],
             diagnostics: [
@@ -653,6 +666,7 @@ struct ChromeMV3ExtensionManagerActionResult:
             status: json == nil ? .failed : .succeeded,
             lifecycleOperationResult: nil,
             report: nil,
+            packageIntakeReport: nil,
             diagnosticsJSON: json,
             blockedDiagnostics: [],
             diagnostics: [
@@ -660,6 +674,33 @@ struct ChromeMV3ExtensionManagerActionResult:
                     ? "No diagnostics JSON was available to export."
                     : "Diagnostics JSON is available for copy/export.",
             ],
+            productFlags: .unavailable,
+            mutatedLifecycle: false,
+            runtimeAttachmentAttempted: false,
+            runtimeObjectsCreated: false,
+            serviceWorkerWakeAttempted: false,
+            nativeHostLaunchAttempted: false
+        )
+    }
+
+    static func packageIntake(
+        action: ChromeMV3ExtensionManagerActionKind,
+        status: ChromeMV3ExtensionManagerActionStatus,
+        report: ChromeMV3PackageIntakeReport
+    ) -> ChromeMV3ExtensionManagerActionResult {
+        ChromeMV3ExtensionManagerActionResult(
+            action: action,
+            status: status,
+            lifecycleOperationResult: nil,
+            report: nil,
+            packageIntakeReport: report,
+            diagnosticsJSON: nil,
+            blockedDiagnostics: [],
+            diagnostics: (
+                report.blockers.isEmpty
+                    ? [report.preflightResult.message]
+                    : report.blockers
+            ).sorted(),
             productFlags: .unavailable,
             mutatedLifecycle: false,
             runtimeAttachmentAttempted: false,
@@ -702,9 +743,13 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
                 return $0.extensionID < $1.extensionID
             },
             unsupportedArchiveDiagnostics:
-                ChromeMV3ExtensionManagerBlockedDiagnostic.archiveImportDeferred,
+                [
+                    ChromeMV3ExtensionManagerBlockedDiagnostic.crxImportBlocked,
+                ],
             chromeWebStoreDiagnostics:
                 ChromeMV3ExtensionManagerBlockedDiagnostic.chromeWebStoreDeferred,
+            packageIntakeReport:
+                ChromeMV3PackageIntakeService.latestReport(rootURL: rootURL),
             documentationSources: gate.documentationSources
         )
     }
@@ -765,6 +810,8 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
             exactCompatibilityBlockers: report?.blockerTaxonomy ?? [],
             exactProductPreflightBlockers:
                 preflight.normalTabPreflight.blockers,
+            packageIntakeReport:
+                ChromeMV3PackageIntakeService.latestReport(rootURL: rootURL),
             actions: actionDescriptors(
                 gate: gate,
                 record: record,
@@ -922,9 +969,15 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
         let mutates = mutatesLifecycle(action)
         let archiveDiagnostics:
             [ChromeMV3ExtensionManagerBlockedDiagnostic]
-        if action == .importZipArchive || action == .importCRXArchive {
+        if action == .importCRXArchive {
             archiveDiagnostics =
-                ChromeMV3ExtensionManagerBlockedDiagnostic.archiveImportDeferred
+                [
+                    ChromeMV3ExtensionManagerBlockedDiagnostic.crxImportBlocked,
+                    ChromeMV3ExtensionManagerBlockedDiagnostic
+                        .archiveImportDeferred[3],
+                    ChromeMV3ExtensionManagerBlockedDiagnostic
+                        .archiveImportDeferred[4],
+                ]
         } else if action == .chromeWebStoreInstall {
             archiveDiagnostics =
                 ChromeMV3ExtensionManagerBlockedDiagnostic.chromeWebStoreDeferred
@@ -938,6 +991,12 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
         }
         if mutates && gate.installActionsAvailable == false {
             unavailable.append(.installActionsUnavailable)
+        }
+        if action == .importZipArchive && gate.localArchiveImportAvailable == false {
+            unavailable.append(
+                ChromeMV3ExtensionManagerBlockedDiagnostic
+                    .archiveImportDeferred[0]
+            )
         }
         if runtimeAction && gate.runtimeActionsAvailable == false {
             unavailable.append(.runtimeActionsUnavailable)
@@ -986,9 +1045,10 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
         switch action {
         case .installUnpacked, .updateFromUnpacked, .enableInternal,
              .disableInternal, .rebuild, .retryDiagnostics,
-             .runDiagnostics, .recover, .uninstall, .reset:
+             .runDiagnostics, .recover, .uninstall, .reset,
+             .importZipArchive:
             return true
-        case .importZipArchive, .importCRXArchive, .exportDiagnosticsJSON,
+        case .importCRXArchive, .exportDiagnosticsJSON,
              .chromeWebStoreInstall:
             return false
         }
@@ -1067,42 +1127,78 @@ enum ChromeMV3ExtensionManagerActionRunner {
                 enableInternal: enableInternal,
                 runtimeDiagnostics: runtimeDiagnostics
             )
-        return .fromLifecycle(action: .installUnpacked, result: result)
+        let packageReport = ChromeMV3PackageIntakeService(rootURL: rootURL)
+            .writeLocalUnpackedReport(
+                sourceURL: sourceURL,
+                lifecycleResult: result
+            )
+        return .fromLifecycle(
+            action: .installUnpacked,
+            result: result,
+            packageIntakeReport: packageReport
+        )
     }
 
     static func importLocalArchive(
+        rootURL: URL,
         sourceURL: URL,
-        gate: ChromeMV3ExtensionManagerGate
+        profileID: String,
+        enableInternal: Bool,
+        gate: ChromeMV3ExtensionManagerGate,
+        runtimeDiagnostics:
+            ChromeMV3LifecycleRuntimeDiagnosticsSnapshot = .none
     ) -> ChromeMV3ExtensionManagerActionResult {
-        let ext = sourceURL.pathExtension.lowercased()
-        if ext == "zip" {
+        guard gate.installActionsAvailable else {
             return .blocked(
+                action: sourceURL.pathExtension.lowercased() == "crx"
+                    ? .importCRXArchive
+                    : .importZipArchive,
+                diagnostics: [.installActionsUnavailable]
+            )
+        }
+        let ext = sourceURL.pathExtension.lowercased()
+        let service = ChromeMV3PackageIntakeService(rootURL: rootURL)
+        if ext == "zip" {
+            let importResult = service.importLocalZIPArchive(
+                sourceURL: sourceURL,
+                profileID: profileID,
+                enableInternal: enableInternal,
+                runtimeDiagnostics: runtimeDiagnostics
+            )
+            if let lifecycleResult = importResult.lifecycleResult {
+                return .fromLifecycle(
+                    action: .importZipArchive,
+                    result: lifecycleResult,
+                    packageIntakeReport: importResult.report
+                )
+            }
+            return .packageIntake(
                 action: .importZipArchive,
-                diagnostics:
-                    ChromeMV3ExtensionManagerBlockedDiagnostic
-                    .archiveImportDeferred,
-                status: .deferred
+                status: importResult.actionStatus,
+                report: importResult.report
             )
         }
         if ext == "crx" {
-            return .blocked(
+            let importResult = service.importLocalCRXArchive(
+                sourceURL: sourceURL
+            )
+            return .packageIntake(
                 action: .importCRXArchive,
-                diagnostics:
-                    ChromeMV3ExtensionManagerBlockedDiagnostic
-                    .archiveImportDeferred,
-                status: .deferred
+                status: importResult.actionStatus,
+                report: importResult.report
             )
         }
         return .blocked(
             action: .importZipArchive,
-            diagnostics: gate.localArchiveImportAvailable
-                ? [
-                    ChromeMV3ExtensionManagerBlockedDiagnostic
-                        .archiveImportDeferred[0],
-                ]
-                : ChromeMV3ExtensionManagerBlockedDiagnostic
-                    .archiveImportDeferred,
-            status: .deferred
+            diagnostics: [
+                .make(
+                    .zipImportDeferred,
+                    severity: .fatalInstall,
+                    message: "Only local .zip and .crx package files are accepted by package intake.",
+                    remediation: "Choose a local ZIP archive for import or a CRX file for parser diagnostics."
+                ),
+            ],
+            status: .failed
         )
     }
 
@@ -1278,6 +1374,19 @@ enum ChromeMV3ExtensionManagerActionRunner {
             status: .deferred
         )
     }
+
+    static func chromeWebStoreDiagnostic(
+        rootURL: URL,
+        input: String
+    ) -> ChromeMV3ExtensionManagerActionResult {
+        let report = ChromeMV3PackageIntakeService(rootURL: rootURL)
+            .diagnoseChromeWebStoreInput(input)
+        return .packageIntake(
+            action: .chromeWebStoreInstall,
+            status: .deferred,
+            report: report
+        )
+    }
 }
 
 private extension ChromeMV3EndToEndInstallDiagnosticsReport {
@@ -1304,6 +1413,7 @@ struct ChromeMV3ExtensionManagerView: View {
             VStack(alignment: .leading, spacing: 16) {
                 gateSection
                 actionsHeader
+                packageIntakeSection
                 HStack(alignment: .top, spacing: 16) {
                     listSection
                     detailSection
@@ -1348,6 +1458,36 @@ struct ChromeMV3ExtensionManagerView: View {
                         "localArchiveImport",
                         listViewModel.gate.localArchiveImportAvailable
                     )
+                }
+            }
+        }
+
+        @ViewBuilder
+        private var packageIntakeSection: some View {
+            if let report = selectedDetail?.packageIntakeReport
+                ?? listViewModel.packageIntakeReport
+            {
+                SettingsSectionCard(
+                    title: "Package Intake",
+                    subtitle:
+                        "\(report.sourceKind.rawValue) - \(report.preflightResult.status.rawValue)"
+                ) {
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 180), spacing: 8)],
+                        alignment: .leading,
+                        spacing: 8
+                    ) {
+                        fact("ZIP", report.productFlags.zipImportAvailable ? "available" : "unavailable")
+                        fact("CRX", report.trustResult.importAllowed ? "allowed" : "blocked")
+                        fact("Web Store", report.productFlags.chromeWebStoreInstallAvailable ? "available" : "deferred")
+                        fact("Runtime", report.productFlags.runtimeLoadable ? "loadable" : "off")
+                    }
+                    if let blocker = report.blockers.first {
+                        Text(blocker)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }

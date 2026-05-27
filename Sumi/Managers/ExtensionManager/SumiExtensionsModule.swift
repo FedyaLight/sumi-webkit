@@ -3336,8 +3336,45 @@ final class SumiExtensionsModule {
         return result
     }
 
-    func chromeMV3ImportLocalArchiveThroughManager(
+    func chromeMV3PreflightLocalZipArchiveIfEnabled(
+        rootURL: URL = ChromeMV3ExtensionManagerStoreLocation.defaultRootURL(),
         sourceURL: URL
+    ) -> ChromeMV3PackageIntakeReport? {
+        guard isEnabled else { return nil }
+        return ChromeMV3PackageIntakeService(rootURL: rootURL)
+            .preflightLocalZIPArchive(sourceURL: sourceURL)
+    }
+
+    func chromeMV3PreflightLocalCRXArchiveIfEnabled(
+        rootURL: URL = ChromeMV3ExtensionManagerStoreLocation.defaultRootURL(),
+        sourceURL: URL
+    ) -> ChromeMV3PackageIntakeReport? {
+        guard isEnabled else { return nil }
+        return ChromeMV3PackageIntakeService(rootURL: rootURL)
+            .preflightLocalCRXArchive(sourceURL: sourceURL)
+    }
+
+    func chromeMV3DiagnoseChromeWebStoreInputIfEnabled(
+        rootURL: URL = ChromeMV3ExtensionManagerStoreLocation.defaultRootURL(),
+        input: String
+    ) -> ChromeMV3PackageIntakeReport? {
+        guard isEnabled else { return nil }
+        return ChromeMV3PackageIntakeService(rootURL: rootURL)
+            .diagnoseChromeWebStoreInput(input)
+    }
+
+    func chromeMV3LatestPackageIntakeReportIfEnabled(
+        rootURL: URL = ChromeMV3ExtensionManagerStoreLocation.defaultRootURL()
+    ) -> ChromeMV3PackageIntakeReport? {
+        guard isEnabled else { return nil }
+        return ChromeMV3PackageIntakeService.latestReport(rootURL: rootURL)
+    }
+
+    func chromeMV3ImportLocalArchiveThroughManager(
+        rootURL: URL = ChromeMV3ExtensionManagerStoreLocation.defaultRootURL(),
+        sourceURL: URL,
+        profileID: String? = nil,
+        enableInternal: Bool = false
     ) -> ChromeMV3ExtensionManagerActionResult {
         let gate = chromeMV3ExtensionManagerGate()
         guard gate.managerAvailableInDeveloperPreview else {
@@ -3349,10 +3386,19 @@ final class SumiExtensionsModule {
                 diagnostics: gate.diagnostics
             )
         }
-        return ChromeMV3ExtensionManagerActionRunner.importLocalArchive(
+        let result = ChromeMV3ExtensionManagerActionRunner.importLocalArchive(
+            rootURL: rootURL,
             sourceURL: sourceURL,
-            gate: gate
+            profileID: resolvedChromeMV3ManagerProfileID(profileID),
+            enableInternal: enableInternal,
+            gate: gate,
+            runtimeDiagnostics:
+                chromeMV3ExtensionManagerRuntimeDiagnosticsSnapshot()
         )
+        #if DEBUG
+            lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
+        #endif
+        return result
     }
 
     func chromeMV3UpdateUnpackedThroughManager(
@@ -3582,7 +3628,10 @@ final class SumiExtensionsModule {
             )
     }
 
-    func chromeMV3ChromeWebStoreInstallDiagnosticThroughManager()
+    func chromeMV3ChromeWebStoreInstallDiagnosticThroughManager(
+        rootURL: URL = ChromeMV3ExtensionManagerStoreLocation.defaultRootURL(),
+        input: String? = nil
+    )
         -> ChromeMV3ExtensionManagerActionResult
     {
         let gate = chromeMV3ExtensionManagerGate()
@@ -3591,6 +3640,12 @@ final class SumiExtensionsModule {
                 action: .chromeWebStoreInstall,
                 diagnostics: gate.diagnostics
             )
+        }
+        if let input, input.trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty == false
+        {
+            return ChromeMV3ExtensionManagerActionRunner
+                .chromeWebStoreDiagnostic(rootURL: rootURL, input: input)
         }
         return ChromeMV3ExtensionManagerActionRunner
             .chromeWebStoreInstallDeferred()

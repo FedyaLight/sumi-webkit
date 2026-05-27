@@ -248,7 +248,10 @@ struct SumiExtensionsSettingsPane: View {
         guard panel.runModal() == .OK, let sourceURL = panel.url else { return }
 
         let result = browserManager.extensionsModule
-            .chromeMV3ImportLocalArchiveThroughManager(sourceURL: sourceURL)
+            .chromeMV3ImportLocalArchiveThroughManager(
+                rootURL: chromeMV3ManagerRootURL,
+                sourceURL: sourceURL
+            )
         applyChromeMV3ManagerResult(result)
     }
 
@@ -261,7 +264,9 @@ struct SumiExtensionsSettingsPane: View {
             if action == .chromeWebStoreInstall {
                 applyChromeMV3ManagerResult(
                     browserManager.extensionsModule
-                        .chromeMV3ChromeWebStoreInstallDiagnosticThroughManager()
+                        .chromeMV3ChromeWebStoreInstallDiagnosticThroughManager(
+                            rootURL: chromeMV3ManagerRootURL
+                        )
                 )
             }
             return
@@ -330,7 +335,9 @@ struct SumiExtensionsSettingsPane: View {
                 )
         case .chromeWebStoreInstall:
             result = browserManager.extensionsModule
-                .chromeMV3ChromeWebStoreInstallDiagnosticThroughManager()
+                .chromeMV3ChromeWebStoreInstallDiagnosticThroughManager(
+                    rootURL: chromeMV3ManagerRootURL
+                )
         case .updateFromUnpacked:
             updateChromeMV3FromUnpackedFolder(
                 profileID: profileID,
