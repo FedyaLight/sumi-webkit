@@ -252,6 +252,8 @@ struct ChromeMV3CompatibilityReportViewModel:
     var blockersByManifestKey: [ChromeMV3CompatibilityBlockerGroup]
     var blockersByResourcePath: [ChromeMV3CompatibilityBlockerGroup]
     var productFlags: ChromeMV3DiagnosticsProductExposureFlags
+    var productEnablementPreflight:
+        ChromeMV3ProductEnablementPreflightSection
     var internalLifecycleActions: [ChromeMV3InternalLifecycleActionDescriptor]
     var nextRecommendedAction: String
 
@@ -324,6 +326,11 @@ struct ChromeMV3CompatibilityReportViewModel:
                     report.lifecycleAvailability
                     .internalSyntheticRuntimeDiagnosticsAvailable
             )
+        let productEnablementPreflight =
+            ChromeMV3ProductEnablementPreflightSection.make(
+                report: report,
+                lifecycleRecord: lifecycleRecord
+            )
         let readiness = ChromeMV3CompatibilityReadinessSummary.make(
             report: report,
             matrix: matrix
@@ -380,6 +387,7 @@ struct ChromeMV3CompatibilityReportViewModel:
                 title: { "Resource: \($0)" }
             )
         self.productFlags = productFlags
+        self.productEnablementPreflight = productEnablementPreflight
         self.internalLifecycleActions = ChromeMV3InternalLifecycleActionDescriptor
             .all(for: lifecycleRecord, report: report)
         self.nextRecommendedAction = report.aggregateAPICompatibility
@@ -680,6 +688,8 @@ struct ChromeMV3FoundationReadinessReport:
     var performanceBudget: ChromeMV3PerformanceBudgetReport
     var artifactCleanup: ChromeMV3ArtifactCleanupReport?
     var productRuntimeGuard: ChromeMV3ProductRuntimeHardeningGuardReport
+    var productEnablementPreflight:
+        ChromeMV3ProductEnablementPreflightSection?
     var missingRequiredInternalReports: [String]
     var finalPhaseStatus: ChromeMV3FoundationPhaseStatus
 }
@@ -1601,6 +1611,8 @@ extension ChromeMV3ExtensionLifecycleRegistry {
             performanceBudget: .currentInternalDeveloperPreview(),
             artifactCleanup: cleanupReport,
             productRuntimeGuard: .blocked,
+            productEnablementPreflight:
+                viewModel?.productEnablementPreflight,
             missingRequiredInternalReports: missing,
             finalPhaseStatus: .make(
                 viewModel: viewModel,
