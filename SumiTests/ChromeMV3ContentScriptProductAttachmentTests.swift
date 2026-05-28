@@ -827,6 +827,7 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
             surfaceID: "\(profileID):\(extensionID):actionPopup",
             surface: .actionPopup,
             extensionBaseURLString: "chrome-extension://\(extensionID)/",
+            permissionStateRootPath: nil,
             moduleState: .enabled,
             bridgeAvailable: true,
             popupOptionsJSBridgeAvailableInDeveloperPreview: true,

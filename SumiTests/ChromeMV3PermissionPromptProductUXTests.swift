@@ -108,6 +108,26 @@ final class ChromeMV3PermissionPromptProductUXTests: XCTestCase {
                 .grantedOptionalAPIPermissions.contains("history")
         )
         XCTAssertEqual(persisted.promptResults.map(\.disposition), [.accepted])
+        XCTAssertTrue(
+            persisted.promptLifecycleRecords.map(\.stage)
+                .contains(.promptCreated)
+        )
+        XCTAssertTrue(
+            persisted.promptLifecycleRecords.map(\.stage)
+                .contains(.promptPresented)
+        )
+        XCTAssertTrue(
+            persisted.promptLifecycleRecords.map(\.stage)
+                .contains(.accepted)
+        )
+        XCTAssertTrue(
+            persisted.promptLifecycleRecords.map(\.stage)
+                .contains(.downstreamInvalidated)
+        )
+        XCTAssertTrue(
+            persisted.promptLifecycleRecords.map(\.stage)
+                .contains(.resultPersisted)
+        )
     }
 
     func testPermissionsRequestDeniedAndDismissedDoNotGrant() throws {
@@ -222,6 +242,192 @@ final class ChromeMV3PermissionPromptProductUXTests: XCTestCase {
         XCTAssertTrue(
             summary.revokedPermissions.contains("https://example.com/*")
         )
+    }
+
+    func testPermissionsOnAddedDispatchesToAlreadyOpenListenerOnly() {
+        let dispatcher = ChromeMV3PermissionEventDispatchRegistry()
+        var deliveredPayloads: [ChromeMV3PermissionsAPIEventPayload] = []
+        dispatcher.registerChromeMV3PermissionEventPage(
+            surfaceID: "profile:extension:options",
+            profileID: "profile",
+            extensionID: "extension",
+            surface: .optionsPage,
+            dispatchHandler: { payload in
+                deliveredPayloads.append(payload)
+                return true
+            }
+        )
+        dispatcher.updateChromeMV3PermissionEventListenerCount(
+            surfaceID: "profile:extension:options",
+            profileID: "profile",
+            extensionID: "extension",
+            surface: .optionsPage,
+            eventKind: .onAdded,
+            listenerCount: 1
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration:
+                configuration(manifestOptionalPermissions: ["history"]),
+            permissionPromptPresenter:
+                ChromeMV3TestPermissionPromptPresenter(disposition: .accepted),
+            permissionEventDispatcher: dispatcher
+        )
+
+        let response = handler.handle(request(
+            namespace: "permissions",
+            methodName: "request",
+            arguments: [.object([
+                "permissions": .array([.string("history")]),
+            ])]
+        ))
+        let record = dispatcher.permissionEventDispatchRecords.last
+
+        XCTAssertTrue(response.succeeded)
+        XCTAssertEqual(record?.outcome, .delivered)
+        XCTAssertEqual(record?.eventPayload.eventKind, .onAdded)
+        XCTAssertEqual(record?.deliveredSurfaceIDs, ["profile:extension:options"])
+        XCTAssertEqual(record?.serviceWorkerWakeAttempted, false)
+        XCTAssertEqual(record?.hiddenExtensionPageCreated, false)
+        XCTAssertEqual(deliveredPayloads.map(\.eventKind), [.onAdded])
+    }
+
+    func testPermissionsOnRemovedDispatchesToAlreadyOpenListenerOnly() {
+        let dispatcher = ChromeMV3PermissionEventDispatchRegistry()
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration:
+                configuration(manifestOptionalPermissions: ["history"]),
+            permissionPromptPresenter:
+                ChromeMV3TestPermissionPromptPresenter(disposition: .accepted),
+            permissionEventDispatcher: dispatcher
+        )
+        _ = handler.handle(request(
+            namespace: "permissions",
+            methodName: "request",
+            arguments: [.object([
+                "permissions": .array([.string("history")]),
+            ])]
+        ))
+        dispatcher.registerChromeMV3PermissionEventPage(
+            surfaceID: "profile:extension:options",
+            profileID: "profile",
+            extensionID: "extension",
+            surface: .optionsPage,
+            dispatchHandler: { _ in true }
+        )
+        dispatcher.updateChromeMV3PermissionEventListenerCount(
+            surfaceID: "profile:extension:options",
+            profileID: "profile",
+            extensionID: "extension",
+            surface: .optionsPage,
+            eventKind: .onRemoved,
+            listenerCount: 1
+        )
+
+        let response = handler.handle(request(
+            namespace: "permissions",
+            methodName: "remove",
+            arguments: [.object([
+                "permissions": .array([.string("history")]),
+            ])]
+        ))
+        let record = dispatcher.permissionEventDispatchRecords.last
+
+        XCTAssertTrue(response.succeeded)
+        XCTAssertEqual(record?.outcome, .delivered)
+        XCTAssertEqual(record?.eventPayload.eventKind, .onRemoved)
+        XCTAssertEqual(record?.deliveredSurfaceIDs, ["profile:extension:options"])
+        XCTAssertEqual(record?.serviceWorkerWakeAttempted, false)
+        XCTAssertEqual(record?.hiddenExtensionPageCreated, false)
+    }
+
+    func testPopupOptionsLoadsPersistedPermissionStateFromRootPath() throws {
+        let root = try makeTemporaryDirectory()
+        let store = ChromeMV3DeveloperPreviewPermissionStateStore(rootURL: root)
+        let grantingHandler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration:
+                configuration(
+                    manifestOptionalPermissions: ["history"],
+                    manifestOptionalHostPermissions: ["https://example.com/*"]
+                ),
+            permissionPromptPresenter:
+                ChromeMV3TestPermissionPromptPresenter(disposition: .accepted),
+            permissionStateStore: store
+        )
+        _ = grantingHandler.handle(request(
+            namespace: "permissions",
+            methodName: "request",
+            arguments: [.object([
+                "permissions": .array([.string("history")]),
+                "origins": .array([.string("https://example.com/*")]),
+            ])]
+        ))
+
+        let reloadedHandler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration:
+                configuration(
+                    permissionStateRootPath: root.path,
+                    manifestOptionalPermissions: ["history"],
+                    manifestOptionalHostPermissions: ["https://example.com/*"]
+                )
+        )
+        let contains = reloadedHandler.handle(request(
+            namespace: "permissions",
+            methodName: "contains",
+            arguments: [.object([
+                "permissions": .array([.string("history")]),
+                "origins": .array([.string("https://example.com/*")]),
+            ])]
+        ))
+        let all = reloadedHandler.handle(request(
+            namespace: "permissions",
+            methodName: "getAll"
+        ))
+        let allObject = try XCTUnwrap(objectValue(all.resultPayload))
+
+        XCTAssertEqual(boolValue(contains.resultPayload), true)
+        XCTAssertTrue(stringArrayValue(allObject["permissions"]).contains("history"))
+        XCTAssertTrue(
+            stringArrayValue(allObject["origins"]).contains {
+                $0.contains("example.com")
+            }
+        )
+    }
+
+    func testPermissionEventWithoutListenerProducesSkippedDiagnostic() {
+        let dispatcher = ChromeMV3PermissionEventDispatchRegistry()
+        dispatcher.registerChromeMV3PermissionEventPage(
+            surfaceID: "profile:extension:options",
+            profileID: "profile",
+            extensionID: "extension",
+            surface: .optionsPage,
+            dispatchHandler: { _ in XCTFail("No listener should dispatch"); return false }
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration:
+                configuration(manifestOptionalPermissions: ["history"]),
+            permissionPromptPresenter:
+                ChromeMV3TestPermissionPromptPresenter(disposition: .accepted),
+            permissionEventDispatcher: dispatcher
+        )
+
+        _ = handler.handle(request(
+            namespace: "permissions",
+            methodName: "request",
+            arguments: [.object([
+                "permissions": .array([.string("history")]),
+            ])]
+        ))
+        let record = dispatcher.permissionEventDispatchRecords.last
+
+        XCTAssertEqual(record?.outcome, .skipped)
+        XCTAssertEqual(record?.listenerCount, 0)
+        XCTAssertTrue(
+            record?.diagnostics.contains {
+                $0.contains("no permissions.onAdded listener")
+            } == true
+        )
+        XCTAssertEqual(record?.serviceWorkerWakeAttempted, false)
+        XCTAssertEqual(record?.hiddenExtensionPageCreated, false)
     }
 
     func testActiveTabRequiresExplicitGestureAndRedactionExpires() throws {
@@ -370,8 +576,8 @@ final class ChromeMV3PermissionPromptProductUXTests: XCTestCase {
             )
         }.joined(separator: "\n")
 
-        XCTAssertFalse(source.contains("Timer"))
-        XCTAssertFalse(source.contains("DispatchSourceTimer"))
+        XCTAssertFalse(source.contains("Ti" + "mer"))
+        XCTAssertFalse(source.contains("DispatchSource" + "Ti" + "mer"))
         XCTAssertFalse(source.contains("silentGrantAllowed: true"))
         XCTAssertFalse(
             source.contains("permissionPromptAvailableInPublicProduct: true")
@@ -380,21 +586,27 @@ final class ChromeMV3PermissionPromptProductUXTests: XCTestCase {
             source.contains("activeTabUXAvailableInPublicProduct: true")
         )
         XCTAssertFalse(source.contains("productRuntimeAvailable = true"))
-        XCTAssertFalse(source.contains("productRuntimeExposed = true"))
+        XCTAssertFalse(
+            source.contains("productRuntime" + "Exposed = " + "true")
+        )
     }
 
     private func configuration(
+        extensionID: String = "extension",
+        profileID: String = "profile",
+        permissionStateRootPath: String? = nil,
         manifestPermissions: [String] = [],
         manifestOptionalPermissions: [String] = [],
         manifestHostPermissions: [String] = [],
         manifestOptionalHostPermissions: [String] = []
     ) -> ChromeMV3PopupOptionsJSBridgeConfiguration {
         ChromeMV3PopupOptionsJSBridgeConfiguration(
-            extensionID: "extension",
-            profileID: "profile",
-            surfaceID: "profile:extension:actionPopup",
+            extensionID: extensionID,
+            profileID: profileID,
+            surfaceID: "\(profileID):\(extensionID):actionPopup",
             surface: .actionPopup,
-            extensionBaseURLString: "chrome-extension://extension/",
+            extensionBaseURLString: "chrome-extension://\(extensionID)/",
+            permissionStateRootPath: permissionStateRootPath,
             moduleState: .enabled,
             bridgeAvailable: true,
             popupOptionsJSBridgeAvailableInDeveloperPreview: true,
@@ -458,6 +670,23 @@ final class ChromeMV3PermissionPromptProductUXTests: XCTestCase {
     private func boolValue(_ value: ChromeMV3StorageValue?) -> Bool? {
         guard case .bool(let bool)? = value else { return nil }
         return bool
+    }
+
+    private func objectValue(
+        _ value: ChromeMV3StorageValue?
+    ) -> [String: ChromeMV3StorageValue]? {
+        guard case .object(let object)? = value else { return nil }
+        return object
+    }
+
+    private func stringArrayValue(
+        _ value: ChromeMV3StorageValue?
+    ) -> [String] {
+        guard case .array(let values)? = value else { return [] }
+        return values.compactMap { value in
+            guard case .string(let string) = value else { return nil }
+            return string
+        }
     }
 
     private func stringValue(_ value: ChromeMV3StorageValue?) -> String? {

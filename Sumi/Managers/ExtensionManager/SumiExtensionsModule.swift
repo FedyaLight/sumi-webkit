@@ -33,6 +33,8 @@ final class SumiExtensionsModule {
         ChromeMV3ProductPopupOptionsHostController?
     private var lastChromeMV3PopupOptionsRunResult:
         ChromeMV3ProductPopupOptionsRunResult?
+    private let chromeMV3PermissionEventDispatcher =
+        ChromeMV3PermissionEventDispatchRegistry()
     #if DEBUG
         private var cachedChromeMV3ExtensionObjectProbeOwner:
             ChromeMV3ExtensionObjectProbeOwner?
@@ -3649,6 +3651,350 @@ final class SumiExtensionsModule {
         return result
     }
 
+    func chromeMV3RunPermissionControlThroughManager(
+        _ kind: ChromeMV3ExtensionManagerPermissionControlKind,
+        rootURL: URL,
+        profileID: String,
+        extensionID: String,
+        value: String,
+        permissionPromptPresenter:
+            ChromeMV3PermissionPromptPresenting? = nil
+    ) -> ChromeMV3ExtensionManagerPermissionActionResult {
+        let blocked: ([String]) -> ChromeMV3ExtensionManagerPermissionActionResult = {
+            diagnostics in
+            ChromeMV3ExtensionManagerPermissionActionResult(
+                kind: kind,
+                value: value,
+                succeeded: false,
+                returnedBoolean: false,
+                promptRequest: nil,
+                promptResult: nil,
+                promptLifecycleRecords: [],
+                runtimeSnapshot: nil,
+                eventDispatchRecord: nil,
+                serviceWorkerWakeAttempted: false,
+                hiddenExtensionPageCreated: false,
+                diagnostics: diagnostics
+            )
+        }
+        guard isEnabled else {
+            return blocked([
+                "The extensions module is disabled; manager permission controls are blocked.",
+            ])
+        }
+        let gate = chromeMV3ExtensionManagerGate()
+        guard gate.managerAvailableInDeveloperPreview else {
+            return blocked(gate.diagnostics.map(\.message))
+        }
+        let registry = ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
+        guard
+            let record = registry.loadLifecycleRecord(
+                profileID: profileID,
+                extensionID: extensionID
+            )
+        else {
+            return blocked([
+                "The internal MV3 lifecycle record was not found.",
+            ])
+        }
+        guard record.runtimeState.internalRuntimeEnabled else {
+            return blocked([
+                "The extension is disabled; permission manager controls are blocked.",
+            ])
+        }
+        let report = registry.latestEndToEndDiagnosticsReport(
+            profileID: profileID,
+            extensionID: extensionID
+        )
+        let manifestSummary = ChromeMV3ExtensionManagerManifestSummaryViewState
+            .make(summary: report?.managerActiveManifestSummary, record: record)
+        let promptGate = ChromeMV3PermissionPromptGateRecord.evaluate(
+            moduleEnabled: gate.managerAvailableInDeveloperPreview,
+            extensionEnabled: record.runtimeState.internalRuntimeEnabled,
+            developerPreviewGate: gate.managerAvailableInDeveloperPreview,
+            publicProductGate: false
+        )
+        let stateStore = ChromeMV3DeveloperPreviewPermissionStateStore(
+            rootURL: rootURL
+        )
+        var owner = stateStore.loadRuntimeOwner(
+            profileID: profileID,
+            extensionID: extensionID,
+            manifestSummary: manifestSummary
+        )
+        var promptRequests: [ChromeMV3PermissionPromptRequest] =
+            stateStore.loadRecord(
+                profileID: profileID,
+                extensionID: extensionID
+            )?.promptRequests ?? []
+        var promptResults: [ChromeMV3PermissionPromptResultRecord] =
+            stateStore.loadRecord(
+                profileID: profileID,
+                extensionID: extensionID
+            )?.promptResults ?? []
+        var lifecycle: [ChromeMV3PermissionPromptLifecycleRecord] =
+            stateStore.loadRecord(
+                profileID: profileID,
+                extensionID: extensionID
+            )?.promptLifecycleRecords ?? []
+
+        func save(_ diagnostics: [String]) {
+            _ = try? stateStore.save(
+                owner: owner,
+                gateRecord: promptGate,
+                promptRequests: promptRequests,
+                promptResults: promptResults,
+                promptLifecycleRecords: lifecycle,
+                diagnostics: diagnostics
+            )
+        }
+
+        func input(
+            permissions: [String] = [],
+            origins: [String] = []
+        ) -> ChromeMV3PermissionsAPIRequestInput {
+            ChromeMV3PermissionsAPIRequestInput(
+                extensionID: extensionID,
+                profileID: profileID,
+                sourceContext: .testFixture,
+                userGestureModeled: true,
+                extensionModuleEnabled: true,
+                permissions: permissions,
+                origins: origins
+            )
+        }
+
+        switch kind {
+        case .requestOptionalAPIPermission, .requestOptionalHostPermission:
+            let requestInput = kind == .requestOptionalAPIPermission
+                ? input(permissions: [value])
+                : input(origins: [value])
+            let requestResult = ChromeMV3PermissionsAPIContractEvaluator
+                .request(
+                    input: requestInput,
+                    permissionStore: owner.permissionStore,
+                    activeTabStore: owner.activeTabStore
+                )
+            let promptRequest = ChromeMV3PermissionPromptRequest.make(
+                sequence:
+                    promptRequests.count + promptResults.count
+                    + lifecycle.count + 1,
+                extensionName: record.displayName,
+                sourceSurface: .extensionManager,
+                input: requestInput,
+                requestResult: requestResult,
+                permissionStore: owner.permissionStore,
+                gateRecord: promptGate
+            )
+            promptRequests.append(promptRequest)
+            lifecycle.append(
+                ChromeMV3PermissionPromptLifecycleRecord(
+                    request: promptRequest,
+                    stage: .promptCreated,
+                    diagnostics: [
+                        "Manager permission control created a prompt request.",
+                    ]
+                )
+            )
+            guard requestResult.wouldRequirePrompt,
+                  promptRequest.promptEligibility.canPrompt
+            else {
+                let application = owner.request(input: requestInput)
+                let promptResult = promptRequest.result(
+                    ChromeMV3PermissionPromptResultDisposition.blocked,
+                    diagnostics: promptRequest.promptEligibility.diagnostics
+                )
+                promptResults.append(promptResult)
+                lifecycle.append(
+                    ChromeMV3PermissionPromptLifecycleRecord(
+                        request: promptRequest,
+                        stage: .blocked,
+                        resultDisposition:
+                            ChromeMV3PermissionPromptResultDisposition.blocked,
+                        diagnostics: promptResult.diagnostics
+                    )
+                )
+                save(application.diagnostics)
+                return ChromeMV3ExtensionManagerPermissionActionResult(
+                    kind: kind,
+                    value: value,
+                    succeeded: false,
+                    returnedBoolean: false,
+                    promptRequest: promptRequest,
+                    promptResult: promptResult,
+                    promptLifecycleRecords: lifecycle,
+                    runtimeSnapshot: owner.snapshot,
+                    eventDispatchRecord: nil,
+                    serviceWorkerWakeAttempted: false,
+                    hiddenExtensionPageCreated: false,
+                    diagnostics: application.diagnostics
+                        + promptResult.diagnostics
+                )
+            }
+            lifecycle.append(
+                ChromeMV3PermissionPromptLifecycleRecord(
+                    request: promptRequest,
+                    stage: .promptPresented,
+                    diagnostics: [
+                        "Manager permission control invoked the developer-preview presenter.",
+                    ]
+                )
+            )
+            let presenter = permissionPromptPresenter
+                ?? ChromeMV3AppHostedPermissionPromptPresenter()
+            let promptResult =
+                presenter.presentChromeMV3PermissionPrompt(promptRequest)
+            promptResults.append(promptResult)
+            let stage: ChromeMV3PermissionPromptLifecycleStage
+            switch promptResult.disposition {
+            case .accepted:
+                stage = .accepted
+            case .denied:
+                stage = .denied
+            case .dismissed:
+                stage = .dismissed
+            case .blocked, .unavailable:
+                stage = .blocked
+            }
+            lifecycle.append(
+                ChromeMV3PermissionPromptLifecycleRecord(
+                    request: promptRequest,
+                    stage: stage,
+                    resultDisposition: promptResult.disposition,
+                    diagnostics: promptResult.diagnostics
+                )
+            )
+            let modeled: ChromeMV3ModeledPermissionPromptResult
+            switch promptResult.disposition {
+            case .accepted:
+                modeled = .accepted
+            case .denied:
+                modeled = .denied
+            case .dismissed:
+                modeled = .dismissed
+            case .blocked, .unavailable:
+                modeled = .notProvided
+            }
+            let application = owner.request(
+                input: requestInput,
+                modeledPromptResult: modeled,
+                productPromptResult: promptResult
+            )
+            let dispatch = promptResult.disposition
+                == ChromeMV3PermissionPromptResultDisposition.accepted
+                ? chromeMV3PermissionEventDispatcher
+                    .dispatchChromeMV3PermissionEvent(
+                        application.result.eventPayloadIfAccepted
+                            ?? ChromeMV3PermissionsAPIContractEvaluator
+                            .addedEventPayload(
+                                requestInput: requestResult.input,
+                                itemDecisions: requestResult.itemDecisions,
+                                source: .requestAccepted
+                            ),
+                        sourceSurfaceID: nil
+                    )
+                : nil
+            if promptResult.disposition
+                == ChromeMV3PermissionPromptResultDisposition.accepted
+            {
+                lifecycle.append(
+                    ChromeMV3PermissionPromptLifecycleRecord(
+                        request: promptRequest,
+                        stage: .downstreamInvalidated,
+                        resultDisposition: promptResult.disposition,
+                        diagnostics:
+                            dispatch?.diagnostics
+                            ?? [
+                                "Manager permission control had no permissions.onAdded payload for downstream invalidation diagnostics.",
+                            ]
+                    )
+                )
+            }
+            lifecycle.append(
+                ChromeMV3PermissionPromptLifecycleRecord(
+                    request: promptRequest,
+                    stage: .resultPersisted,
+                    resultDisposition: promptResult.disposition,
+                    diagnostics: application.diagnostics
+                )
+            )
+            save(application.diagnostics)
+            return ChromeMV3ExtensionManagerPermissionActionResult(
+                kind: kind,
+                value: value,
+                succeeded: promptResult.disposition
+                    == ChromeMV3PermissionPromptResultDisposition.accepted
+                    && application.returnedBoolean,
+                returnedBoolean: application.returnedBoolean,
+                promptRequest: promptRequest,
+                promptResult: promptResult,
+                promptLifecycleRecords: lifecycle,
+                runtimeSnapshot: owner.snapshot,
+                eventDispatchRecord: dispatch,
+                serviceWorkerWakeAttempted: false,
+                hiddenExtensionPageCreated: false,
+                diagnostics: application.diagnostics
+                    + promptResult.diagnostics
+                    + (dispatch?.diagnostics ?? [])
+            )
+
+        case .revokeOptionalAPIPermission, .revokeOptionalHostPermission:
+            let requestInput = kind == .revokeOptionalAPIPermission
+                ? input(permissions: [value])
+                : input(origins: [value])
+            let application = owner.remove(input: requestInput)
+            let dispatch = application.returnedBoolean
+                ? chromeMV3PermissionEventDispatcher
+                    .dispatchChromeMV3PermissionEvent(
+                        application.result.eventPayloadIfApplied
+                            ?? ChromeMV3PermissionsAPIContractEvaluator
+                            .removedEventPayload(
+                                requestInput: application.result.input,
+                                itemDecisions: application.result.itemDecisions,
+                                source: .removeCall
+                            ),
+                        sourceSurfaceID: nil
+                    )
+                : nil
+            save(application.diagnostics)
+            return ChromeMV3ExtensionManagerPermissionActionResult(
+                kind: kind,
+                value: value,
+                succeeded: application.returnedBoolean,
+                returnedBoolean: application.returnedBoolean,
+                promptRequest: nil,
+                promptResult: nil,
+                promptLifecycleRecords: lifecycle,
+                runtimeSnapshot: owner.snapshot,
+                eventDispatchRecord: dispatch,
+                serviceWorkerWakeAttempted: false,
+                hiddenExtensionPageCreated: false,
+                diagnostics: application.diagnostics
+                    + (dispatch?.diagnostics ?? [])
+            )
+
+        case .clearActiveTabGrant:
+            let application = owner.resetActiveTabGrants()
+            save(application.diagnostics)
+            return ChromeMV3ExtensionManagerPermissionActionResult(
+                kind: kind,
+                value: value,
+                succeeded: application.lifecycleResult.grantsExpired
+                    .isEmpty == false,
+                returnedBoolean: application.lifecycleResult.grantsExpired
+                    .isEmpty == false,
+                promptRequest: nil,
+                promptResult: nil,
+                promptLifecycleRecords: lifecycle,
+                runtimeSnapshot: owner.snapshot,
+                eventDispatchRecord: nil,
+                serviceWorkerWakeAttempted: false,
+                hiddenExtensionPageCreated: false,
+                diagnostics: application.diagnostics
+            )
+        }
+    }
+
     func chromeMV3OpenActionPopupThroughManager(
         rootURL: URL,
         profileID: String,
@@ -4047,6 +4393,48 @@ final class SumiExtensionsModule {
         cachedChromeMV3PopupOptionsHostController?.activeSessionCount ?? 0
     }
 
+    var chromeMV3PermissionEventDispatchRecordsForTesting:
+        [ChromeMV3PermissionEventDispatchRecord]
+    {
+        chromeMV3PermissionEventDispatcher.permissionEventDispatchRecords
+    }
+
+    func chromeMV3RegisterPermissionEventPageForTesting(
+        surfaceID: String,
+        profileID: String,
+        extensionID: String,
+        surface: ChromeMV3ProductPopupOptionsSurface,
+        onAddedListenerCount: Int = 0,
+        onRemovedListenerCount: Int = 0
+    ) {
+        chromeMV3PermissionEventDispatcher
+            .registerChromeMV3PermissionEventPage(
+                surfaceID: surfaceID,
+                profileID: profileID,
+                extensionID: extensionID,
+                surface: surface,
+                dispatchHandler: { _ in true }
+            )
+        chromeMV3PermissionEventDispatcher
+            .updateChromeMV3PermissionEventListenerCount(
+                surfaceID: surfaceID,
+                profileID: profileID,
+                extensionID: extensionID,
+                surface: surface,
+                eventKind: .onAdded,
+                listenerCount: onAddedListenerCount
+            )
+        chromeMV3PermissionEventDispatcher
+            .updateChromeMV3PermissionEventListenerCount(
+                surfaceID: surfaceID,
+                profileID: profileID,
+                extensionID: extensionID,
+                surface: surface,
+                eventKind: .onRemoved,
+                listenerCount: onRemovedListenerCount
+            )
+    }
+
     private func chromeMV3PopupOptionsHostController()
         -> ChromeMV3ProductPopupOptionsHostController
     {
@@ -4054,7 +4442,10 @@ final class SumiExtensionsModule {
             return cachedChromeMV3PopupOptionsHostController
         }
         let controller = ChromeMV3ProductPopupOptionsHostController(
-            factory: chromeMV3PopupOptionsWebViewFactory()
+            factory: chromeMV3PopupOptionsWebViewFactory(),
+            permissionPromptPresenter:
+                ChromeMV3AppHostedPermissionPromptPresenter(),
+            permissionEventDispatcher: chromeMV3PermissionEventDispatcher
         )
         cachedChromeMV3PopupOptionsHostController = controller
         return controller

@@ -164,6 +164,18 @@ struct SumiExtensionsSettingsPane: View {
                         extensionID: extensionID
                     )
                 },
+                onRunPermissionControl: {
+                    kind,
+                    profileID,
+                    extensionID,
+                    value in
+                    runChromeMV3PermissionControl(
+                        kind,
+                        profileID: profileID,
+                        extensionID: extensionID,
+                        value: value
+                    )
+                },
                 onCopyDiagnosticsJSON: { profileID, extensionID in
                     copyChromeMV3DiagnosticsJSON(
                         profileID: profileID,
@@ -374,6 +386,28 @@ struct SumiExtensionsSettingsPane: View {
             return
         }
         applyChromeMV3ManagerResult(result)
+    }
+
+    private func runChromeMV3PermissionControl(
+        _ kind: ChromeMV3ExtensionManagerPermissionControlKind,
+        profileID: String,
+        extensionID: String,
+        value: String
+    ) {
+        guard profileID.isEmpty == false, extensionID.isEmpty == false else {
+            return
+        }
+        let result = browserManager.extensionsModule
+            .chromeMV3RunPermissionControlThroughManager(
+                kind,
+                rootURL: chromeMV3ManagerRootURL,
+                profileID: profileID,
+                extensionID: extensionID,
+                value: value
+            )
+        statusMessage = result.diagnostics.first
+            ?? (result.succeeded ? "Permission control succeeded." : "Permission control blocked.")
+        refreshChromeMV3Manager()
     }
 
     private func updateChromeMV3FromUnpackedFolder(

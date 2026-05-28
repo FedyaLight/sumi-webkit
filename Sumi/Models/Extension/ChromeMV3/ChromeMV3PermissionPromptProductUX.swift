@@ -12,6 +12,10 @@ import CryptoKit
 import Foundation
 import SwiftUI
 
+#if canImport(AppKit)
+import AppKit
+#endif
+
 enum ChromeMV3PermissionPromptBlockedReason:
     String,
     Codable,
@@ -203,6 +207,75 @@ enum ChromeMV3PermissionPromptResultDisposition:
 
     var grantsPermission: Bool {
         self == .accepted
+    }
+}
+
+enum ChromeMV3PermissionPromptLifecycleStage:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case promptCreated
+    case promptPresented
+    case accepted
+    case denied
+    case dismissed
+    case blocked
+    case resultPersisted
+    case downstreamInvalidated
+
+    static func < (
+        lhs: ChromeMV3PermissionPromptLifecycleStage,
+        rhs: ChromeMV3PermissionPromptLifecycleStage
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3PermissionPromptLifecycleRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var id: String
+    var requestID: String
+    var sequence: Int
+    var stage: ChromeMV3PermissionPromptLifecycleStage
+    var sourceSurface: ChromeMV3PermissionPromptSourceSurface
+    var resultDisposition: ChromeMV3PermissionPromptResultDisposition?
+    var diagnostics: [String]
+
+    init(
+        request: ChromeMV3PermissionPromptRequest,
+        stage: ChromeMV3PermissionPromptLifecycleStage,
+        resultDisposition: ChromeMV3PermissionPromptResultDisposition? = nil,
+        diagnostics: [String] = []
+    ) {
+        self.requestID = request.id
+        self.sequence = request.sequence
+        self.stage = stage
+        self.sourceSurface = request.sourceSurface
+        self.resultDisposition = resultDisposition
+        self.diagnostics = uniqueSortedPermissionPrompt(
+            diagnostics
+                + [
+                    "Permission prompt lifecycle stage: \(stage.rawValue).",
+                    "No scheduled work was used for prompt lifecycle tracking.",
+                ]
+        )
+        self.id = stableIDPermissionPrompt(
+            prefix: "permission-prompt-lifecycle",
+            parts: [
+                request.profileID,
+                request.extensionID,
+                request.id,
+                String(request.sequence),
+                stage.rawValue,
+                resultDisposition?.rawValue ?? "no-result",
+            ]
+        )
     }
 }
 
@@ -473,8 +546,10 @@ struct ChromeMV3DeveloperPreviewPermissionPromptViewModel:
     var permissionSummary: [String]
     var hostSummary: [String]
     var riskExplanation: String
+    var sourceDescription: String
     var acceptTitle: String
     var denyTitle: String
+    var dismissTitle: String
     var rememberAvailable: Bool
     var diagnostics: [String]
 
@@ -499,8 +574,11 @@ struct ChromeMV3DeveloperPreviewPermissionPromptViewModel:
                 hosts.isEmpty
                     ? "This may enable additional extension API capability in the developer preview."
                     : "This may allow the extension to read or interact with matching page data while the developer-preview runtime is enabled.",
+            sourceDescription:
+                "Requested from \(request.sourceSurface.rawValue).",
             acceptTitle: "Allow",
             denyTitle: "Deny",
+            dismissTitle: "Dismiss",
             rememberAvailable: false,
             diagnostics:
                 uniqueSortedPermissionPrompt(
@@ -517,11 +595,23 @@ struct ChromeMV3DeveloperPreviewPermissionPromptView: View {
     let viewModel: ChromeMV3DeveloperPreviewPermissionPromptViewModel
     var onAccept: (() -> Void)?
     var onDeny: (() -> Void)?
+    var onDismiss: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(viewModel.title)
-                .font(.headline)
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: "puzzlepiece.extension")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(viewModel.title)
+                        .font(.headline)
+                    Text(viewModel.sourceDescription)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
             Text(viewModel.riskExplanation)
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -529,6 +619,9 @@ struct ChromeMV3DeveloperPreviewPermissionPromptView: View {
             promptGroup(title: "Permissions", rows: viewModel.permissionSummary)
             promptGroup(title: "Hosts", rows: viewModel.hostSummary)
             HStack {
+                Button(viewModel.dismissTitle) {
+                    onDismiss?()
+                }
                 Spacer()
                 Button(viewModel.denyTitle) {
                     onDeny?()
@@ -609,6 +702,433 @@ final class ChromeMV3TestPermissionPromptPresenter:
     }
 }
 
+enum ChromeMV3PermissionEventDispatchOutcome:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case delivered
+    case skipped
+    case blocked
+
+    static func < (
+        lhs: ChromeMV3PermissionEventDispatchOutcome,
+        rhs: ChromeMV3PermissionEventDispatchOutcome
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3PermissionEventDispatchTargetState:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var surfaceID: String
+    var profileID: String
+    var extensionID: String
+    var surface: ChromeMV3ProductPopupOptionsSurface
+    var open: Bool
+    var onAddedListenerCount: Int
+    var onRemovedListenerCount: Int
+    var diagnostics: [String]
+
+    func listenerCount(
+        for eventKind: ChromeMV3PermissionsAPIEventKind
+    ) -> Int {
+        switch eventKind {
+        case .onAdded:
+            return onAddedListenerCount
+        case .onRemoved:
+            return onRemovedListenerCount
+        }
+    }
+}
+
+struct ChromeMV3PermissionEventDispatchRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var id: String
+    var sequence: Int
+    var eventPayload: ChromeMV3PermissionsAPIEventPayload
+    var sourceSurfaceID: String?
+    var openTargetCount: Int
+    var listenerCount: Int
+    var deliveredSurfaceIDs: [String]
+    var skippedSurfaceIDs: [String]
+    var blockedSurfaceIDs: [String]
+    var outcome: ChromeMV3PermissionEventDispatchOutcome
+    var reason: String
+    var serviceWorkerWakeAttempted: Bool
+    var hiddenExtensionPageCreated: Bool
+    var diagnostics: [String]
+}
+
+protocol ChromeMV3PermissionEventDispatching: AnyObject {
+    var permissionEventDispatchRecords:
+        [ChromeMV3PermissionEventDispatchRecord] { get }
+    var permissionEventDispatchTargets:
+        [ChromeMV3PermissionEventDispatchTargetState] { get }
+
+    func registerChromeMV3PermissionEventPage(
+        surfaceID: String,
+        profileID: String,
+        extensionID: String,
+        surface: ChromeMV3ProductPopupOptionsSurface,
+        dispatchHandler:
+            ((ChromeMV3PermissionsAPIEventPayload) -> Bool)?
+    )
+
+    func updateChromeMV3PermissionEventListenerCount(
+        surfaceID: String,
+        profileID: String,
+        extensionID: String,
+        surface: ChromeMV3ProductPopupOptionsSurface,
+        eventKind: ChromeMV3PermissionsAPIEventKind,
+        listenerCount: Int
+    )
+
+    func unregisterChromeMV3PermissionEventPage(surfaceID: String)
+
+    @discardableResult
+    func dispatchChromeMV3PermissionEvent(
+        _ payload: ChromeMV3PermissionsAPIEventPayload,
+        sourceSurfaceID: String?
+    ) -> ChromeMV3PermissionEventDispatchRecord
+}
+
+final class ChromeMV3PermissionEventDispatchRegistry:
+    ChromeMV3PermissionEventDispatching
+{
+    private struct Target {
+        var state: ChromeMV3PermissionEventDispatchTargetState
+        var dispatchHandler:
+            ((ChromeMV3PermissionsAPIEventPayload) -> Bool)?
+    }
+
+    private var targets: [String: Target] = [:]
+    private(set) var permissionEventDispatchRecords:
+        [ChromeMV3PermissionEventDispatchRecord] = []
+    private var nextSequence = 1
+
+    var permissionEventDispatchTargets:
+        [ChromeMV3PermissionEventDispatchTargetState]
+    {
+        targets.values.map(\.state).sorted {
+            if $0.profileID != $1.profileID {
+                return $0.profileID < $1.profileID
+            }
+            if $0.extensionID != $1.extensionID {
+                return $0.extensionID < $1.extensionID
+            }
+            return $0.surfaceID < $1.surfaceID
+        }
+    }
+
+    init() {}
+
+    func registerChromeMV3PermissionEventPage(
+        surfaceID: String,
+        profileID: String,
+        extensionID: String,
+        surface: ChromeMV3ProductPopupOptionsSurface,
+        dispatchHandler:
+            ((ChromeMV3PermissionsAPIEventPayload) -> Bool)? = nil
+    ) {
+        let normalizedID = surfaceID.isEmpty
+            ? "\(profileID):\(extensionID):\(surface.rawValue)"
+            : surfaceID
+        var state = targets[normalizedID]?.state
+            ?? ChromeMV3PermissionEventDispatchTargetState(
+                surfaceID: normalizedID,
+                profileID: profileID,
+                extensionID: extensionID,
+                surface: surface,
+                open: true,
+                onAddedListenerCount: 0,
+                onRemovedListenerCount: 0,
+                diagnostics: []
+            )
+        state.open = true
+        state.diagnostics = uniqueSortedPermissionPrompt(
+            state.diagnostics
+                + [
+                    "Already-open popup/options page registered for safe permissions event dispatch.",
+                ]
+        )
+        targets[normalizedID] = Target(
+            state: state,
+            dispatchHandler:
+                dispatchHandler ?? targets[normalizedID]?.dispatchHandler
+        )
+    }
+
+    func updateChromeMV3PermissionEventListenerCount(
+        surfaceID: String,
+        profileID: String,
+        extensionID: String,
+        surface: ChromeMV3ProductPopupOptionsSurface,
+        eventKind: ChromeMV3PermissionsAPIEventKind,
+        listenerCount: Int
+    ) {
+        let normalizedID = surfaceID.isEmpty
+            ? "\(profileID):\(extensionID):\(surface.rawValue)"
+            : surfaceID
+        registerChromeMV3PermissionEventPage(
+            surfaceID: normalizedID,
+            profileID: profileID,
+            extensionID: extensionID,
+            surface: surface,
+            dispatchHandler: nil
+        )
+        guard var target = targets[normalizedID] else { return }
+        switch eventKind {
+        case .onAdded:
+            target.state.onAddedListenerCount = max(0, listenerCount)
+        case .onRemoved:
+            target.state.onRemovedListenerCount = max(0, listenerCount)
+        }
+        target.state.diagnostics = uniqueSortedPermissionPrompt(
+            target.state.diagnostics
+                + [
+                    "permissions.\(eventKind.rawValue) listener count updated for an already-open extension page.",
+                ]
+        )
+        targets[normalizedID] = target
+    }
+
+    func unregisterChromeMV3PermissionEventPage(surfaceID: String) {
+        guard var target = targets[surfaceID] else { return }
+        target.state.open = false
+        target.state.diagnostics = uniqueSortedPermissionPrompt(
+            target.state.diagnostics
+                + ["Popup/options page unregistered from permissions event dispatch."]
+        )
+        targets[surfaceID] = target
+    }
+
+    @discardableResult
+    func dispatchChromeMV3PermissionEvent(
+        _ payload: ChromeMV3PermissionsAPIEventPayload,
+        sourceSurfaceID: String? = nil
+    ) -> ChromeMV3PermissionEventDispatchRecord {
+        let sequence = nextSequence
+        nextSequence += 1
+        let openTargets = targets.values.filter {
+            $0.state.open
+                && $0.state.profileID == payload.profileID
+                && $0.state.extensionID == payload.extensionID
+        }
+        var delivered: [String] = []
+        var skipped: [String] = []
+        var blocked: [String] = []
+        var listenerCount = 0
+        var diagnostics: [String] = [
+            "Permission event dispatch inspected already-open popup/options pages only.",
+            "No service-worker wake was attempted for permissions.onAdded/onRemoved.",
+            "No hidden extension page was created for permission event delivery.",
+        ]
+
+        for target in openTargets {
+            let id = target.state.surfaceID
+            if id == sourceSurfaceID {
+                skipped.append(id)
+                diagnostics.append(
+                    "Source page \(id) receives the permission event through the API response payload."
+                )
+                continue
+            }
+            let count = target.state.listenerCount(for: payload.eventKind)
+            listenerCount += count
+            guard count > 0 else {
+                skipped.append(id)
+                diagnostics.append(
+                    "Skipped \(id) because no permissions.\(payload.eventKind.rawValue) listener is registered."
+                )
+                continue
+            }
+            if target.dispatchHandler?(payload) ?? true {
+                delivered.append(id)
+                diagnostics.append(
+                    "Delivered permissions.\(payload.eventKind.rawValue) to \(id)."
+                )
+            } else {
+                blocked.append(id)
+                diagnostics.append(
+                    "Blocked permissions.\(payload.eventKind.rawValue) delivery to \(id)."
+                )
+            }
+        }
+
+        if openTargets.isEmpty {
+            diagnostics.append(
+                "No already-open popup/options page matched the permission event namespace."
+            )
+        }
+
+        let outcome: ChromeMV3PermissionEventDispatchOutcome
+        if blocked.isEmpty == false {
+            outcome = .blocked
+        } else if delivered.isEmpty == false {
+            outcome = .delivered
+        } else {
+            outcome = .skipped
+        }
+        let reason: String
+        switch outcome {
+        case .delivered:
+            reason = "Delivered to already-open extension page listener(s)."
+        case .skipped:
+            reason = "No eligible already-open listener required delivery."
+        case .blocked:
+            reason = "At least one already-open listener target blocked delivery."
+        }
+        let record = ChromeMV3PermissionEventDispatchRecord(
+            id:
+                stableIDPermissionPrompt(
+                    prefix: "permission-event-dispatch",
+                    parts: [
+                        payload.profileID,
+                        payload.extensionID,
+                        payload.eventKind.rawValue,
+                        String(sequence),
+                        delivered.joined(separator: ","),
+                        skipped.joined(separator: ","),
+                        blocked.joined(separator: ","),
+                    ]
+                ),
+            sequence: sequence,
+            eventPayload: payload,
+            sourceSurfaceID: sourceSurfaceID,
+            openTargetCount: openTargets.count,
+            listenerCount: listenerCount,
+            deliveredSurfaceIDs: delivered.sorted(),
+            skippedSurfaceIDs: skipped.sorted(),
+            blockedSurfaceIDs: blocked.sorted(),
+            outcome: outcome,
+            reason: reason,
+            serviceWorkerWakeAttempted: false,
+            hiddenExtensionPageCreated: false,
+            diagnostics: uniqueSortedPermissionPrompt(diagnostics)
+        )
+        permissionEventDispatchRecords.append(record)
+        return record
+    }
+}
+
+#if canImport(AppKit)
+@MainActor
+final class ChromeMV3AppHostedPermissionPromptPresenter:
+    ChromeMV3PermissionPromptPresenting
+{
+    private let parentWindowProvider: () -> NSWindow?
+
+    init(parentWindowProvider: @escaping () -> NSWindow? = { NSApp.keyWindow }) {
+        self.parentWindowProvider = parentWindowProvider
+    }
+
+    nonisolated func presentChromeMV3PermissionPrompt(
+        _ request: ChromeMV3PermissionPromptRequest
+    ) -> ChromeMV3PermissionPromptResultRecord {
+        guard Thread.isMainThread else {
+            return request.result(
+                .blocked,
+                diagnostics: [
+                    "App-hosted permission presenter requires the main thread and blocked presentation instead of guessing.",
+                ]
+            )
+        }
+        return MainActor.assumeIsolated {
+            presentOnMainActor(request)
+        }
+    }
+
+    private func presentOnMainActor(
+        _ request: ChromeMV3PermissionPromptRequest
+    ) -> ChromeMV3PermissionPromptResultRecord {
+        guard request.gateRecord.canPromptDeveloperPreview,
+              request.promptEligibility.canPrompt
+        else {
+            return request.result(
+                .blocked,
+                diagnostics: [
+                    "App-hosted permission presenter refused to present because prompt gates are blocked.",
+                ]
+            )
+        }
+
+        var disposition = ChromeMV3PermissionPromptResultDisposition.dismissed
+        var completed = false
+        let complete: (ChromeMV3PermissionPromptResultDisposition) -> Void = {
+            result in
+            guard completed == false else { return }
+            completed = true
+            disposition = result
+            NSApp.stopModal()
+        }
+        let viewModel =
+            ChromeMV3DeveloperPreviewPermissionPromptViewModel.make(
+                request: request
+            )
+        let view = ChromeMV3DeveloperPreviewPermissionPromptView(
+            viewModel: viewModel,
+            onAccept: { complete(.accepted) },
+            onDeny: { complete(.denied) },
+            onDismiss: { complete(.dismissed) }
+        )
+        let hostingController = NSHostingController(rootView: view)
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 320),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        let delegate = ChromeMV3PermissionPromptPanelDelegate {
+            complete(.dismissed)
+        }
+        panel.delegate = delegate
+        panel.title = "Extension Permission Request"
+        panel.contentViewController = hostingController
+        panel.isReleasedWhenClosed = false
+        panel.center()
+        let parentWindow = parentWindowProvider()
+        parentWindow?.addChildWindow(panel, ordered: .above)
+        panel.makeKeyAndOrderFront(parentWindow)
+        NSApp.runModal(for: panel)
+        parentWindow?.removeChildWindow(panel)
+        panel.orderOut(nil)
+        _ = delegate
+        return request.result(
+            disposition,
+            diagnostics: [
+                "App-hosted developer-preview permission prompt window returned \(disposition.rawValue).",
+            ]
+        )
+    }
+}
+
+@MainActor
+private final class ChromeMV3PermissionPromptPanelDelegate:
+    NSObject,
+    NSWindowDelegate
+{
+    private let onClose: () -> Void
+
+    init(onClose: @escaping () -> Void) {
+        self.onClose = onClose
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        _ = notification
+        onClose()
+    }
+}
+#endif
+
 struct ChromeMV3DeveloperPreviewPermissionStateRecord:
     Codable,
     Equatable,
@@ -623,7 +1143,84 @@ struct ChromeMV3DeveloperPreviewPermissionStateRecord:
     var promptGateRecord: ChromeMV3PermissionPromptGateRecord
     var promptRequests: [ChromeMV3PermissionPromptRequest]
     var promptResults: [ChromeMV3PermissionPromptResultRecord]
+    var promptLifecycleRecords:
+        [ChromeMV3PermissionPromptLifecycleRecord]
     var diagnostics: [String]
+
+    init(
+        schemaVersion: Int,
+        updatedAt: Date,
+        extensionID: String,
+        profileID: String,
+        permissionRuntimeSnapshot:
+            ChromeMV3PermissionRuntimeStateOwnerSnapshot,
+        promptGateRecord: ChromeMV3PermissionPromptGateRecord,
+        promptRequests: [ChromeMV3PermissionPromptRequest],
+        promptResults: [ChromeMV3PermissionPromptResultRecord],
+        promptLifecycleRecords:
+            [ChromeMV3PermissionPromptLifecycleRecord] = [],
+        diagnostics: [String]
+    ) {
+        self.schemaVersion = schemaVersion
+        self.updatedAt = updatedAt
+        self.extensionID = extensionID
+        self.profileID = profileID
+        self.permissionRuntimeSnapshot = permissionRuntimeSnapshot
+        self.promptGateRecord = promptGateRecord
+        self.promptRequests = promptRequests
+        self.promptResults = promptResults
+        self.promptLifecycleRecords = promptLifecycleRecords
+        self.diagnostics = diagnostics
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case updatedAt
+        case extensionID
+        case profileID
+        case permissionRuntimeSnapshot
+        case promptGateRecord
+        case promptRequests
+        case promptResults
+        case promptLifecycleRecords
+        case diagnostics
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.schemaVersion = try container.decode(
+            Int.self,
+            forKey: .schemaVersion
+        )
+        self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        self.extensionID = try container.decode(String.self, forKey: .extensionID)
+        self.profileID = try container.decode(String.self, forKey: .profileID)
+        self.permissionRuntimeSnapshot = try container.decode(
+            ChromeMV3PermissionRuntimeStateOwnerSnapshot.self,
+            forKey: .permissionRuntimeSnapshot
+        )
+        self.promptGateRecord = try container.decode(
+            ChromeMV3PermissionPromptGateRecord.self,
+            forKey: .promptGateRecord
+        )
+        self.promptRequests = try container.decode(
+            [ChromeMV3PermissionPromptRequest].self,
+            forKey: .promptRequests
+        )
+        self.promptResults = try container.decode(
+            [ChromeMV3PermissionPromptResultRecord].self,
+            forKey: .promptResults
+        )
+        self.promptLifecycleRecords =
+            try container.decodeIfPresent(
+                [ChromeMV3PermissionPromptLifecycleRecord].self,
+                forKey: .promptLifecycleRecords
+            ) ?? []
+        self.diagnostics = try container.decode(
+            [String].self,
+            forKey: .diagnostics
+        )
+    }
 }
 
 struct ChromeMV3DeveloperPreviewPermissionStateStore {
@@ -696,6 +1293,8 @@ struct ChromeMV3DeveloperPreviewPermissionStateStore {
         gateRecord: ChromeMV3PermissionPromptGateRecord,
         promptRequests: [ChromeMV3PermissionPromptRequest] = [],
         promptResults: [ChromeMV3PermissionPromptResultRecord] = [],
+        promptLifecycleRecords:
+            [ChromeMV3PermissionPromptLifecycleRecord] = [],
         diagnostics: [String] = []
     ) throws -> ChromeMV3DeveloperPreviewPermissionStateRecord {
         let snapshot = owner.snapshot
@@ -717,6 +1316,15 @@ struct ChromeMV3DeveloperPreviewPermissionStateStore {
                     return $0.sequence < $1.sequence
                 }
                 return $0.requestID < $1.requestID
+            },
+            promptLifecycleRecords: promptLifecycleRecords.sorted {
+                if $0.sequence != $1.sequence {
+                    return $0.sequence < $1.sequence
+                }
+                if $0.requestID != $1.requestID {
+                    return $0.requestID < $1.requestID
+                }
+                return $0.stage < $1.stage
             },
             diagnostics:
                 uniqueSortedPermissionPrompt(
