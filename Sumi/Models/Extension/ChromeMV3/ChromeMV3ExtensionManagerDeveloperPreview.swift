@@ -895,6 +895,336 @@ struct ChromeMV3ExtensionManagerPermissionActionResult:
     var diagnostics: [String]
 }
 
+struct ChromeMV3ExtensionManagerTrustedNativeHostControlDescriptor:
+    Identifiable,
+    Codable,
+    Equatable,
+    Sendable
+{
+    var id: String
+    var kind: ChromeMV3NativeTrustedHostControlKind
+    var hostName: String
+    var title: String
+    var available: Bool
+    var warning: String
+    var diagnostics: [String]
+}
+
+struct ChromeMV3ExtensionManagerTrustedNativeHostRequirement:
+    Identifiable,
+    Codable,
+    Equatable,
+    Sendable
+{
+    var id: String { hostName }
+    var hostName: String
+    var requiredBy: String
+    var manifestStatus: ChromeMV3NativeHostLookupStatus
+    var manifestPath: String?
+    var executablePath: String?
+    var resolvedExecutablePath: String?
+    var allowedOrigins: [String]
+    var trustedHostState: ChromeMV3NativeTrustedHostTrustState
+    var trustedForDeveloperPreview: Bool
+    var canSendNativeMessageNow: Bool
+    var canConnectNativeNow: Bool
+    var processLaunchAllowedNow: Bool
+    var controls:
+        [ChromeMV3ExtensionManagerTrustedNativeHostControlDescriptor]
+    var blockers: [String]
+    var diagnostics: [String]
+}
+
+struct ChromeMV3ExtensionManagerTrustedNativeHostPanel:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var nativeMessagingPermissionDeclared: Bool
+    var nativeMessagingPermissionGranted: Bool
+    var trustedHostPolicyAvailable: Bool
+    var approvalRequired: Bool
+    var arbitraryHostLaunchAllowed: Bool
+    var nativeHostScanningAllowed: Bool
+    var discoveryReport: ChromeMV3NativeHostDiscoveryPolicyReport
+    var hostRequirements:
+        [ChromeMV3ExtensionManagerTrustedNativeHostRequirement]
+    var diagnostics: [String]
+
+    static func make(
+        rootURL: URL,
+        record: ChromeMV3ExtensionLifecycleRecord,
+        manifestSummary:
+            ChromeMV3ExtensionManagerManifestSummaryViewState,
+        gate: ChromeMV3ExtensionManagerGate
+    ) -> ChromeMV3ExtensionManagerTrustedNativeHostPanel {
+        let nativeDeclared =
+            manifestSummary.permissions.contains("nativeMessaging")
+                || manifestSummary.optionalPermissions
+                .contains("nativeMessaging")
+        let store = ChromeMV3DeveloperPreviewPermissionStateStore(
+            rootURL: rootURL
+        )
+        let persisted = store.loadRecord(
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+        let grantedOptional =
+            persisted?.permissionRuntimeSnapshot.permissionStore.summary
+            .grantedOptionalAPIPermissions ?? []
+        let nativeGranted =
+            manifestSummary.permissions.contains("nativeMessaging")
+                || grantedOptional.contains("nativeMessaging")
+        let fixtureRoot = rootURL.appendingPathComponent(
+            "NativeMessagingFixtureHosts",
+            isDirectory: true
+        )
+        let lookupPolicy = ChromeMV3NativeHostLookupPolicy.macOS(
+            explicitTestRootPath: fixtureRoot.path,
+            extensionModuleEnabled: gate.managerAvailableInDeveloperPreview
+        )
+        let productPolicy = ChromeMV3NativeMessagingProductPolicy(
+            extensionModuleEnabled: gate.managerAvailableInDeveloperPreview,
+            nativeMessagingAllowedByProductPolicy: true,
+            userConsentRequired: true,
+            userConsentGranted: false
+        )
+        let policyStore = ChromeMV3NativeTrustedHostPolicyStore(
+            rootURL: rootURL
+        )
+        let snapshot = policyStore.loadSnapshot(
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+        let hostNames =
+            nativeDeclared
+                ? [
+                    ChromeMV3NativeMessagingFixtureHostBuilder
+                        .passwordManagerFixtureHostName,
+                ]
+                : []
+        let requirements = hostNames.map { hostName in
+            requirement(
+                hostName: hostName,
+                record: record,
+                nativeGranted: nativeGranted,
+                lookupPolicy: lookupPolicy,
+                productPolicy: productPolicy,
+                trustedRecord:
+                    snapshot.record(hostName: hostName)
+                    ?? .unknown(
+                        hostName: hostName,
+                        extensionID: record.extensionID,
+                        profileID: record.profileID
+                    ),
+                gate: gate
+            )
+        }
+        let discovery = ChromeMV3NativeHostDiscoveryPolicyReport.make(
+            lookupPolicy: lookupPolicy,
+            requestedHostNames: hostNames
+        )
+        return ChromeMV3ExtensionManagerTrustedNativeHostPanel(
+            nativeMessagingPermissionDeclared: nativeDeclared,
+            nativeMessagingPermissionGranted: nativeGranted,
+            trustedHostPolicyAvailable:
+                productPolicy.productGate.trustedHostPolicyAvailable,
+            approvalRequired:
+                productPolicy.productGate.trustedHostApprovalRequired,
+            arbitraryHostLaunchAllowed: false,
+            nativeHostScanningAllowed: false,
+            discoveryReport: discovery,
+            hostRequirements: requirements,
+            diagnostics:
+                uniqueSortedExtensionManager(
+                    snapshot.diagnostics
+                        + discovery.diagnostics
+                        + [
+                            nativeDeclared
+                                ? "nativeMessaging permission is declared or optional in the extension manifest."
+                                : "nativeMessaging permission is not declared.",
+                            "Trusted native host controls require explicit developer-preview user action.",
+                            "Approval controls do not launch native hosts.",
+                            "Arbitrary native host launch and arbitrary directory scanning remain disabled.",
+                        ]
+                )
+        )
+    }
+
+    private static func requirement(
+        hostName: String,
+        record: ChromeMV3ExtensionLifecycleRecord,
+        nativeGranted: Bool,
+        lookupPolicy: ChromeMV3NativeHostLookupPolicy,
+        productPolicy: ChromeMV3NativeMessagingProductPolicy,
+        trustedRecord: ChromeMV3NativeTrustedHostApprovalRecord,
+        gate: ChromeMV3ExtensionManagerGate
+    ) -> ChromeMV3ExtensionManagerTrustedNativeHostRequirement {
+        let lookup = lookupPolicy.lookupHost(named: hostName)
+        let permissionState: ChromeMV3NativeMessagingPermissionState =
+            nativeGranted ? .grantedByManifest : .missing
+        let long = ChromeMV3NativeMessagingPreflightEvaluator.evaluate(
+            input: ChromeMV3NativeMessagingPreflightInput(
+                extensionID: record.extensionID,
+                profileID: record.profileID,
+                hostName: hostName,
+                operationKind: .longLivedNativePort,
+                sourceContext: .extensionPage,
+                permissionState: permissionState,
+                productPolicy: productPolicy,
+                trustedHostPolicyRecord: trustedRecord
+            ),
+            lookupPolicy: lookupPolicy,
+            lookupResult: lookup
+        )
+        let oneShot = ChromeMV3NativeMessagingPreflightEvaluator.evaluate(
+            input: ChromeMV3NativeMessagingPreflightInput(
+                extensionID: record.extensionID,
+                profileID: record.profileID,
+                hostName: hostName,
+                operationKind: .oneShotNativeMessage,
+                sourceContext: .extensionPage,
+                permissionState: permissionState,
+                productPolicy: productPolicy,
+                trustedHostPolicyRecord: trustedRecord
+            ),
+            lookupPolicy: lookupPolicy,
+            lookupResult: lookup
+        )
+        let canEvaluateManifest =
+            lookup.status == .found
+                && lookup.manifest?.isValid == true
+                && gate.managerAvailableInDeveloperPreview
+                && record.runtimeState.internalRuntimeEnabled
+        return ChromeMV3ExtensionManagerTrustedNativeHostRequirement(
+            hostName: hostName,
+            requiredBy:
+                "runtime.connect" + "Native/runtime.send"
+                + "NativeMessage",
+            manifestStatus: lookup.status,
+            manifestPath: lookup.manifest?.sourceLocation.manifestPath,
+            executablePath: lookup.manifest?.path,
+            resolvedExecutablePath:
+                lookup.manifest?.path.map {
+                    URL(fileURLWithPath: $0)
+                        .resolvingSymlinksInPath()
+                        .standardizedFileURL
+                        .path
+                },
+            allowedOrigins:
+                lookup.manifest?.allowedOrigins.map(\.rawValue).sorted()
+                    ?? [],
+            trustedHostState: trustedRecord.trustState,
+            trustedForDeveloperPreview:
+                trustedRecord.trustedForDeveloperPreview,
+            canSendNativeMessageNow: oneShot.canSendNativeMessageNow,
+            canConnectNativeNow: long.canConnectNativeNow,
+            processLaunchAllowedNow:
+                long.processLaunchAllowedNow
+                    || oneShot.processLaunchAllowedNow,
+            controls:
+                controls(
+                    hostName: hostName,
+                    canApprove: canEvaluateManifest,
+                    trustedRecord: trustedRecord
+                ),
+            blockers:
+                uniqueSortedExtensionManager(
+                    long.blockers + oneShot.blockers
+                ),
+            diagnostics:
+                uniqueSortedExtensionManager(
+                    lookup.diagnostics
+                        + trustedRecord.diagnostics
+                        + long.diagnostics
+                        + oneShot.diagnostics
+                )
+        )
+    }
+
+    private static func controls(
+        hostName: String,
+        canApprove: Bool,
+        trustedRecord: ChromeMV3NativeTrustedHostApprovalRecord
+    ) -> [ChromeMV3ExtensionManagerTrustedNativeHostControlDescriptor] {
+        [
+            control(
+                kind: .approveForDeveloperPreview,
+                hostName: hostName,
+                title: "Approve trusted host",
+                available: canApprove
+                    && trustedRecord.trustedForDeveloperPreview == false,
+                warning:
+                    "Approving trusts this executable only for developer-preview fixture native messaging."
+            ),
+            control(
+                kind: .deny,
+                hostName: hostName,
+                title: "Deny host",
+                available: trustedRecord.trustState != .userDenied,
+                warning: "Denying keeps native messaging blocked."
+            ),
+            control(
+                kind: .revoke,
+                hostName: hostName,
+                title: "Revoke host",
+                available: trustedRecord.trustState
+                    == .trustedForDeveloperPreview,
+                warning:
+                    "Revoking disconnects existing native Ports in the runtime owner."
+            ),
+            control(
+                kind: .reset,
+                hostName: hostName,
+                title: "Reset host policy",
+                available: trustedRecord.trustState != .unknown,
+                warning: "Reset removes the persisted trusted-host state."
+            ),
+        ].sorted {
+            if $0.kind != $1.kind { return $0.kind < $1.kind }
+            return $0.hostName < $1.hostName
+        }
+    }
+
+    private static func control(
+        kind: ChromeMV3NativeTrustedHostControlKind,
+        hostName: String,
+        title: String,
+        available: Bool,
+        warning: String
+    ) -> ChromeMV3ExtensionManagerTrustedNativeHostControlDescriptor {
+        ChromeMV3ExtensionManagerTrustedNativeHostControlDescriptor(
+            id: "\(kind.rawValue):\(hostName)",
+            kind: kind,
+            hostName: hostName,
+            title: title,
+            available: available,
+            warning: warning,
+            diagnostics: [
+                "Trusted-host control requires explicit user action.",
+                "Trusted-host control never launches a native host.",
+                "Executable path and allowed_origins must be inspected before approval.",
+            ]
+        )
+    }
+}
+
+struct ChromeMV3ExtensionManagerTrustedNativeHostActionResult:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var kind: ChromeMV3NativeTrustedHostControlKind
+    var hostName: String
+    var succeeded: Bool
+    var record: ChromeMV3NativeTrustedHostApprovalRecord?
+    var snapshot: ChromeMV3NativeTrustedHostPolicySnapshot?
+    var preflight: ChromeMV3NativeMessagingOperationPreflight?
+    var serviceWorkerWakeAttempted: Bool
+    var nativeHostLaunchAttempted: Bool
+    var diagnostics: [String]
+}
+
 struct ChromeMV3ExtensionManagerDetailViewModel:
     Identifiable,
     Codable,
@@ -921,6 +1251,8 @@ struct ChromeMV3ExtensionManagerDetailViewModel:
     var popupOptionsLaunchState: ChromeMV3ProductPopupOptionsLaunchState
     var permissionStatePanel:
         ChromeMV3ExtensionManagerPermissionStatePanel
+    var trustedNativeHostPanel:
+        ChromeMV3ExtensionManagerTrustedNativeHostPanel
     var actions: [ChromeMV3ExtensionManagerActionDescriptor]
     var diagnosticsReportPath: String?
     var diagnosticsJSONAvailable: Bool
@@ -1265,6 +1597,13 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
             popupOptionsLaunchState: popupOptions,
             permissionStatePanel:
                 ChromeMV3ExtensionManagerPermissionStatePanel.make(
+                    rootURL: rootURL,
+                    record: record,
+                    manifestSummary: manifestSummary,
+                    gate: gate
+                ),
+            trustedNativeHostPanel:
+                ChromeMV3ExtensionManagerTrustedNativeHostPanel.make(
                     rootURL: rootURL,
                     record: record,
                     manifestSummary: manifestSummary,

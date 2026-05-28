@@ -63,9 +63,13 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
             "permissions.remove",
             "permissions.request",
             "runtime.connect",
+            "runtime.connectNative",
             "runtime.getURL",
             "runtime.lastError",
+            "runtime.nativePort.disconnect",
+            "runtime.nativePort.postMessage",
             "runtime.sendMessage",
+            "runtime.sendNativeMessage",
             "storage.local.clear",
             "storage.local.get",
             "storage.local.getBytesInUse",
@@ -250,6 +254,12 @@ struct ChromeMV3PopupOptionsJSBridgeConfiguration:
     var surface: ChromeMV3ProductPopupOptionsSurface
     var extensionBaseURLString: String
     var permissionStateRootPath: String?
+    var nativeMessagingFixtureHostRootPaths: [String] = []
+    var nativeMessagingTrustedHostPolicyRootPath: String?
+    var nativeMessagingTrustedHostApprovalRecords:
+        [ChromeMV3NativeTrustedHostApprovalRecord] = []
+    var nativeMessagingProductPolicy:
+        ChromeMV3NativeMessagingProductPolicy = .blockedRuntimeDefault
     var moduleState: ChromeMV3ProfileHostModuleState
     var bridgeAvailable: Bool
     var popupOptionsJSBridgeAvailableInDeveloperPreview: Bool
@@ -290,6 +300,21 @@ struct ChromeMV3PopupOptionsJSBridgeConfiguration:
             extensionBaseURLString:
                 "chrome-extension://\(launchRecord.extensionID)/",
             permissionStateRootPath: launchRecord.managerStoreRootPath,
+            nativeMessagingFixtureHostRootPaths:
+                launchRecord.managerStoreRootPath.map {
+                    [
+                        URL(fileURLWithPath: $0, isDirectory: true)
+                            .appendingPathComponent(
+                                "NativeMessagingFixtureHosts",
+                                isDirectory: true
+                            )
+                            .path,
+                    ]
+                } ?? [],
+            nativeMessagingTrustedHostPolicyRootPath:
+                launchRecord.managerStoreRootPath,
+            nativeMessagingTrustedHostApprovalRecords: [],
+            nativeMessagingProductPolicy: .blockedRuntimeDefault,
             moduleState: bridgeAvailable ? .enabled : .disabled,
             bridgeAvailable: bridgeAvailable,
             popupOptionsJSBridgeAvailableInDeveloperPreview:
@@ -558,6 +583,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     private var callRecords: [ChromeMV3PopupOptionsJSBridgeCallRecord] = []
     private var onChangedPayloads: [ChromeMV3StorageOnChangedEventPayload] = []
     private var syntheticPortIDs: Set<String> = []
+    private var nativeMessagingRuntimeOwner:
+        ChromeMV3NativeMessagingRuntimeOwner?
     private var tornDown = false
 
     init(
@@ -833,9 +860,13 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         case ("runtime", "getURL"):
             return runtimeGetURL(request)
         case ("runtime", "sendNativeMessage"):
-            return blocked(request, namespace: "runtime")
+            return runtimeSendNativeMessage(request)
         case ("runtime", let method) where method == "connect" + "Native":
-            return blocked(request, namespace: "runtime")
+            return runtimeConnectNative(request)
+        case ("runtime", "nativePort.postMessage"):
+            return runtimeNativePortPostMessage(request)
+        case ("runtime", "nativePort.disconnect"):
+            return runtimeNativePortDisconnect(request)
         case ("storage", "local.get"),
              ("storage", "local.set"),
              ("storage", "local.remove"),
@@ -915,6 +946,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         callRecords.removeAll()
         onChangedPayloads.removeAll()
         syntheticPortIDs.removeAll()
+        nativeMessagingRuntimeOwner?.tearDownForProfileClose()
+        nativeMessagingRuntimeOwner = nil
         permissionPromptRequests.removeAll()
         permissionPromptResults.removeAll()
         permissionPromptLifecycleRecords.removeAll()
@@ -1055,6 +1088,207 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             diagnostics: [
                 "runtime.getURL returned a deterministic chrome-extension URL string for the extension-owned page.",
             ]
+        )
+    }
+
+    private func runtimeSendNativeMessage(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        guard request.arguments.count == 2,
+              let hostName = request.arguments[0].stringValue
+        else {
+            return invalidArguments(
+                request,
+                "runtime.sendNativeMessage requires host name and message arguments."
+            )
+        }
+        let owner = nativeMessagingOwner()
+        let result = owner.sendNativeMessage(
+            hostName: hostName,
+            message: request.arguments[1]
+        )
+        guard result.succeeded else {
+            return response(
+                request: request,
+                succeeded: false,
+                lastErrorMessage: result.lastErrorMessage,
+                lastErrorCode: result.lastErrorCode?.rawValue
+                    ?? ChromeMV3JSBridgeErrorCode.productBlocked.rawValue,
+                blockedAPIDiagnostic:
+                    configuration.allowlist.blockedDiagnostic(
+                        namespace: "runtime",
+                        methodName: request.methodName
+                    ),
+                nativeHostLaunchAttempted:
+                    result.lifecycle.processLaunchAttempted,
+                diagnostics:
+                    result.diagnostics
+                    + [
+                        "runtime.sendNativeMessage used trusted-host product preflight before any fixture host launch.",
+                    ]
+            )
+        }
+        return response(
+            request: request,
+            succeeded: true,
+            payload: result.response ?? .null,
+            nativeHostLaunchAttempted:
+                result.lifecycle.processLaunchAttempted,
+            diagnostics:
+                result.diagnostics
+                + [
+                    "runtime.sendNativeMessage completed through an approved developer-preview fixture host.",
+                    "Product/public native messaging remains unavailable.",
+                ]
+        )
+    }
+
+    private func runtimeConnectNative(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        guard request.arguments.count == 1,
+              let hostName = request.arguments[0].stringValue
+        else {
+            return invalidArguments(
+                request,
+                "runtime.connectNative requires one host name argument."
+            )
+        }
+        let owner = nativeMessagingOwner()
+        let result = owner.connectNative(hostName: hostName)
+        guard result.succeeded, let portID = result.portID else {
+            return response(
+                request: request,
+                succeeded: false,
+                lastErrorMessage: result.lastErrorMessage,
+                lastErrorCode: result.lastErrorCode?.rawValue
+                    ?? ChromeMV3JSBridgeErrorCode.productBlocked.rawValue,
+                blockedAPIDiagnostic:
+                    configuration.allowlist.blockedDiagnostic(
+                        namespace: "runtime",
+                        methodName: request.methodName
+                    ),
+                nativeHostLaunchAttempted:
+                    result.lifecycle.processLaunchAttempted,
+                diagnostics:
+                    result.diagnostics
+                    + [
+                        "runtime.connectNative used trusted-host product preflight before any fixture host launch.",
+                    ]
+            )
+        }
+        syntheticPortIDs.insert(portID)
+        return response(
+            request: request,
+            succeeded: true,
+            payload: .object([
+                "portID": .string(portID),
+                "hostName": .string(hostName),
+                "portKind": .string("nativeMessagingTrustedFixturePort"),
+                "canOpenRuntimePortNow": .bool(false),
+                "canWakeServiceWorkerNow": .bool(false),
+                "runtimeLoadable": .bool(false),
+            ]),
+            nativeHostLaunchAttempted:
+                result.lifecycle.processLaunchAttempted,
+            diagnostics:
+                result.diagnostics
+                + [
+                    "runtime.connectNative opened a developer-preview trusted fixture Port.",
+                    "No service-worker keepalive is started by the popup/options bridge.",
+                ]
+        )
+    }
+
+    private func runtimeNativePortPostMessage(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        guard request.arguments.count == 2,
+              let portID = request.arguments[0].stringValue
+        else {
+            return invalidArguments(
+                request,
+                "native Port postMessage requires portID and message arguments."
+            )
+        }
+        guard let owner = nativeMessagingRuntimeOwner else {
+            return runtimeLastErrorResponse(
+                request,
+                error: .noReceivingEnd,
+                diagnostics: [
+                    "No native messaging runtime owner exists for this popup/options page."
+                ]
+            )
+        }
+        let result = owner.postMessage(
+            portID: portID,
+            message: request.arguments[1]
+        )
+        if result.succeeded == false {
+            syntheticPortIDs.remove(portID)
+        }
+        return response(
+            request: request,
+            succeeded: result.succeeded,
+            payload: .object([
+                "portID": .string(result.portID),
+                "hostName": .string(result.hostName),
+                "response": result.response ?? .null,
+            ]),
+            lastErrorMessage: result.lastErrorMessage,
+            lastErrorCode: result.lastErrorCode?.rawValue,
+            nativeHostLaunchAttempted:
+                result.lifecycle.processLaunchAttempted,
+            diagnostics: result.diagnostics
+        )
+    }
+
+    private func runtimeNativePortDisconnect(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        guard request.arguments.count == 1,
+              let portID = request.arguments[0].stringValue
+        else {
+            return invalidArguments(
+                request,
+                "native Port disconnect requires one portID argument."
+            )
+        }
+        guard let owner = nativeMessagingRuntimeOwner else {
+            return response(
+                request: request,
+                succeeded: true,
+                payload: .object([
+                    "portID": .string(portID),
+                    "disconnected": .bool(false),
+                    "disconnectReason": .string(
+                        "No native messaging runtime owner is available."
+                    ),
+                ]),
+                diagnostics: [
+                    "Native Port disconnect was a deterministic no-op because no owner exists."
+                ]
+            )
+        }
+        let result = owner.disconnect(
+            portID: portID,
+            reason: .nativeHostExited
+        )
+        syntheticPortIDs.remove(portID)
+        return response(
+            request: request,
+            succeeded: true,
+            payload: .object([
+                "portID": .string(portID),
+                "hostName": result.hostName.map(ChromeMV3StorageValue.string)
+                    ?? .null,
+                "disconnected": .bool(result.disconnected),
+                "activePortCountAfterDisconnect":
+                    .number(Double(result.activePortCountAfterDisconnect)),
+            ]),
+            nativeHostLaunchAttempted:
+                result.lifecycle?.processLaunchAttempted ?? false,
+            diagnostics: result.diagnostics
         )
     }
 
@@ -1430,6 +1664,11 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 reason:
                     "chrome.permissions.remove revoked host/API access for popup/options bridge."
             )
+            if input.permissions.contains("nativeMessaging") {
+                nativeMessagingRuntimeOwner?.tearDownForExtensionDisable()
+                nativeMessagingRuntimeOwner = nil
+                syntheticPortIDs.removeAll()
+            }
             let dispatchRecord = dispatchPermissionEventIfNeeded(
                 application.result.eventPayloadIfApplied,
                 sourceSurfaceID: configuration.surfaceID
@@ -1919,6 +2158,80 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         )
     }
 
+    private func nativeMessagingOwner()
+        -> ChromeMV3NativeMessagingRuntimeOwner
+    {
+        if let owner = nativeMessagingRuntimeOwner,
+           owner.activePortCount > 0
+        {
+            return owner
+        }
+        let owner = ChromeMV3NativeMessagingRuntimeOwner(
+            configuration: .internalFixture(
+                extensionID: configuration.extensionID,
+                profileID: configuration.profileID,
+                fixtureHostRootPaths:
+                    configuration.nativeMessagingFixtureHostRootPaths,
+                moduleState: configuration.moduleState,
+                explicitInternalNativeMessagingBridgeAllowed:
+                    configuration.bridgeAvailable,
+                permissionState: nativeMessagingPermissionState(),
+                productPolicy: configuration.nativeMessagingProductPolicy,
+                trustedHostApprovalRecords:
+                    nativeMessagingTrustedHostRecords()
+            )
+        )
+        nativeMessagingRuntimeOwner = owner
+        return owner
+    }
+
+    private func nativeMessagingPermissionState()
+        -> ChromeMV3NativeMessagingPermissionState
+    {
+        let decision = permissionRuntimeOwner.permissionBroker
+            .apiPermissionDecision("nativeMessaging")
+        if decision.hasPermission {
+            return .grantedByManifest
+        }
+        if decision.unsupported {
+            return .unsupported
+        }
+        if decision.deferred || decision.wouldNeedPrompt {
+            return .deferred
+        }
+        if decision.denied || decision.revoked {
+            return .denied
+        }
+        return .missing
+    }
+
+    private func nativeMessagingTrustedHostRecords()
+        -> [ChromeMV3NativeTrustedHostApprovalRecord]
+    {
+        var records = configuration.nativeMessagingTrustedHostApprovalRecords
+        if let rootPath = configuration.nativeMessagingTrustedHostPolicyRootPath,
+           rootPath.isEmpty == false
+        {
+            let store = ChromeMV3NativeTrustedHostPolicyStore(
+                rootURL: URL(fileURLWithPath: rootPath, isDirectory: true)
+            )
+            records.append(
+                contentsOf:
+                    store.loadSnapshot(
+                        profileID: configuration.profileID,
+                        extensionID: configuration.extensionID
+                    )
+                    .records
+            )
+        }
+        return records.sorted {
+            if $0.hostName != $1.hostName {
+                return $0.hostName < $1.hostName
+            }
+            return $0.approvalSequence < $1.approvalSequence
+        }
+    }
+
     private func appendPromptLifecycle(
         _ request: ChromeMV3PermissionPromptRequest,
         stage: ChromeMV3PermissionPromptLifecycleStage,
@@ -2147,6 +2460,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         lastErrorCode: String? = nil,
         blockedAPIDiagnostic:
             ChromeMV3PopupOptionsBlockedAPIDiagnostic? = nil,
+        nativeHostLaunchAttempted: Bool = false,
         diagnostics: [String]
     ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
         let resolvedNamespace = request?.namespace ?? namespace ?? "unsupported"
@@ -2175,7 +2489,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             normalTabRuntimeBridgeAvailable: false,
             contentScriptAttachmentAvailableInProduct: false,
             serviceWorkerWakeAttempted: false,
-            nativeHostLaunchAttempted: false,
+            nativeHostLaunchAttempted: nativeHostLaunchAttempted,
             runtimeLoadable: false,
             diagnostics:
                 uniqueSortedPopupOptionsBridge(
@@ -2183,7 +2497,9 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                         + diagnostics
                         + [
                             "Popup/options bridge handled the call inside an extension-owned WebKit host.",
-                            "No normal-tab bridge, product content-script attachment, service-worker wake, native host launch, or runtimeLoadable change occurred.",
+                            nativeHostLaunchAttempted
+                                ? "Native host launch was attempted only after trusted developer-preview preflight passed."
+                                : "No normal-tab bridge, product content-script attachment, service-worker wake, native host launch, or runtimeLoadable change occurred.",
                         ]
                 )
         )
@@ -2201,7 +2517,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 lastErrorCode: response.lastErrorCode,
                 lastErrorMessage: response.lastErrorMessage,
                 serviceWorkerWakeAttempted: false,
-                nativeHostLaunchAttempted: false,
+                nativeHostLaunchAttempted: nativeHostLaunchAttempted,
                 normalTabRuntimeBridgeAvailable: false,
                 contentScriptAttachmentAvailableInProduct: false,
                 diagnostics: response.diagnostics
@@ -3030,11 +3346,21 @@ enum ChromeMV3PopupOptionsJSShimSource {
           const nativeConnectMethod = "connect" + "Native";
           Object.defineProperty(runtime, nativeConnectMethod, {
             value(application) {
-              const port = createPort("");
+              const port = createPort("", {
+                namespace: "runtime",
+                postMessage: "nativePort.postMessage",
+                disconnect: "nativePort.disconnect"
+              });
               const state = portState.get(port);
               bridgePost("runtime", nativeConnectMethod, "fireAndForget", [application])
-                .then(() => {
-                  state.markDisconnected();
+                .then((response) => {
+                  if (!response.succeeded) {
+                    state.markDisconnected();
+                    return;
+                  }
+                  const payload = response.resultPayload || {};
+                  state.id = payload.portID || state.id;
+                  state.flushPendingMessages();
                 })
                 .catch(state.markDisconnected);
               return port;

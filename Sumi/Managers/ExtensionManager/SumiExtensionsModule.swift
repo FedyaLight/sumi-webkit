@@ -3995,6 +3995,179 @@ final class SumiExtensionsModule {
         }
     }
 
+    func chromeMV3RunTrustedNativeHostControlThroughManager(
+        _ kind: ChromeMV3NativeTrustedHostControlKind,
+        rootURL: URL,
+        profileID: String,
+        extensionID: String,
+        hostName: String,
+        fixtureHostRootURL: URL? = nil
+    ) -> ChromeMV3ExtensionManagerTrustedNativeHostActionResult {
+        let blocked: ([String]) -> ChromeMV3ExtensionManagerTrustedNativeHostActionResult = {
+            diagnostics in
+            ChromeMV3ExtensionManagerTrustedNativeHostActionResult(
+                kind: kind,
+                hostName: hostName,
+                succeeded: false,
+                record: nil,
+                snapshot: nil,
+                preflight: nil,
+                serviceWorkerWakeAttempted: false,
+                nativeHostLaunchAttempted: false,
+                diagnostics: diagnostics
+            )
+        }
+        guard isEnabled else {
+            return blocked([
+                "The extensions module is disabled; trusted native host controls are blocked.",
+            ])
+        }
+        let gate = chromeMV3ExtensionManagerGate()
+        guard gate.managerAvailableInDeveloperPreview else {
+            return blocked(gate.diagnostics.map(\.message))
+        }
+        let registry = ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
+        guard
+            let record = registry.loadLifecycleRecord(
+                profileID: profileID,
+                extensionID: extensionID
+            )
+        else {
+            return blocked([
+                "The internal MV3 lifecycle record was not found.",
+            ])
+        }
+        guard record.runtimeState.internalRuntimeEnabled else {
+            return blocked([
+                "The extension is disabled; trusted native host controls are blocked.",
+            ])
+        }
+
+        let report = registry.latestEndToEndDiagnosticsReport(
+            profileID: profileID,
+            extensionID: extensionID
+        )
+        let manifestSummary = ChromeMV3ExtensionManagerManifestSummaryViewState
+            .make(summary: report?.managerActiveManifestSummary, record: record)
+        let permissionState = nativeMessagingPermissionStateForManager(
+            rootURL: rootURL,
+            profileID: profileID,
+            extensionID: extensionID,
+            manifestSummary: manifestSummary
+        )
+        let fixtureRoot = (
+            fixtureHostRootURL
+                ?? rootURL.appendingPathComponent(
+                    "NativeMessagingFixtureHosts",
+                    isDirectory: true
+                )
+        )
+        let lookupPolicy = ChromeMV3NativeHostLookupPolicy.macOS(
+            explicitTestRootPath: fixtureRoot.path,
+            extensionModuleEnabled: true
+        )
+        let lookup = lookupPolicy.lookupHost(named: hostName)
+        let productPolicy = ChromeMV3NativeMessagingProductPolicy(
+            extensionModuleEnabled: true,
+            nativeMessagingAllowedByProductPolicy: true,
+            userConsentRequired: true,
+            userConsentGranted: false
+        )
+        let authorization = ChromeMV3NativeMessagingAuthorizationEvaluator
+            .evaluate(
+                extensionID: extensionID,
+                permissionState: permissionState,
+                hostManifest: lookup.manifest,
+                productPolicy: productPolicy
+            )
+        let store = ChromeMV3NativeTrustedHostPolicyStore(rootURL: rootURL)
+        let existing = store.record(
+            profileID: profileID,
+            extensionID: extensionID,
+            hostName: hostName
+        )
+        let evaluation = ChromeMV3NativeTrustedHostPolicyEvaluator.evaluate(
+            hostName: hostName,
+            extensionID: extensionID,
+            profileID: profileID,
+            lookupResult: lookup,
+            authorizationResult: authorization,
+            approvedRootPaths: [fixtureRoot.path],
+            control: kind,
+            sequence: (existing?.approvalSequence ?? 0) + 1,
+            existingRecord: existing
+        )
+        let snapshot: ChromeMV3NativeTrustedHostPolicySnapshot
+        do {
+            if kind == .reset {
+                snapshot = try store.resetRecord(
+                    profileID: profileID,
+                    extensionID: extensionID,
+                    hostName: hostName
+                )
+            } else {
+                snapshot = try store.saveRecord(evaluation.record)
+            }
+        } catch {
+            return blocked(
+                evaluation.diagnostics
+                    + [
+                        "Failed to persist trusted native host policy: \(error.localizedDescription)",
+                    ]
+            )
+        }
+
+        if kind == .revoke || kind == .reset || kind == .deny {
+            _ = cachedChromeMV3PopupOptionsHostController?.close(
+                profileID: profileID,
+                extensionID: extensionID,
+                reason: .resetWhileOpen
+            )
+        }
+        let savedRecord = kind == .reset ? nil : evaluation.record
+        let preflight = ChromeMV3NativeMessagingPreflightEvaluator.evaluate(
+            input: ChromeMV3NativeMessagingPreflightInput(
+                extensionID: extensionID,
+                profileID: profileID,
+                hostName: hostName,
+                operationKind: .longLivedNativePort,
+                sourceContext: .extensionPage,
+                permissionState: permissionState,
+                productPolicy: productPolicy,
+                trustedHostPolicyRecord: savedRecord
+            ),
+            lookupPolicy: lookupPolicy,
+            lookupResult: lookup
+        )
+        return ChromeMV3ExtensionManagerTrustedNativeHostActionResult(
+            kind: kind,
+            hostName: hostName,
+            succeeded:
+                kind == .reset
+                    || [
+                        ChromeMV3NativeTrustedHostTrustState
+                            .trustedForDeveloperPreview,
+                        .userDenied,
+                        .revoked,
+                    ].contains(evaluation.record.trustState),
+            record: savedRecord,
+            snapshot: snapshot,
+            preflight: preflight,
+            serviceWorkerWakeAttempted: false,
+            nativeHostLaunchAttempted: false,
+            diagnostics:
+                uniqueSortedSumiNativeHostManager(
+                    evaluation.diagnostics
+                        + snapshot.diagnostics
+                        + preflight.diagnostics
+                        + [
+                            "Trusted native host manager control did not launch a native host.",
+                            "No arbitrary native host directory scan occurred.",
+                        ]
+                )
+        )
+    }
+
     func chromeMV3OpenActionPopupThroughManager(
         rootURL: URL,
         profileID: String,
@@ -4473,6 +4646,32 @@ final class SumiExtensionsModule {
             ?? "internal-debug-profile"
     }
 
+    private func nativeMessagingPermissionStateForManager(
+        rootURL: URL,
+        profileID: String,
+        extensionID: String,
+        manifestSummary:
+            ChromeMV3ExtensionManagerManifestSummaryViewState
+    ) -> ChromeMV3NativeMessagingPermissionState {
+        if manifestSummary.permissions.contains("nativeMessaging") {
+            return .grantedByManifest
+        }
+        let store = ChromeMV3DeveloperPreviewPermissionStateStore(
+            rootURL: rootURL
+        )
+        let granted =
+            store.loadRecord(profileID: profileID, extensionID: extensionID)?
+            .permissionRuntimeSnapshot.permissionStore.summary
+            .grantedOptionalAPIPermissions.contains("nativeMessaging") ?? false
+        if granted {
+            return .grantedByManifest
+        }
+        if manifestSummary.optionalPermissions.contains("nativeMessaging") {
+            return .deferred
+        }
+        return .missing
+    }
+
     private func chromeMV3ExtensionManagerRuntimeDiagnosticsSnapshot()
         -> ChromeMV3LifecycleRuntimeDiagnosticsSnapshot
     {
@@ -4764,4 +4963,10 @@ final class SumiExtensionsModule {
             profile
         )
     }
+}
+
+private func uniqueSortedSumiNativeHostManager(
+    _ values: [String]
+) -> [String] {
+    Array(Set(values.filter { $0.isEmpty == false })).sorted()
 }

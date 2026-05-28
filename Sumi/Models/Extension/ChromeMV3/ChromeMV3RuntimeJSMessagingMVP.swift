@@ -95,6 +95,8 @@ struct ChromeMV3RuntimeJSBridgeConfiguration:
     var nativeMessagingAvailableInProduct: Bool
     var explicitInternalNativeMessagingBridgeAllowed: Bool
     var nativeMessagingFixtureHostRootPaths: [String]
+    var nativeMessagingTrustedHostApprovalRecords:
+        [ChromeMV3NativeTrustedHostApprovalRecord]
     var nativeMessagingPermissionState:
         ChromeMV3NativeMessagingPermissionState
     var runtimeLoadable: Bool
@@ -116,6 +118,8 @@ struct ChromeMV3RuntimeJSBridgeConfiguration:
         explicitInternalRuntimeJSBridgeAllowed: Bool = true,
         explicitInternalNativeMessagingBridgeAllowed: Bool = false,
         nativeMessagingFixtureHostRootPaths: [String] = [],
+        nativeMessagingTrustedHostApprovalRecords:
+            [ChromeMV3NativeTrustedHostApprovalRecord] = [],
         nativeMessagingPermissionState:
             ChromeMV3NativeMessagingPermissionState = .missing
     ) -> ChromeMV3RuntimeJSBridgeConfiguration {
@@ -164,6 +168,19 @@ struct ChromeMV3RuntimeJSBridgeConfiguration:
             explicitInternalNativeMessagingBridgeAllowed:
                 explicitInternalNativeMessagingBridgeAllowed,
             nativeMessagingFixtureHostRootPaths: normalizedFixtureRoots,
+            nativeMessagingTrustedHostApprovalRecords:
+                nativeMessagingTrustedHostApprovalRecords.sorted {
+                    if $0.profileID != $1.profileID {
+                        return $0.profileID < $1.profileID
+                    }
+                    if $0.extensionID != $1.extensionID {
+                        return $0.extensionID < $1.extensionID
+                    }
+                    if $0.hostName != $1.hostName {
+                        return $0.hostName < $1.hostName
+                    }
+                    return $0.approvalSequence < $1.approvalSequence
+                },
             nativeMessagingPermissionState: nativeMessagingPermissionState,
             runtimeLoadable: false,
             diagnostics:
@@ -624,7 +641,10 @@ final class ChromeMV3RuntimeJSBridgeHandler {
                             configuration
                             .explicitInternalNativeMessagingBridgeAllowed,
                         permissionState:
-                            configuration.nativeMessagingPermissionState
+                            configuration.nativeMessagingPermissionState,
+                        trustedHostApprovalRecords:
+                            configuration
+                            .nativeMessagingTrustedHostApprovalRecords
                     )
                 )
         } else {

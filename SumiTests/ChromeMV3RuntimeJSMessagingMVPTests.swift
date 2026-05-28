@@ -188,6 +188,7 @@ final class ChromeMV3RuntimeJSMessagingMVPTests: XCTestCase {
     {
         let root = try temporaryDirectory(named: "native-handler")
         let extensionID = "abcdefghijklmnopabcdefghijklmnop"
+        let profileID = "runtime-js-native-handler-profile"
         let hostName =
             ChromeMV3NativeMessagingFixtureHostBuilder
             .passwordManagerFixtureHostName
@@ -200,9 +201,17 @@ final class ChromeMV3RuntimeJSMessagingMVPTests: XCTestCase {
         let handler = ChromeMV3RuntimeJSBridgeHandler(
             configuration: .syntheticHarness(
                 extensionID: extensionID,
-                profileID: "runtime-js-native-handler-profile",
+                profileID: profileID,
                 explicitInternalNativeMessagingBridgeAllowed: true,
                 nativeMessagingFixtureHostRootPaths: [root.path],
+                nativeMessagingTrustedHostApprovalRecords: [
+                    trustedNativeHostApprovalRecord(
+                        root: root,
+                        extensionID: extensionID,
+                        profileID: profileID,
+                        hostName: hostName
+                    ),
+                ],
                 nativeMessagingPermissionState: .grantedByManifest
             )
         )
@@ -297,6 +306,7 @@ final class ChromeMV3RuntimeJSMessagingMVPTests: XCTestCase {
         guard #available(macOS 15.5, *) else { return }
         let root = try temporaryDirectory(named: "native-webkit")
         let extensionID = "abcdefghijklmnopabcdefghijklmnop"
+        let profileID = "runtime-js-native-webkit-profile"
         let hostName =
             ChromeMV3NativeMessagingFixtureHostBuilder
             .passwordManagerFixtureHostName
@@ -367,9 +377,17 @@ final class ChromeMV3RuntimeJSMessagingMVPTests: XCTestCase {
             """,
             configuration: .syntheticHarness(
                 extensionID: extensionID,
-                profileID: "runtime-js-native-webkit-profile",
+                profileID: profileID,
                 explicitInternalNativeMessagingBridgeAllowed: true,
                 nativeMessagingFixtureHostRootPaths: [root.path],
+                nativeMessagingTrustedHostApprovalRecords: [
+                    trustedNativeHostApprovalRecord(
+                        root: root,
+                        extensionID: extensionID,
+                        profileID: profileID,
+                        hostName: hostName
+                    ),
+                ],
                 nativeMessagingPermissionState: .grantedByManifest
             )
         )
@@ -775,6 +793,34 @@ final class ChromeMV3RuntimeJSMessagingMVPTests: XCTestCase {
 
     private func isNullOrMissing(_ value: Any?) -> Bool {
         value == nil || value is NSNull
+    }
+
+    private func trustedNativeHostApprovalRecord(
+        root: URL,
+        extensionID: String,
+        profileID: String,
+        hostName: String
+    ) -> ChromeMV3NativeTrustedHostApprovalRecord {
+        ChromeMV3NativeTrustedHostPolicyFactory
+            .recordForExplicitDeveloperPreviewApproval(
+                hostName: hostName,
+                extensionID: extensionID,
+                profileID: profileID,
+                lookupPolicy: .macOS(
+                    explicitTestRootPath: root.path,
+                    extensionModuleEnabled: true
+                ),
+                permissionState: .grantedByManifest,
+                productPolicy: ChromeMV3NativeMessagingProductPolicy(
+                    extensionModuleEnabled: true,
+                    nativeMessagingAllowedByProductPolicy: true,
+                    userConsentRequired: true,
+                    userConsentGranted: false
+                ),
+                approvedRootPaths: [root.path],
+                sequence: 1,
+                now: Date(timeIntervalSince1970: 1_234)
+            ).record
     }
 
     private func sourceFiles(

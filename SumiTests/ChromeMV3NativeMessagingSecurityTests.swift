@@ -262,6 +262,174 @@ final class ChromeMV3NativeMessagingSecurityTests: XCTestCase {
         XCTAssertFalse(preflight.runtimeLoadable)
     }
 
+    func testApprovedTrustedFixtureHostAllowsPreflightButNotRuntimeLoadable()
+        throws
+    {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try ChromeMV3NativeMessagingFixtureHostBuilder.writeFixtureHost(
+            kind: .echo,
+            rootURL: root,
+            hostName: hostName,
+            extensionID: allowedExtensionID
+        )
+        let policy = ChromeMV3NativeHostLookupPolicy.macOS(
+            explicitTestRootPath: root.path
+        )
+        let approval = ChromeMV3NativeTrustedHostPolicyFactory
+            .recordForExplicitDeveloperPreviewApproval(
+                hostName: hostName,
+                extensionID: allowedExtensionID,
+                profileID: "profile-a",
+                lookupPolicy: policy,
+                permissionState: .grantedByManifest,
+                approvedRootPaths: [root.path],
+                sequence: 1,
+                now: Date(timeIntervalSince1970: 1)
+            )
+            .record
+        let connect = makePreflight(
+            operationKind: .longLivedNativePort,
+            lookupPolicy: policy,
+            trustedHostPolicyRecord: approval
+        )
+        let send = makePreflight(
+            operationKind: .oneShotNativeMessage,
+            lookupPolicy: policy,
+            trustedHostPolicyRecord: approval
+        )
+
+        XCTAssertTrue(approval.trustedForDeveloperPreview)
+        XCTAssertTrue(connect.trustedHostPolicyApproved)
+        XCTAssertTrue(connect.canConnectNativeNow)
+        XCTAssertFalse(connect.canSendNativeMessageNow)
+        XCTAssertTrue(send.canSendNativeMessageNow)
+        XCTAssertFalse(send.canConnectNativeNow)
+        XCTAssertTrue(connect.processLaunchAllowedNow)
+        XCTAssertFalse(connect.runtimeLoadable)
+        XCTAssertFalse(connect.canWakeServiceWorkerNow)
+    }
+
+    func testPermissionGrantAndHostApprovalRemainSeparate()
+        throws
+    {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try ChromeMV3NativeMessagingFixtureHostBuilder.writeFixtureHost(
+            kind: .echo,
+            rootURL: root,
+            hostName: hostName,
+            extensionID: allowedExtensionID
+        )
+        let policy = ChromeMV3NativeHostLookupPolicy.macOS(
+            explicitTestRootPath: root.path
+        )
+        let approval = ChromeMV3NativeTrustedHostPolicyFactory
+            .recordForExplicitDeveloperPreviewApproval(
+                hostName: hostName,
+                extensionID: allowedExtensionID,
+                profileID: "profile-a",
+                lookupPolicy: policy,
+                permissionState: .grantedByManifest,
+                approvedRootPaths: [root.path],
+                sequence: 1,
+                now: Date(timeIntervalSince1970: 1)
+            )
+            .record
+        let permissionOnly = makePreflight(
+            operationKind: .longLivedNativePort,
+            lookupPolicy: policy
+        )
+        let approvalOnly = ChromeMV3NativeMessagingPreflightEvaluator
+            .evaluate(
+                input: ChromeMV3NativeMessagingPreflightInput(
+                    extensionID: allowedExtensionID,
+                    profileID: "profile-a",
+                    hostName: hostName,
+                    operationKind: .longLivedNativePort,
+                    sourceContext: .serviceWorker,
+                    permissionState: .missing,
+                    productPolicy:
+                        productPolicy(userConsentRequired: true),
+                    trustedHostPolicyRecord: approval
+                ),
+                lookupPolicy: policy
+            )
+
+        XCTAssertFalse(permissionOnly.trustedHostPolicyApproved)
+        XCTAssertFalse(permissionOnly.canConnectNativeNow)
+        XCTAssertTrue(approvalOnly.trustedHostPolicyApproved)
+        XCTAssertFalse(approvalOnly.authorizationResult.hasNativeMessagingPermission)
+        XCTAssertFalse(approvalOnly.canConnectNativeNow)
+    }
+
+    func testDeniedRevokedAndDiscoveryPolicyStayBlocked()
+        throws
+    {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try ChromeMV3NativeMessagingFixtureHostBuilder.writeFixtureHost(
+            kind: .echo,
+            rootURL: root,
+            hostName: hostName,
+            extensionID: allowedExtensionID
+        )
+        let policy = ChromeMV3NativeHostLookupPolicy.macOS(
+            explicitTestRootPath: root.path
+        )
+        let lookup = policy.lookupHost(named: hostName)
+        let auth = ChromeMV3NativeMessagingAuthorizationEvaluator.evaluate(
+            extensionID: allowedExtensionID,
+            permissionState: .grantedByManifest,
+            hostManifest: lookup.manifest,
+            productPolicy: productPolicy(userConsentRequired: true)
+        )
+        let denied = ChromeMV3NativeTrustedHostPolicyEvaluator.evaluate(
+            hostName: hostName,
+            extensionID: allowedExtensionID,
+            profileID: "profile-a",
+            lookupResult: lookup,
+            authorizationResult: auth,
+            approvedRootPaths: [root.path],
+            control: .deny,
+            sequence: 1,
+            now: Date(timeIntervalSince1970: 1)
+        )
+        let revoked = ChromeMV3NativeTrustedHostPolicyEvaluator.evaluate(
+            hostName: hostName,
+            extensionID: allowedExtensionID,
+            profileID: "profile-a",
+            lookupResult: lookup,
+            authorizationResult: auth,
+            approvedRootPaths: [root.path],
+            control: .revoke,
+            sequence: 2,
+            now: Date(timeIntervalSince1970: 2)
+        )
+        let deniedPreflight = makePreflight(
+            operationKind: .longLivedNativePort,
+            lookupPolicy: policy,
+            trustedHostPolicyRecord: denied.record
+        )
+        let revokedPreflight = makePreflight(
+            operationKind: .longLivedNativePort,
+            lookupPolicy: policy,
+            trustedHostPolicyRecord: revoked.record
+        )
+        let discovery = ChromeMV3NativeHostDiscoveryPolicyReport.make(
+            lookupPolicy: policy,
+            requestedHostNames: [hostName]
+        )
+
+        XCTAssertEqual(denied.record.trustState, .userDenied)
+        XCTAssertEqual(revoked.record.trustState, .revoked)
+        XCTAssertFalse(deniedPreflight.canConnectNativeNow)
+        XCTAssertFalse(revokedPreflight.canConnectNativeNow)
+        XCTAssertFalse(discovery.arbitrarySystemScanPerformed)
+        XCTAssertFalse(discovery.nativeHostScanningAllowed)
+        XCTAssertTrue(discovery.roots.allSatisfy { $0.hostsFound.isEmpty })
+    }
+
     func testDisabledModuleBlocksNativeMessagingPreflight() {
         let lookupPolicy = ChromeMV3NativeHostLookupPolicy.macOS(
             extensionModuleEnabled: false
@@ -517,7 +685,14 @@ final class ChromeMV3NativeMessagingSecurityTests: XCTestCase {
             $0.relativePath.hasPrefix("Sumi/Models/Extension/ChromeMV3/")
                 || $0.relativePath.hasPrefix("SumiTests/ChromeMV3")
         }
-        let joined = sources.map(\.contents).joined(separator: "\n")
+        let productSourceJoined = sources
+            .filter {
+                $0.relativePath.hasPrefix(
+                    "Sumi/Models/Extension/ChromeMV3/"
+                )
+            }
+            .map(\.contents)
+            .joined(separator: "\n")
         let boundaryGuardJoined = sources
             .filter {
                 $0.relativePath
@@ -557,13 +732,15 @@ final class ChromeMV3NativeMessagingSecurityTests: XCTestCase {
             "runtime" + "Loadable\\s*[:=].*" + "tr" + "ue",
             "canCreate" + "ContextNow\\s*[:=].*" + "tr" + "ue",
             "canLoad" + "ContextNow\\s*[:=].*" + "tr" + "ue",
-            "canConnect" + "NativeNow\\s*[:=].*" + "tr" + "ue",
-            "canSend" + "NativeMessageNow\\s*[:=].*" + "tr" + "ue",
-            "processLaunch" + "AllowedNow\\s*[:=].*" + "tr" + "ue",
-            "passwordManager" + "NativeMessagingReady\\s*[:=].*" + "tr" + "ue",
+            "nativeMessagingAvailableInPublicProduct\\s*[:=].*" + "tr"
+                + "ue",
+            "arbitraryHostLaunchAllowed\\s*[:=].*" + "tr" + "ue",
+            "nativeHostScanningAllowed\\s*[:=].*" + "tr" + "ue",
+            "productRuntimeAvailable\\s*[:=].*" + "tr" + "ue",
+            "productRuntimeExposed\\s*[:=].*" + "tr" + "ue",
         ] {
             XCTAssertNil(
-                joined.range(
+                productSourceJoined.range(
                     of: forbiddenRegex,
                     options: .regularExpression
                 ),
@@ -575,7 +752,9 @@ final class ChromeMV3NativeMessagingSecurityTests: XCTestCase {
     private func makePreflight(
         operationKind: ChromeMV3NativeMessagingOperationKind,
         lookupPolicy: ChromeMV3NativeHostLookupPolicy,
-        productPolicy: ChromeMV3NativeMessagingProductPolicy? = nil
+        productPolicy: ChromeMV3NativeMessagingProductPolicy? = nil,
+        trustedHostPolicyRecord:
+            ChromeMV3NativeTrustedHostApprovalRecord? = nil
     ) -> ChromeMV3NativeMessagingOperationPreflight {
         ChromeMV3NativeMessagingPreflightEvaluator.evaluate(
             input: ChromeMV3NativeMessagingPreflightInput(
@@ -588,7 +767,8 @@ final class ChromeMV3NativeMessagingSecurityTests: XCTestCase {
                 productPolicy:
                     productPolicy ?? self.productPolicy(
                         userConsentRequired: false
-                    )
+                    ),
+                trustedHostPolicyRecord: trustedHostPolicyRecord
             ),
             lookupPolicy: lookupPolicy
         )

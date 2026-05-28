@@ -1323,6 +1323,9 @@ struct ChromeMV3PasswordManagerNativeMessagingBlockerFlow:
     var nativeMessagingPermissionDetected: Bool
     var requestedHostName: String
     var hostLookupStatus: ChromeMV3NativeHostLookupStatus
+    var trustedHostPolicyState: ChromeMV3NativeTrustedHostTrustState
+    var trustedHostApprovedForDeveloperPreview: Bool
+    var trustedHostApprovalRequired: Bool
     var canConnectNativeNow: Bool
     var processLaunchAllowedNow: Bool
     var nativeMessagingAvailableInInternalFixture: Bool
@@ -2203,11 +2206,19 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
         let fixtureReady =
             implementationSummary?
             .passwordManagerNativeMessagingReadyInFixture == true
+        let trustedApproved =
+            report.trustedHostPolicyRecord?.trustedForDeveloperPreview == true
+                || fixtureReady
         return ChromeMV3PasswordManagerNativeMessagingBlockerFlow(
             nativeMessagingPermissionDetected:
                 report.nativeMessagingPermissionDetected,
             requestedHostName: report.requestedHostName,
             hostLookupStatus: report.hostLookupResult.status,
+            trustedHostPolicyState:
+                report.trustedHostPolicyRecord?.trustState
+                ?? (fixtureReady ? .trustedForDeveloperPreview : .unknown),
+            trustedHostApprovedForDeveloperPreview: trustedApproved,
+            trustedHostApprovalRequired: trustedApproved == false,
             canConnectNativeNow: fixtureReady,
             processLaunchAllowedNow: fixtureReady,
             nativeMessagingAvailableInInternalFixture:
@@ -2231,6 +2242,9 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
                             fixtureReady
                                 ? "sendNativeMessage/connectNative fixture exchange succeeded."
                                 : "sendNativeMessage/connectNative fixture exchange has not succeeded.",
+                            trustedApproved
+                                ? "Trusted-host policy is approved for developer-preview fixture scope."
+                                : "Trusted-host policy approval is required before native messaging readiness.",
                             "Product native messaging remains unavailable.",
                         ]
                 )

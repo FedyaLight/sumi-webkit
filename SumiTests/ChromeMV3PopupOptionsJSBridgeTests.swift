@@ -218,8 +218,6 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             configuration: configuration()
         )
         let blockedCalls: [(String, String)] = [
-            ("runtime", "sendNativeMessage"),
-            ("runtime", "connect" + "Native"),
             ("scripting", "executeScript"),
             ("nativeMessaging", "sendMessage"),
             ("sidePanel", "open"),
@@ -372,6 +370,125 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(handler.diagnosticsSnapshot.observedMethods.contains(
             "tabs.port.disconnect"
         ))
+    }
+
+    func testNativeMessagingBridgeRequiresTrustedHostApprovalAndRunsFixture()
+        throws
+    {
+        let extensionID = "abcdefghijklmnopabcdefghijklmnop"
+        let profileID = "popup-native-profile"
+        let hostName = ChromeMV3NativeMessagingFixtureHostBuilder
+            .passwordManagerFixtureHostName
+        let root = try makeTemporaryDirectory()
+        let fixtureRoot = root.appendingPathComponent(
+            "native-hosts",
+            isDirectory: true
+        )
+        _ = try ChromeMV3NativeMessagingFixtureHostBuilder.writeFixtureHost(
+            kind: .echo,
+            rootURL: fixtureRoot,
+            hostName: hostName,
+            extensionID: extensionID
+        )
+
+        var unapprovedConfig = configuration(
+            extensionID: extensionID,
+            profileID: profileID,
+            manifestPermissions: ["nativeMessaging"]
+        )
+        unapprovedConfig.nativeMessagingFixtureHostRootPaths = [
+            fixtureRoot.path,
+        ]
+        let unapproved = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: unapprovedConfig
+        ).handle(request(
+            namespace: "runtime",
+            methodName: "send" + "NativeMessage",
+            arguments: [
+                .string(hostName),
+                .object(["kind": .string("unapproved")]),
+            ]
+        ))
+
+        let lookupPolicy = ChromeMV3NativeHostLookupPolicy.macOS(
+            explicitTestRootPath: fixtureRoot.path
+        )
+        let approval = ChromeMV3NativeTrustedHostPolicyFactory
+            .recordForExplicitDeveloperPreviewApproval(
+                hostName: hostName,
+                extensionID: extensionID,
+                profileID: profileID,
+                lookupPolicy: lookupPolicy,
+                permissionState: .grantedByManifest,
+                approvedRootPaths: [fixtureRoot.path],
+                sequence: 1,
+                now: Date(timeIntervalSince1970: 1)
+            )
+            .record
+        var approvedConfig = unapprovedConfig
+        approvedConfig.nativeMessagingTrustedHostApprovalRecords = [approval]
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: approvedConfig
+        )
+        let send = handler.handle(request(
+            namespace: "runtime",
+            methodName: "send" + "NativeMessage",
+            arguments: [
+                .string(hostName),
+                .object(["kind": .string("send" + "NativeMessage")]),
+            ]
+        ))
+        let connect = handler.handle(request(
+            namespace: "runtime",
+            methodName: "connect" + "Native",
+            arguments: [.string(hostName)],
+            invocationMode: .fireAndForget
+        ))
+        let portID = try XCTUnwrap(
+            stringValue(objectValue(connect.resultPayload)?["portID"])
+        )
+        let post = handler.handle(request(
+            namespace: "runtime",
+            methodName: "nativePort.postMessage",
+            arguments: [
+                .string(portID),
+                .object(["kind": .string("portMessage")]),
+            ],
+            invocationMode: .fireAndForget
+        ))
+        let disconnect = handler.handle(request(
+            namespace: "runtime",
+            methodName: "nativePort.disconnect",
+            arguments: [.string(portID)],
+            invocationMode: .fireAndForget
+        ))
+        let postResponse = objectValue(
+            objectValue(post.resultPayload)?["response"]
+        )
+
+        XCTAssertFalse(unapproved.succeeded)
+        XCTAssertEqual(unapproved.lastErrorCode, "trustedHostApprovalRequired")
+        XCTAssertFalse(unapproved.nativeHostLaunchAttempted)
+
+        XCTAssertTrue(send.succeeded, send.diagnostics.joined(separator: "\n"))
+        XCTAssertTrue(send.nativeHostLaunchAttempted)
+        XCTAssertEqual(
+            stringValue(objectValue(objectValue(send.resultPayload)?["echo"])?["kind"]),
+            "send" + "NativeMessage"
+        )
+        XCTAssertTrue(connect.succeeded)
+        XCTAssertTrue(connect.nativeHostLaunchAttempted)
+        XCTAssertEqual(
+            stringValue(objectValue(connect.resultPayload)?["portKind"]),
+            "nativeMessagingTrustedFixturePort"
+        )
+        XCTAssertTrue(post.succeeded)
+        XCTAssertEqual(
+            stringValue(objectValue(postResponse?["echo"])?["kind"]),
+            "portMessage"
+        )
+        XCTAssertTrue(disconnect.succeeded)
+        XCTAssertFalse(disconnect.serviceWorkerWakeAttempted)
     }
 
     func testTeardownClearsPopupOptionsBridgeState() throws {
