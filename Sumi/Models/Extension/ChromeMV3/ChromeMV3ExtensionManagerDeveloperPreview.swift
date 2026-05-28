@@ -640,6 +640,7 @@ struct ChromeMV3ExtensionManagerPermissionStatePanel:
     var activeTabCurrentGrants: [String]
     var promptGate:
         ChromeMV3PermissionPromptGateRecord
+    var controls: [ChromeMV3ExtensionManagerPermissionControl]
     var blockedPromptReasons: [String]
     var diagnostics: [String]
 
@@ -697,6 +698,20 @@ struct ChromeMV3ExtensionManagerPermissionStatePanel:
                 uniqueSortedExtensionManager(dismissedPromptIDs),
             activeTabCurrentGrants: activeTab?.activeGrantScopes ?? [],
             promptGate: persisted?.promptGateRecord ?? promptGate,
+            controls:
+                ChromeMV3ExtensionManagerPermissionControl.makeControls(
+                    promptGate: persisted?.promptGateRecord ?? promptGate,
+                    requiredPermissions: manifestSummary.permissions,
+                    optionalPermissions: manifestSummary.optionalPermissions,
+                    optionalHostPermissions:
+                        manifestSummary.optionalHostPermissions,
+                    grantedOptionalPermissions:
+                        summary?.grantedOptionalAPIPermissions ?? [],
+                    grantedOptionalHostPermissions:
+                        summary?.grantedOptionalHostPermissions ?? [],
+                    activeTabCurrentGrants:
+                        activeTab?.activeGrantScopes ?? []
+                ),
             blockedPromptReasons:
                 uniqueSortedExtensionManager(blockedPromptReasons),
             diagnostics:
@@ -713,6 +728,171 @@ struct ChromeMV3ExtensionManagerPermissionStatePanel:
                 )
         )
     }
+}
+
+enum ChromeMV3ExtensionManagerPermissionControlKind:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case requestOptionalAPIPermission
+    case requestOptionalHostPermission
+    case revokeOptionalAPIPermission
+    case revokeOptionalHostPermission
+    case clearActiveTabGrant
+
+    static func < (
+        lhs: ChromeMV3ExtensionManagerPermissionControlKind,
+        rhs: ChromeMV3ExtensionManagerPermissionControlKind
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3ExtensionManagerPermissionControl:
+    Identifiable,
+    Codable,
+    Equatable,
+    Sendable
+{
+    var id: String
+    var kind: ChromeMV3ExtensionManagerPermissionControlKind
+    var value: String
+    var title: String
+    var available: Bool
+    var blockerReason: String?
+    var diagnostics: [String]
+
+    static func makeControls(
+        promptGate: ChromeMV3PermissionPromptGateRecord,
+        requiredPermissions: [String],
+        optionalPermissions: [String],
+        optionalHostPermissions: [String],
+        grantedOptionalPermissions: [String],
+        grantedOptionalHostPermissions: [String],
+        activeTabCurrentGrants: [String]
+    ) -> [ChromeMV3ExtensionManagerPermissionControl] {
+        let grantedAPIs = Set(grantedOptionalPermissions)
+        let grantedHosts = Set(grantedOptionalHostPermissions)
+        let gateBlocked = promptGate.blockers.first?.diagnostic
+        var controls: [ChromeMV3ExtensionManagerPermissionControl] = []
+        for permission in uniqueSortedExtensionManager(optionalPermissions) {
+            let granted = grantedAPIs.contains(permission)
+            controls.append(
+                control(
+                    kind:
+                        granted
+                            ? .revokeOptionalAPIPermission
+                            : .requestOptionalAPIPermission,
+                    value: permission,
+                    title: granted ? "Revoke \(permission)" : "Request \(permission)",
+                    available:
+                        granted
+                            || promptGate.canPromptDeveloperPreview,
+                    blockerReason: granted ? nil : gateBlocked,
+                    diagnostics: [
+                        granted
+                            ? "Optional API permission is currently granted and can be revoked explicitly."
+                            : "Optional API permission can be requested only through an explicit prompt.",
+                    ]
+                )
+            )
+        }
+        for origin in uniqueSortedExtensionManager(optionalHostPermissions) {
+            let granted = grantedHosts.contains(origin)
+            controls.append(
+                control(
+                    kind:
+                        granted
+                            ? .revokeOptionalHostPermission
+                            : .requestOptionalHostPermission,
+                    value: origin,
+                    title: granted ? "Revoke \(origin)" : "Request \(origin)",
+                    available:
+                        granted
+                            || promptGate.canPromptDeveloperPreview,
+                    blockerReason: granted ? nil : gateBlocked,
+                    diagnostics: [
+                        granted
+                            ? "Optional host permission is currently granted and can be revoked explicitly."
+                            : "Optional host permission can be requested only through an explicit prompt.",
+                    ]
+                )
+            )
+        }
+        if activeTabCurrentGrants.isEmpty == false
+            || requiredPermissions.contains("activeTab")
+        {
+            controls.append(
+                control(
+                    kind: .clearActiveTabGrant,
+                    value: "activeTab",
+                    title: "Clear activeTab",
+                    available: activeTabCurrentGrants.isEmpty == false,
+                    blockerReason:
+                        activeTabCurrentGrants.isEmpty
+                            ? "No activeTab grant is currently recorded."
+                            : nil,
+                    diagnostics: [
+                        "activeTab grants are temporary and can be explicitly cleared from developer-preview manager state.",
+                    ]
+                )
+            )
+        }
+        return controls.sorted {
+            if $0.kind != $1.kind { return $0.kind < $1.kind }
+            return $0.value < $1.value
+        }
+    }
+
+    private static func control(
+        kind: ChromeMV3ExtensionManagerPermissionControlKind,
+        value: String,
+        title: String,
+        available: Bool,
+        blockerReason: String?,
+        diagnostics: [String]
+    ) -> ChromeMV3ExtensionManagerPermissionControl {
+        ChromeMV3ExtensionManagerPermissionControl(
+            id: "\(kind.rawValue):\(value)",
+            kind: kind,
+            value: value,
+            title: title,
+            available: available,
+            blockerReason: blockerReason,
+            diagnostics:
+                uniqueSortedExtensionManager(
+                    diagnostics
+                        + [
+                            "Manager permission control requires explicit user action.",
+                            "Manager permission control does not wake a service worker.",
+                            "silentGrantAllowed is false.",
+                        ]
+                )
+        )
+    }
+}
+
+struct ChromeMV3ExtensionManagerPermissionActionResult:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var kind: ChromeMV3ExtensionManagerPermissionControlKind
+    var value: String
+    var succeeded: Bool
+    var returnedBoolean: Bool
+    var promptRequest: ChromeMV3PermissionPromptRequest?
+    var promptResult: ChromeMV3PermissionPromptResultRecord?
+    var promptLifecycleRecords:
+        [ChromeMV3PermissionPromptLifecycleRecord]
+    var runtimeSnapshot: ChromeMV3PermissionRuntimeStateOwnerSnapshot?
+    var eventDispatchRecord: ChromeMV3PermissionEventDispatchRecord?
+    var serviceWorkerWakeAttempted: Bool
+    var hiddenExtensionPageCreated: Bool
+    var diagnostics: [String]
 }
 
 struct ChromeMV3ExtensionManagerDetailViewModel:
@@ -1730,7 +1910,7 @@ enum ChromeMV3ExtensionManagerActionRunner {
     }
 }
 
-private extension ChromeMV3EndToEndInstallDiagnosticsReport {
+extension ChromeMV3EndToEndInstallDiagnosticsReport {
     var managerActiveManifestSummary: ChromeMV3ManifestSummary? {
         let active = generatedBundleVersionState.last {
             $0.state == .active || $0.state == .rollbackActive
@@ -1748,6 +1928,13 @@ struct ChromeMV3ExtensionManagerView: View {
         var onSelectExtension: ((String, String) -> Void)?
         var onRunAction:
             ((ChromeMV3ExtensionManagerActionKind, String, String) -> Void)?
+        var onRunPermissionControl:
+            ((
+                ChromeMV3ExtensionManagerPermissionControlKind,
+                String,
+                String,
+                String
+            ) -> Void)?
         var onCopyDiagnosticsJSON: ((String, String) -> Void)?
 
         var body: some View {
@@ -2207,6 +2394,30 @@ struct ChromeMV3ExtensionManagerView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+                if panel.controls.isEmpty == false {
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 150), spacing: 8)],
+                        alignment: .leading,
+                        spacing: 8
+                    ) {
+                        ForEach(panel.controls.prefix(8)) { control in
+                            Button(control.title) {
+                                onRunPermissionControl?(
+                                    control.kind,
+                                    detail.listItem.profileID,
+                                    detail.listItem.extensionID,
+                                    control.value
+                                )
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(
+                                control.available == false
+                                    || onRunPermissionControl == nil
+                            )
+                            .help(control.blockerReason ?? control.title)
+                        }
+                    }
                 }
             }
         }

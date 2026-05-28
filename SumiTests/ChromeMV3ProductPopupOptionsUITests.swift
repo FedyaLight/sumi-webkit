@@ -711,9 +711,15 @@ private final class FakePopupOptionsWebViewFactory:
         loadFileURL: URL,
         allowingReadAccessTo readAccessURL: URL,
         bridgeInstallation:
-            ChromeMV3PopupOptionsJSBridgeInstallation
+            ChromeMV3PopupOptionsJSBridgeInstallation,
+        permissionPromptPresenter:
+            ChromeMV3PermissionPromptPresenting?,
+        permissionEventDispatcher:
+            ChromeMV3PermissionEventDispatching?
     ) throws -> ChromeMV3PopupOptionsWebViewHandle {
         lastBridgeInstallation = bridgeInstallation
+        _ = permissionPromptPresenter
+        _ = permissionEventDispatcher
         return try createWebView(
             loadFileURL: loadFileURL,
             allowingReadAccessTo: readAccessURL

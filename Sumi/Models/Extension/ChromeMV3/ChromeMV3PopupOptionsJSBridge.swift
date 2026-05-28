@@ -249,6 +249,7 @@ struct ChromeMV3PopupOptionsJSBridgeConfiguration:
     var surfaceID: String
     var surface: ChromeMV3ProductPopupOptionsSurface
     var extensionBaseURLString: String
+    var permissionStateRootPath: String?
     var moduleState: ChromeMV3ProfileHostModuleState
     var bridgeAvailable: Bool
     var popupOptionsJSBridgeAvailableInDeveloperPreview: Bool
@@ -288,6 +289,7 @@ struct ChromeMV3PopupOptionsJSBridgeConfiguration:
             surface: launchRecord.surface,
             extensionBaseURLString:
                 "chrome-extension://\(launchRecord.extensionID)/",
+            permissionStateRootPath: launchRecord.managerStoreRootPath,
             moduleState: bridgeAvailable ? .enabled : .disabled,
             bridgeAvailable: bridgeAvailable,
             popupOptionsJSBridgeAvailableInDeveloperPreview:
@@ -437,6 +439,10 @@ struct ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot:
     var permissionPromptRequests: [ChromeMV3PermissionPromptRequest]
     var permissionPromptResults:
         [ChromeMV3PermissionPromptResultRecord]
+    var permissionPromptLifecycleRecords:
+        [ChromeMV3PermissionPromptLifecycleRecord]
+    var permissionEventDispatches:
+        [ChromeMV3PermissionEventDispatchRecord]
     var contentScriptEndpointSummary:
         ChromeMV3ContentScriptEndpointRegistrySummary?
     var listenerRegistryClearedOnTeardown: Bool
@@ -538,10 +544,16 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         ChromeMV3PermissionPromptGateRecord
     private let permissionStateStore:
         ChromeMV3DeveloperPreviewPermissionStateStore?
+    private let permissionEventDispatcher:
+        ChromeMV3PermissionEventDispatching?
     private var permissionPromptRequests:
         [ChromeMV3PermissionPromptRequest] = []
     private var permissionPromptResults:
         [ChromeMV3PermissionPromptResultRecord] = []
+    private var permissionPromptLifecycleRecords:
+        [ChromeMV3PermissionPromptLifecycleRecord] = []
+    private var permissionEventDispatches:
+        [ChromeMV3PermissionEventDispatchRecord] = []
     private var permissionPersistenceDiagnostics: [String] = []
     private var callRecords: [ChromeMV3PopupOptionsJSBridgeCallRecord] = []
     private var onChangedPayloads: [ChromeMV3StorageOnChangedEventPayload] = []
@@ -555,12 +567,26 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         permissionPromptPresenter:
             ChromeMV3PermissionPromptPresenting? = nil,
         permissionStateStore:
-            ChromeMV3DeveloperPreviewPermissionStateStore? = nil
+            ChromeMV3DeveloperPreviewPermissionStateStore? = nil,
+        permissionEventDispatcher:
+            ChromeMV3PermissionEventDispatching? = nil
     ) {
         self.configuration = configuration
         self.contentScriptEndpointRegistry = contentScriptEndpointRegistry
         self.permissionPromptPresenter = permissionPromptPresenter
-        self.permissionStateStore = permissionStateStore
+        if let permissionStateStore {
+            self.permissionStateStore = permissionStateStore
+        } else if let rootPath = configuration.permissionStateRootPath,
+                  rootPath.isEmpty == false
+        {
+            self.permissionStateStore =
+                ChromeMV3DeveloperPreviewPermissionStateStore(
+                    rootURL: URL(fileURLWithPath: rootPath, isDirectory: true)
+                )
+        } else {
+            self.permissionStateStore = nil
+        }
+        self.permissionEventDispatcher = permissionEventDispatcher
         self.permissionPromptGate =
             ChromeMV3PermissionPromptGateRecord.evaluate(
                 moduleEnabled: configuration.moduleState == .enabled,
@@ -585,7 +611,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                         ? .enabledModelTestFixture
                         : .disabledModule
             )
-        if let persisted = permissionStateStore?.loadRecord(
+        if let persisted = self.permissionStateStore?.loadRecord(
             profileID: configuration.profileID,
             extensionID: configuration.extensionID
         ) {
@@ -595,6 +621,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 )
             self.permissionPromptRequests = persisted.promptRequests
             self.permissionPromptResults = persisted.promptResults
+            self.permissionPromptLifecycleRecords =
+                persisted.promptLifecycleRecords
             self.permissionPersistenceDiagnostics = [
                 "Loaded persisted developer-preview permission state for popup/options bridge.",
             ]
@@ -633,6 +661,13 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 profileID: configuration.profileID,
                 includeProductNormalTab: false
             )
+        permissionEventDispatcher?.registerChromeMV3PermissionEventPage(
+            surfaceID: configuration.surfaceID,
+            profileID: configuration.profileID,
+            extensionID: configuration.extensionID,
+            surface: configuration.surface,
+            dispatchHandler: nil
+        )
     }
 
     var diagnosticsSnapshot:
@@ -673,6 +708,14 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             permissionPromptGate: permissionPromptGate,
             permissionPromptRequests: permissionPromptRequests,
             permissionPromptResults: permissionPromptResults,
+            permissionPromptLifecycleRecords:
+                permissionPromptLifecycleRecords,
+            permissionEventDispatches:
+                uniquePermissionEventDispatches(
+                    permissionEventDispatches
+                        + (permissionEventDispatcher?
+                            .permissionEventDispatchRecords ?? [])
+                ),
             contentScriptEndpointSummary:
                 contentScriptEndpointRegistry?.summary,
             listenerRegistryClearedOnTeardown: tornDown,
@@ -807,6 +850,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             return permissionsRequest(request)
         case ("permissions", "remove"):
             return permissionsRemove(request)
+        case ("permissions", "__sumiPermissionEventListenerCount"):
+            return permissionsEventListenerCountChanged(request)
         case ("tabs", "query"):
             return tabsQuery(request)
         case ("tabs", "sendMessage"):
@@ -872,7 +917,13 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         syntheticPortIDs.removeAll()
         permissionPromptRequests.removeAll()
         permissionPromptResults.removeAll()
+        permissionPromptLifecycleRecords.removeAll()
+        permissionEventDispatches.removeAll()
         permissionPersistenceDiagnostics.removeAll()
+        permissionEventDispatcher?
+            .unregisterChromeMV3PermissionEventPage(
+                surfaceID: configuration.surfaceID
+            )
         tabRegistry.tearDown()
         tornDown = true
     }
@@ -1137,6 +1188,13 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 gateRecord: permissionPromptGate
             )
             permissionPromptRequests.append(promptRequest)
+            appendPromptLifecycle(
+                promptRequest,
+                stage: .promptCreated,
+                diagnostics: [
+                    "chrome.permissions.request created a developer-preview prompt request record.",
+                ]
+            )
 
             guard requestResult.wouldRequirePrompt,
                   promptRequest.promptEligibility.canPrompt
@@ -1147,6 +1205,12 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     diagnostics: promptRequest.promptEligibility.diagnostics
                 )
                 permissionPromptResults.append(blockedResult)
+                appendPromptLifecycle(
+                    promptRequest,
+                    stage: .blocked,
+                    resultDisposition: .blocked,
+                    diagnostics: blockedResult.diagnostics
+                )
                 let diagnostic = permissionRequestFailure(
                     result: application.result,
                     promptResult: .notProvided,
@@ -1173,6 +1237,12 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     ]
                 )
                 permissionPromptResults.append(unavailable)
+                appendPromptLifecycle(
+                    promptRequest,
+                    stage: .blocked,
+                    resultDisposition: .unavailable,
+                    diagnostics: unavailable.diagnostics
+                )
                 let application = permissionRuntimeOwner.request(input: input)
                 let diagnostic = permissionRequestFailure(
                     result: application.result,
@@ -1192,10 +1262,23 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 )
             }
 
+            appendPromptLifecycle(
+                promptRequest,
+                stage: .promptPresented,
+                diagnostics: [
+                    "Developer-preview permission prompt presenter was invoked.",
+                ]
+            )
             let promptResultRecord =
                 permissionPromptPresenter
                 .presentChromeMV3PermissionPrompt(promptRequest)
             permissionPromptResults.append(promptResultRecord)
+            appendPromptLifecycle(
+                promptRequest,
+                stage: lifecycleStage(for: promptResultRecord.disposition),
+                resultDisposition: promptResultRecord.disposition,
+                diagnostics: promptResultRecord.diagnostics
+            )
 
             switch promptResultRecord.disposition {
             case .accepted:
@@ -1203,6 +1286,30 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     input: input,
                     modeledPromptResult: .accepted,
                     productPromptResult: promptResultRecord
+                )
+                let dispatchRecord = dispatchPermissionEventIfNeeded(
+                    application.result.eventPayloadIfAccepted,
+                    sourceSurfaceID: configuration.surfaceID
+                )
+                invalidateContentScriptEndpoints(
+                    reason:
+                        "chrome.permissions.request granted host/API access for popup/options bridge."
+                )
+                appendPromptLifecycle(
+                    promptRequest,
+                    stage: .downstreamInvalidated,
+                    resultDisposition: .accepted,
+                    diagnostics:
+                        dispatchRecord?.diagnostics
+                        ?? [
+                            "No permissions.onAdded dispatch payload was available for downstream invalidation diagnostics.",
+                        ]
+                )
+                appendPromptLifecycle(
+                    promptRequest,
+                    stage: .resultPersisted,
+                    resultDisposition: .accepted,
+                    diagnostics: application.diagnostics
                 )
                 persistPermissionState(diagnostics: application.diagnostics)
                 return response(
@@ -1214,6 +1321,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     diagnostics:
                         application.diagnostics
                             + promptResultRecord.diagnostics
+                            + (dispatchRecord?.diagnostics ?? [])
                             + [
                                 "permissions.request used an explicit developer-preview product prompt result.",
                             ]
@@ -1223,6 +1331,12 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     input: input,
                     modeledPromptResult: .denied,
                     productPromptResult: promptResultRecord
+                )
+                appendPromptLifecycle(
+                    promptRequest,
+                    stage: .resultPersisted,
+                    resultDisposition: .denied,
+                    diagnostics: application.diagnostics
                 )
                 persistPermissionState(diagnostics: application.diagnostics)
                 return response(
@@ -1242,6 +1356,12 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     input: input,
                     modeledPromptResult: .dismissed,
                     productPromptResult: promptResultRecord
+                )
+                appendPromptLifecycle(
+                    promptRequest,
+                    stage: .resultPersisted,
+                    resultDisposition: .dismissed,
+                    diagnostics: application.diagnostics
                 )
                 persistPermissionState(diagnostics: application.diagnostics)
                 return response(
@@ -1263,6 +1383,12 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     promptResult: .notProvided,
                     promptRequest: promptRequest,
                     promptResultRecord: promptResultRecord
+                )
+                appendPromptLifecycle(
+                    promptRequest,
+                    stage: .resultPersisted,
+                    resultDisposition: promptResultRecord.disposition,
+                    diagnostics: diagnostic.diagnostics
                 )
                 persistPermissionState(diagnostics: diagnostic.diagnostics)
                 return response(
@@ -1304,6 +1430,10 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 reason:
                     "chrome.permissions.remove revoked host/API access for popup/options bridge."
             )
+            let dispatchRecord = dispatchPermissionEventIfNeeded(
+                application.result.eventPayloadIfApplied,
+                sourceSurfaceID: configuration.surfaceID
+            )
             persistPermissionState(diagnostics: application.diagnostics)
             return response(
                 request: request,
@@ -1311,9 +1441,62 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 payload: .bool(true),
                 permissionEventPayload:
                     application.result.eventPayloadIfApplied,
-                diagnostics: application.diagnostics
+                diagnostics:
+                    application.diagnostics
+                    + (dispatchRecord?.diagnostics ?? [])
             )
         }
+    }
+
+    private func permissionsEventListenerCountChanged(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        guard request.arguments.count == 2,
+              let eventName = request.arguments[0].stringValue,
+              let listenerCount = request.arguments[1].intValue
+        else {
+            return invalidArguments(
+                request,
+                "permissions event listener count updates require eventName and listenerCount."
+            )
+        }
+        let eventKind: ChromeMV3PermissionsAPIEventKind?
+        switch eventName {
+        case "onAdded":
+            eventKind = .onAdded
+        case "onRemoved":
+            eventKind = .onRemoved
+        default:
+            eventKind = nil
+        }
+        guard let eventKind else {
+            return invalidArguments(
+                request,
+                "Unsupported permissions event listener name."
+            )
+        }
+        permissionEventDispatcher?
+            .updateChromeMV3PermissionEventListenerCount(
+                surfaceID: configuration.surfaceID,
+                profileID: configuration.profileID,
+                extensionID: configuration.extensionID,
+                surface: configuration.surface,
+                eventKind: eventKind,
+                listenerCount: listenerCount
+            )
+        return response(
+            request: request,
+            succeeded: true,
+            payload: .object([
+                "eventName": .string(eventName),
+                "listenerCount": .number(Double(max(0, listenerCount))),
+                "registeredOpenPage": .bool(permissionEventDispatcher != nil),
+            ]),
+            diagnostics: [
+                "Popup/options page reported permissions.\(eventName) listener count.",
+                "Listener tracking is used only for already-open page event dispatch.",
+            ]
+        )
     }
 
     private func tabsQuery(
@@ -1736,6 +1919,70 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         )
     }
 
+    private func appendPromptLifecycle(
+        _ request: ChromeMV3PermissionPromptRequest,
+        stage: ChromeMV3PermissionPromptLifecycleStage,
+        resultDisposition:
+            ChromeMV3PermissionPromptResultDisposition? = nil,
+        diagnostics: [String]
+    ) {
+        permissionPromptLifecycleRecords.append(
+            ChromeMV3PermissionPromptLifecycleRecord(
+                request: request,
+                stage: stage,
+                resultDisposition: resultDisposition,
+                diagnostics: diagnostics
+            )
+        )
+        permissionPromptLifecycleRecords.sort {
+            if $0.sequence != $1.sequence {
+                return $0.sequence < $1.sequence
+            }
+            if $0.requestID != $1.requestID {
+                return $0.requestID < $1.requestID
+            }
+            return $0.stage < $1.stage
+        }
+    }
+
+    private func lifecycleStage(
+        for disposition: ChromeMV3PermissionPromptResultDisposition
+    ) -> ChromeMV3PermissionPromptLifecycleStage {
+        switch disposition {
+        case .accepted:
+            return .accepted
+        case .denied:
+            return .denied
+        case .dismissed:
+            return .dismissed
+        case .blocked, .unavailable:
+            return .blocked
+        }
+    }
+
+    private func dispatchPermissionEventIfNeeded(
+        _ payload: ChromeMV3PermissionsAPIEventPayload?,
+        sourceSurfaceID: String?
+    ) -> ChromeMV3PermissionEventDispatchRecord? {
+        guard let payload else { return nil }
+        guard let permissionEventDispatcher else {
+            let registry = ChromeMV3PermissionEventDispatchRegistry()
+            let record = registry.dispatchChromeMV3PermissionEvent(
+                payload,
+                sourceSurfaceID: sourceSurfaceID
+            )
+            permissionEventDispatches.append(record)
+            return record
+        }
+        let record = permissionEventDispatcher
+            .dispatchChromeMV3PermissionEvent(
+                payload,
+                sourceSurfaceID: sourceSurfaceID
+            )
+        permissionEventDispatches.append(record)
+        return record
+    }
+
     private func persistPermissionState(diagnostics: [String]) {
         guard let permissionStateStore else { return }
         do {
@@ -1744,6 +1991,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 gateRecord: permissionPromptGate,
                 promptRequests: permissionPromptRequests,
                 promptResults: permissionPromptResults,
+                promptLifecycleRecords: permissionPromptLifecycleRecords,
                 diagnostics: diagnostics
             )
             permissionPersistenceDiagnostics =
@@ -2447,18 +2695,32 @@ enum ChromeMV3PopupOptionsJSShimSource {
             });
           }
 
-          function makeEvent() {
+          function notifyPermissionListenerCount(eventName, count) {
+            if (eventName !== "onAdded" && eventName !== "onRemoved") {
+              return;
+            }
+            bridgePost(
+              "permissions",
+              "__sumiPermissionEventListenerCount",
+              "fireAndForget",
+              [eventName, count]
+            ).catch(() => {});
+          }
+
+          function makeEvent(eventName) {
             const listeners = [];
             return Object.freeze({
               addListener(listener) {
                 if (typeof listener === "function" && !listeners.includes(listener)) {
                   listeners.push(listener);
+                  notifyPermissionListenerCount(eventName, listeners.length);
                 }
               },
               removeListener(listener) {
                 const index = listeners.indexOf(listener);
                 if (index >= 0) {
                   listeners.splice(index, 1);
+                  notifyPermissionListenerCount(eventName, listeners.length);
                 }
               },
               hasListener(listener) {
@@ -2474,9 +2736,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
             });
           }
 
-          const storageOnChanged = makeEvent();
-          const permissionsOnAdded = makeEvent();
-          const permissionsOnRemoved = makeEvent();
+          const storageOnChanged = makeEvent("storage.onChanged");
+          const permissionsOnAdded = makeEvent("onAdded");
+          const permissionsOnRemoved = makeEvent("onRemoved");
 
           function normalizeOnChangedPayload(payload) {
             if (!payload || payload.areaName !== "local" || !Array.isArray(payload.changes)) {
@@ -2526,16 +2788,37 @@ enum ChromeMV3PopupOptionsJSShimSource {
             if (!payload) {
               return;
             }
-            const eventPayload = {
-              permissions: payload.permissions,
-              origins: payload.origins
-            };
-            if (payload.eventKind === "onAdded") {
-              permissionsOnAdded.__sumiDispatch(eventPayload);
-            } else if (payload.eventKind === "onRemoved") {
-              permissionsOnRemoved.__sumiDispatch(eventPayload);
-            }
+            globalThis.__sumiDispatchChromeMV3PermissionEvent(payload);
           }
+
+          Object.defineProperty(globalThis, "__sumiDispatchChromeMV3PermissionEvent", {
+            value(rawPayload) {
+              const payload = normalizePermissionEvent(rawPayload);
+              if (!payload) {
+                return { dispatched: false, listenerCount: 0, eventKind: "" };
+              }
+              const target = payload.eventKind === "onAdded"
+                ? permissionsOnAdded
+                : (payload.eventKind === "onRemoved" ? permissionsOnRemoved : null);
+              if (!target) {
+                return { dispatched: false, listenerCount: 0, eventKind: payload.eventKind };
+              }
+              const listenerCount = target.hasListeners() ? 1 : 0;
+              if (!target.hasListeners()) {
+                return { dispatched: false, listenerCount: 0, eventKind: payload.eventKind };
+              }
+              target.__sumiDispatch({
+                permissions: payload.permissions,
+                origins: payload.origins
+              });
+              return {
+                dispatched: true,
+                listenerCount,
+                eventKind: payload.eventKind
+              };
+            },
+            configurable: false
+          });
 
           function optionalKeysAndCallback(first, second) {
             if (typeof first === "function") {
@@ -3012,6 +3295,22 @@ private func uniqueBlockedDiagnostics(
         let key = "\(diagnostic.namespace).\(diagnostic.methodName)"
         if seen.insert(key).inserted {
             unique.append(diagnostic)
+        }
+    }
+    return unique
+}
+
+private func uniquePermissionEventDispatches(
+    _ records: [ChromeMV3PermissionEventDispatchRecord]
+) -> [ChromeMV3PermissionEventDispatchRecord] {
+    var seen: Set<String> = []
+    var unique: [ChromeMV3PermissionEventDispatchRecord] = []
+    for record in records.sorted(by: {
+        if $0.sequence != $1.sequence { return $0.sequence < $1.sequence }
+        return $0.id < $1.id
+    }) {
+        if seen.insert(record.id).inserted {
+            unique.append(record)
         }
     }
     return unique

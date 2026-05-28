@@ -489,6 +489,7 @@ struct ChromeMV3ProductPopupOptionsLaunchRecord:
     var declaredPath: String?
     var normalizedPath: String?
     var generatedBundleVersionID: String?
+    var managerStoreRootPath: String?
     var generatedBundleRootPath: String?
     var generatedRewrittenBundlePath: String?
     var generatedResourcePath: String?
@@ -649,6 +650,7 @@ enum ChromeMV3ProductPopupOptionsLaunchPlanner {
         guard let lifecycleRecord else {
             blockers.append(.recordMissing)
             return record(
+                rootURL: rootURL,
                 profileID: profileID,
                 extensionID: extensionID,
                 surface: surface,
@@ -762,6 +764,7 @@ enum ChromeMV3ProductPopupOptionsLaunchPlanner {
         }
 
         return record(
+            rootURL: rootURL,
             profileID: lifecycleRecord.profileID,
             extensionID: lifecycleRecord.extensionID,
             surface: surface,
@@ -780,6 +783,7 @@ enum ChromeMV3ProductPopupOptionsLaunchPlanner {
     }
 
     private static func record(
+        rootURL: URL,
         profileID: String,
         extensionID: String,
         surface: ChromeMV3ProductPopupOptionsSurface,
@@ -819,6 +823,7 @@ enum ChromeMV3ProductPopupOptionsLaunchPlanner {
             declaredPath: declaration?.declaredPath,
             normalizedPath: declaration?.normalizedPath,
             generatedBundleVersionID: activeVersion?.id,
+            managerStoreRootPath: rootURL.path,
             generatedBundleRootPath: activeVersion?.generatedBundleRootPath,
             generatedRewrittenBundlePath: generatedRootPath,
             generatedResourcePath: declaration?.generatedResourcePath,
@@ -1136,7 +1141,11 @@ protocol ChromeMV3PopupOptionsWebViewFactory: AnyObject {
         loadFileURL: URL,
         allowingReadAccessTo readAccessURL: URL,
         bridgeInstallation:
-            ChromeMV3PopupOptionsJSBridgeInstallation
+            ChromeMV3PopupOptionsJSBridgeInstallation,
+        permissionPromptPresenter:
+            ChromeMV3PermissionPromptPresenting?,
+        permissionEventDispatcher:
+            ChromeMV3PermissionEventDispatching?
     ) throws -> ChromeMV3PopupOptionsWebViewHandle
 }
 
@@ -1146,9 +1155,15 @@ extension ChromeMV3PopupOptionsWebViewFactory {
         loadFileURL: URL,
         allowingReadAccessTo readAccessURL: URL,
         bridgeInstallation:
-            ChromeMV3PopupOptionsJSBridgeInstallation
+            ChromeMV3PopupOptionsJSBridgeInstallation,
+        permissionPromptPresenter:
+            ChromeMV3PermissionPromptPresenting? = nil,
+        permissionEventDispatcher:
+            ChromeMV3PermissionEventDispatching? = nil
     ) throws -> ChromeMV3PopupOptionsWebViewHandle {
         _ = bridgeInstallation
+        _ = permissionPromptPresenter
+        _ = permissionEventDispatcher
         return try createWebView(
             loadFileURL: loadFileURL,
             allowingReadAccessTo: readAccessURL
@@ -1164,10 +1179,22 @@ final class ChromeMV3ProductPopupOptionsHostController {
     }
 
     private let factory: ChromeMV3PopupOptionsWebViewFactory
+    private let permissionPromptPresenter:
+        ChromeMV3PermissionPromptPresenting?
+    private let permissionEventDispatcher:
+        ChromeMV3PermissionEventDispatching?
     private var sessions: [String: ActiveSession] = [:]
 
-    init(factory: ChromeMV3PopupOptionsWebViewFactory) {
+    init(
+        factory: ChromeMV3PopupOptionsWebViewFactory,
+        permissionPromptPresenter:
+            ChromeMV3PermissionPromptPresenting? = nil,
+        permissionEventDispatcher:
+            ChromeMV3PermissionEventDispatching? = nil
+    ) {
         self.factory = factory
+        self.permissionPromptPresenter = permissionPromptPresenter
+        self.permissionEventDispatcher = permissionEventDispatcher
     }
 
     var activeSessionCount: Int {
@@ -1237,7 +1264,9 @@ final class ChromeMV3ProductPopupOptionsHostController {
             let handle = try factory.createWebView(
                 loadFileURL: fileURL,
                 allowingReadAccessTo: readAccessURL,
-                bridgeInstallation: bridgeInstallation
+                bridgeInstallation: bridgeInstallation,
+                permissionPromptPresenter: permissionPromptPresenter,
+                permissionEventDispatcher: permissionEventDispatcher
             )
             var opened = launchRecord
             opened.hostCreationState = .created
@@ -1521,12 +1550,18 @@ final class ChromeMV3ProductPopupOptionsWKWebViewFactory:
         loadFileURL: URL,
         allowingReadAccessTo readAccessURL: URL,
         bridgeInstallation:
-            ChromeMV3PopupOptionsJSBridgeInstallation
+            ChromeMV3PopupOptionsJSBridgeInstallation,
+        permissionPromptPresenter:
+            ChromeMV3PermissionPromptPresenting?,
+        permissionEventDispatcher:
+            ChromeMV3PermissionEventDispatching?
     ) throws -> ChromeMV3PopupOptionsWebViewHandle {
         ChromeMV3ProductPopupOptionsWKWebViewHandle(
             loadFileURL: loadFileURL,
             readAccessURL: readAccessURL,
-            bridgeInstallation: bridgeInstallation
+            bridgeInstallation: bridgeInstallation,
+            permissionPromptPresenter: permissionPromptPresenter,
+            permissionEventDispatcher: permissionEventDispatcher
         )
     }
 }
@@ -1560,7 +1595,11 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         loadFileURL: URL,
         readAccessURL: URL,
         bridgeInstallation:
-            ChromeMV3PopupOptionsJSBridgeInstallation
+            ChromeMV3PopupOptionsJSBridgeInstallation,
+        permissionPromptPresenter:
+            ChromeMV3PermissionPromptPresenting?,
+        permissionEventDispatcher:
+            ChromeMV3PermissionEventDispatching?
     ) {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
@@ -1570,7 +1609,9 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
            let scriptSource = bridgeInstallation.scriptSource
         {
             let handler = ChromeMV3PopupOptionsJSBridgeHandler(
-                configuration: bridgeInstallation.configuration
+                configuration: bridgeInstallation.configuration,
+                permissionPromptPresenter: permissionPromptPresenter,
+                permissionEventDispatcher: permissionEventDispatcher
             )
             let scriptHandler =
                 ChromeMV3PopupOptionsWKScriptMessageHandler(
@@ -1606,6 +1647,36 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
             allowingReadAccessTo: readAccessURL
         )
         self.webView = webView
+        if bridgeInstallation.bridgeAvailable {
+            permissionEventDispatcher?
+                .registerChromeMV3PermissionEventPage(
+                    surfaceID: bridgeInstallation.configuration.surfaceID,
+                    profileID: bridgeInstallation.configuration.profileID,
+                    extensionID: bridgeInstallation.configuration.extensionID,
+                    surface: bridgeInstallation.configuration.surface,
+                    dispatchHandler: { [weak webView] payload in
+                        guard let webView else { return false }
+                        guard
+                            let data = try? JSONSerialization.data(
+                                withJSONObject: [
+                                    "eventKind": payload.eventKind.rawValue,
+                                    "permissions": payload.permissions,
+                                    "origins": payload.origins,
+                                    "extensionID": payload.extensionID,
+                                    "profileID": payload.profileID,
+                                ],
+                                options: [.sortedKeys]
+                            ),
+                            let json = String(data: data, encoding: .utf8)
+                        else { return false }
+                        webView.evaluateJavaScript(
+                            "globalThis.__sumiDispatchChromeMV3PermissionEvent && globalThis.__sumiDispatchChromeMV3PermissionEvent(\(json));",
+                            completionHandler: nil
+                        )
+                        return true
+                    }
+                )
+        }
     }
 
     var popupOptionsBridgeDiagnosticsSnapshot:

@@ -432,7 +432,9 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         let handle = ChromeMV3ProductPopupOptionsWKWebViewHandle(
             loadFileURL: htmlURL,
             readAccessURL: root,
-            bridgeInstallation: installation
+            bridgeInstallation: installation,
+            permissionPromptPresenter: nil,
+            permissionEventDispatcher: nil
         )
         defer { handle.tearDown() }
 
@@ -510,6 +512,7 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             surfaceID: "\(profileID):\(extensionID):\(surface.rawValue)",
             surface: surface,
             extensionBaseURLString: "chrome-extension://\(extensionID)/",
+            permissionStateRootPath: nil,
             moduleState: moduleState,
             bridgeAvailable: bridgeAvailable,
             popupOptionsJSBridgeAvailableInDeveloperPreview:
