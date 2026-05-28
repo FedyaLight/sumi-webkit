@@ -78,6 +78,7 @@ struct ChromeMV3ManifestSummary: Codable, Equatable {
     var permissions: [String]
     var optionalPermissions: [String]
     var hostPermissions: [String]
+    var optionalHostPermissions: [String]
     var contentScriptCount: Int
     var hasAction: Bool
     var hasOptionsPage: Bool
@@ -88,6 +89,163 @@ struct ChromeMV3ManifestSummary: Codable, Equatable {
     var commandCount: Int
     var minimumChromeVersion: String?
     var hasBrowserSpecificSettings: Bool
+
+    init(
+        manifestVersion: Int,
+        name: String,
+        version: String,
+        description: String?,
+        backgroundServiceWorker: String?,
+        backgroundType: String?,
+        permissions: [String],
+        optionalPermissions: [String],
+        hostPermissions: [String],
+        optionalHostPermissions: [String] = [],
+        contentScriptCount: Int,
+        hasAction: Bool,
+        hasOptionsPage: Bool,
+        webAccessibleResourceCount: Int,
+        hasExternallyConnectable: Bool,
+        hasDeclarativeNetRequest: Bool,
+        hasSidePanel: Bool,
+        commandCount: Int,
+        minimumChromeVersion: String?,
+        hasBrowserSpecificSettings: Bool
+    ) {
+        self.manifestVersion = manifestVersion
+        self.name = name
+        self.version = version
+        self.description = description
+        self.backgroundServiceWorker = backgroundServiceWorker
+        self.backgroundType = backgroundType
+        self.permissions = permissions
+        self.optionalPermissions = optionalPermissions
+        self.hostPermissions = hostPermissions
+        self.optionalHostPermissions = optionalHostPermissions
+        self.contentScriptCount = contentScriptCount
+        self.hasAction = hasAction
+        self.hasOptionsPage = hasOptionsPage
+        self.webAccessibleResourceCount = webAccessibleResourceCount
+        self.hasExternallyConnectable = hasExternallyConnectable
+        self.hasDeclarativeNetRequest = hasDeclarativeNetRequest
+        self.hasSidePanel = hasSidePanel
+        self.commandCount = commandCount
+        self.minimumChromeVersion = minimumChromeVersion
+        self.hasBrowserSpecificSettings = hasBrowserSpecificSettings
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case manifestVersion
+        case name
+        case version
+        case description
+        case backgroundServiceWorker
+        case backgroundType
+        case permissions
+        case optionalPermissions
+        case hostPermissions
+        case optionalHostPermissions
+        case contentScriptCount
+        case hasAction
+        case hasOptionsPage
+        case webAccessibleResourceCount
+        case hasExternallyConnectable
+        case hasDeclarativeNetRequest
+        case hasSidePanel
+        case commandCount
+        case minimumChromeVersion
+        case hasBrowserSpecificSettings
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            manifestVersion: try container.decode(
+                Int.self,
+                forKey: .manifestVersion
+            ),
+            name: try container.decode(String.self, forKey: .name),
+            version: try container.decode(String.self, forKey: .version),
+            description:
+                try container.decodeIfPresent(String.self, forKey: .description),
+            backgroundServiceWorker:
+                try container.decodeIfPresent(
+                    String.self,
+                    forKey: .backgroundServiceWorker
+                ),
+            backgroundType:
+                try container.decodeIfPresent(
+                    String.self,
+                    forKey: .backgroundType
+                ),
+            permissions:
+                try container.decodeIfPresent(
+                    [String].self,
+                    forKey: .permissions
+                ) ?? [],
+            optionalPermissions:
+                try container.decodeIfPresent(
+                    [String].self,
+                    forKey: .optionalPermissions
+                ) ?? [],
+            hostPermissions:
+                try container.decodeIfPresent(
+                    [String].self,
+                    forKey: .hostPermissions
+                ) ?? [],
+            optionalHostPermissions:
+                try container.decodeIfPresent(
+                    [String].self,
+                    forKey: .optionalHostPermissions
+                ) ?? [],
+            contentScriptCount:
+                try container.decodeIfPresent(
+                    Int.self,
+                    forKey: .contentScriptCount
+                ) ?? 0,
+            hasAction:
+                try container.decodeIfPresent(Bool.self, forKey: .hasAction)
+                    ?? false,
+            hasOptionsPage:
+                try container.decodeIfPresent(
+                    Bool.self,
+                    forKey: .hasOptionsPage
+                ) ?? false,
+            webAccessibleResourceCount:
+                try container.decodeIfPresent(
+                    Int.self,
+                    forKey: .webAccessibleResourceCount
+                ) ?? 0,
+            hasExternallyConnectable:
+                try container.decodeIfPresent(
+                    Bool.self,
+                    forKey: .hasExternallyConnectable
+                ) ?? false,
+            hasDeclarativeNetRequest:
+                try container.decodeIfPresent(
+                    Bool.self,
+                    forKey: .hasDeclarativeNetRequest
+                ) ?? false,
+            hasSidePanel:
+                try container.decodeIfPresent(
+                    Bool.self,
+                    forKey: .hasSidePanel
+                ) ?? false,
+            commandCount:
+                try container.decodeIfPresent(Int.self, forKey: .commandCount)
+                    ?? 0,
+            minimumChromeVersion:
+                try container.decodeIfPresent(
+                    String.self,
+                    forKey: .minimumChromeVersion
+                ),
+            hasBrowserSpecificSettings:
+                try container.decodeIfPresent(
+                    Bool.self,
+                    forKey: .hasBrowserSpecificSettings
+                ) ?? false
+        )
+    }
 }
 
 struct ChromeMV3InstallReport: Codable, Equatable {
@@ -243,6 +401,7 @@ enum ChromeMV3InstallReporter {
             permissions: manifest.permissions,
             optionalPermissions: manifest.optionalPermissions,
             hostPermissions: manifest.hostPermissions,
+            optionalHostPermissions: manifest.optionalHostPermissions,
             contentScriptCount: manifest.contentScripts.count,
             hasAction: manifest.action != nil,
             hasOptionsPage: manifest.optionsPage != nil

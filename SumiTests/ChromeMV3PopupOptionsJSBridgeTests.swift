@@ -66,7 +66,7 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(callback.succeeded)
         XCTAssertTrue(callback.callbackWouldSetLastError)
         XCTAssertFalse(callback.promiseWouldReject)
-        XCTAssertEqual(callback.lastErrorCode, "noReceivingEnd")
+        XCTAssertEqual(callback.lastErrorCode, "hostPermissionMissing")
         XCTAssertTrue(port.succeeded)
         XCTAssertEqual(handler.diagnosticsSnapshot.portCount, 1)
         XCTAssertFalse(port.runtimeLoadable)
@@ -114,13 +114,17 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(set.serviceWorkerWakeAttempted)
     }
 
-    func testPermissionsModeledPopupOptionsFlow() throws {
+    func testPermissionsPromptPopupOptionsFlow() throws {
+        let presenter = ChromeMV3TestPermissionPromptPresenter(
+            disposition: .accepted
+        )
         let handler = ChromeMV3PopupOptionsJSBridgeHandler(
             configuration: configuration(
                 manifestPermissions: ["tabs"],
                 manifestOptionalPermissions: ["history"],
                 manifestOptionalHostPermissions: ["https://example.com/*"]
-            )
+            ),
+            permissionPromptPresenter: presenter
         )
 
         let containsBefore = handler.handle(request(
@@ -133,7 +137,6 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             methodName: "request",
             arguments: [.object([
                 "permissions": .array([.string("history")]),
-                "__sumiModeledPromptResult": .bool(true),
             ])]
         ))
         let requestOrigin = handler.handle(request(
@@ -141,7 +144,6 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             methodName: "request",
             arguments: [.object([
                 "origins": .array([.string("https://example.com/*")]),
-                "__sumiModeledPromptResult": .string("accepted"),
             ])]
         ))
         let allAfterGrant = handler.handle(request(
@@ -169,6 +171,12 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(stringArrayValue(allObject["permissions"]).contains("history"))
         XCTAssertTrue(stringArrayValue(allObject["origins"]).contains("https://example.com/*"))
         XCTAssertTrue(removePermission.succeeded)
+        XCTAssertEqual(presenter.presentedRequests.count, 2)
+        XCTAssertEqual(
+            handler.diagnosticsSnapshot.permissionPromptResults
+                .map(\.disposition),
+            [.accepted, .accepted]
+        )
         XCTAssertFalse(missingPrompt.succeeded)
         XCTAssertEqual(missingPrompt.lastErrorCode, "productUIUnavailable")
         XCTAssertTrue(missingPrompt.lastErrorMessage?.contains("permission UI") == true)
@@ -238,7 +246,11 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(handler.diagnosticsSnapshot.blockedAPIs.contains {
             $0.namespace == "scripting" && $0.methodName == "executeScript"
         })
-        let noEndpointConnect = handler.handle(request(
+        let hostHandler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration:
+                configuration(manifestHostPermissions: ["https://example.com/*"])
+        )
+        let noEndpointConnect = hostHandler.handle(request(
             namespace: "tabs",
             methodName: "connect",
             arguments: [.number(1)]
@@ -402,7 +414,10 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         <title>Popup Bridge</title>
         <main data-sumi-extension-page-fixture-marker="safe">Popup</main>
         """.write(to: htmlURL, atomically: true, encoding: .utf8)
-        let config = configuration(manifestPermissions: ["tabs"])
+        let config = configuration(
+            manifestPermissions: ["tabs"],
+            manifestHostPermissions: ["https://example.com/*"]
+        )
         let installation = ChromeMV3PopupOptionsJSBridgeInstallation(
             configuration: config,
             allowlist: config.allowlist,

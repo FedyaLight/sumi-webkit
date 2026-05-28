@@ -20,6 +20,7 @@ enum ChromeMV3ModeledPermissionPromptResult:
 {
     case accepted
     case denied
+    case dismissed
     case notProvided
 
     static func < (
@@ -64,6 +65,7 @@ enum ChromeMV3PermissionRuntimeEventKind:
     case activeTabGranted
     case permissionAdded
     case permissionDenied
+    case permissionDismissed
     case permissionRemoved
     case promptRequiredButProductUIUnavailable
 
@@ -290,6 +292,8 @@ struct ChromeMV3PermissionRuntimeTransactionRecord:
     var origins: [String]
     var returnedBoolean: Bool?
     var modeledPromptResult: ChromeMV3ModeledPermissionPromptResult?
+    var productPromptResult:
+        ChromeMV3PermissionPromptResultDisposition?
     var eventRecordIDs: [String]
     var diffRecordID: String?
     var diagnostics: [String]
@@ -302,6 +306,8 @@ struct ChromeMV3PermissionRuntimeTransactionRecord:
         origins: [String] = [],
         returnedBoolean: Bool? = nil,
         modeledPromptResult: ChromeMV3ModeledPermissionPromptResult? = nil,
+        productPromptResult:
+            ChromeMV3PermissionPromptResultDisposition? = nil,
         eventRecordIDs: [String] = [],
         diffRecordID: String? = nil,
         diagnostics: [String] = []
@@ -314,6 +320,7 @@ struct ChromeMV3PermissionRuntimeTransactionRecord:
         self.origins = Self.uniqueSorted(origins)
         self.returnedBoolean = returnedBoolean
         self.modeledPromptResult = modeledPromptResult
+        self.productPromptResult = productPromptResult
         self.eventRecordIDs = Self.uniqueSorted(eventRecordIDs)
         self.diffRecordID = diffRecordID
         self.diagnostics = Self.uniqueSorted(
@@ -333,6 +340,7 @@ struct ChromeMV3PermissionRuntimeTransactionRecord:
                     self.origins.joined(separator: ","),
                     returnedBoolean.map(String.init) ?? "no-bool",
                     modeledPromptResult?.rawValue ?? "no-modeled-result",
+                    productPromptResult?.rawValue ?? "no-product-result",
                 ]
         )
     }
@@ -614,7 +622,9 @@ struct ChromeMV3PermissionRuntimeStateOwner:
     mutating func request(
         input: ChromeMV3PermissionsAPIRequestInput,
         modeledPromptResult:
-            ChromeMV3ModeledPermissionPromptResult = .notProvided
+            ChromeMV3ModeledPermissionPromptResult = .notProvided,
+        productPromptResult:
+            ChromeMV3PermissionPromptResultRecord? = nil
     ) -> ChromeMV3PermissionRuntimeRequestApplication {
         let beforePermission = permissionStore.exportSnapshot().summary
         let beforeActiveTab = activeTabStore.exportSnapshot().summary
@@ -669,7 +679,9 @@ struct ChromeMV3PermissionRuntimeStateOwner:
                     .map(\.value),
                 chromePermissionsEventPayload: payload,
                 diagnostics: [
-                    "Modeled prompt result accepted optional permission request.",
+                    productPromptResult == nil
+                        ? "Modeled prompt result accepted optional permission request."
+                        : "Developer-preview product prompt accepted optional permission request.",
                 ]
             )
             newEvents.append(event)
@@ -700,6 +712,30 @@ struct ChromeMV3PermissionRuntimeStateOwner:
                     .map(\.value),
                 diagnostics: [
                     "Modeled prompt result denied optional permission request.",
+                ]
+            )
+            newEvents.append(event)
+        } else if result.wouldGrantIfUserAccepted,
+                  modeledPromptResult == .dismissed,
+                  internalRuntimeMutationAllowed
+        {
+            returned = false
+            let event = makeEvent(
+                sequence: sequence,
+                eventKind: .permissionDismissed,
+                source: "chrome.permissions.request.dismissed",
+                permissions:
+                    result.itemDecisions
+                    .filter { $0.kind == .apiPermission }
+                    .map(\.value),
+                origins:
+                    result.itemDecisions
+                    .filter { $0.kind == .origin }
+                    .map(\.value),
+                diagnostics: [
+                    productPromptResult == nil
+                        ? "Modeled prompt result dismissed optional permission request."
+                        : "Developer-preview product prompt dismissed optional permission request.",
                 ]
             )
             newEvents.append(event)
@@ -765,6 +801,7 @@ struct ChromeMV3PermissionRuntimeStateOwner:
             origins: input.normalized.origins,
             returnedBoolean: returned,
             modeledPromptResult: modeledPromptResult,
+            productPromptResult: productPromptResult?.disposition,
             eventRecordIDs: newEvents.map(\.id),
             diffRecordID: diff?.id,
             diagnostics: result.diagnostics
@@ -1174,6 +1211,8 @@ struct ChromeMV3PermissionRuntimeStateOwner:
         returnedBoolean: Bool? = nil,
         modeledPromptResult:
             ChromeMV3ModeledPermissionPromptResult? = nil,
+        productPromptResult:
+            ChromeMV3PermissionPromptResultDisposition? = nil,
         eventRecordIDs: [String] = [],
         diffRecordID: String? = nil,
         diagnostics: [String] = []
@@ -1187,6 +1226,7 @@ struct ChromeMV3PermissionRuntimeStateOwner:
                 origins: origins,
                 returnedBoolean: returnedBoolean,
                 modeledPromptResult: modeledPromptResult,
+                productPromptResult: productPromptResult,
                 eventRecordIDs: eventRecordIDs,
                 diffRecordID: diffRecordID,
                 diagnostics: diagnostics
