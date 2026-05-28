@@ -33,6 +33,9 @@ enum ChromeMV3NativeMessagingRuntimeErrorCode:
     case processLaunchFailed
     case portClosed
     case truncatedFrame
+    case trustedHostApprovalRequired
+    case trustedHostDenied
+    case trustedHostRevoked
     case writeFailed
 
     static func < (
@@ -76,6 +79,12 @@ enum ChromeMV3NativeMessagingRuntimeErrorCode:
             return "Native messaging port is closed."
         case .truncatedFrame:
             return "Native host sent a truncated response."
+        case .trustedHostApprovalRequired:
+            return "Native messaging host requires developer-preview trusted-host approval."
+        case .trustedHostDenied:
+            return "Native messaging host was denied by developer-preview trusted-host policy."
+        case .trustedHostRevoked:
+            return "Native messaging host approval was revoked."
         case .writeFailed:
             return "Failed to write to native messaging host."
         }
@@ -580,6 +589,9 @@ struct ChromeMV3NativeMessagingFixtureLaunchPolicyResult:
     var processLaunchAllowedForFixtureHost: Bool
     var processLaunchAllowedInProduct: Bool
     var nativeMessagingAvailableInProduct: Bool
+    var trustedHostApprovedForDeveloperPreview: Bool
+    var trustedHostApprovalState: ChromeMV3NativeTrustedHostTrustState
+    var userConsentGrantedForTrustedHost: Bool
     var diagnostics: [String]
     var error: ChromeMV3NativeMessagingRuntimeError?
 }
@@ -596,6 +608,7 @@ struct ChromeMV3NativeMessagingRuntimeOwnerConfiguration:
     var explicitInternalNativeMessagingBridgeAllowed: Bool
     var permissionState: ChromeMV3NativeMessagingPermissionState
     var productPolicy: ChromeMV3NativeMessagingProductPolicy
+    var trustedHostApprovalRecords: [ChromeMV3NativeTrustedHostApprovalRecord]
     var nativeMessagingAvailableInProduct: Bool
     var processLaunchAllowedInProduct: Bool
     var normalTabRuntimeBridgeAvailable: Bool
@@ -627,7 +640,9 @@ struct ChromeMV3NativeMessagingRuntimeOwnerConfiguration:
         permissionState: ChromeMV3NativeMessagingPermissionState =
             .grantedByManifest,
         productPolicy: ChromeMV3NativeMessagingProductPolicy =
-            .blockedRuntimeDefault
+            .blockedRuntimeDefault,
+        trustedHostApprovalRecords:
+            [ChromeMV3NativeTrustedHostApprovalRecord] = []
     ) -> ChromeMV3NativeMessagingRuntimeOwnerConfiguration {
         ChromeMV3NativeMessagingRuntimeOwnerConfiguration(
             extensionID: extensionID,
@@ -643,6 +658,13 @@ struct ChromeMV3NativeMessagingRuntimeOwnerConfiguration:
                 explicitInternalNativeMessagingBridgeAllowed,
             permissionState: permissionState,
             productPolicy: productPolicy,
+            trustedHostApprovalRecords:
+                trustedHostApprovalRecords.sorted {
+                    if $0.hostName != $1.hostName {
+                        return $0.hostName < $1.hostName
+                    }
+                    return $0.approvalSequence < $1.approvalSequence
+                },
             nativeMessagingAvailableInProduct: false,
             processLaunchAllowedInProduct: false,
             normalTabRuntimeBridgeAvailable: false,
@@ -654,6 +676,7 @@ struct ChromeMV3NativeMessagingRuntimeOwnerConfiguration:
                 "Normal-tab runtime bridge remains unavailable.",
                 "Service-worker wake remains unavailable.",
                 "runtimeLoadable remains false.",
+                "Trusted-host approval is required before any fixture host launch.",
                 debugFixtureBuildAllowsProcessLaunch
                     ? "DEBUG build allows explicit fixture host launch after policy validation."
                     : "Non-DEBUG build blocks fixture host process launch.",
@@ -1121,6 +1144,19 @@ final class ChromeMV3NativeMessagingRuntimeOwner {
         }
     }
 
+    @discardableResult
+    func tearDownForTrustedHostRevoke(
+        hostName: String
+    ) -> [ChromeMV3NativeMessagingPortDisconnectResult] {
+        ports
+            .filter { $0.value.hostName == hostName }
+            .map(\.key)
+            .sorted()
+            .map {
+                disconnect(portID: $0, reason: .permissionRevoked)
+            }
+    }
+
     private func prepareLaunch(
         hostName: String,
         operationKind: ChromeMV3NativeMessagingOperationKind,
@@ -1132,6 +1168,11 @@ final class ChromeMV3NativeMessagingRuntimeOwner {
         diagnostics: [String]
     ) {
         let policy = lookupPolicy()
+        let lookup = policy.lookupHost(named: hostName)
+        let trustedRecord = trustedHostRecord(
+            hostName: hostName,
+            manifestSHA256: lookup.manifest?.canonicalJSONSHA256
+        )
         let preflight = ChromeMV3NativeMessagingPreflightEvaluator.evaluate(
             input: ChromeMV3NativeMessagingPreflightInput(
                 extensionID: configuration.extensionID,
@@ -1140,21 +1181,27 @@ final class ChromeMV3NativeMessagingRuntimeOwner {
                 operationKind: operationKind,
                 sourceContext: .extensionPage,
                 permissionState: configuration.permissionState,
-                productPolicy: configuration.productPolicy
+                productPolicy: configuration.productPolicy,
+                trustedHostPolicyRecord: trustedRecord
             ),
-            lookupPolicy: policy
+            lookupPolicy: policy,
+            lookupResult: lookup
         )
         let launch = launchPolicyResult(
             hostName: hostName,
-            manifest: preflight.hostLookupResult.manifest
+            manifest: preflight.hostLookupResult.manifest,
+            trustedRecord: trustedRecord
         )
         var diagnostics = uniqueSortedNative(
             configuration.diagnostics
                 + preflight.diagnostics
                 + launch.diagnostics
+                + (trustedRecord?.diagnostics ?? [
+                    "No trusted-host approval record is available to the runtime owner.",
+                ])
                 + [
                     "Operation \(operationID) evaluated by the internal native messaging runtime owner.",
-                    "Product native messaging remains unavailable.",
+                    "Product/public native messaging remains unavailable.",
                 ]
         )
 
@@ -1177,6 +1224,16 @@ final class ChromeMV3NativeMessagingRuntimeOwner {
             error = .make(.authorizationFailed, diagnostics)
         } else if preflight.authorizationResult.blockedByPolicy {
             error = .make(.productPolicyBlocked, diagnostics)
+        } else if trustedRecord?.trustState == .userDenied {
+            error = .make(.trustedHostDenied, diagnostics)
+        } else if trustedRecord?.trustState == .revoked {
+            error = .make(.trustedHostRevoked, diagnostics)
+        } else if launch.error?.code == .invalidExecutablePath {
+            error = launch.error
+        } else if preflight.trustedHostPolicyApproved == false {
+            error = .make(.trustedHostApprovalRequired, diagnostics)
+        } else if preflight.userConsentSatisfied == false {
+            error = .make(.productPolicyBlocked, diagnostics)
         } else if launch.processLaunchAllowedForFixtureHost == false {
             error = launch.error ?? .make(.invalidExecutablePath, diagnostics)
         } else {
@@ -1194,7 +1251,8 @@ final class ChromeMV3NativeMessagingRuntimeOwner {
 
     private func launchPolicyResult(
         hostName: String,
-        manifest: ChromeMV3NativeHostManifest?
+        manifest: ChromeMV3NativeHostManifest?,
+        trustedRecord: ChromeMV3NativeTrustedHostApprovalRecord?
     ) -> ChromeMV3NativeMessagingFixtureLaunchPolicyResult {
         guard let manifest,
               let path = manifest.path
@@ -1208,6 +1266,11 @@ final class ChromeMV3NativeMessagingRuntimeOwner {
                 processLaunchAllowedForFixtureHost: false,
                 processLaunchAllowedInProduct: false,
                 nativeMessagingAvailableInProduct: false,
+                trustedHostApprovedForDeveloperPreview: false,
+                trustedHostApprovalState:
+                    trustedRecord?.trustState ?? .unknown,
+                userConsentGrantedForTrustedHost:
+                    trustedRecord?.userConsentGranted ?? false,
                 diagnostics: ["No manifest path is available for launch."],
                 error: .make(.hostManifestMissing)
             )
@@ -1234,7 +1297,15 @@ final class ChromeMV3NativeMessagingRuntimeOwner {
             manifest.sourceLocation.kind == .explicitTestRoot
                 && manifest.sourceLocation.lookupAllowedInThisModel
         let nameMatches = manifest.name == hostName
-        let allowed = underRoot && executable && sourceAllowed && nameMatches
+        let trusted =
+            trustedRecord?.hostName == hostName
+                && trustedRecord?.extensionID == configuration.extensionID
+                && trustedRecord?.profileID == configuration.profileID
+                && trustedRecord?.manifestSHA256
+                    == manifest.canonicalJSONSHA256
+                && trustedRecord?.canLaunchTrustedFixtureHost == true
+        let safetyAllowed = underRoot && executable && sourceAllowed && nameMatches
+        let allowed = safetyAllowed && trusted
         let diagnostics = uniqueSortedNative([
             underRoot
                 ? "Resolved host executable remains under an explicit fixture root."
@@ -1248,6 +1319,9 @@ final class ChromeMV3NativeMessagingRuntimeOwner {
             nameMatches
                 ? "Host manifest name matches requested host."
                 : "Host manifest name does not match requested host.",
+            trusted
+                ? "Trusted-host approval record allows developer-preview fixture launch."
+                : "Trusted-host approval record is missing, revoked, denied, stale, or not launchable.",
             "processLaunchAllowedInProduct remains false.",
             "nativeMessagingAvailableInProduct remains false.",
         ])
@@ -1260,9 +1334,36 @@ final class ChromeMV3NativeMessagingRuntimeOwner {
             processLaunchAllowedForFixtureHost: allowed,
             processLaunchAllowedInProduct: false,
             nativeMessagingAvailableInProduct: false,
+            trustedHostApprovedForDeveloperPreview: trusted,
+            trustedHostApprovalState:
+                trustedRecord?.trustState ?? .unknown,
+            userConsentGrantedForTrustedHost:
+                trustedRecord?.userConsentGranted ?? false,
             diagnostics: diagnostics,
-            error: allowed ? nil : .make(.invalidExecutablePath, diagnostics)
+            error:
+                allowed
+                    ? nil
+                    : .make(
+                        safetyAllowed
+                            ? .trustedHostApprovalRequired
+                            : .invalidExecutablePath,
+                        diagnostics
+                    )
         )
+    }
+
+    private func trustedHostRecord(
+        hostName: String,
+        manifestSHA256: String?
+    ) -> ChromeMV3NativeTrustedHostApprovalRecord? {
+        configuration.trustedHostApprovalRecords.last {
+            $0.hostName == hostName
+                && $0.extensionID == configuration.extensionID
+                && $0.profileID == configuration.profileID
+                && ($0.manifestSHA256 == manifestSHA256
+                    || $0.trustState == .userDenied
+                    || $0.trustState == .revoked)
+        }
     }
 
     private func lifecycleRecord(
@@ -1326,7 +1427,9 @@ final class ChromeMV3NativeMessagingRuntimeOwner {
             return .oversizedMessage
         case .hostCrashedOrExited, .processLaunchFailed, .writeFailed,
              .portClosed, .fixtureGateDisabled, .invalidArguments,
-             .invalidExecutablePath, .productPolicyBlocked:
+             .invalidExecutablePath, .productPolicyBlocked,
+             .trustedHostApprovalRequired, .trustedHostDenied,
+             .trustedHostRevoked:
             return .nativeHostExited
         }
     }
@@ -1504,7 +1607,8 @@ private final class ChromeMV3NativeMessagingInternalPort {
             return .hostManifestMissing
         case .fixtureGateDisabled, .hostCrashedOrExited, .invalidArguments,
              .invalidExecutablePath, .portClosed, .processLaunchFailed,
-             .productPolicyBlocked, .writeFailed:
+             .productPolicyBlocked, .trustedHostApprovalRequired,
+             .trustedHostDenied, .trustedHostRevoked, .writeFailed:
             return .nativeHostExited
         }
     }
@@ -1624,10 +1728,14 @@ struct ChromeMV3NativeMessagingImplementationReport:
     var extensionID: String
     var profileID: String
     var fixtureHostRootPath: String
+    var hostDiscoveryPolicyReport:
+        ChromeMV3NativeHostDiscoveryPolicyReport
     var hostManifestLookupValidation:
         ChromeMV3NativeHostManifestValidationSummary?
     var extensionAuthorization:
         ChromeMV3NativeMessagingAuthorizationResult
+    var trustedHostPolicyRecord:
+        ChromeMV3NativeTrustedHostApprovalRecord
     var fixtureHostLaunchPolicy:
         ChromeMV3NativeMessagingFixtureLaunchPolicyResult
     var framingCodecResults: [ChromeMV3NativeMessagingFrameCodecResult]
@@ -1728,11 +1836,18 @@ enum ChromeMV3NativeMessagingImplementationReportGenerator {
                 hostName: hostName,
                 extensionID: extensionID
             )
+        let approvedRecord = trustedFixtureRecord(
+            extensionID: extensionID,
+            profileID: profileID,
+            root: root,
+            hostName: hostName
+        )
         let owner = ChromeMV3NativeMessagingRuntimeOwner(
             configuration: .internalFixture(
                 extensionID: extensionID,
                 profileID: profileID,
-                fixtureHostRootPaths: [root.path]
+                fixtureHostRootPaths: [root.path],
+                trustedHostApprovalRecords: [approvedRecord]
             )
         )
         let send = owner.sendNativeMessage(
@@ -1808,10 +1923,16 @@ enum ChromeMV3NativeMessagingImplementationReportGenerator {
             extensionID: extensionID,
             profileID: profileID,
             fixtureHostRootPath: root.path,
+            hostDiscoveryPolicyReport:
+                ChromeMV3NativeHostDiscoveryPolicyReport.make(
+                    lookupPolicy: owner.lookupPolicy(),
+                    requestedHostNames: [hostName]
+                ),
             hostManifestLookupValidation:
                 send.preflight.hostManifestValidationSummary,
             extensionAuthorization:
                 send.preflight.authorizationResult,
+            trustedHostPolicyRecord: approvedRecord,
             fixtureHostLaunchPolicy: send.launchPolicy,
             framingCodecResults: [outbound] + (inbound.map { [$0] } ?? []),
             sendNativeMessageResult: send,
@@ -1867,17 +1988,46 @@ enum ChromeMV3NativeMessagingImplementationReportGenerator {
             hostName: hostName,
             extensionID: extensionID
         )
+        let approvedRecord = trustedFixtureRecord(
+            extensionID: extensionID,
+            profileID: profileID,
+            root: root,
+            hostName: hostName
+        )
         let owner = ChromeMV3NativeMessagingRuntimeOwner(
             configuration: .internalFixture(
                 extensionID: extensionID,
                 profileID: profileID,
-                fixtureHostRootPaths: [root.path]
+                fixtureHostRootPaths: [root.path],
+                trustedHostApprovalRecords: [approvedRecord]
             )
         )
         return owner.sendNativeMessage(
             hostName: hostName,
             message: .object(["variant": .string(kind.rawValue)])
         )
+    }
+
+    private static func trustedFixtureRecord(
+        extensionID: String,
+        profileID: String,
+        root: URL,
+        hostName: String
+    ) -> ChromeMV3NativeTrustedHostApprovalRecord {
+        let lookupPolicy = ChromeMV3NativeHostLookupPolicy.macOS(
+            explicitTestRootPath: root.path
+        )
+        return ChromeMV3NativeTrustedHostPolicyFactory
+            .recordForExplicitDeveloperPreviewApproval(
+                hostName: hostName,
+                extensionID: extensionID,
+                profileID: profileID,
+                lookupPolicy: lookupPolicy,
+                permissionState: .grantedByManifest,
+                approvedRootPaths: [root.path],
+                sequence: 1
+            )
+            .record
     }
 
     private static func documentationSources()

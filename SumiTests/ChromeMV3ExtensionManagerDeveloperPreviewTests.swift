@@ -205,6 +205,136 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
     }
 
     @MainActor
+    func testTrustedNativeHostPanelApproveAndRevokeControls()
+        throws
+    {
+        let root = try makeTemporaryDirectory()
+        let source = try makeFixture(
+            named: "trusted-native-host-manager",
+            manifest: blockerHeavyManifest(),
+            files: [
+                "background.js": "",
+                "content.js": "",
+                "panel.html": "<!doctype html><title>Panel</title>\n",
+                "rules.json": "[]",
+            ]
+        )
+        let module = try makeModule(enabled: true)
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: source,
+            profileID: "profile-trusted-native-host",
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+        let hostName = ChromeMV3NativeMessagingFixtureHostBuilder
+            .passwordManagerFixtureHostName
+        let fixtureRoot = root.appendingPathComponent(
+            "NativeMessagingFixtureHosts",
+            isDirectory: true
+        )
+        _ = try ChromeMV3NativeMessagingFixtureHostBuilder.writeFixtureHost(
+            kind: .echo,
+            rootURL: fixtureRoot,
+            hostName: hostName,
+            extensionID: record.extensionID
+        )
+        let detailBefore = try XCTUnwrap(
+            module.chromeMV3ExtensionManagerDetailViewModelIfEnabled(
+                rootURL: root,
+                profileID: record.profileID,
+                extensionID: record.extensionID
+            )
+        )
+        let before = try XCTUnwrap(
+            detailBefore.trustedNativeHostPanel.hostRequirements.first
+        )
+
+        XCTAssertTrue(
+            detailBefore.trustedNativeHostPanel
+                .nativeMessagingPermissionDeclared
+        )
+        XCTAssertTrue(
+            detailBefore.trustedNativeHostPanel
+                .nativeMessagingPermissionGranted
+        )
+        XCTAssertFalse(
+            detailBefore.trustedNativeHostPanel.arbitraryHostLaunchAllowed
+        )
+        XCTAssertFalse(detailBefore.trustedNativeHostPanel.nativeHostScanningAllowed)
+        XCTAssertEqual(before.manifestStatus, .found)
+        XCTAssertEqual(before.trustedHostState, .unknown)
+        XCTAssertFalse(before.trustedForDeveloperPreview)
+        XCTAssertTrue(before.controls.contains {
+            $0.kind == .approveForDeveloperPreview && $0.available
+        })
+
+        let approve = module.chromeMV3RunTrustedNativeHostControlThroughManager(
+            .approveForDeveloperPreview,
+            rootURL: root,
+            profileID: record.profileID,
+            extensionID: record.extensionID,
+            hostName: hostName
+        )
+        let detailApproved = try XCTUnwrap(
+            module.chromeMV3ExtensionManagerDetailViewModelIfEnabled(
+                rootURL: root,
+                profileID: record.profileID,
+                extensionID: record.extensionID
+            )
+        )
+        let approved = try XCTUnwrap(
+            detailApproved.trustedNativeHostPanel.hostRequirements.first
+        )
+
+        XCTAssertTrue(approve.succeeded, approve.diagnostics.joined(separator: "\n"))
+        XCTAssertEqual(
+            approve.record?.trustState,
+            .trustedForDeveloperPreview
+        )
+        XCTAssertEqual(approve.record?.userConsentGranted, true)
+        XCTAssertTrue(approve.preflight?.canConnectNativeNow == true)
+        XCTAssertFalse(approve.serviceWorkerWakeAttempted)
+        XCTAssertFalse(approve.nativeHostLaunchAttempted)
+        XCTAssertEqual(
+            approved.trustedHostState,
+            .trustedForDeveloperPreview
+        )
+        XCTAssertTrue(approved.trustedForDeveloperPreview)
+        XCTAssertTrue(approved.processLaunchAllowedNow)
+        XCTAssertTrue(approved.controls.contains {
+            $0.kind == .revoke && $0.available
+        })
+
+        let revoke = module.chromeMV3RunTrustedNativeHostControlThroughManager(
+            .revoke,
+            rootURL: root,
+            profileID: record.profileID,
+            extensionID: record.extensionID,
+            hostName: hostName
+        )
+        let detailRevoked = try XCTUnwrap(
+            module.chromeMV3ExtensionManagerDetailViewModelIfEnabled(
+                rootURL: root,
+                profileID: record.profileID,
+                extensionID: record.extensionID
+            )
+        )
+        let revoked = try XCTUnwrap(
+            detailRevoked.trustedNativeHostPanel.hostRequirements.first
+        )
+
+        XCTAssertTrue(revoke.succeeded, revoke.diagnostics.joined(separator: "\n"))
+        XCTAssertEqual(revoke.record?.trustState, .revoked)
+        XCTAssertFalse(revoke.preflight?.canConnectNativeNow == true)
+        XCTAssertFalse(revoke.serviceWorkerWakeAttempted)
+        XCTAssertFalse(revoke.nativeHostLaunchAttempted)
+        XCTAssertEqual(revoked.trustedHostState, .revoked)
+        XCTAssertFalse(revoked.trustedForDeveloperPreview)
+        XCTAssertFalse(revoked.processLaunchAllowedNow)
+    }
+
+    @MainActor
     func testInstallRejectsMV2AndSafariPackagesThroughManager() throws {
         let root = try makeTemporaryDirectory()
         let module = try makeModule(enabled: true)

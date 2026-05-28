@@ -1117,10 +1117,13 @@ enum ChromeMV3RuntimeMessageDispatcher {
                 preflight.authorizationResult.authorizedByManifest,
             hasNativeMessagingPermission:
                 preflight.authorizationResult.hasNativeMessagingPermission,
-            canConnectNativeNow: false,
-            canSendNativeMessageNow: false,
-            processLaunchAllowedNow: false,
-            canOpenPortNow: false,
+            trustedHostPolicyApproved:
+                preflight.trustedHostPolicyApproved,
+            userConsentSatisfied: preflight.userConsentSatisfied,
+            canConnectNativeNow: preflight.canConnectNativeNow,
+            canSendNativeMessageNow: preflight.canSendNativeMessageNow,
+            processLaunchAllowedNow: preflight.processLaunchAllowedNow,
+            canOpenPortNow: preflight.canOpenPortNow,
             canWakeServiceWorkerNow: false,
             blockerCount: preflight.blockers.count
         )

@@ -421,6 +421,14 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSessionTests: XCTestCase {
                 surfaceID: "runtime-surface",
                 explicitInternalNativeMessagingBridgeAllowed: true,
                 nativeMessagingFixtureHostRootPaths: [hostRoot.path],
+                nativeMessagingTrustedHostApprovalRecords: [
+                    trustedNativeHostApprovalRecord(
+                        root: hostRoot,
+                        extensionID: extensionID,
+                        profileID: profileID,
+                        hostName: hostName
+                    ),
+                ],
                 nativeMessagingPermissionState: .grantedByManifest
             ),
             sharedLifecycleSession: session
@@ -924,6 +932,34 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSessionTests: XCTestCase {
         )
         temporaryDirectories.append(root.deletingLastPathComponent())
         return root.standardizedFileURL
+    }
+
+    private func trustedNativeHostApprovalRecord(
+        root: URL,
+        extensionID: String,
+        profileID: String,
+        hostName: String
+    ) -> ChromeMV3NativeTrustedHostApprovalRecord {
+        ChromeMV3NativeTrustedHostPolicyFactory
+            .recordForExplicitDeveloperPreviewApproval(
+                hostName: hostName,
+                extensionID: extensionID,
+                profileID: profileID,
+                lookupPolicy: .macOS(
+                    explicitTestRootPath: root.path,
+                    extensionModuleEnabled: true
+                ),
+                permissionState: .grantedByManifest,
+                productPolicy: ChromeMV3NativeMessagingProductPolicy(
+                    extensionModuleEnabled: true,
+                    nativeMessagingAllowedByProductPolicy: true,
+                    userConsentRequired: true,
+                    userConsentGranted: false
+                ),
+                approvedRootPaths: [root.path],
+                sequence: 1,
+                now: Date(timeIntervalSince1970: 1_234)
+            ).record
     }
 
     private func object(_ value: ChromeMV3StorageValue?)

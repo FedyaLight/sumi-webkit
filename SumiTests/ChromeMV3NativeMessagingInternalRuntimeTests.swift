@@ -89,8 +89,27 @@ final class ChromeMV3NativeMessagingInternalRuntimeTests: XCTestCase {
         XCTAssertFalse(result.succeeded)
         XCTAssertEqual(result.lastErrorCode, .authorizationFailed)
         XCTAssertFalse(result.lifecycle.processLaunchAttempted)
-        XCTAssertTrue(result.launchPolicy.processLaunchAllowedForFixtureHost)
+        XCTAssertFalse(result.launchPolicy.processLaunchAllowedForFixtureHost)
         XCTAssertFalse(result.launchPolicy.processLaunchAllowedInProduct)
+    }
+
+    func testTrustedHostApprovalRequiredBeforeFixtureLaunch()
+        throws
+    {
+        let root = try temporaryDirectory(named: "approval-required")
+        _ = try writeFixture(kind: .echo, root: root)
+        let owner = makeOwner(root: root, includeTrustedHostApproval: false)
+
+        let result = owner.sendNativeMessage(
+            hostName: hostName,
+            message: .object(["kind": .string("approvalRequired")])
+        )
+
+        XCTAssertFalse(result.succeeded)
+        XCTAssertEqual(result.lastErrorCode, .trustedHostApprovalRequired)
+        XCTAssertFalse(result.lifecycle.processLaunchAttempted)
+        XCTAssertFalse(result.preflight.trustedHostPolicyApproved)
+        XCTAssertFalse(result.launchPolicy.trustedHostApprovedForDeveloperPreview)
     }
 
     func testMissingNativeMessagingPermissionBlocksLaunch()
@@ -437,14 +456,39 @@ final class ChromeMV3NativeMessagingInternalRuntimeTests: XCTestCase {
         root: URL,
         extensionID: String? = nil,
         permissionState: ChromeMV3NativeMessagingPermissionState =
-            .grantedByManifest
+            .grantedByManifest,
+        includeTrustedHostApproval: Bool = true
     ) -> ChromeMV3NativeMessagingRuntimeOwner {
-        ChromeMV3NativeMessagingRuntimeOwner(
+        let resolvedExtensionID = extensionID ?? self.extensionID
+        let trustedRecords: [ChromeMV3NativeTrustedHostApprovalRecord]
+        if includeTrustedHostApproval {
+            let lookupPolicy = ChromeMV3NativeHostLookupPolicy.macOS(
+                explicitTestRootPath: root.path
+            )
+            trustedRecords = [
+                ChromeMV3NativeTrustedHostPolicyFactory
+                    .recordForExplicitDeveloperPreviewApproval(
+                        hostName: hostName,
+                        extensionID: resolvedExtensionID,
+                        profileID: "profile-a",
+                        lookupPolicy: lookupPolicy,
+                        permissionState: permissionState,
+                        approvedRootPaths: [root.path],
+                        sequence: 1,
+                        now: Date(timeIntervalSince1970: 1)
+                    )
+                    .record,
+            ]
+        } else {
+            trustedRecords = []
+        }
+        return ChromeMV3NativeMessagingRuntimeOwner(
             configuration: .internalFixture(
-                extensionID: extensionID ?? self.extensionID,
+                extensionID: resolvedExtensionID,
                 profileID: "profile-a",
                 fixtureHostRootPaths: [root.path],
-                permissionState: permissionState
+                permissionState: permissionState,
+                trustedHostApprovalRecords: trustedRecords
             )
         )
     }
