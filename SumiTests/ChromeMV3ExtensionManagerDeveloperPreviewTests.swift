@@ -155,6 +155,19 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
 
         XCTAssertEqual(detail.manifestSummary.manifestVersion, 3)
         XCTAssertEqual(detail.manifestSummary.name, "Manager Blocker Heavy")
+        XCTAssertTrue(
+            detail.permissionStatePanel.requiredPermissions
+                .contains("storage")
+        )
+        XCTAssertTrue(
+            detail.permissionStatePanel.hostPermissions
+                .contains("https://example.com/*")
+        )
+        XCTAssertFalse(detail.permissionStatePanel.promptGate.silentGrantAllowed)
+        XCTAssertFalse(
+            detail.permissionStatePanel.promptGate
+                .permissionPromptAvailableInPublicProduct
+        )
         XCTAssertEqual(detail.lifecycleRecord.lifecycleState, .diagnosticsReady)
         XCTAssertTrue(detail.generatedBundleState.generatedBundleAvailable)
         XCTAssertFalse(

@@ -312,7 +312,11 @@ struct ChromeMV3PopupOptionsJSBridgeConfiguration:
                 uniqueSortedPopupOptionsBridge(
                     launchRecord.manifestOptionalHostPermissions
                 ),
-            activeTabGrants: [],
+            activeTabGrants:
+                Self.activeTabGrantsForExplicitActionPopupOpen(
+                    launchRecord: launchRecord,
+                    bridgeAvailable: bridgeAvailable
+                ),
             allowlist: .defaultPolicy,
             diagnostics:
                 uniqueSortedPopupOptionsBridge([
@@ -327,6 +331,31 @@ struct ChromeMV3PopupOptionsJSBridgeConfiguration:
                     Self.contentScriptProductAttachmentGuard,
                 ])
         )
+    }
+
+    private static func activeTabGrantsForExplicitActionPopupOpen(
+        launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord,
+        bridgeAvailable: Bool
+    ) -> [ChromeMV3ActiveTabGrant] {
+        guard bridgeAvailable,
+              launchRecord.surface == .actionPopup,
+              launchRecord.manifestPermissions.contains("activeTab")
+        else { return [] }
+        return [
+            ChromeMV3ActiveTabGrant(
+                extensionID: launchRecord.extensionID,
+                profileID: launchRecord.profileID,
+                tabID: 1,
+                scope: .origin("https://example.com"),
+                reason: .actionClick,
+                userGestureModeled: true,
+                createdSequence: 1,
+                diagnostics: [
+                    "Developer-preview activeTab grant created from explicit action popup open.",
+                    "Grant is scoped to the controlled synthetic active tab fixture and expires through lifecycle events.",
+                ]
+            ),
+        ]
     }
 }
 
@@ -403,6 +432,11 @@ struct ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot:
     var lastAPIErrorSummary: String?
     var storageOnChangedPayloadCount: Int
     var portCount: Int
+    var permissionPromptGate:
+        ChromeMV3PermissionPromptGateRecord
+    var permissionPromptRequests: [ChromeMV3PermissionPromptRequest]
+    var permissionPromptResults:
+        [ChromeMV3PermissionPromptResultRecord]
     var contentScriptEndpointSummary:
         ChromeMV3ContentScriptEndpointRegistrySummary?
     var listenerRegistryClearedOnTeardown: Bool
@@ -498,6 +532,17 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     private let tabRegistry: ChromeMV3SyntheticTabRegistry
     private let contentScriptEndpointRegistry:
         ChromeMV3ContentScriptEndpointRegistry?
+    private let permissionPromptPresenter:
+        ChromeMV3PermissionPromptPresenting?
+    private let permissionPromptGate:
+        ChromeMV3PermissionPromptGateRecord
+    private let permissionStateStore:
+        ChromeMV3DeveloperPreviewPermissionStateStore?
+    private var permissionPromptRequests:
+        [ChromeMV3PermissionPromptRequest] = []
+    private var permissionPromptResults:
+        [ChromeMV3PermissionPromptResultRecord] = []
+    private var permissionPersistenceDiagnostics: [String] = []
     private var callRecords: [ChromeMV3PopupOptionsJSBridgeCallRecord] = []
     private var onChangedPayloads: [ChromeMV3StorageOnChangedEventPayload] = []
     private var syntheticPortIDs: Set<String> = []
@@ -506,10 +551,27 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     init(
         configuration: ChromeMV3PopupOptionsJSBridgeConfiguration,
         contentScriptEndpointRegistry:
-            ChromeMV3ContentScriptEndpointRegistry? = nil
+            ChromeMV3ContentScriptEndpointRegistry? = nil,
+        permissionPromptPresenter:
+            ChromeMV3PermissionPromptPresenting? = nil,
+        permissionStateStore:
+            ChromeMV3DeveloperPreviewPermissionStateStore? = nil
     ) {
         self.configuration = configuration
         self.contentScriptEndpointRegistry = contentScriptEndpointRegistry
+        self.permissionPromptPresenter = permissionPromptPresenter
+        self.permissionStateStore = permissionStateStore
+        self.permissionPromptGate =
+            ChromeMV3PermissionPromptGateRecord.evaluate(
+                moduleEnabled: configuration.moduleState == .enabled,
+                extensionEnabled: configuration.bridgeAvailable,
+                developerPreviewGate:
+                    configuration
+                    .popupOptionsJSBridgeAvailableInDeveloperPreview,
+                publicProductGate:
+                    configuration
+                    .popupOptionsJSBridgeAvailableInPublicProduct
+            )
         let namespace = ChromeMV3StorageNamespace(
             profileID: configuration.profileID,
             extensionID: configuration.extensionID,
@@ -523,33 +585,48 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                         ? .enabledModelTestFixture
                         : .disabledModule
             )
-        self.permissionRuntimeOwner =
-            ChromeMV3PermissionRuntimeStateOwner(
-                permissionStore:
-                    ChromeMV3PermissionDecisionStore(
-                        snapshot:
-                            ChromeMV3PermissionDecisionStoreSnapshot(
-                                extensionID: configuration.extensionID,
-                                profileID: configuration.profileID,
-                                declaredAPIPermissions:
-                                    configuration.manifestPermissions,
-                                declaredHostPermissions:
-                                    configuration.manifestHostPermissions,
-                                optionalAPIPermissions:
-                                    configuration
-                                    .manifestOptionalPermissions,
-                                optionalHostPermissions:
-                                    configuration
-                                    .manifestOptionalHostPermissions
-                            )
-                    ),
-                activeTabStore:
-                    ChromeMV3ActiveTabGrantStore.from(
-                        extensionID: configuration.extensionID,
-                        profileID: configuration.profileID,
-                        grants: configuration.activeTabGrants
-                    )
-            )
+        if let persisted = permissionStateStore?.loadRecord(
+            profileID: configuration.profileID,
+            extensionID: configuration.extensionID
+        ) {
+            self.permissionRuntimeOwner =
+                ChromeMV3PermissionRuntimeStateOwner(
+                    snapshot: persisted.permissionRuntimeSnapshot
+                )
+            self.permissionPromptRequests = persisted.promptRequests
+            self.permissionPromptResults = persisted.promptResults
+            self.permissionPersistenceDiagnostics = [
+                "Loaded persisted developer-preview permission state for popup/options bridge.",
+            ]
+        } else {
+            self.permissionRuntimeOwner =
+                ChromeMV3PermissionRuntimeStateOwner(
+                    permissionStore:
+                        ChromeMV3PermissionDecisionStore(
+                            snapshot:
+                                ChromeMV3PermissionDecisionStoreSnapshot(
+                                    extensionID: configuration.extensionID,
+                                    profileID: configuration.profileID,
+                                    declaredAPIPermissions:
+                                        configuration.manifestPermissions,
+                                    declaredHostPermissions:
+                                        configuration.manifestHostPermissions,
+                                    optionalAPIPermissions:
+                                        configuration
+                                        .manifestOptionalPermissions,
+                                    optionalHostPermissions:
+                                        configuration
+                                        .manifestOptionalHostPermissions
+                                )
+                        ),
+                    activeTabStore:
+                        ChromeMV3ActiveTabGrantStore.from(
+                            extensionID: configuration.extensionID,
+                            profileID: configuration.profileID,
+                            grants: configuration.activeTabGrants
+                        )
+                )
+        }
         self.tabRegistry =
             ChromeMV3SyntheticTabRegistry.passwordManagerFixture(
                 extensionID: configuration.extensionID,
@@ -593,6 +670,9 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             lastAPIErrorSummary: lastAPIErrorSummary,
             storageOnChangedPayloadCount: onChangedPayloads.count,
             portCount: syntheticPortIDs.count,
+            permissionPromptGate: permissionPromptGate,
+            permissionPromptRequests: permissionPromptRequests,
+            permissionPromptResults: permissionPromptResults,
             contentScriptEndpointSummary:
                 contentScriptEndpointRegistry?.summary,
             listenerRegistryClearedOnTeardown: tornDown,
@@ -601,12 +681,67 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             diagnostics:
                 uniqueSortedPopupOptionsBridge(
                     configuration.diagnostics
+                        + permissionPersistenceDiagnostics
                         + [
                             "Popup/options bridge diagnostics are scoped to one WebKit host.",
                             "No normal-tab bridge installation is represented by this snapshot.",
                         ]
                 )
         )
+    }
+
+    var permissionRuntimeSnapshot:
+        ChromeMV3PermissionRuntimeStateOwnerSnapshot
+    {
+        permissionRuntimeOwner.snapshot
+    }
+
+    var permissionBroker: ChromeMV3PermissionBroker {
+        permissionRuntimeOwner.permissionBroker
+    }
+
+    @discardableResult
+    func grantActiveTabFromExplicitUserAction(
+        tabID: Int = 1,
+        sourceSurface: ChromeMV3PermissionPromptSourceSurface = .actionClick,
+        sequence: Int = 0
+    ) -> ChromeMV3ActiveTabRuntimeGrantResult {
+        let tab = tabRegistry.tab(id: tabID)
+        let result = ChromeMV3DeveloperPreviewActiveTabUX.grant(
+            request:
+                ChromeMV3ActiveTabUXRequest(
+                    extensionID: configuration.extensionID,
+                    profileID: configuration.profileID,
+                    tabID: tabID,
+                    url: tab?.url ?? "",
+                    sourceSurface: sourceSurface,
+                    explicitUserGesture: true,
+                    sequence: sequence
+                ),
+            gateRecord: permissionPromptGate,
+            owner: &permissionRuntimeOwner
+        )
+        persistPermissionState(
+            diagnostics: [
+                result.granted
+                    ? "activeTab grant persisted after explicit user action."
+                    : "Blocked activeTab grant result persisted for diagnostics.",
+            ]
+        )
+        return result
+    }
+
+    @discardableResult
+    func applyPermissionLifecycleEvent(
+        _ event: ChromeMV3PermissionLifecycleEvent
+    ) -> ChromeMV3PermissionRuntimeLifecycleApplication {
+        let application = permissionRuntimeOwner.applyLifecycleEvent(event)
+        invalidateContentScriptEndpoints(
+            reason:
+                "Permission lifecycle event invalidated stale content-script endpoints."
+        )
+        persistPermissionState(diagnostics: application.diagnostics)
+        return application
     }
 
     func handle(_ body: Any) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
@@ -735,6 +870,9 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         callRecords.removeAll()
         onChangedPayloads.removeAll()
         syntheticPortIDs.removeAll()
+        permissionPromptRequests.removeAll()
+        permissionPromptResults.removeAll()
+        permissionPersistenceDiagnostics.removeAll()
         tabRegistry.tearDown()
         tornDown = true
     }
@@ -964,20 +1102,58 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         case .failure(let error):
             return invalidArguments(request, error.message)
         case .success(let input):
-            let promptResult = modeledPromptResult(from: request)
-            let application = permissionRuntimeOwner.request(
+            let requestResult = ChromeMV3PermissionsAPIContractEvaluator
+                .request(
+                    input: input,
+                    permissionStore: permissionRuntimeOwner.permissionStore,
+                    activeTabStore: permissionRuntimeOwner.activeTabStore
+                )
+            if requestResult.wouldBeAllowedByModel {
+                let application = permissionRuntimeOwner.request(input: input)
+                return response(
+                    request: request,
+                    succeeded: true,
+                    payload: .bool(application.returnedBoolean),
+                    permissionEventPayload: nil,
+                    diagnostics:
+                        application.diagnostics
+                            + [
+                                "permissions.request returned true because the requested permissions were already granted.",
+                                "No prompt was displayed and no new grant was created.",
+                            ]
+                )
+            }
+
+            let promptRequest = ChromeMV3PermissionPromptRequest.make(
+                sequence: permissionPromptRequests.count
+                    + permissionPromptResults.count
+                    + 1,
+                extensionName: configuration.extensionID,
+                sourceSurface:
+                    configuration.sourceContext.permissionPromptSourceSurface,
                 input: input,
-                modeledPromptResult: promptResult
+                requestResult: requestResult,
+                permissionStore: permissionRuntimeOwner.permissionStore,
+                gateRecord: permissionPromptGate
             )
-            let alreadyGranted = application.result.wouldBeAllowedByModel
-            let promptAccepted =
-                application.result.wouldGrantIfUserAccepted
-                    && promptResult == .accepted
-            guard alreadyGranted || promptAccepted else {
+            permissionPromptRequests.append(promptRequest)
+
+            guard requestResult.wouldRequirePrompt,
+                  promptRequest.promptEligibility.canPrompt
+            else {
+                let application = permissionRuntimeOwner.request(input: input)
+                let blockedResult = promptRequest.result(
+                    .blocked,
+                    diagnostics: promptRequest.promptEligibility.diagnostics
+                )
+                permissionPromptResults.append(blockedResult)
                 let diagnostic = permissionRequestFailure(
                     result: application.result,
-                    promptResult: promptResult
+                    promptResult: .notProvided,
+                    promptRequest: promptRequest,
+                    promptResultRecord: blockedResult
                 )
+                persistPermissionState(diagnostics: diagnostic.diagnostics)
                 return response(
                     request: request,
                     succeeded: false,
@@ -988,21 +1164,117 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                         application.diagnostics + diagnostic.diagnostics
                 )
             }
-            return response(
-                request: request,
-                succeeded: true,
-                payload: .bool(application.returnedBoolean),
-                permissionEventPayload:
-                    promptAccepted
-                        ? application.result.eventPayloadIfAccepted
-                        : nil,
-                diagnostics:
-                    application.diagnostics
-                        + [
-                            "permissions.request used the internal modeled developer-preview permission flow.",
-                            "No product permission prompt UI was displayed.",
-                        ]
-            )
+
+            guard let permissionPromptPresenter else {
+                let unavailable = promptRequest.result(
+                    .unavailable,
+                    diagnostics: [
+                        "Permission prompt required, but no developer-preview presenter is installed.",
+                    ]
+                )
+                permissionPromptResults.append(unavailable)
+                let application = permissionRuntimeOwner.request(input: input)
+                let diagnostic = permissionRequestFailure(
+                    result: application.result,
+                    promptResult: .notProvided,
+                    promptRequest: promptRequest,
+                    promptResultRecord: unavailable
+                )
+                persistPermissionState(diagnostics: diagnostic.diagnostics)
+                return response(
+                    request: request,
+                    succeeded: false,
+                    payload: .bool(false),
+                    lastErrorMessage: diagnostic.message,
+                    lastErrorCode: diagnostic.code,
+                    diagnostics:
+                        application.diagnostics + diagnostic.diagnostics
+                )
+            }
+
+            let promptResultRecord =
+                permissionPromptPresenter
+                .presentChromeMV3PermissionPrompt(promptRequest)
+            permissionPromptResults.append(promptResultRecord)
+
+            switch promptResultRecord.disposition {
+            case .accepted:
+                let application = permissionRuntimeOwner.request(
+                    input: input,
+                    modeledPromptResult: .accepted,
+                    productPromptResult: promptResultRecord
+                )
+                persistPermissionState(diagnostics: application.diagnostics)
+                return response(
+                    request: request,
+                    succeeded: true,
+                    payload: .bool(application.returnedBoolean),
+                    permissionEventPayload:
+                        application.result.eventPayloadIfAccepted,
+                    diagnostics:
+                        application.diagnostics
+                            + promptResultRecord.diagnostics
+                            + [
+                                "permissions.request used an explicit developer-preview product prompt result.",
+                            ]
+                )
+            case .denied:
+                let application = permissionRuntimeOwner.request(
+                    input: input,
+                    modeledPromptResult: .denied,
+                    productPromptResult: promptResultRecord
+                )
+                persistPermissionState(diagnostics: application.diagnostics)
+                return response(
+                    request: request,
+                    succeeded: true,
+                    payload: .bool(false),
+                    permissionEventPayload: nil,
+                    diagnostics:
+                        application.diagnostics
+                            + promptResultRecord.diagnostics
+                            + [
+                                "permissions.request was denied by explicit developer-preview product prompt result.",
+                            ]
+                )
+            case .dismissed:
+                let application = permissionRuntimeOwner.request(
+                    input: input,
+                    modeledPromptResult: .dismissed,
+                    productPromptResult: promptResultRecord
+                )
+                persistPermissionState(diagnostics: application.diagnostics)
+                return response(
+                    request: request,
+                    succeeded: true,
+                    payload: .bool(false),
+                    permissionEventPayload: nil,
+                    diagnostics:
+                        application.diagnostics
+                            + promptResultRecord.diagnostics
+                            + [
+                                "permissions.request was dismissed by explicit developer-preview product prompt result.",
+                            ]
+                )
+            case .blocked, .unavailable:
+                let application = permissionRuntimeOwner.request(input: input)
+                let diagnostic = permissionRequestFailure(
+                    result: application.result,
+                    promptResult: .notProvided,
+                    promptRequest: promptRequest,
+                    promptResultRecord: promptResultRecord
+                )
+                persistPermissionState(diagnostics: diagnostic.diagnostics)
+                return response(
+                    request: request,
+                    succeeded: false,
+                    payload: .bool(false),
+                    lastErrorMessage: diagnostic.message,
+                    lastErrorCode: diagnostic.code,
+                    diagnostics:
+                        application.diagnostics + diagnostic.diagnostics
+                )
+            }
         }
     }
 
@@ -1028,6 +1300,11 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                         application.diagnostics + diagnostic.diagnostics
                 )
             }
+            invalidateContentScriptEndpoints(
+                reason:
+                    "chrome.permissions.remove revoked host/API access for popup/options bridge."
+            )
+            persistPermissionState(diagnostics: application.diagnostics)
             return response(
                 request: request,
                 succeeded: true,
@@ -1104,6 +1381,13 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         }
         let frameID = options?["frameId"]?.intValue
         let documentID = options?["documentId"]?.stringValue
+        if let permissionFailure = tabPermissionFailure(
+            request: request,
+            tabID: tabID,
+            requestName: "tabs.sendMessage"
+        ) {
+            return permissionFailure
+        }
         guard let registry = contentScriptEndpointRegistry,
               let endpoint = registry.targetEndpoint(
                 extensionID: configuration.extensionID,
@@ -1129,7 +1413,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             frameID: endpoint.frameID,
             documentID: endpoint.documentID,
             sourceURL: configuration.extensionBaseURLString,
-            targetURL: endpoint.senderMetadata.url
+            targetURL: endpoint.frameTarget.urlString
         )
         let dispatch = ChromeMV3RuntimeMessageDispatcher.dispatch(
             input: ChromeMV3RuntimeMessageDispatcherInput.make(
@@ -1211,6 +1495,13 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         let frameID = connectInfo?["frameId"]?.intValue
         let documentID = connectInfo?["documentId"]?.stringValue
         let name = connectInfo?["name"]?.stringValue ?? ""
+        if let permissionFailure = tabPermissionFailure(
+            request: request,
+            tabID: tabID,
+            requestName: "tabs.connect"
+        ) {
+            return permissionFailure
+        }
         guard let registry = contentScriptEndpointRegistry,
               let endpoint = registry.targetEndpoint(
                 extensionID: configuration.extensionID,
@@ -1236,7 +1527,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             frameID: endpoint.frameID,
             documentID: endpoint.documentID,
             sourceURL: configuration.extensionBaseURLString,
-            targetURL: endpoint.senderMetadata.url
+            targetURL: endpoint.frameTarget.urlString
         )
         let permission = ChromeMV3RuntimeMessagingPermissionDecision.evaluate(
             route: route,
@@ -1436,6 +1727,43 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         return .object(object)
     }
 
+    private func invalidateContentScriptEndpoints(reason: String) {
+        contentScriptEndpointRegistry?.invalidateForPermissionChange(
+            extensionID: configuration.extensionID,
+            profileID: configuration.profileID,
+            permissionBroker: permissionRuntimeOwner.permissionBroker,
+            reason: reason
+        )
+    }
+
+    private func persistPermissionState(diagnostics: [String]) {
+        guard let permissionStateStore else { return }
+        do {
+            _ = try permissionStateStore.save(
+                owner: permissionRuntimeOwner,
+                gateRecord: permissionPromptGate,
+                promptRequests: permissionPromptRequests,
+                promptResults: permissionPromptResults,
+                diagnostics: diagnostics
+            )
+            permissionPersistenceDiagnostics =
+                uniqueSortedPopupOptionsBridge(
+                    permissionPersistenceDiagnostics
+                        + [
+                            "Persisted developer-preview permission state sidecar for popup/options bridge.",
+                        ]
+                )
+        } catch {
+            permissionPersistenceDiagnostics =
+                uniqueSortedPopupOptionsBridge(
+                    permissionPersistenceDiagnostics
+                        + [
+                            "Failed to persist developer-preview permission state: \(error.localizedDescription)",
+                        ]
+                )
+        }
+    }
+
     private func runtimeLastErrorResponse(
         _ request: ChromeMV3RuntimeJSBridgeHostRequest,
         error: ChromeMV3RuntimeLastErrorCase,
@@ -1446,6 +1774,42 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             contract:
                 ChromeMV3RuntimeLastErrorContract.contract(for: error),
             diagnostics: diagnostics
+        )
+    }
+
+    private func tabPermissionFailure(
+        request: ChromeMV3RuntimeJSBridgeHostRequest,
+        tabID: Int,
+        requestName: String
+    ) -> ChromeMV3PopupOptionsJSBridgeHostResponse? {
+        guard let tab = tabRegistry.tab(id: tabID) else {
+            return nil
+        }
+        let decision = permissionRuntimeOwner.permissionBroker
+            .hostAccessDecision(url: tab.url, tabID: tab.id)
+        guard decision.hasHostAccess == false else { return nil }
+        let error: ChromeMV3RuntimeLastErrorCase
+        if decision.missingReason == .permissionDenied
+            || decision.missingReason == .permissionRevoked
+        {
+            error = .permissionDenied
+        } else if decision.missingReason == .activeTabMissing
+                    || permissionRuntimeOwner.permissionBroker
+                    .activeTabPermissionDeclared
+        {
+            error = .activeTabMissing
+        } else {
+            error = .hostPermissionMissing
+        }
+        return runtimeLastErrorResponse(
+            request,
+            error: error,
+            diagnostics:
+                decision.diagnostics
+                    + [
+                        "\(requestName) target failed host/activeTab permission checks before endpoint lookup.",
+                        "Permission denied and noReceivingEnd are kept distinct.",
+                    ]
         )
     }
 
@@ -1784,45 +2148,32 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         return (uniqueSortedPopupOptionsBridge(values), nil)
     }
 
-    private func modeledPromptResult(
-        from request: ChromeMV3RuntimeJSBridgeHostRequest
-    ) -> ChromeMV3ModeledPermissionPromptResult {
-        guard let object = request.arguments.first?.objectValue,
-              let value = object["__sumiModeledPromptResult"]
-        else { return .notProvided }
-        if let bool = value.boolValue {
-            return bool ? .accepted : .denied
-        }
-        switch value.stringValue?.lowercased() {
-        case "accept", "accepted", "grant", "granted", "allow", "allowed":
-            return .accepted
-        case "deny", "denied", "reject", "rejected", "block", "blocked":
-            return .denied
-        default:
-            return .notProvided
-        }
-    }
-
     private func permissionRequestFailure(
         result: ChromeMV3PermissionsAPIRequestResult,
-        promptResult: ChromeMV3ModeledPermissionPromptResult
+        promptResult: ChromeMV3ModeledPermissionPromptResult,
+        promptRequest: ChromeMV3PermissionPromptRequest? = nil,
+        promptResultRecord:
+            ChromeMV3PermissionPromptResultRecord? = nil
     ) -> (code: String, message: String, diagnostics: [String]) {
         let classifications = result.itemDecisions.map(\.classification)
-        if result.wouldRequirePrompt && promptResult == .notProvided {
+        let promptDiagnostics =
+            (promptRequest?.diagnostics ?? [])
+            + (promptResultRecord?.diagnostics ?? [])
+        if promptResultRecord?.disposition == .unavailable
+            || (result.wouldRequirePrompt
+                && promptResult == .notProvided
+                && promptResultRecord == nil)
+        {
             return (
                 ChromeMV3JSBridgeErrorCode.productUIUnavailable.rawValue,
                 "Permission prompt required, but product permission UI is unavailable in popup/options developer preview.",
-                [
-                    "Provide an explicit modeled prompt result in internal tests.",
-                    "No product permission prompt UI was displayed.",
-                ]
-            )
-        }
-        if result.wouldRequirePrompt && promptResult == .denied {
-            return (
-                ChromeMV3JSBridgeErrorCode.permissionDenied.rawValue,
-                "Permission request was denied by the modeled developer-preview prompt result.",
-                ["Modeled permission request denial was returned deterministically."]
+                uniqueSortedPopupOptionsBridge(
+                    promptDiagnostics
+                        + [
+                            "Install a developer-preview permission prompt presenter before requesting optional permissions.",
+                            "No permission was granted silently.",
+                        ]
+                )
             )
         }
         if classifications.contains(.missingUserGesture) {
@@ -1837,6 +2188,23 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 "permissionNotDeclaredOptional",
                 "Requested permission or origin is not declared optional.",
                 ["Only declared optional permissions can be granted."]
+            )
+        }
+        if promptResultRecord?.disposition == .blocked {
+            return (
+                ChromeMV3JSBridgeErrorCode.permissionDenied.rawValue,
+                "Permission request was blocked by developer-preview permission prompt policy.",
+                uniqueSortedPopupOptionsBridge(
+                    promptDiagnostics
+                        + ["Permission request was blocked before prompting."]
+                )
+            )
+        }
+        if result.wouldRequirePrompt && promptResult == .denied {
+            return (
+                ChromeMV3JSBridgeErrorCode.permissionDenied.rawValue,
+                "Permission request was denied by the developer-preview prompt result.",
+                ["Permission request denial was returned deterministically."]
             )
         }
         return (

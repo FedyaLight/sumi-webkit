@@ -591,6 +591,7 @@ struct ChromeMV3ExtensionManagerManifestSummaryViewState:
     var permissions: [String]
     var optionalPermissions: [String]
     var hostPermissions: [String]
+    var optionalHostPermissions: [String]
     var contentScriptCount: Int
     var hasAction: Bool
     var hasOptionsPage: Bool
@@ -611,12 +612,105 @@ struct ChromeMV3ExtensionManagerManifestSummaryViewState:
             permissions: summary?.permissions ?? [],
             optionalPermissions: summary?.optionalPermissions ?? [],
             hostPermissions: summary?.hostPermissions ?? [],
+            optionalHostPermissions: summary?.optionalHostPermissions ?? [],
             contentScriptCount: summary?.contentScriptCount ?? 0,
             hasAction: summary?.hasAction ?? false,
             hasOptionsPage: summary?.hasOptionsPage ?? false,
             hasDeclarativeNetRequest:
                 summary?.hasDeclarativeNetRequest ?? false,
             hasSidePanel: summary?.hasSidePanel ?? false
+        )
+    }
+}
+
+struct ChromeMV3ExtensionManagerPermissionStatePanel:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var requiredPermissions: [String]
+    var optionalPermissions: [String]
+    var hostPermissions: [String]
+    var optionalHostPermissions: [String]
+    var grantedOptionalPermissions: [String]
+    var grantedOptionalHostPermissions: [String]
+    var deniedPermissions: [String]
+    var revokedPermissions: [String]
+    var dismissedPromptRequestIDs: [String]
+    var activeTabCurrentGrants: [String]
+    var promptGate:
+        ChromeMV3PermissionPromptGateRecord
+    var blockedPromptReasons: [String]
+    var diagnostics: [String]
+
+    static func make(
+        rootURL: URL,
+        record: ChromeMV3ExtensionLifecycleRecord,
+        manifestSummary:
+            ChromeMV3ExtensionManagerManifestSummaryViewState,
+        gate: ChromeMV3ExtensionManagerGate
+    ) -> ChromeMV3ExtensionManagerPermissionStatePanel {
+        let promptGate = ChromeMV3PermissionPromptGateRecord.evaluate(
+            moduleEnabled: gate.managerAvailableInDeveloperPreview,
+            extensionEnabled: record.runtimeState.internalRuntimeEnabled,
+            developerPreviewGate: gate.managerAvailableInDeveloperPreview,
+            publicProductGate: false
+        )
+        let store = ChromeMV3DeveloperPreviewPermissionStateStore(
+            rootURL: rootURL
+        )
+        let persisted = store.loadRecord(
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+        let summary = persisted?.permissionRuntimeSnapshot.permissionStore
+            .summary
+        let activeTab = persisted?.permissionRuntimeSnapshot.activeTabStore
+            .summary
+        let deniedFromPrompts =
+            persisted?.promptResults
+            .filter { $0.disposition == .denied }
+            .flatMap {
+                $0.requestedAPIPermissions + $0.requestedHostPermissions
+                    + $0.requestedOptionalOrigins
+            } ?? []
+        let dismissedPromptIDs =
+            persisted?.promptResults
+            .filter { $0.disposition == .dismissed }
+            .map(\.requestID) ?? []
+        let blockedPromptReasons = promptGate.blockers.map(\.diagnostic)
+        return ChromeMV3ExtensionManagerPermissionStatePanel(
+            requiredPermissions: manifestSummary.permissions,
+            optionalPermissions: manifestSummary.optionalPermissions,
+            hostPermissions: manifestSummary.hostPermissions,
+            optionalHostPermissions: manifestSummary.optionalHostPermissions,
+            grantedOptionalPermissions:
+                summary?.grantedOptionalAPIPermissions ?? [],
+            grantedOptionalHostPermissions:
+                summary?.grantedOptionalHostPermissions ?? [],
+            deniedPermissions:
+                uniqueSortedExtensionManager(
+                    (summary?.deniedPermissions ?? []) + deniedFromPrompts
+                ),
+            revokedPermissions: summary?.revokedPermissions ?? [],
+            dismissedPromptRequestIDs:
+                uniqueSortedExtensionManager(dismissedPromptIDs),
+            activeTabCurrentGrants: activeTab?.activeGrantScopes ?? [],
+            promptGate: persisted?.promptGateRecord ?? promptGate,
+            blockedPromptReasons:
+                uniqueSortedExtensionManager(blockedPromptReasons),
+            diagnostics:
+                uniqueSortedExtensionManager(
+                    (persisted?.diagnostics ?? [])
+                        + promptGate.diagnostics
+                        + [
+                            persisted == nil
+                                ? "No persisted developer-preview permission decisions are recorded for this extension."
+                                : "Developer-preview permission decisions were loaded from the internal sidecar store.",
+                            "Permission state panel does not construct ExtensionManager runtime controllers.",
+                            "silentGrantAllowed is false.",
+                        ]
+                )
         )
     }
 }
@@ -645,6 +739,8 @@ struct ChromeMV3ExtensionManagerDetailViewModel:
         [ChromeMV3ProductRuntimePreflightBlocker]
     var packageIntakeReport: ChromeMV3PackageIntakeReport?
     var popupOptionsLaunchState: ChromeMV3ProductPopupOptionsLaunchState
+    var permissionStatePanel:
+        ChromeMV3ExtensionManagerPermissionStatePanel
     var actions: [ChromeMV3ExtensionManagerActionDescriptor]
     var diagnosticsReportPath: String?
     var diagnosticsJSONAvailable: Bool
@@ -961,14 +1057,16 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
                 moduleEnabled: gate.managerAvailableInDeveloperPreview
                     || gate.installActionsAvailable
             )
+        let manifestSummary = ChromeMV3ExtensionManagerManifestSummaryViewState
+            .make(
+                summary: report?.managerActiveManifestSummary,
+                record: record
+            )
 
         return ChromeMV3ExtensionManagerDetailViewModel(
             gate: gate,
             listItem: listItem,
-            manifestSummary: .make(
-                summary: report?.managerActiveManifestSummary,
-                record: record
-            ),
+            manifestSummary: manifestSummary,
             lifecycleRecord: record,
             generatedBundleState:
                 compatibility?.generatedBundleState
@@ -985,6 +1083,13 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
             packageIntakeReport:
                 ChromeMV3PackageIntakeService.latestReport(rootURL: rootURL),
             popupOptionsLaunchState: popupOptions,
+            permissionStatePanel:
+                ChromeMV3ExtensionManagerPermissionStatePanel.make(
+                    rootURL: rootURL,
+                    record: record,
+                    manifestSummary: manifestSummary,
+                    gate: gate
+                ),
             actions: actionDescriptors(
                 gate: gate,
                 record: record,
@@ -1837,6 +1942,7 @@ struct ChromeMV3ExtensionManagerView: View {
                         detailSummary(selectedDetail)
                         preflightSummary(selectedDetail)
                         popupOptionsSummary(selectedDetail)
+                        permissionStateSummary(selectedDetail)
                         blockerSummary(selectedDetail)
                         detailActions(selectedDetail)
                     }
@@ -2021,6 +2127,90 @@ struct ChromeMV3ExtensionManagerView: View {
             }
         }
 
+        private func permissionStateSummary(
+            _ detail: ChromeMV3ExtensionManagerDetailViewModel
+        ) -> some View {
+            let panel = detail.permissionStatePanel
+            return VStack(alignment: .leading, spacing: 8) {
+                Text("Permissions")
+                    .font(.callout.weight(.semibold))
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 150), spacing: 8)],
+                    alignment: .leading,
+                    spacing: 8
+                ) {
+                    fact(
+                        "Required APIs",
+                        "\(panel.requiredPermissions.count)"
+                    )
+                    fact(
+                        "Optional APIs",
+                        "\(panel.optionalPermissions.count)"
+                    )
+                    fact(
+                        "Required Hosts",
+                        "\(panel.hostPermissions.count)"
+                    )
+                    fact(
+                        "Optional Hosts",
+                        "\(panel.optionalHostPermissions.count)"
+                    )
+                    fact(
+                        "Granted Optional",
+                        "\(panel.grantedOptionalPermissions.count + panel.grantedOptionalHostPermissions.count)"
+                    )
+                    fact(
+                        "Denied/Revoked",
+                        "\(panel.deniedPermissions.count + panel.revokedPermissions.count)"
+                    )
+                    fact(
+                        "activeTab",
+                        "\(panel.activeTabCurrentGrants.count)"
+                    )
+                    fact(
+                        "Prompt Gate",
+                        panel.promptGate
+                            .permissionPromptAvailableInDeveloperPreview
+                            ? "developer-preview" : "blocked"
+                    )
+                }
+                if panel.grantedOptionalPermissions.isEmpty == false
+                    || panel.grantedOptionalHostPermissions.isEmpty == false
+                {
+                    Text(
+                        "Granted: "
+                            + (panel.grantedOptionalPermissions
+                                + panel.grantedOptionalHostPermissions)
+                            .prefix(4)
+                            .joined(separator: ", ")
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                if panel.deniedPermissions.isEmpty == false
+                    || panel.revokedPermissions.isEmpty == false
+                {
+                    Text(
+                        "Blocked decisions: "
+                            + (panel.deniedPermissions
+                                + panel.revokedPermissions)
+                            .prefix(4)
+                            .joined(separator: ", ")
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                if let blocker = panel.blockedPromptReasons.first {
+                    Text(blocker)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+
         private func detailActions(
             _ detail: ChromeMV3ExtensionManagerDetailViewModel
         ) -> some View {
@@ -2085,4 +2275,8 @@ struct ChromeMV3ExtensionManagerView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+}
+
+private func uniqueSortedExtensionManager(_ values: [String]) -> [String] {
+    Array(Set(values.filter { $0.isEmpty == false })).sorted()
 }

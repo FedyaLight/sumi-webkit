@@ -137,6 +137,8 @@ enum ChromeMV3ManifestValidator {
             permissions: stringArray(object["permissions"]).sorted(),
             optionalPermissions: stringArray(object["optional_permissions"]).sorted(),
             hostPermissions: stringArray(object["host_permissions"]).sorted(),
+            optionalHostPermissions:
+                stringArray(object["optional_host_permissions"]).sorted(),
             contentScripts: parseContentScripts(object["content_scripts"]),
             action: parseAction(object["action"]),
             optionsPage: stringValue(object["options_page"]),

@@ -1701,6 +1701,59 @@ final class ChromeMV3ContentScriptEndpointRegistry {
         )
     }
 
+    func invalidateForPermissionChange(
+        extensionID: String,
+        profileID: String,
+        permissionBroker: ChromeMV3PermissionBroker,
+        reason: String
+    ) {
+        let matchedIndices = endpoints.indices.filter { index in
+            endpoints[index].active
+                && endpoints[index].extensionID == extensionID
+                && endpoints[index].profileID == profileID
+        }
+        for index in matchedIndices {
+            let decision = permissionBroker.hostAccessDecision(
+                url: endpoints[index].frameTarget.urlString,
+                tabID: endpoints[index].tabID
+            )
+            guard decision.hasHostAccess == false else { continue }
+            disconnectPorts(
+                endpointID: endpoints[index].endpointID,
+                reason: reason
+            )
+            endpoints[index].senderMetadata.url = nil
+            endpoints[index].senderMetadata.origin = nil
+            endpoints[index].senderMetadata.urlRedacted = true
+            endpoints[index].senderMetadata.originRedacted = true
+            endpoints[index].senderMetadata.redactionReason =
+                "URL and origin were redacted after permission revoke or activeTab expiry."
+            endpoints[index].endpointState = .detached
+            endpoints[index].teardownReason = reason
+            endpoints[index].messageListenerRegistered = false
+            endpoints[index].connectListenerRegistered = false
+            endpoints[index].diagnostics =
+                uniqueSortedContentScripts(
+                    endpoints[index].diagnostics
+                        + decision.diagnostics
+                        + [
+                            "Content-script endpoint invalidated by permission state change.",
+                            "Sender metadata was redacted before teardown completed.",
+                        ]
+                )
+            appendLifecycle(
+                endpointID: endpoints[index].endpointID,
+                state: .detached,
+                reason: reason
+            )
+            appendLifecycle(
+                endpointID: endpoints[index].endpointID,
+                state: .teardownComplete,
+                reason: "Content-script endpoint teardown completed after permission state change."
+            )
+        }
+    }
+
     func tearDownAll(reason: String = "Content-script registry reset.") {
         for index in endpoints.indices where endpoints[index].active {
             disconnectPorts(endpointID: endpoints[index].endpointID, reason: reason)
