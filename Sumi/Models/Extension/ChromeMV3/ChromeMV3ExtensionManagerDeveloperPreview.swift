@@ -1907,6 +1907,14 @@ struct ChromeMV3ExtensionManagerView: View {
                             ? "limited" : "blocked"
                     )
                     fact(
+                        "API Allowlist",
+                        "\(popup.apiSurface.allowedMethods.count) methods"
+                    )
+                    fact(
+                        "API Blockers",
+                        "\(popup.apiSurface.blockedMethods.count) methods"
+                    )
+                    fact(
                         "Toolbar",
                         detail.popupOptionsLaunchState.toolbarActionUIDeferred
                             ? "deferred" : "available"
@@ -1952,6 +1960,24 @@ struct ChromeMV3ExtensionManagerView: View {
                     + (options?.blockingReasons ?? [])).first
                 {
                     Text(reason)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let lastError = detail.popupOptionsLaunchState
+                    .lastRunResult?.popupOptionsLastAPIErrorSummary
+                {
+                    Text("Last popup/options API error: \(lastError)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if popup.apiSurface.blockedMethods.isEmpty == false {
+                    let blocked = popup.apiSurface.blockedMethods
+                        .prefix(4)
+                        .map { "\($0.namespace).\($0.methodName)" }
+                        .joined(separator: ", ")
+                    Text("Blocked popup/options APIs: \(blocked)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

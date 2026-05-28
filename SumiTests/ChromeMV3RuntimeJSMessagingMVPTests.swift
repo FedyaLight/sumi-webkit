@@ -591,6 +591,8 @@ final class ChromeMV3RuntimeJSMessagingMVPTests: XCTestCase {
         let syntheticBridgeFiles =
             runtimeBridgeFiles.union([
                 "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3PopupOptionsJSBridge.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift",
                 "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift",
                 "SumiTests/ChromeMV3TabsScriptingJSMVPTests.swift",
                 "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift",

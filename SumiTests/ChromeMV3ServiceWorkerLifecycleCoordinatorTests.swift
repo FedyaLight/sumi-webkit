@@ -871,29 +871,52 @@ final class ChromeMV3ServiceWorkerLifecycleCoordinatorTests: XCTestCase {
                 "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift"
             )
             .path
+        let popupOptionsBridgePath =
+            root
+            .appendingPathComponent(
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3PopupOptionsJSBridge.swift"
+            )
+            .path
+        let popupOptionsUIPath =
+            root
+            .appendingPathComponent(
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift"
+            )
+            .path
         for pattern in literalPatterns {
+            let allowedPaths: Set<String>
+            if pattern == "add" + "User" + "Script" {
+                allowedPaths = [
+                    tabsScriptingHarnessPath,
+                    storageLocalSyntheticHarnessPath,
+                    passwordManagerSyntheticHarnessPath,
+                    extensionEventAPIsSyntheticHarnessPath,
+                    sidePanelOffscreenIdentitySyntheticHarnessPath,
+                    popupOptionsBridgePath,
+                    popupOptionsUIPath,
+                ]
+            } else if pattern == "connect" + "Native" {
+                allowedPaths = [
+                    runtimeJSMessagingHarnessPath,
+                    runtimeJSMessagingHarnessTestsPath,
+                    passwordManagerSyntheticHarnessPath,
+                    nativeMessagingInternalRuntimePath,
+                    nativeMessagingInternalRuntimeTestsPath,
+                    popupOptionsBridgePath,
+                ]
+            } else if pattern == "Pro" + "cess" + "(" {
+                allowedPaths = [
+                    nativeMessagingInternalRuntimePath,
+                    nativeMessagingInternalRuntimeTestsPath,
+                ]
+            } else {
+                allowedPaths = []
+            }
+
             let offenders = texts
                 .filter { $0.1.contains(pattern) }
                 .map(\.0)
-                .filter {
-                    pattern == "add" + "User" + "Script"
-                        ? $0 != tabsScriptingHarnessPath
-                            && $0 != storageLocalSyntheticHarnessPath
-                            && $0 != passwordManagerSyntheticHarnessPath
-                            && $0 != extensionEventAPIsSyntheticHarnessPath
-                            && $0
-                                != sidePanelOffscreenIdentitySyntheticHarnessPath
-                        : pattern == "connect" + "Native"
-                            ? $0 != runtimeJSMessagingHarnessPath
-                                && $0 != runtimeJSMessagingHarnessTestsPath
-                                && $0 != passwordManagerSyntheticHarnessPath
-                                && $0 != nativeMessagingInternalRuntimePath
-                                && $0 != nativeMessagingInternalRuntimeTestsPath
-                        : pattern == "Pro" + "cess" + "("
-                            ? $0 != nativeMessagingInternalRuntimePath
-                                && $0 != nativeMessagingInternalRuntimeTestsPath
-                        : true
-                }
+                .filter { allowedPaths.contains($0) == false }
             XCTAssertTrue(offenders.isEmpty, "\(pattern): \(offenders)")
         }
         for pattern in regexPatterns {

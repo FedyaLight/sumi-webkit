@@ -107,6 +107,11 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
 
         XCTAssertEqual(open.status, .succeeded)
         XCTAssertEqual(open.popupOptionsRunResult?.webViewCreated, true)
+        XCTAssertEqual(open.popupOptionsRunResult?.popupOptionsBridgeInstalled, true)
+        XCTAssertEqual(open.popupOptionsRunResult?.popupOptionsUserScriptInstalled, true)
+        XCTAssertTrue(open.popupOptionsRunResult?.popupOptionsAPIAllowlist
+            .contains("runtime.sendMessage") == true)
+        XCTAssertTrue(fixture.factory.lastBridgeInstallation?.bridgeAvailable == true)
         XCTAssertEqual(open.popupOptionsRunResult?.normalTabAttached, false)
         XCTAssertEqual(
             open.popupOptionsRunResult?
@@ -378,8 +383,15 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         XCTAssertTrue(popup.canOpen)
         XCTAssertFalse(popup.apiSurface.nativeMessagingAvailable)
         XCTAssertFalse(popup.apiSurface.serviceWorkerWakeAllowed)
-        XCTAssertFalse(popup.apiSurface.tabsAvailable)
-        XCTAssertFalse(popup.apiSurface.scriptingAvailable)
+        XCTAssertTrue(popup.apiSurface.tabsAvailable)
+        XCTAssertTrue(popup.apiSurface.scriptingAvailable)
+        XCTAssertTrue(popup.apiSurface.allowedMethods.contains("tabs.query"))
+        XCTAssertTrue(popup.apiSurface.blockedMethods.contains {
+            $0.namespace == "tabs" && $0.methodName == "sendMessage"
+        })
+        XCTAssertTrue(popup.apiSurface.blockedMethods.contains {
+            $0.namespace == "scripting" && $0.methodName == "executeScript"
+        })
         XCTAssertFalse(popup.gateRecord.normalTabRuntimeBridgeAvailable)
         XCTAssertFalse(popup.gateRecord.contentScriptAttachmentAvailable)
         XCTAssertFalse(popup.gateRecord.runtimeLoadable)
@@ -412,20 +424,37 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         let hostSource = try source(
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift"
         )
+        let bridgeSource = try source(
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3PopupOptionsJSBridge.swift"
+        )
         let managerSource = try source(
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionManagerDeveloperPreview.swift"
         )
         let moduleSource = try source(
             "Sumi/Managers/ExtensionManager/SumiExtensionsModule.swift"
         )
-        let combined = hostSource + "\n" + managerSource + "\n" + moduleSource
+        let normalTabGateSource = try source(
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3NormalTabConfigurationAttachmentGate.swift"
+        )
+        let normalTabBrowserSource = try source(
+            "Sumi/Managers/BrowserManager/BrowserManager.swift"
+        )
+        let combined =
+            hostSource + "\n" + bridgeSource + "\n" + managerSource + "\n"
+                + moduleSource
         let enabledWord = "tr" + "ue"
 
         XCTAssertFalse(combined.contains("Ti" + "mer"))
         XCTAssertFalse(combined.contains("DispatchSource" + "Ti" + "mer"))
         XCTAssertFalse(combined.contains("Process" + "("))
-        XCTAssertFalse(combined.contains("addUser" + "Script"))
-        XCTAssertFalse(combined.contains("addScript" + "MessageHandler"))
+        XCTAssertTrue(hostSource.contains("addUser" + "Script"))
+        XCTAssertTrue(hostSource.contains("addScript" + "MessageHandler"))
+        XCTAssertFalse(managerSource.contains("addUser" + "Script"))
+        XCTAssertFalse(managerSource.contains("addScript" + "MessageHandler"))
+        XCTAssertFalse(moduleSource.contains("addUser" + "Script"))
+        XCTAssertFalse(moduleSource.contains("addScript" + "MessageHandler"))
+        XCTAssertFalse(normalTabGateSource.contains("ChromeMV3PopupOptionsJSShimSource"))
+        XCTAssertFalse(normalTabBrowserSource.contains("ChromeMV3PopupOptionsJSShimSource"))
         XCTAssertFalse(combined.contains("WKContent" + "RuleList"))
         XCTAssertFalse(combined.contains("chrome" + ".google"))
         XCTAssertFalse(
@@ -443,6 +472,16 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         XCTAssertTrue(hostSource.contains("toolbarActionUIDeferred"))
         XCTAssertTrue(hostSource.contains("actionPopupUIAvailableInDeveloperPreview"))
         XCTAssertTrue(hostSource.contains("optionsUIAvailableInDeveloperPreview"))
+        XCTAssertTrue(
+            bridgeSource.contains(
+                "popupOptionsJSBridgeNeverInstalledInProductNormalTabWebViews"
+            )
+        )
+        XCTAssertTrue(
+            bridgeSource.contains(
+                "popupOptionsJSBridgeDoesNotAttachProductContentScripts"
+            )
+        )
     }
 
     private func installFixture(
@@ -642,6 +681,8 @@ private final class FakePopupOptionsWebViewFactory:
     var teardownCount = 0
     var loadedFileURLs: [URL] = []
     var readAccessURLs: [URL] = []
+    var lastBridgeInstallation:
+        ChromeMV3PopupOptionsJSBridgeInstallation?
     var failCreation = false
 
     func createWebView(
@@ -664,6 +705,19 @@ private final class FakePopupOptionsWebViewFactory:
         return FakePopupOptionsWebViewHandle { [weak self] in
             self?.teardownCount += 1
         }
+    }
+
+    func createWebView(
+        loadFileURL: URL,
+        allowingReadAccessTo readAccessURL: URL,
+        bridgeInstallation:
+            ChromeMV3PopupOptionsJSBridgeInstallation
+    ) throws -> ChromeMV3PopupOptionsWebViewHandle {
+        lastBridgeInstallation = bridgeInstallation
+        return try createWebView(
+            loadFileURL: loadFileURL,
+            allowingReadAccessTo: readAccessURL
+        )
     }
 }
 

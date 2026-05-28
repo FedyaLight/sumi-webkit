@@ -138,8 +138,18 @@ struct ChromeMV3DiagnosticsProductExposureFlags:
     var optionsUIAvailableInPublicProduct: Bool
     var popupOptionsRuntimeAllowed: Bool
     var popupOptionsBridgeAllowed: Bool
+    var popupOptionsJSBridgeAvailableInDeveloperPreview: Bool
+    var popupOptionsJSBridgeAvailableInPublicProduct: Bool
+    var popupOptionsRuntimeNamespaceAllowed: Bool
+    var popupOptionsStorageNamespaceAllowed: Bool
+    var popupOptionsPermissionsNamespaceAllowed: Bool
+    var popupOptionsTabsNamespaceAllowed: Bool
+    var popupOptionsScriptingNamespaceAllowed: Bool
+    var popupOptionsNativeMessagingNamespaceAllowed: Bool
+    var popupOptionsBlockedAPIs: [String]
     var popupOptionsProductBlockedReason: String?
     var normalTabRuntimeBridgeAvailable: Bool
+    var contentScriptAttachmentAvailableInProduct: Bool
     var runtimeLoadable: Bool
     var productExtensionUIAvailable: Bool
     var productNetworkEnforcementAvailable: Bool
@@ -173,9 +183,31 @@ struct ChromeMV3DiagnosticsProductExposureFlags:
                 popupOptionsGate.popupOptionsRuntimeAllowed,
             popupOptionsBridgeAllowed:
                 popupOptionsGate.popupOptionsBridgeAllowed,
+            popupOptionsJSBridgeAvailableInDeveloperPreview:
+                popupOptionsGate
+                    .popupOptionsJSBridgeAvailableInDeveloperPreview,
+            popupOptionsJSBridgeAvailableInPublicProduct:
+                popupOptionsGate
+                    .popupOptionsJSBridgeAvailableInPublicProduct,
+            popupOptionsRuntimeNamespaceAllowed:
+                popupOptionsGate.popupOptionsRuntimeNamespaceAllowed,
+            popupOptionsStorageNamespaceAllowed:
+                popupOptionsGate.popupOptionsStorageNamespaceAllowed,
+            popupOptionsPermissionsNamespaceAllowed:
+                popupOptionsGate.popupOptionsPermissionsNamespaceAllowed,
+            popupOptionsTabsNamespaceAllowed:
+                popupOptionsGate.popupOptionsTabsNamespaceAllowed,
+            popupOptionsScriptingNamespaceAllowed:
+                popupOptionsGate.popupOptionsScriptingNamespaceAllowed,
+            popupOptionsNativeMessagingNamespaceAllowed:
+                popupOptionsGate
+                    .popupOptionsNativeMessagingNamespaceAllowed,
+            popupOptionsBlockedAPIs:
+                popupOptionsGate.popupOptionsBlockedAPIs,
             popupOptionsProductBlockedReason:
                 popupOptionsGate.popupOptionsProductBlockedReason,
             normalTabRuntimeBridgeAvailable: false,
+            contentScriptAttachmentAvailableInProduct: false,
             runtimeLoadable: false,
             productExtensionUIAvailable: false,
             productNetworkEnforcementAvailable: false,
@@ -448,6 +480,9 @@ struct ChromeMV3ProductRuntimeHardeningGuardReport:
     var optionsUIAvailableInPublicProduct: Bool
     var popupOptionsRuntimeAllowed: Bool
     var popupOptionsBridgeAllowed: Bool
+    var popupOptionsJSBridgeAvailableInDeveloperPreview: Bool
+    var popupOptionsJSBridgeAvailableInPublicProduct: Bool
+    var contentScriptAttachmentAvailableInProduct: Bool
     var normalTabRuntimeBridgeAvailable: Bool
     var runtimeLoadable: Bool
     var productExtensionUIAvailable: Bool
@@ -467,6 +502,9 @@ struct ChromeMV3ProductRuntimeHardeningGuardReport:
         optionsUIAvailableInPublicProduct: false,
         popupOptionsRuntimeAllowed: false,
         popupOptionsBridgeAllowed: false,
+        popupOptionsJSBridgeAvailableInDeveloperPreview: false,
+        popupOptionsJSBridgeAvailableInPublicProduct: false,
+        contentScriptAttachmentAvailableInProduct: false,
         normalTabRuntimeBridgeAvailable: false,
         runtimeLoadable: false,
         productExtensionUIAvailable: false,
@@ -753,6 +791,9 @@ struct ChromeMV3FoundationPhaseStatus:
     var optionsUIAvailableInPublicProduct: Bool
     var popupOptionsRuntimeAllowed: Bool
     var popupOptionsBridgeAllowed: Bool
+    var popupOptionsJSBridgeAvailableInDeveloperPreview: Bool
+    var popupOptionsJSBridgeAvailableInPublicProduct: Bool
+    var contentScriptAttachmentAvailableInProduct: Bool
     var normalTabRuntimeBridgeAvailable: Bool
     var runtimeLoadable: Bool
     var productExtensionUIAvailable: Bool
@@ -789,7 +830,13 @@ struct ChromeMV3FoundationPhaseStatus:
             optionsUIAvailableInPublicProduct: false,
             popupOptionsRuntimeAllowed:
                 viewModel?.productFlags.popupOptionsRuntimeAllowed ?? false,
-            popupOptionsBridgeAllowed: false,
+            popupOptionsBridgeAllowed:
+                viewModel?.productFlags.popupOptionsBridgeAllowed ?? false,
+            popupOptionsJSBridgeAvailableInDeveloperPreview:
+                viewModel?.productFlags
+                    .popupOptionsJSBridgeAvailableInDeveloperPreview ?? false,
+            popupOptionsJSBridgeAvailableInPublicProduct: false,
+            contentScriptAttachmentAvailableInProduct: false,
             normalTabRuntimeBridgeAvailable: false,
             runtimeLoadable: false,
             productExtensionUIAvailable: false,
@@ -1856,6 +1903,21 @@ private func safeDiagnosticsPathComponent(_ raw: String) -> String {
                     flagRow(
                         "normalTabRuntimeBridgeAvailable",
                         viewModel.productFlags.normalTabRuntimeBridgeAvailable
+                    )
+                    flagRow(
+                        "popupOptionsJSBridgeAvailableInDeveloperPreview",
+                        viewModel.productFlags
+                            .popupOptionsJSBridgeAvailableInDeveloperPreview
+                    )
+                    flagRow(
+                        "popupOptionsJSBridgeAvailableInPublicProduct",
+                        viewModel.productFlags
+                            .popupOptionsJSBridgeAvailableInPublicProduct
+                    )
+                    flagRow(
+                        "contentScriptAttachmentAvailableInProduct",
+                        viewModel.productFlags
+                            .contentScriptAttachmentAvailableInProduct
                     )
                     flagRow("runtimeLoadable", viewModel.productFlags.runtimeLoadable)
                     flagRow(
