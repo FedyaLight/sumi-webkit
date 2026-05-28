@@ -3719,6 +3719,12 @@ final class SumiExtensionsModule {
             contentScriptsInjectedIntoProductPages: false,
             serviceWorkerWakeAttempted: false,
             nativeHostLaunchAttempted: false,
+            popupOptionsBridgeInstalled: false,
+            popupOptionsUserScriptInstalled: false,
+            popupOptionsAPIAllowlist: [],
+            popupOptionsAPICallsObserved: [],
+            popupOptionsBlockedAPIs: [],
+            popupOptionsLastAPIErrorSummary: nil,
             diagnostics: ["No popup/options WebView session was active."]
         )
         lastChromeMV3PopupOptionsRunResult = result

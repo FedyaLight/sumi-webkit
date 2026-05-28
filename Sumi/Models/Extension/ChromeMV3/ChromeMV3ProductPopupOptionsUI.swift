@@ -281,8 +281,17 @@ struct ChromeMV3ProductPopupOptionsUIGateRecord:
     var actionPopupUIAvailableInPublicProduct: Bool
     var optionsUIAvailableInDeveloperPreview: Bool
     var optionsUIAvailableInPublicProduct: Bool
+    var popupOptionsJSBridgeAvailableInDeveloperPreview: Bool
+    var popupOptionsJSBridgeAvailableInPublicProduct: Bool
     var popupOptionsRuntimeAllowed: Bool
     var popupOptionsBridgeAllowed: Bool
+    var popupOptionsRuntimeNamespaceAllowed: Bool
+    var popupOptionsStorageNamespaceAllowed: Bool
+    var popupOptionsPermissionsNamespaceAllowed: Bool
+    var popupOptionsTabsNamespaceAllowed: Bool
+    var popupOptionsScriptingNamespaceAllowed: Bool
+    var popupOptionsNativeMessagingNamespaceAllowed: Bool
+    var popupOptionsBlockedAPIs: [String]
     var popupOptionsProductBlockedReason: String?
     var normalTabRuntimeBridgeAvailable: Bool
     var contentScriptAttachmentAvailable: Bool
@@ -311,6 +320,7 @@ struct ChromeMV3ProductPopupOptionsUIGateRecord:
         let developerPreviewAvailable =
             developerPreviewGate && (lifecycleRecord == nil || installed)
         let runtimeAllowed = developerPreviewAvailable && enabled
+        let bridgeAllowed = runtimeAllowed
         var diagnostics: [String] = []
         if moduleEnabled == false {
             diagnostics.append(
@@ -346,8 +356,19 @@ struct ChromeMV3ProductPopupOptionsUIGateRecord:
             optionsUIAvailableInDeveloperPreview:
                 developerPreviewAvailable,
             optionsUIAvailableInPublicProduct: false,
+            popupOptionsJSBridgeAvailableInDeveloperPreview:
+                bridgeAllowed,
+            popupOptionsJSBridgeAvailableInPublicProduct: false,
             popupOptionsRuntimeAllowed: runtimeAllowed,
-            popupOptionsBridgeAllowed: false,
+            popupOptionsBridgeAllowed: bridgeAllowed,
+            popupOptionsRuntimeNamespaceAllowed: bridgeAllowed,
+            popupOptionsStorageNamespaceAllowed: bridgeAllowed,
+            popupOptionsPermissionsNamespaceAllowed: bridgeAllowed,
+            popupOptionsTabsNamespaceAllowed: bridgeAllowed,
+            popupOptionsScriptingNamespaceAllowed: bridgeAllowed,
+            popupOptionsNativeMessagingNamespaceAllowed: false,
+            popupOptionsBlockedAPIs:
+                ChromeMV3PopupOptionsAPIMethodPolicy.defaultBlockedAPIIDs,
             popupOptionsProductBlockedReason:
                 "Public product popup/options support remains gated to internal developer preview.",
             normalTabRuntimeBridgeAvailable: false,
@@ -367,6 +388,8 @@ struct ChromeMV3PopupOptionsAPISurfaceAvailability:
     var implementedNamespaces: [String]
     var exposedNamespaces: [String]
     var blockedNamespaces: [String]
+    var allowedMethods: [String]
+    var blockedMethods: [ChromeMV3PopupOptionsBlockedAPIDiagnostic]
     var pageReferencesExtensionAPI: Bool
     var runtimeAvailable: Bool
     var storageLocalAvailable: Bool
@@ -400,32 +423,39 @@ struct ChromeMV3PopupOptionsAPISurfaceAvailability:
             implemented.append(contentsOf: ["tabs", "scripting"])
         }
 
+        let policy = ChromeMV3PopupOptionsAPIMethodPolicy.defaultPolicy
         let exposed = gateRecord.popupOptionsBridgeAllowed
-            ? implemented
+            ? policy.exposedNamespaces
             : []
-        let blocked = pageReferencesExtensionAPI
-            ? Array(Set(implemented + ["runtime"])).sorted()
-            : []
+        let blocked = gateRecord.popupOptionsBridgeAllowed
+            ? policy.blockedNamespaces
+            : Array(Set(implemented + ["runtime"])).sorted()
         var diagnostics: [String] = []
         if pageReferencesExtensionAPI {
             diagnostics.append(
-                "The page references extension APIs; bridge exposure is blocked in this phase."
+                gateRecord.popupOptionsBridgeAllowed
+                    ? "The page references extension APIs; the developer-preview popup/options bridge is available."
+                    : "The page references extension APIs; bridge exposure is blocked by launch gates."
             )
         }
         diagnostics.append(
-            "Native messaging, service-worker wake, tabs, and scripting are not exposed from popup/options product UI."
+            "Popup/options bridge exposes only the developer-preview allowlist; unsupported methods return deterministic lastError diagnostics."
         )
 
         return ChromeMV3PopupOptionsAPISurfaceAvailability(
             implementedNamespaces: uniqueSortedPopupOptions(implemented),
             exposedNamespaces: uniqueSortedPopupOptions(exposed),
             blockedNamespaces: uniqueSortedPopupOptions(blocked),
+            allowedMethods: gateRecord.popupOptionsBridgeAllowed
+                ? policy.allowedMethods
+                : [],
+            blockedMethods: policy.blockedDiagnostics,
             pageReferencesExtensionAPI: pageReferencesExtensionAPI,
             runtimeAvailable: exposed.contains("runtime"),
             storageLocalAvailable: exposed.contains("storage.local"),
             permissionsAvailable: exposed.contains("permissions"),
-            tabsAvailable: false,
-            scriptingAvailable: false,
+            tabsAvailable: exposed.contains("tabs"),
+            scriptingAvailable: exposed.contains("scripting"),
             nativeMessagingAvailable: false,
             serviceWorkerWakeAllowed: false,
             diagnostics: uniqueSortedPopupOptions(diagnostics)
@@ -462,6 +492,10 @@ struct ChromeMV3ProductPopupOptionsLaunchRecord:
     var generatedBundleRootPath: String?
     var generatedRewrittenBundlePath: String?
     var generatedResourcePath: String?
+    var manifestPermissions: [String]
+    var manifestOptionalPermissions: [String]
+    var manifestHostPermissions: [String]
+    var manifestOptionalHostPermissions: [String]
     var resourceValidationState:
         ChromeMV3PopupOptionsResourceValidationState
     var productGateState: ChromeMV3PopupOptionsProductGateState
@@ -788,6 +822,11 @@ enum ChromeMV3ProductPopupOptionsLaunchPlanner {
             generatedBundleRootPath: activeVersion?.generatedBundleRootPath,
             generatedRewrittenBundlePath: generatedRootPath,
             generatedResourcePath: declaration?.generatedResourcePath,
+            manifestPermissions: manifestFacts.permissions,
+            manifestOptionalPermissions: manifestFacts.optionalPermissions,
+            manifestHostPermissions: manifestFacts.hostPermissions,
+            manifestOptionalHostPermissions:
+                manifestFacts.optionalHostPermissions,
             resourceValidationState: validation,
             productGateState: productGate,
             hostCreationState:
@@ -904,6 +943,10 @@ enum ChromeMV3ProductPopupOptionsLaunchPlanner {
             permissions: object["permissions"] as? [String] ?? [],
             optionalPermissions:
                 object["optional_permissions"] as? [String] ?? [],
+            hostPermissions:
+                object["host_permissions"] as? [String] ?? [],
+            optionalHostPermissions:
+                object["optional_host_permissions"] as? [String] ?? [],
             backgroundServiceWorkerPath:
                 background?["service_worker"] as? String
         )
@@ -929,6 +972,8 @@ private struct ChromeMV3PopupOptionsManifestFacts {
     var optionsUIOpenInTab: Bool?
     var permissions: [String]
     var optionalPermissions: [String]
+    var hostPermissions: [String]
+    var optionalHostPermissions: [String]
     var backgroundServiceWorkerPath: String?
 
     static let empty = ChromeMV3PopupOptionsManifestFacts(
@@ -939,6 +984,8 @@ private struct ChromeMV3PopupOptionsManifestFacts {
         optionsUIOpenInTab: nil,
         permissions: [],
         optionalPermissions: [],
+        hostPermissions: [],
+        optionalHostPermissions: [],
         backgroundServiceWorkerPath: nil
     )
 }
@@ -1025,6 +1072,12 @@ struct ChromeMV3ProductPopupOptionsRunResult:
     var contentScriptsInjectedIntoProductPages: Bool
     var serviceWorkerWakeAttempted: Bool
     var nativeHostLaunchAttempted: Bool
+    var popupOptionsBridgeInstalled: Bool
+    var popupOptionsUserScriptInstalled: Bool
+    var popupOptionsAPIAllowlist: [String]
+    var popupOptionsAPICallsObserved: [ChromeMV3PopupOptionsJSBridgeCallRecord]
+    var popupOptionsBlockedAPIs: [ChromeMV3PopupOptionsBlockedAPIDiagnostic]
+    var popupOptionsLastAPIErrorSummary: String?
     var diagnostics: [String]
 
     static func blocked(
@@ -1044,6 +1097,13 @@ struct ChromeMV3ProductPopupOptionsRunResult:
             contentScriptsInjectedIntoProductPages: false,
             serviceWorkerWakeAttempted: false,
             nativeHostLaunchAttempted: false,
+            popupOptionsBridgeInstalled: false,
+            popupOptionsUserScriptInstalled: false,
+            popupOptionsAPIAllowlist: [],
+            popupOptionsAPICallsObserved: [],
+            popupOptionsBlockedAPIs:
+                launchRecord?.apiSurface.blockedMethods ?? [],
+            popupOptionsLastAPIErrorSummary: nil,
             diagnostics: uniqueSortedPopupOptions(diagnostics)
         )
     }
@@ -1051,7 +1111,18 @@ struct ChromeMV3ProductPopupOptionsRunResult:
 
 @MainActor
 protocol ChromeMV3PopupOptionsWebViewHandle: AnyObject {
+    var popupOptionsBridgeDiagnosticsSnapshot:
+        ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot? { get }
+
     func tearDown()
+}
+
+@MainActor
+extension ChromeMV3PopupOptionsWebViewHandle {
+    var popupOptionsBridgeDiagnosticsSnapshot:
+        ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot? {
+        nil
+    }
 }
 
 @MainActor
@@ -1060,6 +1131,29 @@ protocol ChromeMV3PopupOptionsWebViewFactory: AnyObject {
         loadFileURL: URL,
         allowingReadAccessTo readAccessURL: URL
     ) throws -> ChromeMV3PopupOptionsWebViewHandle
+
+    func createWebView(
+        loadFileURL: URL,
+        allowingReadAccessTo readAccessURL: URL,
+        bridgeInstallation:
+            ChromeMV3PopupOptionsJSBridgeInstallation
+    ) throws -> ChromeMV3PopupOptionsWebViewHandle
+}
+
+@MainActor
+extension ChromeMV3PopupOptionsWebViewFactory {
+    func createWebView(
+        loadFileURL: URL,
+        allowingReadAccessTo readAccessURL: URL,
+        bridgeInstallation:
+            ChromeMV3PopupOptionsJSBridgeInstallation
+    ) throws -> ChromeMV3PopupOptionsWebViewHandle {
+        _ = bridgeInstallation
+        return try createWebView(
+            loadFileURL: loadFileURL,
+            allowingReadAccessTo: readAccessURL
+        )
+    }
 }
 
 @MainActor
@@ -1136,9 +1230,14 @@ final class ChromeMV3ProductPopupOptionsHostController {
         }
 
         do {
+            let bridgeInstallation =
+                ChromeMV3PopupOptionsJSBridgeInstallation.make(
+                    launchRecord: launchRecord
+                )
             let handle = try factory.createWebView(
                 loadFileURL: fileURL,
-                allowingReadAccessTo: readAccessURL
+                allowingReadAccessTo: readAccessURL,
+                bridgeInstallation: bridgeInstallation
             )
             var opened = launchRecord
             opened.hostCreationState = .created
@@ -1160,8 +1259,21 @@ final class ChromeMV3ProductPopupOptionsHostController {
                 contentScriptsInjectedIntoProductPages: false,
                 serviceWorkerWakeAttempted: false,
                 nativeHostLaunchAttempted: false,
+                popupOptionsBridgeInstalled:
+                    bridgeInstallation.bridgeAvailable,
+                popupOptionsUserScriptInstalled:
+                    bridgeInstallation.bridgeAvailable,
+                popupOptionsAPIAllowlist:
+                    bridgeInstallation.allowlist.allowedMethods,
+                popupOptionsAPICallsObserved: [],
+                popupOptionsBlockedAPIs:
+                    bridgeInstallation.allowlist.blockedDiagnostics,
+                popupOptionsLastAPIErrorSummary: nil,
                 diagnostics: [
                     "Popup/options WebView was created only after explicit developer-preview launch gates passed.",
+                    bridgeInstallation.bridgeAvailable
+                        ? "Popup/options JS bridge was installed only in the extension-owned WebView."
+                        : "Popup/options JS bridge was not installed because launch gates did not allow it.",
                     "No normal tab was attached and no content scripts were injected.",
                 ]
             )
@@ -1189,6 +1301,12 @@ final class ChromeMV3ProductPopupOptionsHostController {
                 contentScriptsInjectedIntoProductPages: false,
                 serviceWorkerWakeAttempted: false,
                 nativeHostLaunchAttempted: false,
+                popupOptionsBridgeInstalled: false,
+                popupOptionsUserScriptInstalled: false,
+                popupOptionsAPIAllowlist: [],
+                popupOptionsAPICallsObserved: [],
+                popupOptionsBlockedAPIs: failed.apiSurface.blockedMethods,
+                popupOptionsLastAPIErrorSummary: nil,
                 diagnostics: failed.diagnostics
             )
         }
@@ -1222,6 +1340,12 @@ final class ChromeMV3ProductPopupOptionsHostController {
                 contentScriptsInjectedIntoProductPages: false,
                 serviceWorkerWakeAttempted: false,
                 nativeHostLaunchAttempted: false,
+                popupOptionsBridgeInstalled: false,
+                popupOptionsUserScriptInstalled: false,
+                popupOptionsAPIAllowlist: [],
+                popupOptionsAPICallsObserved: [],
+                popupOptionsBlockedAPIs: [],
+                popupOptionsLastAPIErrorSummary: nil,
                 diagnostics: [
                     "No popup/options WebView session was active.",
                 ]
@@ -1229,10 +1353,14 @@ final class ChromeMV3ProductPopupOptionsHostController {
         }
 
         var lastRecord: ChromeMV3ProductPopupOptionsLaunchRecord?
+        var lastBridgeSnapshot:
+            ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?
         for key in keys {
             guard let session = sessions.removeValue(forKey: key) else {
                 continue
             }
+            lastBridgeSnapshot =
+                session.handle.popupOptionsBridgeDiagnosticsSnapshot
             session.handle.tearDown()
             var closed = session.launchRecord
             closed.hostCreationState = .tornDown
@@ -1256,6 +1384,18 @@ final class ChromeMV3ProductPopupOptionsHostController {
             contentScriptsInjectedIntoProductPages: false,
             serviceWorkerWakeAttempted: false,
             nativeHostLaunchAttempted: false,
+            popupOptionsBridgeInstalled: false,
+            popupOptionsUserScriptInstalled: false,
+            popupOptionsAPIAllowlist:
+                lastRecord?.apiSurface.allowedMethods ?? [],
+            popupOptionsAPICallsObserved:
+                lastBridgeSnapshot?.callRecords ?? [],
+            popupOptionsBlockedAPIs:
+                lastBridgeSnapshot?.blockedAPIs
+                    ?? lastRecord?.apiSurface.blockedMethods
+                    ?? [],
+            popupOptionsLastAPIErrorSummary:
+                lastBridgeSnapshot?.lastAPIErrorSummary,
             diagnostics: [
                 "Popup/options WebView teardown completed.",
                 "No script message handlers, native hosts, service-worker sessions, or normal-tab attachments were retained.",
@@ -1281,6 +1421,12 @@ final class ChromeMV3ProductPopupOptionsHostController {
                 contentScriptsInjectedIntoProductPages: false,
                 serviceWorkerWakeAttempted: false,
                 nativeHostLaunchAttempted: false,
+                popupOptionsBridgeInstalled: false,
+                popupOptionsUserScriptInstalled: false,
+                popupOptionsAPIAllowlist: [],
+                popupOptionsAPICallsObserved: [],
+                popupOptionsBlockedAPIs: [],
+                popupOptionsLastAPIErrorSummary: nil,
                 diagnostics: ["No popup/options WebView session was active."]
             )
         }
@@ -1306,6 +1452,12 @@ final class ChromeMV3ProductPopupOptionsHostController {
             contentScriptsInjectedIntoProductPages: false,
             serviceWorkerWakeAttempted: false,
             nativeHostLaunchAttempted: false,
+            popupOptionsBridgeInstalled: false,
+            popupOptionsUserScriptInstalled: false,
+            popupOptionsAPIAllowlist: [],
+            popupOptionsAPICallsObserved: [],
+            popupOptionsBlockedAPIs: [],
+            popupOptionsLastAPIErrorSummary: nil,
             diagnostics: ["Popup/options WebView teardown completed."]
         )
     }
@@ -1364,15 +1516,36 @@ final class ChromeMV3ProductPopupOptionsWKWebViewFactory:
             readAccessURL: readAccessURL
         )
     }
+
+    func createWebView(
+        loadFileURL: URL,
+        allowingReadAccessTo readAccessURL: URL,
+        bridgeInstallation:
+            ChromeMV3PopupOptionsJSBridgeInstallation
+    ) throws -> ChromeMV3PopupOptionsWebViewHandle {
+        ChromeMV3ProductPopupOptionsWKWebViewHandle(
+            loadFileURL: loadFileURL,
+            readAccessURL: readAccessURL,
+            bridgeInstallation: bridgeInstallation
+        )
+    }
 }
 
 @MainActor
-private final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
+final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
     ChromeMV3PopupOptionsWebViewHandle
 {
     private var webView: WKWebView?
+    private var userContentController: WKUserContentController?
+    private var scriptHandler:
+        ChromeMV3PopupOptionsWKScriptMessageHandler?
+    private let messageHandlerName: String?
+    private var bridgeHandler: ChromeMV3PopupOptionsJSBridgeHandler?
+    private(set) var installedUserScriptCount = 0
+    private(set) var installedScriptMessageHandlerCount = 0
 
     init(loadFileURL: URL, readAccessURL: URL) {
+        self.messageHandlerName = nil
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         let webView = WKWebView(frame: .zero, configuration: configuration)
@@ -1383,14 +1556,173 @@ private final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         self.webView = webView
     }
 
+    init(
+        loadFileURL: URL,
+        readAccessURL: URL,
+        bridgeInstallation:
+            ChromeMV3PopupOptionsJSBridgeInstallation
+    ) {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let userContentController = WKUserContentController()
+        var messageHandlerName: String?
+        if bridgeInstallation.bridgeAvailable,
+           let scriptSource = bridgeInstallation.scriptSource
+        {
+            let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+                configuration: bridgeInstallation.configuration
+            )
+            let scriptHandler =
+                ChromeMV3PopupOptionsWKScriptMessageHandler(
+                    handler: handler
+                )
+            userContentController.addScriptMessageHandler(
+                scriptHandler,
+                contentWorld: .page,
+                name: bridgeInstallation.messageHandlerName
+            )
+            let userScript = WKUserScript(
+                source: scriptSource,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true,
+                in: .page
+            )
+            userContentController.addUserScript(userScript)
+            self.scriptHandler = scriptHandler
+            self.bridgeHandler = handler
+            self.installedUserScriptCount = 1
+            self.installedScriptMessageHandlerCount = 1
+            messageHandlerName = bridgeInstallation.messageHandlerName
+        } else {
+            self.scriptHandler = nil
+            self.bridgeHandler = nil
+        }
+        configuration.userContentController = userContentController
+        self.userContentController = userContentController
+        self.messageHandlerName = messageHandlerName
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.loadFileURL(
+            loadFileURL,
+            allowingReadAccessTo: readAccessURL
+        )
+        self.webView = webView
+    }
+
+    var popupOptionsBridgeDiagnosticsSnapshot:
+        ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot? {
+        bridgeHandler?.diagnosticsSnapshot
+    }
+
     func tearDown() {
         webView?.stopLoading()
         webView?.navigationDelegate = nil
         webView?.uiDelegate = nil
+        if let messageHandlerName {
+            userContentController?.removeScriptMessageHandler(
+                forName: messageHandlerName,
+                contentWorld: .page
+            )
+        }
+        userContentController?.removeAllUserScripts()
+        bridgeHandler?.tearDown()
         webView?.removeFromSuperview()
         webView = nil
+        scriptHandler = nil
+        bridgeHandler = nil
+        userContentController = nil
+        installedUserScriptCount = 0
+        installedScriptMessageHandlerCount = 0
+    }
+
+    #if DEBUG
+    private var loadWaiter:
+        ChromeMV3ProductPopupOptionsWKLoadWaiter?
+
+    func waitForLoadForTesting() async throws {
+        guard let webView else { return }
+        let waiter = ChromeMV3ProductPopupOptionsWKLoadWaiter()
+        loadWaiter = waiter
+        webView.navigationDelegate = waiter
+        defer {
+            webView.navigationDelegate = nil
+            loadWaiter = nil
+        }
+        if webView.isLoading == false {
+            return
+        }
+        try await waiter.wait()
+    }
+
+    func callAsyncJavaScriptForTesting(_ script: String) async throws -> Any? {
+        guard let webView else { return nil }
+        return try await webView.callAsyncJavaScript(
+            script,
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        )
+    }
+    #endif
+}
+
+#if DEBUG
+@MainActor
+private final class ChromeMV3ProductPopupOptionsWKLoadWaiter:
+    NSObject,
+    WKNavigationDelegate
+{
+    private var continuation: CheckedContinuation<Void, Error>?
+    private var completed = false
+
+    func wait() async throws {
+        if completed { return }
+        try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFinish navigation: WKNavigation!
+    ) {
+        _ = webView
+        _ = navigation
+        finish()
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFail navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        _ = webView
+        _ = navigation
+        finish(error)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        _ = webView
+        _ = navigation
+        finish(error)
+    }
+
+    private func finish(_ error: Error? = nil) {
+        guard completed == false else { return }
+        completed = true
+        guard let continuation else { return }
+        self.continuation = nil
+        if let error {
+            continuation.resume(throwing: error)
+        } else {
+            continuation.resume()
+        }
     }
 }
+#endif
 #endif
 
 private func uniqueBlockers(

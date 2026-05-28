@@ -845,6 +845,10 @@ final class ChromeMV3PermissionRuntimeImplementationTests: XCTestCase {
                     != "ChromeMV3PasswordManagerSyntheticFixture.swift"
                     && $0.lastPathComponent
                     != "ChromeMV3NativeMessagingInternalRuntime.swift"
+                    && $0.lastPathComponent
+                    != "ChromeMV3PopupOptionsJSBridge.swift"
+                    && $0.lastPathComponent
+                    != "ChromeMV3ProductPopupOptionsUI.swift"
             }
             + [extensionModule]
         let source = try swiftFiles.map {

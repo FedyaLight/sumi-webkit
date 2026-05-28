@@ -724,6 +724,8 @@ final class ChromeMV3JSBridgeContractTests: XCTestCase {
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionEventAPIsRuntime.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3SidePanelOffscreenIdentitySyntheticWebKitHarness.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3PopupOptionsJSBridge.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift",
             "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift",
         ]
         let boundaryGuardJoined = sources

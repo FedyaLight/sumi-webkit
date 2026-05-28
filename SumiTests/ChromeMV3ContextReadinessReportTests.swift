@@ -1028,6 +1028,10 @@ final class ChromeMV3ContextReadinessReportTests: XCTestCase {
                         != "Sumi/Models/Extension/ChromeMV3/ChromeMV3SidePanelOffscreenIdentitySyntheticWebKitHarness.swift"
                     && $0.relativePath
                         != "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift"
+                    && $0.relativePath
+                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3PopupOptionsJSBridge.swift"
+                    && $0.relativePath
+                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift"
             }
             .map(\.contents)
             .joined(separator: "\n")
