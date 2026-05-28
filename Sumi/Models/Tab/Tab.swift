@@ -1174,6 +1174,14 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         guard let replacementWebView = makeNormalTabWebView(reason: reason) else {
             return false
         }
+        browserManager?.extensionsModule
+            .noteChromeMV3ContentScriptLifecycleEntrypointIfLoaded(
+                self,
+                webView: previousWebView,
+                url: targetURL ?? previousWebView.url,
+                entrypoint: .webViewReplaced,
+                reason: "Tab.rebuildNormalWebViewForAdblockIfNeeded.\(reason)"
+            )
 
         invalidateCurrentPermissionPageForWebViewReplacement(reason: reason)
 
@@ -1222,6 +1230,14 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         guard let replacementWebView = makeNormalTabWebView(reason: reason) else {
             return false
         }
+        browserManager?.extensionsModule
+            .noteChromeMV3ContentScriptLifecycleEntrypointIfLoaded(
+                self,
+                webView: previousWebView,
+                url: targetURL ?? previousWebView.url,
+                entrypoint: .webViewReplaced,
+                reason: "Tab.rebuildNormalWebViewForProtectionIfNeeded.\(reason)"
+            )
 
         invalidateCurrentPermissionPageForWebViewReplacement(reason: reason)
 
@@ -1269,6 +1285,14 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         guard let replacementWebView = makeNormalTabWebView(reason: reason) else {
             return false
         }
+        browserManager?.extensionsModule
+            .noteChromeMV3ContentScriptLifecycleEntrypointIfLoaded(
+                self,
+                webView: previousWebView,
+                url: targetURL ?? previousWebView.url,
+                entrypoint: .webViewReplaced,
+                reason: "Tab.rebuildNormalWebViewForAutoplayIfNeeded.\(reason)"
+            )
 
         invalidateCurrentPermissionPageForWebViewReplacement(reason: reason)
 
@@ -1487,6 +1511,14 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         RuntimeDiagnostics.debug("Performing comprehensive WebView cleanup for '\(name)'.", category: "Tab")
 
         if let webView = _webView {
+            browserManager?.extensionsModule
+                .noteChromeMV3ContentScriptLifecycleEntrypointIfLoaded(
+                    self,
+                    webView: webView,
+                    url: webView.url ?? url,
+                    entrypoint: .webViewDiscarded,
+                    reason: "Tab.performComprehensiveWebViewCleanup"
+                )
             cleanupCloneWebView(webView)
         }
 

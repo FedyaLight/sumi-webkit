@@ -298,6 +298,14 @@ final class TabSuspensionService {
             return false
         }
 
+        browserManager.extensionsModule
+            .noteChromeMV3ContentScriptLifecycleEntrypointIfLoaded(
+                tab,
+                webView: liveWebViews.first,
+                url: tab.url,
+                entrypoint: .webViewSuspended,
+                reason: "TabSuspensionService.suspend.\(reason)"
+            )
         cancelProactiveTimer(for: tab.id)
         hiddenTabStates.removeValue(forKey: tab.id)
         tab.markSuspended(at: dateProvider())

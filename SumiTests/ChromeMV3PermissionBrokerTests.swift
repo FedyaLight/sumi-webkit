@@ -1379,6 +1379,8 @@ final class ChromeMV3PermissionBrokerTests: XCTestCase {
                     && $0.relativePath
                         != "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift"
                     && $0.relativePath
+                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3ContentScriptProductAttachment.swift"
+                    && $0.relativePath
                         != "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift"
             }
             .map(\.contents)

@@ -31,6 +31,14 @@ final class SumiTabLifecycleNavigationResponder:
         }
         tab.resetPageSuspensionRuntimeState()
         tab.browserManager?.tabSuspensionService.resetRevisitProtection(for: tab)
+        tab.browserManager?.extensionsModule
+            .noteChromeMV3ContentScriptLifecycleEntrypointIfLoaded(
+                tab,
+                webView: webView,
+                url: context.url ?? webView.url,
+                entrypoint: .navigationStarted,
+                reason: "SumiTabLifecycleNavigationResponder.willStart"
+            )
 
         if let url = context.url {
             tab.browserManager?.extensionsModule.prepareWebViewForExtensionRuntime(
@@ -82,6 +90,14 @@ final class SumiTabLifecycleNavigationResponder:
 
         tab.loadingState = .didCommit
         tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.loading])
+        tab.browserManager?.extensionsModule
+            .noteChromeMV3ContentScriptLifecycleEntrypointIfLoaded(
+                tab,
+                webView: webView,
+                url: context.url ?? webView.url,
+                entrypoint: .navigationCommitted,
+                reason: "SumiTabLifecycleNavigationResponder.didCommit"
+            )
 
         if let newURL = webView.url {
             tab.url = newURL
@@ -124,6 +140,14 @@ final class SumiTabLifecycleNavigationResponder:
 
         tab.loadingState = .didFinish
         tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.loading])
+        tab.browserManager?.extensionsModule
+            .noteChromeMV3ContentScriptLifecycleEntrypointIfLoaded(
+                tab,
+                webView: webView,
+                url: context?.url ?? webView.url,
+                entrypoint: .navigationFinished,
+                reason: "SumiTabLifecycleNavigationResponder.didFinish"
+            )
 
         if let newURL = webView.url {
             tab.url = newURL
@@ -163,6 +187,14 @@ final class SumiTabLifecycleNavigationResponder:
         else { return }
 
         tab.handleSameDocumentNavigation(to: newURL)
+        tab.browserManager?.extensionsModule
+            .noteChromeMV3ContentScriptLifecycleEntrypointIfLoaded(
+                tab,
+                webView: webView,
+                url: newURL,
+                entrypoint: .sameDocumentNavigation,
+                reason: "SumiTabLifecycleNavigationResponder.sameDocument"
+            )
         tab.historyRecorder.didSameDocumentNavigation(
             to: newURL,
             type: navigationType,
@@ -185,6 +217,14 @@ final class SumiTabLifecycleNavigationResponder:
         else { return }
 
         let webView = context?.webView
+        tab.browserManager?.extensionsModule
+            .noteChromeMV3ContentScriptLifecycleEntrypointIfLoaded(
+                tab,
+                webView: webView,
+                url: context?.url ?? webView?.url,
+                entrypoint: .navigationFailed,
+                reason: "SumiTabLifecycleNavigationResponder.didFail"
+            )
         let isBackForwardNavigation = context?.action?.navigationType.isBackForward == true
         if isBackForwardNavigation {
             tab.finishBackForwardNavigationTracking(using: webView)

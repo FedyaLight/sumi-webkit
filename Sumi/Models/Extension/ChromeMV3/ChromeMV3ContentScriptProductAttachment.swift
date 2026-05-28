@@ -107,6 +107,218 @@ enum ChromeMV3ContentScriptWorld:
     }
 }
 
+enum ChromeMV3ContentScriptURLClassification:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case aboutBlank = "about:blank"
+    case aboutSrcdoc = "about:srcdoc"
+    case blob
+    case data
+    case extensionPage
+    case file
+    case httpFamily
+    case opaqueAbout
+    case other
+    case unknown
+
+    static func < (
+        lhs: ChromeMV3ContentScriptURLClassification,
+        rhs: ChromeMV3ContentScriptURLClassification
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+
+    static func classify(_ urlString: String?) -> Self {
+        guard let raw = urlString?.trimmingCharacters(in: .whitespacesAndNewlines),
+              raw.isEmpty == false
+        else { return .unknown }
+        guard let components = URLComponents(string: raw),
+              let scheme = components.scheme?.lowercased()
+        else { return .unknown }
+        switch scheme {
+        case "http", "https":
+            return .httpFamily
+        case "about":
+            let normalized = raw.lowercased()
+            if normalized == "about:blank" { return .aboutBlank }
+            if normalized == "about:srcdoc" { return .aboutSrcdoc }
+            return .opaqueAbout
+        case "data":
+            return .data
+        case "blob":
+            return .blob
+        case "file":
+            return .file
+        case "chrome-extension", "webkit-extension", "safari-web-extension":
+            return .extensionPage
+        default:
+            return .other
+        }
+    }
+}
+
+enum ChromeMV3ContentScriptOriginRelationship:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case mainFrame
+    case sameOriginWithParent
+    case crossOriginWithParent
+    case opaqueOrUnknown
+    case parentUnavailable
+
+    static func < (
+        lhs: ChromeMV3ContentScriptOriginRelationship,
+        rhs: ChromeMV3ContentScriptOriginRelationship
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3ContentScriptFrameTarget:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var tabID: Int
+    var frameID: Int
+    var parentFrameID: Int?
+    var documentID: String
+    var navigationSequence: Int
+    var urlString: String
+    var parentURLString: String?
+    var isMainFrame: Bool
+    var urlClassification: ChromeMV3ContentScriptURLClassification
+    var originRelationship: ChromeMV3ContentScriptOriginRelationship
+    var eligibleForCurrentDeveloperPreview: Bool
+    var diagnostics: [String]
+
+    static func make(
+        tabID: Int,
+        frameID: Int,
+        parentFrameID: Int? = nil,
+        documentID: String,
+        navigationSequence: Int,
+        urlString: String,
+        parentURLString: String? = nil,
+        isMainFrame: Bool
+    ) -> ChromeMV3ContentScriptFrameTarget {
+        let classification =
+            ChromeMV3ContentScriptURLClassification.classify(urlString)
+        let parentOrigin = parentURLString.flatMap {
+            ChromeMV3RuntimeMessagingURL.origin(from: $0)
+        }
+        let ownOrigin = ChromeMV3RuntimeMessagingURL.origin(from: urlString)
+        let relationship: ChromeMV3ContentScriptOriginRelationship
+        if isMainFrame {
+            relationship = .mainFrame
+        } else if parentURLString == nil {
+            relationship = .parentUnavailable
+        } else if let ownOrigin, let parentOrigin {
+            relationship =
+                ownOrigin == parentOrigin
+                    ? .sameOriginWithParent
+                    : .crossOriginWithParent
+        } else {
+            relationship = .opaqueOrUnknown
+        }
+
+        var diagnostics = [
+            isMainFrame
+                ? "Frame target is the top-level frame."
+                : "Frame target is a subframe; developer-preview attachment is blocked until per-frame WebKit routing is proven.",
+            "Frame URL classification: \(classification.rawValue).",
+            "Frame origin relationship: \(relationship.rawValue).",
+        ]
+        if classification == .aboutBlank || classification == .aboutSrcdoc {
+            diagnostics.append(
+                "about: frame targeting requires match_about_blank parent/opener matching and is blocked."
+            )
+        }
+        if classification == .data || classification == .blob {
+            diagnostics.append(
+                "\(classification.rawValue) frame targeting requires match_origin_as_fallback initiator matching and is blocked."
+            )
+        }
+
+        return ChromeMV3ContentScriptFrameTarget(
+            tabID: tabID,
+            frameID: frameID,
+            parentFrameID: parentFrameID,
+            documentID: documentID,
+            navigationSequence: navigationSequence,
+            urlString: urlString,
+            parentURLString: parentURLString,
+            isMainFrame: isMainFrame,
+            urlClassification: classification,
+            originRelationship: relationship,
+            eligibleForCurrentDeveloperPreview:
+                isMainFrame && classification == .httpFamily,
+            diagnostics: uniqueSortedContentScripts(diagnostics)
+        )
+    }
+
+    static let unknownMainFrame = ChromeMV3ContentScriptFrameTarget.make(
+        tabID: -1,
+        frameID: 0,
+        documentID: "unknown-document",
+        navigationSequence: 0,
+        urlString: "about:blank",
+        isMainFrame: true
+    )
+}
+
+enum ChromeMV3ContentScriptCSSPolicyStatus:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case notDeclared
+    case blockedScopedRemovalUnavailable
+
+    static func < (
+        lhs: ChromeMV3ContentScriptCSSPolicyStatus,
+        rhs: ChromeMV3ContentScriptCSSPolicyStatus
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3ContentScriptLifecycleEntrypoint:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case initialPageLoadEligibility
+    case navigationStarted
+    case navigationCommitted
+    case navigationFinished
+    case navigationFailed
+    case sameDocumentNavigation
+    case tabClosed
+    case webViewDiscarded
+    case webViewReplaced
+    case webViewSuspended
+
+    static func < (
+        lhs: ChromeMV3ContentScriptLifecycleEntrypoint,
+        rhs: ChromeMV3ContentScriptLifecycleEntrypoint
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
 struct ChromeMV3ContentScriptProductGateRecord:
     Codable,
     Equatable,
@@ -204,6 +416,7 @@ struct ChromeMV3DeclaredContentScriptAttachmentRecord:
     var matchAboutBlank: Bool
     var matchOriginAsFallback: Bool
     var world: ChromeMV3ContentScriptWorld?
+    var cssPolicyStatus: ChromeMV3ContentScriptCSSPolicyStatus
     var validatedJSFilePaths: [String]
     var supported: Bool
     var blockers: [ChromeMV3ContentScriptBlockedReason]
@@ -333,8 +546,18 @@ struct ChromeMV3ContentScriptAttachmentPlan:
             switch normalized {
             case .success(let path):
                 blockers.append(.cssUnsupported)
+                let validation = ChromeMV3ContentScriptResourcePath
+                    .validateExistingResourceFile(
+                        path,
+                        root: root,
+                        kind: "CSS"
+                    )
+                diagnostics.append(contentsOf: validation.diagnostics)
                 diagnostics.append(
-                    "content_scripts[\(index)] CSS file \(path) is blocked; no safe product CSS attachment path is enabled."
+                    "content_scripts[\(index)] CSS file \(path) is blocked because WKUserContentController has no public, per-extension user stylesheet removal API and JS-injected style teardown cannot be guaranteed on disable/uninstall without a live WebView delivery path."
+                )
+                diagnostics.append(
+                    "No product global stylesheet leakage is allowed; manifest CSS remains blocked until scoped insertion and deterministic removal are proven."
                 )
             case .failure(let diagnostic):
                 blockers.append(.cssUnsupported)
@@ -389,25 +612,28 @@ struct ChromeMV3ContentScriptAttachmentPlan:
         if world == .main {
             blockers.append(.unsupportedWorld)
             diagnostics.append(
-                "content_scripts[\(index)] MAIN world is blocked by Sumi developer-preview policy."
+                "content_scripts[\(index)] MAIN world is blocked by Sumi developer-preview policy; isolated named WKContentWorld remains the only supported path."
+            )
+            diagnostics.append(
+                "MAIN world is not silently downgraded to ISOLATED."
             )
         }
         if script.allFrames {
             blockers.append(.frameBehaviorUnsupported)
             diagnostics.append(
-                "content_scripts[\(index)] all_frames=true is blocked until per-frame URL eligibility is wired."
+                "content_scripts[\(index)] all_frames=true is blocked until WebKit per-frame targeting, sender frame metadata, and multi-frame Port disconnect semantics are proven."
             )
         }
         if script.matchAboutBlank {
             blockers.append(.frameBehaviorUnsupported)
             diagnostics.append(
-                "content_scripts[\(index)] match_about_blank requires parent-frame matching that is not wired."
+                "content_scripts[\(index)] match_about_blank is blocked because parent/opener frame URL matching is not available from the current safe WebKit attachment path."
             )
         }
         if script.matchOriginAsFallback {
             blockers.append(.frameBehaviorUnsupported)
             diagnostics.append(
-                "content_scripts[\(index)] match_origin_as_fallback requires origin fallback matching that is not wired."
+                "content_scripts[\(index)] match_origin_as_fallback is blocked because initiator-origin fallback matching is not available from the current safe WebKit attachment path."
             )
         }
 
@@ -467,6 +693,10 @@ struct ChromeMV3ContentScriptAttachmentPlan:
             matchAboutBlank: script.matchAboutBlank,
             matchOriginAsFallback: script.matchOriginAsFallback,
             world: world,
+            cssPolicyStatus:
+                script.css.isEmpty
+                    ? .notDeclared
+                    : .blockedScopedRemovalUnavailable,
             validatedJSFilePaths: validatedJSPaths.sorted(),
             supported: normalizedBlockers.isEmpty,
             blockers: normalizedBlockers,
@@ -497,6 +727,7 @@ struct ChromeMV3NormalTabContentScriptPreflightInput:
     var documentID: String
     var navigationSequence: Int
     var urlString: String
+    var frameTarget: ChromeMV3ContentScriptFrameTarget = .unknownMainFrame
     var tabSurface: ChromeMV3WebViewSurface
     var generatedBundleActive: Bool
     var webKitUserContentControllerAvailable: Bool
@@ -515,6 +746,7 @@ struct ChromeMV3NormalTabContentScriptPreflight:
     var documentID: String
     var navigationSequence: Int
     var urlString: String
+    var frameTarget: ChromeMV3ContentScriptFrameTarget
     var canAttachDeclaredContentScriptsNow: Bool
     var canExposeContentScriptBridgeNow: Bool
     var canRegisterEndpointNow: Bool
@@ -532,6 +764,17 @@ enum ChromeMV3NormalTabContentScriptPreflightEvaluator {
     ) -> ChromeMV3NormalTabContentScriptPreflight {
         var blockers: [ChromeMV3ContentScriptBlockedReason] = []
         var diagnostics: [String] = []
+        let frameTarget =
+            input.frameTarget.tabID == -1
+                ? ChromeMV3ContentScriptFrameTarget.make(
+                    tabID: input.tabID,
+                    frameID: input.frameID,
+                    documentID: input.documentID,
+                    navigationSequence: input.navigationSequence,
+                    urlString: input.urlString,
+                    isMainFrame: input.frameID == 0
+                )
+                : input.frameTarget
 
         if input.moduleEnabled == false {
             blockers.append(.moduleDisabled)
@@ -581,6 +824,13 @@ enum ChromeMV3NormalTabContentScriptPreflightEvaluator {
                 "Content-script teardown is pending; new attachment is blocked."
             )
         }
+        diagnostics.append(contentsOf: frameTarget.diagnostics)
+        if frameTarget.eligibleForCurrentDeveloperPreview == false {
+            blockers.append(.frameBehaviorUnsupported)
+            diagnostics.append(
+                "Frame target is not eligible for the current developer-preview content-script attachment path."
+            )
+        }
 
         let hostDecision = input.permissionBroker.hostAccessDecision(
             url: input.urlString,
@@ -628,6 +878,7 @@ enum ChromeMV3NormalTabContentScriptPreflightEvaluator {
             documentID: input.documentID,
             navigationSequence: input.navigationSequence,
             urlString: input.urlString,
+            frameTarget: frameTarget,
             canAttachDeclaredContentScriptsNow: canAttach,
             canExposeContentScriptBridgeNow: canAttach,
             canRegisterEndpointNow: canAttach,
@@ -668,12 +919,18 @@ enum ChromeMV3ContentScriptEndpointLifecycleState:
     case endpointRegistered
     case listenerRegistered
     case navigationCommitted
+    case navigationFailed
+    case navigationFinished
     case navigationInvalidated
     case navigationStarted
     case resetWhileAttached
+    case sameDocumentNavigation
     case tabClosed
     case teardownComplete
     case uninstalledWhileAttached
+    case webViewDiscarded
+    case webViewReplaced
+    case webViewSuspended
 
     static func < (
         lhs: ChromeMV3ContentScriptEndpointLifecycleState,
@@ -699,11 +956,20 @@ struct ChromeMV3ContentScriptSenderMetadata:
     Equatable,
     Sendable
 {
+    var extensionID: String
+    var profileID: String
     var tabID: Int
     var frameID: Int
+    var parentFrameID: Int?
     var documentID: String
-    var url: String
+    var navigationSequence: Int
+    var lifecycleSessionID: String
+    var endpointID: String
+    var url: String?
     var origin: String?
+    var urlRedacted: Bool
+    var originRedacted: Bool
+    var redactionReason: String?
 }
 
 struct ChromeMV3ContentScriptEndpointRecord:
@@ -718,6 +984,7 @@ struct ChromeMV3ContentScriptEndpointRecord:
     var frameID: Int
     var documentID: String
     var navigationSequence: Int
+    var frameTarget: ChromeMV3ContentScriptFrameTarget
     var attachedScriptIDs: [String]
     var messageListenerRegistered: Bool
     var connectListenerRegistered: Bool
@@ -747,6 +1014,57 @@ struct ChromeMV3ContentScriptModeledPortRecord:
     var name: String
     var opened: Bool
     var disconnectReason: String?
+    var sender: ChromeMV3ContentScriptSenderMetadata
+    var popupOptionsMessageCount: Int
+    var contentScriptMessageCount: Int
+    var disconnectNotifiedPopupOptions: Bool
+    var disconnectNotifiedContentScript: Bool
+    var diagnostics: [String]
+}
+
+enum ChromeMV3ContentScriptPortMessageDirection:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case popupOptionsToContentScript
+    case contentScriptToPopupOptions
+
+    static func < (
+        lhs: ChromeMV3ContentScriptPortMessageDirection,
+        rhs: ChromeMV3ContentScriptPortMessageDirection
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3ContentScriptPortMessageRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var sequence: Int
+    var portID: String
+    var endpointID: String
+    var direction: ChromeMV3ContentScriptPortMessageDirection
+    var payload: ChromeMV3StorageValue
+    var delivered: Bool
+    var diagnostics: [String]
+}
+
+struct ChromeMV3ContentScriptPortDeliveryResult:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var portID: String
+    var endpointID: String?
+    var direction: ChromeMV3ContentScriptPortMessageDirection
+    var delivered: Bool
+    var disconnectReason: String?
+    var payload: ChromeMV3StorageValue?
     var diagnostics: [String]
 }
 
@@ -760,9 +1078,14 @@ struct ChromeMV3ContentScriptEndpointRegistrySummary:
     var messageListenerEndpointCount: Int
     var connectListenerEndpointCount: Int
     var portCount: Int
+    var activePortCount: Int
+    var disconnectedPortCount: Int
+    var portMessageCount: Int
     var endpointIDs: [String]
+    var portIDs: [String]
     var tabsWithEndpoints: [Int]
     var lifecycleStates: [ChromeMV3ContentScriptEndpointLifecycleState]
+    var portDisconnectReasons: [String]
     var diagnostics: [String]
 }
 
@@ -771,12 +1094,14 @@ final class ChromeMV3ContentScriptEndpointRegistry {
     private var lifecycleRecords:
         [ChromeMV3ContentScriptEndpointLifecycleRecord] = []
     private var ports: [ChromeMV3ContentScriptModeledPortRecord] = []
+    private var portMessages: [ChromeMV3ContentScriptPortMessageRecord] = []
     private var nextSequence = 1
 
     init() {}
 
     var summary: ChromeMV3ContentScriptEndpointRegistrySummary {
         let active = endpoints.filter(\.active)
+        let activePorts = ports.filter(\.opened)
         return ChromeMV3ContentScriptEndpointRegistrySummary(
             endpointCount: endpoints.count,
             activeEndpointCount: active.count,
@@ -784,16 +1109,26 @@ final class ChromeMV3ContentScriptEndpointRegistry {
                 active.filter(\.messageListenerRegistered).count,
             connectListenerEndpointCount:
                 active.filter(\.connectListenerRegistered).count,
-            portCount: ports.count,
+            portCount: activePorts.count,
+            activePortCount: activePorts.count,
+            disconnectedPortCount: ports.filter { $0.opened == false }.count,
+            portMessageCount: portMessages.count,
             endpointIDs: endpoints.map(\.endpointID).sorted(),
+            portIDs: ports.map(\.portID).sorted(),
             tabsWithEndpoints:
                 Array(Set(active.map(\.tabID))).sorted(),
             lifecycleStates:
                 Array(Set(lifecycleRecords.map(\.state))).sorted(),
+            portDisconnectReasons:
+                uniqueSortedContentScripts(
+                    ports.compactMap(\.disconnectReason)
+                ),
             diagnostics:
                 uniqueSortedContentScripts(
                     endpoints.flatMap(\.diagnostics)
                         + lifecycleRecords.map(\.reason)
+                        + ports.flatMap(\.diagnostics)
+                        + portMessages.flatMap(\.diagnostics)
                         + [
                             "Content-script endpoint registry is explicit and instance-local.",
                             "No tab scanning or background scheduling is performed.",
@@ -833,6 +1168,7 @@ final class ChromeMV3ContentScriptEndpointRegistry {
             frameID: preflight.frameID,
             documentID: preflight.documentID,
             navigationSequence: preflight.navigationSequence,
+            frameTarget: preflight.frameTarget,
             attachedScriptIDs:
                 preflight.matchedScripts.map(\.contentScriptID).sorted(),
             messageListenerRegistered: messageListenerRegistered,
@@ -842,14 +1178,42 @@ final class ChromeMV3ContentScriptEndpointRegistry {
                     ? .listenerRegistered
                     : .endpointRegistered,
             senderMetadata: ChromeMV3ContentScriptSenderMetadata(
+                extensionID: preflight.extensionID,
+                profileID: preflight.profileID,
                 tabID: preflight.tabID,
                 frameID: preflight.frameID,
+                parentFrameID: preflight.frameTarget.parentFrameID,
                 documentID: preflight.documentID,
-                url: preflight.urlString,
+                navigationSequence: preflight.navigationSequence,
+                lifecycleSessionID:
+                    stableIDContentScripts(
+                        prefix: "content-script-lifecycle-session",
+                        parts: [
+                            preflight.profileID,
+                            preflight.extensionID,
+                            String(preflight.tabID),
+                            preflight.documentID,
+                            String(preflight.navigationSequence),
+                        ]
+                    ),
+                endpointID: endpointID,
+                url:
+                    preflight.hostAccessDecision.hasHostAccess
+                        ? preflight.urlString
+                        : nil,
                 origin:
-                    ChromeMV3RuntimeMessagingURL.origin(
-                        from: preflight.urlString
-                    )
+                    preflight.hostAccessDecision.hasHostAccess
+                        ? ChromeMV3RuntimeMessagingURL.origin(
+                            from: preflight.urlString
+                        )
+                        : nil,
+                urlRedacted: preflight.hostAccessDecision.hasHostAccess == false,
+                originRedacted:
+                    preflight.hostAccessDecision.hasHostAccess == false,
+                redactionReason:
+                    preflight.hostAccessDecision.hasHostAccess
+                        ? nil
+                        : "URL and origin are redacted because host permission or activeTab access is missing."
             ),
             teardownReason: nil,
             diagnostics:
@@ -942,6 +1306,9 @@ final class ChromeMV3ContentScriptEndpointRegistry {
                                 "tabId": .number(Double(endpoint.tabID)),
                                 "frameId": .number(Double(endpoint.frameID)),
                                 "documentId": .string(endpoint.documentID),
+                                "navigationSequence": .number(
+                                    Double(endpoint.navigationSequence)
+                                ),
                             ]),
                             diagnostics: [
                                 "tabs.sendMessage reached a registered content-script endpoint."
@@ -961,6 +1328,9 @@ final class ChromeMV3ContentScriptEndpointRegistry {
                                 "tabId": .number(Double(endpoint.tabID)),
                                 "frameId": .number(Double(endpoint.frameID)),
                                 "documentId": .string(endpoint.documentID),
+                                "navigationSequence": .number(
+                                    Double(endpoint.navigationSequence)
+                                ),
                             ]),
                             diagnostics: [
                                 "runtime.onMessage in the content-script endpoint can receive modeled tab messages."
@@ -1052,13 +1422,78 @@ final class ChromeMV3ContentScriptEndpointRegistry {
             name: name,
             opened: true,
             disconnectReason: nil,
+            sender: endpoint.senderMetadata,
+            popupOptionsMessageCount: 0,
+            contentScriptMessageCount: 0,
+            disconnectNotifiedPopupOptions: false,
+            disconnectNotifiedContentScript: false,
             diagnostics: [
                 "tabs.connect opened a modeled Port to a registered content-script endpoint.",
+                "Port.name and Port.sender metadata were recorded for deterministic delivery.",
                 "No service-worker keepalive or native messaging path was used.",
             ]
         )
         ports.append(port)
         return port
+    }
+
+    @discardableResult
+    func deliverPopupOptionsPortMessage(
+        portID: String,
+        payload: ChromeMV3StorageValue
+    ) -> ChromeMV3ContentScriptPortDeliveryResult {
+        deliverPortMessage(
+            portID: portID,
+            payload: payload,
+            direction: .popupOptionsToContentScript
+        )
+    }
+
+    @discardableResult
+    func deliverContentScriptPortMessage(
+        portID: String,
+        payload: ChromeMV3StorageValue
+    ) -> ChromeMV3ContentScriptPortDeliveryResult {
+        deliverPortMessage(
+            portID: portID,
+            payload: payload,
+            direction: .contentScriptToPopupOptions
+        )
+    }
+
+    @discardableResult
+    func disconnectPort(
+        portID: String,
+        reason: String
+    ) -> ChromeMV3ContentScriptPortDeliveryResult {
+        guard let index = ports.firstIndex(where: { $0.portID == portID })
+        else {
+            return ChromeMV3ContentScriptPortDeliveryResult(
+                portID: portID,
+                endpointID: nil,
+                direction: .popupOptionsToContentScript,
+                delivered: false,
+                disconnectReason: "Port not found.",
+                payload: nil,
+                diagnostics: ["No modeled Port exists for \(portID)."]
+            )
+        }
+        disconnectPort(at: index, reason: reason)
+        return ChromeMV3ContentScriptPortDeliveryResult(
+            portID: portID,
+            endpointID: ports[index].endpointID,
+            direction: .popupOptionsToContentScript,
+            delivered: false,
+            disconnectReason: ports[index].disconnectReason,
+            payload: nil,
+            diagnostics:
+                uniqueSortedContentScripts(
+                    ports[index].diagnostics
+                        + [
+                            "Port disconnect was delivered to both modeled endpoints."
+                        ]
+                )
+        )
     }
 
     func navigationStarted(
@@ -1094,6 +1529,105 @@ final class ChromeMV3ContentScriptEndpointRegistry {
             endpointID: "tab-\(tabID)-navigation-\(navigationSequence)",
             state: .navigationCommitted,
             reason: reason
+        )
+    }
+
+    func navigationFinished(
+        profileID: String,
+        tabID: Int,
+        navigationSequence: Int,
+        reason: String = "Navigation finished."
+    ) {
+        _ = profileID
+        appendLifecycle(
+            endpointID: "tab-\(tabID)-navigation-\(navigationSequence)",
+            state: .navigationFinished,
+            reason: reason
+        )
+    }
+
+    func navigationFailed(
+        profileID: String,
+        tabID: Int,
+        navigationSequence: Int,
+        reason: String = "Navigation failed."
+    ) {
+        teardownMatching(
+            transitions: [
+                (.navigationFailed, reason),
+                (
+                    .teardownComplete,
+                    "Content-script endpoint teardown completed after navigation failure."
+                ),
+            ],
+            profileID: profileID,
+            tabID: tabID,
+            navigationSequence: navigationSequence
+        )
+    }
+
+    func sameDocumentNavigation(
+        profileID: String,
+        tabID: Int,
+        navigationSequence: Int,
+        reason: String = "Same-document navigation observed."
+    ) {
+        _ = profileID
+        appendLifecycle(
+            endpointID: "tab-\(tabID)-navigation-\(navigationSequence)",
+            state: .sameDocumentNavigation,
+            reason: reason
+        )
+    }
+
+    func detachForWebViewReplacement(profileID: String, tabID: Int) {
+        teardownMatching(
+            transitions: [
+                (
+                    .webViewReplaced,
+                    "WebView was replaced while content scripts were attached."
+                ),
+                (
+                    .teardownComplete,
+                    "Content-script endpoint teardown completed after WebView replacement."
+                ),
+            ],
+            profileID: profileID,
+            tabID: tabID
+        )
+    }
+
+    func detachForWebViewSuspension(profileID: String, tabID: Int) {
+        teardownMatching(
+            transitions: [
+                (
+                    .webViewSuspended,
+                    "WebView was suspended while content scripts were attached."
+                ),
+                (
+                    .teardownComplete,
+                    "Content-script endpoint teardown completed after WebView suspension."
+                ),
+            ],
+            profileID: profileID,
+            tabID: tabID
+        )
+    }
+
+    func detachForWebViewDiscard(profileID: String, tabID: Int) {
+        teardownMatching(
+            transitions: [
+                (
+                    .webViewDiscarded,
+                    "WebView was discarded while content scripts were attached."
+                ),
+                (
+                    .teardownComplete,
+                    "Content-script endpoint teardown completed after WebView discard."
+                ),
+            ],
+            profileID: profileID,
+            tabID: tabID
         )
     }
 
@@ -1169,6 +1703,7 @@ final class ChromeMV3ContentScriptEndpointRegistry {
 
     func tearDownAll(reason: String = "Content-script registry reset.") {
         for index in endpoints.indices where endpoints[index].active {
+            disconnectPorts(endpointID: endpoints[index].endpointID, reason: reason)
             endpoints[index].endpointState = .detached
             endpoints[index].teardownReason = reason
             endpoints[index].messageListenerRegistered = false
@@ -1261,6 +1796,10 @@ final class ChromeMV3ContentScriptEndpointRegistry {
                         == navigationSequence)
         }
         for index in matchedIndices {
+            disconnectPorts(
+                endpointID: endpoints[index].endpointID,
+                reason: terminal.1
+            )
             endpoints[index].endpointState = terminal.0
             endpoints[index].teardownReason = terminal.1
             endpoints[index].messageListenerRegistered = false
@@ -1273,11 +1812,6 @@ final class ChromeMV3ContentScriptEndpointRegistry {
                 )
             }
         }
-        ports.removeAll { port in
-            endpoints.contains {
-                $0.endpointID == port.endpointID && $0.active == false
-            }
-        }
     }
 
     private func invalidateDuplicate(endpointID: String) {
@@ -1288,12 +1822,134 @@ final class ChromeMV3ContentScriptEndpointRegistry {
             endpoints[index].endpointState = .navigationInvalidated
             endpoints[index].teardownReason =
                 "Duplicate endpoint registration invalidated stale endpoint."
+            disconnectPorts(
+                endpointID: endpoints[index].endpointID,
+                reason: "Duplicate endpoint registration invalidated stale endpoint."
+            )
             appendLifecycle(
                 endpointID: endpointID,
                 state: .navigationInvalidated,
                 reason: "Duplicate endpoint registration invalidated stale endpoint."
             )
         }
+    }
+
+    private func deliverPortMessage(
+        portID: String,
+        payload: ChromeMV3StorageValue,
+        direction: ChromeMV3ContentScriptPortMessageDirection
+    ) -> ChromeMV3ContentScriptPortDeliveryResult {
+        guard let index = ports.firstIndex(where: { $0.portID == portID })
+        else {
+            return ChromeMV3ContentScriptPortDeliveryResult(
+                portID: portID,
+                endpointID: nil,
+                direction: direction,
+                delivered: false,
+                disconnectReason: "Port not found.",
+                payload: nil,
+                diagnostics: ["No modeled Port exists for \(portID)."]
+            )
+        }
+        guard ports[index].opened else {
+            return ChromeMV3ContentScriptPortDeliveryResult(
+                portID: portID,
+                endpointID: ports[index].endpointID,
+                direction: direction,
+                delivered: false,
+                disconnectReason: ports[index].disconnectReason,
+                payload: nil,
+                diagnostics:
+                    uniqueSortedContentScripts(
+                        ports[index].diagnostics
+                            + [
+                                "Port message was rejected because the Port is disconnected."
+                            ]
+                    )
+            )
+        }
+        guard endpoints.contains(where: {
+            $0.endpointID == ports[index].endpointID && $0.active
+        }) else {
+            disconnectPort(
+                at: index,
+                reason: "Content-script endpoint is no longer active."
+            )
+            return ChromeMV3ContentScriptPortDeliveryResult(
+                portID: portID,
+                endpointID: ports[index].endpointID,
+                direction: direction,
+                delivered: false,
+                disconnectReason: ports[index].disconnectReason,
+                payload: nil,
+                diagnostics:
+                    uniqueSortedContentScripts(
+                        ports[index].diagnostics
+                            + [
+                                "Port message was rejected because the endpoint is stale."
+                            ]
+                    )
+            )
+        }
+
+        switch direction {
+        case .popupOptionsToContentScript:
+            ports[index].popupOptionsMessageCount += 1
+        case .contentScriptToPopupOptions:
+            ports[index].contentScriptMessageCount += 1
+        }
+        let message = ChromeMV3ContentScriptPortMessageRecord(
+            sequence: nextSequence,
+            portID: portID,
+            endpointID: ports[index].endpointID,
+            direction: direction,
+            payload: payload,
+            delivered: true,
+            diagnostics: [
+                "Modeled Port message delivered: \(direction.rawValue)."
+            ]
+        )
+        nextSequence += 1
+        portMessages.append(message)
+        ports[index].diagnostics.append(
+            "Delivered Port message \(direction.rawValue)."
+        )
+        return ChromeMV3ContentScriptPortDeliveryResult(
+            portID: portID,
+            endpointID: ports[index].endpointID,
+            direction: direction,
+            delivered: true,
+            disconnectReason: nil,
+            payload: payload,
+            diagnostics:
+                uniqueSortedContentScripts(
+                    message.diagnostics
+                        + ports[index].diagnostics
+                        + [
+                            "Delivery is endpoint-modeled and does not wake a service worker.",
+                            "No arbitrary scripting.executeScript path was used.",
+                        ]
+                )
+        )
+    }
+
+    private func disconnectPorts(endpointID: String, reason: String) {
+        for index in ports.indices where ports[index].endpointID == endpointID {
+            disconnectPort(at: index, reason: reason)
+        }
+    }
+
+    private func disconnectPort(at index: Int, reason: String) {
+        guard ports.indices.contains(index),
+              ports[index].opened
+        else { return }
+        ports[index].opened = false
+        ports[index].disconnectReason = reason
+        ports[index].disconnectNotifiedPopupOptions = true
+        ports[index].disconnectNotifiedContentScript = true
+        ports[index].diagnostics.append(
+            "Port disconnected: \(reason)"
+        )
     }
 
     private func appendLifecycle(
@@ -1361,6 +2017,49 @@ struct ChromeMV3ContentScriptBridgeResponse:
 }
 
 private extension ChromeMV3StorageValue {
+    init?(contentScriptBridgeWebKitValue value: Any) {
+        if value is NSNull {
+            self = .null
+        } else if let bool = value as? Bool {
+            self = .bool(bool)
+        } else if let string = value as? String {
+            self = .string(string)
+        } else if let number = value as? NSNumber {
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                self = .bool(number.boolValue)
+            } else {
+                let double = number.doubleValue
+                guard double.isFinite else { return nil }
+                self = .number(double)
+            }
+        } else if let array = value as? [Any] {
+            var values: [ChromeMV3StorageValue] = []
+            for entry in array {
+                guard let converted = ChromeMV3StorageValue(
+                    contentScriptBridgeWebKitValue: entry
+                ) else { return nil }
+                values.append(converted)
+            }
+            self = .array(values)
+        } else if let object = value as? [String: Any] {
+            var mapped: [String: ChromeMV3StorageValue] = [:]
+            for (key, entry) in object {
+                guard let converted = ChromeMV3StorageValue(
+                    contentScriptBridgeWebKitValue: entry
+                ) else { return nil }
+                mapped[key] = converted
+            }
+            self = .object(mapped)
+        } else {
+            return nil
+        }
+    }
+
+    var stringValue: String? {
+        guard case .string(let string) = self else { return nil }
+        return string
+    }
+
     var contentScriptBridgeFoundationObject: Any {
         switch self {
         case .array(let values):
@@ -1467,8 +2166,20 @@ final class ChromeMV3ContentScriptBridgeHost {
                 bridgeCallID: bridgeCallID,
                 code: .routeNotImplemented,
                 diagnostics: [
-                    "runtime.connect from content scripts remains blocked until Port delivery to extension surfaces is safe."
+                    "runtime.connect from content scripts targets the extension runtime/service-worker side, which is not available to product normal tabs in Prompt 61R.",
+                    "tabs.connect content-script endpoint Ports are supported only when popup/options opens a modeled Port to an attached endpoint.",
+                    "No fake runtime Port is returned; roadmap owner: Prompt 62/service-worker runtime policy."
                 ]
+            )
+        case ("runtime", "port.postMessage"):
+            return runtimePortPostMessage(
+                bridgeCallID: bridgeCallID,
+                arguments: bridgeArguments(from: object)
+            )
+        case ("runtime", "port.disconnect"):
+            return runtimePortDisconnect(
+                bridgeCallID: bridgeCallID,
+                arguments: bridgeArguments(from: object)
             )
         case ("storage", _),
              ("permissions", _),
@@ -1494,6 +2205,15 @@ final class ChromeMV3ContentScriptBridgeHost {
                     "Unknown content-script chrome API route \(namespace).\(methodName)."
                 ]
             )
+        }
+    }
+
+    private func bridgeArguments(
+        from object: [String: Any]
+    ) -> [ChromeMV3StorageValue] {
+        guard let values = object["arguments"] as? [Any] else { return [] }
+        return values.compactMap {
+            ChromeMV3StorageValue(contentScriptBridgeWebKitValue: $0)
         }
     }
 
@@ -1552,6 +2272,92 @@ final class ChromeMV3ContentScriptBridgeHost {
             payload: dispatch.responsePayload ?? .null,
             diagnostics: dispatch.diagnostics
         )
+    }
+
+    private func runtimePortPostMessage(
+        bridgeCallID: String,
+        arguments: [ChromeMV3StorageValue]
+    ) -> ChromeMV3ContentScriptBridgeResponse {
+        guard arguments.count == 2,
+              let portID = arguments[0].stringValue
+        else {
+            return blocked(
+                bridgeCallID: bridgeCallID,
+                code: .unsupportedAPI,
+                diagnostics: [
+                    "runtime Port postMessage requires portID and message arguments."
+                ]
+            )
+        }
+        let delivery = endpointRegistry.deliverContentScriptPortMessage(
+            portID: portID,
+            payload: arguments[1]
+        )
+        guard delivery.delivered else {
+            return blocked(
+                bridgeCallID: bridgeCallID,
+                code: .noReceivingEnd,
+                diagnostics: delivery.diagnostics
+            )
+        }
+        return success(
+            bridgeCallID: bridgeCallID,
+            payload: portDeliveryPayload(delivery),
+            diagnostics:
+                delivery.diagnostics
+                    + [
+                        "Content-script Port.postMessage reached the modeled popup/options endpoint.",
+                        "No service-worker keepalive was opened for Port delivery.",
+                    ]
+        )
+    }
+
+    private func runtimePortDisconnect(
+        bridgeCallID: String,
+        arguments: [ChromeMV3StorageValue]
+    ) -> ChromeMV3ContentScriptBridgeResponse {
+        guard arguments.count == 1,
+              let portID = arguments[0].stringValue
+        else {
+            return blocked(
+                bridgeCallID: bridgeCallID,
+                code: .unsupportedAPI,
+                diagnostics: [
+                    "runtime Port disconnect requires one portID argument."
+                ]
+            )
+        }
+        let delivery = endpointRegistry.disconnectPort(
+            portID: portID,
+            reason: "Port.disconnect called by content script."
+        )
+        return success(
+            bridgeCallID: bridgeCallID,
+            payload: portDeliveryPayload(delivery),
+            diagnostics:
+                delivery.diagnostics
+                    + [
+                        "Content-script Port.disconnect deterministically notified both modeled endpoints when present.",
+                    ]
+        )
+    }
+
+    private func portDeliveryPayload(
+        _ delivery: ChromeMV3ContentScriptPortDeliveryResult
+    ) -> ChromeMV3StorageValue {
+        var object: [String: ChromeMV3StorageValue] = [
+            "portID": .string(delivery.portID),
+            "direction": .string(delivery.direction.rawValue),
+            "delivered": .bool(delivery.delivered),
+            "payload": delivery.payload ?? .null,
+        ]
+        if let endpointID = delivery.endpointID {
+            object["endpointID"] = .string(endpointID)
+        }
+        if let reason = delivery.disconnectReason {
+            object["disconnectReason"] = .string(reason)
+        }
+        return .object(object)
     }
 
     private func success(
@@ -1990,6 +2796,33 @@ enum ChromeMV3ContentScriptJSBridgeSource {
             });
           }
 
+          function makePortEvent() {
+            const listeners = [];
+            return Object.freeze({
+              addListener(listener) {
+                if (typeof listener === "function" && !listeners.includes(listener)) {
+                  listeners.push(listener);
+                }
+              },
+              removeListener(listener) {
+                const index = listeners.indexOf(listener);
+                if (index >= 0) {
+                  listeners.splice(index, 1);
+                }
+              },
+              hasListener(listener) {
+                return listeners.includes(listener);
+              },
+              hasListeners() {
+                return listeners.length > 0;
+              },
+              dispatch() {
+                const args = Array.prototype.slice.call(arguments);
+                listeners.slice().forEach((listener) => listener.apply(undefined, args));
+              }
+            });
+          }
+
           Object.defineProperty(runtime, "lastError", {
             get() { return lastErrorValue; },
             enumerable: true
@@ -2029,16 +2862,38 @@ enum ChromeMV3ContentScriptJSBridgeSource {
               const name = connectInfo && typeof connectInfo.name === "string"
                 ? connectInfo.name
                 : "";
+              const onMessage = makePortEvent();
+              const onDisconnect = makePortEvent();
+              let disconnected = false;
               const port = {
                 name,
-                onMessage: makeEvent("registerPortOnMessage"),
-                onDisconnect: makeEvent("registerPortOnDisconnect"),
+                onMessage,
+                onDisconnect,
                 postMessage(message) {
-                  return callbackOrPromise("runtime", "connect", [message], null);
+                  void message;
+                  throw new Error("chrome.runtime.connect is blocked for Sumi content scripts in this developer preview.");
                 },
-                disconnect() {}
+                disconnect() {
+                  if (disconnected) {
+                    return;
+                  }
+                  disconnected = true;
+                  onDisconnect.dispatch(port);
+                }
               };
-              post("runtime", "connect", { arguments: [connectInfo || {}] });
+              post("runtime", "connect", { arguments: [connectInfo || {}] })
+                .then(() => {
+                  if (!disconnected) {
+                    disconnected = true;
+                    onDisconnect.dispatch(port);
+                  }
+                })
+                .catch(() => {
+                  if (!disconnected) {
+                    disconnected = true;
+                    onDisconnect.dispatch(port);
+                  }
+                });
               return port;
             },
             enumerable: true
@@ -2207,13 +3062,25 @@ private enum ChromeMV3ContentScriptResourcePath {
         reason: ChromeMV3ContentScriptBlockedReason?,
         diagnostics: [String]
     ) {
+        validateExistingResourceFile(relativePath, root: root, kind: "JS")
+    }
+
+    static func validateExistingResourceFile(
+        _ relativePath: String,
+        root: URL,
+        kind: String
+    ) -> (
+        valid: Bool,
+        reason: ChromeMV3ContentScriptBlockedReason?,
+        diagnostics: [String]
+    ) {
         let fileURL = root.appendingPathComponent(relativePath)
             .standardizedFileURL
         guard fileURL.path.hasPrefix(root.path + "/") else {
             return (
                 false,
                 .unsafeJSPath,
-                ["Content-script JS path escapes generated bundle root: \(relativePath)."]
+                ["Content-script \(kind) path escapes generated bundle root: \(relativePath)."]
             )
         }
         let manager = FileManager.default
@@ -2221,14 +3088,14 @@ private enum ChromeMV3ContentScriptResourcePath {
             return (
                 false,
                 .missingJSFile,
-                ["Content-script JS file is missing: \(relativePath)."]
+                ["Content-script \(kind) file is missing: \(relativePath)."]
             )
         }
         if (try? manager.destinationOfSymbolicLink(atPath: fileURL.path)) != nil {
             return (
                 false,
                 .unsafeJSPath,
-                ["Content-script JS file is a symbolic link: \(relativePath)."]
+                ["Content-script \(kind) file is a symbolic link: \(relativePath)."]
             )
         }
         guard let values = try? fileURL.resourceValues(
@@ -2238,13 +3105,13 @@ private enum ChromeMV3ContentScriptResourcePath {
             return (
                 false,
                 .unsafeJSPath,
-                ["Content-script JS path is not a regular file: \(relativePath)."]
+                ["Content-script \(kind) path is not a regular file: \(relativePath)."]
             )
         }
         return (
             true,
             nil,
-            ["Content-script JS file validated: \(relativePath)."]
+            ["Content-script \(kind) file validated: \(relativePath)."]
         )
     }
 }

@@ -161,6 +161,13 @@ extension ExtensionManager {
     }
 
     func notifyTabClosed(_ tab: Tab) {
+        noteChromeMV3ContentScriptLifecycleEntrypoint(
+            tab: tab,
+            webView: tab.existingWebView,
+            url: tab.url,
+            entrypoint: .tabClosed,
+            reason: "ExtensionManager.notifyTabClosed"
+        )
         guard let controller = extensionController,
               let adapter = stableAdapter(for: tab) else { return }
         controller.didCloseTab(adapter, windowIsClosing: false)

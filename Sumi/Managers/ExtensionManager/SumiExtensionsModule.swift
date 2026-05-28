@@ -3929,6 +3929,23 @@ final class SumiExtensionsModule {
         managerIfLoadedAndEnabled()?.notifyTabClosed(tab)
     }
 
+    func noteChromeMV3ContentScriptLifecycleEntrypointIfLoaded(
+        _ tab: Tab,
+        webView: WKWebView?,
+        url: URL?,
+        entrypoint: ChromeMV3ContentScriptLifecycleEntrypoint,
+        reason: String
+    ) {
+        managerIfLoadedAndEnabled()?
+            .noteChromeMV3ContentScriptLifecycleEntrypoint(
+                tab: tab,
+                webView: webView,
+                url: url,
+                entrypoint: entrypoint,
+                reason: reason
+            )
+    }
+
     func notifyTabPropertiesChangedIfLoaded(
         _ tab: Tab,
         properties: WKWebExtension.TabChangedProperties
