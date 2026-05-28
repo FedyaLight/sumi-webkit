@@ -150,6 +150,14 @@ struct ChromeMV3DiagnosticsProductExposureFlags:
     var popupOptionsProductBlockedReason: String?
     var normalTabRuntimeBridgeAvailable: Bool
     var contentScriptAttachmentAvailableInProduct: Bool
+    var contentScriptAttachmentAvailableInDeveloperPreview: Bool
+    var contentScriptAttachmentAvailableInPublicProduct: Bool
+    var contentScriptBridgeAvailableInDeveloperPreview: Bool
+    var contentScriptBridgeAvailableInPublicProduct: Bool
+    var staticContentScriptsAllowed: Bool
+    var dynamicScriptingAllowed: Bool
+    var normalTabGeneralRuntimeAvailable: Bool
+    var contentScriptBlockedReason: String?
     var runtimeLoadable: Bool
     var productExtensionUIAvailable: Bool
     var productNetworkEnforcementAvailable: Bool
@@ -208,6 +216,16 @@ struct ChromeMV3DiagnosticsProductExposureFlags:
                 popupOptionsGate.popupOptionsProductBlockedReason,
             normalTabRuntimeBridgeAvailable: false,
             contentScriptAttachmentAvailableInProduct: false,
+            contentScriptAttachmentAvailableInDeveloperPreview: false,
+            contentScriptAttachmentAvailableInPublicProduct: false,
+            contentScriptBridgeAvailableInDeveloperPreview: false,
+            contentScriptBridgeAvailableInPublicProduct: false,
+            staticContentScriptsAllowed: false,
+            dynamicScriptingAllowed: false,
+            normalTabGeneralRuntimeAvailable: false,
+            contentScriptBlockedReason:
+                ChromeMV3ContentScriptProductGateRecord.defaultBlocked()
+                    .contentScriptBlockedReason,
             runtimeLoadable: false,
             productExtensionUIAvailable: false,
             productNetworkEnforcementAvailable: false,
