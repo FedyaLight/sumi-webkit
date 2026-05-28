@@ -418,6 +418,7 @@ final class ChromeMV3SyntheticConfigurationAttachmentTests: XCTestCase {
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3PopupOptionsJSBridge.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ContentScriptProductAttachment.swift",
         ]
         let source = sourceFiles
             .filter { syntheticBridgeScopedFiles.contains($0.relativePath) == false }

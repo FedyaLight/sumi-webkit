@@ -66,7 +66,7 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(callback.succeeded)
         XCTAssertTrue(callback.callbackWouldSetLastError)
         XCTAssertFalse(callback.promiseWouldReject)
-        XCTAssertEqual(callback.lastErrorCode, "runtimeDispatchUnavailable")
+        XCTAssertEqual(callback.lastErrorCode, "noReceivingEnd")
         XCTAssertTrue(port.succeeded)
         XCTAssertEqual(handler.diagnosticsSnapshot.portCount, 1)
         XCTAssertFalse(port.runtimeLoadable)
@@ -212,7 +212,6 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         let blockedCalls: [(String, String)] = [
             ("runtime", "sendNativeMessage"),
             ("runtime", "connect" + "Native"),
-            ("tabs", "connect"),
             ("scripting", "executeScript"),
             ("nativeMessaging", "sendMessage"),
             ("sidePanel", "open"),
@@ -239,6 +238,13 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(handler.diagnosticsSnapshot.blockedAPIs.contains {
             $0.namespace == "scripting" && $0.methodName == "executeScript"
         })
+        let noEndpointConnect = handler.handle(request(
+            namespace: "tabs",
+            methodName: "connect",
+            arguments: [.number(1)]
+        ))
+        XCTAssertFalse(noEndpointConnect.succeeded)
+        XCTAssertEqual(noEndpointConnect.lastErrorCode, "noReceivingEnd")
     }
 
     func testTeardownClearsPopupOptionsBridgeState() throws {
@@ -365,7 +371,8 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         manifestPermissions: [String] = [],
         manifestOptionalPermissions: [String] = [],
         manifestHostPermissions: [String] = [],
-        manifestOptionalHostPermissions: [String] = []
+        manifestOptionalHostPermissions: [String] = [],
+        activeTabGrants: [ChromeMV3ActiveTabGrant] = []
     ) -> ChromeMV3PopupOptionsJSBridgeConfiguration {
         ChromeMV3PopupOptionsJSBridgeConfiguration(
             extensionID: extensionID,
@@ -385,6 +392,7 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             manifestOptionalPermissions: manifestOptionalPermissions,
             manifestHostPermissions: manifestHostPermissions,
             manifestOptionalHostPermissions: manifestOptionalHostPermissions,
+            activeTabGrants: activeTabGrants,
             allowlist: .defaultPolicy,
             diagnostics: [
                 ChromeMV3PopupOptionsJSBridgeConfiguration

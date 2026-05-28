@@ -786,9 +786,16 @@ struct ChromeMV3RuntimeMessagingPermissionDecision:
             )
         }
 
-        let url = route.source.url ?? route.target.url
-            ?? envelope?.source.url
-            ?? envelope?.target.url
+        let url: String?
+        switch route.kind {
+        case .serviceWorkerToTab, .serviceWorkerToFrame, .tabsSendMessage,
+             .tabsConnect:
+            url = route.target.url ?? envelope?.target.url
+                ?? route.source.url ?? envelope?.source.url
+        default:
+            url = route.source.url ?? envelope?.source.url
+                ?? route.target.url ?? envelope?.target.url
+        }
         let tabID = route.tabID ?? route.source.tabID ?? route.target.tabID
         let hostDecision = permissionBroker.hostAccessDecision(
             url: url,
