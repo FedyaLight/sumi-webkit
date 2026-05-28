@@ -883,6 +883,12 @@ final class ChromeMV3ServiceWorkerLifecycleCoordinatorTests: XCTestCase {
                 "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift"
             )
             .path
+        let contentScriptProductAttachmentPath =
+            root
+            .appendingPathComponent(
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3ContentScriptProductAttachment.swift"
+            )
+            .path
         for pattern in literalPatterns {
             let allowedPaths: Set<String>
             if pattern == "add" + "User" + "Script" {
@@ -894,6 +900,7 @@ final class ChromeMV3ServiceWorkerLifecycleCoordinatorTests: XCTestCase {
                     sidePanelOffscreenIdentitySyntheticHarnessPath,
                     popupOptionsBridgePath,
                     popupOptionsUIPath,
+                    contentScriptProductAttachmentPath,
                 ]
             } else if pattern == "connect" + "Native" {
                 allowedPaths = [

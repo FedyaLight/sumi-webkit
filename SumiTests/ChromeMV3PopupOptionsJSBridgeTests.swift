@@ -247,6 +247,121 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertEqual(noEndpointConnect.lastErrorCode, "noReceivingEnd")
     }
 
+    func testTabsConnectPortDeliveryUsesContentScriptEndpointRegistry()
+        throws
+    {
+        let extensionID = "popup-options-extension"
+        let profileID = "popup-options-profile"
+        let root = try makeTemporaryDirectory()
+        try "void 0;\n".write(
+            to: root.appendingPathComponent("content.js"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let manifest = try ChromeMV3ManifestValidator.validateJSONObject([
+            "manifest_version": 3,
+            "name": "Popup Port Fixture",
+            "version": "1.0.0",
+            "host_permissions": ["https://example.com/*"],
+            "content_scripts": [
+                [
+                    "matches": ["https://example.com/*"],
+                    "js": ["content.js"],
+                ],
+            ],
+        ])
+        let plan = ChromeMV3ContentScriptAttachmentPlan.make(
+            manifest: manifest,
+            generatedBundleRootURL: root,
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        let broker = ChromeMV3PermissionBroker(
+            state: ChromeMV3PermissionBrokerState(
+                extensionID: extensionID,
+                profileID: profileID,
+                hostPermissions: ["https://example.com/*"]
+            )
+        )
+        let preflight = ChromeMV3NormalTabContentScriptPreflightEvaluator
+            .evaluate(
+                input: ChromeMV3NormalTabContentScriptPreflightInput(
+                    moduleEnabled: true,
+                    extensionEnabled: true,
+                    productRuntimePreflightAllowsNormalTabAttachment: true,
+                    contentScriptGate: .developerPreviewAllowed(),
+                    attachmentPlan: plan,
+                    permissionBroker: broker,
+                    tabID: 7,
+                    frameID: 0,
+                    documentID: "document-1",
+                    navigationSequence: 1,
+                    urlString: "https://example.com/login",
+                    tabSurface: .normalTab,
+                    generatedBundleActive: true,
+                    webKitUserContentControllerAvailable: true,
+                    teardownPending: false
+                )
+            )
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+        _ = registry.registerEndpoint(
+            preflight: preflight,
+            connectListenerRegistered: true
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration:
+                configuration(
+                    manifestHostPermissions: ["https://example.com/*"]
+                ),
+            contentScriptEndpointRegistry: registry
+        )
+
+        let connect = handler.handle(request(
+            namespace: "tabs",
+            methodName: "connect",
+            arguments: [
+                .number(7),
+                .object(["name": .string("popup-port")]),
+            ],
+            invocationMode: .fireAndForget
+        ))
+        let portID = try XCTUnwrap(
+            stringValue(objectValue(connect.resultPayload)?["portID"])
+        )
+        let post = handler.handle(request(
+            namespace: "tabs",
+            methodName: "port.postMessage",
+            arguments: [
+                .string(portID),
+                .object(["hello": .string("content")]),
+            ],
+            invocationMode: .fireAndForget
+        ))
+        let disconnect = handler.handle(request(
+            namespace: "tabs",
+            methodName: "port.disconnect",
+            arguments: [.string(portID)],
+            invocationMode: .fireAndForget
+        ))
+
+        XCTAssertTrue(connect.succeeded)
+        XCTAssertEqual(
+            stringValue(objectValue(connect.resultPayload)?["portKind"]),
+            "contentScriptEndpointPort"
+        )
+        XCTAssertTrue(post.succeeded)
+        XCTAssertTrue(disconnect.succeeded)
+        XCTAssertEqual(registry.summary.portMessageCount, 1)
+        XCTAssertEqual(registry.summary.activePortCount, 0)
+        XCTAssertEqual(registry.summary.disconnectedPortCount, 1)
+        XCTAssertTrue(handler.diagnosticsSnapshot.observedMethods.contains(
+            "tabs.port.postMessage"
+        ))
+        XCTAssertTrue(handler.diagnosticsSnapshot.observedMethods.contains(
+            "tabs.port.disconnect"
+        ))
+    }
+
     func testTeardownClearsPopupOptionsBridgeState() throws {
         let handler = ChromeMV3PopupOptionsJSBridgeHandler(
             configuration: configuration()

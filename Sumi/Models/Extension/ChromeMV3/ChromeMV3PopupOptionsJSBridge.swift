@@ -73,6 +73,8 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
             "storage.local.set",
             "storage.onChanged",
             "tabs.connect",
+            "tabs.port.disconnect",
+            "tabs.port.postMessage",
             "tabs.query",
             "tabs.sendMessage",
         ],
@@ -676,6 +678,10 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             return tabsSendMessage(request)
         case ("tabs", "connect"):
             return tabsConnect(request)
+        case ("tabs", "port.postMessage"):
+            return tabsPortPostMessage(request)
+        case ("tabs", "port.disconnect"):
+            return tabsPortDisconnect(request)
         case ("scripting", "executeScript"):
             return blocked(request, namespace: "scripting")
         case ("nativeMessaging", _),
@@ -1271,6 +1277,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 "portID": .string(port.portID),
                 "portKind": .string("contentScriptEndpointPort"),
                 "endpointID": .string(port.endpointID),
+                "sender": senderPayload(port.sender),
                 "canOpenRuntimePortNow": .bool(true),
                 "canWakeServiceWorkerNow": .bool(false),
                 "runtimeLoadable": .bool(false),
@@ -1282,6 +1289,151 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                         "No product service-worker wake or native host launch occurred.",
                     ]
         )
+    }
+
+    private func tabsPortPostMessage(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        guard request.arguments.count == 2 else {
+            return invalidArguments(
+                request,
+                "tabs Port postMessage requires portID and message arguments."
+            )
+        }
+        guard let portID = request.arguments[0].stringValue else {
+            return invalidArguments(
+                request,
+                "tabs Port postMessage portID must be a string."
+            )
+        }
+        guard let registry = contentScriptEndpointRegistry else {
+            return runtimeLastErrorResponse(
+                request,
+                error: .noReceivingEnd,
+                diagnostics: [
+                    "No content-script endpoint registry is available for tabs Port delivery."
+                ]
+            )
+        }
+        let delivery = registry.deliverPopupOptionsPortMessage(
+            portID: portID,
+            payload: request.arguments[1]
+        )
+        guard delivery.delivered else {
+            return runtimeLastErrorResponse(
+                request,
+                error: .noReceivingEnd,
+                diagnostics: delivery.diagnostics
+            )
+        }
+        return response(
+            request: request,
+            succeeded: true,
+            payload: portDeliveryPayload(delivery),
+            diagnostics:
+                delivery.diagnostics
+                    + [
+                        "popup/options Port.postMessage reached the modeled content-script endpoint.",
+                        "No service-worker keepalive was opened for Port delivery.",
+                    ]
+        )
+    }
+
+    private func tabsPortDisconnect(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        guard request.arguments.count == 1 else {
+            return invalidArguments(
+                request,
+                "tabs Port disconnect requires one portID argument."
+            )
+        }
+        guard let portID = request.arguments[0].stringValue else {
+            return invalidArguments(
+                request,
+                "tabs Port disconnect portID must be a string."
+            )
+        }
+        guard let registry = contentScriptEndpointRegistry else {
+            return response(
+                request: request,
+                succeeded: true,
+                payload: .object([
+                    "portID": .string(portID),
+                    "disconnected": .bool(false),
+                    "disconnectReason": .string(
+                        "No content-script endpoint registry is available."
+                    ),
+                ]),
+                diagnostics: [
+                    "tabs Port disconnect was a deterministic no-op because no endpoint registry is available."
+                ]
+            )
+        }
+        let delivery = registry.disconnectPort(
+            portID: portID,
+            reason: "Port.disconnect called by popup/options."
+        )
+        syntheticPortIDs.remove(portID)
+        return response(
+            request: request,
+            succeeded: true,
+            payload: portDeliveryPayload(delivery),
+            diagnostics:
+                delivery.diagnostics
+                    + [
+                        "popup/options Port.disconnect deterministically notified both modeled endpoints when present.",
+                    ]
+        )
+    }
+
+    private func portDeliveryPayload(
+        _ delivery: ChromeMV3ContentScriptPortDeliveryResult
+    ) -> ChromeMV3StorageValue {
+        var object: [String: ChromeMV3StorageValue] = [
+            "portID": .string(delivery.portID),
+            "direction": .string(delivery.direction.rawValue),
+            "delivered": .bool(delivery.delivered),
+            "payload": delivery.payload ?? .null,
+        ]
+        if let endpointID = delivery.endpointID {
+            object["endpointID"] = .string(endpointID)
+        }
+        if let reason = delivery.disconnectReason {
+            object["disconnectReason"] = .string(reason)
+        }
+        return .object(object)
+    }
+
+    private func senderPayload(
+        _ sender: ChromeMV3ContentScriptSenderMetadata
+    ) -> ChromeMV3StorageValue {
+        var object: [String: ChromeMV3StorageValue] = [
+            "id": .string(sender.extensionID),
+            "extensionID": .string(sender.extensionID),
+            "profileID": .string(sender.profileID),
+            "tabId": .number(Double(sender.tabID)),
+            "frameId": .number(Double(sender.frameID)),
+            "documentId": .string(sender.documentID),
+            "navigationSequence": .number(Double(sender.navigationSequence)),
+            "lifecycleSessionID": .string(sender.lifecycleSessionID),
+            "endpointID": .string(sender.endpointID),
+            "urlRedacted": .bool(sender.urlRedacted),
+            "originRedacted": .bool(sender.originRedacted),
+        ]
+        if let parentFrameID = sender.parentFrameID {
+            object["parentFrameId"] = .number(Double(parentFrameID))
+        }
+        if let url = sender.url {
+            object["url"] = .string(url)
+        }
+        if let origin = sender.origin {
+            object["origin"] = .string(origin)
+        }
+        if let redactionReason = sender.redactionReason {
+            object["redactionReason"] = .string(redactionReason)
+        }
+        return .object(object)
     }
 
     private func runtimeLastErrorResponse(
@@ -2051,16 +2203,60 @@ enum ChromeMV3PopupOptionsJSShimSource {
             });
           }
 
-          function createPort(name) {
+          function createPort(name, delivery) {
             const port = {};
             const state = {
               id: null,
               disconnected: false,
+              delivery: delivery || null,
+              sender: null,
+              pendingMessages: [],
               onMessage: makePortEvent(),
               onDisconnect: makePortEvent()
             };
+            function markDisconnected() {
+              if (state.disconnected) {
+                return;
+              }
+              state.disconnected = true;
+              state.pendingMessages = [];
+              state.onDisconnect.dispatch(port);
+            }
+            function sendNativePortMessage(message) {
+              if (!state.delivery || !state.delivery.namespace || !state.delivery.postMessage) {
+                state.onMessage.dispatch(message, port);
+                return;
+              }
+              if (!state.id) {
+                state.pendingMessages.push(message);
+                return;
+              }
+              bridgePost(
+                state.delivery.namespace,
+                state.delivery.postMessage,
+                "fireAndForget",
+                [state.id, message]
+              ).then((response) => {
+                if (!response.succeeded) {
+                  markDisconnected();
+                }
+              }).catch(markDisconnected);
+            }
+            function flushPendingMessages() {
+              if (!state.id || state.disconnected || state.pendingMessages.length === 0) {
+                return;
+              }
+              const messages = state.pendingMessages.splice(0, state.pendingMessages.length);
+              messages.forEach(sendNativePortMessage);
+            }
             Object.defineProperty(port, "name", {
               value: name || "",
+              enumerable: true
+            });
+            Object.defineProperty(port, "sender", {
+              get() {
+                return state.sender || undefined;
+              },
               enumerable: true
             });
             Object.defineProperty(port, "onMessage", {
@@ -2076,7 +2272,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 if (state.disconnected) {
                   throw new Error("Attempting to use a disconnected port object");
                 }
-                state.onMessage.dispatch(toJSONCompatible(message), port);
+                sendNativePortMessage(toJSONCompatible(message));
               },
               enumerable: true
             });
@@ -2085,12 +2281,21 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 if (state.disconnected) {
                   return;
                 }
-                state.disconnected = true;
-                state.onDisconnect.dispatch(port);
+                if (state.delivery && state.delivery.namespace && state.delivery.disconnect && state.id) {
+                  bridgePost(
+                    state.delivery.namespace,
+                    state.delivery.disconnect,
+                    "fireAndForget",
+                    [state.id]
+                  );
+                }
+                markDisconnected();
               },
               enumerable: true
             });
             portState.set(port, state);
+            state.flushPendingMessages = flushPendingMessages;
+            state.markDisconnected = markDisconnected;
             return port;
           }
 
@@ -2146,17 +2351,13 @@ enum ChromeMV3PopupOptionsJSShimSource {
               bridgePost("runtime", "connect", "fireAndForget", args.map(toJSONCompatible))
                 .then((response) => {
                   if (!response.succeeded) {
-                    state.disconnected = true;
-                    state.onDisconnect.dispatch(port);
+                    state.markDisconnected();
                     return;
                   }
                   const payload = response.resultPayload || {};
                   state.id = payload.portID || state.id;
                 })
-                .catch(() => {
-                  state.disconnected = true;
-                  state.onDisconnect.dispatch(port);
-                });
+                .catch(state.markDisconnected);
               return port;
             },
             enumerable: true
@@ -2182,13 +2383,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
               const state = portState.get(port);
               bridgePost("runtime", nativeConnectMethod, "fireAndForget", [application])
                 .then(() => {
-                  state.disconnected = true;
-                  state.onDisconnect.dispatch(port);
+                  state.markDisconnected();
                 })
-                .catch(() => {
-                  state.disconnected = true;
-                  state.onDisconnect.dispatch(port);
-                });
+                .catch(state.markDisconnected);
               return port;
             },
             enumerable: true
@@ -2296,22 +2493,24 @@ enum ChromeMV3PopupOptionsJSShimSource {
           });
           Object.defineProperty(tabs, "connect", {
             value(tabId, connectInfo) {
-              const port = createPort(connectInfo && connectInfo.name);
+              const port = createPort(connectInfo && connectInfo.name, {
+                namespace: "tabs",
+                postMessage: "port.postMessage",
+                disconnect: "port.disconnect"
+              });
               const state = portState.get(port);
               bridgePost("tabs", "connect", "fireAndForget", [tabId, connectInfo || {}])
                 .then((response) => {
                   if (!response.succeeded) {
-                    state.disconnected = true;
-                    state.onDisconnect.dispatch(port);
+                    state.markDisconnected();
                     return;
                   }
                   const payload = response.resultPayload || {};
                   state.id = payload.portID || state.id;
+                  state.sender = payload.sender || null;
+                  state.flushPendingMessages();
                 })
-                .catch(() => {
-                  state.disconnected = true;
-                  state.onDisconnect.dispatch(port);
-                });
+                .catch(state.markDisconnected);
               return port;
             },
             enumerable: true

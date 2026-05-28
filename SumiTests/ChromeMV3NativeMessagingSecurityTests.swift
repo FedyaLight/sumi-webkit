@@ -536,6 +536,8 @@ final class ChromeMV3NativeMessagingSecurityTests: XCTestCase {
                         != "Sumi/Models/Extension/ChromeMV3/ChromeMV3PopupOptionsJSBridge.swift"
                     && $0.relativePath
                         != "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift"
+                    && $0.relativePath
+                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3ContentScriptProductAttachment.swift"
             }
             .map(\.contents)
             .joined(separator: "\n")

@@ -196,6 +196,30 @@ struct ChromeMV3ExtensionManagerDocumentationSource:
             finding: "Inline installation redirects/fails instead of installing directly; Sumi records Chrome Web Store install as deferred and does not inject or spoof Web Store pages."
         ),
         ChromeMV3ExtensionManagerDocumentationSource(
+            title: "Chrome manifest content scripts",
+            url: "https://developer.chrome.com/docs/extensions/reference/manifest/content-scripts",
+            boundary: "static content-script attachment",
+            finding: "Static MV3 content_scripts define matches, CSS/JS order, run_at, all_frames, match_about_blank, match_origin_as_fallback, and execution world; Sumi supports only product-gated main-frame isolated-world JS in Prompt 61R."
+        ),
+        ChromeMV3ExtensionManagerDocumentationSource(
+            title: "Chrome tabs API",
+            url: "https://developer.chrome.com/docs/extensions/reference/api/tabs",
+            boundary: "popup/options to content-script messaging",
+            finding: "tabs.sendMessage and tabs.connect target content scripts by tab, optional frameId, and optional documentId; Sumi models these only against registered developer-preview endpoints."
+        ),
+        ChromeMV3ExtensionManagerDocumentationSource(
+            title: "Chrome runtime API",
+            url: "https://developer.chrome.com/docs/extensions/reference/api/runtime",
+            boundary: "content-script MessageSender and Port metadata",
+            finding: "runtime.MessageSender and Port metadata include extension, tab/frame/document context and URL/origin details; Sumi redacts URL/origin unless host access is present."
+        ),
+        ChromeMV3ExtensionManagerDocumentationSource(
+            title: "Chrome scripting API",
+            url: "https://developer.chrome.com/docs/extensions/reference/api/scripting",
+            boundary: "dynamic scripting distinction",
+            finding: "scripting.executeScript is a runtime injection API distinct from manifest static content scripts; Sumi keeps arbitrary product executeScript blocked."
+        ),
+        ChromeMV3ExtensionManagerDocumentationSource(
             title: "Apple WKWebExtensionController header",
             url: "xcode://MacOSX.sdk/System/Library/Frameworks/WebKit.framework/Headers/WKWebExtensionController.h",
             boundary: "WebKit runtime attachment",
@@ -206,6 +230,18 @@ struct ChromeMV3ExtensionManagerDocumentationSource:
             url: "xcode://MacOSX.sdk/System/Library/Frameworks/WebKit.framework/Headers/WKWebExtensionContext.h",
             boundary: "WebKit runtime context",
             finding: "The SDK header models extension runtime environment and loaded state; manager viewing avoids context creation and loading."
+        ),
+        ChromeMV3ExtensionManagerDocumentationSource(
+            title: "Apple WKUserScript/WKContentWorld/WKUserContentController headers",
+            url: "xcode://MacOSX.sdk/System/Library/Frameworks/WebKit.framework/Headers/",
+            boundary: "WebKit user-script and content-world attachment",
+            finding: "Local SDK headers expose WKUserScript injection times and named WKContentWorlds plus script message handlers, but no public per-extension user stylesheet removal API."
+        ),
+        ChromeMV3ExtensionManagerDocumentationSource(
+            title: "Apple WKNavigationDelegate/WKFrameInfo headers",
+            url: "xcode://MacOSX.sdk/System/Library/Frameworks/WebKit.framework/Headers/",
+            boundary: "normal-tab lifecycle and frame metadata",
+            finding: "Local SDK headers expose navigation start/commit/finish/fail callbacks and WKFrameInfo main-frame/request/security-origin metadata; Sumi wires lifecycle entrypoints conservatively and blocks unsupported subframe attachment."
         ),
     ]
 }

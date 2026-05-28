@@ -136,6 +136,182 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         XCTAssertTrue(plan.supportedScripts.isEmpty)
     }
 
+    func testMatchAboutBlankAndOriginFallbackDiagnosticsArePrecise()
+        throws
+    {
+        let root = try makeBundle(files: ["content.js": "void 0;\n"])
+        var manifest = try ChromeMV3ManifestValidator.validateJSONObject([
+            "manifest_version": 3,
+            "name": "Related Frame Content Scripts",
+            "version": "1.0.0",
+        ])
+        manifest.contentScripts = [
+            contentScript(js: ["content.js"], matchAboutBlank: true),
+            contentScript(js: ["content.js"], matchOriginAsFallback: true),
+        ]
+
+        let plan = ChromeMV3ContentScriptAttachmentPlan.make(
+            manifest: manifest,
+            generatedBundleRootURL: root,
+            extensionID: extensionID,
+            profileID: profileID
+        )
+
+        XCTAssertTrue(
+            Set(plan.declaredScripts.flatMap(\.blockers))
+                .contains(.frameBehaviorUnsupported)
+        )
+        XCTAssertTrue(plan.diagnostics.joined(separator: "\n")
+            .contains("match_about_blank"))
+        XCTAssertTrue(plan.diagnostics.joined(separator: "\n")
+            .contains("match_origin_as_fallback"))
+        XCTAssertTrue(plan.supportedScripts.isEmpty)
+    }
+
+    func testCSSRemainsBlockedWithScopedRemovalDiagnostic() throws {
+        let root = try makeBundle(files: [
+            "content.js": "void 0;\n",
+            "style.css": "body { color: rgb(1 2 3); }\n",
+        ])
+        var manifest = try ChromeMV3ManifestValidator.validateJSONObject([
+            "manifest_version": 3,
+            "name": "CSS Content Script",
+            "version": "1.0.0",
+        ])
+        manifest.contentScripts = [
+            contentScript(js: ["content.js"], css: ["style.css"]),
+        ]
+
+        let plan = ChromeMV3ContentScriptAttachmentPlan.make(
+            manifest: manifest,
+            generatedBundleRootURL: root,
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        let record = try XCTUnwrap(plan.declaredScripts.first)
+
+        XCTAssertEqual(record.cssPolicyStatus, .blockedScopedRemovalUnavailable)
+        XCTAssertTrue(record.blockers.contains(.cssUnsupported))
+        XCTAssertTrue(record.diagnostics.joined(separator: "\n")
+            .contains("No product global stylesheet leakage"))
+        XCTAssertTrue(record.diagnostics.joined(separator: "\n")
+            .contains("CSS file validated"))
+    }
+
+    func testMainWorldRemainsBlockedAndNotDowngraded() throws {
+        let root = try makeBundle(files: ["content.js": "void 0;\n"])
+        var manifest = try ChromeMV3ManifestValidator.validateJSONObject([
+            "manifest_version": 3,
+            "name": "Main World Content Script",
+            "version": "1.0.0",
+        ])
+        manifest.contentScripts = [
+            contentScript(js: ["content.js"], world: "MAIN"),
+        ]
+
+        let plan = ChromeMV3ContentScriptAttachmentPlan.make(
+            manifest: manifest,
+            generatedBundleRootURL: root,
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        let record = try XCTUnwrap(plan.declaredScripts.first)
+
+        XCTAssertEqual(record.world, .main)
+        XCTAssertTrue(record.blockers.contains(.unsupportedWorld))
+        XCTAssertTrue(record.diagnostics.joined(separator: "\n")
+            .contains("not silently downgraded"))
+        XCTAssertTrue(plan.supportedScripts.isEmpty)
+    }
+
+    func testFrameTargetingRecordsMainFrameAndBlocksSubframes()
+        throws
+    {
+        let main = try makePreflightFixture()
+        XCTAssertEqual(main.preflight.frameTarget.tabID, 7)
+        XCTAssertEqual(main.preflight.frameTarget.frameID, 0)
+        XCTAssertEqual(main.preflight.frameTarget.documentID, "document-1")
+        XCTAssertEqual(main.preflight.frameTarget.navigationSequence, 1)
+        XCTAssertEqual(main.preflight.frameTarget.urlClassification, .httpFamily)
+        XCTAssertEqual(main.preflight.frameTarget.originRelationship, .mainFrame)
+
+        let subframeTarget = ChromeMV3ContentScriptFrameTarget.make(
+            tabID: 7,
+            frameID: 4,
+            parentFrameID: 0,
+            documentID: "document-subframe",
+            navigationSequence: 2,
+            urlString: "https://example.com/frame",
+            parentURLString: "https://example.com/login",
+            isMainFrame: false
+        )
+        let subframe = try makePreflightFixture(
+            urlString: "https://example.com/frame",
+            frameID: 4,
+            documentID: "document-subframe",
+            navigationSequence: 2,
+            frameTarget: subframeTarget
+        )
+
+        XCTAssertFalse(subframe.preflight.canAttachDeclaredContentScriptsNow)
+        XCTAssertTrue(
+            subframe.preflight.blockers.contains(.frameBehaviorUnsupported)
+        )
+        XCTAssertEqual(
+            subframe.preflight.frameTarget.originRelationship,
+            .sameOriginWithParent
+        )
+        XCTAssertTrue(subframe.preflight.diagnostics.joined(separator: "\n")
+            .contains("subframe"))
+    }
+
+    func testSpecialFrameTargetsAreBlockedWithPreciseDiagnostics()
+        throws
+    {
+        let aboutTarget = ChromeMV3ContentScriptFrameTarget.make(
+            tabID: 7,
+            frameID: 5,
+            parentFrameID: 0,
+            documentID: "about-document",
+            navigationSequence: 3,
+            urlString: "about:blank",
+            parentURLString: "https://example.com/login",
+            isMainFrame: false
+        )
+        let blobTarget = ChromeMV3ContentScriptFrameTarget.make(
+            tabID: 7,
+            frameID: 6,
+            parentFrameID: 0,
+            documentID: "blob-document",
+            navigationSequence: 4,
+            urlString: "blob:https://example.com/uuid",
+            parentURLString: "https://example.com/login",
+            isMainFrame: false
+        )
+
+        let about = try makePreflightFixture(
+            urlString: "about:blank",
+            frameID: 5,
+            documentID: "about-document",
+            navigationSequence: 3,
+            frameTarget: aboutTarget
+        )
+        let blob = try makePreflightFixture(
+            urlString: "blob:https://example.com/uuid",
+            frameID: 6,
+            documentID: "blob-document",
+            navigationSequence: 4,
+            frameTarget: blobTarget
+        )
+
+        XCTAssertTrue(about.preflight.blockers.contains(.frameBehaviorUnsupported))
+        XCTAssertTrue(about.preflight.diagnostics.joined(separator: "\n")
+            .contains("match_about_blank"))
+        XCTAssertTrue(blob.preflight.blockers.contains(.frameBehaviorUnsupported))
+        XCTAssertTrue(blob.preflight.diagnostics.joined(separator: "\n")
+            .contains("match_origin_as_fallback"))
+    }
+
     func testEndpointRegistryRoutesMessagesPortsAndTeardown()
         throws
     {
@@ -186,6 +362,7 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
             "contentScriptEndpointPort"
         )
         XCTAssertEqual(registry.summary.portCount, 1)
+        XCTAssertEqual(registry.summary.activePortCount, 1)
 
         registry.navigationStarted(
             profileID: profileID,
@@ -205,6 +382,153 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         XCTAssertTrue(
             registry.summary.lifecycleStates.contains(.navigationInvalidated)
         )
+        XCTAssertEqual(registry.summary.activePortCount, 0)
+        XCTAssertEqual(registry.summary.disconnectedPortCount, 1)
+    }
+
+    func testPortMessageDeliveryBothDirectionsAndDisconnect() throws {
+        let fixture = try makePreflightFixture()
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+        let endpoint = try XCTUnwrap(
+            registry.registerEndpoint(
+                preflight: fixture.preflight,
+                messageListenerRegistered: true,
+                connectListenerRegistered: true
+            )
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration:
+                popupConfiguration(hostPermissions: ["https://example.com/*"]),
+            contentScriptEndpointRegistry: registry
+        )
+        let connect = handler.handle(request(
+            namespace: "tabs",
+            methodName: "connect",
+            arguments: [
+                .number(7),
+                .object(["name": .string("preview-port")]),
+            ],
+            invocationMode: .fireAndForget
+        ))
+        let portID = try XCTUnwrap(
+            stringValue(objectValue(connect.resultPayload)?["portID"])
+        )
+        let sender = try XCTUnwrap(objectValue(
+            objectValue(connect.resultPayload)?["sender"]
+        ))
+
+        let outbound = handler.handle(request(
+            namespace: "tabs",
+            methodName: "port.postMessage",
+            arguments: [
+                .string(portID),
+                .object(["ping": .bool(true)]),
+            ],
+            invocationMode: .fireAndForget
+        ))
+        let contentHost = ChromeMV3ContentScriptBridgeHost(
+            extensionID: extensionID,
+            profileID: profileID,
+            tabID: 7,
+            frameID: 0,
+            documentID: "document-1",
+            urlString: "https://example.com/login",
+            permissionBroker:
+                permissionBroker(hostPermissions: ["https://example.com/*"]),
+            endpointRegistry: registry
+        )
+        let inbound = contentHost.handle([
+            "namespace": "runtime",
+            "methodName": "port.postMessage",
+            "bridgeCallID": "content-port-post",
+            "arguments": [
+                portID,
+                ["pong": true],
+            ],
+        ])
+        let disconnect = handler.handle(request(
+            namespace: "tabs",
+            methodName: "port.disconnect",
+            arguments: [.string(portID)],
+            invocationMode: .fireAndForget
+        ))
+
+        XCTAssertEqual(endpoint.senderMetadata.endpointID, endpoint.endpointID)
+        XCTAssertEqual(stringValue(sender["documentId"]), "document-1")
+        XCTAssertEqual(stringValue(sender["url"]), "https://example.com/login")
+        XCTAssertEqual(boolValue(sender["urlRedacted"]), false)
+        XCTAssertTrue(outbound.succeeded)
+        XCTAssertTrue(inbound.succeeded)
+        XCTAssertTrue(disconnect.succeeded)
+        XCTAssertEqual(registry.summary.portMessageCount, 2)
+        XCTAssertEqual(registry.summary.activePortCount, 0)
+        XCTAssertEqual(registry.summary.disconnectedPortCount, 1)
+        XCTAssertTrue(
+            registry.summary.portDisconnectReasons.contains(
+                "Port.disconnect called by popup/options."
+            )
+        )
+    }
+
+    func testNavigationLifecycleAndWebViewLifecycleRecordsTeardown()
+        throws
+    {
+        let fixture = try makePreflightFixture()
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+        _ = registry.registerEndpoint(
+            preflight: fixture.preflight,
+            connectListenerRegistered: true
+        )
+        registry.navigationCommitted(
+            profileID: profileID,
+            tabID: 7,
+            navigationSequence: 2
+        )
+        registry.navigationFinished(
+            profileID: profileID,
+            tabID: 7,
+            navigationSequence: 2
+        )
+        registry.sameDocumentNavigation(
+            profileID: profileID,
+            tabID: 7,
+            navigationSequence: 2
+        )
+        registry.navigationFailed(
+            profileID: profileID,
+            tabID: 7,
+            navigationSequence: 1
+        )
+
+        XCTAssertTrue(registry.summary.lifecycleStates.contains(.navigationCommitted))
+        XCTAssertTrue(registry.summary.lifecycleStates.contains(.navigationFinished))
+        XCTAssertTrue(registry.summary.lifecycleStates.contains(.sameDocumentNavigation))
+        XCTAssertTrue(registry.summary.lifecycleStates.contains(.navigationFailed))
+        XCTAssertEqual(registry.summary.activeEndpointCount, 0)
+
+        let replacement = ChromeMV3ContentScriptEndpointRegistry()
+        _ = replacement.registerEndpoint(
+            preflight: fixture.preflight,
+            connectListenerRegistered: true
+        )
+        replacement.detachForWebViewReplacement(profileID: profileID, tabID: 7)
+        XCTAssertTrue(replacement.summary.lifecycleStates.contains(.webViewReplaced))
+
+        let suspension = ChromeMV3ContentScriptEndpointRegistry()
+        _ = suspension.registerEndpoint(
+            preflight: fixture.preflight,
+            connectListenerRegistered: true
+        )
+        suspension.detachForWebViewSuspension(profileID: profileID, tabID: 7)
+        XCTAssertTrue(suspension.summary.lifecycleStates.contains(.webViewSuspended))
+
+        let discard = ChromeMV3ContentScriptEndpointRegistry()
+        _ = discard.registerEndpoint(
+            preflight: fixture.preflight,
+            connectListenerRegistered: true
+        )
+        discard.detachForWebViewDiscard(profileID: profileID, tabID: 7)
+        XCTAssertTrue(discard.summary.lifecycleStates.contains(.webViewDiscarded))
     }
 
     func testListenerMissingReturnsNoReceivingEnd() throws {
@@ -263,6 +587,39 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         XCTAssertEqual(response.lastErrorCode, "noReceivingEnd")
         XCTAssertFalse(response.serviceWorkerWakeAttempted)
         XCTAssertFalse(response.nativeHostLaunchAttempted)
+    }
+
+    func testContentScriptRuntimeConnectBlockedDiagnostic() throws {
+        let fixture = try makePreflightFixture()
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+        _ = registry.registerEndpoint(
+            preflight: fixture.preflight,
+            connectListenerRegistered: true
+        )
+        let host = ChromeMV3ContentScriptBridgeHost(
+            extensionID: extensionID,
+            profileID: profileID,
+            tabID: 7,
+            frameID: 0,
+            documentID: "document-1",
+            urlString: "https://example.com/login",
+            permissionBroker:
+                permissionBroker(hostPermissions: ["https://example.com/*"]),
+            endpointRegistry: registry
+        )
+
+        let response = host.handle([
+            "namespace": "runtime",
+            "methodName": "connect",
+            "bridgeCallID": "runtime-connect-blocked",
+            "arguments": [["name": "content-runtime"]],
+        ])
+
+        XCTAssertFalse(response.succeeded)
+        XCTAssertEqual(response.lastErrorCode, "routeNotImplemented")
+        XCTAssertTrue(response.diagnostics.joined(separator: "\n")
+            .contains("No fake runtime Port"))
+        XCTAssertFalse(response.serviceWorkerWakeAttempted)
     }
 
     func testDisableUninstallResetAndTabCloseTeardownEndpoints()
@@ -380,7 +737,11 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         generatedBundleActive: Bool = true,
         gate: ChromeMV3ContentScriptProductGateRecord =
             .developerPreviewAllowed(),
-        tabSurface: ChromeMV3WebViewSurface = .normalTab
+        tabSurface: ChromeMV3WebViewSurface = .normalTab,
+        frameID: Int = 0,
+        documentID: String = "document-1",
+        navigationSequence: Int = 1,
+        frameTarget: ChromeMV3ContentScriptFrameTarget = .unknownMainFrame
     ) throws -> PreflightFixture {
         let root = try makeBundle(files: ["content.js": "globalThis.__sumiMV3Content = true;\n"])
         let manifest = try ChromeMV3ManifestValidator.validateJSONObject([
@@ -419,10 +780,11 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
                     attachmentPlan: plan,
                     permissionBroker: broker,
                     tabID: 7,
-                    frameID: 0,
-                    documentID: "document-1",
-                    navigationSequence: 1,
+                    frameID: frameID,
+                    documentID: documentID,
+                    navigationSequence: navigationSequence,
                     urlString: urlString,
+                    frameTarget: frameTarget,
                     tabSurface: tabSurface,
                     generatedBundleActive: generatedBundleActive,
                     webKitUserContentControllerAvailable: true,
@@ -526,6 +888,8 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         js: [String],
         css: [String] = [],
         allFrames: Bool = false,
+        matchAboutBlank: Bool = false,
+        matchOriginAsFallback: Bool = false,
         world: String? = nil
     ) -> ChromeMV3ContentScript {
         ChromeMV3ContentScript(
@@ -536,8 +900,8 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
             js: js,
             css: css,
             allFrames: allFrames,
-            matchAboutBlank: false,
-            matchOriginAsFallback: false,
+            matchAboutBlank: matchAboutBlank,
+            matchOriginAsFallback: matchOriginAsFallback,
             runAt: "document_start",
             world: world
         )
@@ -553,6 +917,11 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
     private func stringValue(_ value: ChromeMV3StorageValue?) -> String? {
         guard case .string(let string) = value else { return nil }
         return string
+    }
+
+    private func boolValue(_ value: ChromeMV3StorageValue?) -> Bool? {
+        guard case .bool(let bool) = value else { return nil }
+        return bool
     }
 }
 

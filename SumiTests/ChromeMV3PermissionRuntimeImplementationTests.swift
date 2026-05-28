@@ -849,6 +849,8 @@ final class ChromeMV3PermissionRuntimeImplementationTests: XCTestCase {
                     != "ChromeMV3PopupOptionsJSBridge.swift"
                     && $0.lastPathComponent
                     != "ChromeMV3ProductPopupOptionsUI.swift"
+                    && $0.lastPathComponent
+                    != "ChromeMV3ContentScriptProductAttachment.swift"
             }
             + [extensionModule]
         let source = try swiftFiles.map {
