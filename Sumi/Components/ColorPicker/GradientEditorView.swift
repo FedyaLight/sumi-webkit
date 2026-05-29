@@ -522,7 +522,7 @@ private struct SumiPresetSwatch: View {
         ZStack {
             Circle()
                 .fill(tokens.fieldBackground)
-            BarycentricGradientView(gradient: preset.workspaceTheme.gradient)
+            SpaceMeshGradientView(gradient: preset.workspaceTheme.gradient)
                 .clipShape(Circle())
                 .padding(2)
         }

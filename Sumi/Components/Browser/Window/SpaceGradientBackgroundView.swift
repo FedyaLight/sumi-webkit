@@ -183,7 +183,7 @@ struct SpaceGradientBackgroundView: View {
             : max(0, min(1, gradient.grain * clampedIntensity))
 
         return ZStack {
-            BarycentricGradientView(gradient: gradient)
+            SpaceMeshGradientView(gradient: gradient)
                 .opacity(max(0, min(1, gradient.opacity)))
                 .frame(width: fieldSize.width, height: fieldSize.height)
                 .clipped()
