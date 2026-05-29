@@ -338,6 +338,7 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
                 "default_popup": "ui/popup.html",
                 "default_icon": [
                     "16": "icons/action-16.png",
+                    "32": "/icons/action-32.png",
                 ],
             ],
             "icons": [
@@ -384,6 +385,7 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
                 "content/content.css": "body { color: rgb(1, 2, 3); }\n",
                 "ui/popup.html": "<!doctype html><title>Popup</title>\n",
                 "icons/action-16.png": "action icon\n",
+                "icons/action-32.png": "action icon root relative\n",
                 "icons/icon-48.png": "icon 48\n",
                 "icons/icon-128.png": "icon 128\n",
                 "options.html": "<!doctype html><title>Options</title>\n",
@@ -407,6 +409,7 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
             "content/content.css",
             "content/content.js",
             "icons/action-16.png",
+            "icons/action-32.png",
             "icons/icon-128.png",
             "icons/icon-48.png",
             "options-ui.html",

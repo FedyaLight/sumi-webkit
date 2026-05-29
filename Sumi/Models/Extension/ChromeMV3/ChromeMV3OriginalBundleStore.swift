@@ -391,15 +391,25 @@ private struct ChromeMV3OriginalBundleDigest {
     ) throws -> ChromeMV3OriginalBundleDigest {
         let fileManager = FileManager.default
         let standardizedSourceURL = sourceURL.standardizedFileURL
+        let sourceValues = try standardizedSourceURL.resourceValues(forKeys: [
+            .isDirectoryKey,
+            .isSymbolicLinkKey,
+        ])
         var isDirectory: ObjCBool = false
         guard
             fileManager.fileExists(
                 atPath: standardizedSourceURL.path,
                 isDirectory: &isDirectory
             ),
-            isDirectory.boolValue
+            isDirectory.boolValue,
+            sourceValues.isDirectory == true
         else {
             throw ChromeMV3OriginalBundleStoreError.nonDirectorySource(
+                standardizedSourceURL.path
+            )
+        }
+        if sourceValues.isSymbolicLink == true {
+            throw ChromeMV3OriginalBundleStoreError.unsafeBundlePath(
                 standardizedSourceURL.path
             )
         }
@@ -409,9 +419,10 @@ private struct ChromeMV3OriginalBundleDigest {
             originalPath: standardizedSourceURL.path
         )
 
-        let rootPath = standardizedSourceURL.path.hasSuffix("/")
-            ? standardizedSourceURL.path
-            : standardizedSourceURL.path + "/"
+        let canonicalRootPath = try canonicalPath(for: standardizedSourceURL)
+        let rootPath = canonicalRootPath.hasSuffix("/")
+            ? canonicalRootPath
+            : canonicalRootPath + "/"
         guard
             let enumerator = fileManager.enumerator(
                 at: standardizedSourceURL,
@@ -437,14 +448,18 @@ private struct ChromeMV3OriginalBundleDigest {
 
         for case let itemURL as URL in enumerator {
             let itemURL = itemURL.standardizedFileURL
-            guard itemURL.path.hasPrefix(rootPath) else {
+            let itemCanonicalPath = try canonicalPath(for: itemURL)
+            guard itemCanonicalPath.hasPrefix(rootPath) else {
                 throw ChromeMV3OriginalBundleStoreError.sourceEscapedStoreRoot(
-                    itemURL.path
+                    itemCanonicalPath
                 )
             }
 
-            let relativePath = String(itemURL.path.dropFirst(rootPath.count))
-            try validateSafeRelativePath(relativePath, originalPath: itemURL.path)
+            let relativePath = String(itemCanonicalPath.dropFirst(rootPath.count))
+            try validateSafeRelativePath(
+                relativePath,
+                originalPath: itemCanonicalPath
+            )
 
             let values = try itemURL.resourceValues(forKeys: [
                 .isDirectoryKey,
@@ -521,6 +536,16 @@ private struct ChromeMV3OriginalBundleDigest {
         else {
             throw ChromeMV3OriginalBundleStoreError.unsafeBundlePath(relativePath)
         }
+    }
+
+    private static func canonicalPath(for url: URL) throws -> String {
+        var value: AnyObject?
+        try (url.standardizedFileURL as NSURL).getResourceValue(
+            &value,
+            forKey: .canonicalPathKey
+        )
+        return (value as? String).flatMap { $0.isEmpty ? nil : $0 }
+            ?? url.standardizedFileURL.path
     }
 
     private static func sha256File(at url: URL) throws -> String {
