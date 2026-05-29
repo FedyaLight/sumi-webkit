@@ -63,6 +63,11 @@ default.profraw
 docs/
 !docs/
 docs/*
+!docs/architecture.md
+!docs/status.md
+!docs/roadmap.md
+!docs/mv3-extensions.md
+!docs/demo-script.md
 !docs/adblock-native-rule-bundle-v1.md
 !docs/extensions/
 docs/extensions/*

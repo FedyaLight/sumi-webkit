@@ -1,10 +1,12 @@
 <div align="center">
-  <img width="230" height="230" src="./assets/icon.png" alt="Sumi Logo">
-  <h1><b>Sumi</b></h1>
+  <img width="230" height="230" src="./assets/icon.png" alt="Sumi Browser logo">
+  <h1><b>Sumi Browser</b></h1>
   <p>
-    Sumi is a native macOS browser built on WebKit and SwiftUI, organized around vertical tabs,
-    spaces, and profiles so browsing stays structured without heavy chrome.
+    Sumi Browser is a native performance-first macOS browser.
     <br>
+    It is built with WebKit and SwiftUI for users who like workspace-oriented browsers
+    such as Arc and Zen, but want a leaner native macOS app with optional modules and
+    no built-in AI clutter.
   </p>
 </div>
 
@@ -12,55 +14,150 @@
   <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-15.7+-blue" alt="macOS 15.7+"></a>
   <a href="https://swift.org/"><img src="https://img.shields.io/badge/Swift-6.3.1-orange" alt="Swift 6.3.1"></a>
   <a href="https://www.gnu.org/licenses/gpl-3.0.html"><img src="https://img.shields.io/badge/License-GPL--3.0-green" alt="GPL-3.0"></a>
+  <img src="https://img.shields.io/badge/Status-Developer%20Preview-lightgrey" alt="Developer Preview">
 </p>
 
-## Project status
+## Status
 
-This tree is primarily a **development and testbed** checkout: debugging is ongoing, behaviors and APIs may change, and not everything here is polished end-user packaging. Treat builds as **experimental** unless you are contributing or validating a specific change.
+Sumi is in developer preview. The browser shell builds and runs locally, but it is not recommended as a primary browser yet.
 
-Design goals stay **simple, fast, and deliberately anti-bloat**—fewer nested surfaces than mainstream browsers, with keyboard-first shortcuts and a lightweight chrome footprint where we can keep it.
+The first public preview is planned after three user-safety pieces are in place:
 
-Release packaging targets **GitHub Releases** as a notarized DMG. Maintainer-facing material (release steps, CI notes, performance profiling workflow) lives under `docs/` in a full maintainer checkout; that directory is **gitignored** here and is not part of the public GitHub tree.
+- MV3 password-manager extension compatibility.
+- File/archive-based backup and restore for user data.
+- An update mechanism or update notification path.
 
-## Acknowledgments
+See [docs/status.md](docs/status.md) and [docs/roadmap.md](docs/roadmap.md) for more detail.
 
-- **Zen Browser** informs the **workspace / vertical-tab mental model** and the overall “sidebar-first, low chrome” posture Sumi chases—especially how Essentials-style pinning coexists with dense tab lists.
-- The codebase **started from the open-source Nook browser** but has been **heavily reworked** toward Sumi’s goals; treat today’s architecture and features as Sumi-first, not a drop-in Nook fork.
-- A few **AppKit / WebKit helpers** (notably around **find-in-page**, **downloads**, and related window chrome) **adapt code published by DuckDuckGo** for macOS under the **Apache License 2.0**—those files retain DDG copyright/SPDX headers where code is directly reused. They are an implementation reference for specific subsystems, not an endorsement or full UI parity.
+## What Sumi Is
 
-## Project structure
+Sumi is an independent open-source macOS browser. It is not a commercial product, not an AI browser, and not an attempt to replace Chromium for every use case.
+
+The project focuses on:
+
+- Native macOS behavior through Swift, SwiftUI, AppKit where appropriate, and system WebKit.
+- Arc/Zen-style organization without cloning either project.
+- A performance-first browser shell with tabs, spaces, profiles, Glance, split view, and sidebar organization.
+- Optional privacy, adblock, and extension modules that should not impose background runtime cost when disabled.
+- User-controlled features instead of always-on product surfaces.
+
+## Working Browser Features
+
+Current developer-preview builds include:
+
+- Native macOS browser shell using WebKit and SwiftUI.
+- Tabs, sidebar, profiles, and spaces.
+- Essentials, pinned items, folders, and drag-and-drop sidebar organization.
+- Essentials shared across spaces that belong to the same profile.
+- Pinned items that live in a single space and appear like normal tabs.
+- Pinned and essential items that keep their visible sidebar identity while the live WebView/runtime instance is unloaded to reduce memory use.
+- Glance, which opens over the current tab or from pinned, essential, and launcher-style items, closes quickly, can expand into a normal tab, and can move into split view.
+- Split view with up to four views.
+- Floating bar search/address field with suggestions, site search, history suggestions, bookmark suggestions, compact/top links behavior, and split-aware actions.
+- Bookmarks, history, and search inside bookmarks, history, and settings.
+- Custom themes.
+- Session restore setting for restoring the previous session or starting clean.
+- Mini Player at the bottom of the sidebar for jumping to playing media, pausing media, and muting media.
+- Memory modes and inactive tab unloading that preserve visible organization after a live WebView/runtime instance is unloaded.
+- Optional tracking protection, adblock, and automatic history/site-data cleanup modules.
+
+Privacy tools are available as optional modules, not mandatory background systems. Tracking protection and adblock are implemented and being validated; the public docs avoid benchmark-style blocking claims until there is documented methodology.
+
+## Extensions And MV3
+
+Chrome Manifest V3 compatibility is the active engineering milestone. Sumi is targeting Chrome MV3 because it is the modern extension architecture and better matches the project's performance and energy goals than older background-page models.
+
+The current direction is:
+
+- Chrome MV3 extensions on top of `WKWebExtensions` plus a compatibility layer where needed.
+- Current installation paths for development: unpacked directory and zip.
+- Future goal: Chrome Web Store installation support.
+- Near-term validation target: real-world password-manager extensions.
+
+Sumi does not currently claim that Bitwarden, Proton Pass, 1Password, or other password managers work. The near-term target is that a user can install an unpacked or zipped password-manager extension and use it from the browser UI.
+
+See [docs/mv3-extensions.md](docs/mv3-extensions.md) for the current capability and blocker summary.
+
+## Architecture Principles
+
+Sumi WebKit is a native macOS application. The current target is macOS 15.7+.
+
+The project prefers:
+
+- System WebKit for page rendering.
+- SwiftUI and AppKit for native browser chrome and platform integration.
+- Native platform surfaces over heavy web/JavaScript-based browser UI where possible.
+- Lazy optional modules and no runtime work when a module is disabled.
+- Avoiding background services, timers, and long-running tasks unless they are necessary and visible in the product design.
+- Extension-based AI tools later, once extension compatibility matures, instead of a built-in AI panel.
+
+The high-level architecture notes live in [docs/architecture.md](docs/architecture.md).
+
+## Roadmap Summary
+
+Near-term work:
+
+- MV3 password-manager extension compatibility.
+- Backup and restore for tabs, spaces, profiles, bookmarks, pinned items, essentials, folders, themes, extension settings, and tracking/adblock settings.
+- Update mechanism or update notification.
+- Import from Arc and Zen.
+
+Later work under consideration:
+
+- Nested folders and live folders.
+- Site customization/boosts.
+- Private or ephemeral profile mode.
+- Fully encrypted sync without data collection.
+- Multi-window workflows.
+- Improved profile isolation.
+- Safari and Chrome import.
+
+## Demo
+
+A short development demo will be added before the first public preview.
+
+The demo outline is drafted in [docs/demo-script.md](docs/demo-script.md).
+
+## Project Structure
 
 Paths below are relative to the repository root.
 
-```
+```text
 .
 ├── Sumi.xcodeproj          # Xcode project for the Sumi target and tests
-├── App/                     # Entry point (@main), window/content shell, commands
-├── Sumi/                    # Primary app target (most SwiftUI and services)
-│   ├── Managers/            # BrowserManager, TabManager, ExtensionManager, …
-│   ├── Models/              # Tab, Space, Profile, BrowserConfig, …
-│   ├── Components/          # SwiftUI UI (Sidebar, Browser, Settings, Glance, …)
-│   ├── Services/            # Cross-cutting services (routing, diagnostics, …)
-│   ├── Theme/               # Theming and chrome styling
-│   ├── Utils/               # Helpers, WebKit wrappers, SwiftUI gradient views, …
-│   ├── Resources/           # Bundled scripts and related assets
-│   └── …                    # Protocols, Extensions, Diagnostics, …
-├── Navigation/              # Sidebar navigation helpers used by the shell
-├── FloatingBar/          # Floating bar UI and accessories
-├── UI/                      # Shared lightweight UI helpers
-├── Settings/                # Settings-related helpers at target boundaries
-├── SumiTests/               # Unit tests
-├── SumiUITests/             # UI tests
-├── README.md                # This file
-├── assets/                  # Logo and marketing assets for GitHub / docs
-├── docs/                    # Maintainer docs (local / gitignored; not on GitHub)
-└── scripts/                 # Development scripts
+├── App/                    # Entry point, window/content shell, commands
+├── Sumi/                   # Primary app target
+│   ├── Managers/           # BrowserManager, TabManager, ExtensionManager, ...
+│   ├── Models/             # Tab, Space, Profile, BrowserConfig, ...
+│   ├── Components/         # SwiftUI UI: Sidebar, Browser, Settings, Glance, ...
+│   ├── Services/           # Cross-cutting services
+│   ├── Theme/              # Theming and chrome styling
+│   ├── Utils/              # Helpers and WebKit wrappers
+│   └── Resources/          # Bundled scripts and related assets
+├── FloatingBar/            # Floating bar UI and accessories
+├── Navigation/             # Sidebar navigation helpers
+├── Settings/               # Settings-related helpers
+├── UI/                     # Shared lightweight UI helpers
+├── Vendor/                 # Vendored third-party components
+├── SumiTests/              # Unit tests
+├── SumiUITests/            # UI tests
+├── assets/                 # Logo and public visual assets
+├── docs/                   # Public and maintainer documentation
+└── scripts/                # Development scripts
 ```
 
-Notable areas inside `Sumi/Components/` include **FindInPage** (in-page search) alongside Sidebar, Browser, Settings, Extensions, and related modules.
+Some maintainer-only docs and local artifacts may exist in a full checkout, but public documentation under `docs/` is intended to be tracked.
 
-## License
+## Contributing
 
-Sumi is intended to be used under the **GNU General Public License v3.0**. See the [full license text](https://www.gnu.org/licenses/gpl-3.0.html).
+Sumi is experimental. Contributions should preserve the native macOS/WebKit direction, performance-first design, optional module boundaries, and honest status of incomplete features.
 
-Some files incorporate or adapt third-party code; those portions are identified in the relevant source headers (and in any README shipped with vendored subtrees, if present). Third-party licenses apply only to those portions.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License And Attribution
+
+Sumi is licensed under the GNU General Public License v3.0. See [LICENSE](LICENSE).
+
+The project is independent, but it was not written entirely from scratch. The codebase started from the open-source Nook browser and has been heavily reworked toward Sumi's goals. Sumi also includes vendored or adapted open-source components from DuckDuckGo's Apple browser projects, including BrowserServicesKit and URLPredictor, under their applicable licenses.
+
+See [NOTICE.md](NOTICE.md) for attribution and affiliation details.
