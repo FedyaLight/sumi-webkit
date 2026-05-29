@@ -1253,6 +1253,8 @@ struct ChromeMV3ExtensionManagerDetailViewModel:
         ChromeMV3ExtensionManagerPermissionStatePanel
     var trustedNativeHostPanel:
         ChromeMV3ExtensionManagerTrustedNativeHostPanel
+    var passwordManagerCompatibilitySummary:
+        ChromeMV3PasswordManagerCompatibilityManagerSummary?
     var actions: [ChromeMV3ExtensionManagerActionDescriptor]
     var diagnosticsReportPath: String?
     var diagnosticsJSONAvailable: Bool
@@ -1608,6 +1610,11 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
                     record: record,
                     manifestSummary: manifestSummary,
                     gate: gate
+                ),
+            passwordManagerCompatibilitySummary:
+                ChromeMV3PasswordManagerCompatibilityManagerSummary.make(
+                    record: record,
+                    report: report
                 ),
             actions: actionDescriptors(
                 gate: gate,
@@ -2466,6 +2473,7 @@ struct ChromeMV3ExtensionManagerView: View {
                 ) {
                     VStack(alignment: .leading, spacing: 14) {
                         detailSummary(selectedDetail)
+                        passwordManagerSummary(selectedDetail)
                         preflightSummary(selectedDetail)
                         popupOptionsSummary(selectedDetail)
                         permissionStateSummary(selectedDetail)
@@ -2480,6 +2488,44 @@ struct ChromeMV3ExtensionManagerView: View {
                 ) {
                     Text("No extension selected.")
                         .foregroundStyle(.secondary)
+                }
+            }
+        }
+
+        @ViewBuilder
+        private func passwordManagerSummary(
+            _ detail: ChromeMV3ExtensionManagerDetailViewModel
+        ) -> some View {
+            if let summary = detail.passwordManagerCompatibilitySummary {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Password Manager Compatibility")
+                        .font(.callout.weight(.semibold))
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 150), spacing: 8)],
+                        alignment: .leading,
+                        spacing: 8
+                    ) {
+                        fact("Target", summary.targetDisplayName)
+                        fact("Readiness", summary.targetStatus.rawValue)
+                        fact(
+                            "Native Host",
+                            summary.nativeHostRequired
+                                ? (summary.nativeHostName ?? "required")
+                                : "not required"
+                        )
+                        fact(
+                            "Trust",
+                            summary.trustedHostState.rawValue
+                        )
+                    }
+                    Text(summary.nextRecommendedFix)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(summary.notPublicSupportDisclaimer)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }

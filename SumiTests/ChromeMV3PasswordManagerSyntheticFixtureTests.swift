@@ -177,6 +177,212 @@ final class ChromeMV3PasswordManagerSyntheticFixtureTests: XCTestCase {
         XCTAssertEqual(readinessByAPI["serviceWorkerLifecycle"]?.classification, .partial)
     }
 
+    func testCompatibilityTargetCatalogIsDeterministicAndExplicit() {
+        let first = ChromeMV3PasswordManagerCompatibilityTargetCatalog.all()
+        let second = ChromeMV3PasswordManagerCompatibilityTargetCatalog.all()
+        let byKind = Dictionary(uniqueKeysWithValues: first.map { ($0.kind, $0) })
+
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(first.map(\.kind), [
+            .onePasswordClass,
+            .bitwardenClass,
+            .protonPassClass,
+        ].sorted())
+        XCTAssertEqual(first.count, 3)
+        XCTAssertTrue(first.allSatisfy(\.noRealCredentialsInvariant))
+        XCTAssertTrue(first.allSatisfy {
+            $0.diagnostics.contains {
+                $0.contains("not a vendor support claim")
+            }
+        })
+        XCTAssertTrue(byKind[.onePasswordClass]?.nativeHostRequirement.required == true)
+        XCTAssertTrue(byKind[.bitwardenClass]?.nativeHostRequirement.optional == true)
+        XCTAssertFalse(byKind[.protonPassClass]?.nativeHostRequirement.required == true)
+        XCTAssertEqual(
+            byKind[.onePasswordClass]?.nativeHostRequirement
+                .expectedExtensionIDAlias?.count,
+            32
+        )
+        XCTAssertTrue(
+            byKind[.onePasswordClass]?.nativeHostRequirement
+                .allowedOrigin?
+                .hasPrefix("chrome-extension://") == true
+        )
+        XCTAssertEqual(
+            byKind[.onePasswordClass]?.nativeHostRequirement
+                .realHostDiscoveryAllowed,
+            false
+        )
+    }
+
+    func testCompatibilityPassImportsReviewedFixturesAndWritesMatrix()
+        throws
+    {
+        let root = try temporaryDirectory(named: "compatibility-pass")
+
+        let report = ChromeMV3PasswordManagerCompatibilityPassRunner.run(
+            rootURL: root,
+            writeReport: true,
+            now: { Date(timeIntervalSince1970: 1) }
+        )
+        let reportURL = root.appendingPathComponent(
+            ChromeMV3PasswordManagerCompatibilityReport.reportFileName
+        )
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(
+            ChromeMV3PasswordManagerCompatibilityReport.self,
+            from: Data(contentsOf: reportURL)
+        )
+        let rows = Dictionary(uniqueKeysWithValues: report.rows.map { ($0.targetKind, $0) })
+
+        XCTAssertEqual(decoded, report)
+        XCTAssertEqual(report.rows.count, 3)
+        XCTAssertEqual(report.targetRecords.count, 3)
+        XCTAssertTrue(report.noWebStoreInstallAttempted)
+        XCTAssertTrue(report.noRemoteCRXDownloadAttempted)
+        XCTAssertTrue(report.noRealCredentialsUsed)
+        XCTAssertFalse(report.arbitraryNativeHostDiscoveryAttempted)
+        XCTAssertFalse(report.productRuntimeAvailable)
+        XCTAssertFalse(report.productRuntimeExposed)
+        XCTAssertTrue(report.rows.allSatisfy {
+            $0.installImportResult == .pass
+                && $0.packageIntake == .fixtureOnly
+                && $0.manifestValidation == .pass
+                && $0.generatedBundle == .pass
+                && $0.popupOptions == .pass
+                && $0.popupOptionsJSBridge == .pass
+                && $0.contentScripts == .pass
+                && $0.storageLocal == .pass
+                && $0.productReadiness == .blocked
+        })
+        XCTAssertEqual(rows[.bitwardenClass]?.contentScriptCSS, .unsafeWithoutReview)
+        XCTAssertEqual(rows[.onePasswordClass]?.mainWorld, .unsafeWithoutReview)
+        XCTAssertEqual(rows[.onePasswordClass]?.nativeMessaging, .blocked)
+        XCTAssertEqual(rows[.protonPassClass]?.multiFrame, .deferred)
+        XCTAssertEqual(
+            rows[.protonPassClass]?.sidePanelOffscreenIdentityRelevance,
+            .deferred
+        )
+        XCTAssertTrue(report.nativeHostMappings.allSatisfy {
+            !$0.arbitraryHostLaunchAllowed && !$0.nativeHostScanningAllowed
+        })
+    }
+
+    func testExplicitLocalPackagePathOverridesReviewedFixtureFallback()
+        throws
+    {
+        let root = try temporaryDirectory(named: "explicit-local-package")
+        let explicit = root.appendingPathComponent(
+            "explicit-packages",
+            isDirectory: true
+        )
+        var target = ChromeMV3PasswordManagerCompatibilityTargetCatalog
+            .target(.bitwardenClass)
+        target.fixturePackageRelativePath = "bitwarden-class"
+        _ = try ChromeMV3PasswordManagerFixturePackageBuilder
+            .writeFixturePackage(for: target, rootURL: explicit)
+
+        let report = ChromeMV3PasswordManagerCompatibilityPassRunner.run(
+            rootURL: root,
+            explicitPackageRootURL: explicit,
+            targetKinds: [.bitwardenClass],
+            writeReport: false,
+            now: { Date(timeIntervalSince1970: 2) }
+        )
+        let row = try XCTUnwrap(report.rows.first)
+
+        XCTAssertEqual(row.targetKind, .bitwardenClass)
+        XCTAssertEqual(row.packageSourceKind, .localUnpacked)
+        XCTAssertEqual(row.packageIntake, .pass)
+        XCTAssertTrue(row.packagePath?.hasSuffix("bitwarden-class") == true)
+        XCTAssertTrue(report.noWebStoreInstallAttempted)
+        XCTAssertTrue(report.noRemoteCRXDownloadAttempted)
+    }
+
+    func testCompatibilityPassRecordsNativeHostTrustAsSeparateBlocker()
+        throws
+    {
+        let root = try temporaryDirectory(named: "native-trust-matrix")
+
+        let report = ChromeMV3PasswordManagerCompatibilityPassRunner.run(
+            rootURL: root,
+            targetKinds: [.onePasswordClass, .bitwardenClass],
+            writeReport: false,
+            now: { Date(timeIntervalSince1970: 3) }
+        )
+        let byTarget = Dictionary(uniqueKeysWithValues: report.rows.map { ($0.targetKind, $0) })
+        let onePasswordMapping = try XCTUnwrap(
+            report.nativeHostMappings.first {
+                $0.hostName.contains("onepassword")
+            }
+        )
+        let bitwardenMapping = try XCTUnwrap(
+            report.nativeHostMappings.first {
+                $0.hostName.contains("bitwarden")
+            }
+        )
+
+        XCTAssertEqual(byTarget[.onePasswordClass]?.nativeMessaging, .blocked)
+        XCTAssertEqual(byTarget[.bitwardenClass]?.nativeMessaging, .partial)
+        XCTAssertEqual(onePasswordMapping.lookupStatus, .found)
+        XCTAssertEqual(onePasswordMapping.trustedHostState, .unknown)
+        XCTAssertTrue(onePasswordMapping.approvalRequired)
+        XCTAssertFalse(onePasswordMapping.permissionRequired)
+        XCTAssertFalse(onePasswordMapping.canConnectNativeNow)
+        XCTAssertFalse(onePasswordMapping.processLaunchAllowedNow)
+        XCTAssertTrue(bitwardenMapping.permissionRequired)
+        XCTAssertFalse(bitwardenMapping.canConnectNativeNow)
+        XCTAssertTrue(
+            onePasswordMapping.allowedOrigin
+                .hasPrefix("chrome-extension://")
+        )
+    }
+
+    func testExtensionManagerDetailShowsPasswordManagerCompatibilitySummary()
+        throws
+    {
+        let root = try temporaryDirectory(named: "manager-target-summary")
+        let report = ChromeMV3PasswordManagerCompatibilityPassRunner.run(
+            rootURL: root,
+            targetKinds: [.onePasswordClass],
+            writeReport: true,
+            now: { Date(timeIntervalSince1970: 4) }
+        )
+        let record = try XCTUnwrap(
+            ChromeMV3ExtensionLifecycleRegistry(rootURL: root)
+                .listLifecycleRecords()
+                .first
+        )
+        let gate = ChromeMV3ExtensionManagerGate.evaluate(
+            moduleEnabled: true
+        )
+        let detail = try XCTUnwrap(
+            ChromeMV3ExtensionManagerViewModelBuilder.makeDetailViewModel(
+                rootURL: root,
+                profileID: record.profileID,
+                extensionID: record.extensionID,
+                gate: gate
+            )
+        )
+        let summary = try XCTUnwrap(
+            detail.passwordManagerCompatibilitySummary
+        )
+
+        XCTAssertEqual(report.rows.first?.targetKind, .onePasswordClass)
+        XCTAssertEqual(summary.targetKind, .onePasswordClass)
+        XCTAssertEqual(summary.targetStatus, .blocked)
+        XCTAssertTrue(summary.nativeHostRequired)
+        XCTAssertEqual(summary.trustedHostState, .unknown)
+        XCTAssertEqual(
+            summary.reportFileName,
+            ChromeMV3PasswordManagerCompatibilityReport.reportFileName
+        )
+        XCTAssertTrue(
+            summary.notPublicSupportDisclaimer.contains("not public")
+        )
+    }
+
     func testNativeMessagingImplementationSummaryMakesFixtureInternallyReady()
         throws
     {
@@ -240,12 +446,14 @@ final class ChromeMV3PasswordManagerSyntheticFixtureTests: XCTestCase {
             "storage",
             "tabs",
         ])
+        XCTAssertTrue(coverage.runtimeMethods.contains("getURL"))
         XCTAssertEqual(coverage.storageAreas, ["local"])
         XCTAssertEqual(coverage.scriptingMethods, ["executeScript"])
         XCTAssertTrue(coverage.callbackModeSupported)
         XCTAssertTrue(coverage.promiseModeSupported)
         XCTAssertTrue(coverage.lastErrorScopedToCallbackTurn)
         XCTAssertTrue(source.contains("Object.defineProperty(globalThis, \"chrome\""))
+        XCTAssertTrue(source.contains("Object.defineProperty(runtime, \"getURL\""))
         XCTAssertTrue(source.contains("__sumiChromeMV3PasswordManagerFixture"))
         XCTAssertFalse(source.contains("Object.defineProperty(chromeObject, \"nativeMessaging\""))
         XCTAssertFalse(configuration.passwordManagerProductRuntimeReady)

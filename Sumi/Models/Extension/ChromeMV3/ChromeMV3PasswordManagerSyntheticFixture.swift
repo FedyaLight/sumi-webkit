@@ -537,7 +537,7 @@ enum ChromeMV3PasswordManagerCombinedJSShimSource {
                 "storage",
                 "tabs",
             ],
-            runtimeMethods: ["connect", "sendMessage"],
+            runtimeMethods: ["connect", "getURL", "sendMessage"],
             runtimeEvents: ["onConnect", "onMessage"],
             tabsMethods: ["connect", "query", "sendMessage"],
             scriptingMethods: ["executeScript"],
@@ -935,6 +935,15 @@ enum ChromeMV3PasswordManagerCombinedJSShimSource {
           Object.defineProperty(runtime, "lastError", {
             get() {
               return lastErrorValue;
+            },
+            enumerable: true
+          });
+
+          Object.defineProperty(runtime, "getURL", {
+            value(path) {
+              const raw = path === undefined || path === null ? "" : String(path);
+              const trimmed = raw.replace(/^\\/+/, "");
+              return "chrome-extension://" + config.extensionID + "/" + trimmed;
             },
             enumerable: true
           });
@@ -1569,6 +1578,1371 @@ enum ChromeMV3PasswordManagerFixtureReportWriter {
             atPath: url.path,
             isDirectory: &isDirectory
         ) && isDirectory.boolValue
+    }
+}
+
+enum ChromeMV3PasswordManagerCompatibilityTargetKind:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case bitwardenClass = "Bitwarden-class"
+    case onePasswordClass = "1Password-class"
+    case protonPassClass = "Proton Pass-class"
+
+    static func < (
+        lhs: ChromeMV3PasswordManagerCompatibilityTargetKind,
+        rhs: ChromeMV3PasswordManagerCompatibilityTargetKind
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+
+    var pathComponent: String {
+        switch self {
+        case .bitwardenClass:
+            return "bitwarden-class"
+        case .onePasswordClass:
+            return "onepassword-class"
+        case .protonPassClass:
+            return "proton-pass-class"
+        }
+    }
+}
+
+enum ChromeMV3PasswordManagerCompatibilityStatus:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case pass
+    case partial
+    case blocked
+    case deferred
+    case unsupported
+    case notRequired
+    case fixtureOnly
+    case unsafeWithoutReview
+
+    static func < (
+        lhs: ChromeMV3PasswordManagerCompatibilityStatus,
+        rhs: ChromeMV3PasswordManagerCompatibilityStatus
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3PasswordManagerPackageSelectionKind:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case localUnpacked
+    case localZip
+    case reviewedFixture
+    case missing
+
+    static func < (
+        lhs: ChromeMV3PasswordManagerPackageSelectionKind,
+        rhs: ChromeMV3PasswordManagerPackageSelectionKind
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3PasswordManagerNativeHostRequirement:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var required: Bool
+    var optional: Bool
+    var hostName: String?
+    var expectedExtensionIDAlias: String?
+    var allowedOrigin: String?
+    var aliasMappingSource: String?
+    var allowedOriginsCompatibility: ChromeMV3PasswordManagerCompatibilityStatus
+    var requiresTrustedHostApproval: Bool
+    var realHostDiscoveryAllowed: Bool
+    var diagnostics: [String]
+}
+
+struct ChromeMV3PasswordManagerContentScriptRequirement:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var matches: [String]
+    var js: [String]
+    var css: [String]
+    var allFrames: Bool
+    var world: String
+    var requiresCSS: Bool
+    var requiresMainWorld: Bool
+    var requiresMultiFrame: Bool
+    var diagnostics: [String]
+}
+
+struct ChromeMV3PasswordManagerPopupOptionsRequirement:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var popupPath: String
+    var optionsPath: String
+    var requiredBridgeMethods: [String]
+}
+
+struct ChromeMV3PasswordManagerCompatibilityTargetRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var kind: ChromeMV3PasswordManagerCompatibilityTargetKind
+    var displayName: String
+    var fixturePackageRelativePath: String
+    var localPackageSearchRelativePaths: [String]
+    var expectedExtensionIDOrAlias: String
+    var extensionIDAliasMappingSource: String
+    var nativeHostRequirement:
+        ChromeMV3PasswordManagerNativeHostRequirement
+    var requiredPermissions: [String]
+    var optionalPermissions: [String]
+    var hostPermissions: [String]
+    var optionalHostPermissions: [String]
+    var contentScriptRequirement:
+        ChromeMV3PasswordManagerContentScriptRequirement
+    var popupOptionsRequirement:
+        ChromeMV3PasswordManagerPopupOptionsRequirement
+    var storageRequirements: [String]
+    var runtimeTabsMessagingRequirements: [String]
+    var knownBlockedDeferredAPIs: [String]
+    var noRealCredentialsInvariant: Bool
+    var diagnostics: [String]
+}
+
+enum ChromeMV3PasswordManagerCompatibilityTargetCatalog {
+    static func all() -> [ChromeMV3PasswordManagerCompatibilityTargetRecord] {
+        ChromeMV3PasswordManagerCompatibilityTargetKind.allCases
+            .sorted()
+            .map(target)
+    }
+
+    static func target(
+        _ kind: ChromeMV3PasswordManagerCompatibilityTargetKind
+    ) -> ChromeMV3PasswordManagerCompatibilityTargetRecord {
+        let alias =
+            ChromeMV3NativeMessagingAllowedOrigin
+            .nativeMessagingOriginExtensionID(for: kind.rawValue)
+        let allowedOrigin =
+            ChromeMV3NativeMessagingAllowedOrigin
+            .originString(extensionID: kind.rawValue)
+        let basePermissions = ["activeTab", "scripting", "storage"]
+        let baseOptional = ["tabs"]
+        let baseMatches = ["https://example.com/*"]
+        let fixturePath =
+            "password-manager-fixtures/\(kind.pathComponent)"
+        var permissions = basePermissions
+        var optional = baseOptional
+        var hostPermissions: [String] = []
+        var optionalHosts = baseMatches
+        var native = nativeRequirement(
+            required: false,
+            optional: false,
+            hostName: nil,
+            alias: alias,
+            allowedOrigin: allowedOrigin
+        )
+        var content = ChromeMV3PasswordManagerContentScriptRequirement(
+            matches: baseMatches,
+            js: ["content-script.js"],
+            css: [],
+            allFrames: false,
+            world: "ISOLATED",
+            requiresCSS: false,
+            requiresMainWorld: false,
+            requiresMultiFrame: false,
+            diagnostics: [
+                "Static isolated-world content script is the reviewed fixture baseline.",
+            ]
+        )
+        var deferred: [String] = []
+        var diagnostics = [
+            "Target is a password-manager-class compatibility fixture, not a vendor support claim.",
+            "No real extension code, accounts, vaults, credentials, or vendor assets are used.",
+        ]
+
+        switch kind {
+        case .bitwardenClass:
+            optional = (baseOptional + ["nativeMessaging"]).sorted()
+            native = nativeRequirement(
+                required: false,
+                optional: true,
+                hostName:
+                    "com.sumi.synthetic_password_manager.bitwarden",
+                alias: alias,
+                allowedOrigin: allowedOrigin
+            )
+            content.css = ["content-style.css"]
+            content.requiresCSS = true
+            content.diagnostics.append(
+                "CSS attachment is reported unsafe without WebKit scoping review."
+            )
+            diagnostics.append(
+                "Fixture stresses popup/options, static content scripts, optional host access, storage.local, tabs messaging, and optional native messaging."
+            )
+        case .onePasswordClass:
+            permissions = (basePermissions + ["nativeMessaging"]).sorted()
+            native = nativeRequirement(
+                required: true,
+                optional: false,
+                hostName:
+                    "com.sumi.synthetic_password_manager.onepassword",
+                alias: alias,
+                allowedOrigin: allowedOrigin
+            )
+            content.world = "MAIN"
+            content.requiresMainWorld = true
+            content.diagnostics.append(
+                "MAIN-world behavior remains unsafe without a separate WebKit bridge review."
+            )
+            diagnostics.append(
+                "Fixture stresses required native messaging plus service-worker and tabs Port behavior."
+            )
+        case .protonPassClass:
+            hostPermissions = []
+            optionalHosts = baseMatches
+            content.allFrames = true
+            content.requiresMultiFrame = true
+            deferred = ["identity", "offscreen"]
+            content.diagnostics.append(
+                "Multi-frame behavior is reported deferred until frame targeting is product-safe."
+            )
+            diagnostics.append(
+                "Fixture stresses no-native-host operation, activeTab, storage.local, and deferred account-flow APIs."
+            )
+        }
+
+        return ChromeMV3PasswordManagerCompatibilityTargetRecord(
+            kind: kind,
+            displayName: kind.rawValue,
+            fixturePackageRelativePath: fixturePath,
+            localPackageSearchRelativePaths: [
+                "\(kind.pathComponent)",
+                "\(kind.pathComponent).zip",
+                "fixtures/\(kind.pathComponent)",
+                "fixtures/\(kind.pathComponent).zip",
+            ],
+            expectedExtensionIDOrAlias: alias,
+            extensionIDAliasMappingSource:
+                "deterministic target-class alias for native host allowed_origins only",
+            nativeHostRequirement: native,
+            requiredPermissions: permissions.sorted(),
+            optionalPermissions: optional.sorted(),
+            hostPermissions: hostPermissions.sorted(),
+            optionalHostPermissions: optionalHosts.sorted(),
+            contentScriptRequirement: content,
+            popupOptionsRequirement:
+                ChromeMV3PasswordManagerPopupOptionsRequirement(
+                    popupPath: "popup.html",
+                    optionsPath: "options.html",
+                    requiredBridgeMethods: [
+                        "runtime.getURL",
+                        "runtime.sendMessage",
+                        "storage.local",
+                        "permissions.contains",
+                        "permissions.getAll",
+                        "tabs.query",
+                    ]
+                ),
+            storageRequirements: [
+                "storage.local set/get/remove/getBytesInUse",
+                "storage.onChanged synthetic event payload",
+            ],
+            runtimeTabsMessagingRequirements: [
+                "runtime.sendMessage popup smoke",
+                "tabs.query redaction and grant transition",
+                "tabs.sendMessage detectFields-like content endpoint",
+                "tabs.connect controlled Port lifecycle",
+            ],
+            knownBlockedDeferredAPIs: deferred.sorted(),
+            noRealCredentialsInvariant: true,
+            diagnostics: uniqueSortedPasswordManager(diagnostics)
+        )
+    }
+
+    static func match(
+        displayName: String,
+        sourcePath: String?
+    ) -> ChromeMV3PasswordManagerCompatibilityTargetRecord? {
+        let haystack = ([displayName, sourcePath ?? ""])
+            .joined(separator: " ")
+            .lowercased()
+        return all().first { target in
+            haystack.contains(target.kind.pathComponent)
+                || haystack.contains(target.kind.rawValue.lowercased())
+        }
+    }
+
+    private static func nativeRequirement(
+        required: Bool,
+        optional: Bool,
+        hostName: String?,
+        alias: String,
+        allowedOrigin: String
+    ) -> ChromeMV3PasswordManagerNativeHostRequirement {
+        ChromeMV3PasswordManagerNativeHostRequirement(
+            required: required,
+            optional: optional,
+            hostName: hostName,
+            expectedExtensionIDAlias: hostName == nil ? nil : alias,
+            allowedOrigin: hostName == nil ? nil : allowedOrigin,
+            aliasMappingSource:
+                hostName == nil
+                    ? nil
+                    : "explicit reviewed fixture alias; real vendor identity is not rewritten",
+            allowedOriginsCompatibility:
+                hostName == nil ? .notRequired : .partial,
+            requiresTrustedHostApproval: hostName != nil,
+            realHostDiscoveryAllowed: false,
+            diagnostics:
+                hostName == nil
+                    ? [
+                        "This target class does not require native messaging.",
+                    ]
+                    : [
+                        "Native host manifest must be under an explicit fixture root.",
+                        "allowed_origins must match the extension id alias recorded for this fixture.",
+                        "Trusted-host approval remains separate from nativeMessaging permission.",
+                        "Real installed native hosts are not discovered.",
+                    ]
+        )
+    }
+}
+
+struct ChromeMV3PasswordManagerPackageSelection:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var kind: ChromeMV3PasswordManagerPackageSelectionKind
+    var packagePath: String?
+    var sourceDescription: String
+    var diagnostics: [String]
+}
+
+enum ChromeMV3PasswordManagerFixturePackageBuilder {
+    static func writeFixturePackage(
+        for target: ChromeMV3PasswordManagerCompatibilityTargetRecord,
+        rootURL: URL,
+        fileManager: FileManager = .default
+    ) throws -> URL {
+        let packageRoot = rootURL.standardizedFileURL
+            .appendingPathComponent(
+                target.fixturePackageRelativePath,
+                isDirectory: true
+            )
+        try fileManager.createDirectory(
+            at: packageRoot,
+            withIntermediateDirectories: true
+        )
+
+        let content = target.contentScriptRequirement
+        var contentScript: [String: Any] = [
+            "matches": content.matches,
+            "js": content.js,
+            "all_frames": content.allFrames,
+            "run_at": "document_idle",
+            "world": content.world,
+        ]
+        if content.css.isEmpty == false {
+            contentScript["css"] = content.css
+        }
+
+        let manifest: [String: Any] = [
+            "manifest_version": 3,
+            "name": "Sumi \(target.displayName) Fixture",
+            "version": "0.0.1",
+            "description":
+                "Reviewed local password-manager-class fixture with no real credentials.",
+            "permissions": target.requiredPermissions,
+            "optional_permissions": target.optionalPermissions,
+            "host_permissions": target.hostPermissions,
+            "optional_host_permissions": target.optionalHostPermissions,
+            "action": [
+                "default_popup":
+                    target.popupOptionsRequirement.popupPath,
+                "default_title": target.displayName,
+            ],
+            "options_ui": [
+                "page": target.popupOptionsRequirement.optionsPath,
+                "open_in_tab": true,
+            ],
+            "background": [
+                "service_worker": "service-worker.js",
+            ],
+            "content_scripts": [contentScript],
+            "web_accessible_resources": [
+                [
+                    "resources": ["fixture-icon.svg"],
+                    "matches": target.contentScriptRequirement.matches,
+                ],
+            ],
+        ]
+        let manifestData = try JSONSerialization.data(
+            withJSONObject: manifest,
+            options: [.prettyPrinted, .sortedKeys]
+        )
+        try manifestData.write(
+            to: packageRoot.appendingPathComponent("manifest.json")
+        )
+        try write(
+            popupHTML(target: target),
+            to: packageRoot.appendingPathComponent("popup.html")
+        )
+        try write(
+            optionsHTML(target: target),
+            to: packageRoot.appendingPathComponent("options.html")
+        )
+        try write(
+            popupJS(target: target),
+            to: packageRoot.appendingPathComponent("popup.js")
+        )
+        try write(
+            contentScriptJS(target: target),
+            to: packageRoot.appendingPathComponent("content-script.js")
+        )
+        try write(
+            serviceWorkerJS(target: target),
+            to: packageRoot.appendingPathComponent("service-worker.js")
+        )
+        try write(
+            "form[data-sumi-password-manager-fixture] { outline: 1px solid transparent; }\n",
+            to: packageRoot.appendingPathComponent("content-style.css")
+        )
+        try write(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\"><rect width=\"16\" height=\"16\" fill=\"#555\"/></svg>\n",
+            to: packageRoot.appendingPathComponent("fixture-icon.svg")
+        )
+        return packageRoot
+    }
+
+    private static func popupHTML(
+        target: ChromeMV3PasswordManagerCompatibilityTargetRecord
+    ) -> String {
+        """
+        <!doctype html>
+        <meta charset="utf-8">
+        <title>\(target.displayName) Fixture</title>
+        <button id="detect">Detect</button>
+        <script src="popup.js"></script>
+        """
+    }
+
+    private static func optionsHTML(
+        target: ChromeMV3PasswordManagerCompatibilityTargetRecord
+    ) -> String {
+        """
+        <!doctype html>
+        <meta charset="utf-8">
+        <title>\(target.displayName) Options Fixture</title>
+        <label><input id="synthetic-only" type="checkbox"> Synthetic only</label>
+        <script src="popup.js"></script>
+        """
+    }
+
+    private static func popupJS(
+        target: ChromeMV3PasswordManagerCompatibilityTargetRecord
+    ) -> String {
+        """
+        "use strict";
+        const targetClass = "\(target.kind.rawValue)";
+        async function smoke() {
+          const url = chrome.runtime.getURL("popup.html");
+          await chrome.storage.local.set({["fixture:" + targetClass]: {url, syntheticOnly: true}});
+          await chrome.storage.local.get("fixture:" + targetClass);
+          await chrome.permissions.contains({permissions: ["activeTab"]});
+          await chrome.permissions.getAll();
+          await chrome.tabs.query({active: true, currentWindow: true});
+          await chrome.runtime.sendMessage({type: "fixturePopupReady", targetClass});
+        }
+        smoke().catch(() => undefined);
+        """
+    }
+
+    private static func contentScriptJS(
+        target: ChromeMV3PasswordManagerCompatibilityTargetRecord
+    ) -> String {
+        """
+        "use strict";
+        chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+          if (message && message.type === "detectFields") {
+            sendResponse({
+              targetClass: "\(target.kind.rawValue)",
+              detectedFields: {
+                username: {selector: "#username", autocomplete: "username"},
+                passphrase: {selector: "#password", autocomplete: "current-password"}
+              }
+            });
+            return true;
+          }
+          if (message && message.type === "fillFields") {
+            sendResponse({success: true, syntheticOnly: true});
+            return true;
+          }
+          return false;
+        });
+        """
+    }
+
+    private static func serviceWorkerJS(
+        target: ChromeMV3PasswordManagerCompatibilityTargetRecord
+    ) -> String {
+        """
+        "use strict";
+        chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+          if (message && message.type === "fixturePopupReady") {
+            sendResponse({ok: true, targetClass: "\(target.kind.rawValue)"});
+            return true;
+          }
+          return false;
+        });
+        """
+    }
+
+    private static func write(_ string: String, to url: URL) throws {
+        try string.write(to: url, atomically: true, encoding: .utf8)
+    }
+}
+
+enum ChromeMV3PasswordManagerPackageResolver {
+    static func resolve(
+        target: ChromeMV3PasswordManagerCompatibilityTargetRecord,
+        explicitPackageRootURL: URL?,
+        fixtureRootURL: URL,
+        fileManager: FileManager = .default
+    ) throws -> ChromeMV3PasswordManagerPackageSelection {
+        if let explicitPackageRootURL {
+            for relative in target.localPackageSearchRelativePaths {
+                let candidate = explicitPackageRootURL
+                    .appendingPathComponent(relative)
+                    .standardizedFileURL
+                var isDirectory: ObjCBool = false
+                if fileManager.fileExists(
+                    atPath: candidate.path,
+                    isDirectory: &isDirectory
+                ) {
+                    if isDirectory.boolValue {
+                        return ChromeMV3PasswordManagerPackageSelection(
+                            kind: .localUnpacked,
+                            packagePath: candidate.path,
+                            sourceDescription:
+                                "Explicit local unpacked package matched \(relative).",
+                            diagnostics: [
+                                "No Web Store download or remote CRX acquisition occurred.",
+                            ]
+                        )
+                    }
+                    if candidate.pathExtension.lowercased() == "zip" {
+                        return ChromeMV3PasswordManagerPackageSelection(
+                            kind: .localZip,
+                            packagePath: candidate.path,
+                            sourceDescription:
+                                "Explicit local ZIP package matched \(relative).",
+                            diagnostics: [
+                                "ZIP intake remains local and safe-entry preflighted.",
+                            ]
+                        )
+                    }
+                }
+            }
+        }
+
+        let fixture = try ChromeMV3PasswordManagerFixturePackageBuilder
+            .writeFixturePackage(for: target, rootURL: fixtureRootURL)
+        return ChromeMV3PasswordManagerPackageSelection(
+            kind: .reviewedFixture,
+            packagePath: fixture.path,
+            sourceDescription:
+                "Reviewed local target-class fixture generated under the explicit test root.",
+            diagnostics: [
+                "Real vendor package was unavailable or not explicitly supplied.",
+                "Fixture package contains no proprietary code and no real credentials.",
+                "No Web Store download or remote CRX acquisition occurred.",
+            ]
+        )
+    }
+}
+
+struct ChromeMV3PasswordManagerNativeHostFixtureMapping:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var hostName: String
+    var fixtureRootPath: String
+    var manifestPath: String?
+    var executablePath: String?
+    var extensionID: String
+    var allowedOrigin: String
+    var lookupStatus: ChromeMV3NativeHostLookupStatus
+    var trustedHostState: ChromeMV3NativeTrustedHostTrustState
+    var approvalRequired: Bool
+    var permissionRequired: Bool
+    var canConnectNativeNow: Bool
+    var processLaunchAllowedNow: Bool
+    var arbitraryHostLaunchAllowed: Bool
+    var nativeHostScanningAllowed: Bool
+    var diagnostics: [String]
+}
+
+struct ChromeMV3PasswordManagerCompatibilityMatrixRow:
+    Identifiable,
+    Codable,
+    Equatable,
+    Sendable
+{
+    var id: String { targetKind.rawValue }
+    var targetKind: ChromeMV3PasswordManagerCompatibilityTargetKind
+    var targetDisplayName: String
+    var packageSourceKind: ChromeMV3PasswordManagerPackageSelectionKind
+    var packagePath: String?
+    var installImportResult: ChromeMV3PasswordManagerCompatibilityStatus
+    var manifestAPIRequirements: [String]
+    var hostPermissionRequirements: [String]
+    var packageIntake: ChromeMV3PasswordManagerCompatibilityStatus
+    var manifestValidation: ChromeMV3PasswordManagerCompatibilityStatus
+    var generatedBundle: ChromeMV3PasswordManagerCompatibilityStatus
+    var extensionManagerLifecycle:
+        ChromeMV3PasswordManagerCompatibilityStatus
+    var popupOptions: ChromeMV3PasswordManagerCompatibilityStatus
+    var popupOptionsJSBridge: ChromeMV3PasswordManagerCompatibilityStatus
+    var contentScripts: ChromeMV3PasswordManagerCompatibilityStatus
+    var contentScriptCSS: ChromeMV3PasswordManagerCompatibilityStatus
+    var mainWorld: ChromeMV3PasswordManagerCompatibilityStatus
+    var multiFrame: ChromeMV3PasswordManagerCompatibilityStatus
+    var permissions: ChromeMV3PasswordManagerCompatibilityStatus
+    var activeTab: ChromeMV3PasswordManagerCompatibilityStatus
+    var tabsQuery: ChromeMV3PasswordManagerCompatibilityStatus
+    var tabsSendMessage: ChromeMV3PasswordManagerCompatibilityStatus
+    var tabsConnect: ChromeMV3PasswordManagerCompatibilityStatus
+    var storageLocal: ChromeMV3PasswordManagerCompatibilityStatus
+    var nativeMessaging: ChromeMV3PasswordManagerCompatibilityStatus
+    var serviceWorkerLifecycle: ChromeMV3PasswordManagerCompatibilityStatus
+    var dnrWebRequestRelevance:
+        ChromeMV3PasswordManagerCompatibilityStatus
+    var sidePanelOffscreenIdentityRelevance:
+        ChromeMV3PasswordManagerCompatibilityStatus
+    var securityTrustBlockers: [String]
+    var productReadiness: ChromeMV3PasswordManagerCompatibilityStatus
+    var productReadinessStatus: String
+    var blockerSummary: [String]
+    var nextRecommendedFix: String
+    var notPublicSupportDisclaimer: String
+}
+
+struct ChromeMV3PasswordManagerCompatibilityReport:
+    Codable,
+    Equatable,
+    Sendable
+{
+    static let schemaVersion = 1
+    static let reportFileName =
+        "runtime-mv3-password-manager-compatibility-report.json"
+
+    var schemaVersion: Int
+    var reportFileName: String
+    var generatedAt: Date
+    var targetRecords: [ChromeMV3PasswordManagerCompatibilityTargetRecord]
+    var rows: [ChromeMV3PasswordManagerCompatibilityMatrixRow]
+    var packageSelections: [ChromeMV3PasswordManagerPackageSelection]
+    var nativeHostMappings:
+        [ChromeMV3PasswordManagerNativeHostFixtureMapping]
+    var documentationSources:
+        [ChromeMV3WebKitObjectAcceptanceDocumentationSource]
+    var noWebStoreInstallAttempted: Bool
+    var noRemoteCRXDownloadAttempted: Bool
+    var noRealCredentialsUsed: Bool
+    var arbitraryNativeHostDiscoveryAttempted: Bool
+    var productRuntimeAvailable: Bool
+    var productRuntimeExposed: Bool
+    var diagnostics: [String]
+}
+
+enum ChromeMV3PasswordManagerCompatibilityReportWriter {
+    static let reportFileName =
+        ChromeMV3PasswordManagerCompatibilityReport.reportFileName
+
+    @discardableResult
+    static func write(
+        _ report: ChromeMV3PasswordManagerCompatibilityReport,
+        to rootURL: URL
+    ) throws -> ChromeMV3PasswordManagerCompatibilityReport {
+        let url = rootURL.standardizedFileURL
+            .appendingPathComponent(reportFileName)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try ChromeMV3DeterministicJSON.write(report, to: url)
+        return report
+    }
+}
+
+enum ChromeMV3PasswordManagerCompatibilityPassRunner {
+    static func run(
+        rootURL: URL,
+        explicitPackageRootURL: URL? = nil,
+        profileID: String = "password-manager-compatibility-profile",
+        targetKinds: [ChromeMV3PasswordManagerCompatibilityTargetKind] =
+            ChromeMV3PasswordManagerCompatibilityTargetKind.allCases.sorted(),
+        writeReport: Bool = true,
+        now: @escaping () -> Date = Date.init
+    ) -> ChromeMV3PasswordManagerCompatibilityReport {
+        let root = rootURL.standardizedFileURL
+        let registry = ChromeMV3ExtensionLifecycleRegistry(
+            rootURL: root,
+            now: now
+        )
+        let intake = ChromeMV3PackageIntakeService(rootURL: root, now: now)
+        var rows: [ChromeMV3PasswordManagerCompatibilityMatrixRow] = []
+        var selections: [ChromeMV3PasswordManagerPackageSelection] = []
+        var mappings: [ChromeMV3PasswordManagerNativeHostFixtureMapping] = []
+        var diagnostics: [String] = []
+        let fixtureRoot = root.appendingPathComponent(
+            "PasswordManagerCompatibilityFixtures",
+            isDirectory: true
+        )
+        let nativeFixtureRoot = root.appendingPathComponent(
+            "NativeMessagingFixtureHosts",
+            isDirectory: true
+        )
+
+        for target in targetKinds.map(ChromeMV3PasswordManagerCompatibilityTargetCatalog.target) {
+            let selection: ChromeMV3PasswordManagerPackageSelection
+            do {
+                selection =
+                    try ChromeMV3PasswordManagerPackageResolver.resolve(
+                        target: target,
+                        explicitPackageRootURL: explicitPackageRootURL,
+                        fixtureRootURL: fixtureRoot
+                    )
+            } catch {
+                selection = ChromeMV3PasswordManagerPackageSelection(
+                    kind: .missing,
+                    packagePath: nil,
+                    sourceDescription:
+                        "No local package or reviewed fixture could be prepared.",
+                    diagnostics: [error.localizedDescription]
+                )
+            }
+            selections.append(selection)
+
+            let lifecycleResult: ChromeMV3LifecycleOperationResult?
+            let packageReport: ChromeMV3PackageIntakeReport?
+            if let packagePath = selection.packagePath {
+                let packageURL = URL(
+                    fileURLWithPath: packagePath,
+                    isDirectory:
+                        selection.kind != .localZip
+                )
+                if selection.kind == .localZip {
+                    let imported = intake.importLocalZIPArchive(
+                        sourceURL: packageURL,
+                        profileID:
+                            "\(profileID)-\(target.kind.pathComponent)",
+                        enableInternal: true,
+                        runtimeDiagnostics:
+                            .passwordManagerCompatibilityPass
+                    )
+                    lifecycleResult = imported.lifecycleResult
+                    packageReport = imported.report
+                } else {
+                    let result = registry.installUnpackedExtension(
+                        at: packageURL,
+                        profileID:
+                            "\(profileID)-\(target.kind.pathComponent)",
+                        enableInternal: true,
+                        runtimeDiagnostics:
+                            .passwordManagerCompatibilityPass
+                    )
+                    lifecycleResult = result
+                    packageReport = intake.writeLocalUnpackedReport(
+                        sourceURL: packageURL,
+                        lifecycleResult: result
+                    )
+                }
+            } else {
+                lifecycleResult = nil
+                packageReport = nil
+            }
+
+            let nativeMapping = nativeFixtureMapping(
+                target: target,
+                lifecycleResult: lifecycleResult,
+                nativeFixtureRoot: nativeFixtureRoot
+                    .appendingPathComponent(
+                        target.kind.pathComponent,
+                        isDirectory: true
+                    )
+            )
+            if let nativeMapping {
+                mappings.append(nativeMapping)
+            }
+            rows.append(
+                matrixRow(
+                    target: target,
+                    selection: selection,
+                    lifecycleResult: lifecycleResult,
+                    packageReport: packageReport,
+                    nativeMapping: nativeMapping
+                )
+            )
+            diagnostics.append(contentsOf: selection.diagnostics)
+            diagnostics.append(contentsOf: lifecycleResult?.diagnostics ?? [])
+        }
+
+        let report = ChromeMV3PasswordManagerCompatibilityReport(
+            schemaVersion:
+                ChromeMV3PasswordManagerCompatibilityReport.schemaVersion,
+            reportFileName:
+                ChromeMV3PasswordManagerCompatibilityReport.reportFileName,
+            generatedAt: now(),
+            targetRecords:
+                targetKinds
+                .map(ChromeMV3PasswordManagerCompatibilityTargetCatalog.target)
+                .sorted { $0.kind < $1.kind },
+            rows: rows.sorted { $0.targetKind < $1.targetKind },
+            packageSelections: selections.sorted {
+                $0.sourceDescription < $1.sourceDescription
+            },
+            nativeHostMappings: mappings.sorted {
+                if $0.hostName != $1.hostName {
+                    return $0.hostName < $1.hostName
+                }
+                return $0.extensionID < $1.extensionID
+            },
+            documentationSources: documentationSources(),
+            noWebStoreInstallAttempted: true,
+            noRemoteCRXDownloadAttempted: true,
+            noRealCredentialsUsed: true,
+            arbitraryNativeHostDiscoveryAttempted: false,
+            productRuntimeAvailable: false,
+            productRuntimeExposed: false,
+            diagnostics:
+                uniqueSortedPasswordManager(
+                    diagnostics + [
+                        "Password-manager compatibility pass used only explicit local paths or reviewed fixtures.",
+                        "Chrome Web Store install, scraping, spoofing, and remote CRX download were not attempted.",
+                        "Product runtime and public password-manager support remain unavailable.",
+                    ]
+                )
+        )
+        if writeReport {
+            return (
+                try? ChromeMV3PasswordManagerCompatibilityReportWriter
+                    .write(report, to: root)
+            ) ?? report
+        }
+        return report
+    }
+
+    private static func nativeFixtureMapping(
+        target: ChromeMV3PasswordManagerCompatibilityTargetRecord,
+        lifecycleResult: ChromeMV3LifecycleOperationResult?,
+        nativeFixtureRoot: URL
+    ) -> ChromeMV3PasswordManagerNativeHostFixtureMapping? {
+        guard let hostName = target.nativeHostRequirement.hostName,
+              let extensionID = lifecycleResult?.record?.extensionID
+        else { return nil }
+        let permissionState: ChromeMV3NativeMessagingPermissionState =
+            target.requiredPermissions.contains("nativeMessaging")
+                ? .grantedByManifest
+                : (
+                    target.optionalPermissions.contains("nativeMessaging")
+                        ? .deferred
+                        : .missing
+                )
+        let fixture: ChromeMV3NativeMessagingFixtureHost?
+        do {
+            fixture = try ChromeMV3NativeMessagingFixtureHostBuilder
+                .writeFixtureHost(
+                    kind: .echo,
+                    rootURL: nativeFixtureRoot,
+                    hostName: hostName,
+                    extensionID: extensionID
+                )
+        } catch {
+            fixture = nil
+        }
+        let lookupPolicy = ChromeMV3NativeHostLookupPolicy.macOS(
+            explicitTestRootPath: nativeFixtureRoot.path
+        )
+        let trusted = ChromeMV3NativeTrustedHostApprovalRecord.unknown(
+            hostName: hostName,
+            extensionID: extensionID,
+            profileID: lifecycleResult?.record?.profileID
+                ?? "password-manager-compatibility-profile"
+        )
+        let preflight = ChromeMV3NativeMessagingPreflightEvaluator.evaluate(
+            input: ChromeMV3NativeMessagingPreflightInput(
+                extensionID: extensionID,
+                profileID: lifecycleResult?.record?.profileID
+                    ?? "password-manager-compatibility-profile",
+                hostName: hostName,
+                operationKind: .longLivedNativePort,
+                sourceContext: .extensionPage,
+                permissionState: permissionState,
+                productPolicy:
+                    ChromeMV3NativeMessagingProductPolicy
+                    .blockedRuntimeDefault,
+                trustedHostPolicyRecord: trusted
+            ),
+            lookupPolicy: lookupPolicy
+        )
+        return ChromeMV3PasswordManagerNativeHostFixtureMapping(
+            hostName: hostName,
+            fixtureRootPath: nativeFixtureRoot.path,
+            manifestPath:
+                fixture?.manifestPath
+                    ?? preflight.hostLookupResult.manifest?
+                    .sourceLocation.manifestPath,
+            executablePath:
+                fixture?.executablePath
+                    ?? preflight.hostLookupResult.manifest?.path,
+            extensionID: extensionID,
+            allowedOrigin:
+                ChromeMV3NativeMessagingAllowedOrigin.originString(
+                    extensionID: extensionID
+                ),
+            lookupStatus: preflight.hostLookupResult.status,
+            trustedHostState: trusted.trustState,
+            approvalRequired:
+                preflight.trustedHostPolicyApproved == false
+                    && target.nativeHostRequirement
+                    .requiresTrustedHostApproval,
+            permissionRequired:
+                preflight.authorizationResult
+                .hasNativeMessagingPermission == false,
+            canConnectNativeNow: preflight.canConnectNativeNow,
+            processLaunchAllowedNow: preflight.processLaunchAllowedNow,
+            arbitraryHostLaunchAllowed: false,
+            nativeHostScanningAllowed: false,
+            diagnostics:
+                uniqueSortedPasswordManager(
+                    (fixture?.diagnostics ?? [])
+                        + preflight.diagnostics
+                        + [
+                            "Native host mapping is explicit fixture-root only.",
+                            "No real vendor native host discovery occurred.",
+                        ]
+                )
+        )
+    }
+
+    private static func matrixRow(
+        target: ChromeMV3PasswordManagerCompatibilityTargetRecord,
+        selection: ChromeMV3PasswordManagerPackageSelection,
+        lifecycleResult: ChromeMV3LifecycleOperationResult?,
+        packageReport: ChromeMV3PackageIntakeReport?,
+        nativeMapping: ChromeMV3PasswordManagerNativeHostFixtureMapping?
+    ) -> ChromeMV3PasswordManagerCompatibilityMatrixRow {
+        let succeeded = lifecycleResult?.succeeded == true
+        let manifestSummary = lifecycleResult?.report?.passwordManagerManifestSummary
+            ?? packageReport?.validationResult.manifestSummary
+        let generatedAvailable =
+            lifecycleResult?.generatedVersion != nil
+                || lifecycleResult?.record?.activeGeneratedVersionID != nil
+        let fixtureReport =
+            ChromeMV3PasswordManagerFixtureReportGenerator.makeReport(
+                extensionID: lifecycleResult?.record?.extensionID
+                    ?? target.expectedExtensionIDOrAlias,
+                profileID: lifecycleResult?.record?.profileID
+                    ?? "password-manager-compatibility-profile"
+            )
+        let nativeStatus: ChromeMV3PasswordManagerCompatibilityStatus
+        if target.nativeHostRequirement.required {
+            nativeStatus =
+                nativeMapping?.canConnectNativeNow == true
+                    ? .partial
+                    : .blocked
+        } else if target.nativeHostRequirement.optional {
+            nativeStatus =
+                nativeMapping?.lookupStatus == .found ? .partial : .deferred
+        } else {
+            nativeStatus = .notRequired
+        }
+        let cssStatus: ChromeMV3PasswordManagerCompatibilityStatus =
+            target.contentScriptRequirement.requiresCSS
+                ? .unsafeWithoutReview
+                : .notRequired
+        let mainWorldStatus: ChromeMV3PasswordManagerCompatibilityStatus =
+            target.contentScriptRequirement.requiresMainWorld
+                ? .unsafeWithoutReview
+                : .notRequired
+        let multiFrameStatus: ChromeMV3PasswordManagerCompatibilityStatus =
+            target.contentScriptRequirement.requiresMultiFrame
+                ? .deferred
+                : .notRequired
+        let identityStatus: ChromeMV3PasswordManagerCompatibilityStatus =
+            target.knownBlockedDeferredAPIs.contains {
+                $0 == "identity" || $0 == "offscreen" || $0 == "sidePanel"
+            } ? .deferred : .notRequired
+        var blockers = [
+            "Product runtime remains unavailable; this is not public password-manager support.",
+        ]
+        if cssStatus == .unsafeWithoutReview {
+            blockers.append(
+                "Content-script CSS requires WebKit scoping review."
+            )
+        }
+        if mainWorldStatus == .unsafeWithoutReview {
+            blockers.append(
+                "MAIN-world content-script behavior requires a separate bridge review."
+            )
+        }
+        if multiFrameStatus == .deferred {
+            blockers.append(
+                "Multi-frame attachment remains deferred until frame targeting is product-safe."
+            )
+        }
+        if nativeStatus == .blocked {
+            blockers.append(
+                "Native messaging requires both nativeMessaging permission and explicit trusted-host approval."
+            )
+        } else if nativeStatus == .partial {
+            blockers.append(
+                "Native messaging is fixture-root only and not product host discovery."
+            )
+        }
+        if identityStatus == .deferred {
+            blockers.append(
+                "sidePanel/offscreen/identity account-flow APIs remain deferred."
+            )
+        }
+        let hostRequirements =
+            uniqueSortedPasswordManager(
+                target.hostPermissions + target.optionalHostPermissions
+            )
+        return ChromeMV3PasswordManagerCompatibilityMatrixRow(
+            targetKind: target.kind,
+            targetDisplayName: target.displayName,
+            packageSourceKind: selection.kind,
+            packagePath: selection.packagePath,
+            installImportResult: succeeded ? .pass : .blocked,
+            manifestAPIRequirements:
+                uniqueSortedPasswordManager(
+                    target.requiredPermissions
+                        + target.optionalPermissions
+                        + target.knownBlockedDeferredAPIs
+                ),
+            hostPermissionRequirements: hostRequirements,
+            packageIntake:
+                selection.kind == .reviewedFixture ? .fixtureOnly
+                    : (succeeded ? .pass : .blocked),
+            manifestValidation:
+                manifestSummary != nil && succeeded ? .pass : .blocked,
+            generatedBundle: generatedAvailable ? .pass : .blocked,
+            extensionManagerLifecycle: succeeded ? .pass : .blocked,
+            popupOptions:
+                manifestSummary?.hasAction == true
+                    || manifestSummary?.hasOptionsPage == true
+                    ? .pass : .blocked,
+            popupOptionsJSBridge:
+                fixtureReport.passwordManagerSyntheticJSReady
+                    ? .pass : .blocked,
+            contentScripts:
+                (manifestSummary?.contentScriptCount ?? 0) > 0
+                    && fixtureReport.contentMessagingResult
+                    .detectFieldsSucceeded ? .pass : .blocked,
+            contentScriptCSS: cssStatus,
+            mainWorld: mainWorldStatus,
+            multiFrame: multiFrameStatus,
+            permissions:
+                fixtureReport.permissionActiveTabResult
+                .modeledAcceptGrantsOptionalHost ? .pass : .blocked,
+            activeTab:
+                fixtureReport.permissionActiveTabResult
+                .activeTabGrantAllowsTemporaryAccess ? .pass : .blocked,
+            tabsQuery:
+                fixtureReport.tabDiscoveryResult.visibleWithActiveTab
+                    ? .pass : .blocked,
+            tabsSendMessage:
+                fixtureReport.contentMessagingResult.detectFieldsSucceeded
+                    ? .pass : .blocked,
+            tabsConnect:
+                fixtureReport.webKitExecutionSummary
+                .runtimeMessagingFlowPassed
+                    ? .pass
+                    : (
+                        fixtureReport.contentMessagingResult
+                        .runtimeMessagingSucceeded ? .partial : .blocked
+                    ),
+            storageLocal:
+                fixtureReport.storageFlowResult.setSucceeded
+                    && fixtureReport.storageFlowResult.readBackSucceeded
+                    ? .pass : .blocked,
+            nativeMessaging: nativeStatus,
+            serviceWorkerLifecycle:
+                fixtureReport.passwordManagerServiceWorkerReady
+                    ? .partial : .blocked,
+            dnrWebRequestRelevance: .notRequired,
+            sidePanelOffscreenIdentityRelevance: identityStatus,
+            securityTrustBlockers:
+                uniqueSortedPasswordManager(
+                    nativeMapping?.diagnostics.filter {
+                        $0.contains("approval")
+                            || $0.contains("permission")
+                            || $0.contains("discovery")
+                    } ?? []
+                ),
+            productReadiness: .blocked,
+            productReadinessStatus:
+                "developerPreviewDiagnosticsOnly",
+            blockerSummary: uniqueSortedPasswordManager(blockers),
+            nextRecommendedFix: nextFix(
+                target: target,
+                nativeStatus: nativeStatus,
+                cssStatus: cssStatus,
+                mainWorldStatus: mainWorldStatus,
+                multiFrameStatus: multiFrameStatus,
+                identityStatus: identityStatus
+            ),
+            notPublicSupportDisclaimer:
+                "Developer-preview compatibility diagnostic only; not Chrome parity and not public Bitwarden/1Password/Proton Pass support."
+        )
+    }
+
+    private static func nextFix(
+        target: ChromeMV3PasswordManagerCompatibilityTargetRecord,
+        nativeStatus: ChromeMV3PasswordManagerCompatibilityStatus,
+        cssStatus: ChromeMV3PasswordManagerCompatibilityStatus,
+        mainWorldStatus: ChromeMV3PasswordManagerCompatibilityStatus,
+        multiFrameStatus: ChromeMV3PasswordManagerCompatibilityStatus,
+        identityStatus: ChromeMV3PasswordManagerCompatibilityStatus
+    ) -> String {
+        if nativeStatus == .blocked {
+            return "Complete fixture-root trusted-host approval and native exchange diagnostics before any broader native messaging work."
+        }
+        if cssStatus == .unsafeWithoutReview {
+            return "Review WebKit-safe CSS content-script scoping before enabling CSS attachment."
+        }
+        if mainWorldStatus == .unsafeWithoutReview {
+            return "Design a constrained MAIN-world bridge before accepting MAIN-world content scripts."
+        }
+        if multiFrameStatus == .deferred {
+            return "Add frame-targeted attachment diagnostics before multi-frame support."
+        }
+        if identityStatus == .deferred {
+            return "Keep account/identity/offscreen flows blocked until a separate identity runtime design exists."
+        }
+        return "Continue with reviewed local package trials; keep product support claims blocked."
+    }
+
+    private static func documentationSources()
+        -> [ChromeMV3WebKitObjectAcceptanceDocumentationSource]
+    {
+        [
+            source(
+                "Chrome manifest file format",
+                "https://developer.chrome.com/docs/extensions/reference/manifest",
+                "Checked MV3 manifest keys, options_page/options_ui, permissions, host_permissions, and web_accessible_resources."
+            ),
+            source(
+                "Chrome action popup",
+                "https://developer.chrome.com/docs/extensions/develop/ui/add-popup",
+                "Checked action.default_popup and popup script constraints."
+            ),
+            source(
+                "Chrome content scripts",
+                "https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts",
+                "Checked static content script matching, isolated/page worlds, frames, CSS, and messaging limitations."
+            ),
+            source(
+                "Chrome message passing",
+                "https://developer.chrome.com/docs/extensions/develop/concepts/messaging",
+                "Checked runtime.sendMessage, tabs.sendMessage, runtime.connect, tabs.connect, and Port behavior."
+            ),
+            source(
+                "Chrome tabs API",
+                "https://developer.chrome.com/docs/extensions/reference/api/tabs",
+                "Checked tabs.query sensitive fields and tab messaging permissions."
+            ),
+            source(
+                "Chrome permissions API",
+                "https://developer.chrome.com/docs/extensions/reference/api/permissions",
+                "Checked permissions.contains/getAll/request/remove and optional permission behavior."
+            ),
+            source(
+                "Chrome activeTab",
+                "https://developer.chrome.com/docs/extensions/develop/concepts/activeTab",
+                "Checked temporary activeTab host access and expiry."
+            ),
+            source(
+                "Chrome storage API",
+                "https://developer.chrome.com/docs/extensions/reference/api/storage",
+                "Checked storage.local behavior and content-script availability."
+            ),
+            source(
+                "Chrome native messaging",
+                "https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging",
+                "Checked nativeMessaging permission, allowed_origins, host manifests, and stdio process boundary."
+            ),
+            source(
+                "Chrome service-worker lifecycle",
+                "https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle",
+                "Checked event-driven MV3 service-worker lifecycle and native Port keepalive implications."
+            ),
+        ]
+    }
+
+    private static func source(
+        _ title: String,
+        _ url: String,
+        _ note: String
+    ) -> ChromeMV3WebKitObjectAcceptanceDocumentationSource {
+        ChromeMV3WebKitObjectAcceptanceDocumentationSource(
+            kind: "chromeDocumentation",
+            title: title,
+            url: url,
+            note: note
+        )
+    }
+}
+
+extension ChromeMV3LifecycleRuntimeDiagnosticsSnapshot {
+    static let passwordManagerCompatibilityPass =
+        ChromeMV3LifecycleRuntimeDiagnosticsSnapshot(
+            WebKitObjectDiagnosticsAvailable: true,
+            contextCreationGateDiagnosticsAvailable: true,
+            controllerLoadGateDiagnosticsAvailable: true,
+            runtimeBridgeReadinessDiagnosticsAvailable: true,
+            runtimeJSMessagingDiagnosticsAvailable: true,
+            tabsScriptingDiagnosticsAvailable: true,
+            permissionsDiagnosticsAvailable: true,
+            storageDiagnosticsAvailable: true,
+            nativeMessagingDiagnosticsAvailable: true,
+            serviceWorkerDiagnosticsAvailable: true,
+            eventAPIDiagnosticsAvailable: true,
+            networkDiagnosticsAvailable: true,
+            sidePanelOffscreenIdentityDiagnosticsAvailable: true,
+            passwordManagerDiagnosticsAvailable: true,
+            diagnostics: [
+                "Password-manager compatibility pass links existing focused MV3 diagnostics without enabling product runtime.",
+            ]
+        )
+}
+
+extension ChromeMV3EndToEndInstallDiagnosticsReport {
+    fileprivate var passwordManagerManifestSummary:
+        ChromeMV3ManifestSummary?
+    {
+        let active = generatedBundleVersionState.last {
+            $0.state == .active || $0.state == .rollbackActive
+        } ?? generatedBundleVersionState.last
+        return active?.generatedBundleRecord.installReportSummary
+            .manifestSummary
+    }
+}
+
+struct ChromeMV3PasswordManagerCompatibilityManagerSummary:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var targetKind: ChromeMV3PasswordManagerCompatibilityTargetKind
+    var targetDisplayName: String
+    var targetStatus: ChromeMV3PasswordManagerCompatibilityStatus
+    var nativeHostRequired: Bool
+    var nativeHostName: String?
+    var trustedHostState: ChromeMV3NativeTrustedHostTrustState
+    var reportFileName: String
+    var blockerSummary: [String]
+    var nextRecommendedFix: String
+    var notPublicSupportDisclaimer: String
+
+    static func make(
+        record: ChromeMV3ExtensionLifecycleRecord,
+        report: ChromeMV3EndToEndInstallDiagnosticsReport?
+    ) -> ChromeMV3PasswordManagerCompatibilityManagerSummary? {
+        guard
+            let target =
+                ChromeMV3PasswordManagerCompatibilityTargetCatalog.match(
+                    displayName: record.displayName,
+                    sourcePath: record.sourcePath
+                )
+        else { return nil }
+        let selection = ChromeMV3PasswordManagerPackageSelection(
+            kind:
+                record.sourceKind == .zipArchive
+                    ? .localZip
+                    : (
+                        record.sourcePath.contains("password-manager-fixtures")
+                            ? .reviewedFixture : .localUnpacked
+                    ),
+            packagePath: record.sourcePath,
+            sourceDescription:
+                "Manager detail derived target summary from lifecycle record.",
+            diagnostics: []
+        )
+        let syntheticLifecycleResult = ChromeMV3LifecycleOperationResult(
+            schemaVersion: ChromeMV3ExtensionLifecycleRegistry
+                .lifecycleSchemaVersion,
+            operation: .diagnostics,
+            succeeded: report != nil,
+            failureCode: nil,
+            record: record,
+            previousRecord: nil,
+            generatedVersion:
+                record.generatedBundleVersions.last {
+                    $0.id == record.activeGeneratedVersionID
+                },
+            report: report,
+            diagnostics: record.diagnostics,
+            productFlags: .unavailable
+        )
+        let row = ChromeMV3PasswordManagerCompatibilityPassRunner.matrixRowForManager(
+            target: target,
+            selection: selection,
+            lifecycleResult: syntheticLifecycleResult
+        )
+        return ChromeMV3PasswordManagerCompatibilityManagerSummary(
+            targetKind: target.kind,
+            targetDisplayName: target.displayName,
+            targetStatus: row.productReadiness,
+            nativeHostRequired:
+                target.nativeHostRequirement.required
+                    || target.nativeHostRequirement.optional,
+            nativeHostName: target.nativeHostRequirement.hostName,
+            trustedHostState: .unknown,
+            reportFileName:
+                ChromeMV3PasswordManagerCompatibilityReport.reportFileName,
+            blockerSummary: row.blockerSummary,
+            nextRecommendedFix: row.nextRecommendedFix,
+            notPublicSupportDisclaimer:
+                row.notPublicSupportDisclaimer
+        )
+    }
+}
+
+extension ChromeMV3PasswordManagerCompatibilityPassRunner {
+    fileprivate static func matrixRowForManager(
+        target: ChromeMV3PasswordManagerCompatibilityTargetRecord,
+        selection: ChromeMV3PasswordManagerPackageSelection,
+        lifecycleResult: ChromeMV3LifecycleOperationResult
+    ) -> ChromeMV3PasswordManagerCompatibilityMatrixRow {
+        matrixRow(
+            target: target,
+            selection: selection,
+            lifecycleResult: lifecycleResult,
+            packageReport: nil,
+            nativeMapping: nil
+        )
     }
 }
 
@@ -3013,6 +4387,7 @@ enum ChromeMV3PasswordManagerCombinedSyntheticHarness {
       username: "fixture.user@example.test",
       passwordRef: "synthetic-password-token"
     };
+    const popupURL = chrome.runtime.getURL("popup.html");
     await chrome.storage.local.set({[credentialKey]: credentialRecord});
     const stored = await chrome.storage.local.get(credentialKey);
     const bytes = await chrome.storage.local.getBytesInUse(credentialKey);
@@ -3148,7 +4523,8 @@ enum ChromeMV3PasswordManagerCombinedSyntheticHarness {
         runtimeResponse
         && runtimeResponse.target === "popupRuntimeListener"
         && port.name === "password-manager-content"
-        && portDisconnected === true,
+        && portDisconnected === true
+        && popupURL === "chrome-extension://password-manager-synthetic-extension/popup.html",
       nativeMessagingBlockedOK:
         chrome.runtime.sendNativeMessage === undefined,
       serviceWorkerBlockedOK:
