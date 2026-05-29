@@ -2,7 +2,6 @@
 //  TabFolder.swift
 //  Sumi
 //
-//  Created by Jonathan Caudill on 2025-09-24.
 //
 
 import Foundation

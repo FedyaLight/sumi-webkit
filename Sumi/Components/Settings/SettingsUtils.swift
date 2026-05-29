@@ -90,6 +90,7 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                 group: .privacy,
                 keywords: [
                     "tracking", "protection", "ad blocking", "protection bundles",
+                    "tracker",
                     "site overrides", "rules", "privacy", "security",
                     "site settings", "permissions", "camera", "microphone",
                     "location", "notifications", "popups", "pop-ups",
@@ -99,12 +100,13 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
         case .profiles:
             return SettingsPaneDescriptor(
                 tab: tab,
-                title: "Profiles & Spaces",
-                subtitle: "Profiles, personas, and space assignments.",
+                title: "Profiles",
+                subtitle: "Isolated browsing data and profile management.",
                 icon: tab.icon,
                 group: .browsing,
                 keywords: [
-                    "profiles", "spaces", "personas", "assignments"
+                    "profiles", "spaces", "website data", "cookies",
+                    "cache", "local storage", "history"
                 ]
             )
         case .shortcuts:
@@ -136,7 +138,7 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                 icon: tab.icon,
                 group: .system,
                 keywords: [
-                    "extensions", "webextension", "manifest",
+                    "extensions", "webextension", "manifest", "safari",
                     "userscripts", "uninstall"
                 ]
             )
@@ -296,7 +298,7 @@ enum SettingsTabs: Hashable, CaseIterable {
         case .appearance: return "paintpalette"
         case .performance: return "speedometer"
         case .privacy: return "lock.shield"
-        case .profiles: return "square.grid.2x2"
+        case .profiles: return "person.2"
         case .shortcuts: return "keyboard"
         case .userScripts: return "curlybraces.square"
         case .extensions: return "puzzlepiece.extension"

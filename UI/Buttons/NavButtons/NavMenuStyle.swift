@@ -2,7 +2,6 @@
 //  NavMenuStyle.swift
 //  Sumi
 //
-//  Created by Aether Aurelia on 11/10/2025.
 //
 
 import SwiftUI

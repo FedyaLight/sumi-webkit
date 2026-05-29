@@ -133,8 +133,10 @@ struct SidebarSpaceCreationView: View {
 
     private var profileRow: some View {
         HStack(spacing: 10) {
-            Image(systemName: "person.crop.circle")
-                .font(.system(size: 15, weight: .medium))
+            SumiProfileIconView(
+                icon: currentProfileIcon,
+                font: .system(size: 15, weight: .medium)
+            )
                 .foregroundStyle(tokens.secondaryText)
                 .frame(
                     width: SidebarSpaceCreationMetrics.iconWellSize,
@@ -181,8 +183,15 @@ struct SidebarSpaceCreationView: View {
 
     private var profileMenuLabel: some View {
         HStack(spacing: 6) {
-            Image(systemName: currentProfilePickerSymbolName)
-                .font(.system(size: 13, weight: .medium))
+            if session.createsNewProfile {
+                Image(systemName: "person.badge.plus")
+                    .font(.system(size: 13, weight: .medium))
+            } else {
+                SumiProfileIconView(
+                    icon: currentProfileIcon,
+                    font: .system(size: 13, weight: .medium)
+                )
+            }
 
             Text(currentProfileName)
                 .font(.system(size: 13, weight: .medium))
@@ -246,17 +255,12 @@ struct SidebarSpaceCreationView: View {
         return profile.name
     }
 
-    private var currentProfilePickerSymbolName: String {
-        if session.createsNewProfile {
-            return "person.badge.plus"
-        }
+    private var currentProfileIcon: String {
         guard let profile = currentProfile else {
-            return SumiPersistentGlyph.resolvedProfileSystemImageName(
-                browserManager.profileManager.profiles.first?.icon
-                    ?? SumiPersistentGlyph.profileSystemImageFallback
-            )
+            return browserManager.profileManager.profiles.first?.icon
+                ?? SumiProfileIcon.defaultIcon
         }
-        return SumiPersistentGlyph.resolvedProfileSystemImageName(profile.icon)
+        return profile.icon
     }
 
     private var currentProfile: Profile? {

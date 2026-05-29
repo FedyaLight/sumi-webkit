@@ -62,7 +62,7 @@ final class BrowserWindowShellService {
         let ephemeralSpace = Space(
             id: UUID(),
             name: "Incognito",
-            icon: "eye.slash",
+            icon: "🕶️",
             profileId: ephemeralProfile.id
         )
         ephemeralSpace.isEphemeral = true

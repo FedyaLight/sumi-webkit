@@ -134,7 +134,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
         XCTAssertFalse(SumiPersistentGlyph.presentsAsEmoji("square.grid.2x2"))
 
         let personalProfile = Profile(id: Self.profileA, name: "Personal", icon: "😀")
-        let workProfile = Profile(id: Self.profileB, name: "Work", icon: "briefcase")
+        let workProfile = Profile(id: Self.profileB, name: "Work", icon: "💼")
         let currentSpace = Space(id: Self.spaceA, name: "Current", icon: "✨", profileId: personalProfile.id)
         let workSpace = Space(id: Self.spaceB, name: "Work", icon: "square.grid.2x2", profileId: workProfile.id)
         let folder = TabFolder(
@@ -156,7 +156,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
             selectedProfileId: personalProfile.id
         )
         XCTAssertEqual(profileChoices.first?.icon, .emoji("😀"))
-        XCTAssertEqual(profileChoices.last?.icon, .systemImage("briefcase"))
+        XCTAssertEqual(profileChoices.last?.icon, .emoji("💼"))
 
         let folderChoices = makeSidebarContextMenuFolderChoices(folders: [folder])
         XCTAssertEqual(

@@ -1353,7 +1353,7 @@ class TabManager: ObservableObject {
             let resolvedProfileId = browserManager?.currentProfile?.id
             let personal = Space(
                 name: "Personal",
-                icon: "person.crop.circle",
+                icon: "🏠",
                 workspaceTheme: .default,
                 profileId: resolvedProfileId
             )

@@ -482,7 +482,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             SpaceEntity(
                 id: spaceBId,
                 name: "B",
-                icon: "person.crop.circle",
+                icon: "🏠",
                 index: 0,
                 profileId: profileId
             )
@@ -821,7 +821,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             SpaceEntity(
                 id: fixture.spaceBId,
                 name: "B",
-                icon: "person.crop.circle",
+                icon: "🏠",
                 index: 1,
                 profileId: fixture.profileId
             )

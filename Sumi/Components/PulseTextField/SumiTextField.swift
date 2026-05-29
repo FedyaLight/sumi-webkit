@@ -2,7 +2,6 @@
 //  SumiTextField.swift
 //  Sumi
 //
-//  Created by Maciek Bagiński on 05/08/2025.
 //
 
 import SwiftUI

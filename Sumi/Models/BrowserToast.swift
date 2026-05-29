@@ -22,7 +22,7 @@ struct BrowserToast: Equatable, Identifiable {
     var icon: String {
         switch kind {
         case .profileSwitch:
-            return "person.crop.circle"
+            return "person.2"
         case .tabClosure:
             return "arrow.uturn.backward"
         case .copyURL:

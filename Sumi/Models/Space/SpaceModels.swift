@@ -2,7 +2,6 @@
 //  SpaceModels.swift
 //  Sumi
 //
-//  Created by Maciek Bagiński on 04/08/2025.
 //
 
 import Foundation

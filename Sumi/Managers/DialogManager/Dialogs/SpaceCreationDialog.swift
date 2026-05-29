@@ -2,7 +2,6 @@
 //  SpaceCreationDialog.swift
 //  Sumi
 //
-//  Created by Maciek Bagiński on 04/08/2025.
 //
 
 import AppKit
@@ -135,8 +134,6 @@ struct SpaceCreationContent: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     Picker(
-                        currentProfileName,
-                        systemImage: currentProfilePickerSymbolName,
                         selection: Binding(
                             get: {
                                 selectedProfileId ?? browserManager.profileManager.profiles.first?.id ?? UUID()
@@ -149,12 +146,14 @@ struct SpaceCreationContent: View {
                         ForEach(browserManager.profileManager.profiles, id: \.id) { profile in
                             SumiProfileMenuLabel(name: profile.name, icon: profile.icon).tag(profile.id)
                         }
+                    } label: {
+                        SumiProfileMenuLabel(name: currentProfileName, icon: currentProfileIcon)
                     }
 
                     Button {
                         isProfileCreationPresented = true
                     } label: {
-                        Label("Create New Profile", systemImage: "person.badge.plus")
+                        Label("New Profile...", systemImage: "person.badge.plus")
                     }
                     .buttonStyle(.borderless)
                 }
@@ -177,7 +176,8 @@ struct SpaceCreationContent: View {
             }
         }
         .sheet(isPresented: $isProfileCreationPresented) {
-            ProfileCreationDialog(
+            ProfileEditorSheet(
+                mode: .create,
                 isNameAvailable: { proposed in
                     let trimmed = proposed.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmed.isEmpty else { return false }
@@ -185,14 +185,12 @@ struct SpaceCreationContent: View {
                         $0.name.caseInsensitiveCompare(trimmed) == .orderedSame
                     }
                 },
-                onCreate: { name, icon in
+                onSave: { name, icon in
                     let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmed.isEmpty else { return }
                     let created = browserManager.profileManager.createProfile(
                         name: trimmed,
-                        icon: SumiPersistentGlyph.normalizedProfileIconValue(
-                            icon.isEmpty ? SumiPersistentGlyph.profileSystemImageFallback : icon
-                        )
+                        icon: SumiProfileIcon.storedValue(icon)
                     )
                     selectedProfileId = created.id
                     isProfileCreationPresented = false
@@ -214,14 +212,13 @@ struct SpaceCreationContent: View {
         return profile.name
     }
 
-    private var currentProfilePickerSymbolName: String {
+    private var currentProfileIcon: String {
         guard let profileId = selectedProfileId,
               let profile = browserManager.profileManager.profiles.first(where: { $0.id == profileId })
         else {
-            return SumiPersistentGlyph.resolvedProfileSystemImageName(
-                browserManager.profileManager.profiles.first?.icon ?? SumiPersistentGlyph.profileSystemImageFallback
-            )
+            return browserManager.profileManager.profiles.first?.icon
+                ?? SumiProfileIcon.defaultIcon
         }
-        return SumiPersistentGlyph.resolvedProfileSystemImageName(profile.icon)
+        return profile.icon
     }
 }

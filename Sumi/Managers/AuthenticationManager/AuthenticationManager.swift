@@ -2,7 +2,6 @@
 //  AuthenticationManager.swift
 //  Sumi
 //
-//  Created by Jonathan Caudill on 01/09/2025.
 //
 
 import AppKit

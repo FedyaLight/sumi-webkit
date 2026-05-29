@@ -309,7 +309,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         )
         let profile = Profile(
             name: "Primary",
-            icon: "person.crop.circle",
+            icon: "🏠",
             dataStore: .nonPersistent()
         )
 
@@ -334,7 +334,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         )
         let profile = Profile(
             name: "Primary",
-            icon: "person.crop.circle",
+            icon: "🏠",
             dataStore: .nonPersistent()
         )
 
@@ -600,13 +600,13 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         let currentProfile = Profile(
             id: harness.profileID,
             name: "Current",
-            icon: "person.crop.circle",
+            icon: "🏠",
             dataStore: .nonPersistent()
         )
         let otherProfile = Profile(
             id: otherProfileID,
             name: "Other",
-            icon: "person.crop.circle",
+            icon: "🏠",
             dataStore: .nonPersistent()
         )
 
@@ -696,7 +696,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         let profile = Profile(
             id: harness.profileID,
             name: "Primary",
-            icon: "person.crop.circle",
+            icon: "🏠",
             dataStore: .nonPersistent()
         )
 
@@ -749,7 +749,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         let profile = Profile(
             id: harness.profileID,
             name: "Primary",
-            icon: "person.crop.circle",
+            icon: "🏠",
             dataStore: .nonPersistent()
         )
 
@@ -807,7 +807,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         let profile = Profile(
             id: harness.profileID,
             name: "Primary",
-            icon: "person.crop.circle",
+            icon: "🏠",
             dataStore: .nonPersistent()
         )
 

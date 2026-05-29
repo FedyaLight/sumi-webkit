@@ -2,7 +2,6 @@
 //  BasicAuthDialog.swift
 //  Sumi
 //
-//  Created by Jonathan Caudill on 2025-09-06.
 //
 
 import SwiftUI

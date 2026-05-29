@@ -2,7 +2,6 @@
 //  BlurModifier.swift
 //  Sumi
 //
-//  Created by Aether on 25/03/2025.
 //
 
 import SwiftUI

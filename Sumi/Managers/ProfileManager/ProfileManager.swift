@@ -30,17 +30,6 @@ final class ProfileManager: ObservableObject {
                 sortBy: [SortDescriptor(\.index, order: .forward)]
             )
             let entities = try context.fetch(descriptor)
-            var didNormalizeProfileIcons = false
-            for entity in entities {
-                let normalized = SumiPersistentGlyph.normalizedProfileIconValue(entity.icon)
-                if normalized != entity.icon {
-                    entity.icon = normalized
-                    didNormalizeProfileIcons = true
-                }
-            }
-            if didNormalizeProfileIcons {
-                try context.save()
-            }
             self.profiles = entities.map { e in
                 Profile(id: e.id, name: e.name, icon: e.icon)
             }
@@ -56,11 +45,11 @@ final class ProfileManager: ObservableObject {
 
     // MARK: - CRUD
     @discardableResult
-    func createProfile(name: String, icon: String = "person.crop.circle") -> Profile {
+    func createProfile(name: String, icon: String = SumiProfileIcon.defaultIcon) -> Profile {
         // Next index is current count (append to end)
         let nextIndex = profiles.count
         let profile = Profile(name: name, icon: icon)
-        let entity = ProfileEntity(id: profile.id, name: name, icon: icon, index: nextIndex)
+        let entity = ProfileEntity(id: profile.id, name: name, icon: profile.icon, index: nextIndex)
         context.insert(entity)
         do { try context.save() } catch { RuntimeDiagnostics.emit("[ProfileManager] Save failed during create: \(error)") }
         profiles.append(profile)
@@ -118,7 +107,7 @@ final class ProfileManager: ObservableObject {
 
     func ensureDefaultProfile() {
         if profiles.isEmpty {
-            _ = createProfile(name: "Default", icon: "person.crop.circle")
+            _ = createProfile(name: "Default", icon: SumiProfileIcon.defaultIcon)
         }
     }
     

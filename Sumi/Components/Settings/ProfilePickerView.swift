@@ -50,7 +50,7 @@ struct ProfilePickerView: View {
                 ForEach(profiles, id: \.id) { p in
                     Button(action: { select(p.id) }) {
                         HStack(spacing: 8) {
-                            SumiProfileGlyphDisplay(icon: p.icon, font: .system(size: 13))
+                            SumiProfileIconView(icon: p.icon, font: .system(size: 13))
                             Text(p.name).font(.system(size: 13))
                             Spacer()
                             if selectedProfileId == p.id { Image(systemName: "checkmark").foregroundStyle(.secondary) }
@@ -83,7 +83,7 @@ struct ProfilePickerView: View {
                             ZStack {
                                 RoundedRectangle(cornerRadius: 6)
                                     .fill(Color(.controlBackgroundColor))
-                                SumiProfileGlyphDisplay(icon: p.icon, font: .system(size: 16))
+                                SumiProfileIconView(icon: p.icon, font: .system(size: 16))
                             }
                             .frame(width: 24, height: 24)
                             Text(p.name).lineLimit(1)
@@ -108,8 +108,10 @@ struct ProfilePickerView: View {
     private struct EmptyProfilesView: View {
         var body: some View {
             HStack(spacing: 8) {
-                Image(systemName: "person.crop.circle")
-                    .foregroundStyle(.secondary)
+                SumiProfileIconView(
+                    icon: SumiProfileIcon.defaultIcon,
+                    font: .system(size: 15)
+                )
                 Text("No profiles available")
                     .foregroundStyle(.secondary)
             }

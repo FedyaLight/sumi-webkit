@@ -2,7 +2,6 @@
 //  ShortcutRecorderView.swift
 //  Sumi
 //
-//  Created by Jonathan Caudill on 09/30/2025.
 //
 
 import SwiftUI

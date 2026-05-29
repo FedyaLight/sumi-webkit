@@ -2,7 +2,6 @@
 //  EmojiPicker.swift
 //  Sumi
 //
-//  Created by Maciek Bagiński on 02/10/2025.
 //
 
 import AppKit
