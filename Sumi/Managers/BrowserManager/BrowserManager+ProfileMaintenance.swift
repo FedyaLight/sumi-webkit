@@ -28,27 +28,13 @@ extension BrowserManager {
     private func presentProfileMaintenanceNotice(
         _ notice: SumiProfileMaintenanceService.Notice
     ) {
-        dialogManager.showDialog {
-            StandardDialog(
-                header: {
-                    DialogHeader(
-                        icon: notice.icon,
-                        title: notice.title,
-                        subtitle: notice.subtitle
-                    )
-                },
-                content: {
-                    Text(notice.message)
-                        .font(.body)
-                },
-                footer: {
-                    DialogFooter(rightButtons: [
-                        DialogButton(text: "OK", variant: .primary) { [weak self] in
-                            self?.closeDialog()
-                        }
-                    ])
-                }
+        presentNoticeSheet(
+            BrowserNoticeSheetModel(
+                icon: notice.icon,
+                title: notice.title,
+                subtitle: notice.subtitle,
+                message: notice.message
             )
-        }
+        )
     }
 }

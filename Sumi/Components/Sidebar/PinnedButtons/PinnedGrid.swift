@@ -684,19 +684,7 @@ struct PinnedGrid: View {
                     ),
                     moveToSpace: .init(
                         choices: spaceChoices,
-                        onSelect: moveToSpaceAction,
-                        presentPicker: {
-                            MainActor.assumeIsolated {
-                                presentSidebarSpaceDestinationPicker(
-                                    choices: spaceChoices,
-                                    browserManager: browserManager,
-                                    settings: sumiSettings,
-                                    themeContext: themeContext,
-                                    source: windowState.resolveSidebarPresentationSource(),
-                                    onSelect: moveToSpaceAction
-                                )
-                            }
-                        }
+                        onSelect: moveToSpaceAction
                     ),
                     profileTarget: .init(
                         choices: profileChoices(for: pin),

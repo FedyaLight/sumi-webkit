@@ -277,7 +277,7 @@ class KeyboardShortcutManager {
            state.isFloatingBarVisible {
             return true
         }
-        if browserManager?.dialogManager.isVisible == true {
+        if browserManager?.isNativeModalPresented(in: keyWindow) == true {
             return true
         }
         return false

@@ -18,7 +18,7 @@ struct FindInPageChromeHost: View {
     }
 
     private var isModalSuppressed: Bool {
-        browserManager.dialogManager.isPresented(in: windowState.window)
+        browserManager.isNativeModalPresented(in: windowState.id)
     }
 
     var body: some View {

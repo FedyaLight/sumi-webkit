@@ -63,7 +63,7 @@ struct SumiHistoryTabRootView: View {
 
     private var nativeSurfaceHoverUpdatesEnabled: Bool {
         scrollHoverCoordinator.hoverUpdatesEnabled
-            && !browserManager.dialogManager.isPresented(in: windowState?.window)
+            && !browserManager.isNativeModalPresented(in: windowState?.id)
     }
 
     private var sidebar: some View {

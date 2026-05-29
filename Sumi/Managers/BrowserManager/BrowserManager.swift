@@ -163,6 +163,7 @@ class BrowserManager: ObservableObject {
     @Published var isTransitioningProfile: Bool = false
 
     @Published var workspaceThemePickerSession: WorkspaceThemePickerSession?
+    @Published var nativeModalPresentation: BrowserNativeModalPresentation?
     @Published var tabStructuralRevision: UInt = 0
 
     var modelContext: ModelContext
@@ -177,7 +178,6 @@ class BrowserManager: ObservableObject {
     }
     var tabManager: TabManager
     var profileManager: ProfileManager
-    var dialogManager: DialogManager
     var downloadManager: DownloadManager
     let downloadsPopoverPresenter: DownloadsPopoverPresenter
     let urlBarHubPopoverPresenter: URLBarHubPopoverPresenter
@@ -414,7 +414,6 @@ class BrowserManager: ObservableObject {
 
         self.tabManager = TabManager(browserManager: nil, context: startupModelContext)
         // settingsManager will be injected from SumiApp
-        self.dialogManager = DialogManager()
         self.downloadManager = DownloadManager()
         self.downloadsPopoverPresenter = DownloadsPopoverPresenter()
         self.urlBarHubPopoverPresenter = URLBarHubPopoverPresenter()
@@ -525,11 +524,6 @@ class BrowserManager: ObservableObject {
         self.externalMiniWindowManager.attach(browserManager: self)
         self.glanceManager.attach(browserManager: self)
         self.authenticationManager.attach(browserManager: self)
-
-        self.dialogManager.onWillPresentModal = { [weak self] in
-            self?.requestCollapsedSidebarOverlayDismissal()
-            self?.dismissWorkspaceThemePickerIfNeededDiscarding()
-        }
 
         tabManagerLoadObserverToken = NotificationCenter.default.addObserver(
             forName: .tabManagerDidLoadInitialData,
