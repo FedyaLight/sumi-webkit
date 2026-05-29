@@ -1614,7 +1614,8 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
             passwordManagerCompatibilitySummary:
                 ChromeMV3PasswordManagerCompatibilityManagerSummary.make(
                     record: record,
-                    report: report
+                    report: report,
+                    rootURL: rootURL
                 ),
             actions: actionDescriptors(
                 gate: gate,
@@ -2517,6 +2518,25 @@ struct ChromeMV3ExtensionManagerView: View {
                             "Trust",
                             summary.trustedHostState.rawValue
                         )
+                        if let source = summary.realPackageSource {
+                            fact("Package Source", source.rawValue)
+                        }
+                        if let kind = summary.realPackageDetectedKind {
+                            fact("Package Kind", kind.rawValue)
+                        }
+                        if let status = summary.realPackageTrialStatus {
+                            fact("Real Trial", status.rawValue)
+                        }
+                    }
+                    if summary.fixtureVsRealDeltaSummary.isEmpty == false {
+                        Text(
+                            summary.fixtureVsRealDeltaSummary
+                                .prefix(3)
+                                .joined(separator: "\n")
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                     Text(summary.nextRecommendedFix)
                         .font(.caption)

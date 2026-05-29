@@ -651,13 +651,17 @@ struct ChromeMV3GeneratedBundleWriter {
             omittingEmptySubsequences: false
         ).first.map(String.init) ?? pathBeforeFragment
         let decoded = pathOnly.removingPercentEncoding ?? pathOnly
+        let normalizedDecoded =
+            decoded.hasPrefix("/") && decoded.hasPrefix("//") == false
+            ? String(decoded.dropFirst())
+            : decoded
 
-        let isUnsafe = decoded.hasPrefix("/")
+        let isUnsafe = decoded.hasPrefix("//")
             || decoded.hasPrefix("~")
             || decoded.contains("\\")
             || decoded.contains("\0")
             || decoded.localizedCaseInsensitiveContains("://")
-            || (!allowsGlob && decoded.contains("*"))
+            || (!allowsGlob && normalizedDecoded.contains("*"))
 
         guard isUnsafe == false else {
             throw ChromeMV3GeneratedBundleWriterError.unsafeResourcePath(
@@ -666,7 +670,7 @@ struct ChromeMV3GeneratedBundleWriter {
             )
         }
 
-        let segments = decoded.split(
+        let segments = normalizedDecoded.split(
             separator: "/",
             omittingEmptySubsequences: false
         )
@@ -684,7 +688,7 @@ struct ChromeMV3GeneratedBundleWriter {
             )
         }
 
-        return decoded
+        return normalizedDecoded
     }
 
     private func copyResources(

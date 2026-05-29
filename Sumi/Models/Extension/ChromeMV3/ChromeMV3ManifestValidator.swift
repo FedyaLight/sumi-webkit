@@ -344,8 +344,12 @@ enum ChromeMV3ManifestValidator {
             omittingEmptySubsequences: false
         ).first.map(String.init) ?? pathBeforeFragment
         let decoded = pathOnly.removingPercentEncoding ?? pathOnly
+        let relativeDecoded =
+            decoded.hasPrefix("/") && decoded.hasPrefix("//") == false
+                ? String(decoded.drop { $0 == "/" })
+                : decoded
 
-        let isUnsafe = decoded.hasPrefix("/")
+        let isUnsafe = decoded.hasPrefix("//")
             || decoded.hasPrefix("~")
             || decoded.contains("\\")
             || decoded.contains("\0")
@@ -359,7 +363,7 @@ enum ChromeMV3ManifestValidator {
             )
         }
 
-        let segments = decoded.split(
+        let segments = relativeDecoded.split(
             separator: "/",
             omittingEmptySubsequences: false
         )

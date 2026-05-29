@@ -2862,21 +2862,40 @@ struct ChromeMV3PasswordManagerCompatibilityManagerSummary:
     var nativeHostName: String?
     var trustedHostState: ChromeMV3NativeTrustedHostTrustState
     var reportFileName: String
+    var realPackageTrialStatus:
+        ChromeMV3PasswordManagerCompatibilityStatus?
+    var realPackageSource:
+        ChromeMV3PasswordManagerRealPackageSource?
+    var realPackageDetectedKind:
+        ChromeMV3PasswordManagerRealPackageDetectedKind?
+    var realPackageReportFileName: String?
+    var fixtureVsRealDeltaSummary: [String]
     var blockerSummary: [String]
     var nextRecommendedFix: String
     var notPublicSupportDisclaimer: String
 
     static func make(
         record: ChromeMV3ExtensionLifecycleRecord,
-        report: ChromeMV3EndToEndInstallDiagnosticsReport?
+        report: ChromeMV3EndToEndInstallDiagnosticsReport?,
+        rootURL: URL? = nil
     ) -> ChromeMV3PasswordManagerCompatibilityManagerSummary? {
-        guard
-            let target =
-                ChromeMV3PasswordManagerCompatibilityTargetCatalog.match(
-                    displayName: record.displayName,
-                    sourcePath: record.sourcePath
-                )
-        else { return nil }
+        let realReport = rootURL.flatMap {
+            ChromeMV3PasswordManagerRealPackageCompatibilityReportWriter
+                .latestReport(rootURL: $0)
+        }
+        let realRow = realReport?.rows.first {
+            realPackageRow($0, matches: record, in: realReport)
+        }
+        let target =
+            ChromeMV3PasswordManagerCompatibilityTargetCatalog.match(
+                displayName: record.displayName,
+                sourcePath: record.sourcePath
+            )
+                ?? realRow.map {
+                    ChromeMV3PasswordManagerCompatibilityTargetCatalog
+                        .target($0.targetClass.fixtureFallbackKind)
+                }
+        guard let target else { return nil }
         let selection = ChromeMV3PasswordManagerPackageSelection(
             kind:
                 record.sourceKind == .zipArchive
@@ -2922,11 +2941,60 @@ struct ChromeMV3PasswordManagerCompatibilityManagerSummary:
             trustedHostState: .unknown,
             reportFileName:
                 ChromeMV3PasswordManagerCompatibilityReport.reportFileName,
+            realPackageTrialStatus: realRow?.productReadiness,
+            realPackageSource: realRow?.packageSource,
+            realPackageDetectedKind: realRow?.detectedPackageKind,
+            realPackageReportFileName:
+                realRow == nil
+                    ? nil
+                    : ChromeMV3PasswordManagerRealPackageCompatibilityReport
+                    .reportFileName,
+            fixtureVsRealDeltaSummary:
+                uniqueSortedPasswordManager(
+                    realRow?.fixtureDelta.riskDeltas
+                        ?? realRow?.fixtureDelta.newBlockers
+                        ?? []
+                ),
             blockerSummary: row.blockerSummary,
             nextRecommendedFix: row.nextRecommendedFix,
             notPublicSupportDisclaimer:
                 row.notPublicSupportDisclaimer
         )
+    }
+
+    private static func realPackageRow(
+        _ row: ChromeMV3PasswordManagerRealPackageCompatibilityRow,
+        matches record: ChromeMV3ExtensionLifecycleRecord,
+        in report: ChromeMV3PasswordManagerRealPackageCompatibilityReport?
+    ) -> Bool {
+        if row.packagePath == record.sourcePath {
+            return true
+        }
+        if let configuration = report?.targetConfigurations.first(where: {
+            $0.targetID == row.targetID
+        }) {
+            if let unpacked = configuration.localUnpackedPath,
+               record.sourcePath == unpacked
+            {
+                return true
+            }
+            if record.sourcePath.hasPrefix(
+                configuration.explicitAllowedLocalRoot + "/"
+            ) {
+                return true
+            }
+        }
+        let haystack = "\(record.displayName) \(record.sourcePath)"
+            .lowercased()
+        switch row.targetClass {
+        case .bitwarden:
+            return haystack.contains("bitwarden")
+        case .onePassword:
+            return haystack.contains("1password")
+                || haystack.contains("onepassword")
+        case .protonPass:
+            return haystack.contains("proton")
+        }
     }
 }
 
