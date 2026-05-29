@@ -976,27 +976,13 @@ struct TabFolderView: View {
     }
 
     private func confirmDeleteShortcutPin(_ pin: ShortcutPin) {
-        let manager = browserManager
-        let settings = sumiSettings
-        let theme = themeContext
-        let source = windowState.resolveSidebarPresentationSource()
-        DispatchQueue.main.async {
-            manager.showDialog(
-                SavedTabDeleteConfirmationDialog(
-                    kind: .pinnedTab,
-                    displayName: pin.preferredDisplayTitle,
-                    url: pin.launchURL,
-                    onDelete: {
-                        manager.closeDialog()
-                        removeShortcutPin(pin)
-                    },
-                    onCancel: { manager.closeDialog() }
-                )
-                .environment(\.sumiSettings, settings)
-                .environment(\.resolvedThemeContext, theme),
-                source: source
-            )
-        }
+        SidebarSavedItemDeletionConfirmationPresenter.confirmDeleteSavedTab(
+            kind: .pinnedTab,
+            title: pin.preferredDisplayTitle,
+            url: pin.launchURL,
+            window: windowState.window,
+            onDelete: { removeShortcutPin(pin) }
+        )
     }
 
     private func mutateFolderContent(_ update: () -> Void) {

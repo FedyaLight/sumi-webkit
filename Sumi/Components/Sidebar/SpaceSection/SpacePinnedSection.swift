@@ -679,52 +679,26 @@ extension SpaceView {
     }
 
     private func confirmDeleteShortcutPin(_ pin: ShortcutPin) {
-        let manager = browserManager
-        let settings = sumiSettings
-        let theme = themeContext
-        let source = windowState.resolveSidebarPresentationSource()
-        DispatchQueue.main.async {
-            manager.showDialog(
-                SavedTabDeleteConfirmationDialog(
-                    kind: .pinnedTab,
-                    displayName: pin.preferredDisplayTitle,
-                    url: pin.launchURL,
-                    onDelete: {
-                        manager.closeDialog()
-                        removeShortcutPin(pin)
-                    },
-                    onCancel: { manager.closeDialog() }
-                )
-                .environment(\.sumiSettings, settings)
-                .environment(\.resolvedThemeContext, theme),
-                source: source
-            )
-        }
+        SidebarSavedItemDeletionConfirmationPresenter.confirmDeleteSavedTab(
+            kind: .pinnedTab,
+            title: pin.preferredDisplayTitle,
+            url: pin.launchURL,
+            window: windowState.window,
+            onDelete: { removeShortcutPin(pin) }
+        )
     }
 
     private func confirmDeleteFolder(_ folder: TabFolder, childCount: Int) {
-        let manager = browserManager
-        let settings = sumiSettings
-        let theme = themeContext
-        let source = windowState.resolveSidebarPresentationSource()
-        DispatchQueue.main.async {
-            manager.showDialog(
-                FolderDeleteConfirmationDialog(
-                    folderName: folder.name,
-                    childCount: childCount,
-                    onDelete: {
-                        manager.closeDialog()
-                        mutatePinnedContent {
-                            manager.tabManager.deleteFolder(folder.id)
-                        }
-                    },
-                    onCancel: { manager.closeDialog() }
-                )
-                .environment(\.sumiSettings, settings)
-                .environment(\.resolvedThemeContext, theme),
-                source: source
-            )
-        }
+        SidebarSavedItemDeletionConfirmationPresenter.confirmDeleteFolder(
+            folderName: folder.name,
+            childCount: childCount,
+            window: windowState.window,
+            onDelete: {
+                mutatePinnedContent {
+                    browserManager.tabManager.deleteFolder(folder.id)
+                }
+            }
+        )
     }
 
     private func mutatePinnedContent(_ update: () -> Void) {

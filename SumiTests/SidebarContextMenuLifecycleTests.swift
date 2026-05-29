@@ -492,8 +492,8 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
         let files = [
             "App/SumiHistoryCommands.swift",
             "Sumi/Components/Sidebar/SidebarMenuFactories.swift",
+            "Sumi/Components/Sidebar/SidebarSavedItemDeletionConfirmationPresenter.swift",
             "Sumi/Components/Sidebar/SpaceSection/ShortcutLinkEditorSheet.swift",
-            "Sumi/Managers/DialogManager/Dialogs/SidebarDeleteConfirmationDialogs.swift",
         ]
         let regex = try NSRegularExpression(pattern: #""(?:[^"\\\n]|\\.)*Launcher(?:[^"\\\n]|\\.)*""#)
 

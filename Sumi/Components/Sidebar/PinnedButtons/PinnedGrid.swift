@@ -797,27 +797,13 @@ struct PinnedGrid: View {
     }
 
     private func confirmDeleteEssential(_ pin: ShortcutPin) {
-        let manager = browserManager
-        let settings = sumiSettings
-        let theme = themeContext
-        let source = windowState.resolveSidebarPresentationSource()
-        DispatchQueue.main.async {
-            manager.showDialog(
-                SavedTabDeleteConfirmationDialog(
-                    kind: .essential,
-                    displayName: pin.preferredDisplayTitle,
-                    url: pin.launchURL,
-                    onDelete: {
-                        manager.closeDialog()
-                        removeFromEssentials(pin)
-                    },
-                    onCancel: { manager.closeDialog() }
-                )
-                .environment(\.sumiSettings, settings)
-                .environment(\.resolvedThemeContext, theme),
-                source: source
-            )
-        }
+        SidebarSavedItemDeletionConfirmationPresenter.confirmDeleteSavedTab(
+            kind: .essential,
+            title: pin.preferredDisplayTitle,
+            url: pin.launchURL,
+            window: windowState.window,
+            onDelete: { removeFromEssentials(pin) }
+        )
     }
 
     private func presentShortcutLinkEditor(for pin: ShortcutPin) {
