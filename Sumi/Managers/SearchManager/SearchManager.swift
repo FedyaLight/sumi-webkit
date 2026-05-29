@@ -1,8 +1,7 @@
 //
 //  SearchManager.swift
-//  Alto
+//  Sumi
 //
-//  Created by Maciek Bagiński on 31/07/2025.
 //
 
 import Foundation

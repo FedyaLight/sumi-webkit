@@ -1791,7 +1791,7 @@ enum ChromeMV3PasswordManagerCompatibilityTargetCatalog {
             content.css = ["content-style.css"]
             content.requiresCSS = true
             content.diagnostics.append(
-                "CSS attachment is reported unsafe without WebKit scoping review."
+                "CSS attachment is developer-preview partial through manifest-declared WebKit user stylesheets."
             )
             diagnostics.append(
                 "Fixture stresses popup/options, static content scripts, optional host access, storage.local, tabs messaging, and optional native messaging."
@@ -2579,7 +2579,7 @@ enum ChromeMV3PasswordManagerCompatibilityPassRunner {
         }
         let cssStatus: ChromeMV3PasswordManagerCompatibilityStatus =
             target.contentScriptRequirement.requiresCSS
-                ? .unsafeWithoutReview
+                ? .partial
                 : .notRequired
         let mainWorldStatus: ChromeMV3PasswordManagerCompatibilityStatus =
             target.contentScriptRequirement.requiresMainWorld
@@ -2596,9 +2596,9 @@ enum ChromeMV3PasswordManagerCompatibilityPassRunner {
         var blockers = [
             "Product runtime remains unavailable; this is not public password-manager support.",
         ]
-        if cssStatus == .unsafeWithoutReview {
+        if cssStatus == .partial {
             blockers.append(
-                "Content-script CSS requires WebKit scoping review."
+                "Manifest content-script CSS is developer-preview scoped through WebKit user stylesheets and remains unavailable as public product support."
             )
         }
         if mainWorldStatus == .unsafeWithoutReview {
@@ -2729,8 +2729,8 @@ enum ChromeMV3PasswordManagerCompatibilityPassRunner {
         if nativeStatus == .blocked {
             return "Complete fixture-root trusted-host approval and native exchange diagnostics before any broader native messaging work."
         }
-        if cssStatus == .unsafeWithoutReview {
-            return "Review WebKit-safe CSS content-script scoping before enabling CSS attachment."
+        if cssStatus == .partial {
+            return "Continue validating manifest CSS only through the developer-preview static content-script preflight; keep scripting.insertCSS blocked."
         }
         if mainWorldStatus == .unsafeWithoutReview {
             return "Design a constrained MAIN-world bridge before accepting MAIN-world content scripts."

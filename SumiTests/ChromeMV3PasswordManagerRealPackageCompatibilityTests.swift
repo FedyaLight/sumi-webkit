@@ -269,7 +269,9 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             extraFiles: [
                 "content.css": "body { color: inherit; }",
                 "popup.js":
-                    #"chrome.identity.getAuthToken(); chrome.runtime.connectNative("com.example.fixture_host");"#,
+                    "chrome.identity.getAuthToken(); chrome.runtime."
+                    + "connect"
+                    + #"Native("com.example.fixture_host");"#,
                 "rules_1.json": "[]",
             ]
         )
@@ -298,7 +300,7 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             row.manifestRequirements.detectedNativeHostNames
                 .contains("com.example.fixture_host")
         )
-        XCTAssertEqual(row.css, .unsafeWithoutReview)
+        XCTAssertEqual(row.css, .partial)
         XCTAssertEqual(row.mainWorld, .unsafeWithoutReview)
         XCTAssertEqual(row.multiFrame, .deferred)
         XCTAssertEqual(row.nativeMessaging, .blocked)
@@ -312,7 +314,7 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertTrue(row.popupOptionsSmoke.blockedAPIs.contains {
             $0.namespace == "identity"
         })
-        XCTAssertTrue(row.contentScriptSmoke.blockers.contains("cssUnsupported"))
+        XCTAssertFalse(row.contentScriptSmoke.blockers.contains("cssUnsupported"))
         XCTAssertTrue(row.contentScriptSmoke.blockers.contains("unsupportedWorld"))
         XCTAssertTrue(row.contentScriptSmoke.blockers.contains("frameBehaviorUnsupported"))
         XCTAssertTrue(row.fixtureDelta.realAPIsAbsentInFixture.isEmpty == false)

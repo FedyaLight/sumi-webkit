@@ -2,7 +2,6 @@
 //  SettingsUtils.swift
 //  Sumi
 //
-//  Created by Maciek Bagiński on 03/08/2025.
 //
 import Foundation
 import SwiftUI

@@ -2,7 +2,6 @@
 //  FloatingBarLayoutPolicy.swift
 //  Sumi
 //
-//  Created by Codex on 23/05/2026.
 //
 
 import CoreGraphics

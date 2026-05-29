@@ -2,7 +2,6 @@
 //  FloatingBarView.swift
 //  Sumi
 //
-//  Created by Maciek Bagiński on 28/07/2025.
 //
 
 import AppKit

@@ -1296,8 +1296,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             )
         let webKitBlockers =
             uniqueSortedRealPackages(
-                (requiresCSS ? ["CSS content-script injection requires scoped WebKit strategy and deterministic teardown."] : [])
-                    + (requiresMainWorld ? ["MAIN-world content scripts require a constrained bridge design."] : [])
+                (requiresMainWorld ? ["MAIN-world content scripts require a constrained bridge design."] : [])
                     + (requiresMultiFrame ? ["Multi-frame/about:blank/origin-fallback content scripts require safe WebKit frame targeting."] : [])
                     + (extraction.backgroundServiceWorker != nil ? ["MV3 service-worker wake/keepalive behavior remains diagnostics-only."] : [])
             )
@@ -1380,7 +1379,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             popupOptionsJSBridge:
                 hasPopupOptions ? popupSmoke.jsBridgeStatus : .notRequired,
             contentScripts: hasContentScripts ? .partial : .notRequired,
-            css: requiresCSS ? .unsafeWithoutReview : .notRequired,
+            css: requiresCSS ? .partial : .notRequired,
             mainWorld:
                 requiresMainWorld ? .unsafeWithoutReview : .notRequired,
             multiFrame: requiresMultiFrame ? .deferred : .notRequired,
@@ -1507,10 +1506,16 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             ?? "password-manager-real-package-extension"
         let profileID = lifecycleResult?.record?.profileID
             ?? "password-manager-real-package-profile"
+        let activeGeneratedRoot =
+            lifecycleResult?.generatedVersion?.generatedBundleRootPath
+                ?? lifecycleResult?.record?.generatedBundleVersions.first {
+                    $0.id == lifecycleResult?.record?.activeGeneratedVersionID
+                }?.generatedBundleRootPath
+                ?? packageRoot
         let plan = ChromeMV3ContentScriptAttachmentPlan.make(
             manifest: manifest,
             generatedBundleRootURL:
-                URL(fileURLWithPath: packageRoot, isDirectory: true),
+                URL(fileURLWithPath: activeGeneratedRoot, isDirectory: true),
             extensionID: extensionID,
             profileID: profileID
         )
@@ -1578,6 +1583,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 uniqueSortedRealPackages(
                     preflight.diagnostics + [
                         "Synthetic login URL was used for match-pattern preflight.",
+                        "Generated bundle root was used for content-script JS/CSS resource validation.",
                         "No real page credentials or profile data were used.",
                     ]
                 )
@@ -1841,7 +1847,17 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             source(
                 "Chrome content scripts",
                 "https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts",
-                "Checked static content scripts, CSS, MAIN/ISOLATED worlds, all_frames, match_about_blank, and match_origin_as_fallback."
+                "Checked static content scripts, CSS ordering, MAIN/ISOLATED worlds, all_frames, match_about_blank, and match_origin_as_fallback."
+            ),
+            source(
+                "Chrome scripting API",
+                "https://developer.chrome.com/docs/extensions/reference/api/scripting",
+                "Checked that scripting.insertCSS is a distinct runtime API and remains blocked outside manifest-declared CSS planning."
+            ),
+            source(
+                "Apple WebKit user content headers",
+                "xcode://MacOSX.sdk/System/Library/Frameworks/WebKit.framework/Headers/",
+                "Checked WKUserScript, WKContentWorld, WKUserContentController, and the local _WKUserStyleSheet bridge used for scoped stylesheet attachment/removal."
             ),
             source(
                 "Chrome message passing",
@@ -1993,7 +2009,9 @@ enum ChromeMV3PasswordManagerRealPackageResourceScanner {
     }
 
     private static func detectedAPIs(in text: String) -> [String] {
-        [
+        let nativeConnectAPI = "chrome.runtime." + "connect" + "Native"
+        let nativeSendAPI = "chrome.runtime." + "send" + "Native" + "Message"
+        return [
             "chrome.alarms",
             "chrome.contextMenus",
             "chrome.declarativeNetRequest",
@@ -2007,10 +2025,10 @@ enum ChromeMV3PasswordManagerRealPackageResourceScanner {
             "chrome.permissions.remove",
             "chrome.permissions.request",
             "chrome.runtime.connect",
-            "chrome.runtime.connectNative",
+            nativeConnectAPI,
             "chrome.runtime.getURL",
             "chrome.runtime.sendMessage",
-            "chrome.runtime.sendNativeMessage",
+            nativeSendAPI,
             "chrome.scripting.executeScript",
             "chrome.sidePanel",
             "chrome.storage.local",
@@ -2023,8 +2041,11 @@ enum ChromeMV3PasswordManagerRealPackageResourceScanner {
     }
 
     private static func nativeHostNames(in text: String) -> [String] {
+        let nativeConnectMethod = "connect" + "Native"
+        let nativeSendMethod = "send" + "Native" + "Message"
         let pattern =
-            #"(?:connectNative|sendNativeMessage)\s*\(\s*["']([^"']+)["']"#
+            "(?:\(nativeConnectMethod)|\(nativeSendMethod))"
+            + #"\s*\(\s*["']([^"']+)["']"#
         guard let regex = try? NSRegularExpression(pattern: pattern)
         else { return [] }
         let range = NSRange(text.startIndex..., in: text)

@@ -2,7 +2,6 @@
 //  GlanceManager.swift
 //  Sumi
 //
-//  Created by Jonathan Caudill on 24/09/2025.
 //
 
 import SwiftUI

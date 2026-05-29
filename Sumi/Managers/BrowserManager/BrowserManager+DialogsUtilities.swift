@@ -2,7 +2,6 @@
 //  BrowserManager+DialogsUtilities.swift
 //  Sumi
 //
-//  Created by OpenAI Codex on 06/04/2026.
 //
 
 import AppKit
