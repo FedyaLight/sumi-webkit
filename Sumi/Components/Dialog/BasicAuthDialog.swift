@@ -1,11 +1,5 @@
-//
-//  BasicAuthDialog.swift
-//  Sumi
-//
-//
-
-import SwiftUI
 import Observation
+import SwiftUI
 
 @Observable
 final class BasicAuthDialogModel {
@@ -22,7 +16,38 @@ final class BasicAuthDialogModel {
     }
 }
 
-struct BasicAuthDialog: DialogPresentable {
+@MainActor
+final class BasicAuthSheetSession: Identifiable {
+    let id = UUID()
+    let model: BasicAuthDialogModel
+    private let onSubmit: (String, String, Bool) -> Void
+    private let onCancel: () -> Void
+    private var didComplete = false
+
+    init(
+        model: BasicAuthDialogModel,
+        onSubmit: @escaping (String, String, Bool) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        self.model = model
+        self.onSubmit = onSubmit
+        self.onCancel = onCancel
+    }
+
+    func submit(username: String, password: String, rememberCredential: Bool) {
+        guard didComplete == false else { return }
+        didComplete = true
+        onSubmit(username, password, rememberCredential)
+    }
+
+    func cancel() {
+        guard didComplete == false else { return }
+        didComplete = true
+        onCancel()
+    }
+}
+
+struct BasicAuthDialog: View {
     @Bindable var model: BasicAuthDialogModel
     let onSubmit: (String, String, Bool) -> Void
     let onCancel: () -> Void
@@ -37,16 +62,26 @@ struct BasicAuthDialog: DialogPresentable {
         self.onCancel = onCancel
     }
 
-    func dialogHeader() -> DialogHeader {
-        DialogHeader(
-            icon: "lock.circle",
-            title: "Authentication Required",
-            subtitle: "The server \(model.host) is requesting credentials."
+    var body: some View {
+        StandardDialog(
+            header: {
+                DialogHeader(
+                    icon: "lock.circle",
+                    title: "Authentication Required",
+                    subtitle: "The server \(model.host) is requesting credentials."
+                )
+            },
+            content: {
+                dialogContent
+            },
+            footer: {
+                dialogFooter
+            }
         )
+        .padding(20)
     }
 
-    @ViewBuilder
-    func dialogContent() -> some View {
+    private var dialogContent: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("User name")
@@ -79,7 +114,7 @@ struct BasicAuthDialog: DialogPresentable {
         .padding(.horizontal, 4)
     }
 
-    func dialogFooter() -> DialogFooter {
+    private var dialogFooter: DialogFooter {
         let canSubmit = !model.username.isEmpty && !model.password.isEmpty
 
         return DialogFooter(
@@ -104,4 +139,3 @@ struct BasicAuthDialog: DialogPresentable {
         )
     }
 }
-

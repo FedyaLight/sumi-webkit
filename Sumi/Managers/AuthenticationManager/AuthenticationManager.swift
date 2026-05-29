@@ -217,7 +217,7 @@ final class AuthenticationManager: NSObject {
             completion(credential)
         }
 
-        let dialog = BasicAuthDialog(
+        let session = BasicAuthSheetSession(
             model: model,
             onSubmit: { [weak self] username, password, remember in
                 guard let self else { return }
@@ -231,16 +231,18 @@ final class AuthenticationManager: NSObject {
                     }
                 }
 
-                manager.closeDialog()
+                manager.dismissNativeModalPresentation()
                 finish(with: URLCredential(user: username, password: password, persistence: .forSession))
             },
             onCancel: {
                 NSApp.mainWindow?.makeFirstResponder(nil)
-                manager.closeDialog()
+                manager.dismissNativeModalPresentation()
                 finish(with: nil)
             }
         )
 
-        manager.showDialog(dialog)
+        if manager.presentBasicAuthSheet(session, in: manager.windowState(containing: tab)) == false {
+            session.cancel()
+        }
     }
 }

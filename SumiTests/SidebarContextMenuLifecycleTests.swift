@@ -191,8 +191,8 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
             role: .essential,
             actions: Self.savedTabActions(
                 folders: [.init(id: Self.folderA, title: "Project")],
-                spaces: [.init(id: Self.spaceA, title: "Only Space")],
-                profiles: [.init(id: Self.profileA, title: "Only Profile")]
+                spaces: [.init(id: Self.spaceA, title: "Only Space", isSelected: true)],
+                profiles: [.init(id: Self.profileA, title: "Only Profile", isSelected: true)]
             )
         )
         let savedSnapshot = Self.snapshot(saved)
@@ -331,8 +331,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
         XCTAssertTrue(folderPinnedSnapshot.contains("Delete Pinned Tab [destructive]"))
     }
 
-    func testMoveToSpaceUsesPickerForLongDestinationLists() {
-        var didPresentPicker = false
+    func testMoveToSpaceUsesSubmenuForLongDestinationLists() {
         let spaces = (0..<10).map { index in
             SidebarContextMenuChoice(
                 id: UUID(),
@@ -343,17 +342,14 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
         let entries = makeSidebarTabContextMenuEntries(
             role: .regularTab,
             actions: Self.regularActions(
-                spaces: spaces,
-                presentSpacePicker: { didPresentPicker = true }
+                spaces: spaces
             )
         )
         let snapshot = Self.snapshot(entries)
 
-        XCTAssertTrue(snapshot.contains("Move to Space…"))
-        XCTAssertFalse(snapshot.contains("> Move to Space"))
-
-        Self.action(named: "Move to Space…", in: entries)?.action()
-        XCTAssertTrue(didPresentPicker)
+        XCTAssertFalse(snapshot.contains("Move to Space…"))
+        XCTAssertTrue(snapshot.contains("> Move to Space"))
+        XCTAssertEqual(snapshot.filter { $0.hasPrefix("  Space ") }.count, 9)
     }
 
     @MainActor
@@ -563,13 +559,11 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
     }
 
     private static func spaceDestinationAction(
-        _ choices: [SidebarContextMenuChoice],
-        presentPicker: @escaping () -> Void = {}
+        _ choices: [SidebarContextMenuChoice]
     ) -> SidebarSpaceDestinationAction {
         .init(
             choices: choices,
-            onSelect: { _ in },
-            presentPicker: presentPicker
+            onSelect: { _ in }
         )
     }
 
@@ -581,8 +575,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
         moveDown: (() -> Void)? = {},
         pinToSpace: (() -> Void)? = {},
         addToEssentials: (() -> Void)? = {},
-        closeTabsBelow: (() -> Void)? = {},
-        presentSpacePicker: @escaping () -> Void = {}
+        closeTabsBelow: (() -> Void)? = {}
     ) -> SidebarTabContextMenuActions {
         return SidebarTabContextMenuActions(
             duplicate: noop,
@@ -590,7 +583,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
             share: noop,
             rename: noop,
             folderTarget: choiceAction(folders),
-            moveToSpace: spaceDestinationAction(spaces, presentPicker: presentSpacePicker),
+            moveToSpace: spaceDestinationAction(spaces),
             profileTarget: choiceAction(profiles),
             moveUp: moveUp,
             moveDown: moveDown,

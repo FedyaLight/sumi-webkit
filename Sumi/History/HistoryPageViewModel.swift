@@ -190,9 +190,7 @@ final class HistoryPageViewModel: ObservableObject {
 
     func showBrowsingDataDialog() {
         guard let browserManager else { return }
-        browserManager.showDialog(
-            SumiBrowsingDataDialog(browserManager: browserManager)
-        )
+        browserManager.presentBrowsingDataSheet(windowState: windowState)
     }
 
     private var trimmedSearchText: String {

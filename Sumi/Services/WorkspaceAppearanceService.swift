@@ -43,8 +43,7 @@ final class WorkspaceAppearanceService {
         let syncWorkspaceThemeAcrossWindows: @MainActor (Space, Bool) -> Void
         let scheduleStructuralPersistence: @MainActor () -> Void
         let presentPicker: @MainActor (WorkspaceThemePickerSession, BrowserWindowState) -> Void
-        let showDialog: @MainActor (AnyView, SidebarTransientPresentationSource?) -> Void
-        let closeDialog: @MainActor () -> Void
+        let presentNotice: @MainActor (BrowserNoticeSheetModel, SidebarTransientPresentationSource?) -> Void
     }
 
     func showGradientEditor(
@@ -52,27 +51,12 @@ final class WorkspaceAppearanceService {
         preferredSource: SidebarTransientPresentationSource? = nil
     ) {
         guard let space = context.currentSpace() else {
-            context.showDialog(
-                AnyView(
-                    StandardDialog(
-                        header: {
-                            DialogHeader(
-                                icon: "paintpalette",
-                                title: "No Space Available",
-                                subtitle: "Create a space to customize its gradient."
-                            )
-                        },
-                        content: {
-                            Color.clear.frame(height: 0)
-                        },
-                        footer: {
-                            DialogFooter(rightButtons: [
-                                DialogButton(text: "OK", variant: .primary) {
-                                    context.closeDialog()
-                                }
-                            ])
-                        }
-                    )
+            context.presentNotice(
+                BrowserNoticeSheetModel(
+                    icon: "paintpalette",
+                    title: "No Space Available",
+                    subtitle: "Create a space to customize its gradient.",
+                    message: "Create a space before editing a workspace theme."
                 ),
                 preferredSource
             )
@@ -84,27 +68,12 @@ final class WorkspaceAppearanceService {
             preferredWindowID: preferredSource?.windowID,
             using: context
         ) else {
-            context.showDialog(
-                AnyView(
-                    StandardDialog(
-                        header: {
-                            DialogHeader(
-                                icon: "paintpalette",
-                                title: "No Browser Window",
-                                subtitle: "Open a browser window for this workspace to edit its theme."
-                            )
-                        },
-                        content: {
-                            Color.clear.frame(height: 0)
-                        },
-                        footer: {
-                            DialogFooter(rightButtons: [
-                                DialogButton(text: "OK", variant: .primary) {
-                                    context.closeDialog()
-                                }
-                            ])
-                        }
-                    )
+            context.presentNotice(
+                BrowserNoticeSheetModel(
+                    icon: "paintpalette",
+                    title: "No Browser Window",
+                    subtitle: "Open a browser window for this workspace to edit its theme.",
+                    message: "Open a browser window before editing a workspace theme."
                 ),
                 preferredSource
             )

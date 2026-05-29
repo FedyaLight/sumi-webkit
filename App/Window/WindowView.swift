@@ -16,8 +16,6 @@ private enum WindowTransientChromeZIndex {
     static let collapsedSidebar: Double = 8_750
     /// Floating bar must stay above Glance so URL editing keeps targeting the preview page.
     static let floatingBar: Double = 9_000
-    /// Modal dialogs (quit, settings paths, etc.) must stay above app chrome.
-    static let dialog: Double = 11_000
     /// Drag ghost only.
     static let sidebarDragPreview: Double = 20_000
 }
@@ -93,11 +91,6 @@ struct WindowView: View {
                 .zIndex(WindowTransientChromeZIndex.floatingBar)
             }
 
-                chromeThemeScope {
-                    DialogView()
-                    .zIndex(WindowTransientChromeZIndex.dialog)
-            }
-
             // Glance overlay for external link previews
                 if shouldRenderGlanceOverlay {
                     chromeThemeScope {
@@ -140,6 +133,9 @@ struct WindowView: View {
         // System feedback toast - top trailing corner
         .overlay(alignment: .topTrailing) {
             toastOverlay
+        }
+        .sheet(item: nativeModalPresentationBinding) { presentation in
+            nativeModalContent(for: presentation)
         }
         // Lifecycle management
         .onAppear {
@@ -406,7 +402,55 @@ struct WindowView: View {
     }
 
     private var transientChromeModalSuppressed: Bool {
-        browserManager.dialogManager.isPresented(in: windowState.window)
+        browserManager.isNativeModalPresented(in: windowState.id)
+    }
+
+    private var nativeModalPresentationBinding: Binding<BrowserNativeModalPresentation?> {
+        Binding(
+            get: {
+                guard let presentation = browserManager.nativeModalPresentation,
+                      presentation.windowID == windowState.id
+                else {
+                    return nil
+                }
+                return presentation
+            },
+            set: { newValue in
+                if newValue == nil {
+                    browserManager.nativeModalPresentationBindingDismissed(
+                        for: windowState.id
+                    )
+                }
+            }
+        )
+    }
+
+    @ViewBuilder
+    private func nativeModalContent(
+        for presentation: BrowserNativeModalPresentation
+    ) -> some View {
+        switch presentation.kind {
+        case .browsingData:
+            SumiBrowsingDataDialog(browserManager: browserManager)
+        case .basicAuth(let session):
+            BasicAuthDialog(
+                model: session.model,
+                onSubmit: { username, password, rememberCredential in
+                    session.submit(
+                        username: username,
+                        password: password,
+                        rememberCredential: rememberCredential
+                    )
+                },
+                onCancel: {
+                    session.cancel()
+                }
+            )
+        case .notice(let notice):
+            BrowserNoticeSheet(notice: notice) {
+                browserManager.dismissNativeModalPresentation()
+            }
+        }
     }
 
     private var appKitGlobalAppearance: NSAppearance {

@@ -122,15 +122,8 @@ extension BrowserManager {
             presentPicker: { [weak self] session, windowState in
                 self?.presentWorkspaceThemePicker(session, in: windowState)
             },
-            showDialog: { [weak self] dialog, source in
-                if let source {
-                    self?.showDialog(dialog, source: source)
-                } else {
-                    self?.showDialog(dialog)
-                }
-            },
-            closeDialog: { [weak self] in
-                self?.closeDialog()
+            presentNotice: { [weak self] notice, source in
+                self?.presentNoticeSheet(notice, source: source)
             }
         )
     }

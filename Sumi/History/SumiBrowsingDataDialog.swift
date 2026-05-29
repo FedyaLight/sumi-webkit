@@ -387,7 +387,7 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
     }
 
     func cancel() {
-        browserManager?.closeDialog()
+        browserManager?.dismissNativeModalPresentation()
     }
 
     func delete() {
@@ -447,7 +447,7 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
         }
 
         isDeleting = false
-        browserManager.closeDialog()
+        browserManager.dismissNativeModalPresentation()
     }
 
     private var regularProfileCount: Int {

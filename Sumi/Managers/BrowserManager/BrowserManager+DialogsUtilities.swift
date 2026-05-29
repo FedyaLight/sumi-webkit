@@ -65,7 +65,7 @@ private final class SidebarSharingServicePickerBridge: NSObject, @preconcurrency
 
 @MainActor
 extension BrowserManager {
-    private func dialogPresentationWindow(
+    private func modalPresentationWindow(
         for source: SidebarTransientPresentationSource? = nil
     ) -> NSWindow? {
         source?.window?.parent
@@ -75,7 +75,7 @@ extension BrowserManager {
             ?? NSApp.mainWindow
     }
 
-    // MARK: - Dialog Methods
+    // MARK: - Native Modal Presentation
 
     func requestCollapsedSidebarOverlayDismissal() {
         NotificationCenter.default.post(
@@ -90,30 +90,142 @@ extension BrowserManager {
         NSApplication.shared.terminate(nil)
     }
 
-    func showDialog<Content: View>(_ dialog: Content) {
-        dialogManager.showDialog(dialog, in: dialogPresentationWindow())
+    func presentBrowsingDataSheet(windowState: BrowserWindowState? = nil) {
+        _ = presentNativeModal(.browsingData, windowState: windowState)
     }
 
-    func showDialog<Content: View>(
-        _ dialog: Content,
-        source: SidebarTransientPresentationSource
-    ) {
-        dialogManager.showDialog(
-            dialog,
-            in: dialogPresentationWindow(for: source),
-            source: source
+    @discardableResult
+    func presentBasicAuthSheet(
+        _ session: BasicAuthSheetSession,
+        in windowState: BrowserWindowState?
+    ) -> Bool {
+        presentNativeModal(
+            .basicAuth(session),
+            windowState: windowState,
+            onDismiss: {
+                session.cancel()
+            }
         )
     }
 
-    func closeDialog() {
-        dialogManager.closeDialog()
+    func presentNoticeSheet(
+        _ notice: BrowserNoticeSheetModel,
+        source: SidebarTransientPresentationSource? = nil
+    ) {
+        _ = presentNativeModal(.notice(notice), source: source)
+    }
+
+    func dismissNativeModalPresentation() {
+        dismissNativeModalPresentation(
+            for: nil,
+            reason: "BrowserManager.dismissNativeModalPresentation",
+            invokeOnDismiss: false
+        )
+    }
+
+    func nativeModalPresentationBindingDismissed(for windowID: UUID) {
+        dismissNativeModalPresentation(
+            for: windowID,
+            reason: "BrowserManager.nativeModalPresentationBindingDismissed",
+            invokeOnDismiss: true
+        )
+    }
+
+    func isNativeModalPresented(in windowID: UUID?) -> Bool {
+        guard let presentation = nativeModalPresentation else { return false }
+        guard let windowID else { return true }
+        return presentation.windowID == windowID
+    }
+
+    func isNativeModalPresented(in window: NSWindow?) -> Bool {
+        guard let presentation = nativeModalPresentation else { return false }
+        guard let window else { return true }
+        if let presentedWindow = presentation.window {
+            return presentedWindow === window
+        }
+        return windowRegistry?.windows[presentation.windowID]?.window === window
+    }
+
+    private func prepareForNativeModalPresentation() {
+        requestCollapsedSidebarOverlayDismissal()
+        dismissWorkspaceThemePickerIfNeededDiscarding()
+    }
+
+    @discardableResult
+    private func presentNativeModal(
+        _ kind: BrowserNativeModalKind,
+        windowState: BrowserWindowState? = nil,
+        source: SidebarTransientPresentationSource? = nil,
+        onDismiss: (() -> Void)? = nil
+    ) -> Bool {
+        prepareForNativeModalPresentation()
+        dismissNativeModalPresentation(
+            for: nil,
+            reason: "BrowserManager.presentNativeModalReplacingExisting",
+            invokeOnDismiss: true
+        )
+
+        let targetWindowState = windowState ?? windowRegistry?.activeWindow
+        let windowID = source?.windowID ?? targetWindowState?.id
+        guard let windowID else { return false }
+
+        let window = source?.window?.parent
+            ?? source?.window
+            ?? targetWindowState?.window
+            ?? modalPresentationWindow(for: source)
+        let transientSessionToken: SidebarTransientSessionToken?
+        if let source {
+            transientSessionToken = source.coordinator?.beginSession(
+                kind: .dialog,
+                source: source,
+                path: "BrowserManager.presentNativeModal"
+            )
+        } else {
+            transientSessionToken = nil
+        }
+
+        nativeModalPresentation = BrowserNativeModalPresentation(
+            windowID: windowID,
+            window: window,
+            kind: kind,
+            source: source,
+            transientSessionToken: transientSessionToken,
+            onDismiss: onDismiss
+        )
+        return true
+    }
+
+    private func dismissNativeModalPresentation(
+        for windowID: UUID?,
+        reason: String,
+        invokeOnDismiss: Bool
+    ) {
+        guard let presentation = nativeModalPresentation else { return }
+        guard windowID == nil || presentation.windowID == windowID else { return }
+
+        nativeModalPresentation = nil
+
+        if let transientSessionToken = presentation.transientSessionToken,
+           let coordinator = presentation.source?.coordinator
+        {
+            coordinator.finishSession(
+                transientSessionToken,
+                reason: reason
+            )
+        } else {
+            SidebarHostRecoveryCoordinator.shared.recover(in: presentation.window)
+        }
+
+        if invokeOnDismiss {
+            presentation.onDismiss?()
+        }
     }
 
     func presentSharingServicePicker(
         _ items: [Any],
         source: SidebarTransientPresentationSource
     ) {
-        guard let contentView = source.window?.contentView ?? dialogPresentationWindow(for: source)?.contentView else {
+        guard let contentView = source.window?.contentView ?? modalPresentationWindow(for: source)?.contentView else {
             return
         }
 

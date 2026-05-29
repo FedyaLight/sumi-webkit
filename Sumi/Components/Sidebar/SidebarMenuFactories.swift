@@ -56,7 +56,6 @@ struct SidebarChoiceMenuAction {
 struct SidebarSpaceDestinationAction {
     let choices: [SidebarContextMenuChoice]
     let onSelect: (UUID) -> Void
-    let presentPicker: () -> Void
 }
 
 struct SidebarSavedURLDriftActions {
@@ -100,8 +99,6 @@ private enum SidebarChoiceSubmenuAvailability {
         }
     }
 }
-
-private let sidebarInlineSpaceDestinationLimit = 8
 
 private func joinSidebarMenuSections(_ sections: [[SidebarContextMenuEntry]]) -> [SidebarContextMenuEntry] {
     sections
@@ -214,18 +211,7 @@ private func sidebarSpaceDestinationEntry(action: SidebarSpaceDestinationAction?
     guard let action else { return nil }
 
     let selectableChoices = action.choices.filter { $0.isSelected == false }
-    guard action.choices.count > 1, selectableChoices.isEmpty == false else { return nil }
-
-    if selectableChoices.count > sidebarInlineSpaceDestinationLimit {
-        return .action(
-            .init(
-                title: "Move to Space…",
-                systemImage: "arrow.right",
-                classification: .structuralMutation,
-                onAction: action.presentPicker
-            )
-        )
-    }
+    guard selectableChoices.isEmpty == false else { return nil }
 
     return .submenu(
         title: "Move to Space",
