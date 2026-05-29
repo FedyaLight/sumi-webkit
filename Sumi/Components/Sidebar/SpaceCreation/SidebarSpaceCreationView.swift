@@ -133,15 +133,12 @@ struct SidebarSpaceCreationView: View {
 
     private var profileRow: some View {
         HStack(spacing: 10) {
-            SumiProfileIconView(
-                icon: currentProfileIcon,
-                font: .system(size: 15, weight: .medium)
-            )
-                .foregroundStyle(tokens.secondaryText)
+            Color.clear
                 .frame(
                     width: SidebarSpaceCreationMetrics.iconWellSize,
                     height: SidebarSpaceCreationMetrics.iconWellSize
                 )
+                .accessibilityHidden(true)
 
             Text("Profile")
                 .font(.system(size: 13, weight: .medium))
@@ -154,7 +151,7 @@ struct SidebarSpaceCreationView: View {
                     Button {
                         selectExistingProfile(profile.id)
                     } label: {
-                        SumiProfileMenuLabel(name: profile.name, icon: profile.icon)
+                        Text(profileMenuItemTitle(for: profile))
                     }
                 }
 
@@ -261,6 +258,10 @@ struct SidebarSpaceCreationView: View {
                 ?? SumiProfileIcon.defaultIcon
         }
         return profile.icon
+    }
+
+    private func profileMenuItemTitle(for profile: Profile) -> String {
+        "\(SumiProfileIcon.storedValue(profile.icon))  \(profile.name)"
     }
 
     private var currentProfile: Profile? {
