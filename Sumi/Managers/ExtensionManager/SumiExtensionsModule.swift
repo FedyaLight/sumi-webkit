@@ -98,6 +98,8 @@ final class SumiExtensionsModule {
             ChromeMV3PermissionImplementationReport?
         private var lastChromeMV3PasswordManagerFixtureReport:
             ChromeMV3PasswordManagerFixtureReport?
+        private var lastChromeMV3PasswordManagerCompatibilityReport:
+            ChromeMV3PasswordManagerCompatibilityReport?
         private var lastChromeMV3ExtensionEventAPIsReport:
             ChromeMV3ExtensionEventAPIsReport?
         private var lastChromeMV3NetworkCompatibilityReport:
@@ -221,6 +223,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3PermissionsAPIContractReport = nil
                     lastChromeMV3PermissionImplementationReport = nil
                     lastChromeMV3PasswordManagerFixtureReport = nil
+                    lastChromeMV3PasswordManagerCompatibilityReport = nil
                     lastChromeMV3NetworkCompatibilityReport = nil
                     lastChromeMV3SidePanelOffscreenIdentityReport = nil
                     lastChromeMV3EndToEndInstallDiagnosticsReport = nil
@@ -2943,7 +2946,26 @@ final class SumiExtensionsModule {
         func tearDownChromeMV3PasswordManagerFixtureIfEnabled() -> Bool {
             guard isEnabled else { return false }
             lastChromeMV3PasswordManagerFixtureReport = nil
+            lastChromeMV3PasswordManagerCompatibilityReport = nil
             return true
+        }
+
+        @available(macOS 15.5, *)
+        func chromeMV3PasswordManagerCompatibilityPassIfEnabled(
+            rootURL: URL,
+            explicitPackageRootURL: URL? = nil,
+            writeReport: Bool = true
+        ) -> ChromeMV3PasswordManagerCompatibilityReport? {
+            guard isEnabled else { return nil }
+
+            let report =
+                ChromeMV3PasswordManagerCompatibilityPassRunner.run(
+                    rootURL: rootURL,
+                    explicitPackageRootURL: explicitPackageRootURL,
+                    writeReport: writeReport
+                )
+            lastChromeMV3PasswordManagerCompatibilityReport = report
+            return report
         }
 
         @available(macOS 15.5, *)
@@ -4806,7 +4828,9 @@ final class SumiExtensionsModule {
                 sidePanelOffscreenIdentityDiagnosticsAvailable:
                     lastChromeMV3SidePanelOffscreenIdentityReport != nil,
                 passwordManagerDiagnosticsAvailable:
-                    lastChromeMV3PasswordManagerFixtureReport != nil,
+                    lastChromeMV3PasswordManagerFixtureReport != nil
+                        || lastChromeMV3PasswordManagerCompatibilityReport
+                            != nil,
                 diagnostics: [
                     "SumiExtensionsModule supplied DEBUG/internal diagnostic availability only.",
                     "Product normal-tab runtime remains unavailable.",
