@@ -817,6 +817,8 @@ final class ChromeMV3ReadinessFixturePipelineTests: XCTestCase {
                         != "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift"
                     && $0.relativePath
                         != "Sumi/Models/Extension/ChromeMV3/ChromeMV3ContentScriptProductAttachment.swift"
+                    && $0.relativePath
+                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerRealPackageCompatibility.swift"
             }
             .map(\.contents)
             .joined(separator: "\n")

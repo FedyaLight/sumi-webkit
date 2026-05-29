@@ -2861,6 +2861,21 @@ struct ChromeMV3PasswordManagerCompatibilityManagerSummary:
     var nativeHostRequired: Bool
     var nativeHostName: String?
     var trustedHostState: ChromeMV3NativeTrustedHostTrustState
+    var nativeFixtureRootPath: String?
+    var nativeFixtureRootState:
+        ChromeMV3PasswordManagerRealPackageNativeHostFixtureRootState?
+    var nativeManifestState:
+        ChromeMV3PasswordManagerRealPackageNativeHostManifestState?
+    var nativeAllowedOriginsState:
+        ChromeMV3PasswordManagerRealPackageAllowedOriginsState?
+    var nativeSendNativeMessageReadiness: String?
+    var nativeConnectNativeReadiness: String?
+    var nativeFixtureExchangeState:
+        ChromeMV3PasswordManagerRealPackageNativeHostExchangeState?
+    var nativeBlockerState:
+        ChromeMV3PasswordManagerRealPackageNativeHostReadinessState?
+    var nativeRemediation: String?
+    var realVendorHostDiscoveryBlockedDisclaimer: String?
     var reportFileName: String
     var realPackageTrialStatus:
         ChromeMV3PasswordManagerCompatibilityStatus?
@@ -2930,15 +2945,45 @@ struct ChromeMV3PasswordManagerCompatibilityManagerSummary:
             selection: selection,
             lifecycleResult: syntheticLifecycleResult
         )
+        let nativeReadiness =
+            realRow?.nativeMessagingSmoke.hostReadiness.first
+        let realNativeSmoke = realRow?.nativeMessagingSmoke
         return ChromeMV3PasswordManagerCompatibilityManagerSummary(
             targetKind: target.kind,
             targetDisplayName: target.displayName,
             targetStatus: row.productReadiness,
             nativeHostRequired:
-                target.nativeHostRequirement.required
-                    || target.nativeHostRequirement.optional,
-            nativeHostName: target.nativeHostRequirement.hostName,
-            trustedHostState: .unknown,
+                realNativeSmoke.map { $0.required || $0.optional }
+                    ?? (target.nativeHostRequirement.required
+                        || target.nativeHostRequirement.optional),
+            nativeHostName:
+                nativeReadiness?.hostName
+                    ?? realNativeSmoke?.hostNames.first
+                    ?? target.nativeHostRequirement.hostName,
+            trustedHostState:
+                nativeReadiness?.trustedHostApprovalState ?? .unknown,
+            nativeFixtureRootPath:
+                realNativeSmoke?.trustedFixtureHostRootPath,
+            nativeFixtureRootState:
+                realNativeSmoke?.fixtureRootState,
+            nativeManifestState:
+                nativeReadiness?.manifestState,
+            nativeAllowedOriginsState:
+                nativeReadiness?.allowedOriginsState,
+            nativeSendNativeMessageReadiness:
+                realNativeSmoke?.sendNativeMessageReadiness,
+            nativeConnectNativeReadiness:
+                realNativeSmoke?.connectNativeReadiness,
+            nativeFixtureExchangeState:
+                nativeReadiness?.exchangeResult.state,
+            nativeBlockerState:
+                realNativeSmoke?.exactBlocker,
+            nativeRemediation:
+                realNativeSmoke?.remediation,
+            realVendorHostDiscoveryBlockedDisclaimer:
+                realNativeSmoke == nil
+                    ? nil
+                    : "Real vendor host discovery and launch remain blocked unless a copied fixture host is explicitly configured and approved.",
             reportFileName:
                 ChromeMV3PasswordManagerCompatibilityReport.reportFileName,
             realPackageTrialStatus: realRow?.productReadiness,
@@ -2955,7 +3000,12 @@ struct ChromeMV3PasswordManagerCompatibilityManagerSummary:
                         ?? realRow?.fixtureDelta.newBlockers
                         ?? []
                 ),
-            blockerSummary: row.blockerSummary,
+            blockerSummary:
+                uniqueSortedPasswordManager(
+                    row.blockerSummary
+                        + (realRow?.nativeHostBlockers ?? [])
+                        + (realRow?.blockerSummary ?? [])
+                ),
             nextRecommendedFix: row.nextRecommendedFix,
             notPublicSupportDisclaimer:
                 row.notPublicSupportDisclaimer

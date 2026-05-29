@@ -380,7 +380,9 @@ final class ChromeMV3RuntimeMinimalSmokeHarnessTests: XCTestCase {
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3PopupOptionsJSBridge.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3ContentScriptProductAttachment.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerRealPackageCompatibility.swift",
             "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift",
+            "SumiTests/ChromeMV3PasswordManagerRealPackageCompatibilityTests.swift",
         ]
         let joined = (chromeMV3Source + testSource)
             .filter { source in

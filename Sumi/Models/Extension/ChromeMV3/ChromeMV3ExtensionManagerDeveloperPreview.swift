@@ -975,10 +975,23 @@ struct ChromeMV3ExtensionManagerTrustedNativeHostPanel:
         let nativeGranted =
             manifestSummary.permissions.contains("nativeMessaging")
                 || grantedOptional.contains("nativeMessaging")
-        let fixtureRoot = rootURL.appendingPathComponent(
-            "NativeMessagingFixtureHosts",
-            isDirectory: true
-        )
+        let realPackageReport =
+            ChromeMV3PasswordManagerRealPackageCompatibilityReportWriter
+            .latestReport(rootURL: rootURL)
+        let realPackageRow = realPackageReport?.rows.first {
+            trustedNativeHostRealPackageRow(
+                $0,
+                matches: record,
+                in: realPackageReport
+            )
+        }
+        let fixtureRoot =
+            realPackageRow?.nativeMessagingSmoke.trustedFixtureHostRootPath
+            .map { URL(fileURLWithPath: $0, isDirectory: true) }
+                ?? rootURL.appendingPathComponent(
+                    "NativeMessagingFixtureHosts",
+                    isDirectory: true
+                )
         let lookupPolicy = ChromeMV3NativeHostLookupPolicy.macOS(
             explicitTestRootPath: fixtureRoot.path,
             extensionModuleEnabled: gate.managerAvailableInDeveloperPreview
@@ -996,12 +1009,18 @@ struct ChromeMV3ExtensionManagerTrustedNativeHostPanel:
             profileID: record.profileID,
             extensionID: record.extensionID
         )
+        let realPackageHostNames =
+            realPackageRow?.nativeMessagingSmoke.hostNames ?? []
         let hostNames =
             nativeDeclared
-                ? [
-                    ChromeMV3NativeMessagingFixtureHostBuilder
-                        .passwordManagerFixtureHostName,
-                ]
+                ? (
+                    realPackageHostNames.isEmpty
+                        ? [
+                            ChromeMV3NativeMessagingFixtureHostBuilder
+                                .passwordManagerFixtureHostName,
+                        ]
+                        : realPackageHostNames
+                )
                 : []
         let requirements = hostNames.map { hostName in
             requirement(
@@ -1043,12 +1062,50 @@ struct ChromeMV3ExtensionManagerTrustedNativeHostPanel:
                             nativeDeclared
                                 ? "nativeMessaging permission is declared or optional in the extension manifest."
                                 : "nativeMessaging permission is not declared.",
+                            realPackageRow == nil
+                                ? "Trusted native host panel uses the default developer-preview fixture root."
+                                : "Trusted native host panel uses real-package fixture root diagnostics.",
                             "Trusted native host controls require explicit developer-preview user action.",
                             "Approval controls do not launch native hosts.",
                             "Arbitrary native host launch and arbitrary directory scanning remain disabled.",
                         ]
                 )
         )
+    }
+
+    private static func trustedNativeHostRealPackageRow(
+        _ row: ChromeMV3PasswordManagerRealPackageCompatibilityRow,
+        matches record: ChromeMV3ExtensionLifecycleRecord,
+        in report: ChromeMV3PasswordManagerRealPackageCompatibilityReport?
+    ) -> Bool {
+        if row.packagePath == record.sourcePath {
+            return true
+        }
+        if let configuration = report?.targetConfigurations.first(where: {
+            $0.targetID == row.targetID
+        }) {
+            if let unpacked = configuration.localUnpackedPath,
+               record.sourcePath == unpacked
+            {
+                return true
+            }
+            if record.sourcePath.hasPrefix(
+                configuration.explicitAllowedLocalRoot + "/"
+            ) {
+                return true
+            }
+        }
+        let haystack = "\(record.displayName) \(record.sourcePath)"
+            .lowercased()
+        switch row.targetClass {
+        case .bitwarden:
+            return haystack.contains("bitwarden")
+        case .onePassword:
+            return haystack.contains("1password")
+                || haystack.contains("onepassword")
+        case .protonPass:
+            return haystack.contains("proton")
+        }
     }
 
     private static func requirement(
@@ -2518,6 +2575,35 @@ struct ChromeMV3ExtensionManagerView: View {
                             "Trust",
                             summary.trustedHostState.rawValue
                         )
+                        if let rootState = summary.nativeFixtureRootState {
+                            fact("Fixture Root", rootState.rawValue)
+                        }
+                        if let manifestState = summary.nativeManifestState {
+                            fact("Host Manifest", manifestState.rawValue)
+                        }
+                        if let origins =
+                            summary.nativeAllowedOriginsState
+                        {
+                            fact("Allowed Origins", origins.rawValue)
+                        }
+                        if let send =
+                            summary.nativeSendNativeMessageReadiness
+                        {
+                            fact("send" + "NativeMessage", send)
+                        }
+                        if let connect =
+                            summary.nativeConnectNativeReadiness
+                        {
+                            fact("connect" + "Native", connect)
+                        }
+                        if let exchange =
+                            summary.nativeFixtureExchangeState
+                        {
+                            fact("Fixture Exchange", exchange.rawValue)
+                        }
+                        if let blocker = summary.nativeBlockerState {
+                            fact("Native Blocker", blocker.rawValue)
+                        }
                         if let source = summary.realPackageSource {
                             fact("Package Source", source.rawValue)
                         }
@@ -2542,6 +2628,20 @@ struct ChromeMV3ExtensionManagerView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    if let remediation = summary.nativeRemediation {
+                        Text(remediation)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let disclaimer =
+                        summary.realVendorHostDiscoveryBlockedDisclaimer
+                    {
+                        Text(disclaimer)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     Text(summary.notPublicSupportDisclaimer)
                         .font(.caption)
                         .foregroundStyle(.secondary)
