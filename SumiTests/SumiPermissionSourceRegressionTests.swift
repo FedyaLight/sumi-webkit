@@ -119,7 +119,6 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
             "Sumi/Permissions/UI/SumiSiteSettingsCategoryView.swift",
             "Sumi/Permissions/UI/SumiSiteSettingsSiteDetailView.swift",
             "Sumi/Permissions/UI/SumiSiteSettingsRows.swift",
-            "Sumi/Permissions/UI/SumiCurrentSitePermissionsView.swift",
             "Sumi/Permissions/UI/SumiCurrentSitePermissionsViewModel.swift",
         ].map(sourceFile).joined(separator: "\n")
         let runtimeSources = try [

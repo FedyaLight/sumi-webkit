@@ -296,17 +296,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { webViewRuntime.webViewConfigurationOverride }
         set { webViewRuntime.webViewConfigurationOverride = newValue }
     }
-    var adblockAppliedAttachmentState: SumiAdblockAttachmentState? {
-        get { webViewRuntime.adblockAppliedAttachmentState }
-        set { webViewRuntime.adblockAppliedAttachmentState = newValue }
-    }
-    var adblockReloadRequirement: SumiAdblockReloadRequirement? {
-        get { webViewRuntime.adblockReloadRequirement }
-        set { webViewRuntime.adblockReloadRequirement = newValue }
-    }
-    var isAdblockReloadRequired: Bool {
-        adblockReloadRequirement != nil
-    }
+
     var protectionAppliedAttachmentState: SumiProtectionAttachmentState? {
         get { webViewRuntime.protectionAppliedAttachmentState }
         set { webViewRuntime.protectionAppliedAttachmentState = newValue }
@@ -934,64 +924,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         isDisplayingPDFDocument = false
     }
 
-    func adblockDesiredAttachmentState(
-        for targetURL: URL?
-    ) -> SumiAdblockAttachmentState {
-        guard let module = browserManager?.adBlockingModule else {
-            return .disabled(siteHost: nil)
-        }
-        return module.desiredAttachmentState(for: targetURL)
-    }
 
-    func noteAdblockAttachmentApplied(
-        _ state: SumiAdblockAttachmentState
-    ) {
-        adblockAppliedAttachmentState = state
-    }
-
-    func markAdblockReloadRequiredIfNeeded(
-        afterChangingOverrideFor changedURL: URL?
-    ) {
-        guard let module = browserManager?.adBlockingModule,
-              let changedHost = module.normalizedSiteHost(for: changedURL),
-              changedHost == module.normalizedSiteHost(for: url)
-        else { return }
-
-        updateAdblockReloadRequirementForCurrentSite()
-    }
-
-    func updateAdblockReloadRequirementForCurrentSite() {
-        guard existingWebView != nil else {
-            clearAdblockReloadRequirement()
-            return
-        }
-
-        let desiredState = adblockDesiredAttachmentState(for: url)
-        guard desiredState.siteHost != nil,
-              let appliedState = adblockAppliedAttachmentState,
-              appliedState != desiredState
-        else {
-            clearAdblockReloadRequirement()
-            return
-        }
-
-        setAdblockReloadRequirement(
-            SumiAdblockReloadRequirement(
-                siteHost: desiredState.siteHost,
-                desiredAttachmentState: desiredState
-            )
-        )
-    }
-
-    func clearAdblockReloadRequirementIfResolved(for committedURL: URL) {
-        guard let requirement = adblockReloadRequirement else { return }
-
-        let committedState = adblockDesiredAttachmentState(for: committedURL)
-        if committedState.siteHost != requirement.siteHost
-            || adblockAppliedAttachmentState?.isEnabled == committedState.isEnabled {
-            clearAdblockReloadRequirement()
-        }
-    }
 
     func protectionDesiredAttachmentState(
         for targetURL: URL?
@@ -1113,20 +1046,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         updateAutoplayReloadRequirementForCurrentSite()
     }
 
-    func adblockAttachmentRequiresNormalWebViewRebuild(
-        for targetURL: URL?
-    ) -> Bool {
-        guard existingWebView != nil,
-              webViewConfigurationOverride == nil,
-              !isPopupHost
-        else { return false }
 
-        let desiredState = adblockDesiredAttachmentState(for: targetURL)
-        guard let appliedState = adblockAppliedAttachmentState else {
-            return desiredState.isEnabled
-        }
-        return appliedState != desiredState
-    }
 
     func protectionAttachmentRequiresNormalWebViewRebuild(
         for targetURL: URL?
@@ -1156,59 +1076,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         return currentState != desiredPolicy.runtimeState
     }
 
-    @discardableResult
-    func rebuildNormalWebViewForAdblockIfNeeded(
-        targetURL: URL?,
-        reason: String
-    ) -> Bool {
-        guard adblockAttachmentRequiresNormalWebViewRebuild(for: targetURL),
-              let previousWebView = existingWebView
-        else { return false }
-
-        let coordinator = browserManager?.webViewCoordinator
-        let previousWindowId = primaryWindowId ?? coordinator?.windowID(containing: previousWebView)
-        let hadTrackedWebViews = coordinator?.windowIDs(for: id).isEmpty == false
-        let previousAppliedState = adblockAppliedAttachmentState
-
-        guard let replacementWebView = makeNormalTabWebView(reason: reason) else {
-            return false
-        }
-        browserManager?.extensionsModule
-            .noteChromeMV3ContentScriptLifecycleEntrypointIfLoaded(
-                self,
-                webView: previousWebView,
-                url: targetURL ?? previousWebView.url,
-                entrypoint: .webViewReplaced,
-                reason: "Tab.rebuildNormalWebViewForAdblockIfNeeded.\(reason)"
-            )
-
-        invalidateCurrentPermissionPageForWebViewReplacement(reason: reason)
-
-        let removedTrackedWebViews = coordinator?.removeAllWebViews(for: self) ?? false
-        if hadTrackedWebViews && !removedTrackedWebViews {
-            adblockAppliedAttachmentState = previousAppliedState
-            return false
-        }
-
-        if !removedTrackedWebViews {
-            cleanupCloneWebView(previousWebView)
-            _webView = nil
-            primaryWindowId = nil
-        }
-
-        if let previousWindowId {
-            coordinator?.setWebView(replacementWebView, for: id, in: previousWindowId)
-            assignWebViewToWindow(replacementWebView, windowId: previousWindowId)
-            if let windowState = browserManager?.windowRegistry?.windows[previousWindowId] {
-                browserManager?.refreshCompositor(for: windowState)
-            }
-        } else {
-            _webView = replacementWebView
-        }
-
-        updateAutoplayReloadRequirementForCurrentSite()
-        return true
-    }
 
     @discardableResult
     func rebuildNormalWebViewForProtectionIfNeeded(
@@ -1224,7 +1091,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         let previousWindowId = primaryWindowId ?? coordinator?.windowID(containing: previousWebView)
         let hadTrackedWebViews = coordinator?.windowIDs(for: id).isEmpty == false
         let previousProtectionState = protectionAppliedAttachmentState
-        let previousAdblockState = adblockAppliedAttachmentState
 
         guard let replacementWebView = makeNormalTabWebView(reason: reason) else {
             return false
@@ -1243,7 +1109,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         let removedTrackedWebViews = coordinator?.removeAllWebViews(for: self) ?? false
         if hadTrackedWebViews && !removedTrackedWebViews {
             protectionAppliedAttachmentState = previousProtectionState
-            adblockAppliedAttachmentState = previousAdblockState
             return false
         }
 
@@ -1327,28 +1192,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         )
     }
 
-    private func setAdblockReloadRequirement(
-        _ requirement: SumiAdblockReloadRequirement
-    ) {
-        guard adblockReloadRequirement != requirement else { return }
-        adblockReloadRequirement = requirement
-        notifyAdblockReloadRequirementChanged()
-    }
-
-    private func clearAdblockReloadRequirement() {
-        guard adblockReloadRequirement != nil else { return }
-        adblockReloadRequirement = nil
-        notifyAdblockReloadRequirementChanged()
-    }
-
-    private func notifyAdblockReloadRequirementChanged() {
-        objectWillChange.send()
-        NotificationCenter.default.post(
-            name: .sumiTabNavigationStateDidChange,
-            object: self,
-            userInfo: ["tabId": id]
-        )
-    }
 
     private func setProtectionReloadRequirement(
         _ requirement: SumiProtectionReloadRequirement
