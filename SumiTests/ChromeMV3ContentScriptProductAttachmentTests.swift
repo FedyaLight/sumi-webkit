@@ -1,5 +1,8 @@
 import Foundation
 import XCTest
+#if canImport(WebKit)
+import WebKit
+#endif
 
 @testable import Sumi
 
@@ -94,6 +97,60 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         XCTAssertTrue(active.preflight.hostAccessDecision.allowedByActiveTab)
     }
 
+    func testCSSAttachmentRequiresSamePreflightGates() throws {
+        let disabledModule = try makePreflightFixture(
+            moduleEnabled: false,
+            includeCSS: true
+        )
+        let disabledExtension = try makePreflightFixture(
+            extensionEnabled: false,
+            includeCSS: true
+        )
+        let nonMatching = try makePreflightFixture(
+            urlString: "https://other.example/login",
+            includeCSS: true
+        )
+        let missingPermission = try makePreflightFixture(
+            hostPermissions: [],
+            includeCSS: true
+        )
+        let active = try makePreflightFixture(
+            hostPermissions: [],
+            apiPermissions: ["activeTab"],
+            activeTabGrants: [
+                ChromeMV3ActiveTabGrant(
+                    extensionID: extensionID,
+                    profileID: profileID,
+                    tabID: 7,
+                    scope: .origin("https://example.com"),
+                    reason: .testFixture,
+                    userGestureModeled: true,
+                    createdSequence: 1
+                ),
+            ],
+            includeCSS: true
+        )
+
+        XCTAssertFalse(disabledModule.preflight.canAttachDeclaredContentScriptsNow)
+        XCTAssertTrue(disabledModule.preflight.blockers.contains(.moduleDisabled))
+        XCTAssertFalse(disabledExtension.preflight.canAttachDeclaredContentScriptsNow)
+        XCTAssertTrue(
+            disabledExtension.preflight.blockers.contains(.extensionDisabled)
+        )
+        XCTAssertFalse(nonMatching.preflight.canAttachDeclaredContentScriptsNow)
+        XCTAssertTrue(nonMatching.preflight.blockers.contains(.urlNotMatched))
+        XCTAssertFalse(missingPermission.preflight.canAttachDeclaredContentScriptsNow)
+        XCTAssertTrue(
+            missingPermission.preflight.blockers.contains(.hostPermissionMissing)
+                || missingPermission.preflight.blockers.contains(.activeTabMissing)
+        )
+        XCTAssertTrue(active.preflight.canAttachDeclaredContentScriptsNow)
+        XCTAssertEqual(
+            active.preflight.matchedScripts.flatMap(\.validatedCSSFilePaths),
+            ["style.css"]
+        )
+    }
+
     func testRevokedHostPermissionBlocksFutureAttachment() throws {
         let fixture = try makePreflightFixture(
             revokedPermissions: ["https://example.com/*"]
@@ -132,7 +189,7 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         XCTAssertTrue(blockers.contains(.unsafeJSPath))
         XCTAssertTrue(blockers.contains(.unsupportedWorld))
         XCTAssertTrue(blockers.contains(.frameBehaviorUnsupported))
-        XCTAssertTrue(blockers.contains(.cssUnsupported))
+        XCTAssertTrue(blockers.contains(.missingCSSFile))
         XCTAssertTrue(plan.supportedScripts.isEmpty)
     }
 
@@ -168,10 +225,30 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         XCTAssertTrue(plan.supportedScripts.isEmpty)
     }
 
-    func testCSSRemainsBlockedWithScopedRemovalDiagnostic() throws {
+    func testCSSSupportPolicyRecordsDeveloperPreviewOnlyStrategy() throws {
+        let policy =
+            ChromeMV3ContentScriptCSSSupportPolicy
+            .developerPreviewPrivateUserStyleSheet()
+
+        XCTAssertTrue(policy.cssContentScriptsAvailableInDeveloperPreview)
+        XCTAssertFalse(policy.cssContentScriptsAvailableInPublicProduct)
+        XCTAssertEqual(policy.cssInjectionStrategy, .privateWKUserStyleSheet)
+        XCTAssertEqual(
+            policy.cssRemovalStrategy,
+            .removeAssociatedContentWorldStyleSheets
+        )
+        XCTAssertEqual(
+            policy.cssScopeGuarantee,
+            .extensionProfileNormalTabMainFrameDocumentNavigation
+        )
+        XCTAssertNil(policy.cssBlockedReason)
+    }
+
+    func testManifestCSSResourceModelValidatesOrderSizeAndHash() throws {
         let root = try makeBundle(files: [
             "content.js": "void 0;\n",
             "style.css": "body { color: rgb(1 2 3); }\n",
+            "theme.css": ":root { --sumi-test: 1; }\n",
         ])
         var manifest = try ChromeMV3ManifestValidator.validateJSONObject([
             "manifest_version": 3,
@@ -179,7 +256,7 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
             "version": "1.0.0",
         ])
         manifest.contentScripts = [
-            contentScript(js: ["content.js"], css: ["style.css"]),
+            contentScript(js: ["content.js"], css: ["style.css", "theme.css"]),
         ]
 
         let plan = ChromeMV3ContentScriptAttachmentPlan.make(
@@ -190,12 +267,49 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         )
         let record = try XCTUnwrap(plan.declaredScripts.first)
 
-        XCTAssertEqual(record.cssPolicyStatus, .blockedScopedRemovalUnavailable)
-        XCTAssertTrue(record.blockers.contains(.cssUnsupported))
+        XCTAssertEqual(record.cssPolicyStatus, .supportedPrivateUserStyleSheet)
+        XCTAssertEqual(record.cssFiles, ["style.css", "theme.css"])
+        XCTAssertEqual(record.validatedCSSFilePaths, ["style.css", "theme.css"])
+        XCTAssertEqual(record.cssResources.map(\.injectionOrder), [0, 1])
+        XCTAssertTrue(record.cssResources.allSatisfy(\.fileExists))
+        XCTAssertTrue(record.cssResources.allSatisfy(\.pathSafe))
+        XCTAssertEqual(record.cssResources[0].contentByteCount, 28)
+        XCTAssertNotNil(record.cssResources[0].contentSHA256)
+        XCTAssertFalse(record.blockers.contains(.cssUnsupported))
         XCTAssertTrue(record.diagnostics.joined(separator: "\n")
-            .contains("No product global stylesheet leakage"))
+            .contains("CSS resources are recorded"))
         XCTAssertTrue(record.diagnostics.joined(separator: "\n")
             .contains("CSS file validated"))
+        XCTAssertTrue(plan.diagnostics.joined(separator: "\n")
+            .contains("scripting.insertCSS remains outside this plan"))
+    }
+
+    func testCSSPathValidationRejectsTraversalAndMissingFile() throws {
+        let root = try makeBundle(files: ["content.js": "void 0;\n"])
+        var manifest = try ChromeMV3ManifestValidator.validateJSONObject([
+            "manifest_version": 3,
+            "name": "Unsafe CSS Content Script",
+            "version": "1.0.0",
+        ])
+        manifest.contentScripts = [
+            contentScript(js: ["content.js"], css: ["../style.css"]),
+            contentScript(js: ["content.js"], css: ["missing.css"]),
+        ]
+
+        let plan = ChromeMV3ContentScriptAttachmentPlan.make(
+            manifest: manifest,
+            generatedBundleRootURL: root,
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        let blockers = Set(plan.declaredScripts.flatMap(\.blockers))
+
+        XCTAssertTrue(blockers.contains(.unsafeCSSPath))
+        XCTAssertTrue(blockers.contains(.missingCSSFile))
+        XCTAssertTrue(plan.declaredScripts.flatMap(\.cssResources)
+            .contains { $0.pathSafe == false })
+        XCTAssertTrue(plan.declaredScripts.flatMap(\.cssResources)
+            .contains { $0.fileExists == false })
     }
 
     func testMainWorldRemainsBlockedAndNotDowngraded() throws {
@@ -531,6 +645,54 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         XCTAssertTrue(discard.summary.lifecycleStates.contains(.webViewDiscarded))
     }
 
+    func testCSSAttachmentLifecycleInvalidatesWithEndpointTeardown()
+        throws
+    {
+        let fixture = try makePreflightFixture(includeCSS: true)
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+        _ = registry.registerEndpoint(
+            preflight: fixture.preflight,
+            connectListenerRegistered: true
+        )
+
+        XCTAssertEqual(registry.summary.cssAttachmentCount, 1)
+        XCTAssertEqual(registry.summary.activeCSSAttachmentCount, 1)
+
+        registry.navigationStarted(
+            profileID: profileID,
+            tabID: 7,
+            oldNavigationSequence: 1
+        )
+        XCTAssertEqual(registry.summary.activeCSSAttachmentCount, 0)
+        XCTAssertTrue(
+            registry.summary.lifecycleStates.contains(.navigationInvalidated)
+        )
+
+        let permissionRegistry = ChromeMV3ContentScriptEndpointRegistry()
+        _ = permissionRegistry.registerEndpoint(
+            preflight: fixture.preflight,
+            connectListenerRegistered: true
+        )
+        permissionRegistry.invalidateForPermissionChange(
+            extensionID: extensionID,
+            profileID: profileID,
+            permissionBroker: permissionBroker(hostPermissions: []),
+            reason: "activeTab grant expired."
+        )
+        XCTAssertEqual(permissionRegistry.summary.activeCSSAttachmentCount, 0)
+
+        let disableRegistry = ChromeMV3ContentScriptEndpointRegistry()
+        _ = disableRegistry.registerEndpoint(
+            preflight: fixture.preflight,
+            connectListenerRegistered: true
+        )
+        disableRegistry.detachForExtensionDisable(
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        XCTAssertEqual(disableRegistry.summary.activeCSSAttachmentCount, 0)
+    }
+
     func testListenerMissingReturnsNoReceivingEnd() throws {
         let fixture = try makePreflightFixture()
         let registry = ChromeMV3ContentScriptEndpointRegistry()
@@ -692,6 +854,7 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
 
         XCTAssertTrue(attachment.result.attached)
         XCTAssertTrue(attachment.result.endpointRegistered)
+        XCTAssertEqual(attachment.result.installedCSSStyleSheetCount, 0)
         XCTAssertGreaterThan(
             configuration.userContentController.userScripts.count,
             before
@@ -722,7 +885,63 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
 
         XCTAssertFalse(attachment.result.attached)
         XCTAssertTrue(attachment.result.blockers.contains(.tabSurfaceIneligible))
+        XCTAssertEqual(attachment.result.installedCSSStyleSheetCount, 0)
         XCTAssertEqual(configuration.userContentController.userScripts.count, 0)
+    }
+
+    @MainActor
+    func testWKUserStyleSheetCSSAttachmentIsScopedAndRemoved()
+        async throws
+    {
+        let pageURL = URL(string: "https://example.com/login")!
+        let matchPattern = "<all_urls>"
+        let fixture = try makePreflightFixture(
+            urlString: pageURL.absoluteString,
+            hostPermissions: [matchPattern],
+            contentScriptMatches: [matchPattern],
+            includeCSS: true
+        )
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+        let configuration = WKWebViewConfiguration()
+        configuration.sumiIsNormalTabWebViewConfiguration = true
+
+        let attachment =
+            ChromeMV3ContentScriptWKAttachmentExecutor.attachIfAllowed(
+                configuration: configuration,
+                preflight: fixture.preflight,
+                permissionBroker:
+                    permissionBroker(hostPermissions: [matchPattern]),
+                endpointRegistry: registry
+            )
+
+        XCTAssertTrue(attachment.result.attached)
+        XCTAssertEqual(attachment.result.installedCSSStyleSheetCount, 1)
+
+        let styledWebView = WKWebView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            configuration: configuration
+        )
+        let unrelatedConfiguration = WKWebViewConfiguration()
+        unrelatedConfiguration.sumiIsNormalTabWebViewConfiguration = true
+        let unrelatedWebView = WKWebView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            configuration: unrelatedConfiguration
+        )
+
+        try await loadURL(pageURL, into: styledWebView)
+        try await loadURL(pageURL, into: unrelatedWebView)
+        let styledColor = try await bodyBackgroundColor(in: styledWebView)
+        let unrelatedColor = try await bodyBackgroundColor(in: unrelatedWebView)
+
+        XCTAssertEqual(styledColor, "rgb(9, 8, 7)")
+        XCTAssertNotEqual(unrelatedColor, "rgb(9, 8, 7)")
+
+        attachment.handle?.tearDown(reason: "css teardown test")
+        try await loadURL(pageURL, into: styledWebView)
+        let afterTeardown = try await bodyBackgroundColor(in: styledWebView)
+
+        XCTAssertNotEqual(afterTeardown, "rgb(9, 8, 7)")
+        XCTAssertEqual(registry.summary.activeCSSAttachmentCount, 0)
     }
     #endif
 
@@ -741,22 +960,33 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         frameID: Int = 0,
         documentID: String = "document-1",
         navigationSequence: Int = 1,
-        frameTarget: ChromeMV3ContentScriptFrameTarget = .unknownMainFrame
+        frameTarget: ChromeMV3ContentScriptFrameTarget = .unknownMainFrame,
+        contentScriptMatches: [String] = ["https://example.com/*"],
+        includeCSS: Bool = false
     ) throws -> PreflightFixture {
-        let root = try makeBundle(files: ["content.js": "globalThis.__sumiMV3Content = true;\n"])
+        var files = [
+            "content.js": "globalThis.__sumiMV3Content = true;\n",
+        ]
+        if includeCSS {
+            files["style.css"] =
+                "body { background-color: rgb(9, 8, 7) !important; }\n"
+        }
+        let root = try makeBundle(files: files)
+        var contentScript: [String: Any] = [
+            "matches": contentScriptMatches,
+            "js": ["content.js"],
+            "run_at": "document_start",
+        ]
+        if includeCSS {
+            contentScript["css"] = ["style.css"]
+        }
         let manifest = try ChromeMV3ManifestValidator.validateJSONObject([
             "manifest_version": 3,
             "name": "Content Script Fixture",
             "version": "1.0.0",
             "permissions": apiPermissions,
             "host_permissions": hostPermissions,
-            "content_scripts": [
-                [
-                    "matches": ["https://example.com/*"],
-                    "js": ["content.js"],
-                    "run_at": "document_start",
-                ],
-            ],
+            "content_scripts": [contentScript],
         ])
         let plan = ChromeMV3ContentScriptAttachmentPlan.make(
             manifest: manifest,
@@ -908,6 +1138,43 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         )
     }
 
+    #if canImport(WebKit)
+    @MainActor
+    private func loadURL(_ url: URL, into webView: WKWebView) async throws {
+        let didFinish = expectation(description: "content script CSS page loaded")
+        let delegate = ContentScriptCSSNavigationDelegate {
+            didFinish.fulfill()
+        }
+        webView.navigationDelegate = delegate
+        if #available(macOS 12.0, *) {
+            webView.loadSimulatedRequest(
+                URLRequest(url: url),
+                responseHTML: contentScriptCSSHTML
+            )
+        } else {
+            webView.loadHTMLString(contentScriptCSSHTML, baseURL: url)
+        }
+        await fulfillment(of: [didFinish], timeout: 5)
+        webView.navigationDelegate = nil
+        _ = delegate
+    }
+
+    @MainActor
+    private func bodyBackgroundColor(in webView: WKWebView) async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
+            webView.evaluateJavaScript(
+                "getComputedStyle(document.body).backgroundColor"
+            ) { result, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                continuation.resume(returning: result as? String ?? "")
+            }
+        }
+    }
+    #endif
+
     private func objectValue(
         _ value: ChromeMV3StorageValue?
     ) -> [String: ChromeMV3StorageValue]? {
@@ -932,3 +1199,31 @@ private struct PreflightFixture {
     var plan: ChromeMV3ContentScriptAttachmentPlan
     var preflight: ChromeMV3NormalTabContentScriptPreflight
 }
+
+#if canImport(WebKit)
+private let contentScriptCSSHTML =
+    """
+    <!doctype html>
+    <html>
+      <head><meta charset="utf-8"><title>CSS Scope</title></head>
+      <body><main id="probe">probe</main></body>
+    </html>
+    """
+
+private final class ContentScriptCSSNavigationDelegate:
+    NSObject,
+    WKNavigationDelegate
+{
+    private let didFinish: () -> Void
+
+    init(didFinish: @escaping () -> Void) {
+        self.didFinish = didFinish
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        _ = webView
+        _ = navigation
+        didFinish()
+    }
+}
+#endif

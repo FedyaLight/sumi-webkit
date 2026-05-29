@@ -2,7 +2,6 @@
 //  HistorySuggestionItem.swift
 //  Sumi
 //
-//  Created by Maciek Bagiński on 18/08/2025.
 //
 
 import AppKit

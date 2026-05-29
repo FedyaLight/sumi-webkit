@@ -38,9 +38,19 @@ static inline void SumiRemovePageWorldUserScripts(WKUserContentController *contr
     [controller _removeAllUserScriptsAssociatedWithContentWorld:WKContentWorld.pageWorld];
 }
 
+static inline void SumiRemoveUserScriptsAssociatedWithContentWorld(WKUserContentController *controller, WKContentWorld *contentWorld)
+{
+    [controller _removeAllUserScriptsAssociatedWithContentWorld:contentWorld];
+}
+
 static inline void SumiRemovePageWorldUserStyleSheets(WKUserContentController *controller)
 {
     [controller _removeAllUserStyleSheetsAssociatedWithContentWorld:WKContentWorld.pageWorld];
+}
+
+static inline void SumiRemoveUserStyleSheetsAssociatedWithContentWorld(WKUserContentController *controller, WKContentWorld *contentWorld)
+{
+    [controller _removeAllUserStyleSheetsAssociatedWithContentWorld:contentWorld];
 }
 
 static inline void SumiAddPrivateUserStyleSheet(WKUserContentController *controller, _WKUserStyleSheet *userStyleSheet)

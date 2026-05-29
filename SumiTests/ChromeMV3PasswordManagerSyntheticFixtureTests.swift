@@ -256,7 +256,7 @@ final class ChromeMV3PasswordManagerSyntheticFixtureTests: XCTestCase {
                 && $0.storageLocal == .pass
                 && $0.productReadiness == .blocked
         })
-        XCTAssertEqual(rows[.bitwardenClass]?.contentScriptCSS, .unsafeWithoutReview)
+        XCTAssertEqual(rows[.bitwardenClass]?.contentScriptCSS, .partial)
         XCTAssertEqual(rows[.onePasswordClass]?.mainWorld, .unsafeWithoutReview)
         XCTAssertEqual(rows[.onePasswordClass]?.nativeMessaging, .blocked)
         XCTAssertEqual(rows[.protonPassClass]?.multiFrame, .deferred)

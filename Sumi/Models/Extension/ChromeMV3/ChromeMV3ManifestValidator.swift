@@ -275,13 +275,17 @@ enum ChromeMV3ManifestValidator {
                 field: "action.default_popup"
             )
             for path in iconPaths(action["default_icon"]) {
-                try validatePath(path, field: "action.default_icon")
+                try validatePath(
+                    path,
+                    field: "action.default_icon",
+                    allowsRootRelative: true
+                )
             }
         }
 
         if let icons = object["icons"] as? [String: Any] {
             for path in iconPaths(icons) {
-                try validatePath(path, field: "icons")
+                try validatePath(path, field: "icons", allowsRootRelative: true)
             }
         }
 
@@ -321,7 +325,8 @@ enum ChromeMV3ManifestValidator {
     private static func validatePath(
         _ path: String?,
         field: String,
-        allowsGlob: Bool = false
+        allowsGlob: Bool = false,
+        allowsRootRelative: Bool = false
     ) throws {
         guard let path else { return }
 
@@ -344,17 +349,18 @@ enum ChromeMV3ManifestValidator {
             omittingEmptySubsequences: false
         ).first.map(String.init) ?? pathBeforeFragment
         let decoded = pathOnly.removingPercentEncoding ?? pathOnly
-        let relativeDecoded =
+        let normalizedDecoded =
             decoded.hasPrefix("/") && decoded.hasPrefix("//") == false
-                ? String(decoded.drop { $0 == "/" })
-                : decoded
-
-        let isUnsafe = decoded.hasPrefix("//")
+            ? String(decoded.dropFirst())
+            : decoded
+        let pathForSegments = allowsRootRelative ? normalizedDecoded : decoded
+        let isUnsafe = (decoded.hasPrefix("/") && allowsRootRelative == false)
+            || decoded.hasPrefix("//")
             || decoded.hasPrefix("~")
             || decoded.contains("\\")
             || decoded.contains("\0")
             || decoded.localizedCaseInsensitiveContains("://")
-            || (!allowsGlob && decoded.contains("*"))
+            || (!allowsGlob && pathForSegments.contains("*"))
 
         guard isUnsafe == false else {
             throw ChromeMV3ManifestValidationError.unsafeResourcePath(
@@ -363,7 +369,7 @@ enum ChromeMV3ManifestValidator {
             )
         }
 
-        let segments = relativeDecoded.split(
+        let segments = pathForSegments.split(
             separator: "/",
             omittingEmptySubsequences: false
         )

@@ -31,6 +31,7 @@ enum ChromeMV3ContentScriptBlockedReason:
     case generatedBundleMissing
     case hostPermissionMissing
     case manifestContentScriptInvalid
+    case missingCSSFile
     case missingJSFile
     case moduleDisabled
     case noEligibleDeclaredContentScript
@@ -39,6 +40,7 @@ enum ChromeMV3ContentScriptBlockedReason:
     case publicProductUnavailable
     case tabSurfaceIneligible
     case teardownPending
+    case unsafeCSSPath
     case unsafeJSPath
     case unsupportedMatchPattern
     case unsupportedRunAt
@@ -284,12 +286,151 @@ enum ChromeMV3ContentScriptCSSPolicyStatus:
 {
     case notDeclared
     case blockedScopedRemovalUnavailable
+    case supportedPrivateUserStyleSheet
 
     static func < (
         lhs: ChromeMV3ContentScriptCSSPolicyStatus,
         rhs: ChromeMV3ContentScriptCSSPolicyStatus
     ) -> Bool {
         lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3ContentScriptCSSInjectionStrategy:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case none
+    case privateWKUserStyleSheet
+
+    static func < (
+        lhs: ChromeMV3ContentScriptCSSInjectionStrategy,
+        rhs: ChromeMV3ContentScriptCSSInjectionStrategy
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3ContentScriptCSSRemovalStrategy:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case none
+    case removeAssociatedContentWorldStyleSheets
+
+    static func < (
+        lhs: ChromeMV3ContentScriptCSSRemovalStrategy,
+        rhs: ChromeMV3ContentScriptCSSRemovalStrategy
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3ContentScriptCSSScopeGuarantee:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case none
+    case extensionProfileNormalTabMainFrameDocumentNavigation
+
+    static func < (
+        lhs: ChromeMV3ContentScriptCSSScopeGuarantee,
+        rhs: ChromeMV3ContentScriptCSSScopeGuarantee
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3ContentScriptCSSLeakageRisk:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case blocked
+    case noKnownCrossDocumentLeakageAfterContentWorldTeardown
+
+    static func < (
+        lhs: ChromeMV3ContentScriptCSSLeakageRisk,
+        rhs: ChromeMV3ContentScriptCSSLeakageRisk
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3ContentScriptCSSSupportPolicy:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var cssContentScriptsAvailableInDeveloperPreview: Bool
+    var cssContentScriptsAvailableInPublicProduct: Bool
+    var cssInjectionStrategy: ChromeMV3ContentScriptCSSInjectionStrategy
+    var cssRemovalStrategy: ChromeMV3ContentScriptCSSRemovalStrategy
+    var cssScopeGuarantee: ChromeMV3ContentScriptCSSScopeGuarantee
+    var cssLeakageRisk: ChromeMV3ContentScriptCSSLeakageRisk
+    var cssBlockedReason: String?
+    var diagnostics: [String]
+
+    var allowsManifestCSSAttachment: Bool {
+        cssContentScriptsAvailableInDeveloperPreview
+            && cssContentScriptsAvailableInPublicProduct == false
+            && cssInjectionStrategy == .privateWKUserStyleSheet
+            && cssRemovalStrategy == .removeAssociatedContentWorldStyleSheets
+            && cssBlockedReason == nil
+    }
+
+    static func developerPreviewPrivateUserStyleSheet()
+        -> ChromeMV3ContentScriptCSSSupportPolicy
+    {
+        ChromeMV3ContentScriptCSSSupportPolicy(
+            cssContentScriptsAvailableInDeveloperPreview: true,
+            cssContentScriptsAvailableInPublicProduct: false,
+            cssInjectionStrategy: .privateWKUserStyleSheet,
+            cssRemovalStrategy: .removeAssociatedContentWorldStyleSheets,
+            cssScopeGuarantee:
+                .extensionProfileNormalTabMainFrameDocumentNavigation,
+            cssLeakageRisk:
+                .noKnownCrossDocumentLeakageAfterContentWorldTeardown,
+            cssBlockedReason: nil,
+            diagnostics: [
+                "Manifest-declared CSS is allowed only in the developer-preview static content-script path.",
+                "CSS is installed through extension-owned generated-bundle resources only.",
+                "CSS attachment is scoped by the same extension/profile/tab/frame/document/navigation preflight used for static JS content scripts.",
+                "Chrome content-script match patterns are translated to WebKit user-content URL patterns; unsupported schemes remain blocked before attachment.",
+                "The private WebKit stylesheet is installed at user style level because local SDK verification did not apply author-level user stylesheets; this is not Chrome parity.",
+                "WebKit removal uses the extension/profile named WKContentWorld stylesheet teardown path; no DOM style element is left behind by Sumi.",
+                "Public product CSS content-script support remains unavailable.",
+            ]
+        )
+    }
+
+    static func blocked(_ reason: String)
+        -> ChromeMV3ContentScriptCSSSupportPolicy
+    {
+        ChromeMV3ContentScriptCSSSupportPolicy(
+            cssContentScriptsAvailableInDeveloperPreview: false,
+            cssContentScriptsAvailableInPublicProduct: false,
+            cssInjectionStrategy: .none,
+            cssRemovalStrategy: .none,
+            cssScopeGuarantee: .none,
+            cssLeakageRisk: .blocked,
+            cssBlockedReason: reason,
+            diagnostics: [
+                reason,
+                "Manifest-declared CSS remains blocked because Sumi could not prove scoped WebKit stylesheet removal.",
+            ]
+        )
     }
 }
 
@@ -395,6 +536,40 @@ struct ChromeMV3ContentScriptProductGateRecord:
     }
 }
 
+struct ChromeMV3ContentScriptCSSResourceRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var resourceID: String
+    var extensionID: String
+    var profileID: String
+    var contentScriptIndex: Int
+    var cssIndex: Int
+    var injectionOrder: Int
+    var cssFilePath: String
+    var generatedBundlePath: String?
+    var fileExists: Bool
+    var pathSafe: Bool
+    var contentByteCount: Int?
+    var contentSHA256: String?
+    var matches: [String]
+    var excludeMatches: [String]
+    var includeGlobs: [String]
+    var excludeGlobs: [String]
+    var runAt: ChromeMV3ContentScriptRunAt?
+    var world: ChromeMV3ContentScriptWorld?
+    var allFrames: Bool
+    var matchAboutBlank: Bool
+    var matchOriginAsFallback: Bool
+    var blockers: [ChromeMV3ContentScriptBlockedReason]
+    var diagnostics: [String]
+
+    var validForAttachment: Bool {
+        pathSafe && fileExists && blockers.isEmpty
+    }
+}
+
 struct ChromeMV3DeclaredContentScriptAttachmentRecord:
     Codable,
     Equatable,
@@ -417,7 +592,9 @@ struct ChromeMV3DeclaredContentScriptAttachmentRecord:
     var matchOriginAsFallback: Bool
     var world: ChromeMV3ContentScriptWorld?
     var cssPolicyStatus: ChromeMV3ContentScriptCSSPolicyStatus
+    var cssResources: [ChromeMV3ContentScriptCSSResourceRecord]
     var validatedJSFilePaths: [String]
+    var validatedCSSFilePaths: [String]
     var supported: Bool
     var blockers: [ChromeMV3ContentScriptBlockedReason]
     var diagnostics: [String]
@@ -457,6 +634,7 @@ struct ChromeMV3ContentScriptAttachmentPlan:
     var extensionID: String
     var profileID: String
     var generatedBundleRootPath: String
+    var cssSupportPolicy: ChromeMV3ContentScriptCSSSupportPolicy
     var declaredScripts: [ChromeMV3DeclaredContentScriptAttachmentRecord]
     var diagnostics: [String]
 
@@ -468,7 +646,9 @@ struct ChromeMV3ContentScriptAttachmentPlan:
         manifest: ChromeMV3Manifest,
         generatedBundleRootURL: URL,
         extensionID: String,
-        profileID: String
+        profileID: String,
+        cssSupportPolicy: ChromeMV3ContentScriptCSSSupportPolicy =
+            .developerPreviewPrivateUserStyleSheet()
     ) -> ChromeMV3ContentScriptAttachmentPlan {
         let root = generatedBundleRootURL.standardizedFileURL
         let records = manifest.contentScripts.enumerated().map { index, script in
@@ -477,22 +657,26 @@ struct ChromeMV3ContentScriptAttachmentPlan:
                 index: index,
                 root: root,
                 extensionID: extensionID,
-                profileID: profileID
+                profileID: profileID,
+                cssSupportPolicy: cssSupportPolicy
             )
         }
         return ChromeMV3ContentScriptAttachmentPlan(
             extensionID: extensionID,
             profileID: profileID,
             generatedBundleRootPath: root.path,
+            cssSupportPolicy: cssSupportPolicy,
             declaredScripts: records.sorted {
                 $0.contentScriptIndex < $1.contentScriptIndex
             },
             diagnostics:
                 uniqueSortedContentScripts(
                     records.flatMap(\.diagnostics)
+                        + cssSupportPolicy.diagnostics
                         + [
                             "Attachment plan was built only from manifest-declared content_scripts.",
                             "scripting.executeScript remains outside this plan.",
+                            "scripting.insertCSS remains outside this plan.",
                         ]
                 )
         )
@@ -503,25 +687,27 @@ struct ChromeMV3ContentScriptAttachmentPlan:
         index: Int,
         root: URL,
         extensionID: String,
-        profileID: String
+        profileID: String,
+        cssSupportPolicy: ChromeMV3ContentScriptCSSSupportPolicy
     ) -> ChromeMV3DeclaredContentScriptAttachmentRecord {
         var blockers: [ChromeMV3ContentScriptBlockedReason] = []
         var diagnostics: [String] = []
         let normalizedJS = script.js.map {
             ChromeMV3ContentScriptResourcePath.normalize($0)
         }
-        let normalizedCSS = script.css.map {
-            ChromeMV3ContentScriptResourcePath.normalize($0)
-        }
         var validatedJSPaths: [String] = []
+        var cssResources: [ChromeMV3ContentScriptCSSResourceRecord] = []
+        var validatedCSSPaths: [String] = []
 
         if script.matches.isEmpty {
             blockers.append(.manifestContentScriptInvalid)
             diagnostics.append("content_scripts[\(index)] has no matches.")
         }
-        if normalizedJS.isEmpty {
+        if normalizedJS.isEmpty && script.css.isEmpty {
             blockers.append(.manifestContentScriptInvalid)
-            diagnostics.append("content_scripts[\(index)] has no JS files.")
+            diagnostics.append(
+                "content_scripts[\(index)] has no JS or CSS files."
+            )
         }
         for normalized in normalizedJS {
             switch normalized {
@@ -542,26 +728,22 @@ struct ChromeMV3ContentScriptAttachmentPlan:
                 diagnostics.append(diagnostic.message)
             }
         }
-        for normalized in normalizedCSS {
-            switch normalized {
-            case .success(let path):
-                blockers.append(.cssUnsupported)
-                let validation = ChromeMV3ContentScriptResourcePath
-                    .validateExistingResourceFile(
-                        path,
-                        root: root,
-                        kind: "CSS"
-                    )
-                diagnostics.append(contentsOf: validation.diagnostics)
-                diagnostics.append(
-                    "content_scripts[\(index)] CSS file \(path) is blocked because WKUserContentController has no public, per-extension user stylesheet removal API and JS-injected style teardown cannot be guaranteed on disable/uninstall without a live WebView delivery path."
-                )
-                diagnostics.append(
-                    "No product global stylesheet leakage is allowed; manifest CSS remains blocked until scoped insertion and deterministic removal are proven."
-                )
-            case .failure(let diagnostic):
-                blockers.append(.cssUnsupported)
-                diagnostics.append(diagnostic.message)
+        for (cssIndex, rawPath) in script.css.enumerated() {
+            let resource = cssResourceRecord(
+                rawPath: rawPath,
+                cssIndex: cssIndex,
+                script: script,
+                contentScriptIndex: index,
+                root: root,
+                extensionID: extensionID,
+                profileID: profileID,
+                cssSupportPolicy: cssSupportPolicy
+            )
+            cssResources.append(resource)
+            blockers.append(contentsOf: resource.blockers)
+            diagnostics.append(contentsOf: resource.diagnostics)
+            if resource.validForAttachment {
+                validatedCSSPaths.append(resource.cssFilePath)
             }
         }
         for pattern in script.matches + script.excludeMatches {
@@ -585,7 +767,9 @@ struct ChromeMV3ContentScriptAttachmentPlan:
                 profileID: profileID,
                 runAt: nil,
                 world: ChromeMV3ContentScriptWorld.normalized(script.world),
+                cssResources: cssResources,
                 validatedJSPaths: validatedJSPaths,
+                validatedCSSPaths: validatedCSSPaths,
                 blockers: blockers,
                 diagnostics: diagnostics
             )
@@ -604,7 +788,9 @@ struct ChromeMV3ContentScriptAttachmentPlan:
                 profileID: profileID,
                 runAt: runAt,
                 world: nil,
+                cssResources: cssResources,
                 validatedJSPaths: validatedJSPaths,
+                validatedCSSPaths: validatedCSSPaths,
                 blockers: blockers,
                 diagnostics: diagnostics
             )
@@ -645,9 +831,101 @@ struct ChromeMV3ContentScriptAttachmentPlan:
             profileID: profileID,
             runAt: runAt,
             world: world,
+            cssResources: cssResources,
             validatedJSPaths: validatedJSPaths,
+            validatedCSSPaths: validatedCSSPaths,
             blockers: blockers,
             diagnostics: diagnostics
+        )
+    }
+
+    private static func cssResourceRecord(
+        rawPath: String,
+        cssIndex: Int,
+        script: ChromeMV3ContentScript,
+        contentScriptIndex: Int,
+        root: URL,
+        extensionID: String,
+        profileID: String,
+        cssSupportPolicy: ChromeMV3ContentScriptCSSSupportPolicy
+    ) -> ChromeMV3ContentScriptCSSResourceRecord {
+        let resourceID = stableIDContentScripts(
+            prefix: "declared-content-script-css",
+            parts: [
+                profileID,
+                extensionID,
+                String(contentScriptIndex),
+                String(cssIndex),
+                rawPath,
+            ]
+        )
+        let normalized = ChromeMV3ContentScriptResourcePath.normalize(rawPath)
+        var blockers: [ChromeMV3ContentScriptBlockedReason] = []
+        var diagnostics: [String] = []
+        var normalizedPath = rawPath
+        var generatedBundlePath: String?
+        var fileExists = false
+        var pathSafe = false
+        var contentByteCount: Int?
+        var contentSHA256: String?
+
+        switch normalized {
+        case .success(let path):
+            normalizedPath = path
+            let validation = ChromeMV3ContentScriptResourcePath
+                .validateExistingCSSFile(path, root: root)
+            fileExists = validation.fileExists
+            pathSafe = validation.pathSafe
+            generatedBundlePath = validation.fileURL?.path
+            contentByteCount = validation.byteCount
+            contentSHA256 = validation.sha256
+            if validation.valid == false {
+                blockers.append(validation.reason ?? .missingCSSFile)
+            } else if cssSupportPolicy.allowsManifestCSSAttachment == false {
+                blockers.append(.cssUnsupported)
+                diagnostics.append(
+                    cssSupportPolicy.cssBlockedReason
+                        ?? "Manifest CSS is blocked by CSS support policy."
+                )
+            }
+            diagnostics.append(contentsOf: validation.diagnostics)
+        case .failure(let diagnostic):
+            blockers.append(.unsafeCSSPath)
+            diagnostics.append(diagnostic.message)
+        }
+
+        if cssSupportPolicy.allowsManifestCSSAttachment {
+            diagnostics.append(
+                "content_scripts[\(contentScriptIndex)] CSS file \(normalizedPath) is eligible for developer-preview WebKit user stylesheet attachment after preflight."
+            )
+        } else if let reason = cssSupportPolicy.cssBlockedReason {
+            diagnostics.append(reason)
+        }
+
+        return ChromeMV3ContentScriptCSSResourceRecord(
+            resourceID: resourceID,
+            extensionID: extensionID,
+            profileID: profileID,
+            contentScriptIndex: contentScriptIndex,
+            cssIndex: cssIndex,
+            injectionOrder: cssIndex,
+            cssFilePath: normalizedPath,
+            generatedBundlePath: generatedBundlePath,
+            fileExists: fileExists,
+            pathSafe: pathSafe,
+            contentByteCount: contentByteCount,
+            contentSHA256: contentSHA256,
+            matches: script.matches.sorted(),
+            excludeMatches: script.excludeMatches.sorted(),
+            includeGlobs: script.includeGlobs.sorted(),
+            excludeGlobs: script.excludeGlobs.sorted(),
+            runAt: ChromeMV3ContentScriptRunAt.normalized(script.runAt),
+            world: ChromeMV3ContentScriptWorld.normalized(script.world),
+            allFrames: script.allFrames,
+            matchAboutBlank: script.matchAboutBlank,
+            matchOriginAsFallback: script.matchOriginAsFallback,
+            blockers: Array(Set(blockers)).sorted(),
+            diagnostics: uniqueSortedContentScripts(diagnostics)
         )
     }
 
@@ -659,7 +937,9 @@ struct ChromeMV3ContentScriptAttachmentPlan:
         profileID: String,
         runAt: ChromeMV3ContentScriptRunAt?,
         world: ChromeMV3ContentScriptWorld?,
+        cssResources: [ChromeMV3ContentScriptCSSResourceRecord],
         validatedJSPaths: [String],
+        validatedCSSPaths: [String],
         blockers: [ChromeMV3ContentScriptBlockedReason],
         diagnostics: [String]
     ) -> ChromeMV3DeclaredContentScriptAttachmentRecord {
@@ -696,14 +976,25 @@ struct ChromeMV3ContentScriptAttachmentPlan:
             cssPolicyStatus:
                 script.css.isEmpty
                     ? .notDeclared
-                    : .blockedScopedRemovalUnavailable,
+                    : (
+                        cssResources.allSatisfy(\.validForAttachment)
+                            ? .supportedPrivateUserStyleSheet
+                            : .blockedScopedRemovalUnavailable
+                    ),
+            cssResources: cssResources.sorted {
+                $0.injectionOrder < $1.injectionOrder
+            },
             validatedJSFilePaths: validatedJSPaths.sorted(),
+            validatedCSSFilePaths: validatedCSSPaths,
             supported: normalizedBlockers.isEmpty,
             blockers: normalizedBlockers,
             diagnostics:
                 uniqueSortedContentScripts(
                     diagnostics
                         + [
+                            script.css.isEmpty
+                                ? "content_scripts[\(index)] declares no CSS files."
+                                : "content_scripts[\(index)] CSS resources are recorded in deterministic manifest order.",
                             normalizedBlockers.isEmpty
                                 ? "content_scripts[\(index)] is eligible for URL and permission preflight."
                                 : "content_scripts[\(index)] is blocked before URL and permission preflight.",
@@ -870,6 +1161,10 @@ enum ChromeMV3NormalTabContentScriptPreflightEvaluator {
 
         let normalizedBlockers = Array(Set(blockers)).sorted()
         let canAttach = normalizedBlockers.isEmpty && matched.isEmpty == false
+        let canExposeBridge =
+            canAttach && matched.contains {
+                $0.validatedJSFilePaths.isEmpty == false
+            }
         return ChromeMV3NormalTabContentScriptPreflight(
             profileID: input.attachmentPlan.profileID,
             extensionID: input.attachmentPlan.extensionID,
@@ -880,8 +1175,8 @@ enum ChromeMV3NormalTabContentScriptPreflightEvaluator {
             urlString: input.urlString,
             frameTarget: frameTarget,
             canAttachDeclaredContentScriptsNow: canAttach,
-            canExposeContentScriptBridgeNow: canAttach,
-            canRegisterEndpointNow: canAttach,
+            canExposeContentScriptBridgeNow: canExposeBridge,
+            canRegisterEndpointNow: canExposeBridge,
             matchedScripts: matched.sorted {
                 $0.contentScriptIndex < $1.contentScriptIndex
             },
@@ -899,7 +1194,12 @@ enum ChromeMV3NormalTabContentScriptPreflightEvaluator {
                             canAttach
                                 ? "Declared content-script preflight passed for this extension/tab/frame/navigation sequence."
                                 : "Declared content-script preflight is blocked.",
+                            canExposeBridge
+                                ? "Content-script JS bridge exposure is allowed for matched JS resources."
+                                : "Content-script JS bridge exposure is unavailable because no matched JS resource passed validation.",
+                            "Manifest CSS, when present, follows the same preflight and is not a scripting.insertCSS path.",
                             "scripting.executeScript remains blocked and is not part of this preflight.",
+                            "scripting.insertCSS remains blocked and is not part of this preflight.",
                         ]
                 )
         )
@@ -986,6 +1286,7 @@ struct ChromeMV3ContentScriptEndpointRecord:
     var navigationSequence: Int
     var frameTarget: ChromeMV3ContentScriptFrameTarget
     var attachedScriptIDs: [String]
+    var attachedCSSResourceIDs: [String]
     var messageListenerRegistered: Bool
     var connectListenerRegistered: Bool
     var endpointState: ChromeMV3ContentScriptEndpointLifecycleState
@@ -1075,6 +1376,8 @@ struct ChromeMV3ContentScriptEndpointRegistrySummary:
 {
     var endpointCount: Int
     var activeEndpointCount: Int
+    var cssAttachmentCount: Int
+    var activeCSSAttachmentCount: Int
     var messageListenerEndpointCount: Int
     var connectListenerEndpointCount: Int
     var portCount: Int
@@ -1105,6 +1408,10 @@ final class ChromeMV3ContentScriptEndpointRegistry {
         return ChromeMV3ContentScriptEndpointRegistrySummary(
             endpointCount: endpoints.count,
             activeEndpointCount: active.count,
+            cssAttachmentCount:
+                endpoints.flatMap(\.attachedCSSResourceIDs).count,
+            activeCSSAttachmentCount:
+                active.flatMap(\.attachedCSSResourceIDs).count,
             messageListenerEndpointCount:
                 active.filter(\.messageListenerRegistered).count,
             connectListenerEndpointCount:
@@ -1171,6 +1478,12 @@ final class ChromeMV3ContentScriptEndpointRegistry {
             frameTarget: preflight.frameTarget,
             attachedScriptIDs:
                 preflight.matchedScripts.map(\.contentScriptID).sorted(),
+            attachedCSSResourceIDs:
+                preflight.matchedScripts
+                    .flatMap(\.cssResources)
+                    .filter(\.validForAttachment)
+                    .map(\.resourceID)
+                    .sorted(),
             messageListenerRegistered: messageListenerRegistered,
             connectListenerRegistered: connectListenerRegistered,
             endpointState:
@@ -1221,6 +1534,7 @@ final class ChromeMV3ContentScriptEndpointRegistry {
                     preflight.diagnostics
                         + [
                             "Content-script endpoint registered for extension/tab/frame/navigation scope.",
+                            "Manifest CSS attachment records, if present, are scoped to the same endpoint lifecycle.",
                         ]
                 )
         )
@@ -2459,6 +2773,7 @@ struct ChromeMV3ContentScriptWKAttachmentResult:
     var attemptedAttachment: Bool
     var attached: Bool
     var installedUserScriptCount: Int
+    var installedCSSStyleSheetCount: Int
     var installedScriptMessageHandlerCount: Int
     var endpointRegistered: Bool
     var endpointID: String?
@@ -2491,6 +2806,7 @@ final class ChromeMV3ContentScriptWKScriptMessageHandler:
 final class ChromeMV3ContentScriptWKAttachmentHandle {
     private weak var configuration: WKWebViewConfiguration?
     private var installedScripts: [WKUserScript]
+    private var installedCSSStyleSheetCount: Int
     private var messageHandlerName: String?
     private var contentWorld: WKContentWorld
     private var scriptHandler: ChromeMV3ContentScriptWKScriptMessageHandler?
@@ -2501,6 +2817,7 @@ final class ChromeMV3ContentScriptWKAttachmentHandle {
     init(
         configuration: WKWebViewConfiguration,
         installedScripts: [WKUserScript],
+        installedCSSStyleSheetCount: Int,
         messageHandlerName: String?,
         contentWorld: WKContentWorld,
         scriptHandler: ChromeMV3ContentScriptWKScriptMessageHandler?,
@@ -2509,6 +2826,7 @@ final class ChromeMV3ContentScriptWKAttachmentHandle {
     ) {
         self.configuration = configuration
         self.installedScripts = installedScripts
+        self.installedCSSStyleSheetCount = installedCSSStyleSheetCount
         self.messageHandlerName = messageHandlerName
         self.contentWorld = contentWorld
         self.scriptHandler = scriptHandler
@@ -2525,6 +2843,12 @@ final class ChromeMV3ContentScriptWKAttachmentHandle {
                     contentWorld: contentWorld
                 )
             }
+            if installedCSSStyleSheetCount > 0 {
+                SumiRemoveUserStyleSheetsAssociatedWithContentWorld(
+                    configuration.userContentController,
+                    contentWorld
+                )
+            }
             removeInstalledUserScripts(
                 installedScripts,
                 from: configuration.userContentController
@@ -2532,6 +2856,7 @@ final class ChromeMV3ContentScriptWKAttachmentHandle {
         }
         endpointRegistry.tearDownAll(reason: reason)
         installedScripts.removeAll()
+        installedCSSStyleSheetCount = 0
         scriptHandler = nil
         messageHandlerName = nil
         tornDown = true
@@ -2542,6 +2867,15 @@ final class ChromeMV3ContentScriptWKAttachmentHandle {
         from userContentController: WKUserContentController
     ) {
         guard scripts.isEmpty == false else { return }
+        SumiRemoveUserScriptsAssociatedWithContentWorld(
+            userContentController,
+            contentWorld
+        )
+        if userContentController.userScripts.contains(where: { script in
+            scripts.contains(where: { $0 === script })
+        }) == false {
+            return
+        }
         let selector = NSSelectorFromString("_removeUserScript:")
         if userContentController.responds(to: selector) {
             for script in scripts {
@@ -2564,14 +2898,13 @@ enum ChromeMV3ContentScriptWKAttachmentExecutor {
         result: ChromeMV3ContentScriptWKAttachmentResult,
         handle: ChromeMV3ContentScriptWKAttachmentHandle?
     ) {
-        guard preflight.canAttachDeclaredContentScriptsNow,
-              preflight.canExposeContentScriptBridgeNow
-        else {
+        guard preflight.canAttachDeclaredContentScriptsNow else {
             return (
                 ChromeMV3ContentScriptWKAttachmentResult(
                     attemptedAttachment: true,
                     attached: false,
                     installedUserScriptCount: 0,
+                    installedCSSStyleSheetCount: 0,
                     installedScriptMessageHandlerCount: 0,
                     endpointRegistered: false,
                     endpointID: nil,
@@ -2587,6 +2920,7 @@ enum ChromeMV3ContentScriptWKAttachmentExecutor {
                     attemptedAttachment: true,
                     attached: false,
                     installedUserScriptCount: 0,
+                    installedCSSStyleSheetCount: 0,
                     installedScriptMessageHandlerCount: 0,
                     endpointRegistered: false,
                     endpointID: nil,
@@ -2606,43 +2940,59 @@ enum ChromeMV3ContentScriptWKAttachmentExecutor {
             prefix: "sumiChromeMV3ContentScript",
             parts: [preflight.profileID, preflight.extensionID]
         ).replacingOccurrences(of: "-", with: "_")
-        let host = ChromeMV3ContentScriptBridgeHost(
-            extensionID: preflight.extensionID,
-            profileID: preflight.profileID,
-            tabID: preflight.tabID,
-            frameID: preflight.frameID,
-            documentID: preflight.documentID,
-            urlString: preflight.urlString,
-            permissionBroker: permissionBroker,
-            endpointRegistry: endpointRegistry
-        )
-        let handler = ChromeMV3ContentScriptWKScriptMessageHandler(host: host)
-        configuration.userContentController.addScriptMessageHandler(
-            handler,
+        var installedScripts: [WKUserScript] = []
+        let installedCSSStyleSheetCount = installCSSStyleSheets(
+            preflight: preflight,
             contentWorld: contentWorld,
-            name: messageHandlerName
+            configuration: configuration
         )
 
-        var installedScripts: [WKUserScript] = []
-        let bridge = WKUserScript(
-            source:
-                ChromeMV3ContentScriptJSBridgeSource.source(
-                    extensionID: preflight.extensionID,
-                    profileID: preflight.profileID,
-                    tabID: preflight.tabID,
-                    frameID: preflight.frameID,
-                    documentID: preflight.documentID,
-                    messageHandlerName: messageHandlerName
-                ),
-            injectionTime: .atDocumentStart,
-            forMainFrameOnly: true,
-            in: contentWorld
-        )
-        configuration.userContentController.addUserScript(bridge)
-        installedScripts.append(bridge)
+        let handler: ChromeMV3ContentScriptWKScriptMessageHandler?
+        let installedScriptMessageHandlerCount: Int
+        if preflight.canExposeContentScriptBridgeNow {
+            let host = ChromeMV3ContentScriptBridgeHost(
+                extensionID: preflight.extensionID,
+                profileID: preflight.profileID,
+                tabID: preflight.tabID,
+                frameID: preflight.frameID,
+                documentID: preflight.documentID,
+                urlString: preflight.urlString,
+                permissionBroker: permissionBroker,
+                endpointRegistry: endpointRegistry
+            )
+            let bridgeHandler =
+                ChromeMV3ContentScriptWKScriptMessageHandler(host: host)
+            configuration.userContentController.addScriptMessageHandler(
+                bridgeHandler,
+                contentWorld: contentWorld,
+                name: messageHandlerName
+            )
+            let bridge = WKUserScript(
+                source:
+                    ChromeMV3ContentScriptJSBridgeSource.source(
+                        extensionID: preflight.extensionID,
+                        profileID: preflight.profileID,
+                        tabID: preflight.tabID,
+                        frameID: preflight.frameID,
+                        documentID: preflight.documentID,
+                        messageHandlerName: messageHandlerName
+                    ),
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true,
+                in: contentWorld
+            )
+            configuration.userContentController.addUserScript(bridge)
+            installedScripts.append(bridge)
+            handler = bridgeHandler
+            installedScriptMessageHandlerCount = 1
+        } else {
+            handler = nil
+            installedScriptMessageHandlerCount = 0
+        }
 
         for script in preflight.matchedScripts {
             guard let runAt = script.runAt else { continue }
+            guard script.validatedJSFilePaths.isEmpty == false else { continue }
             let source = bundledSource(script)
             let userScript = WKUserScript(
                 source: source,
@@ -2654,11 +3004,18 @@ enum ChromeMV3ContentScriptWKAttachmentExecutor {
             installedScripts.append(userScript)
         }
 
-        let endpoint = endpointRegistry.registerEndpoint(preflight: preflight)
+        let endpoint =
+            preflight.canRegisterEndpointNow
+                ? endpointRegistry.registerEndpoint(preflight: preflight)
+                : nil
         let handle = ChromeMV3ContentScriptWKAttachmentHandle(
             configuration: configuration,
             installedScripts: installedScripts,
-            messageHandlerName: messageHandlerName,
+            installedCSSStyleSheetCount: installedCSSStyleSheetCount,
+            messageHandlerName:
+                installedScriptMessageHandlerCount == 0
+                    ? nil
+                    : messageHandlerName,
             contentWorld: contentWorld,
             scriptHandler: handler,
             endpointRegistry: endpointRegistry,
@@ -2669,7 +3026,9 @@ enum ChromeMV3ContentScriptWKAttachmentExecutor {
                 attemptedAttachment: true,
                 attached: true,
                 installedUserScriptCount: installedScripts.count,
-                installedScriptMessageHandlerCount: 1,
+                installedCSSStyleSheetCount: installedCSSStyleSheetCount,
+                installedScriptMessageHandlerCount:
+                    installedScriptMessageHandlerCount,
                 endpointRegistered: endpoint != nil,
                 endpointID: endpoint?.endpointID,
                 blockers: [],
@@ -2677,13 +3036,63 @@ enum ChromeMV3ContentScriptWKAttachmentExecutor {
                     uniqueSortedContentScripts(
                         preflight.diagnostics
                             + [
-                                "WKUserScript attachment installed a scoped content-script bridge and declared JS files.",
+                                "WebKit attachment installed declared CSS through scoped user stylesheets when present.",
+                                "WKUserScript attachment installed a scoped content-script bridge and declared JS files when matched JS resources were present.",
                                 "document_idle maps to WKUserScript atDocumentEnd in this developer-preview path.",
+                                "No scripting.insertCSS API route was enabled.",
                             ]
                     )
             ),
             handle
         )
+    }
+
+    private static func installCSSStyleSheets(
+        preflight: ChromeMV3NormalTabContentScriptPreflight,
+        contentWorld: WKContentWorld,
+        configuration: WKWebViewConfiguration
+    ) -> Int {
+        var installedCount = 0
+        for script in preflight.matchedScripts.sorted(by: {
+            $0.contentScriptIndex < $1.contentScriptIndex
+        }) {
+            for resource in script.cssResources
+                .filter(\.validForAttachment)
+                .sorted(by: { $0.injectionOrder < $1.injectionOrder })
+            {
+                guard let generatedBundlePath = resource.generatedBundlePath,
+                      let source = try? String(
+                        contentsOf: URL(fileURLWithPath: generatedBundlePath),
+                        encoding: .utf8
+                      )
+                else { continue }
+                let baseURL = URL(fileURLWithPath: generatedBundlePath)
+                    .deletingLastPathComponent()
+                let styleSheet = SumiCreatePrivateUserStyleSheet(
+                    source,
+                    true,
+                    webKitUserContentPatterns(script.matches),
+                    webKitUserContentPatterns(script.excludeMatches),
+                    baseURL,
+                    true,
+                    contentWorld
+                )
+                SumiAddPrivateUserStyleSheet(
+                    configuration.userContentController,
+                    styleSheet
+                )
+                installedCount += 1
+            }
+        }
+        return installedCount
+    }
+
+    private static func webKitUserContentPatterns(
+        _ patterns: [String]
+    ) -> [String] {
+        patterns.map { pattern in
+            pattern == "<all_urls>" ? "*://*/*" : pattern
+        }
     }
 
     private static func bundledSource(
@@ -3115,40 +3524,114 @@ private enum ChromeMV3ContentScriptResourcePath {
         reason: ChromeMV3ContentScriptBlockedReason?,
         diagnostics: [String]
     ) {
-        validateExistingResourceFile(relativePath, root: root, kind: "JS")
+        let validation = validateExistingResourceFile(
+            relativePath,
+            root: root,
+            kind: "JS",
+            unsafeReason: .unsafeJSPath,
+            missingReason: .missingJSFile
+        )
+        return (
+            validation.valid,
+            validation.reason,
+            validation.diagnostics
+        )
+    }
+
+    static func validateExistingCSSFile(
+        _ relativePath: String,
+        root: URL
+    ) -> (
+        valid: Bool,
+        reason: ChromeMV3ContentScriptBlockedReason?,
+        diagnostics: [String],
+        fileURL: URL?,
+        fileExists: Bool,
+        pathSafe: Bool,
+        byteCount: Int?,
+        sha256: String?
+    ) {
+        let validation = validateExistingResourceFile(
+            relativePath,
+            root: root,
+            kind: "CSS",
+            unsafeReason: .unsafeCSSPath,
+            missingReason: .missingCSSFile
+        )
+        guard validation.valid,
+              let fileURL = validation.fileURL,
+              let data = try? Data(contentsOf: fileURL)
+        else {
+            return (
+                validation.valid,
+                validation.reason,
+                validation.diagnostics,
+                validation.fileURL,
+                validation.fileExists,
+                validation.pathSafe,
+                nil,
+                nil
+            )
+        }
+        return (
+            true,
+            nil,
+            validation.diagnostics + [
+                "Content-script CSS file metadata recorded: \(relativePath) \(data.count) bytes.",
+            ],
+            fileURL,
+            true,
+            true,
+            data.count,
+            sha256HexContentScripts(data)
+        )
     }
 
     static func validateExistingResourceFile(
         _ relativePath: String,
         root: URL,
-        kind: String
+        kind: String,
+        unsafeReason: ChromeMV3ContentScriptBlockedReason = .unsafeJSPath,
+        missingReason: ChromeMV3ContentScriptBlockedReason = .missingJSFile
     ) -> (
         valid: Bool,
         reason: ChromeMV3ContentScriptBlockedReason?,
-        diagnostics: [String]
+        diagnostics: [String],
+        fileURL: URL?,
+        fileExists: Bool,
+        pathSafe: Bool
     ) {
         let fileURL = root.appendingPathComponent(relativePath)
             .standardizedFileURL
         guard fileURL.path.hasPrefix(root.path + "/") else {
             return (
                 false,
-                .unsafeJSPath,
-                ["Content-script \(kind) path escapes generated bundle root: \(relativePath)."]
+                unsafeReason,
+                ["Content-script \(kind) path escapes generated bundle root: \(relativePath)."],
+                nil,
+                false,
+                false
             )
         }
         let manager = FileManager.default
         guard manager.fileExists(atPath: fileURL.path) else {
             return (
                 false,
-                .missingJSFile,
-                ["Content-script \(kind) file is missing: \(relativePath)."]
+                missingReason,
+                ["Content-script \(kind) file is missing: \(relativePath)."],
+                fileURL,
+                false,
+                true
             )
         }
         if (try? manager.destinationOfSymbolicLink(atPath: fileURL.path)) != nil {
             return (
                 false,
-                .unsafeJSPath,
-                ["Content-script \(kind) file is a symbolic link: \(relativePath)."]
+                unsafeReason,
+                ["Content-script \(kind) file is a symbolic link: \(relativePath)."],
+                fileURL,
+                true,
+                false
             )
         }
         guard let values = try? fileURL.resourceValues(
@@ -3157,14 +3640,20 @@ private enum ChromeMV3ContentScriptResourcePath {
         else {
             return (
                 false,
-                .unsafeJSPath,
-                ["Content-script \(kind) path is not a regular file: \(relativePath)."]
+                unsafeReason,
+                ["Content-script \(kind) path is not a regular file: \(relativePath)."],
+                fileURL,
+                true,
+                false
             )
         }
         return (
             true,
             nil,
-            ["Content-script \(kind) file validated: \(relativePath)."]
+            ["Content-script \(kind) file validated: \(relativePath)."],
+            fileURL,
+            true,
+            true
         )
     }
 }
@@ -3181,4 +3670,9 @@ private func stableIDContentScripts(
     let digest = SHA256.hash(data: Data(joined.utf8))
     let hex = digest.map { String(format: "%02x", $0) }.joined()
     return "\(prefix)-\(String(hex.prefix(16)))"
+}
+
+private func sha256HexContentScripts(_ data: Data) -> String {
+    let digest = SHA256.hash(data: data)
+    return digest.map { String(format: "%02x", $0) }.joined()
 }

@@ -2,7 +2,6 @@
 //  NavigationHistoryContextMenu.swift
 //  Sumi
 //
-//  Created by Jonathan Caudill on 01/10/2025.
 //
 
 import Foundation

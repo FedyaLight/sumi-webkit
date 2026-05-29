@@ -2,7 +2,6 @@
 //  BrowserWindowState.swift
 //  Sumi
 //
-//  Created by Jonathan Caudill on 12/09/2024.
 //
 
 import SwiftUI

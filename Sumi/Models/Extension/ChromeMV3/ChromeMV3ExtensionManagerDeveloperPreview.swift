@@ -199,7 +199,7 @@ struct ChromeMV3ExtensionManagerDocumentationSource:
             title: "Chrome manifest content scripts",
             url: "https://developer.chrome.com/docs/extensions/reference/manifest/content-scripts",
             boundary: "static content-script attachment",
-            finding: "Static MV3 content_scripts define matches, CSS/JS order, run_at, all_frames, match_about_blank, match_origin_as_fallback, and execution world; Sumi supports only product-gated main-frame isolated-world JS in Prompt 61R."
+            finding: "Static MV3 content_scripts define matches, CSS/JS order, run_at, all_frames, match_about_blank, match_origin_as_fallback, and execution world; Sumi supports only developer-preview gated main-frame isolated-world JS plus manifest CSS through scoped WebKit user stylesheets."
         ),
         ChromeMV3ExtensionManagerDocumentationSource(
             title: "Chrome tabs API",
