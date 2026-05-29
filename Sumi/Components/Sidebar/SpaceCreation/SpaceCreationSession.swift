@@ -4,7 +4,7 @@ import Combine
 @MainActor
 final class SpaceCreationSession: ObservableObject, Identifiable {
     static let defaultIcon = "✨"
-    static let defaultProfileIcon = SumiPersistentGlyph.profileSystemImageFallback
+    static let defaultProfileIcon = SumiProfileIcon.defaultIcon
 
     let id = UUID()
     let previousSpaceID: UUID?
@@ -57,7 +57,7 @@ final class SpaceCreationSession: ObservableObject, Identifiable {
     }
 
     var resolvedNewProfileIcon: String {
-        SumiPersistentGlyph.normalizedProfileIconValue(
+        SumiProfileIcon.storedValue(
             newProfileIcon.isEmpty ? Self.defaultProfileIcon : newProfileIcon
         )
     }

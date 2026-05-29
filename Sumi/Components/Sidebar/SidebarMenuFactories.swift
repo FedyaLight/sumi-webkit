@@ -158,10 +158,7 @@ func makeSidebarContextMenuProfileChoices(
         SidebarContextMenuChoice(
             id: profile.id,
             title: profile.name,
-            icon: sidebarContextMenuPersistentGlyphIcon(
-                profile.icon,
-                fallbackSystemImage: SumiPersistentGlyph.profileSystemImageFallback
-            ),
+            icon: .emoji(SumiProfileIcon.storedValue(profile.icon)),
             isSelected: profile.id == selectedProfileId
         )
     }
@@ -324,7 +321,7 @@ private func makeRegularSidebarTabEntries(
     }
     if let profileSubmenu = sidebarStateSubmenu(
         title: "Use Profile",
-        systemImage: "person.crop.circle",
+        systemImage: "person.2",
         action: actions.profileTarget
     ) {
         organizationSection.append(profileSubmenu)
@@ -430,7 +427,7 @@ private func makeSavedSidebarTabEntries(
     }
     if let profileSubmenu = sidebarStateSubmenu(
         title: "Use Profile",
-        systemImage: "person.crop.circle",
+        systemImage: "person.2",
         action: actions.profileTarget
     ) {
         organizationSection.append(profileSubmenu)

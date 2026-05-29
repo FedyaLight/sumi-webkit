@@ -2,7 +2,6 @@
 //  GradientNode.swift
 //  Sumi
 //
-//  Created by Jonathan Caudill on 28/08/2025.
 //
 
 import Foundation

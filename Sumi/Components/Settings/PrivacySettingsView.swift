@@ -2,7 +2,6 @@
 //  PrivacySettingsView.swift
 //  Sumi
 //
-//  Created by Jonathan Caudill on 15/08/2025.
 //
 
 import AppKit

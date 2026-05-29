@@ -2,7 +2,6 @@
 //  SpaceSeparator.swift
 //  Sumi
 //
-//  Created by Maciek Bagiński on 30/07/2025.
 //
 import SwiftUI
 

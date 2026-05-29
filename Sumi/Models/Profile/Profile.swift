@@ -45,11 +45,11 @@ final class Profile: NSObject, Identifiable {
     init(
         id: UUID = UUID(),
         name: String = "Default Profile",
-        icon: String = "person.crop.circle"
+        icon: String = SumiProfileIcon.defaultIcon
     ) {
         self.id = id
         self.name = name
-        self.icon = SumiPersistentGlyph.normalizedProfileIconValue(icon)
+        self.icon = SumiProfileIcon.storedValue(icon)
         self.explicitDataStore = nil
         super.init()
     }
@@ -63,7 +63,7 @@ final class Profile: NSObject, Identifiable {
     ) {
         self.id = id
         self.name = name
-        self.icon = SumiPersistentGlyph.normalizedProfileIconValue(icon)
+        self.icon = SumiProfileIcon.storedValue(icon)
         self.explicitDataStore = dataStore
         super.init()
     }
@@ -74,7 +74,7 @@ final class Profile: NSObject, Identifiable {
         let profile = Profile(
             id: UUID(),
             name: "Incognito",
-            icon: "eye.slash",
+            icon: "🕶️",
             dataStore: .nonPersistent()
         )
         profile.isEphemeral = true

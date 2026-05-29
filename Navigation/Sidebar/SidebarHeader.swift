@@ -2,7 +2,6 @@
 //  SidebarHeader.swift
 //  Sumi
 //
-//  Created by Aether on 15/11/2025.
 //
 
 import AppKit

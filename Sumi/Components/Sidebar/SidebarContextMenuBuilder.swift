@@ -122,7 +122,7 @@ final class SidebarContextMenuBuilder: NSObject, NSMenuDelegate {
 }
 
 @MainActor
-private enum SidebarContextMenuImageStore {
+enum SidebarContextMenuImageStore {
     private static let imageSize = NSSize(width: 16, height: 16)
     private static let cache: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>()

@@ -35,7 +35,7 @@ struct SpaceProfileBadge: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: cornerRadius)
                         .fill(isCurrentProfile ? Color.accentColor.opacity(0.15) : Color(.controlBackgroundColor))
-                    SumiProfileGlyphDisplay(icon: p.icon, font: .system(size: iconSize, weight: .semibold))
+                    SumiProfileIconView(icon: p.icon, font: .system(size: iconSize, weight: .semibold))
                         .foregroundStyle(isCurrentProfile ? .primary : .secondary)
                 }
                 .frame(width: badgeSide, height: badgeSide)
@@ -46,8 +46,10 @@ struct SpaceProfileBadge: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: cornerRadius)
                         .fill(Color(.controlBackgroundColor))
-                    Image(systemName: "person.crop.circle")
-                        .font(.system(size: iconSize, weight: .regular))
+                    SumiProfileIconView(
+                        icon: SumiProfileIcon.defaultIcon,
+                        font: .system(size: iconSize, weight: .regular)
+                    )
                         .foregroundStyle(.tertiary)
                 }
                 .frame(width: badgeSide, height: badgeSide)
@@ -61,4 +63,3 @@ struct SpaceProfileBadge: View {
     private var iconSize: CGFloat { size == .compact ? 9 : 12 }
     private var cornerRadius: CGFloat { size == .compact ? 3 : 4 }
 }
-

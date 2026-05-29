@@ -31,9 +31,9 @@ final class SpaceCreationSessionTests: XCTestCase {
         XCTAssertFalse(session.canCommit)
 
         session.newProfileName = "  Work  "
-        session.newProfileIcon = "briefcase"
+        session.newProfileIcon = "💼"
         XCTAssertEqual(session.trimmedNewProfileName, "Work")
-        XCTAssertEqual(session.resolvedNewProfileIcon, "briefcase")
+        XCTAssertEqual(session.resolvedNewProfileIcon, "💼")
         XCTAssertTrue(session.canCommit)
 
         session.createsNewProfile = false

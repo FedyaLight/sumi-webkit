@@ -2,7 +2,6 @@
 //  FindManager.swift
 //  Sumi
 //
-//  Created by Assistant on 28/12/2024.
 //
 
 import Combine

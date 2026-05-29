@@ -2,7 +2,6 @@
 //  DoubleClickView.swift
 //  Sumi
 //
-//  Created by Aether Aurelia on 11/10/2025.
 //
 //  A view that detects double-clicks without delaying single clicks.
 //  Uses NSClickGestureRecognizer with delaysPrimaryMouseButtonEvents = false

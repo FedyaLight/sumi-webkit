@@ -2,7 +2,6 @@
 //  PinnedUtils.swift
 //  Sumi
 //
-//  Created by Maciek Bagiński on 07/12/2025.
 //
 
 import SwiftUI

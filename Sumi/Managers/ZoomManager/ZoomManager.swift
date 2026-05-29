@@ -2,7 +2,6 @@
 //  ZoomManager.swift
 //  Sumi
 //
-//  Created by Assistant on 13/10/2025.
 //
 
 import Foundation

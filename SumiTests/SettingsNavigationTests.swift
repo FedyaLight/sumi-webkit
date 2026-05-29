@@ -162,7 +162,7 @@ final class SettingsNavigationTests: XCTestCase {
         )
         XCTAssertEqual(
             SettingsPaneDescriptor.descriptor(for: .profiles).title,
-            "Profiles & Spaces"
+            "Profiles"
         )
     }
 

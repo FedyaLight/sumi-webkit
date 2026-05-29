@@ -216,9 +216,9 @@ private final class SpaceEditorViewController: NSViewController, NSTextFieldDele
         for profile in profiles {
             profilePicker.addItem(withTitle: profile.name)
             profilePicker.lastItem?.representedObject = profile.id
-            profilePicker.lastItem?.image = NSImage(
-                systemSymbolName: SumiPersistentGlyph.resolvedProfileSystemImageName(profile.icon),
-                accessibilityDescription: nil
+            let icon = SumiProfileIcon.storedValue(profile.icon)
+            profilePicker.lastItem?.image = SidebarContextMenuImageStore.image(
+                for: SidebarContextMenuIcon.emoji(icon)
             )
         }
 

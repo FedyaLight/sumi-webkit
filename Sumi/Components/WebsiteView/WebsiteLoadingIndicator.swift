@@ -2,7 +2,6 @@
 //  WebsiteLoadingIndicator.swift
 //  Sumi
 //
-//  Created by Maciek Bagiński on 31/07/2025.
 //
 
 import SwiftUI

@@ -2,7 +2,6 @@
 //  SettingsView.swift
 //  Sumi
 //
-//  Created by Maciek Bagiński on 03/08/2025.
 //
 
 import AppKit
@@ -18,7 +17,7 @@ enum SettingsViewStateDeferral {
     }
 }
 
-/// Profiles and space assignments (also used in the in-tab settings surface).
+/// Profile management (also used in the in-tab settings surface).
 struct SumiProfilesSettingsPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -658,139 +657,154 @@ private struct ExtensionCatalogRow: View {
 // MARK: - Profiles Settings
 
 struct ProfilesSettingsView: View {
+    private enum ProfileEditorPresentation: Identifiable {
+        case add
+        case edit(UUID)
+
+        var id: String {
+            switch self {
+            case .add:
+                return "add"
+            case .edit(let id):
+                return "edit-\(id.uuidString)"
+            }
+        }
+    }
+
     @EnvironmentObject var browserManager: BrowserManager
-    @State private var profileToRename: Profile? = nil
+    @State private var selectedProfileID: UUID? = nil
+    @State private var profileEditorPresentation: ProfileEditorPresentation?
+    @State private var profilePendingDeletion: Profile?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Profiles list and actions
-            SettingsSectionCard(
-                title: "Profiles",
-                subtitle: "Create, switch, and manage browsing personas"
-            ) {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Button(action: showCreateDialog) {
-                            Label("Create Profile", systemImage: "plus")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .accessibilityLabel("Create Profile")
-                        .accessibilityHint(
-                            "Open dialog to create a new profile"
-                        )
+        SettingsSectionCard(
+            title: "Browsing Profiles",
+            subtitle: "Each profile keeps website data, history, and extension state separate."
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                if browserManager.profileManager.profiles.isEmpty {
+                    SettingsEmptyState(
+                        systemImage: "person.2",
+                        title: "No Profiles",
+                        detail: "Add a profile to keep browsing data separate."
+                    )
 
-                        Spacer()
-                    }
+                    SettingsDivider()
 
-                    Divider().opacity(0.4)
+                    profileToolbar
+                } else {
+                    profileRows
 
-                    if browserManager.profileManager.profiles.isEmpty {
-                        HStack(spacing: 8) {
-                            Image(systemName: "person.crop.circle")
-                                .foregroundColor(.secondary)
-                            Text("No profiles yet. Create one to get started.")
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.vertical, 8)
-                    } else {
-                        VStack(spacing: 8) {
-                            ForEach(
-                                browserManager.profileManager.profiles,
-                                id: \.id
-                            ) { profile in
-                                ProfileRowView(
-                                    profile: profile,
-                                    isCurrent: browserManager.currentProfile?.id
-                                        == profile.id,
-                                    spacesCount: spacesCount(for: profile),
-                                    tabsCount: tabsCount(for: profile),
-                                    dataSizeDescription: "Shared store",
-                                    pinnedCount: pinnedCount(for: profile),
-                                    onMakeCurrent: {
-                                        Task {
-                                            await browserManager.switchToProfile(
-                                                profile
-                                            )
-                                        }
-                                    },
-                                    onRename: { startRename(profile) },
-                                    onDelete: { startDelete(profile) },
-                                    onManageData: showDataManagement
-                                )
-                                .accessibilityLabel("Profile \(profile.name)")
-                                .accessibilityHint(
-                                    browserManager.currentProfile?.id
-                                        == profile.id
-                                        ? "Current profile" : "Inactive profile"
-                                )
-                            }
-                        }
-                    }
-                }
+                    SettingsDivider()
 
-                Divider().opacity(0.4)
-
-              }
-
-            // Space assignments management
-            SettingsSectionCard(
-                title: "Space Assignments",
-                subtitle: "Assign spaces to specific profiles"
-            ) {
-                VStack(alignment: .leading, spacing: 12) {
-                    // Bulk actions
-                    HStack(spacing: 8) {
-                        Button(action: assignAllSpacesToCurrentProfile) {
-                            Label(
-                                "Assign All to Current Profile",
-                                systemImage: "checkmark.circle"
-                            )
-                        }
-                        .buttonStyle(.bordered)
-                        .accessibilityLabel(
-                            "Assign all spaces to current profile"
-                        )
-
-                        Button(action: resetAllSpaceAssignments) {
-                            Label(
-                                "Reset to Default Profile",
-                                systemImage: "arrow.uturn.backward"
-                            )
-                        }
-                        .buttonStyle(.bordered)
-                        .accessibilityLabel("Reset space assignments to none")
-
-        
-                        Spacer()
-                    }
-
-                    Divider().opacity(0.4)
-
-                    if browserManager.tabManager.spaces.isEmpty {
-                        HStack(spacing: 8) {
-                            Image(systemName: "rectangle.3.group")
-                                .foregroundStyle(.secondary)
-                            Text(
-                                "No spaces yet. Create a space to assign profiles."
-                            )
-                            .foregroundStyle(.secondary)
-                        }
-                        .padding(.vertical, 8)
-                    } else {
-                        VStack(spacing: 8) {
-                            ForEach(browserManager.tabManager.spaces, id: \.id)
-                            { space in
-                                SpaceAssignmentRowView(space: space)
-                            }
-                        }
-                    }
+                    profileToolbar
                 }
             }
+        }
+        .onAppear(perform: reconcileSelectedProfile)
+        .onChange(of: profileIDs) { _, _ in
+            reconcileSelectedProfile()
+        }
+        .sheet(item: $profileEditorPresentation) { presentation in
+            profileEditorSheet(for: presentation)
+        }
+        .confirmationDialog(
+            "Delete Profile?",
+            isPresented: deleteConfirmationPresented,
+            titleVisibility: .visible,
+            presenting: profilePendingDeletion
+        ) { profile in
+            Button("Delete Profile", role: .destructive) {
+                confirmDelete(profile)
+            }
 
+            Button("Cancel", role: .cancel) {
+                profilePendingDeletion = nil
+            }
+        } message: { profile in
+            Text(deleteConfirmationMessage(for: profile))
         }
     }
 
     // MARK: - Helpers
+    private var profileIDs: [UUID] {
+        browserManager.profileManager.profiles.map(\.id)
+    }
+
+    private var selectedProfile: Profile? {
+        guard let selectedProfileID else { return nil }
+        return browserManager.profileManager.profiles.first {
+            $0.id == selectedProfileID
+        }
+    }
+
+    private var deleteConfirmationPresented: Binding<Bool> {
+        Binding(
+            get: {
+                profilePendingDeletion != nil
+            },
+            set: { isPresented in
+                if !isPresented {
+                    profilePendingDeletion = nil
+                }
+            }
+        )
+    }
+
+    private var profileRows: some View {
+        VStack(spacing: 0) {
+            ForEach(browserManager.profileManager.profiles, id: \.id) { profile in
+                ProfileRowView(
+                    profile: profile,
+                    isSelected: selectedProfileID == profile.id,
+                    spacesCount: spacesCount(for: profile),
+                    tabsCount: tabsCount(for: profile),
+                    canDelete: canDelete(profile),
+                    onSelect: { selectedProfileID = profile.id },
+                    onEdit: { startEdit(profile) },
+                    onDelete: { startDelete(profile) }
+                )
+
+                if profile.id != browserManager.profileManager.profiles.last?.id {
+                    SettingsDivider()
+                        .padding(.leading, 58)
+                }
+            }
+        }
+    }
+
+    private var profileToolbar: some View {
+        HStack(spacing: 8) {
+            Button("Add Profile...") {
+                profileEditorPresentation = .add
+            }
+            .buttonStyle(.bordered)
+
+            Button("Remove Profile...", role: .destructive) {
+                deleteSelectedProfile()
+            }
+            .buttonStyle(.bordered)
+            .disabled(selectedProfile.map(canDelete) != true)
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func reconcileSelectedProfile() {
+        if let selectedProfileID,
+           browserManager.profileManager.profiles.contains(where: { $0.id == selectedProfileID })
+        {
+            return
+        }
+
+        selectedProfileID = browserManager.profileManager.profiles.first?.id
+    }
+
+    private func canDelete(_ profile: Profile) -> Bool {
+        browserManager.profileManager.profiles.count > 1
+            && browserManager.profileManager.profiles.contains { $0.id == profile.id }
+    }
+
     private func spacesCount(for profile: Profile) -> Int {
         browserManager.tabManager.spaces.filter { $0.profileId == profile.id }
             .count
@@ -808,252 +822,110 @@ struct ProfilesSettingsView: View {
         }.count
     }
 
-    private func pinnedCount(for profile: Profile) -> Int {
-        // Count space‑pinned tabs in spaces assigned to this profile
-        let spaceIds = browserManager.tabManager.spaces
-            .filter { $0.profileId == profile.id }
-            .map { $0.id }
-        var total = 0
-        for sid in spaceIds {
-            total += browserManager.tabManager.launcherProjection(for: sid).launcherCount
-        }
-        return total
-    }
-
     // MARK: - Actions
-    private func showCreateDialog() {
-        browserManager.showDialog(
-            ProfileCreationDialog(
-                isNameAvailable: { proposed in
-                    let trimmed = proposed.trimmingCharacters(
-                        in: .whitespacesAndNewlines
-                    )
-                    guard !trimmed.isEmpty else { return false }
-                    return !browserManager.profileManager.profiles.contains {
-                        $0.name.caseInsensitiveCompare(trimmed) == .orderedSame
-                    }
-                },
-                onCreate: { name, icon in
-                    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return }
-                    let safeIcon = SumiPersistentGlyph.normalizedProfileIconValue(
-                        icon.isEmpty ? SumiPersistentGlyph.profileSystemImageFallback : icon
-                    )
-                    let created = browserManager.profileManager.createProfile(
-                        name: trimmed,
-                        icon: safeIcon
-                    )
-                    Task { await browserManager.switchToProfile(created) }
-                    browserManager.closeDialog()
+    @ViewBuilder
+    private func profileEditorSheet(
+        for presentation: ProfileEditorPresentation
+    ) -> some View {
+        switch presentation {
+        case .add:
+            ProfileEditorSheet(
+                mode: .create,
+                isNameAvailable: { isProfileNameAvailable($0) },
+                onSave: { name, icon in
+                    createProfile(name: name, icon: icon)
                 },
                 onCancel: {
-                    browserManager.closeDialog()
+                    profileEditorPresentation = nil
                 }
             )
-        )
+        case .edit(let profileID):
+            if let profile = browserManager.profileManager.profiles.first(where: { $0.id == profileID }) {
+                ProfileEditorSheet(
+                    mode: .edit,
+                    initialName: profile.name,
+                    initialIcon: profile.icon,
+                    isNameAvailable: {
+                        isProfileNameAvailable($0, excluding: profile.id)
+                    },
+                    onSave: { name, icon in
+                        updateProfile(profile, name: name, icon: icon)
+                    },
+                    onCancel: {
+                        profileEditorPresentation = nil
+                    }
+                )
+            } else {
+                EmptyView()
+            }
+        }
     }
 
-    private func startRename(_ profile: Profile) {
-        profileToRename = profile
-        browserManager.showDialog(
-            ProfileRenameDialog(
-                originalProfile: profile,
-                isNameAvailable: { proposed in
-                    let trimmed = proposed.trimmingCharacters(
-                        in: .whitespacesAndNewlines
-                    )
-                    return !browserManager.profileManager.profiles.contains {
-                        $0.id != profile.id
-                            && $0.name.caseInsensitiveCompare(trimmed)
-                                == .orderedSame
-                    }
-                },
-                onSave: { newName, newIcon in
-                    guard let target = profileToRename else {
-                        browserManager.closeDialog()
-                        return
-                    }
-                    target.name = newName
-                    target.icon = SumiPersistentGlyph.normalizedProfileIconValue(newIcon)
-                    browserManager.profileManager.persistProfiles()
-                    browserManager.closeDialog()
-                },
-                onCancel: {
-                    browserManager.closeDialog()
-                }
-            )
-        )
+    private func startEdit(_ profile: Profile) {
+        selectedProfileID = profile.id
+        profileEditorPresentation = .edit(profile.id)
+    }
+
+    private func deleteSelectedProfile() {
+        guard let selectedProfile else { return }
+        startDelete(selectedProfile)
     }
 
     private func startDelete(_ profile: Profile) {
-        let isLast = browserManager.profileManager.profiles.count <= 1
-        let stats = (
-            spaces: spacesCount(for: profile),
-            tabs: tabsCount(for: profile)
+        guard canDelete(profile) else { return }
+        selectedProfileID = profile.id
+        profilePendingDeletion = profile
+    }
+
+    private func createProfile(name: String, icon: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, isProfileNameAvailable(trimmed) else { return }
+
+        let created = browserManager.profileManager.createProfile(
+            name: trimmed,
+            icon: SumiProfileIcon.storedValue(icon)
         )
-        let dialog = ProfileDeleteConfirmationDialog(
-            profileName: profile.name,
-            profileIcon: profile.icon,
-            spacesCount: stats.spaces,
-            tabsCount: stats.tabs,
-            isLastProfile: isLast,
-            onDelete: {
-                guard browserManager.profileManager.profiles.count > 1 else {
-                    browserManager.closeDialog()
-                    return
-                }
-                browserManager.deleteProfile(profile)
-            },
-            onCancel: { browserManager.closeDialog() }
-        )
-        browserManager.showDialog(dialog)
+        selectedProfileID = created.id
+        profileEditorPresentation = nil
     }
 
-    private func showDataManagement() {
-        browserManager.dialogManager.showDialog {
-            StandardDialog(
-                header: {
-                    DialogHeader(
-                        icon: "internaldrive",
-                        title: "Manage Data",
-                        subtitle: "Profile data management"
-                    )
-                },
-                content: {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Each profile maintains its own isolated website data store.")
-                        Text("Privacy tools are available under the Privacy tab.")
-                            .foregroundStyle(.secondary)
-                    }
-                },
-                footer: {
-                    DialogFooter(rightButtons: [
-                        DialogButton(text: "Close", variant: .primary) {
-                            browserManager.closeDialog()
-                        }
-                    ])
-                }
-            )
-        }
-    }
-
-    // MARK: - Space assignment helpers and views
-    private func assignAllSpacesToCurrentProfile() {
-        guard let pid = browserManager.currentProfile?.id else { return }
-        for sp in browserManager.tabManager.spaces {
-            browserManager.tabManager.assign(spaceId: sp.id, toProfile: pid)
-        }
-    }
-
-    private func resetAllSpaceAssignments() {
-        guard
-            let defaultProfileId = browserManager.profileManager.profiles.first?
-                .id
+    private func updateProfile(_ profile: Profile, name: String, icon: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              isProfileNameAvailable(trimmed, excluding: profile.id)
         else { return }
-        for sp in browserManager.tabManager.spaces {
-            browserManager.tabManager.assign(
-                spaceId: sp.id,
-                toProfile: defaultProfileId
-            )
+
+        profile.name = trimmed
+        profile.icon = SumiProfileIcon.storedValue(icon)
+        browserManager.profileManager.persistProfiles()
+        selectedProfileID = profile.id
+        profileEditorPresentation = nil
+    }
+
+    private func confirmDelete(_ profile: Profile) {
+        guard canDelete(profile) else { return }
+        browserManager.deleteProfile(profile)
+        profilePendingDeletion = nil
+    }
+
+    private func isProfileNameAvailable(
+        _ proposedName: String,
+        excluding excludedProfileID: UUID? = nil
+    ) -> Bool {
+        let trimmed = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        return !browserManager.profileManager.profiles.contains {
+            $0.id != excludedProfileID
+                && $0.name.caseInsensitiveCompare(trimmed) == .orderedSame
         }
     }
 
-    private struct SpaceAssignmentRowView: View {
-        @EnvironmentObject var browserManager: BrowserManager
-        let space: Space
-
-        var body: some View {
-            HStack(spacing: 12) {
-                // Space icon
-                Group {
-                    if SumiPersistentGlyph.presentsAsEmoji(space.icon) {
-                        Text(space.icon)
-                            .font(.system(size: 14))
-                            .frame(width: 24, height: 24)
-                    } else {
-                        Image(systemName: SumiPersistentGlyph.resolvedSpaceSystemImageName(space.icon))
-                            .font(.system(size: 14))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 24, height: 24)
-                    }
-                }
-                .background(Color(.controlBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(space.name)
-                        .font(.subheadline)
-                    HStack(spacing: 6) {
-                        SpaceProfileBadge(space: space, size: .compact)
-                            .environmentObject(browserManager)
-                        Text(currentProfileName)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Spacer()
-
-                // Quick action to set to current profile
-                if let current = browserManager.currentProfile {
-                    Button {
-                        assign(space: space, to: current.id)
-                    } label: {
-                        Label(
-                            "Assign to \(current.name)",
-                            systemImage: "checkmark.circle"
-                        )
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-
-                // Profile picker menu
-                Menu {
-                    // Use compact picker inside menu
-                    let binding = Binding<UUID>(
-                        get: {
-                            space.profileId ?? browserManager.profileManager
-                                .profiles.first?.id ?? UUID()
-                        },
-                        set: { newId in assign(space: space, to: newId) }
-                    )
-                    Text("Current: \(currentProfileName)")
-                        .foregroundStyle(.secondary)
-                    Divider()
-                    ProfilePickerView(
-                        selectedProfileId: binding,
-                        onSelect: { _ in },
-                        compact: true
-                    )
-                    .environmentObject(browserManager)
-                } label: {
-                    Label("Change", systemImage: "person.crop.circle")
-                        .labelStyle(.titleAndIcon)
-                }
-                .menuStyle(.borderlessButton)
-            }
-            .padding(10)
-            .background(Color(.controlBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-        }
-
-        private var currentProfileName: String {
-            if let pid = space.profileId,
-                let p = browserManager.profileManager.profiles.first(where: {
-                    $0.id == pid
-                })
-            {
-                return p.name
-            }
-            // If no profile assigned, show the default profile name
-            return browserManager.profileManager.profiles.first?.name
-                ?? "Default"
-        }
-
-        private func assign(space: Space, to id: UUID) {
-            browserManager.tabManager.assign(spaceId: space.id, toProfile: id)
-        }
+    private func deleteConfirmationMessage(for profile: Profile) -> String {
+        let spaces = spacesCount(for: profile)
+        let tabs = tabsCount(for: profile)
+        let spaceText = spaces == 1 ? "1 space" : "\(spaces) spaces"
+        let tabText = tabs == 1 ? "1 tab" : "\(tabs) tabs"
+        return "\(spaceText) and \(tabText) that use this profile will move to another profile. Website data stored for this profile will be deleted."
     }
 }
 
