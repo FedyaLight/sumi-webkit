@@ -672,6 +672,7 @@ struct ProfilesSettingsView: View {
     }
 
     @EnvironmentObject var browserManager: BrowserManager
+    @Environment(\.resolvedThemeContext) private var themeContext
     @State private var selectedProfileID: UUID? = nil
     @State private var profileEditorPresentation: ProfileEditorPresentation?
     @State private var profilePendingDeletion: Profile?
@@ -707,6 +708,9 @@ struct ProfilesSettingsView: View {
         }
         .sheet(item: $profileEditorPresentation) { presentation in
             profileEditorSheet(for: presentation)
+                .environment(\.resolvedThemeContext, profileEditorThemeContext)
+                .environment(\.colorScheme, profileEditorColorScheme)
+                .preferredColorScheme(profileEditorColorScheme)
         }
         .confirmationDialog(
             "Delete Profile?",
@@ -736,6 +740,14 @@ struct ProfilesSettingsView: View {
         return browserManager.profileManager.profiles.first {
             $0.id == selectedProfileID
         }
+    }
+
+    private var profileEditorThemeContext: ResolvedThemeContext {
+        themeContext.nativeSurfaceThemeContext
+    }
+
+    private var profileEditorColorScheme: ColorScheme {
+        profileEditorThemeContext.nativeSurfaceColorScheme
     }
 
     private var deleteConfirmationPresented: Binding<Bool> {
