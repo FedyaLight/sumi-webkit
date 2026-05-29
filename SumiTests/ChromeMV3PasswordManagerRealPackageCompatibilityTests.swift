@@ -40,7 +40,9 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertTrue(targets.allSatisfy(\.noRealCredentialsInvariant))
         XCTAssertTrue(targets.allSatisfy {
-            $0.trustedFixtureHostRootPath == nil
+            $0.trustedFixtureHostRootPath?.hasPrefix(
+                "/Users/fedaefimov/Downloads/Aura/mv3-test-extensions/native-host-fixtures/"
+            ) == true
                 && $0.expectedExtensionID == nil
         })
 
@@ -309,6 +311,10 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertFalse(row.permissionActiveTabSmoke.silentlyGranted)
         XCTAssertTrue(row.permissionActiveTabSmoke.urlTitleRedactionTested)
         XCTAssertTrue(row.nativeMessagingSmoke.noTrustedHostConfigured)
+        XCTAssertEqual(
+            row.nativeMessagingSmoke.exactBlocker,
+            .hostRequiredButNotConfigured
+        )
         XCTAssertTrue(row.nativeMessagingSmoke.arbitraryHostDiscoveryBlocked)
         XCTAssertTrue(row.nativeMessagingSmoke.realVendorHostLaunchBlocked)
         XCTAssertTrue(row.popupOptionsSmoke.blockedAPIs.contains {
@@ -370,6 +376,9 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             .unpackedExtensionRoot
         )
         XCTAssertEqual(summary.realPackageTrialStatus, .blocked)
+        XCTAssertEqual(summary.nativeFixtureRootState, .notRequired)
+        XCTAssertEqual(summary.nativeBlockerState, .notRequired)
+        XCTAssertNotNil(summary.realVendorHostDiscoveryBlockedDisclaimer)
         XCTAssertEqual(
             summary.realPackageReportFileName,
             ChromeMV3PasswordManagerRealPackageCompatibilityReport
@@ -379,6 +388,261 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertTrue(
             summary.notPublicSupportDisclaimer.contains("not public")
         )
+    }
+
+    func testMissingNativeFixtureRootIsReportedNotFailure() throws {
+        let root = try temporaryDirectory(named: "missing-native-fixture-root")
+        let package = root.appendingPathComponent("bitwarden", isDirectory: true)
+        let hostName = "com.example.fixture_host"
+        try writePackage(
+            at: package,
+            manifest: nativeManifest(name: "Bitwarden Local"),
+            extraFiles: [
+                "popup.js":
+                    "chrome.runtime."
+                    + "send"
+                    + #"NativeMessage("com.example.fixture_host", {});"#,
+            ]
+        )
+        let fixtureRoot = root.appendingPathComponent(
+            "native-host-fixtures/bitwarden",
+            isDirectory: true
+        )
+        let report = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
+            rootURL: root,
+            targets: [
+                testTarget(
+                    id: "bitwarden-native-missing-root",
+                    targetClass: .bitwarden,
+                    root: package,
+                    fixtureRoot: fixtureRoot,
+                    hostNames: [hostName]
+                ),
+            ],
+            writeReport: false,
+            now: { Date(timeIntervalSince1970: 18) }
+        )
+        let row = try XCTUnwrap(report.rows.first)
+        let readiness = try XCTUnwrap(
+            row.nativeMessagingSmoke.hostReadiness.first
+        )
+
+        XCTAssertEqual(row.packageSource, .realLocalUnpacked)
+        XCTAssertEqual(row.nativeMessagingSmoke.fixtureRootState, .missingFixtureRoot)
+        XCTAssertFalse(row.nativeMessagingSmoke.noTrustedHostConfigured)
+        XCTAssertEqual(row.nativeMessagingSmoke.exactBlocker, .hostRequiredButNotConfigured)
+        XCTAssertEqual(readiness.hostName, hostName)
+        XCTAssertEqual(readiness.blockerState, .hostRequiredButNotConfigured)
+        XCTAssertFalse(readiness.exchangeResult.attempted)
+        XCTAssertFalse(report.arbitraryNativeHostDiscoveryAttempted)
+        XCTAssertFalse(report.realVendorNativeHostLaunchAttempted)
+    }
+
+    func testAllowedOriginsMismatchBlocksConfiguredFixtureHost() throws {
+        let root = try temporaryDirectory(named: "native-fixture-origin-mismatch")
+        let package = root.appendingPathComponent("onepassword", isDirectory: true)
+        let fixtureRoot = root.appendingPathComponent(
+            "native-host-fixtures/onepassword",
+            isDirectory: true
+        )
+        let hostName = "com.example.fixture_host"
+        try writePackage(
+            at: package,
+            manifest: nativeManifest(name: "1Password Local"),
+            extraFiles: [
+                "popup.js":
+                    "chrome.runtime."
+                    + "connect"
+                    + #"Native("com.example.fixture_host");"#,
+            ]
+        )
+        _ = try ChromeMV3NativeMessagingFixtureHostBuilder.writeFixtureHost(
+            kind: .echo,
+            rootURL: fixtureRoot,
+            hostName: hostName,
+            extensionID: "abcdefghijklmnopabcdefghijklmnop"
+        )
+
+        let report = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
+            rootURL: root,
+            targets: [
+                testTarget(
+                    id: "onepassword-origin-mismatch",
+                    targetClass: .onePassword,
+                    root: package,
+                    fixtureRoot: fixtureRoot,
+                    hostNames: [hostName]
+                ),
+            ],
+            writeReport: false,
+            now: { Date(timeIntervalSince1970: 19) }
+        )
+        let readiness = try XCTUnwrap(
+            report.rows.first?.nativeMessagingSmoke.hostReadiness.first
+        )
+
+        XCTAssertEqual(readiness.fixtureRootState, .configured)
+        XCTAssertEqual(readiness.manifestState, .valid)
+        XCTAssertEqual(readiness.allowedOriginsState, .mismatch)
+        XCTAssertEqual(readiness.blockerState, .allowedOriginsMismatch)
+        XCTAssertFalse(readiness.exchangeResult.attempted)
+        XCTAssertTrue(readiness.remediation.contains("allowed_origins"))
+    }
+
+    func testNativeMessagingPermissionMissingBlocksConfiguredFixtureHost()
+        throws
+    {
+        let root = try temporaryDirectory(named: "native-fixture-permission-missing")
+        let package = root.appendingPathComponent("proton", isDirectory: true)
+        let fixtureRoot = root.appendingPathComponent(
+            "native-host-fixtures/proton",
+            isDirectory: true
+        )
+        let hostName = "com.example.fixture_host"
+        try writePackage(
+            at: package,
+            manifest: minimalManifest(name: "Proton Pass Local"),
+            extraFiles: [
+                "popup.js":
+                    "chrome.runtime."
+                    + "send"
+                    + #"NativeMessage("com.example.fixture_host", {});"#,
+            ]
+        )
+        let first = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
+            rootURL: root,
+            targets: [
+                testTarget(
+                    id: "proton-permission-missing",
+                    targetClass: .protonPass,
+                    root: package,
+                    fixtureRoot: fixtureRoot,
+                    hostNames: [hostName]
+                ),
+            ],
+            writeReport: false,
+            now: { Date(timeIntervalSince1970: 20) }
+        )
+        let extensionID = try XCTUnwrap(
+            first.rows.first?.nativeMessagingSmoke.detectedExtensionID
+        )
+        _ = try ChromeMV3NativeMessagingFixtureHostBuilder.writeFixtureHost(
+            kind: .echo,
+            rootURL: fixtureRoot,
+            hostName: hostName,
+            extensionID: extensionID
+        )
+        let second = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
+            rootURL: root,
+            targets: [
+                testTarget(
+                    id: "proton-permission-missing",
+                    targetClass: .protonPass,
+                    root: package,
+                    fixtureRoot: fixtureRoot,
+                    hostNames: [hostName]
+                ),
+            ],
+            writeReport: false,
+            now: { Date(timeIntervalSince1970: 21) }
+        )
+        let readiness = try XCTUnwrap(
+            second.rows.first?.nativeMessagingSmoke.hostReadiness.first
+        )
+
+        XCTAssertEqual(readiness.manifestState, .valid)
+        XCTAssertEqual(readiness.allowedOriginsState, .compatible)
+        XCTAssertEqual(readiness.nativeMessagingPermissionState, .missing)
+        XCTAssertEqual(readiness.blockerState, .permissionMissing)
+        XCTAssertFalse(readiness.exchangeResult.attempted)
+    }
+
+    func testApprovedFixtureHostAllowsSendAndConnectExchange() throws {
+        let root = try temporaryDirectory(named: "native-fixture-approved")
+        let package = root.appendingPathComponent("bitwarden", isDirectory: true)
+        let fixtureRoot = root.appendingPathComponent(
+            "native-host-fixtures/bitwarden",
+            isDirectory: true
+        )
+        let hostName = "com.example.fixture_host"
+        let profileID = "approved-native-profile"
+        try writePackage(
+            at: package,
+            manifest: nativeManifest(name: "Bitwarden Local"),
+            extraFiles: [
+                "popup.js":
+                    "chrome.runtime."
+                    + "connect"
+                    + #"Native("com.example.fixture_host");"#,
+            ]
+        )
+        let target = testTarget(
+            id: "bitwarden-approved-native",
+            targetClass: .bitwarden,
+            root: package,
+            fixtureRoot: fixtureRoot,
+            hostNames: [hostName]
+        )
+        let first = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
+            rootURL: root,
+            targets: [target],
+            profileID: profileID,
+            writeReport: false,
+            now: { Date(timeIntervalSince1970: 22) }
+        )
+        let extensionID = try XCTUnwrap(
+            first.rows.first?.nativeMessagingSmoke.detectedExtensionID
+        )
+        _ = try ChromeMV3NativeMessagingFixtureHostBuilder.writeFixtureHost(
+            kind: .echo,
+            rootURL: fixtureRoot,
+            hostName: hostName,
+            extensionID: extensionID
+        )
+        let targetProfileID =
+            "\(profileID)-\(ChromeMV3PasswordManagerRealPackageClass.bitwarden.fixtureFallbackKind.pathComponent)"
+        let approval =
+            ChromeMV3NativeTrustedHostPolicyFactory
+            .recordForExplicitDeveloperPreviewApproval(
+                hostName: hostName,
+                extensionID: extensionID,
+                profileID: targetProfileID,
+                lookupPolicy: ChromeMV3NativeHostLookupPolicy.macOS(
+                    explicitTestRootPath: fixtureRoot.path
+                ),
+                permissionState: .grantedByManifest,
+                approvedRootPaths: [fixtureRoot.path],
+                sequence: 1,
+                now: Date(timeIntervalSince1970: 23)
+            )
+            .record
+        let second = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
+            rootURL: root,
+            targets: [target],
+            profileID: profileID,
+            trustedHostApprovalRecords: [approval],
+            writeReport: false,
+            now: { Date(timeIntervalSince1970: 24) }
+        )
+        let smoke = try XCTUnwrap(second.rows.first?.nativeMessagingSmoke)
+        let readiness = try XCTUnwrap(smoke.hostReadiness.first)
+
+        XCTAssertEqual(readiness.fixtureRootState, .configured)
+        XCTAssertEqual(readiness.manifestState, .valid)
+        XCTAssertEqual(readiness.allowedOriginsState, .compatible)
+        XCTAssertEqual(readiness.trustedHostApprovalState, .trustedForDeveloperPreview)
+        XCTAssertEqual(readiness.blockerState, .approvedTrustedFixtureHostWorks)
+        XCTAssertTrue(readiness.exchangeResult.attempted)
+        XCTAssertEqual(readiness.exchangeResult.state, .succeeded)
+        XCTAssertTrue(readiness.exchangeResult.sendNativeMessageSucceeded)
+        XCTAssertTrue(readiness.exchangeResult.connectNativeSucceeded)
+        XCTAssertTrue(readiness.exchangeResult.postMessageSucceeded)
+        XCTAssertTrue(readiness.exchangeResult.disconnectSucceeded)
+        XCTAssertTrue(readiness.exchangeResult.fixtureProcessLaunchAttempted)
+        XCTAssertFalse(readiness.exchangeResult.productProcessLaunchAttempted)
+        XCTAssertTrue(smoke.fixtureExchangeSucceeded)
+        XCTAssertEqual(smoke.sendNativeMessageReadiness, "ready")
+        XCTAssertEqual(smoke.connectNativeReadiness, "ready")
     }
 
     func testRealPackageSourceGuardsRemainLocalAndDiagnosticsOnly() throws {
@@ -450,7 +714,9 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
     private func testTarget(
         id: String,
         targetClass: ChromeMV3PasswordManagerRealPackageClass,
-        root: URL
+        root: URL,
+        fixtureRoot: URL? = nil,
+        hostNames: [String] = []
     ) -> ChromeMV3PasswordManagerRealPackageTargetDefinition {
         ChromeMV3PasswordManagerRealPackageTargetDefinition(
             targetID: id,
@@ -459,8 +725,8 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             explicitAllowedLocalRoot: root.path,
             fixtureFallbackID: targetClass.fixtureFallbackKind.rawValue,
             expectedExtensionID: nil,
-            configuredNativeHostNames: [],
-            trustedFixtureHostRootPath: nil,
+            configuredNativeHostNames: hostNames,
+            trustedFixtureHostRootPath: fixtureRoot?.path,
             noRealCredentialsInvariant: true
         )
     }
@@ -482,6 +748,17 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                 ],
             ],
         ]
+    }
+
+    private func nativeManifest(name: String) -> [String: Any] {
+        var manifest = minimalManifest(name: name)
+        manifest["permissions"] = [
+            "activeTab",
+            "nativeMessaging",
+            "storage",
+            "tabs",
+        ]
+        return manifest
     }
 
     private func diagnosticRichManifest(

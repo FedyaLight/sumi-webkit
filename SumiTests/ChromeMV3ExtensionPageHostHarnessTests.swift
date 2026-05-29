@@ -488,7 +488,9 @@ final class ChromeMV3ExtensionPageHostHarnessTests: XCTestCase {
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3PopupOptionsJSBridge.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3ContentScriptProductAttachment.swift",
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerRealPackageCompatibility.swift",
                 "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift",
+                "SumiTests/ChromeMV3PasswordManagerRealPackageCompatibilityTests.swift",
             ])
         let joined = sources
             .filter {

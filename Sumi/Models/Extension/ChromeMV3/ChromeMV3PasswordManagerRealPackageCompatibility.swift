@@ -141,6 +141,14 @@ struct ChromeMV3PasswordManagerRealPackageTargetConfiguration:
     var expectedExtensionID: String?
     var nativeHostNames: [String]
     var trustedFixtureHostRootPath: String?
+    var detectedExtensionID: String?
+    var generatedOrTestExtensionID: String?
+    var nativeFixtureRootState:
+        ChromeMV3PasswordManagerRealPackageNativeHostFixtureRootState
+    var fixtureManifestPathCandidates: [String]
+    var fixtureExecutablePathCandidates: [String]
+    var nativeHostBlockerState:
+        ChromeMV3PasswordManagerRealPackageNativeHostReadinessState?
     var noRealCredentialsInvariant: Bool
     var sourceAvailability:
         [ChromeMV3PasswordManagerRealPackageSourceAvailability]
@@ -152,6 +160,9 @@ struct ChromeMV3PasswordManagerRealPackageTargetConfiguration:
 }
 
 enum ChromeMV3PasswordManagerRealPackageTargetCatalog {
+    private static let explicitFixtureRootBase =
+        "/Users/fedaefimov/Downloads/Aura/mv3-test-extensions/native-host-fixtures"
+
     static func explicitLocalTargets()
         -> [ChromeMV3PasswordManagerRealPackageTargetDefinition]
     {
@@ -167,7 +178,8 @@ enum ChromeMV3PasswordManagerRealPackageTargetCatalog {
                     .bitwardenClass.rawValue,
                 expectedExtensionID: nil,
                 configuredNativeHostNames: [],
-                trustedFixtureHostRootPath: nil,
+                trustedFixtureHostRootPath:
+                    "\(explicitFixtureRootBase)/bitwarden",
                 noRealCredentialsInvariant: true
             ),
             ChromeMV3PasswordManagerRealPackageTargetDefinition(
@@ -181,7 +193,8 @@ enum ChromeMV3PasswordManagerRealPackageTargetCatalog {
                     .protonPassClass.rawValue,
                 expectedExtensionID: nil,
                 configuredNativeHostNames: [],
-                trustedFixtureHostRootPath: nil,
+                trustedFixtureHostRootPath:
+                    "\(explicitFixtureRootBase)/proton",
                 noRealCredentialsInvariant: true
             ),
             ChromeMV3PasswordManagerRealPackageTargetDefinition(
@@ -195,7 +208,8 @@ enum ChromeMV3PasswordManagerRealPackageTargetCatalog {
                     .onePasswordClass.rawValue,
                 expectedExtensionID: nil,
                 configuredNativeHostNames: [],
-                trustedFixtureHostRootPath: nil,
+                trustedFixtureHostRootPath:
+                    "\(explicitFixtureRootBase)/1password",
                 noRealCredentialsInvariant: true
             ),
         ]
@@ -417,6 +431,14 @@ enum ChromeMV3PasswordManagerRealPackageDetector {
             expectedExtensionID: target.expectedExtensionID,
             nativeHostNames: target.configuredNativeHostNames.sorted(),
             trustedFixtureHostRootPath: target.trustedFixtureHostRootPath,
+            detectedExtensionID: nil,
+            generatedOrTestExtensionID: target.expectedExtensionID,
+            nativeFixtureRootState:
+                target.trustedFixtureHostRootPath == nil
+                    ? .notConfigured : .missingFixtureRoot,
+            fixtureManifestPathCandidates: [],
+            fixtureExecutablePathCandidates: [],
+            nativeHostBlockerState: nil,
             noRealCredentialsInvariant: target.noRealCredentialsInvariant,
             sourceAvailability: sourceAvailability.sorted(),
             manifestCandidatePaths: manifestCandidatePaths.sorted(),
@@ -676,6 +698,232 @@ struct ChromeMV3PasswordManagerRealPackagePermissionSmoke:
     var diagnostics: [String]
 }
 
+enum ChromeMV3PasswordManagerRealPackageNativeHostRequirementDetectionConfidence:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case notRequired
+    case manifestPermission
+    case observedRuntimeCall
+    case configuredTarget
+    case fixtureMetadata
+    case hostNameNotObservable
+
+    static func < (
+        lhs:
+            ChromeMV3PasswordManagerRealPackageNativeHostRequirementDetectionConfidence,
+        rhs:
+            ChromeMV3PasswordManagerRealPackageNativeHostRequirementDetectionConfidence
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3PasswordManagerRealPackageNativeHostFixtureRootState:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case notRequired
+    case notConfigured
+    case missingFixtureRoot
+    case invalidFixtureRoot
+    case configured
+
+    static func < (
+        lhs: ChromeMV3PasswordManagerRealPackageNativeHostFixtureRootState,
+        rhs: ChromeMV3PasswordManagerRealPackageNativeHostFixtureRootState
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3PasswordManagerRealPackageNativeHostManifestState:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case notRequired
+    case hostNameNotObservable
+    case missing
+    case valid
+    case invalidHostName
+    case invalidManifest
+    case unsupported
+
+    static func < (
+        lhs: ChromeMV3PasswordManagerRealPackageNativeHostManifestState,
+        rhs: ChromeMV3PasswordManagerRealPackageNativeHostManifestState
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3PasswordManagerRealPackageAllowedOriginsState:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case notRequired
+    case notEvaluated
+    case compatible
+    case mismatch
+    case invalidManifest
+
+    static func < (
+        lhs: ChromeMV3PasswordManagerRealPackageAllowedOriginsState,
+        rhs: ChromeMV3PasswordManagerRealPackageAllowedOriginsState
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3PasswordManagerRealPackageNativeHostReadinessState:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case notRequired
+    case hostRequiredButNotConfigured
+    case hostNameNotObservable
+    case hostManifestConfiguredButInvalid
+    case allowedOriginsMismatch
+    case permissionMissing
+    case userApprovalMissing
+    case userDenied
+    case userRevoked
+    case approvedTrustedFixtureHostWorks
+    case fixtureExchangeFailed
+    case realVendorHostDiscoveryBlocked
+    case realVendorHostLaunchBlockedUnlessFixtureConfigured
+
+    static func < (
+        lhs: ChromeMV3PasswordManagerRealPackageNativeHostReadinessState,
+        rhs: ChromeMV3PasswordManagerRealPackageNativeHostReadinessState
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3PasswordManagerRealPackageNativeHostExchangeState:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case notRequired
+    case notAttempted
+    case sendNativeMessageSucceeded
+    case connectNativeSucceeded
+    case succeeded
+    case failed
+
+    static func < (
+        lhs: ChromeMV3PasswordManagerRealPackageNativeHostExchangeState,
+        rhs: ChromeMV3PasswordManagerRealPackageNativeHostExchangeState
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3PasswordManagerRealPackageNativeFixtureExchangeResult:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var attempted: Bool
+    var state:
+        ChromeMV3PasswordManagerRealPackageNativeHostExchangeState
+    var sendNativeMessageSucceeded: Bool
+    var connectNativeSucceeded: Bool
+    var postMessageSucceeded: Bool
+    var disconnectSucceeded: Bool
+    var fixtureProcessLaunchAttempted: Bool
+    var productProcessLaunchAttempted: Bool
+    var sendNativeMessageLastError: String?
+    var connectNativeLastError: String?
+    var diagnostics: [String]
+
+    static func notAttempted(
+        state:
+            ChromeMV3PasswordManagerRealPackageNativeHostExchangeState =
+                .notAttempted,
+        diagnostics: [String]
+    ) -> ChromeMV3PasswordManagerRealPackageNativeFixtureExchangeResult {
+        ChromeMV3PasswordManagerRealPackageNativeFixtureExchangeResult(
+            attempted: false,
+            state: state,
+            sendNativeMessageSucceeded: false,
+            connectNativeSucceeded: false,
+            postMessageSucceeded: false,
+            disconnectSucceeded: false,
+            fixtureProcessLaunchAttempted: false,
+            productProcessLaunchAttempted: false,
+            sendNativeMessageLastError: nil,
+            connectNativeLastError: nil,
+            diagnostics: uniqueSortedRealPackages(diagnostics)
+        )
+    }
+}
+
+struct ChromeMV3PasswordManagerRealPackageNativeHostReadiness:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var hostName: String?
+    var required: Bool
+    var optional: Bool
+    var detectionSources: [String]
+    var detectionConfidence:
+        ChromeMV3PasswordManagerRealPackageNativeHostRequirementDetectionConfidence
+    var nativeMessagingPermissionDeclared: Bool
+    var nativeMessagingPermissionState:
+        ChromeMV3NativeMessagingPermissionState
+    var fixtureRootPath: String?
+    var fixtureRootState:
+        ChromeMV3PasswordManagerRealPackageNativeHostFixtureRootState
+    var fixtureManifestPathCandidates: [String]
+    var fixtureExecutablePathCandidates: [String]
+    var lookupStatus: ChromeMV3NativeHostLookupStatus?
+    var manifestState:
+        ChromeMV3PasswordManagerRealPackageNativeHostManifestState
+    var manifestValidation:
+        ChromeMV3NativeHostManifestValidationSummary?
+    var manifestPath: String?
+    var executablePath: String?
+    var resolvedExecutablePath: String?
+    var executableInsideFixtureRoot: Bool
+    var executableIsExecutable: Bool
+    var allowedOrigins: [String]
+    var expectedAllowedOrigin: String?
+    var explicitTestAliasUsed: Bool
+    var allowedOriginsState:
+        ChromeMV3PasswordManagerRealPackageAllowedOriginsState
+    var trustedHostApprovalState: ChromeMV3NativeTrustedHostTrustState
+    var trustedHostApprovedForDeveloperPreview: Bool
+    var sendNativeMessageReadiness: String
+    var connectNativeReadiness: String
+    var exchangeResult:
+        ChromeMV3PasswordManagerRealPackageNativeFixtureExchangeResult
+    var blockerState:
+        ChromeMV3PasswordManagerRealPackageNativeHostReadinessState
+    var remediation: String
+    var diagnostics: [String]
+}
+
 struct ChromeMV3PasswordManagerRealPackageNativeMessagingSmoke:
     Codable,
     Equatable,
@@ -683,13 +931,35 @@ struct ChromeMV3PasswordManagerRealPackageNativeMessagingSmoke:
 {
     var required: Bool
     var optional: Bool
+    var detectedExtensionID: String?
+    var generatedOrTestExtensionID: String
+    var expectedAllowedOrigin: String
+    var explicitTestAliasUsed: Bool
+    var nativeMessagingPermissionDeclared: Bool
+    var nativeMessagingPermissionState:
+        ChromeMV3NativeMessagingPermissionState
+    var requirementDetectionConfidence:
+        ChromeMV3PasswordManagerRealPackageNativeHostRequirementDetectionConfidence
     var hostNames: [String]
+    var hostNamesNotObservable: Bool
     var trustedFixtureHostRootPath: String?
+    var fixtureRootState:
+        ChromeMV3PasswordManagerRealPackageNativeHostFixtureRootState
+    var fixtureManifestPathCandidates: [String]
+    var fixtureExecutablePathCandidates: [String]
+    var hostReadiness:
+        [ChromeMV3PasswordManagerRealPackageNativeHostReadiness]
     var noTrustedHostConfigured: Bool
     var arbitraryHostDiscoveryBlocked: Bool
     var realVendorHostLaunchBlocked: Bool
     var fixtureExchangeAttempted: Bool
     var fixtureExchangeSucceeded: Bool
+    var sendNativeMessageReadiness: String
+    var connectNativeReadiness: String
+    var exactBlocker:
+        ChromeMV3PasswordManagerRealPackageNativeHostReadinessState?
+    var remediation: String?
+    var previousTrialDelta: String
     var diagnostics: [String]
 }
 
@@ -773,7 +1043,7 @@ struct ChromeMV3PasswordManagerRealPackageCompatibilityReport:
     Equatable,
     Sendable
 {
-    static let schemaVersion = 1
+    static let schemaVersion = 2
     static let reportFileName =
         "runtime-mv3-real-package-compatibility-report.json"
 
@@ -842,6 +1112,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 ChromeMV3PasswordManagerRealPackageTargetCatalog
                 .explicitLocalTargets(),
         profileID: String = "password-manager-real-package-profile",
+        trustedHostApprovalRecords:
+            [ChromeMV3NativeTrustedHostApprovalRecord] = [],
         writeReport: Bool = true,
         now: @escaping () -> Date = Date.init,
         fileManager: FileManager = .default
@@ -899,11 +1171,12 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     configuration.nativeHostNames
                         + selected.configuredNativeHostNames
                 )
-            configurations.append(configuration)
 
+            let targetProfileID =
+                "\(profileID)-\(target.targetClass.fixtureFallbackKind.pathComponent)"
             let trial = runPackage(
                 selected: selected,
-                profileID: "\(profileID)-\(target.targetClass.fixtureFallbackKind.pathComponent)",
+                profileID: targetProfileID,
                 registry: registry,
                 intake: intake
             )
@@ -934,8 +1207,29 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 installReport: installReport,
                 extraction: extraction,
                 resourceScan: resourceScan,
-                fixtureRow: fixtureRow
+                fixtureRow: fixtureRow,
+                profileID: targetProfileID,
+                trustedHostApprovalRecords: trustedHostApprovalRecords,
+                fileManager: fileManager
             )
+            configuration.nativeHostNames =
+                uniqueSortedRealPackages(
+                    configuration.nativeHostNames
+                        + row.nativeMessagingSmoke.hostNames
+                )
+            configuration.detectedExtensionID =
+                row.nativeMessagingSmoke.detectedExtensionID
+            configuration.generatedOrTestExtensionID =
+                row.nativeMessagingSmoke.generatedOrTestExtensionID
+            configuration.nativeFixtureRootState =
+                row.nativeMessagingSmoke.fixtureRootState
+            configuration.fixtureManifestPathCandidates =
+                row.nativeMessagingSmoke.fixtureManifestPathCandidates
+            configuration.fixtureExecutablePathCandidates =
+                row.nativeMessagingSmoke.fixtureExecutablePathCandidates
+            configuration.nativeHostBlockerState =
+                row.nativeMessagingSmoke.exactBlocker
+            configurations.append(configuration)
             rows.append(row)
             diagnostics.append(contentsOf: configuration.diagnostics)
             diagnostics.append(contentsOf: selected.diagnostics)
@@ -1239,7 +1533,11 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         extraction:
             ChromeMV3PasswordManagerRealPackageManifestRequirementExtraction,
         resourceScan: ChromeMV3PasswordManagerRealPackageResourceScan,
-        fixtureRow: ChromeMV3PasswordManagerCompatibilityMatrixRow?
+        fixtureRow: ChromeMV3PasswordManagerCompatibilityMatrixRow?,
+        profileID: String,
+        trustedHostApprovalRecords:
+            [ChromeMV3NativeTrustedHostApprovalRecord],
+        fileManager: FileManager
     ) -> ChromeMV3PasswordManagerRealPackageCompatibilityRow {
         let lifecycleSucceeded = trial.lifecycleResult?.succeeded == true
         let generatedAvailable =
@@ -1266,10 +1564,15 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             extraction.optionalPermissions.contains("nativeMessaging")
         let nativeSmoke = nativeSmoke(
             target: target,
+            configuration: configuration,
             selected: selected,
+            trial: trial,
             extraction: extraction,
             nativeRequired: nativeRequired,
-            nativeOptional: nativeOptional
+            nativeOptional: nativeOptional,
+            profileID: profileID,
+            trustedHostApprovalRecords: trustedHostApprovalRecords,
+            fileManager: fileManager
         )
         let popupSmoke = popupSmoke(
             extraction: extraction,
@@ -1306,9 +1609,16 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     + packageBlockers(for: configuration)
             )
         let nativeBlockers =
-            uniqueSortedRealPackages(nativeSmoke.diagnostics.filter {
-                $0.contains("blocked") || $0.contains("No trusted")
-            })
+            uniqueSortedRealPackages(
+                nativeSmoke.hostReadiness.map {
+                    "\($0.hostName ?? "native host"): \($0.blockerState.rawValue) - \($0.remediation)"
+                }
+                    + nativeSmoke.diagnostics.filter {
+                        $0.contains("blocked")
+                            || $0.contains("No trusted")
+                            || $0.contains("missing")
+                    }
+            )
         let permissionBlockers =
             permissionSmoke.silentlyGranted
                 ? ["Permission smoke silently granted a permission."]
@@ -1324,7 +1634,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     "Developer-preview diagnostic only; public password-manager support remains blocked.",
                     "Product runtime is not globally loadable or exposed.",
                 ]
-                    + (extraction.declaresDNR ? ["Product DNR/WKContentRuleList enforcement is not enabled."] : [])
+                    + (extraction.declaresDNR ? ["Product DNR content-rule enforcement is not enabled."] : [])
                     + (extraction.declaresWebRequest ? ["Product webRequest runtime/enforcement is not enabled."] : [])
                     + (extraction.declaresSidePanel ? ["Product sidePanel runtime is not enabled."] : [])
                     + (extraction.declaresOffscreen ? ["Product offscreen runtime is not enabled."] : [])
@@ -1612,48 +1922,825 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
 
     private static func nativeSmoke(
         target: ChromeMV3PasswordManagerRealPackageTargetDefinition,
+        configuration:
+            ChromeMV3PasswordManagerRealPackageTargetConfiguration,
         selected: SelectedPackage,
+        trial: PackageTrialResult,
         extraction:
             ChromeMV3PasswordManagerRealPackageManifestRequirementExtraction,
         nativeRequired: Bool,
-        nativeOptional: Bool
+        nativeOptional: Bool,
+        profileID: String,
+        trustedHostApprovalRecords:
+            [ChromeMV3NativeTrustedHostApprovalRecord],
+        fileManager: FileManager
     ) -> ChromeMV3PasswordManagerRealPackageNativeMessagingSmoke {
-        let hostNames =
+        let requiresNative = nativeRequired || nativeOptional
+        let rootState = nativeFixtureRootState(
+            rootPath: target.trustedFixtureHostRootPath,
+            requiresNative: requiresNative,
+            fileManager: fileManager
+        )
+        let fixtureCandidates = nativeFixtureManifestCandidates(
+            rootPath: target.trustedFixtureHostRootPath,
+            rootState: rootState,
+            fileManager: fileManager
+        )
+        let candidateHostNames = fixtureCandidates.compactMap(\.hostName)
+        let configuredAndObservedHostNames =
             uniqueSortedRealPackages(
                 target.configuredNativeHostNames
+                    + configuration.nativeHostNames
                     + selected.configuredNativeHostNames
                     + extraction.detectedNativeHostNames
             )
-        let requiresNative = nativeRequired || nativeOptional
+        let hostNames =
+            configuredAndObservedHostNames.isEmpty && rootState == .configured
+                ? uniqueSortedRealPackages(candidateHostNames)
+                : configuredAndObservedHostNames
+        let detectedExtensionID = trial.lifecycleResult?.record?.extensionID
+        let extensionID =
+            target.expectedExtensionID
+                ?? detectedExtensionID
+                ?? "password-manager-real-package-extension"
+        let expectedAllowedOrigin =
+            ChromeMV3NativeMessagingAllowedOrigin.originString(
+                extensionID: extensionID
+            )
+        let permissionDeclared =
+            extraction.permissions.contains("nativeMessaging")
+                || extraction.optionalPermissions.contains("nativeMessaging")
+        let permissionState = nativeMessagingPermissionState(
+            extraction: extraction
+        )
+        let confidence = nativeRequirementConfidence(
+            requiresNative: requiresNative,
+            observedHostNames: extraction.detectedNativeHostNames,
+            configuredHostNames:
+                target.configuredNativeHostNames
+                    + selected.configuredNativeHostNames,
+            fixtureHostNames: candidateHostNames,
+            permissionDeclared: permissionDeclared
+        )
         let trustedRoot = target.trustedFixtureHostRootPath
         let noTrusted = requiresNative && trustedRoot == nil
+        let readiness: [ChromeMV3PasswordManagerRealPackageNativeHostReadiness]
+        if requiresNative == false {
+            readiness = []
+        } else if hostNames.isEmpty {
+            readiness = [
+                hostNameNotObservableReadiness(
+                    target: target,
+                    extensionID: extensionID,
+                    expectedAllowedOrigin: expectedAllowedOrigin,
+                    permissionDeclared: permissionDeclared,
+                    permissionState: permissionState,
+                    confidence: confidence,
+                    rootState: rootState,
+                    fixtureCandidates: fixtureCandidates
+                ),
+            ]
+        } else {
+            readiness = hostNames.map { hostName in
+                nativeHostReadiness(
+                    hostName: hostName,
+                    target: target,
+                    extensionID: extensionID,
+                    profileID: profileID,
+                    expectedAllowedOrigin: expectedAllowedOrigin,
+                    explicitTestAliasUsed: target.expectedExtensionID != nil,
+                    nativeRequired: nativeRequired,
+                    nativeOptional: nativeOptional,
+                    detectionSources:
+                        nativeHostDetectionSources(
+                            hostName: hostName,
+                            target: target,
+                            selected: selected,
+                            extraction: extraction,
+                            fixtureCandidates: fixtureCandidates
+                        ),
+                    confidence: confidence,
+                    permissionDeclared: permissionDeclared,
+                    permissionState: permissionState,
+                    rootState: rootState,
+                    fixtureCandidates: fixtureCandidates,
+                    trustedHostApprovalRecords:
+                        trustedHostApprovalRecords,
+                    fileManager: fileManager
+                )
+            }
+        }
+        let exchangeAttempted = readiness.contains {
+            $0.exchangeResult.attempted
+        }
+        let exchangeSucceeded = readiness.contains {
+            $0.exchangeResult.state == .succeeded
+        }
+        let exactBlocker =
+            readiness.first {
+                $0.blockerState != .approvedTrustedFixtureHostWorks
+                    && $0.blockerState != .notRequired
+            }?.blockerState
+                ?? (requiresNative ? nil : .notRequired)
+        let remediation =
+            readiness.first {
+                $0.blockerState != .approvedTrustedFixtureHostWorks
+                    && $0.blockerState != .notRequired
+            }?.remediation
+        let fixtureManifestPaths =
+            uniqueSortedRealPackages(fixtureCandidates.map(\.manifestPath))
+        let fixtureExecutablePaths =
+            uniqueSortedRealPackages(
+                fixtureCandidates.compactMap(\.executablePath)
+            )
+        let sendReadiness =
+            aggregateReadiness(
+                readiness.map(\.sendNativeMessageReadiness),
+                requiresNative: requiresNative
+            )
+        let connectReadiness =
+            aggregateReadiness(
+                readiness.map(\.connectNativeReadiness),
+                requiresNative: requiresNative
+            )
+
         return ChromeMV3PasswordManagerRealPackageNativeMessagingSmoke(
             required: nativeRequired,
             optional: nativeOptional,
+            detectedExtensionID: detectedExtensionID,
+            generatedOrTestExtensionID: extensionID,
+            expectedAllowedOrigin: expectedAllowedOrigin,
+            explicitTestAliasUsed: target.expectedExtensionID != nil,
+            nativeMessagingPermissionDeclared: permissionDeclared,
+            nativeMessagingPermissionState: permissionState,
+            requirementDetectionConfidence: confidence,
             hostNames: hostNames,
+            hostNamesNotObservable: requiresNative && hostNames.isEmpty,
             trustedFixtureHostRootPath: trustedRoot,
+            fixtureRootState: rootState,
+            fixtureManifestPathCandidates: fixtureManifestPaths,
+            fixtureExecutablePathCandidates: fixtureExecutablePaths,
+            hostReadiness: readiness.sorted {
+                ($0.hostName ?? "") < ($1.hostName ?? "")
+            },
             noTrustedHostConfigured: noTrusted,
             arbitraryHostDiscoveryBlocked: true,
             realVendorHostLaunchBlocked: true,
-            fixtureExchangeAttempted: false,
-            fixtureExchangeSucceeded: false,
+            fixtureExchangeAttempted: exchangeAttempted,
+            fixtureExchangeSucceeded: exchangeSucceeded,
+            sendNativeMessageReadiness: sendReadiness,
+            connectNativeReadiness: connectReadiness,
+            exactBlocker: exactBlocker,
+            remediation: remediation,
+            previousTrialDelta:
+                requiresNative
+                    ? "Previous real-package trial reported noTrustedHostConfigured; current blocker is \(exactBlocker?.rawValue ?? "none")."
+                    : "Previous real-package trial did not require native messaging for this target.",
             diagnostics:
                 uniqueSortedRealPackages(
-                    requiresNative
-                        ? [
+                    readiness.flatMap(\.diagnostics)
+                        + [
+                            requiresNative
+                                ? "Native messaging readiness was evaluated against explicit fixture roots only."
+                                : "nativeMessaging is not required by this manifest/resource scan.",
                             noTrusted
                                 ? "No trusted fixture native-host root is configured for this real package target."
-                                : "Trusted fixture native-host root is configured; exchange remains explicit test-only.",
+                                : "Trusted fixture native-host root state is \(rootState.rawValue).",
                             "Arbitrary native host discovery is blocked.",
-                            "Real vendor native host launch is blocked.",
-                        ]
-                        : [
-                            "nativeMessaging is not required by this manifest/resource scan.",
-                            "Arbitrary native host discovery remains blocked.",
-                            "Real vendor native host launch remains blocked.",
+                            "Real vendor native host discovery is blocked.",
+                            "Real vendor native host launch is blocked unless the executable is deliberately copied into an explicit reviewed fixture root.",
+                            "No real credentials, accounts, vaults, tokens, or remote native hosts were used.",
                         ]
                 )
         )
+    }
+
+    private static func nativeFixtureRootState(
+        rootPath: String?,
+        requiresNative: Bool,
+        fileManager: FileManager
+    ) -> ChromeMV3PasswordManagerRealPackageNativeHostFixtureRootState {
+        guard requiresNative else { return .notRequired }
+        guard let rootPath else { return .notConfigured }
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(
+            atPath: rootPath,
+            isDirectory: &isDirectory
+        ) else { return .missingFixtureRoot }
+        return isDirectory.boolValue ? .configured : .invalidFixtureRoot
+    }
+
+    private static func nativeFixtureManifestCandidates(
+        rootPath: String?,
+        rootState:
+            ChromeMV3PasswordManagerRealPackageNativeHostFixtureRootState,
+        fileManager: FileManager
+    ) -> [NativeFixtureManifestCandidate] {
+        guard rootState == .configured, let rootPath else { return [] }
+        let root = URL(fileURLWithPath: rootPath, isDirectory: true)
+            .standardizedFileURL
+        let children =
+            (try? fileManager.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [
+                    .isRegularFileKey,
+                    .isSymbolicLinkKey,
+                ],
+                options: [.skipsPackageDescendants]
+            )) ?? []
+        return children.compactMap { url in
+            guard url.pathExtension.lowercased() == "json",
+                  isRegularFile(url),
+                  isSymlink(url) == false,
+                  safeURLInsideRoot(url.resolvingSymlinksInPath(), root: root)
+            else { return nil }
+            let basename = url.deletingPathExtension().lastPathComponent
+            guard let data = try? Data(contentsOf: url) else {
+                return NativeFixtureManifestCandidate(
+                    hostName: basename,
+                    manifestPath: url.path,
+                    executablePath: nil,
+                    manifest: nil,
+                    diagnostics: [
+                        "Fixture host manifest \(url.path) could not be read.",
+                    ]
+                )
+            }
+            let source = ChromeMV3NativeHostManifestSourceLocation
+                .explicitTestRoot(rootPath: root.path, hostName: basename)
+            let manifest = ChromeMV3NativeHostManifestDecoder.decode(
+                data: data,
+                sourceLocation: source,
+                requestedHostName: basename
+            )
+            return NativeFixtureManifestCandidate(
+                hostName:
+                    (manifest.name?.isEmpty == false)
+                        ? manifest.name : basename,
+                manifestPath: url.path,
+                executablePath: manifest.path,
+                manifest: manifest,
+                diagnostics: manifest.diagnostics.map(\.message)
+            )
+        }.sorted { $0.manifestPath < $1.manifestPath }
+    }
+
+    private static func nativeMessagingPermissionState(
+        extraction:
+            ChromeMV3PasswordManagerRealPackageManifestRequirementExtraction
+    ) -> ChromeMV3NativeMessagingPermissionState {
+        if extraction.permissions.contains("nativeMessaging") {
+            return .grantedByManifest
+        }
+        if extraction.optionalPermissions.contains("nativeMessaging") {
+            return .missing
+        }
+        return .missing
+    }
+
+    private static func nativeRequirementConfidence(
+        requiresNative: Bool,
+        observedHostNames: [String],
+        configuredHostNames: [String],
+        fixtureHostNames: [String],
+        permissionDeclared: Bool
+    ) -> ChromeMV3PasswordManagerRealPackageNativeHostRequirementDetectionConfidence {
+        guard requiresNative else { return .notRequired }
+        if observedHostNames.isEmpty == false { return .observedRuntimeCall }
+        if configuredHostNames.isEmpty == false { return .configuredTarget }
+        if fixtureHostNames.isEmpty == false { return .fixtureMetadata }
+        if permissionDeclared { return .manifestPermission }
+        return .hostNameNotObservable
+    }
+
+    private static func nativeHostDetectionSources(
+        hostName: String,
+        target: ChromeMV3PasswordManagerRealPackageTargetDefinition,
+        selected: SelectedPackage,
+        extraction:
+            ChromeMV3PasswordManagerRealPackageManifestRequirementExtraction,
+        fixtureCandidates: [NativeFixtureManifestCandidate]
+    ) -> [String] {
+        uniqueSortedRealPackages(
+            [
+                target.configuredNativeHostNames.contains(hostName)
+                    ? "configuredTarget" : nil,
+                selected.configuredNativeHostNames.contains(hostName)
+                    ? "selectedFixtureMetadata" : nil,
+                extraction.detectedNativeHostNames.contains(hostName)
+                    ? "observedRuntimeCall" : nil,
+                fixtureCandidates.contains { $0.hostName == hostName }
+                    ? "fixtureMetadata" : nil,
+            ].compactMap { $0 }
+        )
+    }
+
+    private static func hostNameNotObservableReadiness(
+        target: ChromeMV3PasswordManagerRealPackageTargetDefinition,
+        extensionID: String,
+        expectedAllowedOrigin: String,
+        permissionDeclared: Bool,
+        permissionState: ChromeMV3NativeMessagingPermissionState,
+        confidence:
+            ChromeMV3PasswordManagerRealPackageNativeHostRequirementDetectionConfidence,
+        rootState:
+            ChromeMV3PasswordManagerRealPackageNativeHostFixtureRootState,
+        fixtureCandidates: [NativeFixtureManifestCandidate]
+    ) -> ChromeMV3PasswordManagerRealPackageNativeHostReadiness {
+        let blocker:
+            ChromeMV3PasswordManagerRealPackageNativeHostReadinessState =
+                rootState == .notConfigured || rootState == .missingFixtureRoot
+                    ? .hostRequiredButNotConfigured
+                    : .hostNameNotObservable
+        let remediation =
+            rootState == .notConfigured
+                ? "Configure an explicit reviewed fixture root for \(target.displayName) and provide a host manifest whose name is observable from package calls or fixture metadata."
+                : "Record the native host name from reviewed local package diagnostics or place a matching manifest in the explicit fixture root."
+        return ChromeMV3PasswordManagerRealPackageNativeHostReadiness(
+            hostName: nil,
+            required: true,
+            optional: false,
+            detectionSources: [],
+            detectionConfidence: confidence,
+            nativeMessagingPermissionDeclared: permissionDeclared,
+            nativeMessagingPermissionState: permissionState,
+            fixtureRootPath: target.trustedFixtureHostRootPath,
+            fixtureRootState: rootState,
+            fixtureManifestPathCandidates:
+                uniqueSortedRealPackages(fixtureCandidates.map(\.manifestPath)),
+            fixtureExecutablePathCandidates:
+                uniqueSortedRealPackages(
+                    fixtureCandidates.compactMap(\.executablePath)
+                ),
+            lookupStatus: nil,
+            manifestState: .hostNameNotObservable,
+            manifestValidation: nil,
+            manifestPath: nil,
+            executablePath: nil,
+            resolvedExecutablePath: nil,
+            executableInsideFixtureRoot: false,
+            executableIsExecutable: false,
+            allowedOrigins: [],
+            expectedAllowedOrigin: expectedAllowedOrigin,
+            explicitTestAliasUsed: false,
+            allowedOriginsState: .notEvaluated,
+            trustedHostApprovalState: .unknown,
+            trustedHostApprovedForDeveloperPreview: false,
+            sendNativeMessageReadiness: "blocked:\(blocker.rawValue)",
+            connectNativeReadiness: "blocked:\(blocker.rawValue)",
+            exchangeResult: .notAttempted(diagnostics: [
+                "Fixture exchange was not attempted because no native host name was observable.",
+            ]),
+            blockerState: blocker,
+            remediation: remediation,
+            diagnostics: [
+                "nativeMessaging was detected, but no concrete native host name was found in package calls or fixture metadata.",
+                "Real vendor host discovery remains blocked.",
+            ]
+        )
+    }
+
+    private static func nativeHostReadiness(
+        hostName: String,
+        target: ChromeMV3PasswordManagerRealPackageTargetDefinition,
+        extensionID: String,
+        profileID: String,
+        expectedAllowedOrigin: String,
+        explicitTestAliasUsed: Bool,
+        nativeRequired: Bool,
+        nativeOptional: Bool,
+        detectionSources: [String],
+        confidence:
+            ChromeMV3PasswordManagerRealPackageNativeHostRequirementDetectionConfidence,
+        permissionDeclared: Bool,
+        permissionState: ChromeMV3NativeMessagingPermissionState,
+        rootState:
+            ChromeMV3PasswordManagerRealPackageNativeHostFixtureRootState,
+        fixtureCandidates: [NativeFixtureManifestCandidate],
+        trustedHostApprovalRecords:
+            [ChromeMV3NativeTrustedHostApprovalRecord],
+        fileManager: FileManager
+    ) -> ChromeMV3PasswordManagerRealPackageNativeHostReadiness {
+        let fixtureManifestPaths =
+            uniqueSortedRealPackages(fixtureCandidates.map(\.manifestPath))
+        let fixtureExecutablePaths =
+            uniqueSortedRealPackages(
+                fixtureCandidates.compactMap(\.executablePath)
+            )
+        let lookupPolicy = ChromeMV3NativeHostLookupPolicy.macOS(
+            explicitTestRootPath: target.trustedFixtureHostRootPath,
+            extensionModuleEnabled: true
+        )
+        let lookup = lookupPolicy.lookupHost(
+            named: hostName,
+            fileManager: fileManager
+        )
+        let manifest = lookup.manifest
+        let expectedOriginID =
+            ChromeMV3NativeMessagingAllowedOrigin
+            .nativeMessagingOriginExtensionID(for: extensionID)
+        let allowedOriginIDs =
+            manifest?.allowedOrigins.compactMap(\.extensionID) ?? []
+        let allowedOriginsState:
+            ChromeMV3PasswordManagerRealPackageAllowedOriginsState
+        if manifest == nil {
+            allowedOriginsState = .notEvaluated
+        } else if manifest?.isValid != true {
+            allowedOriginsState = .invalidManifest
+        } else if allowedOriginIDs.contains(expectedOriginID) {
+            allowedOriginsState = .compatible
+        } else {
+            allowedOriginsState = .mismatch
+        }
+        let resolvedExecutable =
+            manifest?.path.map {
+                URL(fileURLWithPath: $0)
+                    .resolvingSymlinksInPath()
+                    .standardizedFileURL
+            }
+        let resolvedRoot =
+            target.trustedFixtureHostRootPath.map {
+                URL(fileURLWithPath: $0, isDirectory: true)
+                    .resolvingSymlinksInPath()
+                    .standardizedFileURL
+            }
+        let executableInsideRoot: Bool
+        if let resolvedExecutable, let resolvedRoot {
+            executableInsideRoot =
+                resolvedExecutable.path == resolvedRoot.path
+                    || resolvedExecutable.path
+                    .hasPrefix(resolvedRoot.path + "/")
+        } else {
+            executableInsideRoot = false
+        }
+        let executableIsExecutable =
+            resolvedExecutable.map {
+                fileManager.isExecutableFile(atPath: $0.path)
+            } ?? false
+        let trustedRecord = matchingTrustedHostRecord(
+            records: trustedHostApprovalRecords,
+            hostName: hostName,
+            extensionID: extensionID,
+            profileID: profileID,
+            manifestSHA256: manifest?.canonicalJSONSHA256
+        )
+        let productPolicy = ChromeMV3NativeMessagingProductPolicy
+            .blockedRuntimeDefault
+        let oneShot = ChromeMV3NativeMessagingPreflightEvaluator.evaluate(
+            input: ChromeMV3NativeMessagingPreflightInput(
+                extensionID: extensionID,
+                profileID: profileID,
+                hostName: hostName,
+                operationKind: .oneShotNativeMessage,
+                sourceContext: .extensionPage,
+                permissionState: permissionState,
+                productPolicy: productPolicy,
+                trustedHostPolicyRecord: trustedRecord
+            ),
+            lookupPolicy: lookupPolicy,
+            lookupResult: lookup,
+            fileManager: fileManager
+        )
+        let long = ChromeMV3NativeMessagingPreflightEvaluator.evaluate(
+            input: ChromeMV3NativeMessagingPreflightInput(
+                extensionID: extensionID,
+                profileID: profileID,
+                hostName: hostName,
+                operationKind: .longLivedNativePort,
+                sourceContext: .extensionPage,
+                permissionState: permissionState,
+                productPolicy: productPolicy,
+                trustedHostPolicyRecord: trustedRecord
+            ),
+            lookupPolicy: lookupPolicy,
+            lookupResult: lookup,
+            fileManager: fileManager
+        )
+        let manifestState = nativeManifestState(
+            lookup: lookup,
+            requestedHostName: hostName
+        )
+        let preExchangeBlocker = nativeBlockerState(
+            rootState: rootState,
+            lookup: lookup,
+            manifestState: manifestState,
+            requestedHostName: hostName,
+            permissionState: permissionState,
+            allowedOriginsState: allowedOriginsState,
+            trustedRecord: trustedRecord,
+            oneShot: oneShot,
+            long: long
+        )
+        let exchange =
+            preExchangeBlocker == .approvedTrustedFixtureHostWorks
+                ? runNativeFixtureExchange(
+                    hostName: hostName,
+                    targetID: target.targetID,
+                    extensionID: extensionID,
+                    profileID: profileID,
+                    fixtureRootPath: target.trustedFixtureHostRootPath,
+                    permissionState: permissionState,
+                    trustedHostApprovalRecords: trustedHostApprovalRecords
+                )
+                : .notAttempted(diagnostics: [
+                    "Fixture exchange was not attempted because \(preExchangeBlocker.rawValue) blocked launch.",
+                ])
+        let blocker =
+            exchange.attempted && exchange.state != .succeeded
+                ? .fixtureExchangeFailed
+                : preExchangeBlocker
+        return ChromeMV3PasswordManagerRealPackageNativeHostReadiness(
+            hostName: hostName,
+            required: nativeRequired,
+            optional: nativeOptional,
+            detectionSources: detectionSources,
+            detectionConfidence: confidence,
+            nativeMessagingPermissionDeclared: permissionDeclared,
+            nativeMessagingPermissionState: permissionState,
+            fixtureRootPath: target.trustedFixtureHostRootPath,
+            fixtureRootState: rootState,
+            fixtureManifestPathCandidates: fixtureManifestPaths,
+            fixtureExecutablePathCandidates: fixtureExecutablePaths,
+            lookupStatus: lookup.status,
+            manifestState: manifestState,
+            manifestValidation: manifest?.validationSummary,
+            manifestPath: manifest?.sourceLocation.manifestPath,
+            executablePath: manifest?.path,
+            resolvedExecutablePath: resolvedExecutable?.path,
+            executableInsideFixtureRoot: executableInsideRoot,
+            executableIsExecutable: executableIsExecutable,
+            allowedOrigins:
+                manifest?.allowedOrigins.map(\.rawValue).sorted() ?? [],
+            expectedAllowedOrigin: expectedAllowedOrigin,
+            explicitTestAliasUsed: explicitTestAliasUsed,
+            allowedOriginsState: allowedOriginsState,
+            trustedHostApprovalState:
+                trustedRecord?.trustState ?? .unknown,
+            trustedHostApprovedForDeveloperPreview:
+                trustedRecord?.trustedForDeveloperPreview ?? false,
+            sendNativeMessageReadiness:
+                oneShot.canSendNativeMessageNow
+                    ? "ready" : "blocked:\(blocker.rawValue)",
+            connectNativeReadiness:
+                long.canConnectNativeNow
+                    ? "ready" : "blocked:\(blocker.rawValue)",
+            exchangeResult: exchange,
+            blockerState: blocker,
+            remediation:
+                nativeRemediation(
+                    blocker: blocker,
+                    target: target,
+                    hostName: hostName,
+                    expectedAllowedOrigin: expectedAllowedOrigin
+                ),
+            diagnostics:
+                uniqueSortedRealPackages(
+                    lookup.diagnostics
+                        + oneShot.diagnostics
+                        + long.diagnostics
+                        + exchange.diagnostics
+                        + (trustedRecord?.diagnostics ?? [
+                            "No trusted fixture host approval record was supplied for this target/profile/host.",
+                        ])
+                        + [
+                            "Host readiness was evaluated for \(hostName) inside explicit fixture roots only.",
+                            "Allowed origins expected \(expectedAllowedOrigin); state \(allowedOriginsState.rawValue).",
+                            "Real vendor host discovery remains blocked.",
+                            "Real vendor host launch remains blocked unless the executable is fixture-configured and approved.",
+                        ]
+                )
+        )
+    }
+
+    private static func nativeManifestState(
+        lookup: ChromeMV3NativeHostLookupResult,
+        requestedHostName: String
+    ) -> ChromeMV3PasswordManagerRealPackageNativeHostManifestState {
+        switch lookup.status {
+        case .found:
+            guard lookup.manifest?.name == requestedHostName else {
+                return .invalidManifest
+            }
+            return .valid
+        case .invalidHostName:
+            return .invalidHostName
+        case .malformedManifest:
+            return .invalidManifest
+        case .missing:
+            return .missing
+        case .disabledModule, .unsupported:
+            return .unsupported
+        }
+    }
+
+    private static func nativeBlockerState(
+        rootState:
+            ChromeMV3PasswordManagerRealPackageNativeHostFixtureRootState,
+        lookup: ChromeMV3NativeHostLookupResult,
+        manifestState:
+            ChromeMV3PasswordManagerRealPackageNativeHostManifestState,
+        requestedHostName: String,
+        permissionState: ChromeMV3NativeMessagingPermissionState,
+        allowedOriginsState:
+            ChromeMV3PasswordManagerRealPackageAllowedOriginsState,
+        trustedRecord: ChromeMV3NativeTrustedHostApprovalRecord?,
+        oneShot: ChromeMV3NativeMessagingOperationPreflight,
+        long: ChromeMV3NativeMessagingOperationPreflight
+    ) -> ChromeMV3PasswordManagerRealPackageNativeHostReadinessState {
+        if rootState == .notConfigured || rootState == .missingFixtureRoot
+            || rootState == .invalidFixtureRoot
+        {
+            return .hostRequiredButNotConfigured
+        }
+        if lookup.status == .missing {
+            return .hostRequiredButNotConfigured
+        }
+        if manifestState != .valid || lookup.manifest?.name != requestedHostName {
+            return .hostManifestConfiguredButInvalid
+        }
+        if permissionState.hasPermission == false {
+            return .permissionMissing
+        }
+        if allowedOriginsState != .compatible {
+            return .allowedOriginsMismatch
+        }
+        if trustedRecord?.trustState == .userDenied {
+            return .userDenied
+        }
+        if trustedRecord?.trustState == .revoked {
+            return .userRevoked
+        }
+        if oneShot.canSendNativeMessageNow && long.canConnectNativeNow {
+            return .approvedTrustedFixtureHostWorks
+        }
+        return .userApprovalMissing
+    }
+
+    private static func matchingTrustedHostRecord(
+        records: [ChromeMV3NativeTrustedHostApprovalRecord],
+        hostName: String,
+        extensionID: String,
+        profileID: String,
+        manifestSHA256: String?
+    ) -> ChromeMV3NativeTrustedHostApprovalRecord? {
+        records.last {
+            $0.hostName == hostName
+                && $0.extensionID == extensionID
+                && $0.profileID == profileID
+                && ($0.manifestSHA256 == manifestSHA256
+                    || $0.trustState == .userDenied
+                    || $0.trustState == .revoked)
+        }
+    }
+
+    private static func runNativeFixtureExchange(
+        hostName: String,
+        targetID: String,
+        extensionID: String,
+        profileID: String,
+        fixtureRootPath: String?,
+        permissionState: ChromeMV3NativeMessagingPermissionState,
+        trustedHostApprovalRecords:
+            [ChromeMV3NativeTrustedHostApprovalRecord]
+    ) -> ChromeMV3PasswordManagerRealPackageNativeFixtureExchangeResult {
+        guard let fixtureRootPath else {
+            return .notAttempted(diagnostics: [
+                "Fixture exchange was not attempted because no fixture root path was configured.",
+            ])
+        }
+        let owner = ChromeMV3NativeMessagingRuntimeOwner(
+            configuration: .internalFixture(
+                extensionID: extensionID,
+                profileID: profileID,
+                fixtureHostRootPaths: [fixtureRootPath],
+                permissionState: permissionState,
+                trustedHostApprovalRecords: trustedHostApprovalRecords
+            )
+        )
+        let payload = ChromeMV3StorageValue.object([
+            "fixtureOnly": .bool(true),
+            "noRealData": .bool(true),
+            "targetID": .string(targetID),
+        ])
+        let send = owner.sendNativeMessage(
+            hostName: hostName,
+            message: payload
+        )
+        let connect = owner.connectNative(hostName: hostName)
+        var postSucceeded = false
+        var disconnectSucceeded = false
+        var postDiagnostics: [String] = []
+        var disconnectDiagnostics: [String] = []
+        if let portID = connect.portID {
+            let post = owner.postMessage(portID: portID, message: payload)
+            postSucceeded = post.succeeded
+            postDiagnostics = post.diagnostics
+            let disconnect = owner.disconnect(
+                portID: portID,
+                reason: .extensionDisabled
+            )
+            disconnectSucceeded = disconnect.disconnected
+            disconnectDiagnostics = disconnect.diagnostics
+        }
+        let succeeded =
+            send.succeeded
+                && connect.succeeded
+                && postSucceeded
+                && disconnectSucceeded
+        let state:
+            ChromeMV3PasswordManagerRealPackageNativeHostExchangeState
+        if succeeded {
+            state = .succeeded
+        } else if send.succeeded && connect.succeeded {
+            state = .connectNativeSucceeded
+        } else if send.succeeded {
+            state = .sendNativeMessageSucceeded
+        } else {
+            state = .failed
+        }
+        return ChromeMV3PasswordManagerRealPackageNativeFixtureExchangeResult(
+            attempted: true,
+            state: state,
+            sendNativeMessageSucceeded: send.succeeded,
+            connectNativeSucceeded: connect.succeeded,
+            postMessageSucceeded: postSucceeded,
+            disconnectSucceeded: disconnectSucceeded,
+            fixtureProcessLaunchAttempted:
+                send.lifecycle.processLaunchAttempted
+                    || connect.lifecycle.processLaunchAttempted,
+            productProcessLaunchAttempted:
+                send.lifecycle.processLaunchAllowedInProduct
+                    || connect.lifecycle.processLaunchAllowedInProduct,
+            sendNativeMessageLastError: send.lastErrorMessage,
+            connectNativeLastError: connect.lastErrorMessage,
+            diagnostics:
+                uniqueSortedRealPackages(
+                    send.diagnostics
+                        + connect.diagnostics
+                        + postDiagnostics
+                        + disconnectDiagnostics
+                        + [
+                            "Fixture exchange used an explicit reviewed fixture root only.",
+                            "No product native messaging process launch was allowed.",
+                        ]
+                )
+        )
+    }
+
+    private static func nativeRemediation(
+        blocker:
+            ChromeMV3PasswordManagerRealPackageNativeHostReadinessState,
+        target: ChromeMV3PasswordManagerRealPackageTargetDefinition,
+        hostName: String,
+        expectedAllowedOrigin: String
+    ) -> String {
+        switch blocker {
+        case .notRequired:
+            return "No native host fixture is needed for this target."
+        case .hostRequiredButNotConfigured:
+            return "Create \(target.trustedFixtureHostRootPath ?? "an explicit fixture root")/\(hostName).json with an executable copied into that reviewed fixture root."
+        case .hostNameNotObservable:
+            return "Record the requested host name from package diagnostics or reviewed fixture metadata."
+        case .hostManifestConfiguredButInvalid:
+            return "Fix the fixture host manifest name, type, allowed_origins, absolute path, JSON syntax, and executable containment."
+        case .allowedOriginsMismatch:
+            return "Add \(expectedAllowedOrigin) to allowed_origins in the fixture manifest or configure an explicit test alias."
+        case .permissionMissing:
+            return "Grant nativeMessaging through the manifest or an explicit optional-permission approval before fixture launch."
+        case .userApprovalMissing:
+            return "Approve the reviewed fixture host through developer-preview trusted-host policy."
+        case .userDenied:
+            return "Reset or approve the denied trusted-host record before launch."
+        case .userRevoked:
+            return "Approve the fixture host again after revocation."
+        case .approvedTrustedFixtureHostWorks:
+            return "No remediation needed for this fixture host; this is still not public password-manager support."
+        case .fixtureExchangeFailed:
+            return "Inspect fixture host stdio framing, executable permissions, and teardown diagnostics."
+        case .realVendorHostDiscoveryBlocked:
+            return "Real vendor host discovery is intentionally blocked; copy a reviewed fixture into the explicit fixture root instead."
+        case .realVendorHostLaunchBlockedUnlessFixtureConfigured:
+            return "Real vendor host launch remains blocked unless the executable is deliberately fixture-configured and approved."
+        }
+    }
+
+    private static func aggregateReadiness(
+        _ values: [String],
+        requiresNative: Bool
+    ) -> String {
+        guard requiresNative else { return "notRequired" }
+        if values.contains("ready") { return "ready" }
+        return values.first ?? "blocked:hostNameNotObservable"
+    }
+
+    private static func isRegularFile(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isRegularFileKey]))
+            .flatMap(\.isRegularFile) == true
+    }
+
+    private static func isSymlink(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]))
+            .flatMap(\.isSymbolicLink) == true
     }
 
     private static func fixtureDelta(
@@ -1882,12 +2969,22 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             source(
                 "Chrome native messaging",
                 "https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging",
-                "Checked nativeMessaging permission, host manifests, allowed_origins, and process boundary."
+                "Checked nativeMessaging permission, host manifest format, host names, allowed_origins, stdio framing, message size limits, host lifecycle, and process boundary."
+            ),
+            source(
+                "Chrome runtime API",
+                "https://developer.chrome.com/docs/extensions/reference/api/runtime",
+                "Checked runtime.connectNative, runtime.sendNativeMessage, Port lifecycle, and lastError behavior."
             ),
             source(
                 "Chrome service-worker lifecycle",
                 "https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle",
                 "Checked MV3 event-driven service-worker lifecycle constraints."
+            ),
+            source(
+                "Apple Foundation Process and FileManager",
+                "https://developer.apple.com/documentation/foundation",
+                "Checked Foundation Process/FileManager API surface relevant to explicit fixture process launch, executable checks, and symlink-resolved containment."
             ),
             source(
                 "Chrome extension packaging",
@@ -1923,6 +3020,14 @@ private struct PackageTrialResult {
     var lifecycleResult: ChromeMV3LifecycleOperationResult?
     var packageIntakeReport: ChromeMV3PackageIntakeReport?
     var acceptedPackageRootPath: String?
+    var diagnostics: [String]
+}
+
+private struct NativeFixtureManifestCandidate {
+    var hostName: String?
+    var manifestPath: String
+    var executablePath: String?
+    var manifest: ChromeMV3NativeHostManifest?
     var diagnostics: [String]
 }
 
