@@ -400,9 +400,6 @@ extension Tab {
             .normalTabDecision(for: url, profileId: profile.id)
         if let protectionDecision {
             noteProtectionAttachmentApplied(protectionDecision.attachmentState)
-            noteAdblockAttachmentApplied(
-                protectionDecision.adblockAttachmentState
-            )
         }
 
         let autoplayPolicy = BrowserConfiguration.shared.resolvedAutoplayPolicy(

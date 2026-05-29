@@ -277,26 +277,6 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         XCTAssertEqual(store.hostsDeletingWhenAllWindowsClosed(profileId: profileB), ["accounts.youtube.com"])
     }
 
-    func testSiteDataCookieBlockingRuleSourceUsesProfileScopedHosts() throws {
-        let suiteName = "SumiSiteDataRuleSourceTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let store = SumiSiteDataPolicyStore(userDefaults: defaults)
-        let profileA = UUID()
-        let profileB = UUID()
-        store.setBlockStorage(true, forHost: "youtube.com", profileId: profileA)
-        store.setBlockStorage(true, forHost: "reddit.com", profileId: profileB)
-        let source = SumiSiteDataCookieBlockingRuleSource(policyStore: store)
-
-        let profileARules = try source.ruleLists(profileId: profileA)
-        let encoded = profileARules.first?.encodedContentRuleList ?? ""
-
-        XCTAssertEqual(profileARules.count, 1)
-        XCTAssertTrue(encoded.contains("\"block-cookies\""))
-        XCTAssertTrue(encoded.contains("*youtube.com"))
-        XCTAssertFalse(encoded.contains("*reddit.com"))
-    }
-
     func testSiteDataBlockStoragePolicyDeletesExactHostImmediately() async {
         let suiteName = "SumiSiteDataBlockStorageTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

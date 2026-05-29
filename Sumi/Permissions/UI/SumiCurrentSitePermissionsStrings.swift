@@ -2,11 +2,6 @@ import Foundation
 
 enum SumiCurrentSitePermissionsStrings {
     static let rowTitle = "Permissions"
-    static let headerTitlePrefix = "Permissions for"
-    static let unavailableTitle = "Permissions are unavailable for this page."
-    static let unavailableSubtitle = "Sumi can manage site permissions for normal web pages."
-    static let resetTitle = "Reset permissions for this site"
-    static let siteSettingsTitle = "Site settings..."
     static let sessionOnly = "Session only"
     static let defaultSummary = "Default"
     static let ask = "Ask"
@@ -18,8 +13,6 @@ enum SumiCurrentSitePermissionsStrings {
     static let allowAllAutoplay = "Allow all autoplay"
     static let blockAudibleAutoplay = "Block audible autoplay"
     static let blockAllAutoplay = "Block all autoplay"
-    static let noActivityTitle = "No permissions used by this site"
-    static let noActivitySubtitle = "Permissions appear here after the site asks, uses one, or has a saved setting."
     static let permissionsChanged = "Permissions updated"
     static let resetComplete = "Permissions reset"
     static let fileChooserTitle = "File chooser"
