@@ -64,7 +64,6 @@ docs/
 !docs/
 docs/*
 !docs/architecture.md
-!docs/status.md
 !docs/roadmap.md
 !docs/mv3-extensions.md
 !docs/demo-script.md

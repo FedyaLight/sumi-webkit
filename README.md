@@ -26,7 +26,7 @@ The first public preview is planned after three user-safety pieces are in place:
 - File/archive-based backup and restore for user data.
 - An update mechanism or update notification path.
 
-See [docs/status.md](docs/status.md) and [docs/roadmap.md](docs/roadmap.md) for more detail.
+See [docs/roadmap.md](docs/roadmap.md) for the current milestone, developer-preview status, public-preview blockers, and planned work.
 
 ## What Sumi Is
 
