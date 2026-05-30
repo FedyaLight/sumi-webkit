@@ -1,14 +1,18 @@
 # Roadmap
 
-Sumi Browser is a developer-preview project. This roadmap is a planning
-snapshot, not a release promise.
+Sumi Browser is a developer-preview project. This roadmap is a planning snapshot, not a release promise.
+
+## Current Status
+
+- Sumi builds and runs locally as a working native macOS browser shell.
+- It is not recommended as a primary browser yet.
+- The first public preview is planned after MV3 password-manager compatibility, backup/restore user data, and update mechanism/notification.
 
 ## Current Milestone
 
-The active milestone is Chrome MV3 password-manager extension compatibility.
+Chrome MV3 password-manager extension compatibility.
 
-The near-term target is that a user can install an unpacked or zipped
-password-manager extension and use it from the browser UI.
+The near-term target is that a user can install an unpacked or zipped password-manager extension and use it from the browser UI. Sumi does not currently claim that Bitwarden, Proton Pass, or 1Password already work.
 
 ## Done In Developer Preview
 
@@ -22,7 +26,7 @@ password-manager extension and use it from the browser UI.
 - Pinned items, essentials, and folders.
 - Custom themes.
 - Session restore setting.
-- Mini Player controls for jump-to-media, pause, and mute.
+- Mini Player jump-to-media / pause / mute.
 - Memory modes and inactive tab unloading.
 - Optional tracking protection module.
 - Optional adblock module.
@@ -31,13 +35,19 @@ password-manager extension and use it from the browser UI.
 - MV3 compatibility report UI.
 - Real password-manager package trials.
 
-## Partial
+## Experimental Or In Validation
 
 - Chrome MV3 scripting API.
 - MV3 service-worker lifecycle.
 - Native messaging.
-- Adblock product behavior validation.
-- Tracking/privacy module validation.
+- Tracking protection behavior and protection-bundle workflow.
+- Adblock behavior and validation.
+- Automatic history and site-data cleanup.
+- Extension compatibility reporting.
+
+Additional details:
+- Automatic cleanup intervals include 1, 7, 30, and 90 days. Cleanup is intended to remove browser leftovers and site data where possible, not only history.
+- The Mini Player does not currently include next/previous track controls or a timeline.
 
 ## Remaining MV3 Blockers
 
@@ -47,6 +57,14 @@ password-manager extension and use it from the browser UI.
 - Native messaging fixture exchange and trusted host configuration.
 - Offscreen, webRequest, and DNR product behavior.
 - Arbitrary `scripting.executeScript` and `insertCSS`.
+
+## Public Preview Blockers
+
+- MV3 password-manager compatibility.
+- File/archive-based backup and restore for user data.
+- Update mechanism or update notification.
+
+Backup and restore is a blocker because Sumi's target users may build complex tab, space, profile, pinned item, essential, folder, and theme organization.
 
 ## Near-Term
 
