@@ -164,8 +164,10 @@ enum SidebarDropResolver {
             return nil
         }
 
-        // Clean handoff between Essentials and Pinned based on SpaceTitle center
-        guard location.y >= hoveredPage.frame.minY + 26 else {
+        // Clean handoff between Essentials and Pinned
+        let essentialsBoundaryY = state.essentialsLayoutMetricsBySpace[hoveredPage.spaceId]?.dropHitFrame.maxY
+            ?? (hoveredPage.frame.minY + 26) // fallback to legacy
+        guard location.y >= essentialsBoundaryY else {
             return nil
         }
 
@@ -598,8 +600,10 @@ enum SidebarDropResolver {
             return nil
         }
 
-        // Clean handoff between Essentials and Pinned based on SpaceTitle center
-        guard location.y < hoveredPage.frame.minY + 26 else {
+        // Clean handoff between Essentials and Pinned
+        let essentialsBoundaryY = state.essentialsLayoutMetricsBySpace[hoveredPage.spaceId]?.dropHitFrame.maxY
+            ?? (hoveredPage.frame.minY + 26) // fallback to legacy
+        guard location.y < essentialsBoundaryY else {
             return nil
         }
 
