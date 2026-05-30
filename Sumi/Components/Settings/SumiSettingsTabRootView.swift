@@ -50,7 +50,7 @@ struct SumiSettingsTabRootView: View {
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
-            .background(Color(nsColor: .windowBackgroundColor))
+            .background(SettingsSurfaceStyle.pageBackground)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .environment(\.resolvedThemeContext, surfaceThemeContext)
@@ -87,7 +87,7 @@ struct SumiSettingsTabRootView: View {
         HStack(spacing: 0) {
             sidebar(sumiSettings: sumiSettings, width: sidebarWidth)
             Divider()
-                .opacity(0.45)
+                .overlay(SettingsSurfaceStyle.separator)
             detail(sumiSettings: sumiSettings)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .layoutPriority(1)
@@ -133,7 +133,7 @@ struct SumiSettingsTabRootView: View {
         }
         .frame(width: width, alignment: .topLeading)
         .frame(maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(SettingsSurfaceStyle.pageBackground)
     }
 
     private var settingsSearchField: some View {
@@ -150,11 +150,11 @@ struct SumiSettingsTabRootView: View {
         .frame(height: 30)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.95))
+                .fill(SettingsSurfaceStyle.fieldBackground)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.secondary.opacity(0.16), lineWidth: 1)
+                .strokeBorder(SettingsSurfaceStyle.stroke, lineWidth: 1)
         )
     }
 
@@ -243,7 +243,7 @@ struct SumiSettingsTabRootView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(SettingsSurfaceStyle.pageBackground)
     }
 
     private func compactNavigationRow(
@@ -270,20 +270,17 @@ struct SumiSettingsTabRootView: View {
         .buttonStyle(.plain)
         .background(
             Capsule(style: .continuous)
-                .fill(selected ? Color.accentColor.opacity(0.16) : Color(nsColor: .controlBackgroundColor))
+                .fill(selected ? Color.accentColor.opacity(0.16) : SettingsSurfaceStyle.fieldBackground)
         )
         .foregroundStyle(.primary)
     }
 
     private func detail(sumiSettings: SumiSettingsService) -> some View {
         let selectedTab = sumiSettings.currentSettingsTab
-        let descriptor = SettingsPaneDescriptor.descriptor(for: selectedTab)
 
         return ScrollView {
             HStack(alignment: .top, spacing: 0) {
                 VStack(alignment: .leading, spacing: 18) {
-                    settingsHeader(descriptor)
-
                     if filteredDescriptors.isEmpty && isSearching {
                         SettingsEmptyState(
                             systemImage: "magnifyingglass",
@@ -302,21 +299,8 @@ struct SumiSettingsTabRootView: View {
             .padding(.horizontal, Layout.horizontalPadding)
             .padding(.vertical, Layout.verticalPadding)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(SettingsSurfaceStyle.pageBackground)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    private func settingsHeader(_ descriptor: SettingsPaneDescriptor) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(descriptor.title)
-                .font(.system(size: 28, weight: .semibold))
-                .foregroundStyle(.primary)
-            Text(descriptor.subtitle)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.bottom, 4)
     }
 
     @ViewBuilder
@@ -361,18 +345,21 @@ struct SumiSettingsTabRootView: View {
 private struct SettingsPaneIcon: View {
     let systemImage: String
     let color: Color
+    var size: CGFloat = 24
+    var imageSize: CGFloat = 14
+    var cornerRadius: CGFloat = 6
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(color.gradient)
 
             Image(systemName: systemImage)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: imageSize, weight: .semibold))
                 .foregroundStyle(.white)
                 .symbolRenderingMode(.hierarchical)
         }
-        .frame(width: 24, height: 24)
-        .shadow(color: .black.opacity(0.12), radius: 1, x: 0, y: 1)
+        .frame(width: size, height: size)
+        .shadow(color: .black.opacity(0.14), radius: 1.5, x: 0, y: 1)
     }
 }

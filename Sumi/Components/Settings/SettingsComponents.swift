@@ -11,6 +11,35 @@ private enum SettingsLayout {
     static let rowControlWidth: CGFloat = 220
 }
 
+enum SettingsSurfaceStyle {
+    static let groupedCornerRadius: CGFloat = 14
+    static let compactCornerRadius: CGFloat = 8
+
+    static var pageBackground: Color {
+        Color(nsColor: .windowBackgroundColor)
+    }
+
+    static var groupedBackground: Color {
+        Color.primary.opacity(0.055)
+    }
+
+    static var groupedBackgroundProminent: Color {
+        Color.primary.opacity(0.075)
+    }
+
+    static var fieldBackground: Color {
+        Color.primary.opacity(0.055)
+    }
+
+    static var separator: Color {
+        Color.primary.opacity(0.08)
+    }
+
+    static var stroke: Color {
+        Color.primary.opacity(0.06)
+    }
+}
+
 struct SettingsSection<Content: View>: View {
     let title: String
     var subtitle: String? = nil
@@ -48,11 +77,11 @@ struct SettingsSection<Content: View>: View {
         .padding(.horizontal, 18)
         .background(
             RoundedRectangle(cornerRadius: SettingsLayout.sectionCornerRadius, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.96))
+                .fill(SettingsSurfaceStyle.groupedBackground)
         )
         .overlay(
             RoundedRectangle(cornerRadius: SettingsLayout.sectionCornerRadius, style: .continuous)
-                .strokeBorder(Color.secondary.opacity(0.10), lineWidth: 1)
+                .strokeBorder(SettingsSurfaceStyle.stroke, lineWidth: 1)
         )
     }
 }
@@ -129,7 +158,7 @@ struct SettingsActionRow: View {
 struct SettingsDivider: View {
     var body: some View {
         Divider()
-            .opacity(0.45)
+            .overlay(SettingsSurfaceStyle.separator)
     }
 }
 
