@@ -193,7 +193,7 @@ struct GradientCanvasEditor: View {
             updatedTheme.replaceColors(updatedColors, algorithm: resolvedHarmony.persistedAlgorithm)
             gradientTheme = updatedTheme
             harmony = resolvedHarmony
-            gradientColorManager.activePrimaryNodeID = updatedColors.first?.id
+            gradientColorManager.activePrimaryStopID = updatedColors.first?.id
         }
 
         if animate {
@@ -204,8 +204,8 @@ struct GradientCanvasEditor: View {
     }
 
     private func updatePreview(with theme: WorkspaceGradientTheme) {
-        gradientColorManager.preferredPrimaryNodeID = theme.normalizedColors.first?.id
-        gradientColorManager.activePrimaryNodeID = theme.normalizedColors.first?.id
+        gradientColorManager.preferredPrimaryStopID = theme.normalizedColors.first?.id
+        gradientColorManager.activePrimaryStopID = theme.normalizedColors.first?.id
         gradientColorManager.setImmediate(theme.renderGradient)
     }
 }

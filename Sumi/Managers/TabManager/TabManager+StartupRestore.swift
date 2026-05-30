@@ -289,9 +289,6 @@ extension TabManager {
         {
             return theme
         }
-        if let data = snapshotSpace.gradientData {
-            return WorkspaceTheme(gradient: SpaceGradient.decode(data))
-        }
         return .default
     }
 }

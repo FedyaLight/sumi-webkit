@@ -3,12 +3,12 @@ import SwiftUI
 
 @MainActor
 final class WorkspaceThemeEditorPreview: ObservableObject {
-    @Published var displayGradient: SpaceGradient = .default
+    @Published var displayGradient: WorkspaceResolvedGradient = .default
     @Published private(set) var isEditing: Bool = false
-    @Published var activePrimaryNodeID: UUID?
-    @Published var preferredPrimaryNodeID: UUID?
+    @Published var activePrimaryStopID: UUID?
+    @Published var preferredPrimaryStopID: UUID?
 
-    func setImmediate(_ gradient: SpaceGradient) {
+    func setImmediate(_ gradient: WorkspaceResolvedGradient) {
         var tx = Transaction()
         tx.disablesAnimations = true
         withTransaction(tx) {
@@ -22,6 +22,6 @@ final class WorkspaceThemeEditorPreview: ObservableObject {
 
     func endInteractivePreview() {
         isEditing = false
-        activePrimaryNodeID = nil
+        activePrimaryStopID = nil
     }
 }

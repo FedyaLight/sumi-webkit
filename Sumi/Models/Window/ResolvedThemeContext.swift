@@ -23,7 +23,7 @@ struct ResolvedThemeContext: Equatable {
         transitionProgress: 1.0
     )
 
-    var gradient: SpaceGradient {
+    var gradient: WorkspaceResolvedGradient {
         workspaceTheme.gradient
     }
 

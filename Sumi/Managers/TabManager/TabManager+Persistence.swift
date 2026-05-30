@@ -72,7 +72,6 @@ struct TabManagerSnapshotCache {
                     name: space.name,
                     icon: space.icon,
                     index: index,
-                    gradientData: space.gradient.encoded,
                     workspaceThemeData: space.workspaceTheme.encoded,
                     profileId: space.profileId
                 )
@@ -577,7 +576,6 @@ extension TabManager {
                 name: space.name,
                 icon: space.icon,
                 index: index,
-                gradientData: space.gradient.encoded,
                 workspaceThemeData: space.workspaceTheme.encoded,
                 profileId: space.profileId
             )

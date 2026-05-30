@@ -164,9 +164,25 @@ private struct ButtonPreviewSection: View {
 #else
         let hex = "#FFFFFFFF"
 #endif
-        let n1 = GradientNode(colorHex: hex, location: 0.0)
-        let n2 = GradientNode(colorHex: hex, location: 1.0)
-        let gradient = SpaceGradient(angle: 45.0, nodes: [n1, n2], grain: 0.05, opacity: 1.0)
+        let gradient = WorkspaceResolvedGradient(
+            angle: 45,
+            stops: [
+                WorkspaceGradientStop(
+                    id: UUID(),
+                    hex: hex,
+                    location: 0,
+                    position: .topLeft
+                ),
+                WorkspaceGradientStop(
+                    id: UUID(),
+                    hex: hex,
+                    location: 1,
+                    position: .bottom
+                )
+            ],
+            texture: 0.05,
+            opacity: 1
+        )
         manager.setImmediate(gradient)
         return manager
     }

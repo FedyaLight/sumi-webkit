@@ -9,7 +9,7 @@ extension TabManager {
     func createSpace(
         name: String,
         icon: String = "square.grid.2x2",
-        gradient: SpaceGradient = .default,
+        workspaceTheme: WorkspaceTheme? = nil,
         profileId: UUID? = nil
     ) -> Space {
         return withStructuralUpdateTransaction {
@@ -17,14 +17,7 @@ extension TabManager {
                 ?? browserManager?.currentProfile?.id
                 ?? browserManager?.profileManager.profiles.first?.id
             let defaultTheme = SumiWorkspaceThemePresets.rotatingTheme(at: spaces.count)
-            let resolvedTheme: WorkspaceTheme
-            if gradient.visuallyEquals(.default) {
-                resolvedTheme = defaultTheme
-            } else {
-                resolvedTheme = WorkspaceTheme(
-                    gradient: gradient
-                )
-            }
+            let resolvedTheme = workspaceTheme ?? defaultTheme
 
             let space = Space(
                 name: name,

@@ -7,9 +7,6 @@
 import AppKit
 import SwiftUI
  
-// Gradient configuration for spaces
-// See: SpaceGradient.swift
-
 enum SumiProfileRuntimeState: String, Codable, CaseIterable {
     case dormant
     case loadedInactive
@@ -47,10 +44,5 @@ public class Space: NSObject, Identifiable {
         self.activeTabId = nil
         self.profileId = profileId
         super.init()
-    }
-
-    var gradient: SpaceGradient {
-        get { workspaceTheme.gradient }
-        set { workspaceTheme.gradient = newValue }
     }
 }

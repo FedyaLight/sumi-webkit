@@ -4,8 +4,8 @@ import SwiftUI
 struct ZenWorkspaceThemeResolution: Equatable {
     let chromeColorScheme: ColorScheme
     let blackContrast: Double
-    let backgroundGradient: SpaceGradient
-    let toolbarGradient: SpaceGradient
+    let backgroundGradient: WorkspaceResolvedGradient
+    let toolbarGradient: WorkspaceResolvedGradient
     let isThemeExplicitScheme: Bool
 }
 
@@ -41,16 +41,14 @@ enum ZenWorkspaceThemeResolver {
             chromeColorScheme: contrast.scheme,
             blackContrast: contrast.blackContrast,
             backgroundGradient: resolvedGradient(
-                theme.gradient,
+                theme.gradientTheme,
                 forToolbar: false,
-                colorSource: theme,
                 globalWindowScheme: globalWindowScheme,
                 usesWorkspaceExplicitScheme: usesWorkspaceExplicitScheme
             ),
             toolbarGradient: resolvedGradient(
-                theme.gradient,
+                theme.gradientTheme,
                 forToolbar: true,
-                colorSource: theme,
                 globalWindowScheme: globalWindowScheme,
                 usesWorkspaceExplicitScheme: usesWorkspaceExplicitScheme
             ),
@@ -108,12 +106,11 @@ enum ZenWorkspaceThemeResolver {
     }
 
     private static func resolvedGradient(
-        _ gradient: SpaceGradient,
+        _ gradientTheme: WorkspaceGradientTheme,
         forToolbar: Bool,
-        colorSource theme: WorkspaceTheme,
         globalWindowScheme: ColorScheme,
         usesWorkspaceExplicitScheme: Bool
-    ) -> SpaceGradient {
+    ) -> WorkspaceResolvedGradient {
         guard usesWorkspaceExplicitScheme else {
             return defaultThemeGradient(
                 for: globalWindowScheme,
@@ -121,12 +118,11 @@ enum ZenWorkspaceThemeResolver {
             )
         }
 
-        let colorsByID = Dictionary(
-            uniqueKeysWithValues: theme.gradientTheme.normalizedColors.map { ($0.id, $0) }
-        )
-        let nodes = gradient.sortedNodes.map { node -> GradientNode in
-            let color = colorsByID[node.id]
-            let rgb = rgbComponents(of: Color(hex: color?.hex ?? node.colorHex))
+        let gradient = gradientTheme.renderGradient
+        let colorsByID = Dictionary(uniqueKeysWithValues: gradientTheme.normalizedColors.map { ($0.id, $0) })
+        let stops = gradient.sortedStops.map { stop -> WorkspaceGradientStop in
+            let color = colorsByID[stop.id]
+            let rgb = rgbComponents(of: Color(hex: color?.hex ?? stop.hex))
             let resolvedRGB = resolvedSingleRGBColor(
                 rgb,
                 opacity: gradient.opacity,
@@ -134,19 +130,18 @@ enum ZenWorkspaceThemeResolver {
                 forToolbar: forToolbar,
                 globalWindowScheme: globalWindowScheme
             )
-            return GradientNode(
-                id: node.id,
-                colorHex: hexString(from: resolvedRGB),
-                location: node.location,
-                xPosition: node.xPosition,
-                yPosition: node.yPosition
+            return WorkspaceGradientStop(
+                id: stop.id,
+                hex: hexString(from: resolvedRGB),
+                location: stop.location,
+                position: stop.position
             )
         }
 
-        return SpaceGradient(
+        return WorkspaceResolvedGradient(
             angle: gradient.angle,
-            nodes: nodes,
-            grain: gradient.grain,
+            stops: stops,
+            texture: gradient.texture,
             opacity: forToolbar ? 1 : gradient.opacity
         )
     }
@@ -154,7 +149,7 @@ enum ZenWorkspaceThemeResolver {
     private static func defaultThemeGradient(
         for globalWindowScheme: ColorScheme,
         forToolbar: Bool
-    ) -> SpaceGradient {
+    ) -> WorkspaceResolvedGradient {
         let color: Color = {
             switch globalWindowScheme {
             case .light:
@@ -170,17 +165,17 @@ enum ZenWorkspaceThemeResolver {
             ? resolvedToolbarRGB(rgb, globalWindowScheme: globalWindowScheme)
             : rgb
 
-        return SpaceGradient(
+        return WorkspaceResolvedGradient(
             angle: 225,
-            nodes: [
-                GradientNode(
-                    colorHex: hexString(from: resolvedRGB),
+            stops: [
+                WorkspaceGradientStop(
+                    id: UUID(),
+                    hex: hexString(from: resolvedRGB),
                     location: 0,
-                    xPosition: 0.5,
-                    yPosition: 0.5
+                    position: .monochrome
                 )
             ],
-            grain: 0,
+            texture: 0,
             opacity: 1
         )
     }

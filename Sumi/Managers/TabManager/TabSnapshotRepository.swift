@@ -58,7 +58,6 @@ actor TabSnapshotRepository {
         let name: String
         let icon: String
         let index: Int
-        let gradientData: Data?
         let workspaceThemeData: Data?
         let profileId: UUID?
     }
@@ -492,9 +491,6 @@ actor TabSnapshotRepository {
             existing.name = space.name
             existing.icon = space.icon
             existing.index = space.index
-            if let data = space.gradientData {
-                existing.gradientData = data
-            }
             existing.workspaceThemeData = space.workspaceThemeData
             existing.profileId = space.profileId
         } else {
@@ -503,7 +499,6 @@ actor TabSnapshotRepository {
                 name: space.name,
                 icon: space.icon,
                 index: space.index,
-                gradientData: space.gradientData ?? (SpaceGradient.default.encoded ?? Data()),
                 workspaceThemeData: space.workspaceThemeData,
                 profileId: space.profileId
             )

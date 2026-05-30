@@ -79,7 +79,6 @@ actor TabRestoreLoader {
         let name: String
         let icon: String
         let index: Int
-        let gradientData: Data
         let workspaceThemeData: Data?
         let profileId: UUID?
     }
@@ -127,7 +126,6 @@ actor TabRestoreLoader {
                 name: entity.name,
                 icon: entity.icon,
                 index: entity.index,
-                gradientData: entity.gradientData,
                 workspaceThemeData: entity.workspaceThemeData,
                 profileId: entity.profileId
             )
@@ -275,8 +273,7 @@ actor TabRestoreLoader {
                     return nil
                 }
 
-                let workspaceTheme = WorkspaceTheme.decode(raw.workspaceThemeData ?? Data())
-                    ?? WorkspaceTheme(gradient: SpaceGradient.decode(raw.gradientData))
+                let workspaceTheme = WorkspaceTheme.decode(raw.workspaceThemeData ?? Data()) ?? .default
                 let profileId = raw.profileId ?? defaultProfileId
                 if raw.profileId == nil, defaultProfileId != nil {
                     repairReasons.insert("assigned default profile to space")
@@ -536,7 +533,6 @@ actor TabRestoreLoader {
                 name: space.name,
                 icon: space.icon,
                 index: index,
-                gradientData: space.workspaceTheme.gradient.encoded,
                 workspaceThemeData: space.workspaceTheme.encoded,
                 profileId: space.profileId
             )
