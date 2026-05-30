@@ -87,11 +87,6 @@ struct TabFolderView: View {
         }
     }
 
-    private var folderUsesProjectedDropLayout: Bool {
-        let baseItems = baseFolderItems
-        return folderProjectedSourceItem(in: baseItems) != nil
-            || folderProjectedInsertionIndex != nil
-    }
 
     private func folderProjectedSourceItem(in items: [FolderListItem]) -> FolderListItem? {
         guard dragState.isDropProjectionActive,
@@ -202,14 +197,6 @@ struct TabFolderView: View {
         topLevelPinnedIndex ?? 0
     }
 
-    private var folderInsertionGuideLeading: CGFloat {
-        max(
-            0,
-            SidebarRowLayout.leadingInset +
-                SidebarRowLayout.folderTitleLeading -
-                Self.folderContentLeadingPadding
-        )
-    }
 
     private var folderDragHighlightHorizontalBleed: CGFloat {
         8
@@ -377,9 +364,6 @@ struct TabFolderView: View {
         .frame(height: folderBodyTargetHeight, alignment: .top)
         .opacity(folderBodyTargetOpacity)
         .clipped()
-        .overlay(alignment: .topLeading) {
-            folderDropIndicator
-        }
         .animation(folderLayoutAnimation, value: folder.isOpen)
         .animation(folderLayoutAnimation, value: folderBodyTargetHeight)
         .animation(folderLayoutAnimation, value: folderBodyTargetOpacity)
@@ -466,28 +450,6 @@ struct TabFolderView: View {
         }
     }
 
-    private var folderDropIndicator: some View {
-        Group {
-            switch dragState.folderDropIntent {
-            case .insertIntoFolder(let folderId, let index) where folderId == folder.id && !folderUsesProjectedDropLayout:
-                folderInsertionGuide(slot: index)
-                    .animation(isInteractive ? Self.zenFolderContentAnimation : nil, value: index)
-            default:
-                EmptyView()
-            }
-        }
-        .allowsHitTesting(false)
-    }
-
-    private func folderInsertionGuide(slot: Int) -> some View {
-        let safeSlot = max(0, min(slot, folderItems.count))
-        let centerY = Self.folderContentVerticalPadding + CGFloat(safeSlot) * SidebarRowLayout.rowHeight
-
-        return SidebarInsertionGuide()
-            .padding(.leading, folderInsertionGuideLeading)
-            .padding(.trailing, SidebarRowLayout.trailingInset)
-            .offset(y: centerY - SidebarInsertionGuide.visualCenterY)
-    }
 
     private var folderHeader: some View {
         folderHeaderRow

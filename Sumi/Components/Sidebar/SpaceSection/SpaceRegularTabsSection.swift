@@ -242,11 +242,6 @@ extension SpaceView {
                 }
             }
         }
-        .overlay(alignment: .topLeading) {
-            if !regularTabsUsesProjectedDropLayout {
-                regularDropGuideOverlay(itemCount: currentTabs.count)
-            }
-        }
     }
 
     private func visibleSplitGroups(currentTabs: [Tab]) -> [SplitGroup] {
@@ -923,41 +918,6 @@ extension SpaceView {
             tab.url,
             using: .init(windowState: windowState, spaceId: space.id)
         )
-    }
-
-    private func regularDropGuideOverlay(itemCount: Int) -> some View {
-        GeometryReader { geometry in
-            if let localY = regularDropGuideLocalY(in: geometry, itemCount: itemCount) {
-                dropLine()
-                    .offset(y: localY - SidebarInsertionGuide.visualCenterY)
-                    .transition(.opacity)
-                    .animation(dropGuideAnimation, value: localY)
-            }
-        }
-        .allowsHitTesting(false)
-    }
-
-    private func regularDropGuideLocalY(in geometry: GeometryProxy, itemCount: Int) -> CGFloat? {
-        guard dragState.isDragging,
-              case .spaceRegular(let hoveredSpaceId, let slot) = dragState.hoveredSlot,
-              hoveredSpaceId == space.id,
-              let metrics = dragState.regularListHitTargets[space.id],
-              itemCount > 0 else {
-            return nil
-        }
-
-        let safeSlot = max(0, min(slot, itemCount))
-        let globalY: CGFloat
-        if safeSlot == itemCount {
-            globalY = metrics.frame.maxY
-        } else {
-            let rowSpacing = itemCount > 1
-                ? max(0, (metrics.frame.height - (CGFloat(itemCount) * SidebarRowLayout.rowHeight)) / CGFloat(itemCount - 1))
-                : 0
-            globalY = metrics.frame.minY + CGFloat(safeSlot) * (SidebarRowLayout.rowHeight + rowSpacing)
-        }
-
-        return globalY - geometry.frame(in: .global).minY
     }
 
     private func isFirstTab(_ tab: Tab) -> Bool {
