@@ -433,7 +433,8 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             range: .lastHour,
             categories: [.history, .siteData, .cache],
             historyManager: harness.historyManager,
-            dataStore: .nonPersistent()
+            profiles: [testProfile(id: harness.profileID)],
+            includeAllProfiles: false
         )
 
         let remaining = await harness.historyManager.historyPage(
@@ -475,7 +476,8 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             range: .allTime,
             categories: [.history, .siteData],
             historyManager: harness.historyManager,
-            dataStore: .nonPersistent()
+            profiles: [testProfile(id: harness.profileID)],
+            includeAllProfiles: false
         )
 
         let currentProfileRemaining = await harness.historyManager.historyPage(
@@ -515,7 +517,8 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             range: .allTime,
             categories: [.siteData, .cache],
             historyManager: harness.historyManager,
-            dataStore: .nonPersistent()
+            profiles: [testProfile(id: harness.profileID)],
+            includeAllProfiles: false
         )
 
         XCTAssertEqual(cleanupService.removedWebsiteDataTypes.count, 1)
@@ -553,7 +556,8 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             range: .allTime,
             categories: SumiBrowsingDataCategory.defaultSelection,
             historyManager: harness.historyManager,
-            dataStore: .nonPersistent()
+            profiles: [testProfile(id: harness.profileID)],
+            includeAllProfiles: false
         )
 
         let remaining = await harness.historyManager.historyPage(
@@ -650,7 +654,8 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             range: .lastHour,
             categories: [.cache],
             historyManager: harness.historyManager,
-            dataStore: .nonPersistent()
+            profiles: [testProfile(id: harness.profileID)],
+            includeAllProfiles: false
         )
 
         XCTAssertEqual(cleanupService.removedDomainSets.count, 1)
@@ -837,6 +842,16 @@ private func makeHistoryHarness() throws -> (
 
 private func historyTestDate(_ value: String) -> Date {
     ISO8601DateFormatter().date(from: value)!
+}
+
+@MainActor
+private func testProfile(id: UUID) -> Profile {
+    Profile(
+        id: id,
+        name: "Current",
+        icon: "🏠",
+        dataStore: .nonPersistent()
+    )
 }
 
 @MainActor

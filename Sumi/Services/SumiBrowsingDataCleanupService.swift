@@ -212,19 +212,6 @@ final class SumiBrowsingDataCleanupService {
     func summary(
         range: SumiBrowsingDataTimeRange,
         historyManager: HistoryManager,
-        dataStore: WKWebsiteDataStore
-    ) async -> SumiBrowsingDataSummary {
-        await summary(
-            range: range,
-            historyManager: historyManager,
-            profileDataStores: [dataStore],
-            historyProfileId: historyManager.currentProfileId
-        )
-    }
-
-    func summary(
-        range: SumiBrowsingDataTimeRange,
-        historyManager: HistoryManager,
         profiles: [Profile],
         includeAllProfiles: Bool
     ) async -> SumiBrowsingDataSummary {
@@ -296,22 +283,6 @@ final class SumiBrowsingDataCleanupService {
             historyVisitCount: historyVisitCount,
             siteDataSiteCount: siteDataDomains.count,
             cacheSiteCount: cacheDomains.count
-        )
-    }
-
-    func clear(
-        range: SumiBrowsingDataTimeRange,
-        categories: Set<SumiBrowsingDataCategory>,
-        historyManager: HistoryManager,
-        dataStore: WKWebsiteDataStore
-    ) async {
-        await clear(
-            range: range,
-            categories: categories,
-            historyManager: historyManager,
-            profileDataStores: [dataStore],
-            targetProfileIds: Set([historyManager.currentProfileId].compactMap { $0 }),
-            includeAllProfiles: false
         )
     }
 
