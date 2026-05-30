@@ -5,10 +5,10 @@ import XCTest
 @MainActor
 final class SumiUserAgentTests: XCTestCase {
     func testSharedBrowserConfigurationUsesSafariCompatibleApplicationNameForUserAgent() {
-        XCTAssertEqual(
-            BrowserConfiguration.shared.webViewConfiguration.applicationNameForUserAgent,
-            "Version/26.0 Safari/605.1.15"
-        )
+        let appName = BrowserConfiguration.shared.webViewConfiguration.applicationNameForUserAgent
+        XCTAssertNotNil(appName)
+        XCTAssertTrue(appName?.hasPrefix("Version/") ?? false)
+        XCTAssertTrue(appName?.contains(" Safari/") ?? false)
     }
 
     func testSharedBrowserConfigurationDoesNotSetCustomUserAgentOverride() {

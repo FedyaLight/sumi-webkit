@@ -456,11 +456,12 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                     + #"Native("com.example.fixture_host");"#,
             ]
         )
-        _ = try ChromeMV3NativeMessagingFixtureHostBuilder.writeFixtureHost(
-            kind: .echo,
-            rootURL: fixtureRoot,
-            hostName: hostName,
-            extensionID: "abcdefghijklmnopabcdefghijklmnop"
+        _ = try ChromeMV3NativeMessagingFixturePackBuilder.writePack(
+            targetID: "onepassword-origin-mismatch",
+            fixtureRootURL: fixtureRoot,
+            baseHostName: hostName,
+            extensionID: "abcdefghijklmnopabcdefghijklmnop",
+            protocols: [.echo]
         )
 
         let report = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
@@ -526,11 +527,12 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         let extensionID = try XCTUnwrap(
             first.rows.first?.nativeMessagingSmoke.detectedExtensionID
         )
-        _ = try ChromeMV3NativeMessagingFixtureHostBuilder.writeFixtureHost(
-            kind: .echo,
-            rootURL: fixtureRoot,
-            hostName: hostName,
-            extensionID: extensionID
+        _ = try ChromeMV3NativeMessagingFixturePackBuilder.writePack(
+            targetID: "proton-permission-missing",
+            fixtureRootURL: fixtureRoot,
+            baseHostName: hostName,
+            extensionID: extensionID,
+            protocols: [.echo]
         )
         let second = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
             rootURL: root,
@@ -593,11 +595,12 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         let extensionID = try XCTUnwrap(
             first.rows.first?.nativeMessagingSmoke.detectedExtensionID
         )
-        _ = try ChromeMV3NativeMessagingFixtureHostBuilder.writeFixtureHost(
-            kind: .echo,
-            rootURL: fixtureRoot,
-            hostName: hostName,
-            extensionID: extensionID
+        _ = try ChromeMV3NativeMessagingFixturePackBuilder.writePack(
+            targetID: "bitwarden-approved-native",
+            fixtureRootURL: fixtureRoot,
+            baseHostName: hostName,
+            extensionID: extensionID,
+            protocols: [.echo]
         )
         let targetProfileID =
             "\(profileID)-\(ChromeMV3PasswordManagerRealPackageClass.bitwarden.fixtureFallbackKind.pathComponent)"
@@ -628,6 +631,12 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         let readiness = try XCTUnwrap(smoke.hostReadiness.first)
 
         XCTAssertEqual(readiness.fixtureRootState, .configured)
+        XCTAssertEqual(smoke.fixturePack?.generatedState, .generated)
+        XCTAssertEqual(smoke.fixturePack?.validatedState, .valid)
+        XCTAssertEqual(readiness.fixturePackGeneratedState, .generated)
+        XCTAssertEqual(readiness.fixturePackValidatedState, .valid)
+        XCTAssertEqual(readiness.hostNameSource, "configuredTarget+observedRuntimeCall")
+        XCTAssertEqual(readiness.allowedOriginsSource, "fixtureManifest.allowed_origins")
         XCTAssertEqual(readiness.manifestState, .valid)
         XCTAssertEqual(readiness.allowedOriginsState, .compatible)
         XCTAssertEqual(readiness.trustedHostApprovalState, .trustedForDeveloperPreview)
