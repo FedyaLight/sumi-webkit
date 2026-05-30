@@ -41,7 +41,7 @@ extension SpaceView {
     private var showsEmptyPinnedDropPlaceholder: Bool {
         !hasSpacePinnedContent
             && isInteractive
-            && dragState.isDragging
+            && isHoveringThisSpacePinnedWhileEmpty
     }
 
     private var isHoveringThisSpacePinnedWhileEmpty: Bool {
@@ -54,11 +54,7 @@ extension SpaceView {
         SidebarInsertionGuide.visualCenterY
     }
 
-    private var pinnedEmptyDropShowsRowPreview: Bool {
-        showsEmptyPinnedDropPlaceholder
-            && isHoveringThisSpacePinnedWhileEmpty
-            && inlinePinnedGhostPresentation != nil
-    }
+
 
     private var spacePinnedItems: [SpacePinnedListItem] {
         guard !windowState.isIncognito else { return [] }
@@ -165,7 +161,6 @@ extension SpaceView {
         }
         .animation(isInteractive ? .easeInOut(duration: 0.25) : nil, value: hasSpacePinnedContent)
         .animation(isInteractive ? .easeInOut(duration: 0.18) : nil, value: showsEmptyPinnedDropPlaceholder)
-        .animation(isInteractive ? .easeInOut(duration: 0.2) : nil, value: pinnedEmptyDropShowsRowPreview)
         .animation(sidebarContentMutationAnimation, value: spacePinnedItems)
         .transaction { transaction in
             if dragState.isCompletingDrop {
@@ -393,20 +388,9 @@ extension SpaceView {
     private var pinnedRevealStrip: some View {
         VStack(spacing: 0) {
             if showsEmptyPinnedDropPlaceholder {
-                if pinnedEmptyDropShowsRowPreview,
-                   let presentation = inlinePinnedGhostPresentation {
-                    SidebarTabRowPreviewVisual(
-                        title: presentation.title,
-                        icon: presentation.icon
-                    )
-                        .frame(height: SidebarRowLayout.rowHeight)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .opacity(0.82)
-                        .scaleEffect(0.98)
-                        .allowsHitTesting(false)
-                } else {
-                    SidebarPinnedEmptyDropDashPlaceholder()
-                }
+                Color.clear
+                    .frame(height: SidebarRowLayout.rowHeight)
+                    .frame(maxWidth: .infinity)
             } else {
                 Color.clear
                     .frame(height: 6)
@@ -416,25 +400,6 @@ extension SpaceView {
         .frame(
             height: showsEmptyPinnedDropPlaceholder ? SidebarRowLayout.rowHeight : 6,
             alignment: .top
-        )
-    }
-
-    private var inlinePinnedGhostPresentation: (title: String, icon: Image)? {
-        if let model = dragState.previewModel {
-            return (
-                title: model.item.title,
-                icon: model.previewIcon ?? Image(systemName: "globe")
-            )
-        }
-
-        guard let draggedId = dragState.activeDragItemId,
-              let proxyTab = browserManager.tabManager.resolveDragTab(for: draggedId) else {
-            return nil
-        }
-
-        return (
-            title: proxyTab.name,
-            icon: proxyTab.favicon
         )
     }
 

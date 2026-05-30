@@ -2117,6 +2117,7 @@ struct SpacesSideBarView: View {
         let inputRecoveryGeneration = pageRenderMode == .interactive
             ? windowState.sidebarInputRecoveryGeneration
             : 0
+        let allowsInteractiveWork = pageRenderMode == .interactive && allowsSidebarInteractiveWork
 
         VStack(spacing: 8) {
             if includesPinnedGrid && !windowState.isIncognito {
@@ -2133,13 +2134,14 @@ struct SpacesSideBarView: View {
                 allowsInteraction: pageRenderMode == .interactive && allowsSidebarInteractiveWork
             )
         }
+        .animation(allowsInteractiveWork ? .easeInOut(duration: 0.18) : nil, value: dragState.hoveredSlot)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .sidebarPageGeometry(
             spaceId: space.id,
             profileId: pageProfileId,
             renderMode: pageRenderMode.geometryRenderMode,
             generation: dragState.sidebarGeometryGeneration,
-            isEnabled: pageRenderMode == .interactive && allowsSidebarInteractiveWork
+            isEnabled: allowsInteractiveWork
         )
         .id(
             SidebarPageInputGraphIdentity(
