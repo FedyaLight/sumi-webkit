@@ -35,7 +35,11 @@ struct SpaceSeparator: View {
                 }
                 .buttonStyle(PlainButtonStyle())
                 .help("Close other regular tabs in this space. If only the current tab remains, Clear closes it too.")
-                .transition(.blur.animation(.smooth(duration: 0.08)))
+                .transition(
+                    .scale(scale: 0.8)
+                        .combined(with: .opacity)
+                        .animation(.smooth(duration: 0.08))
+                )
                 .onHover { state in
                     isClearHovered = state
                 }
