@@ -303,7 +303,7 @@ private struct HistoryRow: View {
     @ObservedObject var viewModel: HistoryPageViewModel
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
-    @State private var isHovering = false
+    @Environment(\.nativeSurfaceHoverUpdatesEnabled) private var hoverUpdatesEnabled
 
     private enum RowLayout {
         static let selectionWidth: CGFloat = 22
@@ -347,7 +347,7 @@ private struct HistoryRow: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(rowBackgroundColor)
         )
-        .nativeSurfaceHover($isHovering)
+        .chromeCursor(.pointingHand, isEnabled: hoverUpdatesEnabled)
         .contextMenu {
             rowMenuContent
         }
@@ -458,7 +458,7 @@ private struct HistoryRow: View {
         if viewModel.isSelected(item) {
             return themeContext.nativeSurfaceSelectionBackground
         }
-        return isHovering ? tokens.fieldBackgroundHover : Color.clear
+        return Color.clear
     }
 
 }

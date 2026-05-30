@@ -38,7 +38,11 @@ private final class ChromeCursorNSView: NSView {
         didSet {
             guard isCursorEnabled != oldValue else { return }
             window?.invalidateCursorRects(for: self)
-            setCursorIfMouseInside()
+            if isCursorEnabled {
+                setCursorIfMouseInside()
+            } else {
+                setArrowCursorIfMouseInside()
+            }
         }
     }
 
@@ -97,6 +101,14 @@ private final class ChromeCursorNSView: NSView {
         let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
         guard bounds.contains(location) else { return }
         cursorKind.set()
+    }
+
+    private func setArrowCursorIfMouseInside() {
+        guard let window else { return }
+
+        let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        guard bounds.contains(location) else { return }
+        NSCursor.arrow.set()
     }
 }
 
