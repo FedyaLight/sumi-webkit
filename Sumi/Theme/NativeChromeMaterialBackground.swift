@@ -13,7 +13,7 @@ enum NativeChromeMaterialRole {
         case .sidebar:
             return .sidebar
         case .collapsedSidebar:
-            return .hudWindow
+            return .sidebar
         case .windowChrome:
             return .underWindowBackground
         case .nativeGlassChrome:
@@ -25,9 +25,9 @@ enum NativeChromeMaterialRole {
 
     var blendingMode: NSVisualEffectView.BlendingMode {
         switch self {
-        case .sidebar:
+        case .sidebar, .collapsedSidebar:
             return .withinWindow
-        case .collapsedSidebar, .windowChrome, .nativeGlassChrome, .popover:
+        case .windowChrome, .nativeGlassChrome, .popover:
             return .behindWindow
         }
     }
