@@ -164,6 +164,11 @@ enum SidebarDropResolver {
             return nil
         }
 
+        // Clean handoff between Essentials and Pinned based on SpaceTitle center
+        guard location.y >= hoveredPage.frame.minY + 26 else {
+            return nil
+        }
+
         let topLevelItems = state.topLevelPinnedItemTargets.values
             .filter { $0.spaceId == hoveredPage.spaceId }
             .sorted { lhs, rhs in
@@ -212,11 +217,12 @@ enum SidebarDropResolver {
             hoveredPage.frame.minY,
             pinnedFrame.minY - spacePinnedTopEdgeDropAllowance
         )
+        let resolvedMaxY = max(pinnedFrame.maxY, pinnedFrame.minY + SidebarRowLayout.rowHeight)
         return CGRect(
             x: pinnedFrame.minX,
             y: topY,
             width: pinnedFrame.width,
-            height: max(0, pinnedFrame.maxY - topY)
+            height: max(0, resolvedMaxY - topY)
         )
     }
 
@@ -589,6 +595,11 @@ enum SidebarDropResolver {
             return nil
         }
         guard metrics.canAcceptDrop || metrics.visibleItemCount > 0 else {
+            return nil
+        }
+
+        // Clean handoff between Essentials and Pinned based on SpaceTitle center
+        guard location.y < hoveredPage.frame.minY + 26 else {
             return nil
         }
 

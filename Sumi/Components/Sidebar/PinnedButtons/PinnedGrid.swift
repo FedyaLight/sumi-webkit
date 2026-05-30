@@ -379,8 +379,15 @@ struct PinnedGrid: View {
             && !browserManager.isTransitioningProfile
             && !reduceMotion
 
+        let isHoveringThisEssentials: Bool = {
+            guard dragState.isDropProjectionActive,
+                  case .essentials = dragState.projectionHoveredSlot else {
+                return false
+            }
+            return true
+        }()
         let showsRevealGap = items.isEmpty
-            && dragState.isDragging
+            && isHoveringThisEssentials
             && projectedLayout.canAcceptDrop
         let revealTileSize = projectedLayout.rows.first?.tileSize ?? projectedLayout.tileSize
         let revealHeight = showsRevealGap
@@ -431,7 +438,8 @@ struct PinnedGrid: View {
             if items.isEmpty {
                 VStack(spacing: 0) {
                     if showsRevealGap {
-                        SidebarEssentialsEmptyDropDashPlaceholder(size: revealTileSize)
+                        Color.clear
+                            .frame(width: revealTileSize.width, height: revealTileSize.height)
                     } else {
                         Color.clear
                             .frame(height: Self.collapsedRevealHeight)
@@ -439,6 +447,7 @@ struct PinnedGrid: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .top)
                 .frame(height: revealHeight, alignment: .top)
+                .animation(shouldAnimateDropLayout ? .easeInOut(duration: 0.18) : nil, value: showsRevealGap)
             } else {
                 VStack(spacing: pinnedTabsConfiguration.gridSpacing) {
                     ForEach(displayRows, id: \.stableID) { row in
