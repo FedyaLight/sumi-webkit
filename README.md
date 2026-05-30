@@ -28,7 +28,7 @@ The first public preview is planned after three user-safety pieces are in place:
 
 See [docs/roadmap.md](docs/roadmap.md) for the current milestone, developer-preview status, public-preview blockers, and planned work.
 
-A short developer-preview video is available on [YouTube](https://youtu.be/KOtLJA6rRu4).
+A short developer-preview video is available on [YouTube](https://youtu.be/7Wl-LCqUWbQ).
 
 ![Sumi browser preview](assets/browser-preview.png)
 
