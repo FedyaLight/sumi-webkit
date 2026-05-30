@@ -6,9 +6,8 @@
 
 import Foundation
 import SwiftData
-import SwiftUI
 
-// Stores Space persistence, including gradient configuration
+// Stores Space persistence, including workspace theme configuration.
 
 @Model
 final class SpaceEntity {
@@ -18,11 +17,7 @@ final class SpaceEntity {
     var name: String
     var icon: String
     var index: Int
-    var gradientData: Data = SpaceGradient.default.encoded ?? Data()
     var workspaceThemeData: Data?
-    // Added in later schema: optional to enable lightweight migration without data loss
-    // SwiftData should migrate automatically for new optional properties.
-    // If issues arise in the wild, consider introducing an explicit model version and migration plan.
     var profileId: UUID?
 
     init(
@@ -30,7 +25,6 @@ final class SpaceEntity {
         name: String,
         icon: String,
         index: Int,
-        gradientData: Data = SpaceGradient.default.encoded ?? Data(),
         workspaceThemeData: Data? = nil,
         profileId: UUID? = nil
     ) {
@@ -38,7 +32,6 @@ final class SpaceEntity {
         self.name = name
         self.icon = icon
         self.index = index
-        self.gradientData = gradientData
         self.workspaceThemeData = workspaceThemeData
         self.profileId = profileId
     }

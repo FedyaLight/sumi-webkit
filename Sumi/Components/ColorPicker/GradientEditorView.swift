@@ -238,8 +238,8 @@ struct GradientEditorView: View {
     private func syncEditorState(with theme: WorkspaceTheme) {
         let currentColors = theme.gradientTheme.normalizedColors
         editorHarmony = SumiThemePickerHarmony.infer(from: currentColors)
-        editorPreview.preferredPrimaryNodeID = currentColors.first?.id
-        editorPreview.activePrimaryNodeID = currentColors.first?.id
+        editorPreview.preferredPrimaryStopID = currentColors.first?.id
+        editorPreview.activePrimaryStopID = currentColors.first?.id
 
         if let primary = currentColors.first {
             editorLightness = primary.lightness
@@ -318,8 +318,8 @@ struct GradientEditorView: View {
             workspaceTheme.gradientTheme = updatedGradientTheme
             workspaceTheme.usesExplicitColorScheme = !updatedColors.isEmpty
             editorHarmony = resolvedHarmony
-            editorPreview.preferredPrimaryNodeID = updatedColors.first?.id
-            editorPreview.activePrimaryNodeID = updatedColors.first?.id
+            editorPreview.preferredPrimaryStopID = updatedColors.first?.id
+            editorPreview.activePrimaryStopID = updatedColors.first?.id
         }
 
         if animate {

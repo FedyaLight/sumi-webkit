@@ -91,6 +91,116 @@ struct WorkspaceThemeColor: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
+struct WorkspaceGradientStop: Identifiable, Hashable, Sendable {
+    var id: UUID
+    var hex: String
+    var location: Double
+    var position: WorkspaceThemePosition
+
+    init(id: UUID, hex: String, location: Double, position: WorkspaceThemePosition) {
+        self.id = id
+        self.hex = hex.normalizedThemeHex()
+        self.location = min(max(location, 0), 1)
+        self.position = position
+    }
+}
+
+struct WorkspaceResolvedGradient: Hashable, Sendable {
+    static let maxStops = 3
+    static let defaultPrimaryHex = "#F4EFDF"
+
+    var angle: Double
+    var stops: [WorkspaceGradientStop]
+    var texture: Double
+    var opacity: Double
+
+    init(angle: Double, stops: [WorkspaceGradientStop], texture: Double, opacity: Double) {
+        self.angle = Self.normalizedAngle(angle)
+        self.stops = Array(stops.prefix(Self.maxStops))
+        self.texture = min(max(texture, 0), 1)
+        self.opacity = min(max(opacity, 0), 1)
+    }
+
+    static let `default` = WorkspaceResolvedGradient(
+        angle: 225,
+        stops: [
+            WorkspaceGradientStop(
+                id: UUID(),
+                hex: defaultPrimaryHex,
+                location: 0,
+                position: .monochrome
+            )
+        ],
+        texture: 1.0 / 16.0,
+        opacity: 0.62
+    )
+
+    static let incognito = WorkspaceResolvedGradient(
+        angle: 180,
+        stops: [
+            WorkspaceGradientStop(
+                id: UUID(),
+                hex: "#1C1C1E",
+                location: 0,
+                position: .topLeft
+            ),
+            WorkspaceGradientStop(
+                id: UUID(),
+                hex: "#2C2C2E",
+                location: 1,
+                position: .bottom
+            )
+        ],
+        texture: 0,
+        opacity: 1
+    )
+
+    var sortedStops: [WorkspaceGradientStop] {
+        guard stops.count > 1 else { return stops }
+        return stops.sorted { $0.location < $1.location }
+    }
+
+    var primaryColorHex: String {
+        sortedStops.first?.hex ?? WorkspaceGradientTheme.accentHex()
+    }
+
+    var primaryColor: Color {
+        Color(hex: primaryColorHex)
+    }
+
+    func visuallyEquals(
+        _ other: WorkspaceResolvedGradient,
+        angleEpsilon: Double = 0.5,
+        textureEpsilon: Double = 0.01,
+        opacityEpsilon: Double = 0.01
+    ) -> Bool {
+        let angleDiff = abs(angle - other.angle).truncatingRemainder(dividingBy: 360)
+        let angleEqual = angleDiff < angleEpsilon || abs(angleDiff - 360) < angleEpsilon
+        guard angleEqual,
+              abs(texture - other.texture) <= textureEpsilon,
+              abs(opacity - other.opacity) <= opacityEpsilon
+        else {
+            return false
+        }
+
+        let lhs = sortedStops
+        let rhs = other.sortedStops
+        guard lhs.count == rhs.count else { return false }
+        return zip(lhs, rhs).allSatisfy { left, right in
+            left.hex.caseInsensitiveCompare(right.hex) == .orderedSame
+                && abs(left.location - right.location) <= 1e-4
+                && abs(left.position.x - right.position.x) <= 1e-4
+                && abs(left.position.y - right.position.y) <= 1e-4
+        }
+    }
+
+    private static func normalizedAngle(_ value: Double) -> Double {
+        var normalized = value.truncatingRemainder(dividingBy: 360)
+        if normalized < 0 { normalized += 360 }
+        return normalized
+    }
+}
+
 struct WorkspaceGradientTheme: Codable, Hashable, Sendable {
     static let minimumOpacity: Double = 0
     static let maximumOpacity: Double = 1
@@ -113,43 +223,42 @@ struct WorkspaceGradientTheme: Codable, Hashable, Sendable {
         self.texture = WorkspaceGradientTheme.quantizeTexture(texture)
     }
 
-    init(
-        renderGradient: SpaceGradient,
-        preserving previous: WorkspaceGradientTheme? = nil
-    ) {
-        let nodes = Array(renderGradient.sortedNodes.prefix(3))
-        let fallbackPositions = WorkspaceGradientTheme.defaultPositions(for: nodes.count)
-
-        self.type = "gradient"
-        self.opacity = WorkspaceGradientTheme.clampOpacity(renderGradient.opacity)
-        self.texture = WorkspaceGradientTheme.quantizeTexture(renderGradient.grain)
-        self.colors = WorkspaceGradientTheme.normalized(
-            nodes.enumerated().map { index, node in
-                let previousColor = previous?.colors.first(where: { $0.id == node.id })
-                let position = WorkspaceThemePosition(
-                    x: node.xPosition ?? previousColor?.position.x ?? fallbackPositions[index].x,
-                    y: node.yPosition ?? previousColor?.position.y ?? fallbackPositions[index].y
+    static var `default`: WorkspaceGradientTheme {
+        WorkspaceGradientTheme(
+            colors: [
+                WorkspaceThemeColor(
+                    hex: WorkspaceResolvedGradient.defaultPrimaryHex,
+                    isPrimary: true,
+                    position: .monochrome
                 )
-                return WorkspaceThemeColor(
-                    id: node.id,
-                    hex: node.colorHex,
-                    isCustom: previousColor?.isCustom ?? false,
-                    isPrimary: index == 0,
-                    algorithm: previousColor?.algorithm ?? (nodes.count > 1 ? .analogous : .floating),
-                    lightness: previousColor?.lightness ?? WorkspaceThemeColor.defaultLightness(for: node.colorHex),
-                    position: position,
-                    type: previousColor?.type ?? .explicitLightness
-                )
-            }
+            ],
+            opacity: 0.62,
+            texture: 1.0 / 16.0
         )
     }
 
-    static var `default`: WorkspaceGradientTheme {
-        WorkspaceGradientTheme(renderGradient: .default)
+    static var incognito: WorkspaceGradientTheme {
+        WorkspaceGradientTheme(
+            colors: [
+                WorkspaceThemeColor(
+                    hex: "#1C1C1E",
+                    isPrimary: true,
+                    algorithm: .analogous,
+                    position: .topLeft
+                ),
+                WorkspaceThemeColor(
+                    hex: "#2C2C2E",
+                    algorithm: .analogous,
+                    position: .bottom
+                )
+            ],
+            opacity: 1,
+            texture: 0
+        )
     }
 
     var primaryColorHex: String {
-        normalizedColors.first?.hex ?? SpaceGradient.default.primaryColorHex
+        normalizedColors.first?.hex ?? WorkspaceGradientTheme.accentHex()
     }
 
     var primaryColor: Color {
@@ -164,24 +273,23 @@ struct WorkspaceGradientTheme: Codable, Hashable, Sendable {
         normalizedColors.first?.algorithm ?? .floating
     }
 
-    var renderGradient: SpaceGradient {
+    var renderGradient: WorkspaceResolvedGradient {
         let renderColors = normalizedColors
         let locations = WorkspaceGradientTheme.locations(for: renderColors.count)
-        let nodes = zip(renderColors, locations).map { pair in
+        let stops = zip(renderColors, locations).map { pair in
             let (item, location) = pair
-            return GradientNode(
+            return WorkspaceGradientStop(
                 id: item.id,
-                colorHex: item.hex,
+                hex: item.hex,
                 location: location,
-                xPosition: item.position.x,
-                yPosition: item.position.y
+                position: item.position
             )
         }
 
-        return SpaceGradient(
+        return WorkspaceResolvedGradient(
             angle: WorkspaceGradientTheme.renderAngle(for: renderColors),
-            nodes: nodes,
-            grain: texture,
+            stops: stops,
+            texture: texture,
             opacity: opacity
         )
     }
@@ -233,7 +341,7 @@ struct WorkspaceGradientTheme: Codable, Hashable, Sendable {
     }
 
     private static func normalized(_ colors: [WorkspaceThemeColor]) -> [WorkspaceThemeColor] {
-        let limited = Array(colors.prefix(3))
+        let limited = Array(colors.prefix(WorkspaceResolvedGradient.maxStops))
         guard !limited.isEmpty else {
             return []
         }
@@ -303,6 +411,26 @@ struct WorkspaceGradientTheme: Codable, Hashable, Sendable {
         let quantized = (clamped * textureSteps).rounded() / textureSteps
         return quantized >= 1 ? 0 : quantized
     }
+
+    static func accentHex() -> String {
+        #if canImport(AppKit)
+        let accent = NSColor.controlAccentColor
+        guard let rgb = accent.usingColorSpace(.sRGB) else { return "#007AFF" }
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        rgb.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return String(
+            format: "#%02X%02X%02X",
+            Int(round(red * 255)),
+            Int(round(green * 255)),
+            Int(round(blue * 255))
+        )
+        #else
+        return "#007AFF"
+        #endif
+    }
 }
 
 struct WorkspaceTheme: Codable, Hashable, Sendable {
@@ -320,16 +448,6 @@ struct WorkspaceTheme: Codable, Hashable, Sendable {
     ) {
         self.gradientTheme = gradientTheme
         self.usesExplicitColorScheme = usesExplicitColorScheme
-    }
-
-    init(
-        gradient: SpaceGradient = .default,
-        usesExplicitColorScheme: Bool? = nil
-    ) {
-        self.init(
-            gradientTheme: WorkspaceGradientTheme(renderGradient: gradient),
-            usesExplicitColorScheme: usesExplicitColorScheme ?? !gradient.visuallyEquals(.default)
-        )
     }
 
     init(from decoder: Decoder) throws {
@@ -357,15 +475,12 @@ struct WorkspaceTheme: Codable, Hashable, Sendable {
 
     static var incognito: WorkspaceTheme {
         WorkspaceTheme(
-            gradientTheme: WorkspaceGradientTheme(renderGradient: .incognito),
+            gradientTheme: .incognito,
             usesExplicitColorScheme: true
         )
     }
 
-    var gradient: SpaceGradient {
-        get { gradientTheme.renderGradient }
-        set { gradientTheme = WorkspaceGradientTheme(renderGradient: newValue, preserving: gradientTheme) }
-    }
+    var gradient: WorkspaceResolvedGradient { gradientTheme.renderGradient }
 
     var encoded: Data? {
         let encoder = JSONEncoder()
@@ -391,14 +506,12 @@ struct WorkspaceTheme: Codable, Hashable, Sendable {
 
     func interpolated(to other: WorkspaceTheme, progress: Double) -> WorkspaceTheme {
         let clamped = min(max(progress, 0), 1)
-        return WorkspaceTheme(
-            gradient: gradient.interpolated(to: other.gradient, progress: clamped),
-            usesExplicitColorScheme: clamped < 0.5 ? usesExplicitColorScheme : other.usesExplicitColorScheme
-        )
+        return clamped < 0.5 ? self : other
     }
 
     func visuallyEquals(_ other: WorkspaceTheme) -> Bool {
         gradient.visuallyEquals(other.gradient)
+            && usesExplicitColorScheme == other.usesExplicitColorScheme
     }
 }
 

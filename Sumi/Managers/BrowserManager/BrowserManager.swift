@@ -147,8 +147,7 @@ enum StartupWorkspaceThemeResolver {
     }
 
     static func decodeWorkspaceTheme(from space: SpaceEntity) -> WorkspaceTheme {
-        WorkspaceTheme.decode(space.workspaceThemeData ?? Data())
-            ?? WorkspaceTheme(gradient: SpaceGradient.decode(space.gradientData))
+        WorkspaceTheme.decode(space.workspaceThemeData ?? Data()) ?? .default
     }
 }
 

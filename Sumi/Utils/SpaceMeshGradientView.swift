@@ -6,49 +6,43 @@ import AppKit
 // MARK: - SpaceMeshGradientView
 // SwiftUI-native workspace gradient. This replaces the inherited stitchable
 // Metal shader path with MeshGradient on the macOS 15+ deployment target.
-struct SpaceMeshGradientView: View, @MainActor Animatable {
-    var gradient: SpaceGradient
-    var primaryNodeID: UUID? = nil
-
-    var animatableData: SpaceGradient.AnimVector {
-        get { gradient.animatableData }
-        set {
-            gradient.animatableData = newValue
-        }
-    }
+@MainActor
+struct SpaceMeshGradientView: View {
+    var gradient: WorkspaceResolvedGradient
+    var primaryStopID: UUID? = nil
 
     var body: some View {
-        let nodes = resolvedNodes()
+        let stops = resolvedStops()
 
-        if nodes.count <= 1 {
-            Self.color(for: nodes.first)
-        } else if nodes.count == 2 {
+        if stops.count <= 1 {
+            Self.color(for: stops.first)
+        } else if stops.count == 2 {
             MeshGradient(
                 width: 2,
                 height: 2,
                 points: Self.twoColorPoints(),
-                colors: Self.twoColorColors(nodes: nodes, angle: gradient.angle)
+                colors: Self.twoColorColors(stops: stops, angle: gradient.angle)
             )
         } else {
             MeshGradient(
                 width: 3,
                 height: 3,
                 points: Self.threeColorPoints(angle: gradient.angle),
-                colors: Self.threeColorColors(nodes: nodes)
+                colors: Self.threeColorColors(stops: stops)
             )
         }
     }
 
-    private func resolvedNodes() -> [GradientNode] {
-        var nodes = gradient.sortedNodes
-        if nodes.isEmpty {
-            nodes = SpaceGradient.default.sortedNodes
+    private func resolvedStops() -> [WorkspaceGradientStop] {
+        var stops = gradient.sortedStops
+        if stops.isEmpty {
+            stops = WorkspaceResolvedGradient.default.sortedStops
         }
-        if let primaryNodeID, let index = nodes.firstIndex(where: { $0.id == primaryNodeID }) {
-            let primary = nodes.remove(at: index)
-            nodes.insert(primary, at: 0)
+        if let primaryStopID, let index = stops.firstIndex(where: { $0.id == primaryStopID }) {
+            let primary = stops.remove(at: index)
+            stops.insert(primary, at: 0)
         }
-        return Array(nodes.prefix(3))
+        return Array(stops.prefix(WorkspaceResolvedGradient.maxStops))
     }
 
     private static func twoColorPoints() -> [SIMD2<Float>] {
@@ -60,9 +54,9 @@ struct SpaceMeshGradientView: View, @MainActor Animatable {
         ]
     }
 
-    private static func twoColorColors(nodes: [GradientNode], angle: Double) -> [Color] {
-        let start = color(for: nodes[0])
-        let end = color(for: nodes[1])
+    private static func twoColorColors(stops: [WorkspaceGradientStop], angle: Double) -> [Color] {
+        let start = color(for: stops[0])
+        let end = color(for: stops[1])
         let theta = Angle(degrees: angle).radians
         let direction = SIMD2<Double>(cos(theta), sin(theta))
         let corners = [
@@ -108,10 +102,10 @@ struct SpaceMeshGradientView: View, @MainActor Animatable {
         }
     }
 
-    private static func threeColorColors(nodes: [GradientNode]) -> [Color] {
-        let first = color(for: nodes[0])
-        let second = color(for: nodes[1])
-        let third = color(for: nodes[2])
+    private static func threeColorColors(stops: [WorkspaceGradientStop]) -> [Color] {
+        let first = color(for: stops[0])
+        let second = color(for: stops[1])
+        let third = color(for: stops[2])
 
         return [
             first,
@@ -126,14 +120,14 @@ struct SpaceMeshGradientView: View, @MainActor Animatable {
         ]
     }
 
-    private static func color(for node: GradientNode?) -> Color {
-        guard let node else {
-            return Color(hex: SpaceGradient.default.primaryColorHex)
+    private static func color(for stop: WorkspaceGradientStop?) -> Color {
+        guard let stop else {
+            return Color(hex: WorkspaceResolvedGradient.default.primaryColorHex)
         }
         #if canImport(AppKit)
-        return Color(nsColor: cachedSRGBColor(for: node.colorHex))
+        return Color(nsColor: cachedSRGBColor(for: stop.hex))
         #else
-        return Color(hex: node.colorHex)
+        return Color(hex: stop.hex)
         #endif
     }
 

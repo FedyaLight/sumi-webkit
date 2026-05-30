@@ -151,7 +151,7 @@ struct SpaceGradientBackgroundView: View {
     }
 
     private func themedLayer(
-        for gradient: SpaceGradient,
+        for gradient: WorkspaceResolvedGradient,
         intensity: Double,
         localSize: CGSize,
         fieldSize: CGSize,
@@ -171,7 +171,7 @@ struct SpaceGradientBackgroundView: View {
     }
 
     private func gradientVisualLayer(
-        for gradient: SpaceGradient,
+        for gradient: WorkspaceResolvedGradient,
         intensity: Double,
         localSize: CGSize,
         fieldSize: CGSize,
@@ -180,7 +180,7 @@ struct SpaceGradientBackgroundView: View {
         let clampedIntensity = min(max(intensity, 0), 1)
         let effectiveNoiseOpacity = clampedIntensity < 0.08
             ? 0
-            : max(0, min(1, gradient.grain * clampedIntensity))
+            : max(0, min(1, gradient.texture * clampedIntensity))
 
         return ZStack {
             SpaceMeshGradientView(gradient: gradient)
@@ -209,7 +209,7 @@ struct SpaceGradientBackgroundView: View {
         )
     }
 
-    private func gradient(from resolution: ZenWorkspaceThemeResolution) -> SpaceGradient {
+    private func gradient(from resolution: ZenWorkspaceThemeResolution) -> WorkspaceResolvedGradient {
         switch surface {
         case .browser:
             return resolution.backgroundGradient
