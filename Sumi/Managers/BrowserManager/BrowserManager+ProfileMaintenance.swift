@@ -30,7 +30,6 @@ extension BrowserManager {
     ) {
         presentNoticeSheet(
             BrowserNoticeSheetModel(
-                icon: notice.icon,
                 title: notice.title,
                 subtitle: notice.subtitle,
                 message: notice.message

@@ -121,26 +121,6 @@ enum SumiBrowsingDataCategory: String, CaseIterable, Identifiable {
         }
     }
 
-    var iconName: String {
-        switch self {
-        case .history:
-            return "clock.arrow.circlepath"
-        case .siteData:
-            return "network"
-        case .cache:
-            return "internaldrive"
-        }
-    }
-
-    var chromeIconName: String? {
-        switch self {
-        case .siteData:
-            return "cookies-fill"
-        case .history, .cache:
-            return nil
-        }
-    }
-
     static var defaultSelection: Set<Self> {
         Set(allCases)
     }

@@ -53,7 +53,6 @@ final class WorkspaceAppearanceService {
         guard let space = context.currentSpace() else {
             context.presentNotice(
                 BrowserNoticeSheetModel(
-                    icon: "paintpalette",
                     title: "No Space Available",
                     subtitle: "Create a space to customize its gradient.",
                     message: "Create a space before editing a workspace theme."
@@ -70,7 +69,6 @@ final class WorkspaceAppearanceService {
         ) else {
             context.presentNotice(
                 BrowserNoticeSheetModel(
-                    icon: "paintpalette",
                     title: "No Browser Window",
                     subtitle: "Open a browser window for this workspace to edit its theme.",
                     message: "Open a browser window before editing a workspace theme."

@@ -63,79 +63,53 @@ struct BasicAuthDialog: View {
     }
 
     var body: some View {
-        StandardDialog(
-            header: {
-                DialogHeader(
-                    icon: "lock.circle",
-                    title: "Authentication Required",
-                    subtitle: "The server \(model.host) is requesting credentials."
-                )
-            },
-            content: {
-                dialogContent
-            },
-            footer: {
-                dialogFooter
-            }
-        )
-        .padding(20)
-    }
+        VStack(alignment: .leading, spacing: 20) {
+            header
 
-    private var dialogContent: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("User name")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.primary)
-                SumiTextField(
-                    text: $model.username,
-                    placeholder: "Enter user name",
-                    iconName: "person"
-                )
+            Form {
+                TextField("User name:", text: $model.username)
+                SecureField("Password:", text: $model.password)
+                Toggle("Remember for this site", isOn: $model.rememberCredential)
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Password")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.primary)
-                SecureField("Enter password", text: $model.password)
-                    .textFieldStyle(PlainTextFieldStyle())
-                    .padding(.vertical, 12)
-                    .padding(.horizontal, 16)
-                    .background(Color.primary.opacity(0.05))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-            }
-
-            Toggle(isOn: $model.rememberCredential) {
-                Text("Remember for this site")
-            }
-            .toggleStyle(.switch)
+            footer
         }
-        .padding(.horizontal, 4)
+        .padding(24)
+        .frame(width: 420, alignment: .leading)
     }
 
-    private var dialogFooter: DialogFooter {
-        let canSubmit = !model.username.isEmpty && !model.password.isEmpty
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("Authentication Required")
+                .font(.title2)
+                .fontWeight(.semibold)
 
-        return DialogFooter(
-            rightButtons: [
-                DialogButton(
-                    text: "Cancel",
-                    variant: .secondary,
-                    keyboardShortcut: .escape,
-                    action: onCancel
-                ),
-                DialogButton(
-                    text: "Sign In",
-                    iconName: "arrow.right.circle",
-                    variant: .primary,
-                    keyboardShortcut: .return,
-                    isEnabled: canSubmit,
-                    action: {
-                        onSubmit(model.username, model.password, model.rememberCredential)
-                    }
-                )
-            ]
-        )
+            Text("The server \(model.host) is requesting credentials.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 8) {
+            Spacer()
+
+            Button("Cancel", role: .cancel) {
+                onCancel()
+            }
+            .keyboardShortcut(.cancelAction)
+
+            Button("Sign In") {
+                onSubmit(model.username, model.password, model.rememberCredential)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!canSubmit)
+            .keyboardShortcut(.defaultAction)
+        }
+    }
+
+    private var canSubmit: Bool {
+        model.username.isEmpty == false && model.password.isEmpty == false
     }
 }
