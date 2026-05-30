@@ -15,27 +15,28 @@
       "blur-material" : 0.08,
       "layers" : [
         {
-          "glass" : true,
-          "image-name" : "Mask group (2).png",
-          "name" : "Mask group (2)",
+          "hidden" : false,
+          "image-name" : "Pixel.png",
+          "name" : "Pixel",
           "position" : {
             "scale" : 1,
             "translation-in-points" : [
-              1,
-              132.5
+              -8.900142048916791,
+              155.5807914694086
             ]
           }
         },
         {
-          "glass" : true,
-          "image-name" : "Mask group (1).png",
-          "name" : "Mask group (1)"
+          "image-name" : "Mask group (1) 2.png",
+          "name" : "Mask group (1) 2"
         }
       ],
+      "lighting" : "combined",
       "shadow" : {
         "kind" : "neutral",
         "opacity" : 0.83
       },
+      "specular" : true,
       "translucency" : {
         "enabled" : true,
         "value" : 0.6

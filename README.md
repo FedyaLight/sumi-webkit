@@ -113,9 +113,9 @@ Later work under consideration:
 
 ## Demo
 
-A short development demo will be added before the first public preview.
+A short developer-preview demo is available here:
 
-The demo outline is drafted in [docs/demo-script.md](docs/demo-script.md).
+https://youtu.be/KOtLJA6rRu4
 
 ## Project Structure
 
