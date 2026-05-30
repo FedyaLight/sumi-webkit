@@ -5,8 +5,7 @@
     Sumi Browser is a native performance-first macOS browser.
     <br>
     It is built with WebKit and SwiftUI for users who like workspace-oriented browsers
-    such as Arc and Zen, but want a leaner native macOS app with optional modules and
-    no built-in AI clutter.
+    such as Arc and Zen, but want a leaner native macOS app with optional modules.
   </p>
 </div>
 
