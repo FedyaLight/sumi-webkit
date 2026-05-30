@@ -13,12 +13,12 @@
   <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-15.7+-blue" alt="macOS 15.7+"></a>
   <a href="https://swift.org/"><img src="https://img.shields.io/badge/Swift-6.3.1-orange" alt="Swift 6.3.1"></a>
   <a href="https://www.gnu.org/licenses/gpl-3.0.html"><img src="https://img.shields.io/badge/License-GPL--3.0-green" alt="GPL-3.0"></a>
-  <img src="https://img.shields.io/badge/Status-Developer%20Preview-lightgrey" alt="Developer Preview">
+  <img src="https://img.shields.io/badge/Status-ALPHA-orange" alt="ALPHA">
 </p>
 
 ## Status
 
-Sumi is in developer preview. The browser shell builds and runs locally, but it is not recommended as a primary browser yet.
+Sumi is in alpha. The browser shell builds and runs locally, but it is not recommended as a primary browser yet.
 
 The first public preview is planned after three user-safety pieces are in place:
 
