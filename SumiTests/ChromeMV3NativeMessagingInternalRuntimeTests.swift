@@ -74,6 +74,110 @@ final class ChromeMV3NativeMessagingInternalRuntimeTests: XCTestCase {
         )
     }
 
+    func testFixturePackBuilderCreatesDeterministicProtocolPack()
+        throws
+    {
+        let root = try temporaryDirectory(named: "fixture-pack")
+        let baseHostName = "com.example.native_host"
+
+        let first = try ChromeMV3NativeMessagingFixturePackBuilder.writePack(
+            targetID: "target-a",
+            fixtureRootURL: root,
+            baseHostName: baseHostName,
+            extensionID: extensionID,
+            protocols: [.echo, .error, .malformed, .disconnect]
+        )
+        let second = try ChromeMV3NativeMessagingFixturePackBuilder.writePack(
+            targetID: "target-a",
+            fixtureRootURL: root,
+            baseHostName: baseHostName,
+            extensionID: extensionID,
+            protocols: [.disconnect, .malformed, .error, .echo]
+        )
+
+        XCTAssertEqual(first.packID, second.packID)
+        XCTAssertEqual(first.records.count, 4)
+        XCTAssertEqual(first.generatedState, .generated)
+        XCTAssertEqual(first.validatedState, .valid)
+        XCTAssertTrue(first.noNetworkInvariant)
+        XCTAssertTrue(first.noCredentialsInvariant)
+        XCTAssertFalse(first.arbitraryHostLaunchAllowed)
+        XCTAssertTrue(first.realVendorHostDiscoveryBlocked)
+        XCTAssertEqual(
+            Set(first.records.map(\.messageProtocol)),
+            Set(ChromeMV3NativeMessagingFixtureMessageProtocol.allCases)
+        )
+        for record in first.records {
+            XCTAssertEqual(record.generatedState, .generated)
+            XCTAssertEqual(record.validatedState, .valid)
+            XCTAssertEqual(record.cleanupState, .notRequired)
+            XCTAssertTrue(record.noNetworkInvariant)
+            XCTAssertTrue(record.noCredentialsInvariant)
+            XCTAssertTrue(record.executableInsideFixtureRoot)
+            XCTAssertTrue(record.executableIsExecutable)
+            XCTAssertTrue(record.manifestPath?.hasPrefix(root.path) == true)
+            XCTAssertTrue(record.executablePath?.hasPrefix(root.path) == true)
+            XCTAssertEqual(
+                record.allowedOrigins,
+                [
+                    ChromeMV3NativeMessagingAllowedOrigin.originString(
+                        extensionID: extensionID
+                    ),
+                ]
+            )
+            let executable = try XCTUnwrap(record.executablePath)
+            let script = try String(
+                contentsOf: URL(fileURLWithPath: executable),
+                encoding: .utf8
+            )
+            XCTAssertFalse(script.contains("socket"))
+            XCTAssertFalse(script.contains("urllib"))
+            XCTAssertFalse(script.contains("requests"))
+            XCTAssertFalse(script.localizedCaseInsensitiveContains("keychain"))
+            XCTAssertFalse(script.localizedCaseInsensitiveContains("credential"))
+        }
+    }
+
+    func testFixturePackErrorAndDisconnectProtocolsAreDeterministic()
+        throws
+    {
+        let root = try temporaryDirectory(named: "fixture-pack-protocols")
+        let baseHostName = "com.example.protocol_host"
+        let pack = try ChromeMV3NativeMessagingFixturePackBuilder.writePack(
+            targetID: "target-protocols",
+            fixtureRootURL: root,
+            baseHostName: baseHostName,
+            extensionID: extensionID,
+            protocols: [.error, .disconnect]
+        )
+        let errorHost = try XCTUnwrap(
+            pack.record(for: .error, baseHostName: baseHostName)?.hostName
+        )
+        let disconnectHost = try XCTUnwrap(
+            pack.record(for: .disconnect, baseHostName: baseHostName)?.hostName
+        )
+        let errorOwner = makeOwner(root: root, hostName: errorHost)
+        let disconnectOwner = makeOwner(root: root, hostName: disconnectHost)
+
+        let error = errorOwner.sendNativeMessage(
+            hostName: errorHost,
+            message: .object(["kind": .string("error")])
+        )
+        let disconnect = disconnectOwner.sendNativeMessage(
+            hostName: disconnectHost,
+            message: .object(["kind": .string("disconnect")])
+        )
+
+        XCTAssertTrue(error.succeeded, error.diagnostics.joined(separator: "\n"))
+        XCTAssertEqual(object(error.response)?["ok"], .bool(false))
+        XCTAssertEqual(object(error.response)?["error"], .string("fixtureError"))
+        XCTAssertFalse(disconnect.succeeded)
+        XCTAssertEqual(disconnect.lastErrorCode, .hostCrashedOrExited)
+        XCTAssertEqual(disconnect.lifecycle.disconnectReason, .nativeHostExited)
+        XCTAssertTrue(disconnect.lifecycle.processLaunchAttempted)
+        XCTAssertFalse(disconnect.lifecycle.processLaunchAllowedInProduct)
+    }
+
     func testAllowedOriginsMismatchBlocksLaunch()
         throws
     {
@@ -399,6 +503,11 @@ final class ChromeMV3NativeMessagingInternalRuntimeTests: XCTestCase {
             )
 
         XCTAssertTrue(report.nativeMessagingAvailableInInternalFixture)
+        XCTAssertEqual(report.fixturePack.records.count, 4)
+        XCTAssertEqual(report.fixturePack.generatedState, .generated)
+        XCTAssertEqual(report.fixturePack.validatedState, .valid)
+        XCTAssertTrue(report.fixturePack.noNetworkInvariant)
+        XCTAssertTrue(report.fixturePack.noCredentialsInvariant)
         XCTAssertTrue(report.processLaunchAllowedForFixtureHost)
         XCTAssertTrue(report.passwordManagerNativeMessagingReadyInFixture)
         XCTAssertFalse(report.nativeMessagingAvailableInProduct)
@@ -454,12 +563,14 @@ final class ChromeMV3NativeMessagingInternalRuntimeTests: XCTestCase {
 
     private func makeOwner(
         root: URL,
+        hostName: String? = nil,
         extensionID: String? = nil,
         permissionState: ChromeMV3NativeMessagingPermissionState =
             .grantedByManifest,
         includeTrustedHostApproval: Bool = true
     ) -> ChromeMV3NativeMessagingRuntimeOwner {
         let resolvedExtensionID = extensionID ?? self.extensionID
+        let resolvedHostName = hostName ?? self.hostName
         let trustedRecords: [ChromeMV3NativeTrustedHostApprovalRecord]
         if includeTrustedHostApproval {
             let lookupPolicy = ChromeMV3NativeHostLookupPolicy.macOS(
@@ -468,7 +579,7 @@ final class ChromeMV3NativeMessagingInternalRuntimeTests: XCTestCase {
             trustedRecords = [
                 ChromeMV3NativeTrustedHostPolicyFactory
                     .recordForExplicitDeveloperPreviewApproval(
-                        hostName: hostName,
+                        hostName: resolvedHostName,
                         extensionID: resolvedExtensionID,
                         profileID: "profile-a",
                         lookupPolicy: lookupPolicy,

@@ -233,11 +233,12 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
             "NativeMessagingFixtureHosts",
             isDirectory: true
         )
-        _ = try ChromeMV3NativeMessagingFixtureHostBuilder.writeFixtureHost(
-            kind: .echo,
-            rootURL: fixtureRoot,
-            hostName: hostName,
-            extensionID: record.extensionID
+        _ = try ChromeMV3NativeMessagingFixturePackBuilder.writePack(
+            targetID: "manager-\(record.extensionID)",
+            fixtureRootURL: fixtureRoot,
+            baseHostName: hostName,
+            extensionID: record.extensionID,
+            protocols: [.echo]
         )
         let detailBefore = try XCTUnwrap(
             module.chromeMV3ExtensionManagerDetailViewModelIfEnabled(
@@ -263,6 +264,15 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         )
         XCTAssertFalse(detailBefore.trustedNativeHostPanel.nativeHostScanningAllowed)
         XCTAssertEqual(before.manifestStatus, .found)
+        XCTAssertNotNil(before.fixturePackID)
+        XCTAssertEqual(before.fixturePackGeneratedState, .generated)
+        XCTAssertEqual(before.fixturePackValidatedState, .valid)
+        XCTAssertEqual(before.fixtureRootPath, fixtureRoot.path)
+        XCTAssertEqual(before.hostNameSource, "managerManifestSummary")
+        XCTAssertEqual(before.allowedOriginsSource, "fixtureManifest.allowed_origins")
+        XCTAssertFalse(before.fixtureExchangeAttempted)
+        XCTAssertTrue(before.realVendorHostDiscoveryBlocked)
+        XCTAssertFalse(before.arbitraryHostLaunchAllowed)
         XCTAssertEqual(before.trustedHostState, .unknown)
         XCTAssertFalse(before.trustedForDeveloperPreview)
         XCTAssertTrue(before.controls.contains {

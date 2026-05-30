@@ -883,6 +883,12 @@ struct ChromeMV3PasswordManagerRealPackageNativeHostReadiness:
     Equatable,
     Sendable
 {
+    var fixturePackID: String?
+    var fixturePackGeneratedState:
+        ChromeMV3NativeMessagingFixturePackGeneratedState
+    var fixturePackValidatedState:
+        ChromeMV3NativeMessagingFixturePackValidatedState
+    var hostNameSource: String
     var hostName: String?
     var required: Bool
     var optional: Bool
@@ -909,6 +915,7 @@ struct ChromeMV3PasswordManagerRealPackageNativeHostReadiness:
     var executableIsExecutable: Bool
     var allowedOrigins: [String]
     var expectedAllowedOrigin: String?
+    var allowedOriginsSource: String
     var explicitTestAliasUsed: Bool
     var allowedOriginsState:
         ChromeMV3PasswordManagerRealPackageAllowedOriginsState
@@ -929,6 +936,7 @@ struct ChromeMV3PasswordManagerRealPackageNativeMessagingSmoke:
     Equatable,
     Sendable
 {
+    var fixturePack: ChromeMV3NativeMessagingFixturePack?
     var required: Bool
     var optional: Bool
     var detectedExtensionID: String?
@@ -1984,6 +1992,17 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         )
         let trustedRoot = target.trustedFixtureHostRootPath
         let noTrusted = requiresNative && trustedRoot == nil
+        let fixturePack =
+            requiresNative
+                ? ChromeMV3NativeMessagingFixturePackBuilder
+                    .describeExistingPack(
+                        targetID: target.targetID,
+                        fixtureRootPath: trustedRoot,
+                        hostNames: hostNames,
+                        extensionID: extensionID,
+                        fileManager: fileManager
+                    )
+                : nil
         let readiness: [ChromeMV3PasswordManagerRealPackageNativeHostReadiness]
         if requiresNative == false {
             readiness = []
@@ -1997,7 +2016,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     permissionState: permissionState,
                     confidence: confidence,
                     rootState: rootState,
-                    fixtureCandidates: fixtureCandidates
+                    fixtureCandidates: fixtureCandidates,
+                    fixturePack: fixturePack
                 ),
             ]
         } else {
@@ -2024,6 +2044,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     permissionState: permissionState,
                     rootState: rootState,
                     fixtureCandidates: fixtureCandidates,
+                    fixturePackRecord:
+                        fixturePack?.record(hostName: hostName),
                     trustedHostApprovalRecords:
                         trustedHostApprovalRecords,
                     fileManager: fileManager
@@ -2065,6 +2087,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             )
 
         return ChromeMV3PasswordManagerRealPackageNativeMessagingSmoke(
+            fixturePack: fixturePack,
             required: nativeRequired,
             optional: nativeOptional,
             detectedExtensionID: detectedExtensionID,
@@ -2245,7 +2268,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             ChromeMV3PasswordManagerRealPackageNativeHostRequirementDetectionConfidence,
         rootState:
             ChromeMV3PasswordManagerRealPackageNativeHostFixtureRootState,
-        fixtureCandidates: [NativeFixtureManifestCandidate]
+        fixtureCandidates: [NativeFixtureManifestCandidate],
+        fixturePack: ChromeMV3NativeMessagingFixturePack?
     ) -> ChromeMV3PasswordManagerRealPackageNativeHostReadiness {
         let blocker:
             ChromeMV3PasswordManagerRealPackageNativeHostReadinessState =
@@ -2257,6 +2281,12 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 ? "Configure an explicit reviewed fixture root for \(target.displayName) and provide a host manifest whose name is observable from package calls or fixture metadata."
                 : "Record the native host name from reviewed local package diagnostics or place a matching manifest in the explicit fixture root."
         return ChromeMV3PasswordManagerRealPackageNativeHostReadiness(
+            fixturePackID: fixturePack?.packID,
+            fixturePackGeneratedState:
+                fixturePack?.generatedState ?? .notConfigured,
+            fixturePackValidatedState:
+                fixturePack?.validatedState ?? .notEvaluated,
+            hostNameSource: "notObservable",
             hostName: nil,
             required: true,
             optional: false,
@@ -2282,6 +2312,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             executableIsExecutable: false,
             allowedOrigins: [],
             expectedAllowedOrigin: expectedAllowedOrigin,
+            allowedOriginsSource: "notEvaluated",
             explicitTestAliasUsed: false,
             allowedOriginsState: .notEvaluated,
             trustedHostApprovalState: .unknown,
@@ -2317,6 +2348,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         rootState:
             ChromeMV3PasswordManagerRealPackageNativeHostFixtureRootState,
         fixtureCandidates: [NativeFixtureManifestCandidate],
+        fixturePackRecord: ChromeMV3NativeMessagingFixturePackRecord?,
         trustedHostApprovalRecords:
             [ChromeMV3NativeTrustedHostApprovalRecord],
         fileManager: FileManager
@@ -2450,6 +2482,15 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 ? .fixtureExchangeFailed
                 : preExchangeBlocker
         return ChromeMV3PasswordManagerRealPackageNativeHostReadiness(
+            fixturePackID: fixturePackRecord?.packID,
+            fixturePackGeneratedState:
+                fixturePackRecord?.generatedState ?? .notGenerated,
+            fixturePackValidatedState:
+                fixturePackRecord?.validatedState ?? .notEvaluated,
+            hostNameSource:
+                detectionSources.isEmpty
+                    ? "explicitFixtureMetadata"
+                    : detectionSources.joined(separator: "+"),
             hostName: hostName,
             required: nativeRequired,
             optional: nativeOptional,
@@ -2472,6 +2513,10 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             allowedOrigins:
                 manifest?.allowedOrigins.map(\.rawValue).sorted() ?? [],
             expectedAllowedOrigin: expectedAllowedOrigin,
+            allowedOriginsSource:
+                manifest == nil
+                    ? "notEvaluated"
+                    : "fixtureManifest.allowed_origins",
             explicitTestAliasUsed: explicitTestAliasUsed,
             allowedOriginsState: allowedOriginsState,
             trustedHostApprovalState:

@@ -409,7 +409,9 @@ enum ChromeMV3NativeMessagingFixtureHostKind:
     Sendable
 {
     case crashEarlyExit
+    case disconnectAfterRead
     case echo
+    case errorResponse
     case invalidJSON
     case malformedFrame
     case oversizedResponse
@@ -537,6 +539,50 @@ enum ChromeMV3NativeMessagingFixtureHostBuilder {
                 ).encode("utf-8")
                 sys.stdout.buffer.write(struct.pack("<I", len(response)) + response)
                 sys.stdout.buffer.flush()
+            """
+        case .errorResponse:
+            return """
+            #!\(pythonInterpreterPath)
+            import json
+            import struct
+            import sys
+
+            origin = sys.argv[1] if len(sys.argv) > 1 else ""
+
+            header = sys.stdin.buffer.read(4)
+            if len(header) != 4:
+                sys.exit(3)
+            length = struct.unpack("<I", header)[0]
+            payload = sys.stdin.buffer.read(length)
+            if len(payload) != length:
+                sys.exit(4)
+            request = json.loads(payload.decode("utf-8"))
+            response = json.dumps(
+                {
+                    "ok": False,
+                    "error": "fixtureError",
+                    "echo": request,
+                    "origin": origin
+                },
+                separators=(",", ":")
+            ).encode("utf-8")
+            sys.stdout.buffer.write(struct.pack("<I", len(response)) + response)
+            sys.stdout.buffer.flush()
+            """
+        case .disconnectAfterRead:
+            return """
+            #!\(pythonInterpreterPath)
+            import struct
+            import sys
+
+            header = sys.stdin.buffer.read(4)
+            if len(header) != 4:
+                sys.exit(0)
+            length = struct.unpack("<I", header)[0]
+            payload = sys.stdin.buffer.read(length)
+            if len(payload) != length:
+                sys.exit(0)
+            sys.exit(0)
             """
         case .malformedFrame:
             return """
@@ -1736,6 +1782,7 @@ struct ChromeMV3NativeMessagingImplementationReport:
         ChromeMV3NativeMessagingAuthorizationResult
     var trustedHostPolicyRecord:
         ChromeMV3NativeTrustedHostApprovalRecord
+    var fixturePack: ChromeMV3NativeMessagingFixturePack
     var fixtureHostLaunchPolicy:
         ChromeMV3NativeMessagingFixtureLaunchPolicyResult
     var framingCodecResults: [ChromeMV3NativeMessagingFrameCodecResult]
@@ -1829,13 +1876,36 @@ enum ChromeMV3NativeMessagingImplementationReportGenerator {
     ) throws -> ChromeMV3NativeMessagingImplementationReport {
         _ = fileManager
         let root = fixtureHostRootURL.standardizedFileURL
-        let echo = try ChromeMV3NativeMessagingFixtureHostBuilder
-            .writeFixtureHost(
-                kind: .echo,
-                rootURL: root,
-                hostName: hostName,
-                extensionID: extensionID
+        let fixturePack = try ChromeMV3NativeMessagingFixturePackBuilder
+            .writePack(
+                targetID: "internal-native-messaging-fixture",
+                fixtureRootURL: root,
+                baseHostName: hostName,
+                extensionID: extensionID,
+                protocols: [.echo, .error, .malformed, .disconnect]
             )
+        let echo = try fixturePack.record(
+            for: .echo,
+            baseHostName: hostName
+        ).map {
+            ChromeMV3NativeMessagingFixtureHost(
+                kind: .echo,
+                hostName: $0.hostName,
+                extensionID: extensionID,
+                rootPath: $0.fixtureRootPath,
+                executablePath: $0.executablePath ?? "",
+                manifestPath: $0.manifestPath ?? "",
+                interpreterPath:
+                    ChromeMV3NativeMessagingFixtureHostBuilder
+                    .pythonInterpreterPath,
+                diagnostics: $0.diagnostics
+            )
+        } ?? ChromeMV3NativeMessagingFixtureHostBuilder.writeFixtureHost(
+            kind: .echo,
+            rootURL: root,
+            hostName: hostName,
+            extensionID: extensionID
+        )
         let approvedRecord = trustedFixtureRecord(
             extensionID: extensionID,
             profileID: profileID,
@@ -1933,6 +2003,7 @@ enum ChromeMV3NativeMessagingImplementationReportGenerator {
             extensionAuthorization:
                 send.preflight.authorizationResult,
             trustedHostPolicyRecord: approvedRecord,
+            fixturePack: fixturePack,
             fixtureHostLaunchPolicy: send.launchPolicy,
             framingCodecResults: [outbound] + (inbound.map { [$0] } ?? []),
             sendNativeMessageResult: send,

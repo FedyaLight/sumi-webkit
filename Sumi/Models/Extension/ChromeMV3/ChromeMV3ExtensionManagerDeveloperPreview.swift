@@ -917,6 +917,13 @@ struct ChromeMV3ExtensionManagerTrustedNativeHostRequirement:
     Sendable
 {
     var id: String { hostName }
+    var fixturePackID: String?
+    var fixtureRootPath: String?
+    var fixturePackGeneratedState:
+        ChromeMV3NativeMessagingFixturePackGeneratedState
+    var fixturePackValidatedState:
+        ChromeMV3NativeMessagingFixturePackValidatedState
+    var hostNameSource: String
     var hostName: String
     var requiredBy: String
     var manifestStatus: ChromeMV3NativeHostLookupStatus
@@ -924,11 +931,19 @@ struct ChromeMV3ExtensionManagerTrustedNativeHostRequirement:
     var executablePath: String?
     var resolvedExecutablePath: String?
     var allowedOrigins: [String]
+    var allowedOriginsSource: String
+    var allowedOriginsState:
+        ChromeMV3PasswordManagerRealPackageAllowedOriginsState?
     var trustedHostState: ChromeMV3NativeTrustedHostTrustState
     var trustedForDeveloperPreview: Bool
     var canSendNativeMessageNow: Bool
     var canConnectNativeNow: Bool
     var processLaunchAllowedNow: Bool
+    var fixtureExchangeState:
+        ChromeMV3PasswordManagerRealPackageNativeHostExchangeState?
+    var fixtureExchangeAttempted: Bool
+    var realVendorHostDiscoveryBlocked: Bool
+    var arbitraryHostLaunchAllowed: Bool
     var controls:
         [ChromeMV3ExtensionManagerTrustedNativeHostControlDescriptor]
     var blockers: [String]
@@ -1036,6 +1051,9 @@ struct ChromeMV3ExtensionManagerTrustedNativeHostPanel:
                         extensionID: record.extensionID,
                         profileID: record.profileID
                     ),
+                realPackageReadiness:
+                    realPackageRow?.nativeMessagingSmoke.hostReadiness
+                    .first { $0.hostName == hostName },
                 gate: gate
             )
         }
@@ -1115,6 +1133,8 @@ struct ChromeMV3ExtensionManagerTrustedNativeHostPanel:
         lookupPolicy: ChromeMV3NativeHostLookupPolicy,
         productPolicy: ChromeMV3NativeMessagingProductPolicy,
         trustedRecord: ChromeMV3NativeTrustedHostApprovalRecord,
+        realPackageReadiness:
+            ChromeMV3PasswordManagerRealPackageNativeHostReadiness?,
         gate: ChromeMV3ExtensionManagerGate
     ) -> ChromeMV3ExtensionManagerTrustedNativeHostRequirement {
         let lookup = lookupPolicy.lookupHost(named: hostName)
@@ -1153,7 +1173,35 @@ struct ChromeMV3ExtensionManagerTrustedNativeHostPanel:
                 && lookup.manifest?.isValid == true
                 && gate.managerAvailableInDeveloperPreview
                 && record.runtimeState.internalRuntimeEnabled
+        let describedPack = ChromeMV3NativeMessagingFixturePackBuilder
+            .describeExistingPack(
+                targetID: "manager-\(record.extensionID)",
+                fixtureRootPath:
+                    lookupPolicy.locations.first {
+                        $0.kind == .explicitTestRoot
+                    }?.rootPath,
+                hostNames: [hostName],
+                extensionID: record.extensionID
+            )
+        let packRecord = describedPack.record(hostName: hostName)
         return ChromeMV3ExtensionManagerTrustedNativeHostRequirement(
+            fixturePackID:
+                realPackageReadiness?.fixturePackID
+                    ?? describedPack.packID,
+            fixtureRootPath:
+                realPackageReadiness?.fixtureRootPath
+                    ?? describedPack.fixtureRootPath,
+            fixturePackGeneratedState:
+                realPackageReadiness?.fixturePackGeneratedState
+                    ?? packRecord?.generatedState
+                    ?? describedPack.generatedState,
+            fixturePackValidatedState:
+                realPackageReadiness?.fixturePackValidatedState
+                    ?? packRecord?.validatedState
+                    ?? describedPack.validatedState,
+            hostNameSource:
+                realPackageReadiness?.hostNameSource
+                    ?? "managerManifestSummary",
             hostName: hostName,
             requiredBy:
                 "runtime.connect" + "Native/runtime.send"
@@ -1171,6 +1219,12 @@ struct ChromeMV3ExtensionManagerTrustedNativeHostPanel:
             allowedOrigins:
                 lookup.manifest?.allowedOrigins.map(\.rawValue).sorted()
                     ?? [],
+            allowedOriginsSource:
+                realPackageReadiness?.allowedOriginsSource
+                    ?? (lookup.manifest == nil
+                        ? "notEvaluated"
+                        : "fixtureManifest.allowed_origins"),
+            allowedOriginsState: realPackageReadiness?.allowedOriginsState,
             trustedHostState: trustedRecord.trustState,
             trustedForDeveloperPreview:
                 trustedRecord.trustedForDeveloperPreview,
@@ -1179,6 +1233,12 @@ struct ChromeMV3ExtensionManagerTrustedNativeHostPanel:
             processLaunchAllowedNow:
                 long.processLaunchAllowedNow
                     || oneShot.processLaunchAllowedNow,
+            fixtureExchangeState:
+                realPackageReadiness?.exchangeResult.state,
+            fixtureExchangeAttempted:
+                realPackageReadiness?.exchangeResult.attempted ?? false,
+            realVendorHostDiscoveryBlocked: true,
+            arbitraryHostLaunchAllowed: false,
             controls:
                 controls(
                     hostName: hostName,
@@ -1195,6 +1255,9 @@ struct ChromeMV3ExtensionManagerTrustedNativeHostPanel:
                         + trustedRecord.diagnostics
                         + long.diagnostics
                         + oneShot.diagnostics
+                        + describedPack.diagnostics
+                        + (packRecord?.diagnostics ?? [])
+                        + (realPackageReadiness?.diagnostics ?? [])
                 )
         )
     }

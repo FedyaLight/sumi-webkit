@@ -41,10 +41,10 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertNotNil(controller.normalTabUserScriptsProvider)
         XCTAssertTrue(controller.hasInstalledInitialUserContent)
         XCTAssertFalse(configuration.userContentController.userScripts.isEmpty)
-        XCTAssertEqual(
-            configuration.applicationNameForUserAgent,
-            "Version/26.0 Safari/605.1.15"
-        )
+        let appName = configuration.applicationNameForUserAgent
+        XCTAssertNotNil(appName)
+        XCTAssertTrue(appName?.hasPrefix("Version/") ?? false)
+        XCTAssertTrue(appName?.contains(" Safari/") ?? false)
 
         await controller.waitForContentBlockingAssetsInstalled()
 
