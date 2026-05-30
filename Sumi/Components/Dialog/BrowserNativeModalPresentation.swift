@@ -36,18 +36,15 @@ final class BrowserNativeModalPresentation: Identifiable {
 }
 
 struct BrowserNoticeSheetModel {
-    let icon: String
     let title: String
     let subtitle: String?
     let message: String
 
     init(
-        icon: String,
         title: String,
         subtitle: String? = nil,
         message: String
     ) {
-        self.icon = icon
         self.title = title
         self.subtitle = subtitle
         self.message = message
@@ -59,30 +56,35 @@ struct BrowserNoticeSheet: View {
     let onDismiss: () -> Void
 
     var body: some View {
-        StandardDialog(
-            header: {
-                DialogHeader(
-                    icon: notice.icon,
-                    title: notice.title,
-                    subtitle: notice.subtitle
-                )
-            },
-            content: {
-                Text(notice.message)
-                    .font(.body)
-                    .fixedSize(horizontal: false, vertical: true)
-            },
-            footer: {
-                DialogFooter(rightButtons: [
-                    DialogButton(
-                        text: "OK",
-                        variant: .primary,
-                        keyboardShortcut: .return,
-                        action: onDismiss
-                    )
-                ])
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(notice.title)
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                if let subtitle = notice.subtitle {
+                    Text(subtitle)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-        )
-        .padding(20)
+
+            Text(notice.message)
+                .font(.body)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Spacer()
+
+                Button("OK") {
+                    onDismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24)
+        .frame(width: 430, alignment: .leading)
     }
 }
