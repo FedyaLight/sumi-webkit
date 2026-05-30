@@ -28,6 +28,10 @@ The first public preview is planned after three user-safety pieces are in place:
 
 See [docs/roadmap.md](docs/roadmap.md) for the current milestone, developer-preview status, public-preview blockers, and planned work.
 
+A short developer-preview video is available on [YouTube](https://youtu.be/KOtLJA6rRu4).
+
+![Sumi browser preview](assets/browser-preview.png)
+
 ## What Sumi Is
 
 Sumi is an independent open-source macOS browser. It is not a commercial product, not an AI browser, and not an attempt to replace Chromium for every use case.
@@ -110,12 +114,6 @@ Later work under consideration:
 - Multi-window workflows.
 - Improved profile isolation.
 - Safari and Chrome import.
-
-## Demo
-
-A short developer-preview demo is available here:
-
-https://youtu.be/KOtLJA6rRu4
 
 ## Project Structure
 
