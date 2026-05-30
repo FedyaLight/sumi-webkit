@@ -38,8 +38,17 @@ struct SettingsAboutTab: View {
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(SumiAppMetadata.displayName)
-                            .font(.title3.weight(.semibold))
+                        HStack(spacing: 8) {
+                            Text(SumiAppMetadata.displayName)
+                                .font(.title3.weight(.semibold))
+
+                            Text("ALPHA")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(.orange, in: Capsule())
+                        }
 
                         Text("Version \(SumiAppMetadata.shortVersion)")
                             .foregroundStyle(.primary)
