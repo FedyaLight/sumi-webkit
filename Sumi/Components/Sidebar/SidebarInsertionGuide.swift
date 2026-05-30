@@ -11,24 +11,8 @@ private enum SidebarDropGuidePalette {
     }
 }
 
-struct SidebarInsertionGuide: View {
+enum SidebarInsertionGuide {
     static let visualCenterY: CGFloat = 3
-
-    var body: some View {
-        HStack(spacing: 2) {
-            Circle()
-                .fill(SidebarDropGuidePalette.guide)
-                .frame(width: 4, height: 4)
-
-            Capsule(style: .continuous)
-                .fill(SidebarDropGuidePalette.guide)
-                .frame(maxWidth: .infinity)
-                .frame(height: 2)
-        }
-            .frame(maxWidth: .infinity)
-            .frame(height: 6)
-            .accessibilityHidden(true)
-    }
 }
 
 // MARK: - Empty drop zone outlines (dash until hover shows real preview)

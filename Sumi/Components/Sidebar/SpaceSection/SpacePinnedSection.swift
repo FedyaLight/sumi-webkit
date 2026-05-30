@@ -373,11 +373,6 @@ extension SpaceView {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .topLeading) {
-            if !spacePinnedUsesProjectedDropLayout {
-                spacePinnedDropGuideOverlay
-            }
-        }
         .animation(
             isInteractive && dragState.shouldAnimateDropLayout ? SidebarDropMotion.gap : nil,
             value: projectedSpacePinnedItems
@@ -600,50 +595,6 @@ extension SpaceView {
                 deleteSavedTab: { confirmDeleteShortcutPin(pin) }
             )
         )
-    }
-
-    private var spacePinnedDropGuideOverlay: some View {
-        GeometryReader { geometry in
-            if let localY = spacePinnedDropGuideLocalY(in: geometry) {
-                dropLine()
-                    .offset(y: localY - SidebarInsertionGuide.visualCenterY)
-                    .transition(.opacity)
-                    .animation(dropGuideAnimation, value: localY)
-            }
-        }
-        .allowsHitTesting(false)
-    }
-
-    private func spacePinnedDropGuideLocalY(in geometry: GeometryProxy) -> CGFloat? {
-        guard dragState.isDragging,
-              case .spacePinned(let hoveredSpaceId, let slot) = dragState.hoveredSlot,
-              hoveredSpaceId == space.id,
-              let globalY = spacePinnedDropGuideGlobalY(slot: slot) else {
-            return nil
-        }
-
-        return globalY - geometry.frame(in: .global).minY
-    }
-
-    private func spacePinnedDropGuideGlobalY(slot: Int) -> CGFloat? {
-        let items = dragState.topLevelPinnedItemTargets.values
-            .filter { $0.spaceId == space.id }
-            .sorted { lhs, rhs in
-                if lhs.topLevelIndex != rhs.topLevelIndex {
-                    return lhs.topLevelIndex < rhs.topLevelIndex
-                }
-                return lhs.itemId.uuidString < rhs.itemId.uuidString
-            }
-
-        guard !items.isEmpty else {
-            return dragState.sectionFrame(for: .spacePinned, in: space.id)?.minY
-        }
-
-        if let target = items.first(where: { $0.topLevelIndex >= slot }) {
-            return target.frame.minY
-        }
-
-        return items.last?.frame.maxY
     }
 
     // MARK: - Folder Management
