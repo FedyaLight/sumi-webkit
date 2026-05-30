@@ -4,17 +4,27 @@
   },
   "groups" : [
     {
+      "blur-material" : null,
       "layers" : [
         {
-          "glass" : false,
-          "image-name" : "Logo_Sumi.png",
-          "name" : "Logo_Sumi"
+          "glass" : true,
+          "hidden" : false,
+          "image-name" : "Mask group (1).png",
+          "name" : "Mask group (1)",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              0,
+              -23.46875
+            ]
+          }
         }
       ],
       "shadow" : {
         "kind" : "neutral",
         "opacity" : 0.5
       },
+      "specular" : false,
       "translucency" : {
         "enabled" : true,
         "value" : 0.5
