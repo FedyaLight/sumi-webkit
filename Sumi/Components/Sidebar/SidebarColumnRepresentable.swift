@@ -18,7 +18,12 @@ struct SidebarColumnHostedRootView: View {
                 }
             }
             .background {
-                collapsedSidebarChromeBackground
+                ZStack {
+                    if presentationContext.isCollapsedOverlay {
+                        chromeTokens.windowBackground
+                    }
+                    collapsedSidebarChromeBackground
+                }
             }
             .clipShape(
                 RoundedRectangle(
