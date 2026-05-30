@@ -240,7 +240,11 @@ struct SpacesList: View {
                 .opacity(0.7)
                 .lineLimit(1)
                 .id(hoveredSpace.id)
-                .transition(.blur.animation(.smooth(duration: 0.2)))
+                .transition(
+                    .scale(scale: 0.8)
+                        .combined(with: .opacity)
+                        .animation(.smooth(duration: 0.2))
+                )
                 .offset(y: -20)
         }
     }
