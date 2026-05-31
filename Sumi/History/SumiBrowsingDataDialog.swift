@@ -216,6 +216,7 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
     private weak var browserManager: BrowserManager?
     private let cleanupService: SumiBrowsingDataCleanupService
     private var summaryTask: Task<Void, Never>?
+    private var loadingDelayTask: Task<Void, Never>?
 
     init(
         browserManager: BrowserManager,
@@ -227,6 +228,7 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
 
     deinit {
         summaryTask?.cancel()
+        loadingDelayTask?.cancel()
     }
 
     var canDelete: Bool {
@@ -296,16 +298,25 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
 
     private func refreshSummary() {
         summaryTask?.cancel()
+        loadingDelayTask?.cancel()
+        isLoadingSummary = false
         errorMessage = nil
+
+        loadingDelayTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.isLoadingSummary = true
+        }
+
         summaryTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            isLoadingSummary = true
-            defer { isLoadingSummary = false }
 
             guard let browserManager,
                   browserManager.currentProfile != nil
             else {
-                summary = SumiBrowsingDataSummary()
+                self.loadingDelayTask?.cancel()
+                self.isLoadingSummary = false
+                self.summary = SumiBrowsingDataSummary()
                 return
             }
 
@@ -316,7 +327,10 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
                 includeAllProfiles: clearsAllProfiles
             )
             guard !Task.isCancelled else { return }
-            summary = latestSummary
+            
+            self.loadingDelayTask?.cancel()
+            self.isLoadingSummary = false
+            self.summary = latestSummary
         }
     }
 
