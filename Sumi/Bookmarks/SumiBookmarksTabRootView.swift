@@ -190,67 +190,80 @@ struct SumiBookmarksTabRootView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 10) {
-                Button {
-                    bookmarkDraft = viewModel.bookmarkDraft()
-                } label: {
-                    Label("New Bookmark", systemImage: "bookmark.badge.plus")
-                }
-
-                Button {
-                    folderDraft = viewModel.folderDraft()
-                } label: {
-                    Label("New Folder", systemImage: "folder.badge.plus")
-                }
-
-                Button {
-                    viewModel.deleteSelected()
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                }
-                .disabled(!viewModel.canDeleteSelection)
-
-                Menu {
-                    ForEach(SumiBookmarkSortMode.allCases) { mode in
-                        Button {
-                            viewModel.sortMode = mode
-                        } label: {
-                            if viewModel.sortMode == mode {
-                                Label(mode.title, systemImage: "checkmark")
-                            } else {
-                                Text(mode.title)
-                            }
-                        }
-                    }
-                } label: {
-                    Label("Sort", systemImage: "arrow.up.arrow.down")
-                }
-
-                Button {
-                    viewModel.importBookmarksFromMenu()
-                } label: {
-                    Label("Import", systemImage: "square.and.arrow.down")
-                }
-
-                Button {
-                    viewModel.exportBookmarksFromMenu()
-                } label: {
-                    Label("Export", systemImage: "square.and.arrow.up")
-                }
-
+            HStack(spacing: 0) {
+                // Invisible placeholder to perfectly balance the menu button on the right,
+                // ensuring the search field is mathematically centered in the space.
+                Color.clear
+                    .frame(width: 28, height: 28)
+                
                 Spacer()
 
                 searchField
-                    .frame(width: 320)
+                    .frame(width: 480)
+
+                Spacer()
+
+                Menu {
+                    Button("New Bookmark…") {
+                        bookmarkDraft = viewModel.bookmarkDraft()
+                    }
+                    Button("New Folder…") {
+                        folderDraft = viewModel.folderDraft()
+                    }
+                    
+                    Divider()
+                    
+                    Menu("Sort") {
+                        ForEach(SumiBookmarkSortMode.allCases) { mode in
+                            Button {
+                                viewModel.sortMode = mode
+                            } label: {
+                                if viewModel.sortMode == mode {
+                                    Label(mode.title, systemImage: "checkmark")
+                                } else {
+                                    Text(mode.title)
+                                }
+                            }
+                        }
+                    }
+                    
+                    Divider()
+                    
+                    Button("Import Bookmarks…") {
+                        viewModel.importBookmarksFromMenu()
+                    }
+                    
+                    Button("Export Bookmarks…") {
+                        viewModel.exportBookmarksFromMenu()
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 15, weight: .semibold))
+                        .rotationEffect(.degrees(90))
+                        .foregroundStyle(tokens.primaryText)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .frame(width: 28, height: 28)
+                .help("More actions")
             }
 
             if viewModel.hasSelection {
-                HStack(spacing: 10) {
+                HStack(spacing: 12) {
                     Text("\(viewModel.selectionCount) Selected")
                         .foregroundStyle(tokens.secondaryText)
+                    
                     Button("Open") {
                         viewModel.openSelected()
                     }
+                    
+                    Button("Delete") {
+                        viewModel.deleteSelected()
+                    }
+                    .disabled(!viewModel.canDeleteSelection)
+                    
                     Button("Clear Selection") {
                         viewModel.clearSelection()
                     }
