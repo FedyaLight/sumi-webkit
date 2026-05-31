@@ -54,6 +54,7 @@ struct SumiSettingsTabRootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .environment(\.resolvedThemeContext, surfaceThemeContext)
+        .environment(\.colorScheme, surfaceThemeContext.chromeColorScheme)
         .onChange(of: sumiSettings.currentSettingsTab) { _, _ in
             syncSettingsURLToActiveTab(sumiSettings: sumiSettings)
         }
