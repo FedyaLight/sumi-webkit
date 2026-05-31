@@ -1,0 +1,160 @@
+name: Bug Report
+description: Report something that is broken or behaves unexpectedly in Sumi Browser
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+
+        Before filing, please search existing issues to avoid duplicates. Sumi is currently in developer preview, so some features are incomplete or changing.
+
+        Do not include passwords, cookies, API keys, private tabs, password-manager vault contents, or other private data in screenshots, logs, or descriptions. If this is a security vulnerability, do not file a public issue; follow the security policy instead.
+
+        Browser bugs often depend on state. Please describe the full browser state when the bug happened, including open pages, active space/profile, tabs, splits, and any enabled features or settings.
+  - type: checkboxes
+    id: preliminary-checks
+    attributes:
+      label: Before filing
+      options:
+        - label: I searched existing issues and did not find the same bug.
+          required: true
+        - label: I understand Sumi is currently in developer preview.
+          required: true
+        - label: I removed or anonymized private data from screenshots/logs.
+          required: true
+        - label: This is a bug report, not a security vulnerability.
+          required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the bug in your own words. What did you see?
+    validations:
+      required: true
+  - type: textarea
+    id: browser-state
+    attributes:
+      label: What were you doing?
+      description: Describe the full browser state when the bug happened.
+      placeholder: |
+        Page or site open, if safe to share:
+        Number of tabs, windows, or splits:
+        Active Space or Profile, if relevant:
+        Features involved, such as Glance, Split View, pinned items, Essentials, folders, Mini Player, or floating bar:
+        Settings involved, such as memory unloading, tracking protection, adblock, cleanup, or extensions:
+        Did it happen after restart, session restore, moving tabs, switching spaces, unloading, or opening from a launcher, pinned item, or essential item?
+    validations:
+      required: true
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Please use numbered steps when possible.
+      placeholder: |
+        1. Open ...
+        2. Enable/disable ...
+        3. Click ...
+        4. Expected ...
+        5. Actual ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected behavior
+      description: What did you expect Sumi to do?
+    validations:
+      required: true
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual behavior
+      description: What did Sumi do instead?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Choose the closest area, if you know it.
+      options:
+        - Browser shell
+        - Sidebar
+        - Tabs
+        - Spaces
+        - Profiles
+        - Pinned items / Essentials / Launchers
+        - Folders
+        - Glance
+        - Split View
+        - Floating Bar / Address Bar
+        - Bookmarks
+        - History
+        - Settings
+        - Themes
+        - Mini Player / Media
+        - Memory modes / Tab unloading
+        - Tracking protection
+        - Adblock
+        - Extensions / MV3
+        - Password-manager extension compatibility
+        - Backup / Restore
+        - Import
+        - Update mechanism
+        - Performance / Energy
+        - Crash / Freeze / Hang
+        - Other
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: Frequency
+      options:
+        - Once
+        - Sometimes
+        - Often
+        - Always
+        - Not sure
+  - type: dropdown
+    id: build-type
+    attributes:
+      label: Build type
+      options:
+        - Local developer build
+        - Developer preview build
+        - GitHub release build
+        - Not sure
+  - type: input
+    id: version-or-commit
+    attributes:
+      label: Sumi version / commit
+      description: If you know it, paste the version, build number, or commit hash. If not, write Not sure.
+  - type: dropdown
+    id: macos-version
+    attributes:
+      label: macOS version
+      options:
+        - macOS 15.7+
+        - macOS 15.x older than 15.7
+        - macOS 14 or older
+        - Not sure
+  - type: dropdown
+    id: mac-architecture
+    attributes:
+      label: Mac architecture
+      options:
+        - Apple Silicon
+        - Intel
+        - Not sure
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or screen recording
+      description: Attach screenshots or videos if they are safe to share and help explain the issue.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or crash report
+      description: Paste relevant logs or crash reports only if they are safe to share.
+      render: shell
+

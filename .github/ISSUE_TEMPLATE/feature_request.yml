@@ -1,0 +1,83 @@
+name: Feature Request
+description: Suggest an improvement for Sumi Browser
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement.
+
+        Please check the README and roadmap before filing. Sumi is currently in developer preview, and the first public preview is planned after MV3 password-manager compatibility, backup/restore for user data, and an update path are in place.
+
+        Requests are most useful when they describe a user problem and a concrete workflow. Please avoid requests that only ask to clone another product.
+  - type: checkboxes
+    id: preliminary-checks
+    attributes:
+      label: Before filing
+      options:
+        - label: I checked the roadmap and did not find this already planned.
+          required: true
+        - label: This request describes a user problem, not only a product name or clone request.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what makes it hard today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed solution
+      description: What would make this workflow better in Sumi?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives-considered
+    attributes:
+      label: Alternatives considered
+      description: Are there other ways Sumi could solve the same problem?
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Choose the closest area, if you know it.
+      options:
+        - Browser shell
+        - Sidebar
+        - Tabs
+        - Spaces
+        - Profiles
+        - Pinned items / Essentials / Launchers
+        - Folders
+        - Glance
+        - Split View
+        - Floating Bar / Address Bar
+        - Bookmarks
+        - History
+        - Settings
+        - Themes
+        - Mini Player / Media
+        - Memory modes / Tab unloading
+        - Tracking protection
+        - Adblock
+        - Extensions / MV3
+        - Password-manager extension compatibility
+        - Backup / Restore
+        - Import
+        - Update mechanism
+        - Performance / Energy
+        - Crash / Freeze / Hang
+        - Other
+  - type: textarea
+    id: example-workflow
+    attributes:
+      label: Example workflow
+      description: Share a concrete workflow or comparison if it helps explain the request.
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add any other context, screenshots, or links that are safe to share.
+

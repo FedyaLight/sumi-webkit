@@ -48,6 +48,12 @@ telemetry-id
 .github/
 !.github/
 .github/*
+!.github/ISSUE_TEMPLATE/
+.github/ISSUE_TEMPLATE/*
+!.github/ISSUE_TEMPLATE/bug_report.yml
+!.github/ISSUE_TEMPLATE/feature_request.yml
+!.github/ISSUE_TEMPLATE/config.yml
+!.github/pull_request_template.md
 !.github/workflows/
 .github/workflows/*
 !.github/workflows/build-adblock-bundle.yml
