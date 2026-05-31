@@ -58,7 +58,31 @@ struct SidebarColumnHostedRootView: View {
         } else if accessibilityReduceTransparency {
             chromeTokens.windowBackground
         } else {
-            NativeChromeMaterialBackground(role: .collapsedSidebar)
+            let context = environmentContext.chromeBackgroundResolvedThemeContext
+            let usesTransition = context.isInteractiveTransition || !context.sourceWorkspaceTheme.visuallyEquals(context.targetWorkspaceTheme)
+            if usesTransition && context.sourceChromeColorScheme != context.targetChromeColorScheme {
+                ZStack {
+                    NativeChromeMaterialBackground(role: .collapsedSidebar)
+                    
+                    let currentScheme = context.nativeSurfaceColorScheme
+                    let isCurrentLight = currentScheme == .light
+                    let maxOpacity: Double = isCurrentLight ? 0.35 : 0.20
+                    let overlayColor = isCurrentLight ? Color.black : Color.white
+                    
+                    let factor: Double = {
+                        if context.transitionProgress < 0.5 {
+                            return context.transitionProgress / 0.5
+                        } else {
+                            return (1.0 - context.transitionProgress) / 0.5
+                        }
+                    }()
+                    
+                    overlayColor
+                        .opacity(factor * maxOpacity)
+                }
+            } else {
+                NativeChromeMaterialBackground(role: .collapsedSidebar)
+            }
         }
     }
 

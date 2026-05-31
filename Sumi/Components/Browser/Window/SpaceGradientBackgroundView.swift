@@ -134,7 +134,29 @@ struct SpaceGradientBackgroundView: View {
                 if accessibilityReduceTransparency {
                     chromeTokens.windowBackground
                 } else if shouldRenderNativeMaterialBase {
-                    NativeChromeMaterialBackground(role: nativeMaterialRole)
+                    if usesResolvedTransitionLayers && themeContext.sourceChromeColorScheme != themeContext.targetChromeColorScheme {
+                        ZStack {
+                            NativeChromeMaterialBackground(role: nativeMaterialRole)
+                            
+                            let currentScheme = themeContext.nativeSurfaceColorScheme
+                            let isCurrentLight = currentScheme == .light
+                            let maxOpacity: Double = isCurrentLight ? 0.35 : 0.20
+                            let overlayColor = isCurrentLight ? Color.black : Color.white
+                            
+                            let factor: Double = {
+                                if transitionProgress < 0.5 {
+                                    return transitionProgress / 0.5
+                                } else {
+                                    return (1.0 - transitionProgress) / 0.5
+                                }
+                            }()
+                            
+                            overlayColor
+                                .opacity(factor * maxOpacity)
+                        }
+                    } else {
+                        NativeChromeMaterialBackground(role: nativeMaterialRole)
+                    }
                 } else {
                     Color.clear
                 }

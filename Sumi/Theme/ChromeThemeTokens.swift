@@ -76,13 +76,11 @@ extension ResolvedThemeContext {
     }
 
     var nativeSurfaceColorScheme: ColorScheme {
-        if chromeColorScheme == .dark
-            || sourceChromeColorScheme == .dark
-            || targetChromeColorScheme == .dark
-        {
-            return .dark
+        let usesTransition = isInteractiveTransition || sourceWorkspaceTheme != targetWorkspaceTheme
+        if usesTransition {
+            return transitionProgress < 0.5 ? sourceChromeColorScheme : targetChromeColorScheme
         }
-        return .light
+        return chromeColorScheme
     }
 
     var nativeSurfaceThemeContext: ResolvedThemeContext {

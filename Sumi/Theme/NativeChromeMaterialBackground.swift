@@ -35,6 +35,7 @@ enum NativeChromeMaterialRole {
 
 struct NativeChromeMaterialBackground: NSViewRepresentable {
     let role: NativeChromeMaterialRole
+    var colorScheme: ColorScheme? = nil
     @Environment(\.resolvedThemeContext) private var themeContext
 
     func makeNSView(context: Context) -> NSVisualEffectView {
@@ -42,7 +43,8 @@ struct NativeChromeMaterialBackground: NSViewRepresentable {
         view.material = role.material
         view.blendingMode = role.blendingMode
         view.state = .followsWindowActiveState
-        view.appearance = NSAppearance.sumiChromeAppearance(for: themeContext.nativeSurfaceColorScheme)
+        let scheme = colorScheme ?? themeContext.nativeSurfaceColorScheme
+        view.appearance = NSAppearance.sumiChromeAppearance(for: scheme)
         return view
     }
 
@@ -50,8 +52,9 @@ struct NativeChromeMaterialBackground: NSViewRepresentable {
         nsView.material = role.material
         nsView.blendingMode = role.blendingMode
         nsView.state = .followsWindowActiveState
+        let scheme = colorScheme ?? themeContext.nativeSurfaceColorScheme
         nsView.appearance = NSAppearance.sumiChromeAppearance(
-            for: themeContext.nativeSurfaceColorScheme,
+            for: scheme,
             fallback: nsView.window?.effectiveAppearance
         )
     }

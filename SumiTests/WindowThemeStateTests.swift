@@ -130,8 +130,8 @@ final class WindowThemeStateTests: XCTestCase {
     }
 
     @MainActor
-    func testNativeSurfaceSchemeStaysDarkWhenTransitionIncludesDarkChrome() {
-        let mixedTransitionContext = ResolvedThemeContext(
+    func testNativeSurfaceSchemeTransitionMidpointThreshold() {
+        var mixedTransitionContext = ResolvedThemeContext(
             globalColorScheme: .light,
             chromeColorScheme: .light,
             sourceChromeColorScheme: .dark,
@@ -140,12 +140,13 @@ final class WindowThemeStateTests: XCTestCase {
             sourceWorkspaceTheme: .incognito,
             targetWorkspaceTheme: makeTheme(opacity: 0.72),
             isInteractiveTransition: true,
-            transitionProgress: 0.5
+            transitionProgress: 0.49
         )
 
-        let nativeSurfaceScheme = mixedTransitionContext.nativeSurfaceColorScheme
+        XCTAssertEqual(mixedTransitionContext.nativeSurfaceColorScheme, .dark)
 
-        XCTAssertEqual(nativeSurfaceScheme, .dark)
+        mixedTransitionContext.transitionProgress = 0.50
+        XCTAssertEqual(mixedTransitionContext.nativeSurfaceColorScheme, .light)
     }
 
     func testCancelRestoresSourceThemeWithoutIntermediateSnap() {
