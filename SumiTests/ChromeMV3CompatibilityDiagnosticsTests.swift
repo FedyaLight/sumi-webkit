@@ -74,6 +74,7 @@ final class ChromeMV3CompatibilityDiagnosticsTests: XCTestCase {
         XCTAssertTrue(matrix["offscreen"]?.statuses.contains(.webKitSyntheticExecuted) == true)
         XCTAssertTrue(matrix["identity"]?.statuses.contains(.webKitSyntheticExecuted) == true)
         XCTAssertTrue(matrix["activeTab"]?.statuses.contains(.notRequired) == true)
+        XCTAssertTrue(matrix["i18n"]?.statuses.contains(.notRequired) == true)
     }
 
     func testViewModelGroupsBlockersBySeveritySourceAPIManifestAndResource()
@@ -495,6 +496,7 @@ final class ChromeMV3CompatibilityDiagnosticsTests: XCTestCase {
             "tabs",
             "scripting",
             "permissions",
+            "i18n",
             "activeTab",
             "storage.local",
             "storage.sync",

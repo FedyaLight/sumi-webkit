@@ -1156,6 +1156,21 @@ enum ChromeMV3CompatibilityAPIMatrixBuilder {
             }
         ),
         definition(
+            id: "i18n",
+            group: "core",
+            displayName: "i18n",
+            api: .i18n,
+            documentationURL: "\(apiReference)/i18n",
+            diagnosticReportName: nil,
+            productRuntimeRequired: true,
+            defaultStatus: .partial,
+            isRequired: {
+                $0.blockerTaxonomy.contains {
+                    $0.apiNamespace == ChromeMV3API.i18n.rawValue
+                }
+            }
+        ),
+        definition(
             id: "activeTab",
             group: "core",
             displayName: "activeTab",

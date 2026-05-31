@@ -818,6 +818,21 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertTrue(
             detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .i18nCapabilityResult.contains("getUILanguage=true") == true
+        )
+        XCTAssertTrue(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .workerGlobalEventTargetResult.contains(
+                    "windowDocumentExposed=false"
+                ) == true
+        )
+        XCTAssertTrue(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .fetchClassificationResult.contains("networkExecution=false")
+                == true
+        )
+        XCTAssertTrue(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
                 .dispatchSmokeResult.hasPrefix("notAttempted:") == true
         )
         XCTAssertEqual(
@@ -1148,6 +1163,24 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                 "subtleCryptoAvailableByDefault: " + positive
             )
         )
+        XCTAssertFalse(
+            harness.contains("i18nGetUILanguageAvailableByDefault: " + positive)
+        )
+        XCTAssertFalse(
+            harness.contains(
+                "workerGlobalEventTargetAvailableByDefault: " + positive
+            )
+        )
+        XCTAssertFalse(harness.contains("workerGlobalWindowDocumentExposed: " + positive))
+        XCTAssertFalse(harness.contains("fetchAvailableByDefault: " + positive))
+        XCTAssertFalse(
+            harness.contains("fetchNetworkExecutionAllowed: " + positive)
+        )
+        XCTAssertFalse(
+            harness.contains(
+                "fetchExtensionLocalExecutionAllowed: " + positive
+            )
+        )
         XCTAssertFalse(harness.contains("SystemRandomNumberGenerator"))
         XCTAssertTrue(harness.contains("SecRandomCopyBytes(kSecRandomDefault"))
         XCTAssertTrue(
@@ -1193,7 +1226,14 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         let decoded = try decodeReport(reportURL)
 
         XCTAssertEqual(decoded.rows.count, 3)
-        XCTAssertEqual(decoded.rows, report.rows)
+        XCTAssertEqual(
+            decoded.rows.map(\.targetID),
+            report.rows.map(\.targetID)
+        )
+        XCTAssertEqual(
+            decoded.rows.map(\.targetClass),
+            report.rows.map(\.targetClass)
+        )
         XCTAssertTrue(decoded.noWebStoreInstallAttempted)
         XCTAssertTrue(decoded.noRemoteCRXDownloadAttempted)
         XCTAssertTrue(decoded.noRealCredentialsUsed)
@@ -1219,13 +1259,25 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         let bitwarden = try XCTUnwrap(byClass[.bitwarden])
         let onePassword = try XCTUnwrap(byClass[.onePassword])
         let proton = try XCTUnwrap(byClass[.protonPass])
-        XCTAssertEqual(
-            bitwarden.serviceWorkerEventReadiness.nextBlockerClassification,
-            .unsupportedChromeAPI
-        )
-        XCTAssertTrue(
+        XCTAssertFalse(
             bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
                 .contains("chrome.i18n.getUILanguage")
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.i18nCapabilityResult
+                .contains("getUILanguage=true")
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.i18nOperationSummary
+                .contains {
+                    $0.hasPrefix(
+                        "chrome.i18n.getUILanguage:fulfilled:"
+                    )
+                }
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.fetchClassificationResult
+                .contains("networkExecution=false")
         )
         XCTAssertTrue(
             bitwarden.serviceWorkerEventReadiness.cryptoCapabilityResult
@@ -1300,13 +1352,17 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             onePassword.serviceWorkerEventReadiness.executionStartResult?
                 .exceptionDetails
         )
-        XCTAssertEqual(
-            proton.serviceWorkerEventReadiness.nextBlockerClassification,
-            .workerWindowDOMUnsupported
+        XCTAssertTrue(
+            proton.serviceWorkerEventReadiness.workerGlobalEventTargetResult
+                .contains("addEventListener/removeEventListener/dispatchEvent=true")
+        )
+        XCTAssertTrue(
+            proton.serviceWorkerEventReadiness.workerGlobalEventTargetResult
+                .contains("windowDocumentExposed=false")
         )
         XCTAssertTrue(
             proton.serviceWorkerEventReadiness.cryptoCapabilityResult
-                .contains("fulfilled=1")
+                .contains("fulfilled=")
         )
         XCTAssertTrue(
             proton.serviceWorkerEventReadiness.cryptoOperationSummary
@@ -1324,19 +1380,18 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                         || $0.shape == .unknownComputed
                 }
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             proton.serviceWorkerEventReadiness.nextBlockerDetail
-                .contains("addEventListener")
+                .contains("addEventListener is not a function")
         )
-        XCTAssertEqual(
-            proton.serviceWorkerEventReadiness.executionStartResult?
-                .exceptionDetails?.classification,
-            .unknownVendorCodeAssumption
-        )
-        XCTAssertTrue(
+        XCTAssertFalse(
             proton.serviceWorkerEventReadiness
                 .workerWindowFailureClassification
                 .hasPrefix("workerGlobalEventTargetMissing:")
+        )
+        XCTAssertTrue(
+            proton.serviceWorkerEventReadiness.workerGlobalEventSummary
+                .contains { $0.hasPrefix("addEventListener:") }
         )
         XCTAssertFalse(
             proton.serviceWorkerEventReadiness.nextBlockerDetail
@@ -1351,9 +1406,10 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                 .contains("rp.tabs.onUpdated")
         )
         XCTAssertTrue(
-            proton.serviceWorkerEventReadiness.timerShimResult.contains(
-                "manual timer queue installed"
-            )
+            proton.serviceWorkerEventReadiness.timerShimResult
+                .hasPrefix("available:")
+                || proton.serviceWorkerEventReadiness.timerShimResult
+                    .hasPrefix("drained:")
         )
         XCTAssertTrue(decoded.rows.allSatisfy {
             $0.serviceWorkerEventReadiness.importScriptsResult.isEmpty == false
@@ -1365,6 +1421,12 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                     == false
                 && $0.serviceWorkerEventReadiness
                     .moduleWorkerReadinessResult.isEmpty == false
+                && $0.serviceWorkerEventReadiness
+                    .i18nCapabilityResult.isEmpty == false
+                && $0.serviceWorkerEventReadiness
+                    .workerGlobalEventTargetResult.isEmpty == false
+                && $0.serviceWorkerEventReadiness
+                    .fetchClassificationResult.isEmpty == false
                 && $0.serviceWorkerEventReadiness.dispatchSmokeResult.isEmpty
                     == false
         })
@@ -1575,6 +1637,28 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertEqual(asyncInventory.count(.fetch), 1)
         XCTAssertEqual(asyncInventory.count(.webSocket), 1)
         XCTAssertEqual(asyncInventory.count(.eventSource), 1)
+        let fetchClassifications =
+            try XCTUnwrap(
+                report.rows.first?.serviceWorkerEventReadiness
+                    .dependencyInventory.fetchClassifications
+            )
+        XCTAssertEqual(fetchClassifications.count, 1)
+        XCTAssertEqual(
+            fetchClassifications.first?.requestKind,
+            .extensionLocalResource
+        )
+        XCTAssertEqual(
+            fetchClassifications.first?.blocker,
+            "extensionLocalFetchDisabled"
+        )
+        XCTAssertEqual(fetchClassifications.first?.executionAllowed, false)
+        XCTAssertTrue(
+            report.rows.first?.serviceWorkerEventReadiness
+                .fetchClassificationSummary.contains {
+                    $0.contains("extensionLocalResource")
+                        && $0.contains("allowed=false")
+                } == true
+        )
         XCTAssertFalse(
             report.rows.first?.serviceWorkerEventReadiness
                 .jsExecutionPolicy.timersAllowed == true

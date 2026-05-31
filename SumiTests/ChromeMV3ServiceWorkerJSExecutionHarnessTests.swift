@@ -53,6 +53,24 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             moduleDisabled.policy.webCryptoAvailableInLocalExperimentalGate
         )
         XCTAssertFalse(moduleDisabled.policy.webCryptoAvailableByDefault)
+        XCTAssertFalse(
+            moduleDisabled.policy.i18nGetUILanguageAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(moduleDisabled.policy.i18nGetUILanguageAvailableByDefault)
+        XCTAssertFalse(
+            moduleDisabled.policy
+                .workerGlobalEventTargetAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(
+            moduleDisabled.policy.workerGlobalEventTargetAvailableByDefault
+        )
+        XCTAssertFalse(moduleDisabled.policy.workerGlobalWindowDocumentExposed)
+        XCTAssertFalse(
+            moduleDisabled.policy.fetchClassificationAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(moduleDisabled.policy.fetchAvailableByDefault)
+        XCTAssertFalse(moduleDisabled.policy.fetchNetworkExecutionAllowed)
+        XCTAssertFalse(moduleDisabled.policy.fetchExtensionLocalExecutionAllowed)
         XCTAssertFalse(moduleDisabled.policy.cryptoGetRandomValuesAvailable)
         XCTAssertFalse(moduleDisabled.policy.cryptoRandomUUIDAvailable)
         XCTAssertFalse(
@@ -105,6 +123,22 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertFalse(harness.policy.timersAllowed)
         XCTAssertFalse(harness.policy.webCryptoAvailableInLocalExperimentalGate)
         XCTAssertFalse(harness.policy.webCryptoAvailableByDefault)
+        XCTAssertFalse(
+            harness.policy.i18nGetUILanguageAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(harness.policy.i18nGetUILanguageAvailableByDefault)
+        XCTAssertFalse(
+            harness.policy
+                .workerGlobalEventTargetAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(harness.policy.workerGlobalEventTargetAvailableByDefault)
+        XCTAssertFalse(harness.policy.workerGlobalWindowDocumentExposed)
+        XCTAssertFalse(
+            harness.policy.fetchClassificationAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(harness.policy.fetchAvailableByDefault)
+        XCTAssertFalse(harness.policy.fetchNetworkExecutionAllowed)
+        XCTAssertFalse(harness.policy.fetchExtensionLocalExecutionAllowed)
         XCTAssertFalse(harness.policy.cryptoGetRandomValuesAvailable)
         XCTAssertFalse(harness.policy.cryptoRandomUUIDAvailable)
         XCTAssertFalse(
@@ -746,6 +780,157 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         )
     }
 
+    func testChromeI18nGetUILanguageIsDeterministicAndNarrow() throws {
+        let harness = try startedHarness(
+            source: """
+            const uiLanguage = chrome.i18n.getUILanguage();
+            const getMessageType = typeof chrome.i18n.getMessage;
+            const getMessageResult = chrome.i18n.getMessage('appName');
+            chrome.runtime.onMessage.addListener(() => ({
+              uiLanguage,
+              getMessageType,
+              getMessageResult: getMessageResult === undefined ? null : getMessageResult,
+              windowType: typeof window,
+              documentType: typeof document
+            }));
+            """,
+            uiLanguageOverride: "fr_CA"
+        )
+
+        XCTAssertEqual(
+            harness.dispatch(
+                source: .popupOptionsRuntimeMessage,
+                payloadSummary: "i18n getUILanguage"
+            ).responsePayload,
+            .object([
+                "documentType": .string("undefined"),
+                "getMessageResult": .null,
+                "getMessageType": .string("function"),
+                "uiLanguage": .string("fr-CA"),
+                "windowType": .string("undefined"),
+            ])
+        )
+        XCTAssertEqual(harness.policy.i18nSelectedUILanguage, "fr-CA")
+        XCTAssertEqual(harness.policy.i18nSelectedUILanguageSource, "testOverride")
+        XCTAssertTrue(
+            harness.policy.i18nGetUILanguageAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(harness.policy.i18nGetUILanguageAvailableByDefault)
+        XCTAssertTrue(
+            harness.policy.i18nUnsupportedAPIs.contains(
+                "chrome.i18n.getMessage"
+            )
+        )
+        XCTAssertTrue(
+            harness.snapshot.i18nOperationRecords.contains {
+                $0.operation == "chrome.i18n.getUILanguage"
+                    && $0.status == "fulfilled"
+                    && $0.value == "fr-CA"
+            }
+        )
+        XCTAssertTrue(
+            harness.snapshot.i18nOperationRecords.contains {
+                $0.operation == "chrome.i18n.getMessage"
+                    && $0.status == "blocked"
+                    && $0.blocker == "unsupportedI18nAPI"
+            }
+        )
+        XCTAssertTrue(
+            harness.snapshot.blockedUnsupportedCalls.contains(
+                "chrome.i18n.getMessage"
+            )
+        )
+    }
+
+    func testWorkerGlobalEventTargetIsNonDOMAndObservable() throws {
+        let harness = try startedHarness(
+            source: """
+            let count = 0;
+            let onceCount = 0;
+            const seen = [];
+            const listener = (event) => {
+              count += 1;
+              seen.push(`${event.type}:${event.target === self}:${event.currentTarget === self}`);
+              event.preventDefault();
+            };
+            const onceListener = { handleEvent() { onceCount += 1; } };
+            addEventListener('message', listener);
+            const firstResult = dispatchEvent({ type: 'message', cancelable: true });
+            removeEventListener('message', listener);
+            const secondResult = dispatchEvent({ type: 'message', cancelable: true });
+            addEventListener('install', onceListener, { once: true });
+            const firstOnce = dispatchEvent({ type: 'install' });
+            const secondOnce = dispatchEvent({ type: 'install' });
+            chrome.runtime.onMessage.addListener(() => ({
+              count,
+              onceCount,
+              seen: seen.join(','),
+              firstResult,
+              secondResult,
+              firstOnce,
+              secondOnce,
+              addType: typeof addEventListener,
+              removeType: typeof removeEventListener,
+              dispatchType: typeof dispatchEvent,
+              windowType: typeof window,
+              documentType: typeof document
+            }));
+            """
+        )
+
+        XCTAssertEqual(
+            harness.dispatch(
+                source: .popupOptionsRuntimeMessage,
+                payloadSummary: "worker global event target"
+            ).responsePayload,
+            .object([
+                "addType": .string("function"),
+                "count": .number(1),
+                "dispatchType": .string("function"),
+                "documentType": .string("undefined"),
+                "firstOnce": .bool(true),
+                "firstResult": .bool(false),
+                "onceCount": .number(1),
+                "removeType": .string("function"),
+                "secondOnce": .bool(true),
+                "secondResult": .bool(true),
+                "seen": .string("message:true:true"),
+                "windowType": .string("undefined"),
+            ])
+        )
+        XCTAssertTrue(
+            harness.policy
+                .workerGlobalEventTargetAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(harness.policy.workerGlobalEventTargetAvailableByDefault)
+        XCTAssertFalse(harness.policy.workerGlobalWindowDocumentExposed)
+        XCTAssertTrue(
+            harness.policy.workerGlobalEventTargetSupportedTypes
+                .contains("message")
+        )
+        XCTAssertTrue(
+            harness.snapshot.workerGlobalEventRecords.contains {
+                $0.operation == .addEventListener
+                    && $0.eventType == "message"
+                    && $0.listenerCount == 1
+                    && $0.blocked == false
+            }
+        )
+        XCTAssertTrue(
+            harness.snapshot.workerGlobalEventRecords.contains {
+                $0.operation == .dispatchEvent
+                    && $0.eventType == "message"
+                    && $0.dispatchListenerCount == 1
+                    && $0.defaultPrevented
+            }
+        )
+        XCTAssertFalse(
+            harness.snapshot.blockedUnsupportedCalls.contains {
+                $0.contains("window") || $0.contains("document")
+            }
+        )
+    }
+
     func testChromeRuntimeIDSurvivesWebExtensionPolyfillWrapping() throws {
         let harness = try startedHarness(
             source: """
@@ -840,14 +1025,50 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         let harness = try startedHarness(
             source: """
             try { fetch('https://example.com/data.json'); } catch (_) {}
+            try { fetch('./local.json'); } catch (_) {}
+            try { fetch('data:text/plain,blocked'); } catch (_) {}
             chrome.runtime.onMessage.addListener(() => 'after-fetch');
             """
         )
 
         XCTAssertTrue(
-            harness.snapshot.blockedUnsupportedCalls.contains(
-                "globalThis.fetch"
-            )
+            harness.snapshot.blockedUnsupportedCalls.contains {
+                $0.hasPrefix("globalThis.fetch.remoteNetwork")
+            }
+        )
+        XCTAssertTrue(
+            harness.snapshot.blockedUnsupportedCalls.contains {
+                $0.hasPrefix("globalThis.fetch.extensionLocalResource")
+            }
+        )
+        XCTAssertTrue(
+            harness.snapshot.blockedUnsupportedCalls.contains {
+                $0.hasPrefix("globalThis.fetch.unsupportedScheme")
+            }
+        )
+        XCTAssertEqual(harness.snapshot.fetchClassificationRecords.count, 3)
+        XCTAssertTrue(
+            harness.snapshot.fetchClassificationRecords.contains {
+                $0.requestKind == .remoteNetwork
+                    && $0.networkAccessRequired
+                    && $0.executionAllowed == false
+                    && $0.blocker == "networkFetchDisabled"
+            }
+        )
+        XCTAssertTrue(
+            harness.snapshot.fetchClassificationRecords.contains {
+                $0.requestKind == .extensionLocalResource
+                    && $0.extensionLocalResource
+                    && $0.executionAllowed == false
+                    && $0.blocker == "extensionLocalFetchDisabled"
+            }
+        )
+        XCTAssertTrue(
+            harness.snapshot.fetchClassificationRecords.contains {
+                $0.requestKind == .unsupportedScheme
+                    && $0.executionAllowed == false
+                    && $0.blocker == "fetchSchemeOrInputUnsupported"
+            }
         )
         XCTAssertEqual(
             harness.dispatch(
@@ -1938,6 +2159,24 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertFalse(policy.pollingAllowed)
         XCTAssertTrue(policy.webCryptoAvailableInLocalExperimentalGate)
         XCTAssertFalse(policy.webCryptoAvailableByDefault)
+        XCTAssertTrue(policy.i18nGetUILanguageAvailableInLocalExperimentalGate)
+        XCTAssertFalse(policy.i18nGetUILanguageAvailableByDefault)
+        XCTAssertFalse(policy.i18nSelectedUILanguage.isEmpty)
+        XCTAssertTrue(
+            policy.i18nUnsupportedAPIs.contains("chrome.i18n.getMessage")
+        )
+        XCTAssertTrue(
+            policy.workerGlobalEventTargetAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(policy.workerGlobalEventTargetAvailableByDefault)
+        XCTAssertTrue(
+            policy.workerGlobalEventTargetSupportedTypes.contains("message")
+        )
+        XCTAssertFalse(policy.workerGlobalWindowDocumentExposed)
+        XCTAssertTrue(policy.fetchClassificationAvailableInLocalExperimentalGate)
+        XCTAssertFalse(policy.fetchAvailableByDefault)
+        XCTAssertFalse(policy.fetchNetworkExecutionAllowed)
+        XCTAssertFalse(policy.fetchExtensionLocalExecutionAllowed)
         XCTAssertTrue(policy.cryptoGetRandomValuesAvailable)
         XCTAssertTrue(policy.cryptoRandomUUIDAvailable)
         XCTAssertTrue(policy.subtleCryptoAvailableInLocalExperimentalGate)
@@ -1951,14 +2190,15 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
     }
 
     private func startedHarness(
-        source: String
+        source: String,
+        uiLanguageOverride: String? = nil
     ) throws -> ChromeMV3ServiceWorkerJSExecutionHarness {
         let fixture = try makeHarness(
             source: source,
             localExperimentalGateAllowed: true
         )
         let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
-            request: fixture.request()
+            request: fixture.request(uiLanguageOverride: uiLanguageOverride)
         )
         XCTAssertEqual(harness.start().status, .running)
         return harness
@@ -1976,7 +2216,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             generatedRecord: ChromeMV3GeneratedBundleRecord? = nil,
             moduleState: ChromeMV3ProfileHostModuleState = .enabled,
             extensionEnabled: Bool = true,
-            dynamicImportRewriteExperimentAllowed: Bool? = nil
+            dynamicImportRewriteExperimentAllowed: Bool? = nil,
+            uiLanguageOverride: String? = nil
         ) -> ChromeMV3ServiceWorkerJSExecutionRequest {
             ChromeMV3ServiceWorkerJSExecutionRequest(
                 manifest: manifest ?? self.manifest,
@@ -1989,7 +2230,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
                     localExperimentalGateAllowed,
                 dynamicImportRewriteExperimentAllowed:
                     dynamicImportRewriteExperimentAllowed
-                    ?? self.dynamicImportRewriteExperimentAllowed
+                    ?? self.dynamicImportRewriteExperimentAllowed,
+                uiLanguageOverride: uiLanguageOverride
             )
         }
     }

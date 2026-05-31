@@ -564,6 +564,71 @@ struct ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe:
     }
 }
 
+private struct ChromeMV3ServiceWorkerJSUILanguageSelection: Equatable {
+    var language: String
+    var source: String
+    var diagnostics: [String]
+
+    static func select(
+        override: String?
+    ) -> ChromeMV3ServiceWorkerJSUILanguageSelection {
+        if let override = normalizedUILanguageServiceWorkerJS(override) {
+            return ChromeMV3ServiceWorkerJSUILanguageSelection(
+                language: override,
+                source: "testOverride",
+                diagnostics: [
+                    "chrome.i18n.getUILanguage uses the explicit test override for deterministic local experimental execution.",
+                ]
+            )
+        }
+
+        if let appLanguage = Bundle.main.preferredLocalizations.first,
+           let normalized = normalizedUILanguageServiceWorkerJS(appLanguage),
+           normalized.lowercased() != "base"
+        {
+            return ChromeMV3ServiceWorkerJSUILanguageSelection(
+                language: normalized,
+                source: "bundlePreferredLocalization",
+                diagnostics: [
+                    "chrome.i18n.getUILanguage selected Bundle.main.preferredLocalizations as the closest app UI language signal.",
+                ]
+            )
+        }
+
+        if let preferred = Locale.preferredLanguages.first,
+           let normalized = normalizedUILanguageServiceWorkerJS(preferred)
+        {
+            return ChromeMV3ServiceWorkerJSUILanguageSelection(
+                language: normalized,
+                source: "localePreferredLanguages",
+                diagnostics: [
+                    "chrome.i18n.getUILanguage fell back to Locale.preferredLanguages because no app UI localization was available.",
+                ]
+            )
+        }
+
+        if let normalized = normalizedUILanguageServiceWorkerJS(
+            Locale.current.identifier
+        ) {
+            return ChromeMV3ServiceWorkerJSUILanguageSelection(
+                language: normalized,
+                source: "localeCurrentIdentifier",
+                diagnostics: [
+                    "chrome.i18n.getUILanguage fell back to Locale.current.identifier.",
+                ]
+            )
+        }
+
+        return ChromeMV3ServiceWorkerJSUILanguageSelection(
+            language: "en-US",
+            source: "deterministicFallback",
+            diagnostics: [
+                "chrome.i18n.getUILanguage fell back to en-US after locale signals were unavailable or invalid.",
+            ]
+        )
+    }
+}
+
 struct ChromeMV3ServiceWorkerJSExecutionPolicy:
     Codable,
     Equatable,
@@ -616,6 +681,19 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
     var subtleCryptoBlockedMethods: [String]
     var subtleCryptoSupportedAlgorithms: [String]
     var subtleCryptoBlockedAlgorithms: [String]
+    var i18nGetUILanguageAvailableInLocalExperimentalGate: Bool
+    var i18nGetUILanguageAvailableByDefault: Bool
+    var i18nSelectedUILanguage: String
+    var i18nSelectedUILanguageSource: String
+    var i18nUnsupportedAPIs: [String]
+    var workerGlobalEventTargetAvailableInLocalExperimentalGate: Bool
+    var workerGlobalEventTargetAvailableByDefault: Bool
+    var workerGlobalEventTargetSupportedTypes: [String]
+    var workerGlobalWindowDocumentExposed: Bool
+    var fetchClassificationAvailableInLocalExperimentalGate: Bool
+    var fetchAvailableByDefault: Bool
+    var fetchNetworkExecutionAllowed: Bool
+    var fetchExtensionLocalExecutionAllowed: Bool
     var blockers: [ChromeMV3ServiceWorkerJSExecutionPolicyBlocker]
     var diagnostics: [String]
 
@@ -624,7 +702,8 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
         extensionEnabled: Bool,
         localExperimentalGateAllowed: Bool,
         generatedBundleRecordAvailable: Bool,
-        dynamicImportRewriteExperimentAllowed: Bool = false
+        dynamicImportRewriteExperimentAllowed: Bool = false,
+        uiLanguageOverride: String? = nil
     ) -> ChromeMV3ServiceWorkerJSExecutionPolicy {
         var blockers: [ChromeMV3ServiceWorkerJSExecutionPolicyBlocker] = []
         if moduleState != .enabled {
@@ -715,6 +794,26 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
                 "RSA-OAEP",
                 "RSASSA-PKCS1-v1_5",
             ] : []
+        let uiLanguage = ChromeMV3ServiceWorkerJSUILanguageSelection.select(
+            override: uiLanguageOverride
+        )
+        let workerGlobalEventTypes =
+            available
+                ? [
+                    "activate",
+                    "error",
+                    "fetch",
+                    "install",
+                    "message",
+                    "unhandledrejection",
+                ] : []
+        let i18nUnsupportedAPIs =
+            available
+                ? [
+                    "chrome.i18n.detectLanguage",
+                    "chrome.i18n.getAcceptLanguages",
+                    "chrome.i18n.getMessage",
+                ] : []
         let surface: ChromeMV3ServiceWorkerJSExecutionSurface
         if moduleState != .enabled || extensionEnabled == false {
             surface = .none
@@ -773,6 +872,20 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
             subtleCryptoBlockedMethods: blockedSubtleMethods,
             subtleCryptoSupportedAlgorithms: supportedSubtleAlgorithms,
             subtleCryptoBlockedAlgorithms: blockedSubtleAlgorithms,
+            i18nGetUILanguageAvailableInLocalExperimentalGate: available,
+            i18nGetUILanguageAvailableByDefault: false,
+            i18nSelectedUILanguage: uiLanguage.language,
+            i18nSelectedUILanguageSource: uiLanguage.source,
+            i18nUnsupportedAPIs: i18nUnsupportedAPIs,
+            workerGlobalEventTargetAvailableInLocalExperimentalGate:
+                available,
+            workerGlobalEventTargetAvailableByDefault: false,
+            workerGlobalEventTargetSupportedTypes: workerGlobalEventTypes,
+            workerGlobalWindowDocumentExposed: false,
+            fetchClassificationAvailableInLocalExperimentalGate: available,
+            fetchAvailableByDefault: false,
+            fetchNetworkExecutionAllowed: false,
+            fetchExtensionLocalExecutionAllowed: false,
             blockers: blockers,
             diagnostics:
                 uniqueSortedServiceWorkerJS(
@@ -787,10 +900,14 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
                         "setTimeout, clearTimeout, setInterval, and clearInterval are available only as an explicit manually drained harness queue; no wall-clock timer or polling loop is created.",
                         "WebCrypto is exposed only inside the local experimental MV3 gate; getRandomValues and randomUUID require Security.framework secure random bytes.",
                         "SubtleCrypto is local-experimental and default-off; this slice supports digest only and rejects key, signing, derivation, encryption, wrapping, and unsupported algorithm calls precisely.",
+                        "chrome.i18n.getUILanguage is available only in the local experimental gate and returns a deterministic UI language string; message catalogs and language detection remain unsupported.",
+                        "Worker-global addEventListener/removeEventListener/dispatchEvent are modeled as a non-DOM EventTarget surface without window or document.",
+                        "fetch calls are classified and recorded, but network and extension-local resource fetch execution remain disabled.",
                         "Lifetime transitions are explicit fixture calls only.",
                         "Stable product runtime remains default-off.",
                     ]
                         + blockers.map { "Policy blocker: \($0.rawValue)." }
+                        + uiLanguage.diagnostics
                         + dynamicImportCapability.diagnostics
                         + moduleWorkerReadiness.diagnostics
                 )
@@ -979,6 +1096,7 @@ struct ChromeMV3ServiceWorkerJSExecutionRequest {
     var extensionEnabled: Bool
     var localExperimentalGateAllowed: Bool
     var dynamicImportRewriteExperimentAllowed: Bool
+    var uiLanguageOverride: String?
 
     init(
         manifest: ChromeMV3Manifest,
@@ -988,7 +1106,8 @@ struct ChromeMV3ServiceWorkerJSExecutionRequest {
         moduleState: ChromeMV3ProfileHostModuleState = .enabled,
         extensionEnabled: Bool = true,
         localExperimentalGateAllowed: Bool = false,
-        dynamicImportRewriteExperimentAllowed: Bool = false
+        dynamicImportRewriteExperimentAllowed: Bool = false,
+        uiLanguageOverride: String? = nil
     ) {
         self.manifest = manifest
         self.generatedBundleRecord = generatedBundleRecord
@@ -1005,6 +1124,7 @@ struct ChromeMV3ServiceWorkerJSExecutionRequest {
         self.localExperimentalGateAllowed = localExperimentalGateAllowed
         self.dynamicImportRewriteExperimentAllowed =
             dynamicImportRewriteExperimentAllowed
+        self.uiLanguageOverride = uiLanguageOverride
     }
 }
 
@@ -1638,6 +1758,12 @@ struct ChromeMV3ServiceWorkerJSExecutionStartRecord:
     var blockedUnsupportedCalls: [String]
     var cryptoOperationRecords:
         [ChromeMV3ServiceWorkerJSCryptoOperationRecord]
+    var i18nOperationRecords:
+        [ChromeMV3ServiceWorkerJSI18nOperationRecord]
+    var workerGlobalEventRecords:
+        [ChromeMV3ServiceWorkerJSWorkerGlobalEventRecord]
+    var fetchClassificationRecords:
+        [ChromeMV3ServiceWorkerJSFetchClassificationRecord]
     var blockers: [ChromeMV3ServiceWorkerJSExecutionStartBlocker]
     var lastErrorMessage: String?
     var exceptionDetails: ChromeMV3ServiceWorkerJSExceptionDetails?
@@ -1654,6 +1780,91 @@ struct ChromeMV3ServiceWorkerJSCryptoOperationRecord:
     var byteCount: Int?
     var status: String
     var blocker: String?
+    var diagnostics: [String]
+}
+
+struct ChromeMV3ServiceWorkerJSI18nOperationRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var operation: String
+    var status: String
+    var value: String?
+    var source: String?
+    var blocker: String?
+    var diagnostics: [String]
+}
+
+enum ChromeMV3ServiceWorkerJSWorkerGlobalEventOperation:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case addEventListener
+    case dispatchEvent
+    case removeEventListener
+
+    static func < (
+        lhs: ChromeMV3ServiceWorkerJSWorkerGlobalEventOperation,
+        rhs: ChromeMV3ServiceWorkerJSWorkerGlobalEventOperation
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3ServiceWorkerJSWorkerGlobalEventRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var operation: ChromeMV3ServiceWorkerJSWorkerGlobalEventOperation
+    var eventType: String
+    var listenerCount: Int
+    var dispatchListenerCount: Int
+    var defaultPrevented: Bool
+    var blocked: Bool
+    var diagnostics: [String]
+}
+
+enum ChromeMV3ServiceWorkerJSFetchRequestKind:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case extensionLocalResource
+    case remoteNetwork
+    case requestLikeObject
+    case unknownInput
+    case unsupportedScheme
+
+    static func < (
+        lhs: ChromeMV3ServiceWorkerJSFetchRequestKind,
+        rhs: ChromeMV3ServiceWorkerJSFetchRequestKind
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3ServiceWorkerJSFetchClassificationRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var callIndex: Int
+    var sourcePath: String?
+    var line: Int?
+    var requestPreview: String
+    var resolvedURL: String?
+    var requestKind: ChromeMV3ServiceWorkerJSFetchRequestKind
+    var networkAccessRequired: Bool
+    var extensionLocalResource: Bool
+    var executionAllowed: Bool
+    var blocker: String
     var diagnostics: [String]
 }
 
@@ -1733,6 +1944,12 @@ struct ChromeMV3ServiceWorkerJSExecutionSnapshot:
     var blockedUnsupportedCalls: [String]
     var cryptoOperationRecords:
         [ChromeMV3ServiceWorkerJSCryptoOperationRecord]
+    var i18nOperationRecords:
+        [ChromeMV3ServiceWorkerJSI18nOperationRecord]
+    var workerGlobalEventRecords:
+        [ChromeMV3ServiceWorkerJSWorkerGlobalEventRecord]
+    var fetchClassificationRecords:
+        [ChromeMV3ServiceWorkerJSFetchClassificationRecord]
     var dispatchRecords: [ChromeMV3ServiceWorkerJSDispatchRecord]
     var ports: [ChromeMV3ServiceWorkerJSPortRecord]
     var timers: [ChromeMV3ServiceWorkerJSTimerRecord]
@@ -1762,6 +1979,12 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
     private var blockedUnsupportedCalls: [String] = []
     private var cryptoOperationRecords:
         [ChromeMV3ServiceWorkerJSCryptoOperationRecord] = []
+    private var i18nOperationRecords:
+        [ChromeMV3ServiceWorkerJSI18nOperationRecord] = []
+    private var workerGlobalEventRecords:
+        [ChromeMV3ServiceWorkerJSWorkerGlobalEventRecord] = []
+    private var fetchClassificationRecords:
+        [ChromeMV3ServiceWorkerJSFetchClassificationRecord] = []
     private var dispatchRecords: [ChromeMV3ServiceWorkerJSDispatchRecord] = []
     private var ports: [String: ChromeMV3ServiceWorkerJSPortRecord] = [:]
     private var timers: [ChromeMV3ServiceWorkerJSTimerRecord] = []
@@ -1787,6 +2010,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             importScriptsBlockers: [],
             blockedUnsupportedCalls: [],
             cryptoOperationRecords: [],
+            i18nOperationRecords: [],
+            workerGlobalEventRecords: [],
+            fetchClassificationRecords: [],
             blockers: [],
             lastErrorMessage: nil,
             exceptionDetails: nil,
@@ -1805,7 +2031,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             generatedBundleRecordAvailable:
                 request.generatedBundleRecord != nil,
             dynamicImportRewriteExperimentAllowed:
-                request.dynamicImportRewriteExperimentAllowed
+                request.dynamicImportRewriteExperimentAllowed,
+            uiLanguageOverride: request.uiLanguageOverride
         )
     }
 
@@ -1823,6 +2050,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             importScriptsBlockers: currentImportScriptBlockers(),
             blockedUnsupportedCalls: blockedUnsupportedCalls,
             cryptoOperationRecords: cryptoOperationRecords,
+            i18nOperationRecords: i18nOperationRecords,
+            workerGlobalEventRecords: workerGlobalEventRecords,
+            fetchClassificationRecords: fetchClassificationRecords,
             dispatchRecords: dispatchRecords,
             ports: ports.values.sorted { $0.portID < $1.portID },
             timers: timers.sorted { $0.timerID < $1.timerID },
@@ -2366,6 +2596,10 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         capturedListeners.removeAll()
         importedScriptRecords.removeAll()
         blockedUnsupportedCalls.removeAll()
+        cryptoOperationRecords.removeAll()
+        i18nOperationRecords.removeAll()
+        workerGlobalEventRecords.removeAll()
+        fetchClassificationRecords.removeAll()
         dispatchRecords.removeAll()
         ports.removeAll()
         timers.removeAll()
@@ -2630,6 +2864,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             importScriptsBlockers: currentImportScriptBlockers(),
             blockedUnsupportedCalls: blockedUnsupportedCalls,
             cryptoOperationRecords: cryptoOperationRecords,
+            i18nOperationRecords: i18nOperationRecords,
+            workerGlobalEventRecords: workerGlobalEventRecords,
+            fetchClassificationRecords: fetchClassificationRecords,
             blockers: uniqueSortedServiceWorkerJS(blockers),
             lastErrorMessage: lastErrorMessage,
             exceptionDetails: exceptionDetails,
@@ -2716,6 +2953,10 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 ?? resourceLoadRecord?.serviceWorkerRelativePath
                 ?? sourceURL.lastPathComponent
             let origin = "chrome-extension://\(request.extensionID)"
+            let uiLanguage =
+                ChromeMV3ServiceWorkerJSUILanguageSelection.select(
+                    override: request.uiLanguageOverride
+                )
             context.setObject(
                 [
                     "extensionID": request.extensionID,
@@ -2725,6 +2966,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                     "manifest": workerManifestSnapshotServiceWorkerJS(
                         request.manifest
                     ),
+                    "uiLanguage": uiLanguage.language,
+                    "uiLanguageSource": uiLanguage.source,
                     "userAgent":
                         "Sumi local experimental MV3 service-worker harness",
                 ] as NSDictionary,
@@ -4002,6 +4245,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                     diagnostics: $0.diagnostics
                 )
             }
+            i18nOperationRecords = wire.i18nOperations
+            workerGlobalEventRecords = wire.workerGlobalEvents
+            fetchClassificationRecords = wire.fetchClassifications
             ports = Dictionary(
                 uniqueKeysWithValues:
                     wire.ports.map {
@@ -4087,14 +4333,20 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       const registrations = [];
       const blockedCalls = [];
       const cryptoOperations = [];
+      const i18nOperations = [];
+      const workerGlobalEvents = [];
+      const fetchClassifications = [];
       const ports = new Map();
       const timers = new Map();
       const pendingTimeoutIDs = [];
       let registrationOrder = 0;
       let nextTimerID = 1;
+      let fetchCallIndex = 0;
       const workerConfig = globalThis.__sumiWorkerGlobalConfig || {};
       const extensionID = String(workerConfig.extensionID || '');
       const extensionOrigin = String(workerConfig.extensionOrigin || `chrome-extension://${extensionID || 'extension'}`);
+      const uiLanguage = String(workerConfig.uiLanguage || 'en-US');
+      const uiLanguageSource = String(workerConfig.uiLanguageSource || 'deterministicFallback');
       const manifestSnapshot = workerConfig.manifest || { manifest_version: 3 };
       const defineWorkerGlobal = (name, value) => {
         if (typeof globalThis[name] !== 'undefined') return;
@@ -4163,6 +4415,170 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         }
         defineWorkerGlobal('DOMException', SumiDOMException);
       }
+      const workerGlobalEventListeners = new Map();
+      const supportedWorkerGlobalEventTypes = new Set([
+        'activate',
+        'error',
+        'fetch',
+        'install',
+        'message',
+        'unhandledrejection'
+      ]);
+      const workerGlobalListenerList = (type) => {
+        const eventType = String(type);
+        if (!workerGlobalEventListeners.has(eventType)) {
+          workerGlobalEventListeners.set(eventType, []);
+        }
+        return workerGlobalEventListeners.get(eventType);
+      };
+      const workerGlobalEventSnapshot = (operation, type, dispatchCount = 0, defaultPrevented = false, blocked = false, diagnostics = []) => {
+        const eventType = String(type || '');
+        workerGlobalEvents.push({
+          operation,
+          eventType,
+          listenerCount: workerGlobalListenerList(eventType).length,
+          dispatchListenerCount: dispatchCount,
+          defaultPrevented: defaultPrevented === true,
+          blocked: blocked === true,
+          diagnostics: diagnostics.map((value) => String(value))
+        });
+      };
+      const normalizeWorkerGlobalListenerOptions = (options) => ({
+        once: options && typeof options === 'object'
+          ? options.once === true
+          : false
+      });
+      const invokeWorkerGlobalListener = (entry, event) => {
+        if (typeof entry.listener === 'function') {
+          entry.listener.call(globalThis, event);
+          return;
+        }
+        if (entry.listener && typeof entry.listener.handleEvent === 'function') {
+          entry.listener.handleEvent(event);
+          return;
+        }
+        throw new TypeError('Worker-global listener is not callable.');
+      };
+      const makeWorkerGlobalEvent = (input) => {
+        const source = input && typeof input === 'object' ? input : {};
+        const type = String(source.type || input || '');
+        if (!type) throw new TypeError('dispatchEvent requires an event object with a non-empty type.');
+        let defaultPrevented = source.defaultPrevented === true;
+        let immediateStopped = false;
+        let propagationStopped = false;
+        const event = Object.create(source);
+        Object.defineProperties(event, {
+          type: { value: type, enumerable: true },
+          target: { value: globalThis, enumerable: true },
+          currentTarget: { value: globalThis, enumerable: true },
+          defaultPrevented: { get() { return defaultPrevented; }, enumerable: true },
+          cancelable: { value: source.cancelable === true, enumerable: true },
+          preventDefault: {
+            value() {
+              if (event.cancelable) defaultPrevented = true;
+            }
+          },
+          stopPropagation: {
+            value() { propagationStopped = true; }
+          },
+          stopImmediatePropagation: {
+            value() {
+              propagationStopped = true;
+              immediateStopped = true;
+            }
+          },
+          __sumiImmediateStopped: { get() { return immediateStopped; } },
+          __sumiPropagationStopped: { get() { return propagationStopped; } }
+        });
+        return event;
+      };
+      defineWorkerGlobal('addEventListener', (type, listener, options) => {
+        const eventType = String(type || '');
+        if (!eventType || !(typeof listener === 'function'
+            || (listener && typeof listener.handleEvent === 'function'))) {
+          noteBlocked(`globalThis.addEventListener.${eventType || 'invalid'}`);
+          workerGlobalEventSnapshot(
+            'addEventListener',
+            eventType,
+            0,
+            false,
+            true,
+            ['Only non-empty event types and callable listeners are accepted by the worker-global EventTarget model.']
+          );
+          return;
+        }
+        const listeners = workerGlobalListenerList(eventType);
+        if (!listeners.some((entry) => entry.listener === listener)) {
+          listeners.push({
+            listener,
+            options: normalizeWorkerGlobalListenerOptions(options)
+          });
+        }
+        workerGlobalEventSnapshot(
+          'addEventListener',
+          eventType,
+          0,
+          false,
+          false,
+          [
+            supportedWorkerGlobalEventTypes.has(eventType)
+              ? 'Registered a supported service-worker global event type.'
+              : 'Registered an extension-observed worker-global event type for diagnostics; dispatch remains explicit only.',
+            'No DOM Window or document object is exposed.'
+          ]
+        );
+      });
+      defineWorkerGlobal('removeEventListener', (type, listener) => {
+        const eventType = String(type || '');
+        const listeners = workerGlobalListenerList(eventType);
+        const before = listeners.length;
+        for (let index = listeners.length - 1; index >= 0; index -= 1) {
+          if (listeners[index].listener === listener) listeners.splice(index, 1);
+        }
+        workerGlobalEventSnapshot(
+          'removeEventListener',
+          eventType,
+          0,
+          false,
+          false,
+          [before === listeners.length ? 'No matching worker-global listener was registered.' : 'Removed worker-global listener.']
+        );
+      });
+      defineWorkerGlobal('dispatchEvent', (input) => {
+        const event = makeWorkerGlobalEvent(input);
+        const listeners = [...workerGlobalListenerList(event.type)];
+        let blocked = false;
+        const diagnostics = [
+          'dispatchEvent runs synchronously inside the explicit local experimental harness only.',
+          event.type === 'fetch'
+            ? 'fetch event dispatch does not enable request interception or network access.'
+            : 'No browser event loop, DOM Window, or document is created.'
+        ];
+        for (const entry of listeners) {
+          try { invokeWorkerGlobalListener(entry, event); }
+          catch (error) {
+            blocked = true;
+            noteBlocked(`globalThis.dispatchEvent.${event.type}.listenerError`);
+            diagnostics.push(String(error && error.message ? error.message : error));
+          }
+          if (entry.options.once) {
+            const current = workerGlobalListenerList(event.type);
+            const index = current.indexOf(entry);
+            if (index >= 0) current.splice(index, 1);
+          }
+          if (event.__sumiImmediateStopped) break;
+        }
+        workerGlobalEventSnapshot(
+          'dispatchEvent',
+          event.type,
+          listeners.length,
+          event.defaultPrevented,
+          blocked,
+          diagnostics
+        );
+        if (blocked) return false;
+        return !event.defaultPrevented;
+      });
       defineWorkerGlobal('navigator', Object.freeze({
         appCodeName: 'Mozilla',
         appName: 'Netscape',
@@ -4820,8 +5236,54 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         onResponseStarted: event('webRequestOnResponseStarted'),
         onSendHeaders: event('webRequestOnSendHeaders')
       }, 'chrome.webRequest');
+      const recordI18nOperation = (operation, status, value, source, blocker, diagnostics = []) => {
+        i18nOperations.push({
+          operation: String(operation),
+          status: String(status),
+          value: value == null ? null : String(value),
+          source: source == null ? null : String(source),
+          blocker: blocker == null ? null : String(blocker),
+          diagnostics: diagnostics.map((item) => String(item))
+        });
+      };
+      const unsupportedI18nMethod = (name) => function () {
+        const path = `chrome.i18n.${name}`;
+        noteBlocked(path);
+        recordI18nOperation(
+          path,
+          'blocked',
+          null,
+          null,
+          'unsupportedI18nAPI',
+          [
+            'Only chrome.i18n.getUILanguage is implemented in this local experimental service-worker slice.',
+            'No message catalog, accept-language list, or CLD language detection result is faked.'
+          ]
+        );
+        return undefined;
+      };
+      const i18n = proxiedNamespace({
+        getUILanguage() {
+          recordI18nOperation(
+            'chrome.i18n.getUILanguage',
+            'fulfilled',
+            uiLanguage,
+            uiLanguageSource,
+            null,
+            [
+              'Returned deterministic browser UI language string from the local experimental harness configuration.',
+              'This does not enable chrome.i18n message catalog lookup.'
+            ]
+          );
+          return uiLanguage;
+        },
+        getMessage: unsupportedI18nMethod('getMessage'),
+        getAcceptLanguages: unsupportedI18nMethod('getAcceptLanguages'),
+        detectLanguage: unsupportedI18nMethod('detectLanguage')
+      }, 'chrome.i18n');
       globalThis.chrome = proxiedNamespace({
         runtime,
+        i18n,
         storage,
         permissions,
         alarms,
@@ -4969,8 +5431,101 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       globalThis.setInterval = (callback, delay, ...args) =>
         scheduleQueuedCallback('interval', callback, delay, args);
       globalThis.clearInterval = clearTimer;
+      const previewFetchInput = (input) => {
+        try {
+          if (typeof input === 'string') return input.slice(0, 240);
+          if (input instanceof URL) return input.href.slice(0, 240);
+          if (input && typeof input.url === 'string') return input.url.slice(0, 240);
+          return String(input).slice(0, 240);
+        } catch (_) {
+          return '<uninspectable>';
+        }
+      };
+      const classifyFetchInput = (input) => {
+        const preview = previewFetchInput(input);
+        let rawURL = null;
+        let kind = 'unknownInput';
+        if (typeof input === 'string') {
+          rawURL = input;
+        } else if (input instanceof URL) {
+          rawURL = input.href;
+        } else if (input && typeof input.url === 'string') {
+          rawURL = input.url;
+          kind = 'requestLikeObject';
+        }
+        let resolvedURL = null;
+        let networkAccessRequired = false;
+        let extensionLocalResource = false;
+        if (rawURL != null) {
+          try {
+            const url = new URL(rawURL, location.href);
+            resolvedURL = url.href;
+            if (url.protocol === 'http:' || url.protocol === 'https:') {
+              networkAccessRequired = true;
+              extensionLocalResource = false;
+              kind = 'remoteNetwork';
+            } else if (url.protocol === 'chrome-extension:' && url.origin === extensionOrigin) {
+              extensionLocalResource = true;
+              kind = 'extensionLocalResource';
+            } else {
+              kind = 'unsupportedScheme';
+            }
+          } catch (_) {
+            kind = kind === 'requestLikeObject' ? kind : 'unknownInput';
+          }
+        }
+        return {
+          preview,
+          resolvedURL,
+          kind,
+          networkAccessRequired,
+          extensionLocalResource
+        };
+      };
+      const fetchCallSite = () => {
+        const stack = String(new Error().stack || '');
+        const line = stack.split('\n').find((entry) =>
+          entry.includes('.js:') && !entry.includes('service-worker-shim.js'));
+        const match = line && line.match(/([^@\s]+\.js):(\d+):\d+/);
+        return {
+          sourcePath: globalThis.__sumiCurrentScript || null,
+          line: match ? Number(match[2]) : null
+        };
+      };
+      globalThis.fetch = function (input) {
+        const classification = classifyFetchInput(input);
+        const callSite = fetchCallSite();
+        fetchCallIndex += 1;
+        const blocker = classification.networkAccessRequired
+          ? 'networkFetchDisabled'
+          : classification.extensionLocalResource
+            ? 'extensionLocalFetchDisabled'
+            : 'fetchSchemeOrInputUnsupported';
+        noteBlocked(`globalThis.fetch.${classification.kind}.${blocker}`);
+        fetchClassifications.push({
+          callIndex: fetchCallIndex,
+          sourcePath: callSite.sourcePath,
+          line: callSite.line,
+          requestPreview: classification.preview,
+          resolvedURL: classification.resolvedURL,
+          requestKind: classification.kind,
+          networkAccessRequired: classification.networkAccessRequired,
+          extensionLocalResource: classification.extensionLocalResource,
+          executionAllowed: false,
+          blocker,
+          diagnostics: [
+            'fetch request was classified without network or extension-resource execution.',
+            classification.networkAccessRequired
+              ? 'Remote http(s) network fetch remains disabled.'
+              : classification.extensionLocalResource
+                ? 'Extension-local resource fetch remains disabled; no fake Response is returned.'
+                : 'Unsupported fetch input or scheme was blocked.',
+            'No URLSession, WebKit network load, or dummy Response is used by this harness.'
+          ]
+        });
+        throw new Error(`fetch is classified but disabled in the local experimental service-worker harness: ${blocker}.`);
+      };
       for (const name of [
-        'fetch',
         'XMLHttpRequest',
         'WebSocket',
         'EventSource',
@@ -5067,6 +5622,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         })),
         blockedCalls: [...blockedCalls],
         cryptoOperations: cryptoOperations.map((item) => clone(item)),
+        i18nOperations: i18nOperations.map((item) => clone(item)),
+        workerGlobalEvents: workerGlobalEvents.map((item) => clone(item)),
+        fetchClassifications: fetchClassifications.map((item) => clone(item)),
         ports: [...ports.values()].map(portSnapshot),
         timers: [...timers.values()].map((state) => ({
           timerID: state.timerID,
@@ -5117,6 +5675,10 @@ private struct ChromeMV3ServiceWorkerJSWireSnapshot: Decodable {
     var registrations: [ChromeMV3ServiceWorkerJSWireRegistration]
     var blockedCalls: [String]
     var cryptoOperations: [ChromeMV3ServiceWorkerJSWireCryptoOperation]
+    var i18nOperations: [ChromeMV3ServiceWorkerJSI18nOperationRecord]
+    var workerGlobalEvents: [ChromeMV3ServiceWorkerJSWorkerGlobalEventRecord]
+    var fetchClassifications:
+        [ChromeMV3ServiceWorkerJSFetchClassificationRecord]
     var ports: [ChromeMV3ServiceWorkerJSWirePort]
     var timers: [ChromeMV3ServiceWorkerJSTimerRecord]
 }
@@ -5281,6 +5843,30 @@ private func normalizedOptionalServiceWorkerJS(_ value: String?) -> String? {
     guard let value else { return nil }
     let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
     return trimmed.isEmpty ? nil : trimmed
+}
+
+private func normalizedUILanguageServiceWorkerJS(_ value: String?) -> String? {
+    guard let value else { return nil }
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        .replacingOccurrences(of: "_", with: "-")
+    guard trimmed.isEmpty == false else { return nil }
+    let parts = trimmed.split(separator: "-", omittingEmptySubsequences: true)
+    guard let language = parts.first,
+          language.range(
+            of: #"^[A-Za-z]{2,3}$"#,
+            options: .regularExpression
+          ) != nil
+    else { return nil }
+    let normalizedLanguage = language.lowercased()
+    guard let region = parts.dropFirst().first,
+          region.range(
+            of: #"^(?:[A-Za-z]{2}|\d{3})$"#,
+            options: .regularExpression
+          ) != nil
+    else {
+        return normalizedLanguage
+    }
+    return "\(normalizedLanguage)-\(region.uppercased())"
 }
 
 private func isSafeRelativeServiceWorkerJSPath(_ path: String) -> Bool {

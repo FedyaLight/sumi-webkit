@@ -409,9 +409,9 @@ enum ChromeMV3CapabilityClassifier {
             api: .i18n,
             statuses: [.shim, .needsVerification],
             evidence: [
-                chrome("Chrome i18n API resolves extension locale messages.", chromeAPIReference + "/i18n"),
-                sumi("Current ExtensionUtils has locale lookup helpers that can inform a future shim."),
-                fixture("Verify Chrome placeholder, fallback, and message formatting behavior.")
+                chrome("Chrome i18n API resolves extension locale messages and exposes the browser UI language.", chromeAPIReference + "/i18n"),
+                sumi("The local experimental MV3 service-worker harness implements only chrome.i18n.getUILanguage with a deterministic locale source; message catalogs and detection remain blocked."),
+                fixture("Verify Chrome placeholder, fallback, and message formatting behavior before expanding beyond getUILanguage.")
             ],
             detection: .i18n
         ),

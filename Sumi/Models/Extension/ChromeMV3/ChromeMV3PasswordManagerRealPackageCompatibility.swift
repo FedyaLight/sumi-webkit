@@ -861,6 +861,26 @@ struct ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPIInventory:
     }
 }
 
+struct ChromeMV3PasswordManagerRealPackageServiceWorkerFetchClassification:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var sourceKind:
+        ChromeMV3PasswordManagerRealPackageServiceWorkerDependencySourceKind
+    var sourcePath: String
+    var line: Int
+    var rawCallPreview: String
+    var requestPreview: String
+    var resolvedURL: String?
+    var requestKind: ChromeMV3ServiceWorkerJSFetchRequestKind
+    var networkAccessRequired: Bool
+    var extensionLocalResource: Bool
+    var executionAllowed: Bool
+    var blocker: String
+    var diagnostics: [String]
+}
+
 struct ChromeMV3PasswordManagerRealPackageServiceWorkerListenerRegistration:
     Codable,
     Equatable,
@@ -907,6 +927,8 @@ struct ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventory:
         ChromeMV3PasswordManagerRealPackageServiceWorkerModuleWorkerInventory
     var asyncAPIInventory:
         ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPIInventory
+    var fetchClassifications:
+        [ChromeMV3PasswordManagerRealPackageServiceWorkerFetchClassification]
     var listenerRegistrationMap:
         ChromeMV3PasswordManagerRealPackageServiceWorkerListenerRegistrationMap
     var nextRecommendedImplementationPath: String
@@ -1092,6 +1114,7 @@ enum ChromeMV3PasswordManagerRealPackageNextBlockerClassification:
     case dynamicImportComputedUnsupported
     case dynamicImportRewriteSucceededButListenerMissing
     case importScriptsDependencyMissing
+    case networkFetchUnsupported
     case unsupportedChromeAPI
     case webCryptoUnsupported
     case workerWindowDOMUnsupported
@@ -1163,6 +1186,12 @@ struct ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness:
     var cryptoOperationSummary: [String]
     var cryptoSubtleSupportedAlgorithms: [String]
     var cryptoSubtleBlockedAlgorithms: [String]
+    var i18nCapabilityResult: String
+    var i18nOperationSummary: [String]
+    var workerGlobalEventTargetResult: String
+    var workerGlobalEventSummary: [String]
+    var fetchClassificationResult: String
+    var fetchClassificationSummary: [String]
     var workerWindowFailureClassification: String
     var timerShimResult: String
     var moduleWorkerReadinessResult: String
@@ -2655,6 +2684,32 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         let cryptoOperationSummary = serviceWorkerCryptoOperationSummary(
             executionStartResult: executionStartResult
         )
+        let i18nCapabilityResult = serviceWorkerI18nCapabilityResult(
+            policy: policy,
+            executionStartResult: executionStartResult
+        )
+        let i18nOperationSummary = serviceWorkerI18nOperationSummary(
+            executionStartResult: executionStartResult
+        )
+        let workerGlobalEventTargetResult =
+            serviceWorkerWorkerGlobalEventTargetResult(
+                policy: policy,
+                executionStartResult: executionStartResult
+            )
+        let workerGlobalEventSummary = serviceWorkerWorkerGlobalEventSummary(
+            executionStartResult: executionStartResult
+        )
+        let fetchClassificationResult =
+            serviceWorkerFetchClassificationResult(
+                policy: policy,
+                dependencyInventory: dependencyInventory,
+                executionStartResult: executionStartResult
+            )
+        let fetchClassificationSummary =
+            serviceWorkerFetchClassificationSummary(
+                dependencyInventory: dependencyInventory,
+                executionStartResult: executionStartResult
+            )
         let workerWindowFailureClassification =
             serviceWorkerWorkerWindowFailureClassification(
                 executionStartResult: executionStartResult
@@ -2743,6 +2798,12 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 policy.subtleCryptoSupportedAlgorithms,
             cryptoSubtleBlockedAlgorithms:
                 policy.subtleCryptoBlockedAlgorithms,
+            i18nCapabilityResult: i18nCapabilityResult,
+            i18nOperationSummary: i18nOperationSummary,
+            workerGlobalEventTargetResult: workerGlobalEventTargetResult,
+            workerGlobalEventSummary: workerGlobalEventSummary,
+            fetchClassificationResult: fetchClassificationResult,
+            fetchClassificationSummary: fetchClassificationSummary,
             workerWindowFailureClassification:
                 workerWindowFailureClassification,
             timerShimResult: timerShimResult,
@@ -3372,6 +3433,131 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         .sorted()
     }
 
+    private static func serviceWorkerI18nCapabilityResult(
+        policy: ChromeMV3ServiceWorkerJSExecutionPolicy,
+        executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?
+    ) -> String {
+        guard policy.i18nGetUILanguageAvailableInLocalExperimentalGate else {
+            return "blockedByPolicy: chrome.i18n.getUILanguage requires the explicit local experimental MV3 gate."
+        }
+        let operations = executionStartResult?.i18nOperationRecords ?? []
+        let fulfilled = operations.filter { $0.status == "fulfilled" }.count
+        let blocked = operations.filter { $0.status == "blocked" }.count
+        return "available: getUILanguage=true, default=\(policy.i18nGetUILanguageAvailableByDefault), uiLanguage=\(policy.i18nSelectedUILanguage), source=\(policy.i18nSelectedUILanguageSource), fulfilled=\(fulfilled), blocked=\(blocked), unsupported=\(policy.i18nUnsupportedAPIs.joined(separator: ","))."
+    }
+
+    private static func serviceWorkerI18nOperationSummary(
+        executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?
+    ) -> [String] {
+        (executionStartResult?.i18nOperationRecords ?? []).map { record in
+            [
+                record.operation,
+                record.status,
+                record.value ?? "none",
+                record.source ?? "none",
+                record.blocker ?? "none",
+            ].joined(separator: ":")
+        }
+        .sorted()
+    }
+
+    private static func serviceWorkerWorkerGlobalEventTargetResult(
+        policy: ChromeMV3ServiceWorkerJSExecutionPolicy,
+        executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?
+    ) -> String {
+        guard
+            policy.workerGlobalEventTargetAvailableInLocalExperimentalGate
+        else {
+            return "blockedByPolicy: worker-global EventTarget requires the explicit local experimental MV3 gate."
+        }
+        let records = executionStartResult?.workerGlobalEventRecords ?? []
+        let additions = records.filter {
+            $0.operation == .addEventListener
+        }.count
+        let removals = records.filter {
+            $0.operation == .removeEventListener
+        }.count
+        let dispatches = records.filter {
+            $0.operation == .dispatchEvent
+        }.count
+        let blocked = records.filter(\.blocked).count
+        return "available: addEventListener/removeEventListener/dispatchEvent=true, default=\(policy.workerGlobalEventTargetAvailableByDefault), supportedTypes=\(policy.workerGlobalEventTargetSupportedTypes.joined(separator: ",")), windowDocumentExposed=\(policy.workerGlobalWindowDocumentExposed), add=\(additions), remove=\(removals), dispatch=\(dispatches), blocked=\(blocked)."
+    }
+
+    private static func serviceWorkerWorkerGlobalEventSummary(
+        executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?
+    ) -> [String] {
+        (executionStartResult?.workerGlobalEventRecords ?? []).map { record in
+            [
+                record.operation.rawValue,
+                record.eventType,
+                "listeners=\(record.listenerCount)",
+                "dispatchListeners=\(record.dispatchListenerCount)",
+                "defaultPrevented=\(record.defaultPrevented)",
+                "blocked=\(record.blocked)",
+            ].joined(separator: ":")
+        }
+        .sorted()
+    }
+
+    private static func serviceWorkerFetchClassificationResult(
+        policy: ChromeMV3ServiceWorkerJSExecutionPolicy,
+        dependencyInventory:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventory,
+        executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?
+    ) -> String {
+        guard policy.fetchClassificationAvailableInLocalExperimentalGate else {
+            return "blockedByPolicy: fetch classification requires the explicit local experimental MV3 gate."
+        }
+        let runtime = executionStartResult?.fetchClassificationRecords ?? []
+        let staticRecords = dependencyInventory.fetchClassifications
+        let remote = runtime.filter(\.networkAccessRequired).count
+            + staticRecords.filter(\.networkAccessRequired).count
+        let local = runtime.filter(\.extensionLocalResource).count
+            + staticRecords.filter(\.extensionLocalResource).count
+        let unknown =
+            runtime.filter {
+                $0.requestKind == .unknownInput
+                    || $0.requestKind == .unsupportedScheme
+            }.count
+            + staticRecords.filter {
+                $0.requestKind == .unknownInput
+                    || $0.requestKind == .unsupportedScheme
+            }.count
+        return "classifiedDisabled: runtime=\(runtime.count), static=\(staticRecords.count), remote=\(remote), extensionLocal=\(local), unknown=\(unknown), default=\(policy.fetchAvailableByDefault), networkExecution=\(policy.fetchNetworkExecutionAllowed), extensionLocalExecution=\(policy.fetchExtensionLocalExecutionAllowed)."
+    }
+
+    private static func serviceWorkerFetchClassificationSummary(
+        dependencyInventory:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventory,
+        executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?
+    ) -> [String] {
+        let runtime =
+            (executionStartResult?.fetchClassificationRecords ?? []).map {
+                record in
+                [
+                    "runtime",
+                    record.sourcePath ?? "unknown",
+                    "\(record.line ?? 0)",
+                    record.requestKind.rawValue,
+                    record.blocker,
+                    "allowed=\(record.executionAllowed)",
+                ].joined(separator: ":")
+            }
+        let staticRecords = dependencyInventory.fetchClassifications.map {
+            record in
+            [
+                "static",
+                record.sourcePath,
+                "\(record.line)",
+                record.requestKind.rawValue,
+                record.blocker,
+                "allowed=\(record.executionAllowed)",
+            ].joined(separator: ":")
+        }
+        return uniqueSortedRealPackages(runtime + staticRecords)
+    }
+
     private static func serviceWorkerWorkerWindowFailureClassification(
         executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?
     ) -> String {
@@ -3480,6 +3666,24 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 serviceWorkerWorkerWindowFailureClassification(
                     executionStartResult: executionStartResult
                 )
+            )
+        }
+        if let fetchRecord =
+            executionStartResult?.fetchClassificationRecords.first
+        {
+            return (
+                .networkFetchUnsupported,
+                "Execution reached fetch classified as \(fetchRecord.requestKind.rawValue) at \(fetchRecord.sourcePath ?? "unknown"):\(fetchRecord.line ?? 0); networkRequired=\(fetchRecord.networkAccessRequired), extensionLocal=\(fetchRecord.extensionLocalResource), executionAllowed=\(fetchRecord.executionAllowed), blocker=\(fetchRecord.blocker)."
+            )
+        }
+        if let fetchCall =
+            executionStartResult?.blockedUnsupportedCalls.first(where: {
+                $0.hasPrefix("globalThis.fetch")
+            })
+        {
+            return (
+                .networkFetchUnsupported,
+                "Execution reached \(fetchCall); fetch remains classified but disabled."
             )
         }
         if dependencyInventory.serviceWorkerType == "module" {
@@ -3627,6 +3831,13 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             executionStartResult: executionStartResult
         ) {
             return "Classify the worker window/global dependency narrowly and prefer WorkerGlobalScope-compatible shims only; do not expose DOM Window or document."
+        }
+        if executionStartResult?.fetchClassificationRecords.isEmpty == false
+            || executionStartResult?.blockedUnsupportedCalls.contains(
+                where: { $0.hasPrefix("globalThis.fetch") }
+            ) == true
+        {
+            return "Keep fetch classified but disabled; choose any future local-resource or network policy only as a separate audited slice, without enabling arbitrary service-worker network access."
         }
         if dependencyInventory.serviceWorkerType == "module" {
             return dependencyInventory.nextRecommendedImplementationPath
@@ -5096,6 +5307,8 @@ enum ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventoryScanner 
             [ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPIOccurrence] = []
         var asyncTotalsByAPI:
             [ChromeMV3PasswordManagerRealPackageAsyncAPI: Int] = [:]
+        var fetchClassifications:
+            [ChromeMV3PasswordManagerRealPackageServiceWorkerFetchClassification] = []
         var listenerRegistrationRecords:
             [ChromeMV3PasswordManagerRealPackageServiceWorkerListenerRegistration] = []
 
@@ -5133,6 +5346,14 @@ enum ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventoryScanner 
             for total in asyncScan.totals {
                 asyncTotalsByAPI[total.api, default: 0] += total.count
             }
+            fetchClassifications.append(
+                contentsOf: fetchClassificationInventory(
+                    source: scannedSource,
+                    root: root,
+                    generatedBundleRecord: generatedBundleRecord,
+                    generatedRoot: generatedRoot
+                )
+            )
             listenerRegistrationRecords.append(
                 contentsOf: listenerRegistrations(in: scannedSource)
             )
@@ -5213,6 +5434,8 @@ enum ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventoryScanner 
                 importScriptsCalls.sorted(by: importScriptsSort),
             moduleWorkerInventory: moduleInventory,
             asyncAPIInventory: asyncInventory,
+            fetchClassifications:
+                fetchClassifications.sorted(by: fetchClassificationSort),
             listenerRegistrationMap: listenerMap,
             nextRecommendedImplementationPath: nextPath,
             diagnostics:
@@ -5256,6 +5479,7 @@ enum ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventoryScanner 
                     occurrences: [],
                     diagnostics: diagnostics
                 ),
+            fetchClassifications: [],
             listenerRegistrationMap:
                 ChromeMV3PasswordManagerRealPackageServiceWorkerListenerRegistrationMap(
                     registrations: [],
@@ -5407,6 +5631,115 @@ enum ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventoryScanner 
                                 : "Single importScripts argument was inventoried.",
                         ] + resolution.diagnostics
                     )
+            )
+        }
+    }
+
+    private static func fetchClassificationInventory(
+        source: InventorySource,
+        root: URL,
+        generatedBundleRecord: ChromeMV3GeneratedBundleRecord?,
+        generatedRoot: URL?
+    ) -> [ChromeMV3PasswordManagerRealPackageServiceWorkerFetchClassification] {
+        javascriptCalls(
+            named: "fetch",
+            in: source.source,
+            rejectMemberAccess: true
+        ).map { call in
+            let split = firstTopLevelArgument(call.argumentSource)
+            let argument = split.first
+            let shape = importShape(argument)
+            let literal = staticInventorySpecifierValue(argument)
+            let requestKind: ChromeMV3ServiceWorkerJSFetchRequestKind
+            let resolvedURL: String?
+            let networkAccessRequired: Bool
+            let extensionLocalResource: Bool
+            let blocker: String
+            var diagnostics = [
+                "fetch call was classified statically without executing network or extension resource loading.",
+            ]
+
+            if let literal,
+               literal.lowercased().hasPrefix("http://")
+                    || literal.lowercased().hasPrefix("https://")
+            {
+                requestKind = .remoteNetwork
+                resolvedURL = literal
+                networkAccessRequired = true
+                extensionLocalResource = false
+                blocker = "networkFetchDisabled"
+                diagnostics.append("Remote http(s) fetch requires network access and remains disabled.")
+            } else if let literal,
+                      literal.lowercased().hasPrefix("chrome-extension://")
+            {
+                requestKind = .extensionLocalResource
+                resolvedURL = literal
+                networkAccessRequired = false
+                extensionLocalResource = true
+                blocker = "extensionLocalFetchDisabled"
+                diagnostics.append("Extension-local chrome-extension fetch remains classified but disabled.")
+            } else if let literal,
+                      literal.hasPrefix("/"),
+                      literal.hasPrefix("//") == false
+            {
+                let normalized = normalizeInventoryImportPath(
+                    String(literal.drop(while: { $0 == "/" }))
+                )
+                requestKind = .extensionLocalResource
+                resolvedURL = normalized.path
+                networkAccessRequired = false
+                extensionLocalResource = true
+                blocker = "extensionLocalFetchDisabled"
+                diagnostics.append(
+                    "Root-relative fetch is treated as an extension-local resource request and remains disabled; no fake Response is returned."
+                )
+                diagnostics.append(normalized.message)
+            } else if [.stringLiteralLocal, .templateLiteralStatic, .concatenation]
+                .contains(shape)
+            {
+                let resolution = resolveCandidate(
+                    specifier: argument,
+                    shape: shape,
+                    parentSource: source,
+                    root: root,
+                    generatedBundleRecord: generatedBundleRecord,
+                    generatedRoot: generatedRoot
+                )
+                requestKind = .extensionLocalResource
+                resolvedURL = resolution.resolvedCandidatePath
+                networkAccessRequired = false
+                extensionLocalResource = true
+                blocker = "extensionLocalFetchDisabled"
+                diagnostics.append(
+                    contentsOf:
+                        resolution.diagnostics + [
+                            "Relative fetch is treated as an extension-local resource request and remains disabled; no fake Response is returned.",
+                        ]
+                )
+            } else {
+                requestKind = .unknownInput
+                resolvedURL = nil
+                networkAccessRequired = false
+                extensionLocalResource = false
+                blocker = "fetchInputUnsupported"
+                diagnostics.append(
+                    "Computed or request-object fetch input could not be safely resolved by static inventory."
+                )
+            }
+
+            return ChromeMV3PasswordManagerRealPackageServiceWorkerFetchClassification(
+                sourceKind: source.kind,
+                sourcePath: source.relativePath,
+                line: call.line,
+                rawCallPreview: call.rawCallPreview,
+                requestPreview: previewInventory(argument),
+                resolvedURL: resolvedURL,
+                requestKind: requestKind,
+                networkAccessRequired: networkAccessRequired,
+                extensionLocalResource: extensionLocalResource,
+                executionAllowed: false,
+                blocker: blocker,
+                diagnostics: uniqueSortedRealPackages(diagnostics)
             )
         }
     }
@@ -6534,6 +6867,19 @@ enum ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventoryScanner 
         }
         if lhs.line != rhs.line { return lhs.line < rhs.line }
         return lhs.specifierPreview < rhs.specifierPreview
+    }
+
+    private static func fetchClassificationSort(
+        _ lhs:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerFetchClassification,
+        _ rhs:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerFetchClassification
+    ) -> Bool {
+        if lhs.sourcePath != rhs.sourcePath {
+            return lhs.sourcePath < rhs.sourcePath
+        }
+        if lhs.line != rhs.line { return lhs.line < rhs.line }
+        return lhs.requestPreview < rhs.requestPreview
     }
 
     private static func moduleImportSort(

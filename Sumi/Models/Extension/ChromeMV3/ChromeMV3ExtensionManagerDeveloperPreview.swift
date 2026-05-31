@@ -1368,6 +1368,12 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
     var cryptoOperationSummary: [String]
     var cryptoSubtleSupportedAlgorithms: [String]
     var cryptoSubtleBlockedAlgorithms: [String]
+    var i18nCapabilityResult: String
+    var i18nOperationSummary: [String]
+    var workerGlobalEventTargetResult: String
+    var workerGlobalEventSummary: [String]
+    var fetchClassificationResult: String
+    var fetchClassificationSummary: [String]
     var workerWindowFailureClassification: String
     var timerPolicyResult: String
     var timerShimResult: String
@@ -1430,6 +1436,13 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
                 readiness.cryptoSubtleSupportedAlgorithms,
             cryptoSubtleBlockedAlgorithms:
                 readiness.cryptoSubtleBlockedAlgorithms,
+            i18nCapabilityResult: readiness.i18nCapabilityResult,
+            i18nOperationSummary: readiness.i18nOperationSummary,
+            workerGlobalEventTargetResult:
+                readiness.workerGlobalEventTargetResult,
+            workerGlobalEventSummary: readiness.workerGlobalEventSummary,
+            fetchClassificationResult: readiness.fetchClassificationResult,
+            fetchClassificationSummary: readiness.fetchClassificationSummary,
             workerWindowFailureClassification:
                 readiness.workerWindowFailureClassification,
             timerPolicyResult:
@@ -3341,6 +3354,54 @@ struct ChromeMV3ExtensionManagerView: View {
                         Text(
                             "Crypto operations: "
                                 + trial.cryptoOperationSummary
+                                .prefix(4)
+                                .joined(separator: ", ")
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text("i18n slice: \(trial.i18nCapabilityResult)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if trial.i18nOperationSummary.isEmpty == false {
+                        Text(
+                            "i18n operations: "
+                                + trial.i18nOperationSummary
+                                .prefix(4)
+                                .joined(separator: ", ")
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text(
+                        "Worker global events: "
+                            + trial.workerGlobalEventTargetResult
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    if trial.workerGlobalEventSummary.isEmpty == false {
+                        Text(
+                            "Worker event operations: "
+                                + trial.workerGlobalEventSummary
+                                .prefix(4)
+                                .joined(separator: ", ")
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text("Fetch classification: \(trial.fetchClassificationResult)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if trial.fetchClassificationSummary.isEmpty == false {
+                        Text(
+                            "Fetch calls: "
+                                + trial.fetchClassificationSummary
                                 .prefix(4)
                                 .joined(separator: ", ")
                         )
