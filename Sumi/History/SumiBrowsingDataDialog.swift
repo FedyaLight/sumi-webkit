@@ -255,7 +255,6 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
         } else {
             selectedCategories.remove(category)
         }
-        refreshSummary()
     }
 
     func setClearsAllProfiles(_ value: Bool) {
