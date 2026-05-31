@@ -287,6 +287,11 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
         runtimeOwner.tearDownForExtensionDisable()
     }
 
+    func tearDownForExtensionUninstall() {
+        detachAll(reason: .extensionUninstalled)
+        runtimeOwner.tearDownForExtensionUninstall()
+    }
+
     func tearDownForProfileClose() {
         detachAll(reason: .profileClosed)
         runtimeOwner.tearDownForProfileClose()

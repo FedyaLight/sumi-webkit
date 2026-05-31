@@ -170,6 +170,24 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                 "serviceWorker.runtimeLoadableFalse"
             )
         )
+        XCTAssertFalse(
+            row.serviceWorkerEventReadiness.jsExecutionPolicy
+                .serviceWorkerJSExecutionAvailableInLocalExperimentalGate
+        )
+        XCTAssertTrue(
+            row.serviceWorkerEventReadiness
+                .actualListenerRegistrationCaptureStatus
+                .contains("notAttempted")
+        )
+        XCTAssertTrue(
+            row.serviceWorkerEventReadiness.capturedListenerFamilies.isEmpty
+        )
+        XCTAssertFalse(
+            row.serviceWorkerEventReadiness.missingListenerFamilies.isEmpty
+        )
+        XCTAssertTrue(
+            row.serviceWorkerEventReadiness.actualDispatchResults.isEmpty
+        )
         XCTAssertEqual(
             row.serviceWorkerEventReadiness.popupOptionsRuntimeMessage,
             .blocked

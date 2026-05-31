@@ -1351,6 +1351,11 @@ struct ChromeMV3ExtensionManagerServiceWorkerReadinessPanel:
     Sendable
 {
     var readiness: ChromeMV3ServiceWorkerDeclarationReadiness?
+    var jsExecutionPolicy: ChromeMV3ServiceWorkerJSExecutionPolicy
+    var jsExecutionHarnessStatus: String
+    var listenerRegistrationCaptureStatus: String
+    var capturedListenerFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent]
+    var jsExecutionTeardownState: String
     var lastEventResult: ChromeMV3ServiceWorkerEventRoutingRecord?
     var listenerCoverage: [ChromeMV3ServiceWorkerListenerCoverage]
     var idleTimeoutState: String
@@ -1387,6 +1392,13 @@ struct ChromeMV3ExtensionManagerServiceWorkerReadinessPanel:
                 localExperimentalGateAllowed: false
             )
         }
+        let jsExecutionPolicy = ChromeMV3ServiceWorkerJSExecutionPolicy.evaluate(
+            moduleState:
+                gate.managerAvailableInDeveloperPreview ? .enabled : .disabled,
+            extensionEnabled: record.runtimeState.internalRuntimeEnabled,
+            localExperimentalGateAllowed: false,
+            generatedBundleRecordAvailable: active != nil
+        )
         let blockers =
             uniqueSortedExtensionManager(
                 readiness?.blockers.map(\.rawValue)
@@ -1394,6 +1406,14 @@ struct ChromeMV3ExtensionManagerServiceWorkerReadinessPanel:
             )
         return ChromeMV3ExtensionManagerServiceWorkerReadinessPanel(
             readiness: readiness,
+            jsExecutionPolicy: jsExecutionPolicy,
+            jsExecutionHarnessStatus:
+                "notConstructed: manager detail is read-only and the local experimental gate remains closed.",
+            listenerRegistrationCaptureStatus:
+                "notAttempted: no manager-created JavaScript execution harness.",
+            capturedListenerFamilies: [],
+            jsExecutionTeardownState:
+                "notApplicable: manager detail created no JavaScript surface or lifecycle session.",
             lastEventResult: nil,
             listenerCoverage: readiness?.listenerCoverage ?? [],
             idleTimeoutState:
@@ -1418,6 +1438,7 @@ struct ChromeMV3ExtensionManagerServiceWorkerReadinessPanel:
                                 ? "Manifest snapshot could not be loaded for service-worker readiness."
                                 : "Manager detail evaluated service-worker declaration/readiness without constructing a session.",
                             "lastEventResult is nil until a scoped local experimental runtime event is routed.",
+                            "Actual JavaScript listener registration capture is not attempted by manager detail.",
                             "No permanent background page or timer is created by this panel.",
                         ]
                 )
@@ -3035,6 +3056,20 @@ struct ChromeMV3ExtensionManagerView: View {
                         "\(panel.listenerCoverage.filter { $0.listenerDetected }.count)/\(panel.listenerCoverage.count)"
                     )
                     fact(
+                        "JS Harness",
+                        panel.jsExecutionPolicy
+                            .serviceWorkerJSExecutionAvailableInLocalExperimentalGate
+                            ? "available" : "blocked"
+                    )
+                    fact(
+                        "JS Surface",
+                        panel.jsExecutionPolicy.executionSurface.rawValue
+                    )
+                    fact(
+                        "Captured",
+                        "\(panel.capturedListenerFamilies.count)"
+                    )
+                    fact(
                         "runtimeLoadable",
                         readiness.map { $0.runtimeLoadable ? "true" : "false" }
                             ?? "false"
@@ -3048,6 +3083,22 @@ struct ChromeMV3ExtensionManagerView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 }
+                Text("Harness: \(panel.jsExecutionHarnessStatus)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Listener capture: \(panel.listenerRegistrationCaptureStatus)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Idle: \(panel.idleTimeoutState)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Teardown: \(panel.jsExecutionTeardownState)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 if panel.blockers.isEmpty == false {
                     Text("Blockers: " + panel.blockers.prefix(4).joined(separator: ", "))
                         .font(.caption)

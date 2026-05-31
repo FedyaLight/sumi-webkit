@@ -720,6 +720,11 @@ struct ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness:
 {
     var declared: Bool
     var declarationReadiness: ChromeMV3ServiceWorkerDeclarationReadiness?
+    var jsExecutionPolicy: ChromeMV3ServiceWorkerJSExecutionPolicy
+    var actualListenerRegistrationCaptureStatus: String
+    var capturedListenerFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent]
+    var missingListenerFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent]
+    var actualDispatchResults: [ChromeMV3ServiceWorkerJSDispatchRecord]
     var popupOptionsRuntimeMessage: ChromeMV3PasswordManagerCompatibilityStatus
     var popupOptionsRuntimeConnect: ChromeMV3PasswordManagerCompatibilityStatus
     var contentScriptRuntimeMessage: ChromeMV3PasswordManagerCompatibilityStatus
@@ -1091,7 +1096,7 @@ struct ChromeMV3PasswordManagerRealPackageCompatibilityReport:
     Equatable,
     Sendable
 {
-    static let schemaVersion = 3
+    static let schemaVersion = 4
     static let reportFileName =
         "runtime-mv3-real-package-compatibility-report.json"
 
@@ -1998,6 +2003,16 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             declared: declared,
             readiness: readiness
         )
+        let jsExecutionPolicy = ChromeMV3ServiceWorkerJSExecutionPolicy.evaluate(
+            moduleState: .enabled,
+            extensionEnabled:
+                lifecycleResult?.record?.runtimeState
+                .internalRuntimeEnabled ?? true,
+            localExperimentalGateAllowed: false,
+            generatedBundleRecordAvailable:
+                lifecycleResult?.generatedVersion != nil
+                    || lifecycleResult?.record?.activeGeneratedVersionID != nil
+        )
         let blockers: [String]
         if declared == false {
             blockers = []
@@ -2018,6 +2033,17 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         return ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness(
             declared: declared,
             declarationReadiness: readiness,
+            jsExecutionPolicy: jsExecutionPolicy,
+            actualListenerRegistrationCaptureStatus:
+                "notAttempted: real-package compatibility reporting keeps the local experimental service-worker JavaScript gate closed.",
+            capturedListenerFamilies: [],
+            missingListenerFamilies:
+                Array(Set(
+                    statuses.compactMap {
+                        $0.listenerDetected ? nil : $0.targetListener
+                    }
+                )).sorted(),
+            actualDispatchResults: [],
             popupOptionsRuntimeMessage:
                 serviceWorkerStatus(
                     .popupOptionsRuntimeMessage,
@@ -2061,6 +2087,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                                 ? "Real-package service-worker readiness was evaluated without loading or waking the worker."
                                 : "No background.service_worker declaration requires routing.",
                             "Event statuses are diagnostic; no shared lifecycle session is constructed by the real-package report.",
+                            "Actual JavaScript listener registration capture is not attempted while the local experimental gate is closed.",
                             "localExperimentalGateAllowed is false for this compatibility pass.",
                         ]
                 )

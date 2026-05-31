@@ -444,6 +444,7 @@ enum ChromeMV3ServiceWorkerInternalStopReason:
     Sendable
 {
     case extensionDisabled
+    case extensionUninstalled
     case hardTimeout
     case idleRelease
     case profileClosed
@@ -1103,6 +1104,10 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
 
     func tearDownForExtensionDisable() {
         tearDown(reason: .extensionDisabled)
+    }
+
+    func tearDownForExtensionUninstall() {
+        tearDown(reason: .extensionUninstalled)
     }
 
     func tearDownForProfileClose() {

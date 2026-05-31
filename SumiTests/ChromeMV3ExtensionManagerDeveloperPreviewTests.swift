@@ -178,6 +178,21 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
             detail.productEnablementPreflight.normalTabPreflight
                 .canExposeRuntimeBridgeNow
         )
+        XCTAssertFalse(
+            detail.serviceWorkerReadinessPanel.jsExecutionPolicy
+                .serviceWorkerJSExecutionAvailableInLocalExperimentalGate
+        )
+        XCTAssertTrue(
+            detail.serviceWorkerReadinessPanel.jsExecutionHarnessStatus
+                .contains("notConstructed")
+        )
+        XCTAssertTrue(
+            detail.serviceWorkerReadinessPanel.listenerRegistrationCaptureStatus
+                .contains("notAttempted")
+        )
+        XCTAssertTrue(
+            detail.serviceWorkerReadinessPanel.capturedListenerFamilies.isEmpty
+        )
         XCTAssertTrue(detail.apiSupportMatrix.contains {
             $0.apiNamespace == ChromeMV3API.webRequest.rawValue
                 && $0.productBlocked

@@ -495,9 +495,13 @@ enum ChromeMV3ServiceWorkerEventRoutingResultKind:
     case blockedByUnsupportedListener
     case delivered
     case failed
+    case listenerError
     case noListener
     case noReceiver
+    case promiseRejected
+    case sendResponseTimeoutDiagnostic
     case timeoutDiagnostic
+    case unsupportedListenerMode
 
     static func < (
         lhs: ChromeMV3ServiceWorkerEventRoutingResultKind,
