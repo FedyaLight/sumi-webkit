@@ -59,6 +59,7 @@ final class WindowWebContentController: NSViewController {
     private var pendingDisplayState: WebsiteDisplayState?
     private var appliedDisplayState: WebsiteDisplayState?
     private var isDisplayStateApplyScheduled = false
+    private var contentBackgroundColor: Color = .white
     private var lastHoverTabId: UUID?
     private var pendingSplitRepairGroupId: UUID?
     private var hoveredLinkHandler: ((String?) -> Void)?
@@ -130,7 +131,8 @@ final class WindowWebContentController: NSViewController {
     func update(
         displayState: WebsiteDisplayState,
         hoveredLinkHandler: @escaping (String?) -> Void,
-        chromeGeometry: BrowserChromeGeometry
+        chromeGeometry: BrowserChromeGeometry,
+        contentBackgroundColor: Color
     ) {
         let currentTab = browserManager.currentTab(for: windowState)
         let displayStateChanged = appliedDisplayState != displayState
@@ -140,7 +142,11 @@ final class WindowWebContentController: NSViewController {
         )
         let needsDisplayStateApply = displayStateChanged || hasStaleSubviews
 
-        if self.chromeGeometry != chromeGeometry {
+        let previousBg = self.contentBackgroundColor
+        self.contentBackgroundColor = contentBackgroundColor
+        let bgChanged = previousBg != contentBackgroundColor
+
+        if self.chromeGeometry != chromeGeometry || bgChanged {
             self.chromeGeometry = chromeGeometry
             containerView.setChromeGeometry(chromeGeometry)
             updateDisplayedHostViewportStyles()
@@ -596,11 +602,21 @@ final class WindowWebContentController: NSViewController {
             host.frame = paneView.bounds
             host.autoresizingMask = [.width, .height]
             configureViewportStyle(on: host)
+            
+            // Temporary drawsBackground = false transition gate to guarantee zero white flashes
+            host.webView.setValue(false, forKey: "drawsBackground")
+            
             host.attachDisplayedContentIfNeeded()
             host.isHidden = false
             paneView.layoutSubtreeIfNeeded()
             host.layoutSubtreeIfNeeded()
         }
+        
+        let webView = host.webView
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak webView] in
+            webView?.setValue(true, forKey: "drawsBackground")
+        }
+
         if isProtected {
             parkedProtectedHosts[ObjectIdentifier(host.webView)] = host
         }
@@ -757,6 +773,10 @@ final class WindowWebContentController: NSViewController {
 
     private func configureViewportStyle(on host: SumiWebViewContainerView) {
         host.setBrowserContentViewport(geometry: chromeGeometry)
+        let nsColor = NSColor(contentBackgroundColor)
+        host.webView.underPageBackgroundColor = nsColor
+        host.webView.layer?.backgroundColor = nsColor.cgColor
+        host.layer?.backgroundColor = nsColor.cgColor
     }
 
     private func scheduleSplitRepair(groupId: UUID) {
@@ -779,6 +799,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
     var isSplitDropCaptureActive: Bool
     var chromeGeometry: BrowserChromeGeometry
     let windowState: BrowserWindowState
+    var contentBackgroundColor: Color
 
     final class Coordinator {
         var hoveredLink: Binding<String?>
@@ -837,7 +858,8 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         controller.update(
             displayState: makeDisplayState(),
             hoveredLinkHandler: { context.coordinator.setHoveredLink($0) },
-            chromeGeometry: chromeGeometry
+            chromeGeometry: chromeGeometry,
+            contentBackgroundColor: contentBackgroundColor
         )
     }
 

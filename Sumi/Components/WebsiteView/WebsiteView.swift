@@ -215,7 +215,8 @@ struct WebsiteView: View {
             isSplitDropCaptureActive: sidebarDragState.isInternalDragGeometryArmed
                 || (sidebarDragState.isDragging && sidebarDragState.isInternalDragSession),
             chromeGeometry: chromeGeometry,
-            windowState: windowState
+            windowState: windowState,
+            contentBackgroundColor: browserContentSurfaceBackground
         )
         .coordinateSpace(name: dragCoordinateSpace)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
