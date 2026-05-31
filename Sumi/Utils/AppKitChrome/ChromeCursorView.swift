@@ -37,6 +37,7 @@ private final class ChromeCursorNSView: NSView {
     var isCursorEnabled: Bool = true {
         didSet {
             guard isCursorEnabled != oldValue else { return }
+            updateTrackingAreas()
             window?.invalidateCursorRects(for: self)
             if isCursorEnabled {
                 setCursorIfMouseInside()

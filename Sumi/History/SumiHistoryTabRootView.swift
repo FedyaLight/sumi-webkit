@@ -249,27 +249,29 @@ struct SumiHistoryTabRootView: View {
     private var historyCard: some View {
         LazyVStack(alignment: .leading, spacing: 0, pinnedViews: []) {
             ForEach(viewModel.sections) { section in
-                VStack(alignment: .leading, spacing: 14) {
+                Section {
+                    ForEach(section.items) { item in
+                        HistoryRow(item: item, viewModel: viewModel)
+                            .onAppear {
+                                viewModel.loadNextPageIfNeeded(after: item)
+                            }
+                            .padding(.bottom, 2)
+                    }
+                } header: {
                     Text(section.title)
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(tokens.primaryText)
                         .padding(.horizontal, 22)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        ForEach(section.items) { item in
-                            HistoryRow(item: item, viewModel: viewModel)
-                                .onAppear {
-                                    viewModel.loadNextPageIfNeeded(after: item)
-                                }
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 20)
+                        .padding(.bottom, 14)
                 }
-                .padding(.vertical, 20)
-                .frame(maxWidth: .infinity, alignment: .leading)
 
                 if section.id != viewModel.sections.last?.id {
                     Divider()
+                        .padding(.vertical, 20)
+                } else {
+                    Color.clear
+                        .frame(height: 18)
                 }
             }
 
