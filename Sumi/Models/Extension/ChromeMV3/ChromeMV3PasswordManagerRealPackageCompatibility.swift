@@ -698,6 +698,44 @@ struct ChromeMV3PasswordManagerRealPackagePermissionSmoke:
     var diagnostics: [String]
 }
 
+struct ChromeMV3PasswordManagerRealPackageServiceWorkerEventStatus:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var source: ChromeMV3ServiceWorkerEventSource
+    var targetListener: ChromeMV3ServiceWorkerSyntheticListenerEvent
+    var status: ChromeMV3PasswordManagerCompatibilityStatus
+    var routingResultKind: ChromeMV3ServiceWorkerEventRoutingResultKind?
+    var listenerDetected: Bool
+    var listenerDetectionPattern: String?
+    var payloadSummary: String
+    var diagnostics: [String]
+}
+
+struct ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var declared: Bool
+    var declarationReadiness: ChromeMV3ServiceWorkerDeclarationReadiness?
+    var popupOptionsRuntimeMessage: ChromeMV3PasswordManagerCompatibilityStatus
+    var popupOptionsRuntimeConnect: ChromeMV3PasswordManagerCompatibilityStatus
+    var contentScriptRuntimeMessage: ChromeMV3PasswordManagerCompatibilityStatus
+    var contentScriptRuntimeConnect: ChromeMV3PasswordManagerCompatibilityStatus
+    var storageChanged: ChromeMV3PasswordManagerCompatibilityStatus
+    var permissionsAdded: ChromeMV3PasswordManagerCompatibilityStatus
+    var permissionsRemoved: ChromeMV3PasswordManagerCompatibilityStatus
+    var nativeMessagingConnect: ChromeMV3PasswordManagerCompatibilityStatus
+    var nativeMessagingMessage: ChromeMV3PasswordManagerCompatibilityStatus
+    var eventStatuses:
+        [ChromeMV3PasswordManagerRealPackageServiceWorkerEventStatus]
+    var blockers: [String]
+    var nextRecommendedFix: String
+    var diagnostics: [String]
+}
+
 enum ChromeMV3PasswordManagerRealPackageNativeHostRequirementDetectionConfidence:
     String,
     Codable,
@@ -1017,6 +1055,8 @@ struct ChromeMV3PasswordManagerRealPackageCompatibilityRow:
     var storageLocal: ChromeMV3PasswordManagerCompatibilityStatus
     var nativeMessaging: ChromeMV3PasswordManagerCompatibilityStatus
     var serviceWorkerLifecycle: ChromeMV3PasswordManagerCompatibilityStatus
+    var serviceWorkerEventReadiness:
+        ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness
     var dnrWebRequest: ChromeMV3PasswordManagerCompatibilityStatus
     var sidePanelOffscreenIdentity:
         ChromeMV3PasswordManagerCompatibilityStatus
@@ -1051,7 +1091,7 @@ struct ChromeMV3PasswordManagerRealPackageCompatibilityReport:
     Equatable,
     Sendable
 {
-    static let schemaVersion = 2
+    static let schemaVersion = 3
     static let reportFileName =
         "runtime-mv3-real-package-compatibility-report.json"
 
@@ -1271,7 +1311,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                         "Real-package compatibility trials used only the explicit configured local roots.",
                         "Chrome Web Store install, scraping, spoofing, and remote CRX download were not attempted.",
                         "Real credentials, vaults, accounts, tokens, and installed native hosts were not used.",
-                        "Product runtime and public password-manager support remain unavailable.",
+                        "Stable password-manager runtime remains unavailable.",
                     ]
                 )
         )
@@ -1594,6 +1634,12 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             selected: selected
         )
         let permissionSmoke = permissionSmoke(extraction: extraction)
+        let serviceWorkerReadiness = serviceWorkerEventReadiness(
+            manifest: manifest,
+            lifecycleResult: trial.lifecycleResult,
+            extraction: extraction,
+            selected: selected
+        )
         let apiBlockers =
             uniqueSortedRealPackages(extraction.unsupportedOrDeferredAPIs)
         let manifestBlockers =
@@ -1609,7 +1655,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             uniqueSortedRealPackages(
                 (requiresMainWorld ? ["MAIN-world content scripts require a constrained bridge design."] : [])
                     + (requiresMultiFrame ? ["Multi-frame/about:blank/origin-fallback content scripts require safe WebKit frame targeting."] : [])
-                    + (extraction.backgroundServiceWorker != nil ? ["MV3 service-worker wake/keepalive behavior remains diagnostics-only."] : [])
+                    + serviceWorkerReadiness.blockers
             )
         let packageBlockers =
             uniqueSortedRealPackages(
@@ -1639,14 +1685,14 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         let productPolicyBlockers =
             uniqueSortedRealPackages(
                 [
-                    "Developer-preview diagnostic only; public password-manager support remains blocked.",
-                    "Product runtime is not globally loadable or exposed.",
+                    "Local experimental diagnostics only; stable Bitwarden/1Password/Proton Pass support remains blocked.",
+                    "Stable runtime is not globally loadable or exposed.",
                 ]
-                    + (extraction.declaresDNR ? ["Product DNR content-rule enforcement is not enabled."] : [])
-                    + (extraction.declaresWebRequest ? ["Product webRequest runtime/enforcement is not enabled."] : [])
-                    + (extraction.declaresSidePanel ? ["Product sidePanel runtime is not enabled."] : [])
-                    + (extraction.declaresOffscreen ? ["Product offscreen runtime is not enabled."] : [])
-                    + (extraction.declaresIdentity ? ["Product identity/OAuth runtime is not enabled."] : [])
+                    + (extraction.declaresDNR ? ["Stable DNR content-rule enforcement is not enabled."] : [])
+                    + (extraction.declaresWebRequest ? ["Stable webRequest runtime/enforcement is not enabled."] : [])
+                    + (extraction.declaresSidePanel ? ["Stable sidePanel runtime is not enabled."] : [])
+                    + (extraction.declaresOffscreen ? ["Stable offscreen runtime is not enabled."] : [])
+                    + (extraction.declaresIdentity ? ["Stable identity/OAuth runtime is not enabled."] : [])
             )
         let blockers =
             uniqueSortedRealPackages(
@@ -1719,7 +1765,13 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     ? .partial : .notRequired,
             nativeMessaging: nativeStatus,
             serviceWorkerLifecycle:
-                extraction.backgroundServiceWorker != nil ? .blocked : .notRequired,
+                serviceWorkerReadiness.declared
+                    ? (
+                        serviceWorkerReadiness.declarationReadiness?
+                        .eventRoutingAvailable == true ? .partial : .blocked
+                    )
+                    : .notRequired,
+            serviceWorkerEventReadiness: serviceWorkerReadiness,
             dnrWebRequest: dnrWebRequestStatus,
             sidePanelOffscreenIdentity: identityStatus,
             manifestRequirements: extraction,
@@ -1741,7 +1793,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             blockerSummary: blockers,
             nextRecommendedFix: fixtureDelta.nextRecommendedFix,
             notPublicSupportDisclaimer:
-                "Developer-preview diagnostic only; not Chrome parity and not public Bitwarden/1Password/Proton Pass support."
+                "Local experimental/default-off diagnostic only; not Chrome parity and not stable Bitwarden/1Password/Proton Pass support."
         )
     }
 
@@ -1789,7 +1841,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             diagnostics:
                 uniqueSortedRealPackages([
                     hasPopupOptions
-                        ? "Popup/options pages were preflighted for developer-preview bridge coverage; real vendor page execution was not required for this report."
+                        ? "Popup/options pages were preflighted for local experimental/default-off bridge coverage; real vendor page execution was not required for this report."
                         : "No popup/options page was declared.",
                     "No login, account, vault, token, or intentional network/auth call was performed.",
                     "Unsupported popup/options API calls are reported from manifest/resource analysis and bridge allowlist policy.",
@@ -1906,6 +1958,193 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     ]
                 )
         )
+    }
+
+    private static func serviceWorkerEventReadiness(
+        manifest: ChromeMV3Manifest?,
+        lifecycleResult: ChromeMV3LifecycleOperationResult?,
+        extraction:
+            ChromeMV3PasswordManagerRealPackageManifestRequirementExtraction,
+        selected: SelectedPackage
+    ) -> ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness {
+        let declared = extraction.backgroundServiceWorker != nil
+        let extensionID = lifecycleResult?.record?.extensionID
+            ?? "password-manager-real-package-extension"
+        let profileID = lifecycleResult?.record?.profileID
+            ?? "password-manager-real-package-profile"
+        let generatedRootPath =
+            lifecycleResult?.generatedVersion?.generatedBundleRootPath
+                ?? lifecycleResult?.record?.generatedBundleVersions.first {
+                    $0.id == lifecycleResult?.record?.activeGeneratedVersionID
+                }?.generatedBundleRootPath
+                ?? selected.resourceScanRootPath
+                ?? lifecycleResult?.record?.originalBundleRootPath
+        let readiness = manifest.map {
+            ChromeMV3ServiceWorkerDeclarationReadinessEvaluator.evaluate(
+                manifest: $0,
+                generatedBundleRootURL: generatedRootPath.map {
+                    URL(fileURLWithPath: $0, isDirectory: true)
+                },
+                extensionID: extensionID,
+                profileID: profileID,
+                moduleState: .enabled,
+                extensionEnabled:
+                    lifecycleResult?.record?.runtimeState
+                    .internalRuntimeEnabled ?? true,
+                localExperimentalGateAllowed: false
+            )
+        }
+        let statuses = serviceWorkerEventStatuses(
+            declared: declared,
+            readiness: readiness
+        )
+        let blockers: [String]
+        if declared == false {
+            blockers = []
+        } else if let readiness {
+            blockers = uniqueSortedRealPackages(
+                readiness.blockers.map { "serviceWorker.\($0.rawValue)" }
+                    + statuses.compactMap { status in
+                        status.status == .deferred
+                            ? "serviceWorker.\(status.source.rawValue):noListener"
+                            : nil
+                    }
+            )
+        } else {
+            blockers = [
+                "serviceWorker.manifestUnavailable",
+            ]
+        }
+        return ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness(
+            declared: declared,
+            declarationReadiness: readiness,
+            popupOptionsRuntimeMessage:
+                serviceWorkerStatus(
+                    .popupOptionsRuntimeMessage,
+                    from: statuses
+                ),
+            popupOptionsRuntimeConnect:
+                serviceWorkerStatus(
+                    .popupOptionsRuntimeConnect,
+                    from: statuses
+                ),
+            contentScriptRuntimeMessage:
+                serviceWorkerStatus(
+                    .contentScriptRuntimeMessage,
+                    from: statuses
+                ),
+            contentScriptRuntimeConnect:
+                serviceWorkerStatus(
+                    .contentScriptRuntimeConnect,
+                    from: statuses
+                ),
+            storageChanged: serviceWorkerStatus(.storageChanged, from: statuses),
+            permissionsAdded:
+                serviceWorkerStatus(.permissionsAdded, from: statuses),
+            permissionsRemoved:
+                serviceWorkerStatus(.permissionsRemoved, from: statuses),
+            nativeMessagingConnect:
+                serviceWorkerStatus(.nativeMessagingConnect, from: statuses),
+            nativeMessagingMessage:
+                serviceWorkerStatus(.nativeMessagingMessage, from: statuses),
+            eventStatuses: statuses,
+            blockers: blockers,
+            nextRecommendedFix:
+                declared
+                    ? "Keep service-worker routing behind the local experimental/default-off gate; next reduce direct blockers in readiness.blockers without enabling stable runtime load."
+                    : "No background.service_worker was declared.",
+            diagnostics:
+                uniqueSortedRealPackages(
+                    (readiness?.diagnostics ?? [])
+                        + [
+                            declared
+                                ? "Real-package service-worker readiness was evaluated without loading or waking the worker."
+                                : "No background.service_worker declaration requires routing.",
+                            "Event statuses are diagnostic; no shared lifecycle session is constructed by the real-package report.",
+                            "localExperimentalGateAllowed is false for this compatibility pass.",
+                        ]
+                )
+        )
+    }
+
+    private static func serviceWorkerEventStatuses(
+        declared: Bool,
+        readiness: ChromeMV3ServiceWorkerDeclarationReadiness?
+    ) -> [ChromeMV3PasswordManagerRealPackageServiceWorkerEventStatus] {
+        serviceWorkerReportSources.map { source in
+            let coverage = readiness?.coverage(for: source.listenerEvent)
+            let listenerDetected = coverage?.listenerDetected == true
+            let routingKind: ChromeMV3ServiceWorkerEventRoutingResultKind?
+            let status: ChromeMV3PasswordManagerCompatibilityStatus
+            if declared == false {
+                routingKind = nil
+                status = .notRequired
+            } else if readiness == nil {
+                routingKind = .failed
+                status = .blocked
+            } else if readiness?.eventRoutingAvailable == true {
+                routingKind = listenerDetected ? .delivered : noListenerKind(source)
+                status = listenerDetected ? .partial : .deferred
+            } else {
+                routingKind = .blockedByGate
+                status = .blocked
+            }
+            return ChromeMV3PasswordManagerRealPackageServiceWorkerEventStatus(
+                source: source,
+                targetListener: source.listenerEvent,
+                status: status,
+                routingResultKind: routingKind,
+                listenerDetected: listenerDetected,
+                listenerDetectionPattern: coverage?.detectionPattern,
+                payloadSummary:
+                    "diagnostic:\(source.rawValue)->\(source.listenerEvent.rawValue)",
+                diagnostics:
+                    uniqueSortedRealPackages(
+                        (coverage?.diagnostics ?? [])
+                            + [
+                                declared
+                                    ? "Event source is represented in the real-package readiness report."
+                                    : "Event source is not required because no service worker is declared.",
+                                "No event was dispatched during compatibility report generation.",
+                            ]
+                    )
+            )
+        }
+    }
+
+    private static let serviceWorkerReportSources:
+        [ChromeMV3ServiceWorkerEventSource] = [
+            .popupOptionsRuntimeMessage,
+            .popupOptionsRuntimeConnect,
+            .contentScriptRuntimeMessage,
+            .contentScriptRuntimeConnect,
+            .storageChanged,
+            .permissionsAdded,
+            .permissionsRemoved,
+            .nativeMessagingConnect,
+            .nativeMessagingMessage,
+            .contextMenuClicked,
+            .alarmTriggered,
+            .webNavigationSyntheticEvent,
+        ]
+
+    private static func serviceWorkerStatus(
+        _ source: ChromeMV3ServiceWorkerEventSource,
+        from statuses:
+            [ChromeMV3PasswordManagerRealPackageServiceWorkerEventStatus]
+    ) -> ChromeMV3PasswordManagerCompatibilityStatus {
+        statuses.first { $0.source == source }?.status ?? .notRequired
+    }
+
+    private static func noListenerKind(
+        _ source: ChromeMV3ServiceWorkerEventSource
+    ) -> ChromeMV3ServiceWorkerEventRoutingResultKind {
+        switch source.listenerEvent {
+        case .runtimeOnMessage, .runtimeOnConnect:
+            return .noReceiver
+        default:
+            return .noListener
+        }
     }
 
     private static func permissionSmoke(
@@ -2759,7 +2998,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         case .userRevoked:
             return "Approve the fixture host again after revocation."
         case .approvedTrustedFixtureHostWorks:
-            return "No remediation needed for this fixture host; this is still not public password-manager support."
+            return "No remediation needed for this fixture host; stable password-manager support remains unavailable."
         case .fixtureExchangeFailed:
             return "Inspect fixture host stdio framing, executable permissions, and teardown diagnostics."
         case .realVendorHostDiscoveryBlocked:
@@ -3025,6 +3264,26 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 "Chrome service-worker lifecycle",
                 "https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle",
                 "Checked MV3 event-driven service-worker lifecycle constraints."
+            ),
+            source(
+                "Chrome alarms API",
+                "https://developer.chrome.com/docs/extensions/reference/api/alarms",
+                "Checked alarms.onAlarm event routing expectations."
+            ),
+            source(
+                "Chrome contextMenus API",
+                "https://developer.chrome.com/docs/extensions/reference/api/contextMenus",
+                "Checked contextMenus.onClicked event routing expectations."
+            ),
+            source(
+                "Chrome webNavigation API",
+                "https://developer.chrome.com/docs/extensions/reference/api/webNavigation",
+                "Checked selected webNavigation event routing expectations."
+            ),
+            source(
+                "Chrome permissions API",
+                "https://developer.chrome.com/docs/extensions/reference/api/permissions",
+                "Checked permissions.onAdded and permissions.onRemoved event behavior."
             ),
             source(
                 "Apple Foundation Process and FileManager",

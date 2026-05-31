@@ -379,7 +379,7 @@ final class ChromeMV3PasswordManagerSyntheticFixtureTests: XCTestCase {
             ChromeMV3PasswordManagerCompatibilityReport.reportFileName
         )
         XCTAssertTrue(
-            summary.notPublicSupportDisclaimer.contains("not public")
+            summary.notPublicSupportDisclaimer.contains("default-off")
         )
     }
 

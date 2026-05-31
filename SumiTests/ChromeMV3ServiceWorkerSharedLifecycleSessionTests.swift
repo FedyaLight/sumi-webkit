@@ -256,6 +256,41 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSessionTests: XCTestCase {
         )
     }
 
+    func testRegisteredListenerResponsePayloadPropagatesThroughWakeResult()
+        throws
+    {
+        let session = try makeSession(
+            profileID: "response-profile",
+            extensionID: "response-extension"
+        )
+        let runtime = session.attachComponent(
+            kind: .runtimeJSHarness,
+            componentID: "runtime-response-listener",
+            eventSurfaces: [.runtimeOnMessage]
+        )
+        session.registerListener(
+            event: .runtimeOnMessage,
+            listenerID: "runtime-on-message-response",
+            outcome: .modelDispatched(.string("pong"))
+        )
+
+        let result = session.routeEvent(
+            reason: .runtimeMessage,
+            sourceComponentID: runtime.componentID,
+            sourceComponentKind: .runtimeJSHarness,
+            payload: .object(["ping": .bool(true)]),
+            payloadSummary: "runtime.sendMessage response",
+            sourceContext: .extensionPage
+        )
+
+        XCTAssertTrue(result.dispatched)
+        XCTAssertEqual(result.responsePayload, .string("pong"))
+        XCTAssertEqual(
+            session.runtimeOwner.snapshot.wakeResults.last?.responsePayload,
+            .string("pong")
+        )
+    }
+
     func testSharedKeepaliveIdleReleaseAndHardTimeoutBehavior() throws {
         let session = try makeSession(
             profileID: "keepalive-profile",

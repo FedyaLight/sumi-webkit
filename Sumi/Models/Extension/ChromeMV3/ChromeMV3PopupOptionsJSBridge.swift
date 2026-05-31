@@ -439,6 +439,8 @@ struct ChromeMV3PopupOptionsJSBridgeCallRecord:
     var lastErrorCode: String?
     var lastErrorMessage: String?
     var serviceWorkerWakeAttempted: Bool
+    var serviceWorkerLifecycleWakeResult:
+        ChromeMV3ServiceWorkerInternalWakeResult?
     var nativeHostLaunchAttempted: Bool
     var normalTabRuntimeBridgeAvailable: Bool
     var contentScriptAttachmentAvailableInProduct: Bool
@@ -496,6 +498,8 @@ struct ChromeMV3PopupOptionsJSBridgeHostResponse:
     var normalTabRuntimeBridgeAvailable: Bool
     var contentScriptAttachmentAvailableInProduct: Bool
     var serviceWorkerWakeAttempted: Bool
+    var serviceWorkerLifecycleWakeResult:
+        ChromeMV3ServiceWorkerInternalWakeResult?
     var nativeHostLaunchAttempted: Bool
     var runtimeLoadable: Bool
     var diagnostics: [String]
@@ -521,6 +525,8 @@ struct ChromeMV3PopupOptionsJSBridgeHostResponse:
             "contentScriptAttachmentAvailableInProduct":
                 contentScriptAttachmentAvailableInProduct,
             "serviceWorkerWakeAttempted": serviceWorkerWakeAttempted,
+            "serviceWorkerLifecycleWakeResult":
+                serviceWorkerLifecycleWakeResultFoundationObject,
             "nativeHostLaunchAttempted": nativeHostLaunchAttempted,
             "runtimeLoadable": runtimeLoadable,
             "diagnostics": diagnostics,
@@ -535,6 +541,16 @@ struct ChromeMV3PopupOptionsJSBridgeHostResponse:
     private var permissionEventPayloadFoundationObject: Any {
         guard let payload = permissionEventPayload else { return NSNull() }
         return payload.popupOptionsBridgeFoundationObject
+    }
+
+    private var serviceWorkerLifecycleWakeResultFoundationObject: Any {
+        guard let serviceWorkerLifecycleWakeResult,
+              let data = try? JSONEncoder().encode(
+                serviceWorkerLifecycleWakeResult
+              ),
+              let object = try? JSONSerialization.jsonObject(with: data)
+        else { return NSNull() }
+        return object
     }
 
     private var blockedDiagnosticFoundationObject: Any {
@@ -583,6 +599,11 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     private var callRecords: [ChromeMV3PopupOptionsJSBridgeCallRecord] = []
     private var onChangedPayloads: [ChromeMV3StorageOnChangedEventPayload] = []
     private var syntheticPortIDs: Set<String> = []
+    private var serviceWorkerLifecyclePortIDs: Set<String> = []
+    private let sharedLifecycleSession:
+        ChromeMV3ServiceWorkerSharedLifecycleSession?
+    private let lifecycleComponentID: String
+    private let nativeMessagingLifecycleComponentID: String
     private var nativeMessagingRuntimeOwner:
         ChromeMV3NativeMessagingRuntimeOwner?
     private var tornDown = false
@@ -596,11 +617,32 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         permissionStateStore:
             ChromeMV3DeveloperPreviewPermissionStateStore? = nil,
         permissionEventDispatcher:
-            ChromeMV3PermissionEventDispatching? = nil
+            ChromeMV3PermissionEventDispatching? = nil,
+        sharedLifecycleSession:
+            ChromeMV3ServiceWorkerSharedLifecycleSession? = nil
     ) {
         self.configuration = configuration
         self.contentScriptEndpointRegistry = contentScriptEndpointRegistry
         self.permissionPromptPresenter = permissionPromptPresenter
+        self.sharedLifecycleSession = sharedLifecycleSession
+        self.lifecycleComponentID =
+            stableIDPopupOptionsBridge(
+                prefix: "popup-options-extension-page-host",
+                parts: [
+                    configuration.profileID,
+                    configuration.extensionID,
+                    configuration.surfaceID,
+                ]
+            )
+        self.nativeMessagingLifecycleComponentID =
+            stableIDPopupOptionsBridge(
+                prefix: "popup-options-native-fixture",
+                parts: [
+                    configuration.profileID,
+                    configuration.extensionID,
+                    configuration.surfaceID,
+                ]
+            )
         if let permissionStateStore {
             self.permissionStateStore = permissionStateStore
         } else if let rootPath = configuration.permissionStateRootPath,
@@ -695,6 +737,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             surface: configuration.surface,
             dispatchHandler: nil
         )
+        attachSharedLifecycleComponentsIfNeeded()
     }
 
     var diagnosticsSnapshot:
@@ -945,6 +988,13 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         )
         callRecords.removeAll()
         onChangedPayloads.removeAll()
+        for portID in serviceWorkerLifecyclePortIDs {
+            sharedLifecycleSession?.disconnectKeepalive(
+                portID: portID,
+                reason: .reset
+            )
+        }
+        serviceWorkerLifecyclePortIDs.removeAll()
         syntheticPortIDs.removeAll()
         nativeMessagingRuntimeOwner?.tearDownForProfileClose()
         nativeMessagingRuntimeOwner = nil
@@ -957,8 +1007,75 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             .unregisterChromeMV3PermissionEventPage(
                 surfaceID: configuration.surfaceID
             )
+        sharedLifecycleSession?.detachComponent(
+            componentID: lifecycleComponentID,
+            reason: .reset
+        )
+        sharedLifecycleSession?.detachComponent(
+            componentID: nativeMessagingLifecycleComponentID,
+            reason: .reset
+        )
         tabRegistry.tearDown()
         tornDown = true
+    }
+
+    private func attachSharedLifecycleComponentsIfNeeded() {
+        guard let sharedLifecycleSession else { return }
+        sharedLifecycleSession.attachComponent(
+            kind: .extensionPageHostHarness,
+            componentID: lifecycleComponentID,
+            eventSurfaces: [
+                .runtimeOnMessage,
+                .runtimeOnConnect,
+                .storageOnChanged,
+                .permissionsOnAdded,
+                .permissionsOnRemoved,
+            ],
+            keepaliveSources: [.runtimePort],
+            diagnostics: [
+                "Popup/options host attached to the local experimental shared lifecycle session.",
+                "The default runtime remains off unless a caller passes this session explicitly.",
+            ]
+        )
+        sharedLifecycleSession.attachComponent(
+            kind: .nativeMessagingFixtureRuntime,
+            componentID: nativeMessagingLifecycleComponentID,
+            eventSurfaces: [
+                .nativePortOnMessage,
+                .nativePortOnDisconnect,
+            ],
+            keepaliveSources: [.nativeMessagingPort],
+            diagnostics: [
+                "Trusted native-messaging fixture attached to the local experimental shared lifecycle session.",
+                "Arbitrary native host discovery remains unavailable.",
+            ]
+        )
+    }
+
+    private func routeServiceWorkerLifecycleEvent(
+        source: ChromeMV3ServiceWorkerEventSource,
+        payload: ChromeMV3StorageValue?,
+        payloadSummary: String,
+        componentID: String? = nil,
+        componentKind:
+            ChromeMV3ServiceWorkerSharedLifecycleComponentKind =
+                .extensionPageHostHarness,
+        sourceContext: ChromeMV3RuntimeMessagingContextKind? = nil,
+        keepaliveKind: ChromeMV3ServiceWorkerInternalKeepaliveKind? = nil,
+        portID: String? = nil
+    ) -> ChromeMV3ServiceWorkerInternalWakeResult? {
+        sharedLifecycleSession?.routeEvent(
+            reason: source.wakeReason,
+            listenerEvent: source.listenerEvent,
+            sourceComponentID: componentID ?? lifecycleComponentID,
+            sourceComponentKind: componentKind,
+            payload: payload,
+            payloadSummary: payloadSummary,
+            sourceContext:
+                sourceContext ?? configuration.sourceContext.runtimeContext,
+            keepaliveKind: keepaliveKind,
+            portID: portID
+        )
     }
 
     private func runtimeSendMessage(
@@ -974,6 +1091,42 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             return invalidArguments(
                 request,
                 "runtime.sendMessage external-extension overload is not available in popup/options developer preview."
+            )
+        }
+        if let lifecycleResult = routeServiceWorkerLifecycleEvent(
+            source: .popupOptionsRuntimeMessage,
+            payload: request.arguments[0],
+            payloadSummary: "popup/options runtime.sendMessage"
+        ) {
+            guard lifecycleResult.dispatched else {
+                let contract = ChromeMV3RuntimeLastErrorContract
+                    .contract(for: .noReceivingEnd)
+                return response(
+                    request: request,
+                    succeeded: false,
+                    lastErrorMessage:
+                        lifecycleResult.lastErrorMessage
+                        ?? contract.futureLastErrorMessage,
+                    lastErrorCode: contract.error.rawValue,
+                    serviceWorkerLifecycleWakeResult: lifecycleResult,
+                    diagnostics:
+                        lifecycleResult.diagnostics
+                        + contract.diagnostics
+                        + [
+                            "runtime.sendMessage reached the local experimental service-worker lifecycle but no listener accepted it.",
+                        ]
+                )
+            }
+            return response(
+                request: request,
+                succeeded: true,
+                payload: lifecycleResult.responsePayload ?? .null,
+                serviceWorkerLifecycleWakeResult: lifecycleResult,
+                diagnostics:
+                    lifecycleResult.diagnostics
+                    + [
+                        "runtime.sendMessage routed through the local experimental shared lifecycle session.",
+                    ]
             )
         }
         let route = ChromeMV3RuntimeMessagingRoute.make(
@@ -1044,6 +1197,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     private func runtimeConnect(
         _ request: ChromeMV3RuntimeJSBridgeHostRequest
     ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        let connectName = request.arguments.first?.objectValue?["name"]?
+            .stringValue ?? ""
         let portID = stableIDPopupOptionsBridge(
             prefix: "popup-options-runtime-port",
             parts: [
@@ -1052,6 +1207,55 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 String(syntheticPortIDs.count + 1),
             ]
         )
+        if let lifecycleResult = routeServiceWorkerLifecycleEvent(
+            source: .popupOptionsRuntimeConnect,
+            payload: .object([
+                "portID": .string(portID),
+                "name": .string(connectName),
+            ]),
+            payloadSummary: "popup/options runtime.connect",
+            keepaliveKind: .runtimePort,
+            portID: portID
+        ) {
+            guard lifecycleResult.dispatched else {
+                let contract = ChromeMV3RuntimeLastErrorContract
+                    .contract(for: .noReceivingEnd)
+                return response(
+                    request: request,
+                    succeeded: false,
+                    lastErrorMessage:
+                        lifecycleResult.lastErrorMessage
+                        ?? contract.futureLastErrorMessage,
+                    lastErrorCode: contract.error.rawValue,
+                    serviceWorkerLifecycleWakeResult: lifecycleResult,
+                    diagnostics:
+                        lifecycleResult.diagnostics
+                        + contract.diagnostics
+                        + [
+                            "runtime.connect reached the local experimental service-worker lifecycle but no listener accepted it.",
+                        ]
+                )
+            }
+            syntheticPortIDs.insert(portID)
+            serviceWorkerLifecyclePortIDs.insert(portID)
+            return response(
+                request: request,
+                succeeded: true,
+                payload: .object([
+                    "portID": .string(portID),
+                    "portKind": .string("serviceWorkerRuntimePort"),
+                    "canOpenRuntimePortNow": .bool(true),
+                    "canWakeServiceWorkerNow": .bool(true),
+                    "runtimeLoadable": .bool(false),
+                ]),
+                serviceWorkerLifecycleWakeResult: lifecycleResult,
+                diagnostics:
+                    lifecycleResult.diagnostics
+                    + [
+                        "runtime.connect opened a local experimental service-worker Port keepalive.",
+                    ]
+            )
+        }
         syntheticPortIDs.insert(portID)
         return response(
             request: request,
@@ -1138,7 +1342,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 result.diagnostics
                 + [
                     "runtime.sendNativeMessage completed through an approved developer-preview fixture host.",
-                    "Product/public native messaging remains unavailable.",
+                    "Stable native messaging remains unavailable.",
                 ]
         )
     }
@@ -1178,6 +1382,22 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             )
         }
         syntheticPortIDs.insert(portID)
+        let lifecycleResult = routeServiceWorkerLifecycleEvent(
+            source: .nativeMessagingConnect,
+            payload: .object([
+                "portID": .string(portID),
+                "hostName": .string(hostName),
+            ]),
+            payloadSummary: "trusted native-messaging fixture connectNative",
+            componentID: nativeMessagingLifecycleComponentID,
+            componentKind: .nativeMessagingFixtureRuntime,
+            sourceContext: .nativeApplication,
+            keepaliveKind: .nativeMessagingPort,
+            portID: portID
+        )
+        if lifecycleResult != nil {
+            serviceWorkerLifecyclePortIDs.insert(portID)
+        }
         return response(
             request: request,
             succeeded: true,
@@ -1186,16 +1406,20 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 "hostName": .string(hostName),
                 "portKind": .string("nativeMessagingTrustedFixturePort"),
                 "canOpenRuntimePortNow": .bool(false),
-                "canWakeServiceWorkerNow": .bool(false),
+                "canWakeServiceWorkerNow": .bool(lifecycleResult != nil),
                 "runtimeLoadable": .bool(false),
             ]),
+            serviceWorkerLifecycleWakeResult: lifecycleResult,
             nativeHostLaunchAttempted:
                 result.lifecycle.processLaunchAttempted,
             diagnostics:
                 result.diagnostics
+                + (lifecycleResult?.diagnostics ?? [])
                 + [
                     "runtime.connectNative opened a developer-preview trusted fixture Port.",
-                    "No service-worker keepalive is started by the popup/options bridge.",
+                    lifecycleResult == nil
+                        ? "No service-worker keepalive is started without a shared lifecycle session."
+                        : "Native fixture Port was mirrored into the local experimental service-worker lifecycle.",
                 ]
         )
     }
@@ -1227,6 +1451,23 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         if result.succeeded == false {
             syntheticPortIDs.remove(portID)
         }
+        let lifecycleResult =
+            result.succeeded
+                ? routeServiceWorkerLifecycleEvent(
+                    source: .nativeMessagingMessage,
+                    payload: .object([
+                        "portID": .string(result.portID),
+                        "hostName": .string(result.hostName),
+                        "message": request.arguments[1],
+                    ]),
+                    payloadSummary:
+                        "trusted native-messaging fixture Port.postMessage",
+                    componentID: nativeMessagingLifecycleComponentID,
+                    componentKind: .nativeMessagingFixtureRuntime,
+                    sourceContext: .nativeApplication,
+                    portID: portID
+                )
+                : nil
         return response(
             request: request,
             succeeded: result.succeeded,
@@ -1237,9 +1478,12 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             ]),
             lastErrorMessage: result.lastErrorMessage,
             lastErrorCode: result.lastErrorCode?.rawValue,
+            serviceWorkerLifecycleWakeResult: lifecycleResult,
             nativeHostLaunchAttempted:
                 result.lifecycle.processLaunchAttempted,
-            diagnostics: result.diagnostics
+            diagnostics:
+                result.diagnostics
+                + (lifecycleResult?.diagnostics ?? [])
         )
     }
 
@@ -1275,6 +1519,12 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             reason: .nativeHostExited
         )
         syntheticPortIDs.remove(portID)
+        if serviceWorkerLifecyclePortIDs.remove(portID) != nil {
+            sharedLifecycleSession?.disconnectKeepalive(
+                portID: portID,
+                reason: .reset
+            )
+        }
         return response(
             request: request,
             succeeded: true,
@@ -1288,7 +1538,11 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             ]),
             nativeHostLaunchAttempted:
                 result.lifecycle?.processLaunchAttempted ?? false,
-            diagnostics: result.diagnostics
+            diagnostics:
+                result.diagnostics
+                + [
+                    "Native fixture Port disconnect releases any mirrored local experimental service-worker keepalive.",
+                ]
         )
     }
 
@@ -1323,16 +1577,28 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             if let onChanged {
                 onChangedPayloads.append(onChanged)
             }
+            let lifecycleResult = onChanged.flatMap {
+                routeServiceWorkerLifecycleEvent(
+                    source: .storageChanged,
+                    payload: storageOnChangedLifecyclePayload($0),
+                    payloadSummary: "popup/options storage.onChanged",
+                    sourceContext: configuration.sourceContext.runtimeContext
+                )
+            }
             return response(
                 request: request,
                 succeeded: true,
                 payload: storageResultPayload(from: envelope),
                 onChangedPayload: onChanged,
+                serviceWorkerLifecycleWakeResult: lifecycleResult,
                 diagnostics:
                     envelope.diagnostics
+                        + (lifecycleResult?.diagnostics ?? [])
                         + [
                             "storage.local operation used the existing storage operation handler.",
-                            "storage.onChanged dispatch is in-page only and does not wake a service worker.",
+                            lifecycleResult == nil
+                                ? "storage.onChanged dispatch is in-page only without a shared lifecycle session."
+                                : "storage.onChanged routed through the local experimental service-worker lifecycle.",
                         ]
             )
         }
@@ -1546,16 +1812,29 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     diagnostics: application.diagnostics
                 )
                 persistPermissionState(diagnostics: application.diagnostics)
+                let lifecycleResult =
+                    application.result.eventPayloadIfAccepted.flatMap {
+                        routeServiceWorkerLifecycleEvent(
+                            source: .permissionsAdded,
+                            payload: permissionsLifecyclePayload($0),
+                            payloadSummary:
+                                "popup/options permissions.onAdded",
+                            sourceContext:
+                                configuration.sourceContext.runtimeContext
+                        )
+                    }
                 return response(
                     request: request,
                     succeeded: true,
                     payload: .bool(application.returnedBoolean),
                     permissionEventPayload:
                         application.result.eventPayloadIfAccepted,
+                    serviceWorkerLifecycleWakeResult: lifecycleResult,
                     diagnostics:
                         application.diagnostics
                             + promptResultRecord.diagnostics
                             + (dispatchRecord?.diagnostics ?? [])
+                            + (lifecycleResult?.diagnostics ?? [])
                             + [
                                 "permissions.request used an explicit developer-preview product prompt result.",
                             ]
@@ -1674,15 +1953,26 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 sourceSurfaceID: configuration.surfaceID
             )
             persistPermissionState(diagnostics: application.diagnostics)
+            let lifecycleResult =
+                application.result.eventPayloadIfApplied.flatMap {
+                    routeServiceWorkerLifecycleEvent(
+                        source: .permissionsRemoved,
+                        payload: permissionsLifecyclePayload($0),
+                        payloadSummary: "popup/options permissions.onRemoved",
+                        sourceContext: configuration.sourceContext.runtimeContext
+                    )
+                }
             return response(
                 request: request,
                 succeeded: true,
                 payload: .bool(true),
                 permissionEventPayload:
                     application.result.eventPayloadIfApplied,
+                serviceWorkerLifecycleWakeResult: lifecycleResult,
                 diagnostics:
                     application.diagnostics
                     + (dispatchRecord?.diagnostics ?? [])
+                    + (lifecycleResult?.diagnostics ?? [])
             )
         }
     }
@@ -2460,12 +2750,16 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         lastErrorCode: String? = nil,
         blockedAPIDiagnostic:
             ChromeMV3PopupOptionsBlockedAPIDiagnostic? = nil,
+        serviceWorkerLifecycleWakeResult:
+            ChromeMV3ServiceWorkerInternalWakeResult? = nil,
         nativeHostLaunchAttempted: Bool = false,
         diagnostics: [String]
     ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
         let resolvedNamespace = request?.namespace ?? namespace ?? "unsupported"
         let resolvedMethod = request?.methodName ?? methodName ?? "unknown"
         let mode = request?.invocationMode ?? .promise
+        let serviceWorkerWakeAttempted =
+            serviceWorkerLifecycleWakeResult != nil
         let response = ChromeMV3PopupOptionsJSBridgeHostResponse(
             bridgeCallID:
                 request?.bridgeCallID
@@ -2488,18 +2782,24 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             blockedAPIDiagnostic: blockedAPIDiagnostic,
             normalTabRuntimeBridgeAvailable: false,
             contentScriptAttachmentAvailableInProduct: false,
-            serviceWorkerWakeAttempted: false,
+            serviceWorkerWakeAttempted: serviceWorkerWakeAttempted,
+            serviceWorkerLifecycleWakeResult:
+                serviceWorkerLifecycleWakeResult,
             nativeHostLaunchAttempted: nativeHostLaunchAttempted,
             runtimeLoadable: false,
             diagnostics:
                 uniqueSortedPopupOptionsBridge(
                     configuration.diagnostics
                         + diagnostics
+                        + (serviceWorkerLifecycleWakeResult?.diagnostics ?? [])
                         + [
                             "Popup/options bridge handled the call inside an extension-owned WebKit host.",
-                            nativeHostLaunchAttempted
-                                ? "Native host launch was attempted only after trusted developer-preview preflight passed."
-                                : "No normal-tab bridge, product content-script attachment, service-worker wake, native host launch, or runtimeLoadable change occurred.",
+                            bridgeAttemptDiagnostic(
+                                serviceWorkerWakeAttempted:
+                                    serviceWorkerWakeAttempted,
+                                nativeHostLaunchAttempted:
+                                    nativeHostLaunchAttempted
+                            ),
                         ]
                 )
         )
@@ -2516,7 +2816,9 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 succeeded: succeeded,
                 lastErrorCode: response.lastErrorCode,
                 lastErrorMessage: response.lastErrorMessage,
-                serviceWorkerWakeAttempted: false,
+                serviceWorkerWakeAttempted: serviceWorkerWakeAttempted,
+                serviceWorkerLifecycleWakeResult:
+                    serviceWorkerLifecycleWakeResult,
                 nativeHostLaunchAttempted: nativeHostLaunchAttempted,
                 normalTabRuntimeBridgeAvailable: false,
                 contentScriptAttachmentAvailableInProduct: false,
@@ -2524,6 +2826,22 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             )
         )
         return response
+    }
+
+    private func bridgeAttemptDiagnostic(
+        serviceWorkerWakeAttempted: Bool,
+        nativeHostLaunchAttempted: Bool
+    ) -> String {
+        if serviceWorkerWakeAttempted && nativeHostLaunchAttempted {
+            return "Local experimental service-worker routing and trusted native-host fixture launch were both attempted."
+        }
+        if serviceWorkerWakeAttempted {
+            return "Local experimental service-worker routing was attempted; runtimeLoadable remains false."
+        }
+        if nativeHostLaunchAttempted {
+            return "Native host launch was attempted only after trusted developer-preview preflight passed."
+        }
+        return "No normal-tab bridge, product content-script attachment, service-worker wake, native host launch, or runtimeLoadable change occurred."
     }
 
     private func storageInput(
@@ -2830,14 +3148,59 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             profileID: payload.profileID,
             wouldDispatchNow: true,
             listenerRegistrationRequired: false,
-            serviceWorkerWakeRequired: false,
-            blockers: [
-                "Popup/options storage.onChanged dispatch is in-page only.",
-                "No service-worker wake is performed by the popup/options bridge.",
-                "No product normal-tab listener is registered.",
-            ],
+            serviceWorkerWakeRequired: sharedLifecycleSession != nil,
+            blockers:
+                sharedLifecycleSession == nil
+                    ? [
+                        "Popup/options storage.onChanged dispatch is in-page only.",
+                        "No service-worker wake is performed without a shared lifecycle session.",
+                        "No product normal-tab listener is registered.",
+                    ]
+                    : [
+                        "Popup/options storage.onChanged also routes to the local experimental service-worker lifecycle.",
+                        "The default runtime remains off.",
+                    ],
             serviceWorkerWakePreflight: nil
         )
+    }
+
+    private func storageOnChangedLifecyclePayload(
+        _ payload: ChromeMV3StorageOnChangedEventPayload
+    ) -> ChromeMV3StorageValue {
+        var changes: [String: ChromeMV3StorageValue] = [:]
+        for change in payload.changes {
+            var object: [String: ChromeMV3StorageValue] = [:]
+            if let oldValue = change.oldValue {
+                object["oldValue"] = oldValue
+            }
+            if let newValue = change.newValue {
+                object["newValue"] = newValue
+            }
+            changes[change.key] = .object(object)
+        }
+        return .object([
+            "areaName": .string(payload.areaName),
+            "changes": .object(changes),
+            "changedKeys":
+                .array(payload.changedKeys.map(ChromeMV3StorageValue.string)),
+            "extensionID": .string(payload.extensionID),
+            "profileID": .string(payload.profileID),
+        ])
+    }
+
+    private func permissionsLifecyclePayload(
+        _ payload: ChromeMV3PermissionsAPIEventPayload
+    ) -> ChromeMV3StorageValue {
+        .object([
+            "eventKind": .string(payload.eventKind.rawValue),
+            "source": .string(payload.source.rawValue),
+            "extensionID": .string(payload.extensionID),
+            "profileID": .string(payload.profileID),
+            "permissions":
+                .array(payload.permissions.map(ChromeMV3StorageValue.string)),
+            "origins":
+                .array(payload.origins.map(ChromeMV3StorageValue.string)),
+        ])
     }
 }
 

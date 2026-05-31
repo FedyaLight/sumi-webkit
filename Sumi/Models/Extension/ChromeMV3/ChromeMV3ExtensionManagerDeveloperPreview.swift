@@ -1345,6 +1345,103 @@ struct ChromeMV3ExtensionManagerTrustedNativeHostActionResult:
     var diagnostics: [String]
 }
 
+struct ChromeMV3ExtensionManagerServiceWorkerReadinessPanel:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var readiness: ChromeMV3ServiceWorkerDeclarationReadiness?
+    var lastEventResult: ChromeMV3ServiceWorkerEventRoutingRecord?
+    var listenerCoverage: [ChromeMV3ServiceWorkerListenerCoverage]
+    var idleTimeoutState: String
+    var hardTimeoutState: String
+    var defaultOffLocalExperimentalDisclaimer: String
+    var blockers: [String]
+    var remediation: [String]
+    var diagnostics: [String]
+
+    static func make(
+        record: ChromeMV3ExtensionLifecycleRecord,
+        gate: ChromeMV3ExtensionManagerGate
+    ) -> ChromeMV3ExtensionManagerServiceWorkerReadinessPanel {
+        let manifest = loadManifest(from: record)
+        let active = record.activeGeneratedVersionID.flatMap { activeID in
+            record.generatedBundleVersions.first { $0.id == activeID }
+        }
+        let readiness = manifest.map {
+            ChromeMV3ServiceWorkerDeclarationReadinessEvaluator.evaluate(
+                manifest: $0,
+                generatedBundleRootURL:
+                    active.map {
+                        URL(
+                            fileURLWithPath: $0.generatedBundleRootPath,
+                            isDirectory: true
+                        )
+                    },
+                extensionID: record.extensionID,
+                profileID: record.profileID,
+                moduleState:
+                    gate.managerAvailableInDeveloperPreview
+                        ? .enabled : .disabled,
+                extensionEnabled: record.runtimeState.internalRuntimeEnabled,
+                localExperimentalGateAllowed: false
+            )
+        }
+        let blockers =
+            uniqueSortedExtensionManager(
+                readiness?.blockers.map(\.rawValue)
+                    ?? ["manifestSnapshotUnavailable"]
+            )
+        return ChromeMV3ExtensionManagerServiceWorkerReadinessPanel(
+            readiness: readiness,
+            lastEventResult: nil,
+            listenerCoverage: readiness?.listenerCoverage ?? [],
+            idleTimeoutState:
+                "No manager-created lifecycle session; idle is test-controlled.",
+            hardTimeoutState:
+                "No manager-created lifecycle session; hard timeout is test-controlled.",
+            defaultOffLocalExperimentalDisclaimer:
+                "Service-worker routing is local experimental/default-off; stable runtimeLoadable remains false.",
+            blockers: blockers,
+            remediation:
+                uniqueSortedExtensionManager(
+                    blockers.map { "Resolve service-worker readiness blocker: \($0)." }
+                        + [
+                            "Keep localExperimentalGateAllowed false unless an explicit scoped test creates a shared lifecycle session.",
+                        ]
+                ),
+            diagnostics:
+                uniqueSortedExtensionManager(
+                    (readiness?.diagnostics ?? [])
+                        + [
+                            manifest == nil
+                                ? "Manifest snapshot could not be loaded for service-worker readiness."
+                                : "Manager detail evaluated service-worker declaration/readiness without constructing a session.",
+                            "lastEventResult is nil until a scoped local experimental runtime event is routed.",
+                            "No permanent background page or timer is created by this panel.",
+                        ]
+                )
+        )
+    }
+
+    private static func loadManifest(
+        from record: ChromeMV3ExtensionLifecycleRecord
+    ) -> ChromeMV3Manifest? {
+        let url = URL(fileURLWithPath: record.manifestSnapshotPath)
+        if let data = try? Data(contentsOf: url) {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            if let snapshot = try? decoder.decode(
+                ChromeMV3ManifestSnapshotRecord.self,
+                from: data
+            ) {
+                return snapshot.normalizedManifest
+            }
+        }
+        return try? ChromeMV3ManifestValidator.validateManifestFile(at: url)
+    }
+}
+
 struct ChromeMV3ExtensionManagerDetailViewModel:
     Identifiable,
     Codable,
@@ -1373,6 +1470,8 @@ struct ChromeMV3ExtensionManagerDetailViewModel:
         ChromeMV3ExtensionManagerPermissionStatePanel
     var trustedNativeHostPanel:
         ChromeMV3ExtensionManagerTrustedNativeHostPanel
+    var serviceWorkerReadinessPanel:
+        ChromeMV3ExtensionManagerServiceWorkerReadinessPanel
     var passwordManagerCompatibilitySummary:
         ChromeMV3PasswordManagerCompatibilityManagerSummary?
     var actions: [ChromeMV3ExtensionManagerActionDescriptor]
@@ -1729,6 +1828,11 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
                     rootURL: rootURL,
                     record: record,
                     manifestSummary: manifestSummary,
+                    gate: gate
+                ),
+            serviceWorkerReadinessPanel:
+                ChromeMV3ExtensionManagerServiceWorkerReadinessPanel.make(
+                    record: record,
                     gate: gate
                 ),
             passwordManagerCompatibilitySummary:
@@ -2597,6 +2701,7 @@ struct ChromeMV3ExtensionManagerView: View {
                         passwordManagerSummary(selectedDetail)
                         preflightSummary(selectedDetail)
                         popupOptionsSummary(selectedDetail)
+                        serviceWorkerSummary(selectedDetail)
                         permissionStateSummary(selectedDetail)
                         blockerSummary(selectedDetail)
                         detailActions(selectedDetail)
@@ -2879,6 +2984,80 @@ struct ChromeMV3ExtensionManagerView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+            }
+        }
+
+        private func serviceWorkerSummary(
+            _ detail: ChromeMV3ExtensionManagerDetailViewModel
+        ) -> some View {
+            let panel = detail.serviceWorkerReadinessPanel
+            let readiness = panel.readiness
+            return VStack(alignment: .leading, spacing: 8) {
+                Text("Service Worker")
+                    .font(.callout.weight(.semibold))
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 150), spacing: 8)],
+                    alignment: .leading,
+                    spacing: 8
+                ) {
+                    fact(
+                        "Declared",
+                        readiness?.declaresBackgroundServiceWorker == true
+                            ? "yes" : "no"
+                    )
+                    fact(
+                        "Worker File",
+                        readiness?.serviceWorkerFileAvailable == true
+                            ? "available" : "blocked"
+                    )
+                    fact(
+                        "Wrapper",
+                        readiness?.serviceWorkerWrapperAvailable == true
+                            ? "available" : "blocked"
+                    )
+                    fact(
+                        "Shim",
+                        readiness?.wrapperShimAvailable == true
+                            ? "available" : "blocked"
+                    )
+                    fact(
+                        "Routing",
+                        readiness?.eventRoutingAvailable == true
+                            ? "available" : "blocked"
+                    )
+                    fact(
+                        "Gate",
+                        readiness?.localExperimentalGateState.rawValue
+                            ?? "unavailable"
+                    )
+                    fact(
+                        "Listeners",
+                        "\(panel.listenerCoverage.filter { $0.listenerDetected }.count)/\(panel.listenerCoverage.count)"
+                    )
+                    fact(
+                        "runtimeLoadable",
+                        readiness.map { $0.runtimeLoadable ? "true" : "false" }
+                            ?? "false"
+                    )
+                }
+                if let last = panel.lastEventResult {
+                    Text(
+                        "Last event: \(last.source.rawValue) - \(last.resultKind.rawValue)"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                if panel.blockers.isEmpty == false {
+                    Text("Blockers: " + panel.blockers.prefix(4).joined(separator: ", "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text(panel.defaultOffLocalExperimentalDisclaimer)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
 

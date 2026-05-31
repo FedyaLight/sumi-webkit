@@ -1247,7 +1247,7 @@ final class ChromeMV3NativeMessagingRuntimeOwner {
                 ])
                 + [
                     "Operation \(operationID) evaluated by the internal native messaging runtime owner.",
-                    "Product/public native messaging remains unavailable.",
+                    "Stable native messaging remains unavailable.",
                 ]
         )
 

@@ -538,6 +538,7 @@ struct ChromeMV3ServiceWorkerInternalWakeResult:
     var dropped: Bool
     var stateAfter: ChromeMV3ServiceWorkerInternalLifecycleState
     var lastErrorMessage: String?
+    var responsePayload: ChromeMV3StorageValue?
     var keepaliveRecord: ChromeMV3ServiceWorkerInternalKeepaliveRecord?
     var diagnostics: [String]
     var blockers: [String]
@@ -819,6 +820,7 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
                     blockers.contains("No synthetic/model listener is registered.")
                     ? "Could not establish connection. Receiving end does not exist."
                     : blockers.first,
+                responsePayload: nil,
                 keepaliveRecord: nil,
                 diagnostics:
                     uniqueSortedInternalLifecycle(
@@ -908,6 +910,7 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
             blocked: false,
             dropped: false,
             lastErrorMessage: listener.outcome.lastErrorMessage,
+            responsePayload: listener.outcome.responsePayload,
             keepaliveRecord: keepalive,
             diagnostics:
                 uniqueSortedInternalLifecycle(
@@ -992,6 +995,7 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
                 dropped: false,
                 lastErrorMessage:
                     "Idle release deferred; lifecycle is not eligible.",
+                responsePayload: nil,
                 keepaliveRecord: nil,
                 diagnostics:
                     uniqueSortedInternalLifecycle([
@@ -1025,6 +1029,7 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
             blocked: false,
             dropped: false,
             lastErrorMessage: nil,
+            responsePayload: nil,
             keepaliveRecord: nil,
             diagnostics: [
                 "Idle release stopped the internal lifecycle after explicit fixture trigger.",
@@ -1084,6 +1089,7 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
             blocked: false,
             dropped: true,
             lastErrorMessage: nil,
+            responsePayload: nil,
             keepaliveRecord: nil,
             diagnostics: [
                 "Hard-timeout trigger stopped the internal lifecycle even with keepalive state.",
@@ -1289,6 +1295,7 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
         blocked: Bool,
         dropped: Bool,
         lastErrorMessage: String?,
+        responsePayload: ChromeMV3StorageValue?,
         keepaliveRecord: ChromeMV3ServiceWorkerInternalKeepaliveRecord?,
         diagnostics: [String],
         blockers: [String]
@@ -1311,6 +1318,7 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
             dropped: dropped,
             stateAfter: state,
             lastErrorMessage: lastErrorMessage,
+            responsePayload: responsePayload,
             keepaliveRecord: keepaliveRecord,
             diagnostics: uniqueSortedInternalLifecycle(diagnostics),
             blockers: uniqueSortedInternalLifecycle(blockers)

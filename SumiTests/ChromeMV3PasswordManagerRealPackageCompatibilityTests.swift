@@ -150,6 +150,30 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertEqual(row.manifestRequirements.manifestVersion, 3)
         XCTAssertEqual(row.manifestRequirements.name, "Bitwarden Local")
         XCTAssertTrue(row.manifestRequirements.permissions.contains("storage"))
+        XCTAssertTrue(row.serviceWorkerEventReadiness.declared)
+        XCTAssertEqual(
+            row.serviceWorkerEventReadiness
+                .declarationReadiness?.backgroundServiceWorkerPath,
+            "background.js"
+        )
+        XCTAssertEqual(
+            row.serviceWorkerEventReadiness
+                .declarationReadiness?.localExperimentalGateState,
+            .runtimeGateBlocked
+        )
+        XCTAssertFalse(
+            row.serviceWorkerEventReadiness
+                .declarationReadiness?.runtimeLoadable ?? true
+        )
+        XCTAssertTrue(
+            row.serviceWorkerEventReadiness.blockers.contains(
+                "serviceWorker.runtimeLoadableFalse"
+            )
+        )
+        XCTAssertEqual(
+            row.serviceWorkerEventReadiness.popupOptionsRuntimeMessage,
+            .blocked
+        )
         XCTAssertFalse(report.productRuntimeAvailable)
         XCTAssertFalse(report.productRuntimeExposed)
     }
@@ -386,8 +410,19 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertFalse(summary.fixtureVsRealDeltaSummary.isEmpty)
         XCTAssertTrue(
-            summary.notPublicSupportDisclaimer.contains("not public")
+            summary.notPublicSupportDisclaimer.contains("default-off")
         )
+        XCTAssertEqual(
+            detail.serviceWorkerReadinessPanel.readiness?
+                .backgroundServiceWorkerPath,
+            "background.js"
+        )
+        XCTAssertEqual(
+            detail.serviceWorkerReadinessPanel.readiness?
+                .localExperimentalGateState,
+            .runtimeGateBlocked
+        )
+        XCTAssertNil(detail.serviceWorkerReadinessPanel.lastEventResult)
     }
 
     func testMissingNativeFixtureRootIsReportedNotFailure() throws {

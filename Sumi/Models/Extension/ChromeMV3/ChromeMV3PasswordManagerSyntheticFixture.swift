@@ -2439,7 +2439,7 @@ enum ChromeMV3PasswordManagerCompatibilityPassRunner {
                     diagnostics + [
                         "Password-manager compatibility pass used only explicit local paths or reviewed fixtures.",
                         "Chrome Web Store install, scraping, spoofing, and remote CRX download were not attempted.",
-                        "Product runtime and public password-manager support remain unavailable.",
+                        "Stable password-manager runtime remains unavailable.",
                     ]
                 )
         )
@@ -2594,11 +2594,11 @@ enum ChromeMV3PasswordManagerCompatibilityPassRunner {
                 $0 == "identity" || $0 == "offscreen" || $0 == "sidePanel"
             } ? .deferred : .notRequired
         var blockers = [
-            "Product runtime remains unavailable; this is not public password-manager support.",
+            "Stable password-manager runtime remains unavailable.",
         ]
         if cssStatus == .partial {
             blockers.append(
-                "Manifest content-script CSS is developer-preview scoped through WebKit user stylesheets and remains unavailable as public product support."
+                "Manifest content-script CSS is local-experimental scoped through WebKit user stylesheets and remains unavailable on the stable path."
             )
         }
         if mainWorldStatus == .unsafeWithoutReview {
@@ -2714,7 +2714,7 @@ enum ChromeMV3PasswordManagerCompatibilityPassRunner {
                 identityStatus: identityStatus
             ),
             notPublicSupportDisclaimer:
-                "Developer-preview compatibility diagnostic only; not Chrome parity and not public Bitwarden/1Password/Proton Pass support."
+                "Local experimental/default-off compatibility diagnostic only; not Chrome parity and not stable Bitwarden/1Password/Proton Pass support."
         )
     }
 

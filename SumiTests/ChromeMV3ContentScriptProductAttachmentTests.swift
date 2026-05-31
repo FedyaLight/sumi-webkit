@@ -751,6 +751,54 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         XCTAssertFalse(response.nativeHostLaunchAttempted)
     }
 
+    func testContentScriptRuntimeSendMessageRoutesThroughSharedLifecycle()
+        throws
+    {
+        let fixture = try makePreflightFixture()
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+        _ = registry.registerEndpoint(
+            preflight: fixture.preflight,
+            messageListenerRegistered: true
+        )
+        let session = try makeSharedLifecycleSession()
+        session.registerListener(
+            event: .runtimeOnMessage,
+            listenerID: "content-runtime-on-message",
+            outcome: .modelDispatched(.string("content-ok"))
+        )
+        let host = ChromeMV3ContentScriptBridgeHost(
+            extensionID: extensionID,
+            profileID: profileID,
+            tabID: 7,
+            frameID: 0,
+            documentID: "document-1",
+            urlString: "https://example.com/login",
+            permissionBroker:
+                permissionBroker(hostPermissions: ["https://example.com/*"]),
+            endpointRegistry: registry,
+            sharedLifecycleSession: session
+        )
+
+        let response = host.handle([
+            "namespace": "runtime",
+            "methodName": "sendMessage",
+            "bridgeCallID": "content-script-send-message-lifecycle",
+            "arguments": [["ping": true]],
+        ])
+
+        XCTAssertTrue(response.succeeded)
+        XCTAssertEqual(response.resultPayload, .string("content-ok"))
+        XCTAssertTrue(response.serviceWorkerWakeAttempted)
+        XCTAssertEqual(
+            response.serviceWorkerLifecycleWakeResult?.sourceComponentKind,
+            .contentScriptSyntheticEndpoint
+        )
+        XCTAssertEqual(
+            response.serviceWorkerLifecycleWakeResult?.sessionID,
+            session.key.lifecycleSessionID
+        )
+    }
+
     func testContentScriptRuntimeConnectBlockedDiagnostic() throws {
         let fixture = try makePreflightFixture()
         let registry = ChromeMV3ContentScriptEndpointRegistry()
@@ -782,6 +830,70 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         XCTAssertTrue(response.diagnostics.joined(separator: "\n")
             .contains("No fake runtime Port"))
         XCTAssertFalse(response.serviceWorkerWakeAttempted)
+    }
+
+    func testContentScriptRuntimeConnectPortUsesSharedLifecycleKeepalive()
+        throws
+    {
+        let fixture = try makePreflightFixture()
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+        _ = registry.registerEndpoint(
+            preflight: fixture.preflight,
+            connectListenerRegistered: true
+        )
+        let session = try makeSharedLifecycleSession()
+        session.registerListener(
+            event: .runtimeOnConnect,
+            listenerID: "content-runtime-on-connect"
+        )
+        let host = ChromeMV3ContentScriptBridgeHost(
+            extensionID: extensionID,
+            profileID: profileID,
+            tabID: 7,
+            frameID: 0,
+            documentID: "document-1",
+            urlString: "https://example.com/login",
+            permissionBroker:
+                permissionBroker(hostPermissions: ["https://example.com/*"]),
+            endpointRegistry: registry,
+            sharedLifecycleSession: session
+        )
+
+        let connect = host.handle([
+            "namespace": "runtime",
+            "methodName": "connect",
+            "bridgeCallID": "runtime-connect-lifecycle",
+            "arguments": [["name": "content-runtime"]],
+        ])
+        let portID = try XCTUnwrap(
+            stringValue(objectValue(connect.resultPayload)?["portID"])
+        )
+        XCTAssertTrue(connect.succeeded)
+        XCTAssertTrue(connect.serviceWorkerWakeAttempted)
+        XCTAssertEqual(
+            session.runtimeOwner.snapshot.activeKeepaliveRecords.count,
+            1
+        )
+
+        let post = host.handle([
+            "namespace": "runtime",
+            "methodName": "port.postMessage",
+            "bridgeCallID": "runtime-port-post-lifecycle",
+            "arguments": [portID, ["payload": true]],
+        ])
+        let disconnect = host.handle([
+            "namespace": "runtime",
+            "methodName": "port.disconnect",
+            "bridgeCallID": "runtime-port-disconnect-lifecycle",
+            "arguments": [portID],
+        ])
+
+        XCTAssertTrue(post.succeeded)
+        XCTAssertTrue(post.serviceWorkerWakeAttempted)
+        XCTAssertTrue(disconnect.succeeded)
+        XCTAssertTrue(
+            session.runtimeOwner.snapshot.activeKeepaliveRecords.isEmpty
+        )
     }
 
     func testDisableUninstallResetAndTabCloseTeardownEndpoints()
@@ -1093,6 +1205,15 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
             eventName: nil,
             portID: nil,
             diagnostics: []
+        )
+    }
+
+    private func makeSharedLifecycleSession()
+        throws -> ChromeMV3ServiceWorkerSharedLifecycleSession
+    {
+        try XCTUnwrap(
+            ChromeMV3ServiceWorkerSharedLifecycleSessionRegistry()
+                .session(profileID: profileID, extensionID: extensionID)
         )
     }
 

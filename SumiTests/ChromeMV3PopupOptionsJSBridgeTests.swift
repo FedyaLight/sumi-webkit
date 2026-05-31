@@ -72,6 +72,98 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(port.runtimeLoadable)
     }
 
+    func testRuntimeSendMessageRoutesThroughSharedLifecycleWhenProvided()
+        throws
+    {
+        let session = try makeSharedLifecycleSession()
+        session.registerListener(
+            event: .runtimeOnMessage,
+            listenerID: "popup-runtime-on-message",
+            outcome: .modelDispatched(.string("popup-ok"))
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(),
+            sharedLifecycleSession: session
+        )
+
+        let response = handler.handle(request(
+            namespace: "runtime",
+            methodName: "sendMessage",
+            arguments: [.object(["ping": .bool(true)])]
+        ))
+
+        XCTAssertTrue(response.succeeded)
+        XCTAssertEqual(response.resultPayload, .string("popup-ok"))
+        XCTAssertTrue(response.serviceWorkerWakeAttempted)
+        XCTAssertEqual(
+            response.serviceWorkerLifecycleWakeResult?.sessionID,
+            session.key.lifecycleSessionID
+        )
+        XCTAssertEqual(
+            response.serviceWorkerLifecycleWakeResult?.sourceComponentKind,
+            .extensionPageHostHarness
+        )
+        XCTAssertFalse(response.runtimeLoadable)
+    }
+
+    func testStorageAndPermissionEventsRouteThroughSharedLifecycleWhenProvided()
+        throws
+    {
+        let session = try makeSharedLifecycleSession()
+        session.registerListener(
+            event: .storageOnChanged,
+            listenerID: "popup-storage-on-changed"
+        )
+        session.registerListener(
+            event: .permissionsOnAdded,
+            listenerID: "popup-permissions-on-added"
+        )
+        let presenter = ChromeMV3TestPermissionPromptPresenter(
+            disposition: .accepted
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                manifestOptionalPermissions: ["history"]
+            ),
+            permissionPromptPresenter: presenter,
+            sharedLifecycleSession: session
+        )
+
+        let storage = handler.handle(request(
+            namespace: "storage",
+            methodName: "local.set",
+            arguments: [.object(["alpha": .string("beta")])]
+        ))
+        let permission = handler.handle(request(
+            namespace: "permissions",
+            methodName: "request",
+            arguments: [.object([
+                "permissions": .array([.string("history")]),
+            ])]
+        ))
+
+        XCTAssertTrue(storage.succeeded)
+        XCTAssertTrue(storage.serviceWorkerWakeAttempted)
+        XCTAssertEqual(
+            storage.serviceWorkerLifecycleWakeResult?.reason,
+            .storageChanged
+        )
+        XCTAssertEqual(
+            storage.onChangedPayload?.serviceWorkerWakeRequired,
+            true
+        )
+        XCTAssertTrue(permission.succeeded)
+        XCTAssertTrue(permission.serviceWorkerWakeAttempted)
+        XCTAssertEqual(
+            permission.serviceWorkerLifecycleWakeResult?.listenerEvent,
+            .permissionsOnAdded
+        )
+        XCTAssertEqual(
+            Set(session.runtimeOwner.snapshot.events.map(\.reason)),
+            Set([.storageChanged, .permissionsChanged])
+        )
+    }
+
     func testStorageLocalAndOnChangedUseExistingStorageRuntime() throws {
         let handler = ChromeMV3PopupOptionsJSBridgeHandler(
             configuration: configuration()
@@ -669,6 +761,16 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             eventName: nil,
             portID: nil,
             diagnostics: []
+        )
+    }
+
+    private func makeSharedLifecycleSession(
+        profileID: String = "popup-options-profile",
+        extensionID: String = "popup-options-extension"
+    ) throws -> ChromeMV3ServiceWorkerSharedLifecycleSession {
+        try XCTUnwrap(
+            ChromeMV3ServiceWorkerSharedLifecycleSessionRegistry()
+                .session(profileID: profileID, extensionID: extensionID)
         )
     }
 
