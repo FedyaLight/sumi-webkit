@@ -5,7 +5,7 @@ import SwiftUI
 final class NativeSurfaceScrollHoverCoordinator: ObservableObject {
     @Published private(set) var hoverUpdatesEnabled = true
 
-    private static let hoverRestoreDelayNanoseconds: UInt64 = 160_000_000
+    private static let hoverRestoreDelayNanoseconds: UInt64 = 250_000_000
 
     private var activeScrollRegions: Set<String> = []
     private var restoreTask: Task<Void, Never>?
@@ -23,6 +23,12 @@ final class NativeSurfaceScrollHoverCoordinator: ObservableObject {
         scheduleHoverRestoreIfIdle()
     }
 
+    func notifyScrollActivity(region: String) {
+        activeScrollRegions.insert(region)
+        setHoverUpdatesEnabled(false)
+        scheduleHoverRestoreIfIdle()
+    }
+
     func reset() {
         restoreTask?.cancel()
         restoreTask = nil
@@ -36,13 +42,12 @@ final class NativeSurfaceScrollHoverCoordinator: ObservableObject {
     }
 
     private func scheduleHoverRestoreIfIdle() {
-        guard activeScrollRegions.isEmpty else { return }
-
         restoreTask?.cancel()
         let delay = Self.hoverRestoreDelayNanoseconds
         restoreTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: delay)
             guard !Task.isCancelled else { return }
+            self?.activeScrollRegions.removeAll()
             self?.setHoverUpdatesEnabled(true)
             self?.restoreTask = nil
         }
@@ -256,8 +261,14 @@ extension View {
         _ coordinator: NativeSurfaceScrollHoverCoordinator,
         region: String
     ) -> some View {
-        onScrollPhaseChange { _, newPhase in
-            coordinator.setScrolling(newPhase.isScrolling, region: region)
-        }
+        self
+            .onScrollPhaseChange { _, newPhase in
+                coordinator.setScrolling(newPhase.isScrolling, region: region)
+            }
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.contentOffset.y
+            } action: { _, _ in
+                coordinator.notifyScrollActivity(region: region)
+            }
     }
 }

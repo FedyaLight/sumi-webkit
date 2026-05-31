@@ -124,7 +124,7 @@ struct SumiHistoryTabRootView: View {
                 .fill(isSelected ? selectionBackground : Color.clear)
         )
         .foregroundStyle(tokens.primaryText)
-        .chromeCursor(.pointingHand, isEnabled: scrollHoverCoordinator.hoverUpdatesEnabled)
+        .chromeCursor(.pointingHand)
     }
 
     private var content: some View {
@@ -171,7 +171,7 @@ struct SumiHistoryTabRootView: View {
                         }
                     }
                     .disabled(viewModel.allVisibleItemsSelected)
-                    .chromeCursor(.pointingHand, isEnabled: scrollHoverCoordinator.hoverUpdatesEnabled)
+                    .chromeCursor(.pointingHand)
 
                     if viewModel.hasSelection {
                         Text("\(viewModel.selectionCount) Selected")
@@ -183,7 +183,7 @@ struct SumiHistoryTabRootView: View {
                             viewModel.openSelectedItems()
                         }
                         .transition(.move(edge: .leading).combined(with: .opacity))
-                        .chromeCursor(.pointingHand, isEnabled: scrollHoverCoordinator.hoverUpdatesEnabled)
+                        .chromeCursor(.pointingHand)
 
                         Button("Delete") {
                             withAnimation(headerControlsAnimation) {
@@ -191,7 +191,7 @@ struct SumiHistoryTabRootView: View {
                             }
                         }
                         .transition(.move(edge: .leading).combined(with: .opacity))
-                        .chromeCursor(.pointingHand, isEnabled: scrollHoverCoordinator.hoverUpdatesEnabled)
+                        .chromeCursor(.pointingHand)
 
                         Button("Clear Selection") {
                             withAnimation(headerControlsAnimation) {
@@ -199,7 +199,7 @@ struct SumiHistoryTabRootView: View {
                             }
                         }
                         .transition(.move(edge: .leading).combined(with: .opacity))
-                        .chromeCursor(.pointingHand, isEnabled: scrollHoverCoordinator.hoverUpdatesEnabled)
+                        .chromeCursor(.pointingHand)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -217,7 +217,7 @@ struct SumiHistoryTabRootView: View {
                         }
                     }
                     .buttonStyle(.link)
-                    .chromeCursor(.pointingHand, isEnabled: scrollHoverCoordinator.hoverUpdatesEnabled)
+                    .chromeCursor(.pointingHand)
                 }
                 .font(.callout)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -345,6 +345,7 @@ private struct HistoryRow: View {
             .menuIndicator(.hidden)
             .frame(width: RowLayout.menuWidth, alignment: .center)
             .help("More")
+            .chromeCursor(.pointingHand, isEnabled: hoverUpdatesEnabled)
         }
         .padding(.vertical, 5)
         .padding(.horizontal, 22)
