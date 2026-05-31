@@ -871,6 +871,18 @@ final class ChromeMV3ServiceWorkerLifecycleCoordinatorTests: XCTestCase {
                 "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift"
             )
             .path
+        let passwordManagerRealPackageCompatibilityPath =
+            root
+            .appendingPathComponent(
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerRealPackageCompatibility.swift"
+            )
+            .path
+        let passwordManagerRealPackageCompatibilityTestsPath =
+            root
+            .appendingPathComponent(
+                "SumiTests/ChromeMV3PasswordManagerRealPackageCompatibilityTests.swift"
+            )
+            .path
         let popupOptionsBridgePath =
             root
             .appendingPathComponent(
@@ -909,6 +921,8 @@ final class ChromeMV3ServiceWorkerLifecycleCoordinatorTests: XCTestCase {
                     passwordManagerSyntheticHarnessPath,
                     nativeMessagingInternalRuntimePath,
                     nativeMessagingInternalRuntimeTestsPath,
+                    passwordManagerRealPackageCompatibilityPath,
+                    passwordManagerRealPackageCompatibilityTestsPath,
                     popupOptionsBridgePath,
                 ]
             } else if pattern == "Pro" + "cess" + "(" {

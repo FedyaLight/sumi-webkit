@@ -9,14 +9,20 @@ final class WindowThemeStateTests: XCTestCase {
         defer { harness.reset() }
         let settings = SumiSettingsService(userDefaults: harness.defaults)
         let initialTheme = WorkspaceTheme(
-            gradient: SpaceGradient(
-                angle: 90,
-                nodes: [
-                    GradientNode(colorHex: "#0A84FF", location: 0.0),
-                    GradientNode(colorHex: "#FFD60A", location: 1.0)
+            gradientTheme: WorkspaceGradientTheme(
+                colors: [
+                    WorkspaceThemeColor(
+                        hex: "#0A84FF",
+                        isPrimary: true,
+                        position: .topLeft
+                    ),
+                    WorkspaceThemeColor(
+                        hex: "#FFD60A",
+                        position: .bottom
+                    )
                 ],
-                grain: 0.125,
-                opacity: 0.78
+                opacity: 0.78,
+                texture: 0.125
             )
         )
 
@@ -30,8 +36,8 @@ final class WindowThemeStateTests: XCTestCase {
     }
 
     func testBeginInteractivePreservesInitialProgress() {
-        let sourceTheme = WorkspaceTheme(gradient: .default)
-        let targetTheme = WorkspaceTheme(gradient: .incognito)
+        let sourceTheme = WorkspaceTheme(gradientTheme: .default)
+        let targetTheme = WorkspaceTheme(gradientTheme: .incognito)
         let sourceSpaceId = UUID()
         let destinationSpaceId = UUID()
         var state = WindowThemeState()
@@ -58,8 +64,8 @@ final class WindowThemeStateTests: XCTestCase {
     }
 
     func testUpdateProgressDuringInteractiveChangesResolvedThemeContinuously() {
-        let sourceTheme = WorkspaceTheme(gradient: .default)
-        let targetTheme = WorkspaceTheme(gradient: .incognito)
+        let sourceTheme = WorkspaceTheme(gradientTheme: .default)
+        let targetTheme = WorkspaceTheme(gradientTheme: .incognito)
         var state = WindowThemeState()
 
         state.beginInteractive(
@@ -156,8 +162,8 @@ final class WindowThemeStateTests: XCTestCase {
     }
 
     func testCancelRestoresSourceThemeWithoutIntermediateSnap() {
-        let sourceTheme = WorkspaceTheme(gradient: .default)
-        let targetTheme = WorkspaceTheme(gradient: .incognito)
+        let sourceTheme = WorkspaceTheme(gradientTheme: .default)
+        let targetTheme = WorkspaceTheme(gradientTheme: .incognito)
         var state = WindowThemeState()
 
         state.beginInteractive(
@@ -179,14 +185,20 @@ final class WindowThemeStateTests: XCTestCase {
 
     private func makeTheme(opacity: Double) -> WorkspaceTheme {
         WorkspaceTheme(
-            gradient: SpaceGradient(
-                angle: 90,
-                nodes: [
-                    GradientNode(colorHex: "#F4EFDF", location: 0.0),
-                    GradientNode(colorHex: "#F0B8CD", location: 1.0)
+            gradientTheme: WorkspaceGradientTheme(
+                colors: [
+                    WorkspaceThemeColor(
+                        hex: "#F4EFDF",
+                        isPrimary: true,
+                        position: .topLeft
+                    ),
+                    WorkspaceThemeColor(
+                        hex: "#F0B8CD",
+                        position: .bottom
+                    )
                 ],
-                grain: 0.125,
-                opacity: opacity
+                opacity: opacity,
+                texture: 0.125
             )
         )
     }
@@ -211,17 +223,23 @@ final class WindowThemeStateTests: XCTestCase {
     }
 
     func testRestartInteractiveTransitionCanSwitchToOppositeNeighborWithoutSnap() {
-        let sourceTheme = WorkspaceTheme(gradient: .default)
-        let firstTargetTheme = WorkspaceTheme(gradient: .incognito)
+        let sourceTheme = WorkspaceTheme(gradientTheme: .default)
+        let firstTargetTheme = WorkspaceTheme(gradientTheme: .incognito)
         let secondTargetTheme = WorkspaceTheme(
-            gradient: SpaceGradient(
-                angle: 45,
-                nodes: [
-                    GradientNode(colorHex: "#FF3B30", location: 0.0),
-                    GradientNode(colorHex: "#FF9500", location: 1.0)
+            gradientTheme: WorkspaceGradientTheme(
+                colors: [
+                    WorkspaceThemeColor(
+                        hex: "#FF3B30",
+                        isPrimary: true,
+                        position: .topLeft
+                    ),
+                    WorkspaceThemeColor(
+                        hex: "#FF9500",
+                        position: .bottom
+                    )
                 ],
-                grain: 0.1,
-                opacity: 0.7
+                opacity: 0.7,
+                texture: 0.1
             )
         )
         let sourceSpaceId = UUID()

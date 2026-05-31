@@ -323,19 +323,29 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
     func testSnapshotPageThemeContextUsesPageWorkspaceThemeWithoutInteractiveProgress() {
         let settings = makeIsolatedSettings()
         let sourceTheme = WorkspaceTheme(
-            gradient: SpaceGradient(
-                angle: 0,
-                nodes: [GradientNode(colorHex: "#0A84FF", location: 0)],
-                grain: 0,
-                opacity: 1
+            gradientTheme: WorkspaceGradientTheme(
+                colors: [
+                    WorkspaceThemeColor(
+                        hex: "#0A84FF",
+                        isPrimary: true,
+                        position: .monochrome
+                    )
+                ],
+                opacity: 1,
+                texture: 0
             )
         )
         let destinationTheme = WorkspaceTheme(
-            gradient: SpaceGradient(
-                angle: 0,
-                nodes: [GradientNode(colorHex: "#FF3B30", location: 0)],
-                grain: 0,
-                opacity: 1
+            gradientTheme: WorkspaceGradientTheme(
+                colors: [
+                    WorkspaceThemeColor(
+                        hex: "#FF3B30",
+                        isPrimary: true,
+                        position: .monochrome
+                    )
+                ],
+                opacity: 1,
+                texture: 0
             )
         )
         let destination = Space(name: "Destination", workspaceTheme: destinationTheme)

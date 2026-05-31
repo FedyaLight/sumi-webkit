@@ -288,14 +288,20 @@ final class WindowSessionServiceTests: XCTestCase {
 
     private func makeVisibleTheme() -> WorkspaceTheme {
         WorkspaceTheme(
-            gradient: SpaceGradient(
-                angle: 132,
-                nodes: [
-                    GradientNode(colorHex: "#FF3B30", location: 0.0),
-                    GradientNode(colorHex: "#34C759", location: 1.0)
+            gradientTheme: WorkspaceGradientTheme(
+                colors: [
+                    WorkspaceThemeColor(
+                        hex: "#FF3B30",
+                        isPrimary: true,
+                        position: .topLeft
+                    ),
+                    WorkspaceThemeColor(
+                        hex: "#34C759",
+                        position: .bottom
+                    )
                 ],
-                grain: 0.2,
-                opacity: 0.82
+                opacity: 0.82,
+                texture: 0.2
             )
         )
     }

@@ -844,7 +844,9 @@ final class ChromeMV3PermissionRuntimeImplementationTests: XCTestCase {
                     && $0.lastPathComponent
                     != "ChromeMV3PasswordManagerSyntheticFixture.swift"
                     && $0.lastPathComponent
-                    != "ChromeMV3NativeMessagingInternalRuntime.swift"
+                        != "ChromeMV3NativeMessagingInternalRuntime.swift"
+                    && $0.lastPathComponent
+                        != "ChromeMV3PasswordManagerRealPackageCompatibility.swift"
                     && $0.lastPathComponent
                     != "ChromeMV3PopupOptionsJSBridge.swift"
                     && $0.lastPathComponent

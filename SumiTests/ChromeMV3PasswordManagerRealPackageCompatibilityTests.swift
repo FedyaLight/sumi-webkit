@@ -635,7 +635,10 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertEqual(smoke.fixturePack?.validatedState, .valid)
         XCTAssertEqual(readiness.fixturePackGeneratedState, .generated)
         XCTAssertEqual(readiness.fixturePackValidatedState, .valid)
-        XCTAssertEqual(readiness.hostNameSource, "configuredTarget+observedRuntimeCall")
+        XCTAssertEqual(
+            readiness.hostNameSource,
+            "configuredTarget+fixtureMetadata+observedRuntimeCall+selectedFixtureMetadata"
+        )
         XCTAssertEqual(readiness.allowedOriginsSource, "fixtureManifest.allowed_origins")
         XCTAssertEqual(readiness.manifestState, .valid)
         XCTAssertEqual(readiness.allowedOriginsState, .compatible)

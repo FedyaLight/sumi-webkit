@@ -74,7 +74,6 @@ final class LastSessionWindowsStoreTests: XCTestCase {
                     name: "Restored",
                     icon: "globe",
                     index: 0,
-                    gradientData: nil,
                     workspaceThemeData: nil,
                     profileId: nil
                 )

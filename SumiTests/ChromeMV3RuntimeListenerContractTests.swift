@@ -440,6 +440,8 @@ final class ChromeMV3RuntimeListenerContractTests: XCTestCase {
                     && $0.relativePath
                         != "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift"
                     && $0.relativePath
+                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerRealPackageCompatibility.swift"
+                    && $0.relativePath
                         != "Sumi/Models/Extension/ChromeMV3/ChromeMV3PopupOptionsJSBridge.swift"
                     && $0.relativePath
                         != "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift"
@@ -447,6 +449,8 @@ final class ChromeMV3RuntimeListenerContractTests: XCTestCase {
                         != "Sumi/Models/Extension/ChromeMV3/ChromeMV3ContentScriptProductAttachment.swift"
                     && $0.relativePath
                         != "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift"
+                    && $0.relativePath
+                        != "SumiTests/ChromeMV3PasswordManagerRealPackageCompatibilityTests.swift"
             }
             .map(\.contents)
             .joined(separator: "\n")

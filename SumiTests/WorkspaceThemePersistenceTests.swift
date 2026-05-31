@@ -68,9 +68,9 @@ final class WorkspaceThemePersistenceTests: XCTestCase {
         XCTAssertTrue(WorkspaceTheme.default.visuallyEquals(firstLightMonoPreset))
         XCTAssertFalse(WorkspaceTheme.default.usesExplicitColorScheme)
         XCTAssertTrue(firstLightMonoPreset.usesExplicitColorScheme)
-        XCTAssertEqual(SpaceGradient.default.primaryColorHex, "#F4EFDF")
-        XCTAssertEqual(SpaceGradient.default.opacity, 0.62, accuracy: 0.0001)
-        XCTAssertEqual(SpaceGradient.default.grain, 1.0 / 16.0, accuracy: 0.0001)
+        XCTAssertEqual(WorkspaceResolvedGradient.default.primaryColorHex, "#F4EFDF")
+        XCTAssertEqual(WorkspaceResolvedGradient.default.opacity, 0.62, accuracy: 0.0001)
+        XCTAssertEqual(WorkspaceResolvedGradient.default.texture, 1.0 / 16.0, accuracy: 0.0001)
     }
 
     func testLegacyWorkspaceThemePayloadDefaultsExistingColoredThemesToExplicitScheme() throws {
@@ -132,7 +132,7 @@ final class WorkspaceThemePersistenceTests: XCTestCase {
         let theme = WorkspaceGradientTheme(colors: [], opacity: 0.64, texture: 0.18)
 
         XCTAssertTrue(theme.normalizedColors.isEmpty)
-        XCTAssertTrue(theme.renderGradient.nodes.isEmpty)
+        XCTAssertTrue(theme.renderGradient.stops.isEmpty)
     }
 
     func testStartupWorkspaceThemeResolverUsesPersistedActiveSpaceTheme() throws {
@@ -146,14 +146,20 @@ final class WorkspaceThemePersistenceTests: XCTestCase {
 
         let spaceId = UUID()
         let expectedTheme = WorkspaceTheme(
-            gradient: SpaceGradient(
-                angle: 132,
-                nodes: [
-                    GradientNode(colorHex: "#FF3B30", location: 0.0),
-                    GradientNode(colorHex: "#34C759", location: 1.0)
+            gradientTheme: WorkspaceGradientTheme(
+                colors: [
+                    WorkspaceThemeColor(
+                        hex: "#FF3B30",
+                        isPrimary: true,
+                        position: .topLeft
+                    ),
+                    WorkspaceThemeColor(
+                        hex: "#34C759",
+                        position: .bottom
+                    )
                 ],
-                grain: 0.25,
-                opacity: 0.82
+                opacity: 0.82,
+                texture: 0.25
             )
         )
         let space = SpaceEntity(
