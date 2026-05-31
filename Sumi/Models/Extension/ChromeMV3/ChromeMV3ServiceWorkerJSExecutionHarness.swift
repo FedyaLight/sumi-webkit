@@ -101,10 +101,13 @@ enum ChromeMV3ServiceWorkerJSDynamicImportCapabilityBlocker:
     Sendable
 {
     case dynamicImportExecutionSurfaceUnsupported
+    case dynamicImportGeneratedRootContainmentUnproven
+    case dynamicImportLowerLevelAPINotAvailable
     case dynamicImportModuleNamespaceUnsupported
     case dynamicImportNoLoader
     case dynamicImportParseUnsupported
     case dynamicImportPromiseDrainUnavailable
+    case dynamicImportResolverHookUnavailable
     case javaScriptCoreUnavailable
 
     static func < (
@@ -120,10 +123,20 @@ struct ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe:
     Equatable,
     Sendable
 {
+    var probeExecuted: Bool
     var importExpressionParses: Bool
+    var lowerLevelPublicModuleAPIAvailable: Bool
+    var sourceTextModuleLoadSupported: Bool
     var moduleLoadingCanBeIntercepted: Bool
-    var promiseCompletionObservableWithoutTimers: Bool
+    var resolverHookAvailable: Bool
+    var dynamicImportCallbackAvailable: Bool
+    var generatedRootContainmentProven: Bool
+    var promiseCompletionObservableWithoutScheduling: Bool
+    var deterministicPromiseDrainAvailable: Bool
     var moduleNamespaceSupported: Bool
+    var sourceURLMetadataControlAvailable: Bool
+    var safeCancellationAvailable: Bool
+    var teardownWithoutPersistentRuntimeAvailable: Bool
     var executionSurfaceSupported: Bool
     var dynamicImportAvailableInLocalExperimentalGate: Bool
     var dynamicImportAvailableByDefault: Bool
@@ -137,10 +150,20 @@ struct ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe:
         #if canImport(JavaScriptCore)
             guard let context = JSContext() else {
                 return blocked(
+                    probeExecuted: true,
                     importExpressionParses: false,
+                    lowerLevelPublicModuleAPIAvailable: false,
+                    sourceTextModuleLoadSupported: false,
                     moduleLoadingCanBeIntercepted: false,
-                    promiseCompletionObservableWithoutTimers: false,
+                    resolverHookAvailable: false,
+                    dynamicImportCallbackAvailable: false,
+                    generatedRootContainmentProven: false,
+                    promiseCompletionObservableWithoutScheduling: false,
+                    deterministicPromiseDrainAvailable: false,
                     moduleNamespaceSupported: false,
+                    sourceURLMetadataControlAvailable: false,
+                    safeCancellationAvailable: false,
+                    teardownWithoutPersistentRuntimeAvailable: false,
                     executionSurfaceSupported: false,
                     blockers: [.javaScriptCoreUnavailable],
                     diagnostics: [
@@ -219,13 +242,33 @@ struct ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe:
 
             let moduleNamespaceSupported =
                 importState == "resolved" && namespaceType == "object"
+            let lowerLevelPublicModuleAPIAvailable = false
+            let sourceTextModuleLoadSupported = false
+            let resolverHookAvailable = false
+            let dynamicImportCallbackAvailable = false
+            let generatedRootContainmentProven = false
+            let deterministicPromiseDrainAvailable = false
+            let sourceURLMetadataControlAvailable = true
+            let safeCancellationAvailable = false
+            let teardownWithoutPersistentRuntimeAvailable = true
             let moduleLoadingCanBeIntercepted = false
             var blockers:
                 [ChromeMV3ServiceWorkerJSDynamicImportCapabilityBlocker] = []
             if importExpressionParses == false {
                 blockers.append(.dynamicImportParseUnsupported)
             }
-            if promiseCompletionObservable == false {
+            if lowerLevelPublicModuleAPIAvailable == false {
+                blockers.append(.dynamicImportLowerLevelAPINotAvailable)
+            }
+            if resolverHookAvailable == false
+                || dynamicImportCallbackAvailable == false
+            {
+                blockers.append(.dynamicImportResolverHookUnavailable)
+            }
+            if generatedRootContainmentProven == false {
+                blockers.append(.dynamicImportGeneratedRootContainmentUnproven)
+            }
+            if deterministicPromiseDrainAvailable == false {
                 blockers.append(.dynamicImportPromiseDrainUnavailable)
             }
             if importExpressionParses,
@@ -238,9 +281,16 @@ struct ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe:
             }
             let executionSurfaceSupported =
                 importExpressionParses
+                && lowerLevelPublicModuleAPIAvailable
+                && sourceTextModuleLoadSupported
                 && moduleLoadingCanBeIntercepted
-                && promiseCompletionObservable
+                && resolverHookAvailable
+                && dynamicImportCallbackAvailable
+                && generatedRootContainmentProven
+                && deterministicPromiseDrainAvailable
                 && moduleNamespaceSupported
+                && safeCancellationAvailable
+                && teardownWithoutPersistentRuntimeAvailable
             if executionSurfaceSupported == false {
                 blockers.append(.dynamicImportExecutionSurfaceUnsupported)
             }
@@ -253,8 +303,10 @@ struct ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe:
                 promiseCompletionObservable
                     ? "Promise microtask completion is observable immediately after evaluateScript without timers."
                     : "Promise completion could not be observed deterministically without timers.",
-                "The public JavaScriptCore JSContext SDK surface exposes evaluateScript and Promise helpers, but no module-loader interception API.",
-                "Dynamic import module loading cannot be constrained to Sumi's generated bundle root on this surface.",
+                "The public JavaScriptCore JSContext and C API headers expose script evaluation, script syntax checking, source URL metadata, context/VM lifecycle, and Promise construction helpers.",
+                "The public JavaScriptCore headers do not expose a source-text module loader, module resolution hook, dynamic import callback, module namespace access API, or deterministic Promise job-drain API.",
+                "The local JavaScriptCore binary exports unheadered JSScript and C++ module/import symbols, but they are not a public SDK surface and are ignored by this harness.",
+                "Dynamic import module loading cannot be constrained to Sumi's generated bundle root through public JavaScriptCore API.",
             ]
             if let importState {
                 diagnostics.append("Dynamic import probe state: \(importState).")
@@ -265,11 +317,27 @@ struct ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe:
                 )
             }
             return ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe(
+                probeExecuted: true,
                 importExpressionParses: importExpressionParses,
+                lowerLevelPublicModuleAPIAvailable:
+                    lowerLevelPublicModuleAPIAvailable,
+                sourceTextModuleLoadSupported:
+                    sourceTextModuleLoadSupported,
                 moduleLoadingCanBeIntercepted: moduleLoadingCanBeIntercepted,
-                promiseCompletionObservableWithoutTimers:
+                resolverHookAvailable: resolverHookAvailable,
+                dynamicImportCallbackAvailable: dynamicImportCallbackAvailable,
+                generatedRootContainmentProven:
+                    generatedRootContainmentProven,
+                promiseCompletionObservableWithoutScheduling:
                     promiseCompletionObservable,
+                deterministicPromiseDrainAvailable:
+                    deterministicPromiseDrainAvailable,
                 moduleNamespaceSupported: moduleNamespaceSupported,
+                sourceURLMetadataControlAvailable:
+                    sourceURLMetadataControlAvailable,
+                safeCancellationAvailable: safeCancellationAvailable,
+                teardownWithoutPersistentRuntimeAvailable:
+                    teardownWithoutPersistentRuntimeAvailable,
                 executionSurfaceSupported: executionSurfaceSupported,
                 dynamicImportAvailableInLocalExperimentalGate: available,
                 dynamicImportAvailableByDefault: false,
@@ -286,10 +354,20 @@ struct ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe:
             )
         #else
             return blocked(
+                probeExecuted: true,
                 importExpressionParses: false,
+                lowerLevelPublicModuleAPIAvailable: false,
+                sourceTextModuleLoadSupported: false,
                 moduleLoadingCanBeIntercepted: false,
-                promiseCompletionObservableWithoutTimers: false,
+                resolverHookAvailable: false,
+                dynamicImportCallbackAvailable: false,
+                generatedRootContainmentProven: false,
+                promiseCompletionObservableWithoutScheduling: false,
+                deterministicPromiseDrainAvailable: false,
                 moduleNamespaceSupported: false,
+                sourceURLMetadataControlAvailable: false,
+                safeCancellationAvailable: false,
+                teardownWithoutPersistentRuntimeAvailable: false,
                 executionSurfaceSupported: false,
                 blockers: [.javaScriptCoreUnavailable],
                 diagnostics: [
@@ -299,22 +377,74 @@ struct ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe:
         #endif
     }
 
+    static func skippedByPolicy(
+        diagnostics: [String]
+    ) -> ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe {
+        blocked(
+            probeExecuted: false,
+            importExpressionParses: false,
+            lowerLevelPublicModuleAPIAvailable: false,
+            sourceTextModuleLoadSupported: false,
+            moduleLoadingCanBeIntercepted: false,
+            resolverHookAvailable: false,
+            dynamicImportCallbackAvailable: false,
+            generatedRootContainmentProven: false,
+            promiseCompletionObservableWithoutScheduling: false,
+            deterministicPromiseDrainAvailable: false,
+            moduleNamespaceSupported: false,
+            sourceURLMetadataControlAvailable: false,
+            safeCancellationAvailable: false,
+            teardownWithoutPersistentRuntimeAvailable: false,
+            executionSurfaceSupported: false,
+            blockers: [.dynamicImportExecutionSurfaceUnsupported],
+            diagnostics:
+                [
+                    "Dynamic import capability probe was skipped because policy blocked JavaScript execution before resource loading.",
+                ]
+                    + diagnostics
+        )
+    }
+
     private static func blocked(
+        probeExecuted: Bool,
         importExpressionParses: Bool,
+        lowerLevelPublicModuleAPIAvailable: Bool,
+        sourceTextModuleLoadSupported: Bool,
         moduleLoadingCanBeIntercepted: Bool,
-        promiseCompletionObservableWithoutTimers: Bool,
+        resolverHookAvailable: Bool,
+        dynamicImportCallbackAvailable: Bool,
+        generatedRootContainmentProven: Bool,
+        promiseCompletionObservableWithoutScheduling: Bool,
+        deterministicPromiseDrainAvailable: Bool,
         moduleNamespaceSupported: Bool,
+        sourceURLMetadataControlAvailable: Bool,
+        safeCancellationAvailable: Bool,
+        teardownWithoutPersistentRuntimeAvailable: Bool,
         executionSurfaceSupported: Bool,
         blockers: [ChromeMV3ServiceWorkerJSDynamicImportCapabilityBlocker],
         diagnostics: [String]
     ) -> ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe {
         let uniqueBlockers = uniqueSortedServiceWorkerJS(blockers)
         return ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe(
+            probeExecuted: probeExecuted,
             importExpressionParses: importExpressionParses,
+            lowerLevelPublicModuleAPIAvailable:
+                lowerLevelPublicModuleAPIAvailable,
+            sourceTextModuleLoadSupported: sourceTextModuleLoadSupported,
             moduleLoadingCanBeIntercepted: moduleLoadingCanBeIntercepted,
-            promiseCompletionObservableWithoutTimers:
-                promiseCompletionObservableWithoutTimers,
+            resolverHookAvailable: resolverHookAvailable,
+            dynamicImportCallbackAvailable: dynamicImportCallbackAvailable,
+            generatedRootContainmentProven: generatedRootContainmentProven,
+            promiseCompletionObservableWithoutScheduling:
+                promiseCompletionObservableWithoutScheduling,
+            deterministicPromiseDrainAvailable:
+                deterministicPromiseDrainAvailable,
             moduleNamespaceSupported: moduleNamespaceSupported,
+            sourceURLMetadataControlAvailable:
+                sourceURLMetadataControlAvailable,
+            safeCancellationAvailable: safeCancellationAvailable,
+            teardownWithoutPersistentRuntimeAvailable:
+                teardownWithoutPersistentRuntimeAvailable,
             executionSurfaceSupported: executionSurfaceSupported,
             dynamicImportAvailableInLocalExperimentalGate: false,
             dynamicImportAvailableByDefault: false,
@@ -354,6 +484,8 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
     var dynamicImportGeneratedBundleOnly: Bool
     var dynamicImportStringLiteralLocalOnly: Bool
     var dynamicImportAvailable: Bool
+    var dynamicImportCapabilityProbe:
+        ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe
     var dynamicImportCapabilityBlockers:
         [ChromeMV3ServiceWorkerJSDynamicImportCapabilityBlocker]
     var moduleWorkerImportAvailable: Bool
@@ -388,8 +520,23 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
             let javaScriptCoreAvailable = false
             blockers.append(.javaScriptCoreUnavailable)
         #endif
-        let dynamicImportCapability =
-            ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe.evaluate()
+        let dynamicImportCapability:
+            ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe
+        if moduleState != .enabled || extensionEnabled == false {
+            dynamicImportCapability =
+                ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe
+                    .skippedByPolicy(
+                        diagnostics: [
+                            moduleState != .enabled
+                                ? "Module-disabled state skipped JavaScriptCore dynamic import probing."
+                                : "Extension-disabled state skipped JavaScriptCore dynamic import probing.",
+                        ]
+                    )
+        } else {
+            dynamicImportCapability =
+                ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe
+                    .evaluate()
+        }
         blockers = uniqueSortedServiceWorkerJS(blockers)
         let available = blockers.isEmpty && javaScriptCoreAvailable
         let dynamicImportAvailable =
@@ -426,6 +573,7 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
             dynamicImportGeneratedBundleOnly: true,
             dynamicImportStringLiteralLocalOnly: true,
             dynamicImportAvailable: dynamicImportAvailable,
+            dynamicImportCapabilityProbe: dynamicImportCapability,
             dynamicImportCapabilityBlockers: dynamicImportCapability.blockers,
             moduleWorkerImportAvailable: false,
             permanentBackgroundAvailable: false,
@@ -539,6 +687,16 @@ struct ChromeMV3ServiceWorkerJSExecutionDocumentationSource:
             "The local SDK exposes evaluateScript:withSourceURL:, exception handling, a VM association, and an inspectable flag that defaults off."
         ),
         source(
+            "Apple JavaScriptCore C API SDK headers",
+            "xcode://MacOSX.sdk/System/Library/Frameworks/JavaScriptCore.framework/Headers/JSBase.h",
+            "Checked JSBase, JSObjectRef, JSValue, and JSVirtualMachine headers. They expose script evaluation, script syntax checks, source URL metadata, Promise construction helpers, and VM lifecycle, but no public module loader, resolver hook, dynamic import callback, module namespace accessor, or deterministic job-drain API."
+        ),
+        source(
+            "Apple JavaScriptCore binary symbol table",
+            "xcode://MacOSX.sdk/System/Library/Frameworks/JavaScriptCore.framework/JavaScriptCore.tbd",
+            "The local SDK binary exports unheadered JSScript and C++ module/import symbols. They are not declared in public SDK headers or Swift overlay and are not used by the harness."
+        ),
+        source(
             "Apple WKWebExtensionController SDK header",
             "xcode://MacOSX.sdk/System/Library/Frameworks/WebKit.framework/Headers/WKWebExtensionController.h",
             "Loading a WebKit extension context manages background content and WebView association, so this harness avoids that broader surface."
@@ -601,10 +759,13 @@ enum ChromeMV3ServiceWorkerJSResourceLoadBlocker:
 {
     case backgroundServiceWorkerMissing
     case dynamicImportExecutionSurfaceUnsupported
+    case dynamicImportGeneratedRootContainmentUnproven
+    case dynamicImportLowerLevelAPINotAvailable
     case dynamicImportModuleNamespaceUnsupported
     case dynamicImportNoLoader
     case dynamicImportParseUnsupported
     case dynamicImportPromiseDrainUnavailable
+    case dynamicImportResolverHookUnavailable
     case dynamicImportUnsupported
     case generatedBundleRecordMissing
     case generatedBundleRootMismatch
@@ -642,10 +803,13 @@ enum ChromeMV3ServiceWorkerJSImportScriptsBlocker:
     case circularImportBlocked
     case dataURLRejected
     case dynamicImportExecutionSurfaceUnsupported
+    case dynamicImportGeneratedRootContainmentUnproven
+    case dynamicImportLowerLevelAPINotAvailable
     case dynamicImportModuleNamespaceUnsupported
     case dynamicImportNoLoader
     case dynamicImportParseUnsupported
     case dynamicImportPromiseDrainUnavailable
+    case dynamicImportResolverHookUnavailable
     case dynamicImportUnsupported
     case fileURLRejected
     case generatedBundleRecordMissing
@@ -684,10 +848,13 @@ enum ChromeMV3ServiceWorkerJSDynamicImportBlocker:
     case dataURLRejected
     case dynamicImportArgumentNonString
     case dynamicImportExecutionSurfaceUnsupported
+    case dynamicImportGeneratedRootContainmentUnproven
+    case dynamicImportLowerLevelAPINotAvailable
     case dynamicImportModuleNamespaceUnsupported
     case dynamicImportNoLoader
     case dynamicImportParseUnsupported
     case dynamicImportPromiseDrainUnavailable
+    case dynamicImportResolverHookUnavailable
     case fileURLRejected
     case generatedBundleRecordMissing
     case generatedBundleRootMissing
@@ -3466,6 +3633,10 @@ private func resourceLoadBlockerServiceWorkerJS(
     switch blocker {
     case .dynamicImportExecutionSurfaceUnsupported:
         return .dynamicImportExecutionSurfaceUnsupported
+    case .dynamicImportGeneratedRootContainmentUnproven:
+        return .dynamicImportGeneratedRootContainmentUnproven
+    case .dynamicImportLowerLevelAPINotAvailable:
+        return .dynamicImportLowerLevelAPINotAvailable
     case .dynamicImportModuleNamespaceUnsupported:
         return .dynamicImportModuleNamespaceUnsupported
     case .dynamicImportNoLoader:
@@ -3474,6 +3645,8 @@ private func resourceLoadBlockerServiceWorkerJS(
         return .dynamicImportParseUnsupported
     case .dynamicImportPromiseDrainUnavailable:
         return .dynamicImportPromiseDrainUnavailable
+    case .dynamicImportResolverHookUnavailable:
+        return .dynamicImportResolverHookUnavailable
     case .javaScriptCoreUnavailable:
         return nil
     }
@@ -3485,6 +3658,10 @@ private func importScriptsBlockerServiceWorkerJS(
     switch blocker {
     case .dynamicImportExecutionSurfaceUnsupported:
         return .dynamicImportExecutionSurfaceUnsupported
+    case .dynamicImportGeneratedRootContainmentUnproven:
+        return .dynamicImportGeneratedRootContainmentUnproven
+    case .dynamicImportLowerLevelAPINotAvailable:
+        return .dynamicImportLowerLevelAPINotAvailable
     case .dynamicImportModuleNamespaceUnsupported:
         return .dynamicImportModuleNamespaceUnsupported
     case .dynamicImportNoLoader:
@@ -3493,6 +3670,8 @@ private func importScriptsBlockerServiceWorkerJS(
         return .dynamicImportParseUnsupported
     case .dynamicImportPromiseDrainUnavailable:
         return .dynamicImportPromiseDrainUnavailable
+    case .dynamicImportResolverHookUnavailable:
+        return .dynamicImportResolverHookUnavailable
     case .javaScriptCoreUnavailable:
         return nil
     }
@@ -3504,6 +3683,10 @@ private func dynamicImportBlockerServiceWorkerJS(
     switch blocker {
     case .dynamicImportExecutionSurfaceUnsupported:
         return .dynamicImportExecutionSurfaceUnsupported
+    case .dynamicImportGeneratedRootContainmentUnproven:
+        return .dynamicImportGeneratedRootContainmentUnproven
+    case .dynamicImportLowerLevelAPINotAvailable:
+        return .dynamicImportLowerLevelAPINotAvailable
     case .dynamicImportModuleNamespaceUnsupported:
         return .dynamicImportModuleNamespaceUnsupported
     case .dynamicImportNoLoader:
@@ -3512,6 +3695,8 @@ private func dynamicImportBlockerServiceWorkerJS(
         return .dynamicImportParseUnsupported
     case .dynamicImportPromiseDrainUnavailable:
         return .dynamicImportPromiseDrainUnavailable
+    case .dynamicImportResolverHookUnavailable:
+        return .dynamicImportResolverHookUnavailable
     case .javaScriptCoreUnavailable:
         return .dynamicImportExecutionSurfaceUnsupported
     }
@@ -3523,6 +3708,10 @@ private func dynamicImportBlockerServiceWorkerJS(
     switch blocker {
     case .dynamicImportExecutionSurfaceUnsupported:
         return .dynamicImportExecutionSurfaceUnsupported
+    case .dynamicImportGeneratedRootContainmentUnproven:
+        return .dynamicImportGeneratedRootContainmentUnproven
+    case .dynamicImportLowerLevelAPINotAvailable:
+        return .dynamicImportLowerLevelAPINotAvailable
     case .dynamicImportModuleNamespaceUnsupported:
         return .dynamicImportModuleNamespaceUnsupported
     case .dynamicImportNoLoader:
@@ -3531,6 +3720,8 @@ private func dynamicImportBlockerServiceWorkerJS(
         return .dynamicImportParseUnsupported
     case .dynamicImportPromiseDrainUnavailable:
         return .dynamicImportPromiseDrainUnavailable
+    case .dynamicImportResolverHookUnavailable:
+        return .dynamicImportResolverHookUnavailable
     default:
         return nil
     }

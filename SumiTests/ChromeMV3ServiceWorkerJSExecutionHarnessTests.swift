@@ -41,6 +41,22 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertFalse(
             extensionDisabled.policy.dynamicImportAvailableInLocalExperimentalGate
         )
+        XCTAssertFalse(
+            moduleDisabled.policy.dynamicImportCapabilityProbe.probeExecuted
+        )
+        XCTAssertFalse(
+            extensionDisabled.policy.dynamicImportCapabilityProbe.probeExecuted
+        )
+        XCTAssertTrue(
+            moduleDisabled.policy.diagnostics.contains {
+                $0.contains("Module-disabled state skipped JavaScriptCore")
+            }
+        )
+        XCTAssertTrue(
+            extensionDisabled.policy.diagnostics.contains {
+                $0.contains("Extension-disabled state skipped JavaScriptCore")
+            }
+        )
     }
 
     func testDefaultOffGateBlocksExecutionBeforeResourceLoad() throws {
@@ -65,30 +81,60 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         let probe = ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe
             .evaluate()
 
+        XCTAssertTrue(probe.probeExecuted)
         XCTAssertFalse(probe.dynamicImportAvailableByDefault)
         if probe.dynamicImportAvailableInLocalExperimentalGate {
             XCTAssertTrue(probe.blockers.isEmpty)
             XCTAssertEqual(probe.dynamicImportScope, .generatedBundleOnly)
             XCTAssertTrue(probe.importExpressionParses)
+            XCTAssertTrue(probe.lowerLevelPublicModuleAPIAvailable)
+            XCTAssertTrue(probe.sourceTextModuleLoadSupported)
             XCTAssertTrue(probe.moduleLoadingCanBeIntercepted)
-            XCTAssertTrue(probe.promiseCompletionObservableWithoutTimers)
+            XCTAssertTrue(probe.resolverHookAvailable)
+            XCTAssertTrue(probe.dynamicImportCallbackAvailable)
+            XCTAssertTrue(probe.generatedRootContainmentProven)
+            XCTAssertTrue(probe.promiseCompletionObservableWithoutScheduling)
+            XCTAssertTrue(probe.deterministicPromiseDrainAvailable)
             XCTAssertTrue(probe.moduleNamespaceSupported)
+            XCTAssertTrue(probe.sourceURLMetadataControlAvailable)
+            XCTAssertTrue(probe.safeCancellationAvailable)
+            XCTAssertTrue(probe.teardownWithoutPersistentRuntimeAvailable)
             XCTAssertTrue(probe.executionSurfaceSupported)
         } else {
             XCTAssertEqual(probe.dynamicImportScope, .blocked)
             XCTAssertFalse(probe.blockers.isEmpty)
             XCTAssertTrue(
-                probe.blockers.contains(.dynamicImportNoLoader)
-                    || probe.blockers.contains(
-                        .dynamicImportPromiseDrainUnavailable
-                    )
-                    || probe.blockers.contains(
-                        .dynamicImportModuleNamespaceUnsupported
-                    )
-                    || probe.blockers.contains(
-                        .dynamicImportExecutionSurfaceUnsupported
-                    )
+                probe.blockers.contains(
+                    .dynamicImportLowerLevelAPINotAvailable
+                )
             )
+            XCTAssertTrue(
+                probe.blockers.contains(.dynamicImportResolverHookUnavailable)
+            )
+            XCTAssertTrue(
+                probe.blockers.contains(
+                    .dynamicImportGeneratedRootContainmentUnproven
+                )
+            )
+            XCTAssertTrue(
+                probe.blockers.contains(.dynamicImportPromiseDrainUnavailable)
+            )
+            XCTAssertTrue(
+                probe.blockers.contains(
+                    .dynamicImportExecutionSurfaceUnsupported
+                )
+            )
+            XCTAssertFalse(probe.lowerLevelPublicModuleAPIAvailable)
+            XCTAssertFalse(probe.sourceTextModuleLoadSupported)
+            XCTAssertFalse(probe.moduleLoadingCanBeIntercepted)
+            XCTAssertFalse(probe.resolverHookAvailable)
+            XCTAssertFalse(probe.dynamicImportCallbackAvailable)
+            XCTAssertFalse(probe.generatedRootContainmentProven)
+            XCTAssertFalse(probe.deterministicPromiseDrainAvailable)
+            XCTAssertFalse(probe.moduleNamespaceSupported)
+            XCTAssertTrue(probe.sourceURLMetadataControlAvailable)
+            XCTAssertFalse(probe.safeCancellationAvailable)
+            XCTAssertTrue(probe.teardownWithoutPersistentRuntimeAvailable)
         }
     }
 
@@ -402,19 +448,33 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             XCTAssertTrue(record.generatedBundlePathValidated)
             XCTAssertTrue(
                 harness.snapshot.resourceLoad?.dynamicImportBlockers.contains(
-                    .dynamicImportNoLoader
+                    .dynamicImportLowerLevelAPINotAvailable
                 ) == true
-                    || harness.snapshot.resourceLoad?.dynamicImportBlockers
-                        .contains(.dynamicImportExecutionSurfaceUnsupported)
-                        == true
+            )
+            XCTAssertTrue(
+                harness.snapshot.resourceLoad?.dynamicImportBlockers.contains(
+                    .dynamicImportResolverHookUnavailable
+                ) == true
+            )
+            XCTAssertTrue(
+                harness.snapshot.resourceLoad?.dynamicImportBlockers.contains(
+                    .dynamicImportGeneratedRootContainmentUnproven
+                ) == true
             )
             XCTAssertTrue(
                 harness.snapshot.resourceLoad?.blockers.contains(
-                    .dynamicImportNoLoader
+                    .dynamicImportLowerLevelAPINotAvailable
                 ) == true
-                    || harness.snapshot.resourceLoad?.blockers.contains(
-                        .dynamicImportExecutionSurfaceUnsupported
-                    ) == true
+            )
+            XCTAssertTrue(
+                harness.snapshot.resourceLoad?.blockers.contains(
+                    .dynamicImportResolverHookUnavailable
+                ) == true
+            )
+            XCTAssertTrue(
+                harness.snapshot.resourceLoad?.blockers.contains(
+                    .dynamicImportGeneratedRootContainmentUnproven
+                ) == true
             )
         }
     }

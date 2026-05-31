@@ -409,25 +409,45 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertTrue(
             readiness.resourceLoadResult?.blockers.contains(
-                .dynamicImportNoLoader
+                .dynamicImportLowerLevelAPINotAvailable
             ) == true
-                || readiness.resourceLoadResult?.blockers.contains(
-                    .dynamicImportExecutionSurfaceUnsupported
-                ) == true
         )
         XCTAssertTrue(
-            readiness.dynamicImportBlockers.contains(.dynamicImportNoLoader)
-                || readiness.dynamicImportBlockers.contains(
-                    .dynamicImportExecutionSurfaceUnsupported
+            readiness.resourceLoadResult?.blockers.contains(
+                .dynamicImportResolverHookUnavailable
+            ) == true
+        )
+        XCTAssertTrue(
+            readiness.resourceLoadResult?.blockers.contains(
+                .dynamicImportGeneratedRootContainmentUnproven
+            ) == true
+        )
+        XCTAssertTrue(
+            readiness.dynamicImportBlockers.contains(
+                .dynamicImportLowerLevelAPINotAvailable
+            )
+        )
+        XCTAssertTrue(
+            readiness.dynamicImportBlockers.contains(
+                .dynamicImportResolverHookUnavailable
+            )
+        )
+        XCTAssertTrue(
+            readiness.dynamicImportBlockers.contains(
+                .dynamicImportGeneratedRootContainmentUnproven
+            )
+        )
+        XCTAssertTrue(
+            readiness.staticVsExecutionDelta.unsupportedListenerForms
+                .contains(
+                    "dynamicImport.dynamicImportLowerLevelAPINotAvailable"
                 )
         )
         XCTAssertTrue(
             readiness.staticVsExecutionDelta.unsupportedListenerForms
-                .contains("dynamicImport.dynamicImportNoLoader")
-                || readiness.staticVsExecutionDelta.unsupportedListenerForms
-                    .contains(
-                        "dynamicImport.dynamicImportExecutionSurfaceUnsupported"
-                    )
+                .contains(
+                    "dynamicImport.dynamicImportResolverHookUnavailable"
+                )
         )
         XCTAssertTrue(readiness.gateClosedAfterTrial)
         XCTAssertFalse(readiness.jsExecutionPolicy.dynamicImportAvailable)

@@ -2552,10 +2552,13 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     + (resourceLoadResult?.blockers.compactMap {
                         switch $0 {
                         case .dynamicImportExecutionSurfaceUnsupported,
+                             .dynamicImportGeneratedRootContainmentUnproven,
+                             .dynamicImportLowerLevelAPINotAvailable,
                              .dynamicImportModuleNamespaceUnsupported,
                              .dynamicImportNoLoader,
                              .dynamicImportParseUnsupported,
                              .dynamicImportPromiseDrainUnavailable,
+                             .dynamicImportResolverHookUnavailable,
                              .dynamicImportUnsupported,
                              .staticModuleImportUnsupported:
                             return $0.rawValue
@@ -4048,6 +4051,16 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 "Apple JSContext SDK header",
                 "xcode://MacOSX.sdk/System/Library/Frameworks/JavaScriptCore.framework/Headers/JSContext.h",
                 "Checked evaluateScript:withSourceURL:, exception handling, JSVirtualMachine association, and inspectable default-off behavior. The header does not document a Promise job-drain contract, so deferred Promise completion stays diagnostic-only."
+            ),
+            source(
+                "Apple JavaScriptCore C API SDK headers",
+                "xcode://MacOSX.sdk/System/Library/Frameworks/JavaScriptCore.framework/Headers/JSBase.h",
+                "Checked JSBase, JSObjectRef, JSValue, and JSVirtualMachine headers. They expose script evaluation, syntax checks, source URL metadata, Promise construction helpers, and VM lifecycle, but no public module loader, resolver hook, dynamic import callback, module namespace accessor, or deterministic job-drain API."
+            ),
+            source(
+                "Apple JavaScriptCore binary symbol table",
+                "xcode://MacOSX.sdk/System/Library/Frameworks/JavaScriptCore.framework/JavaScriptCore.tbd",
+                "The local SDK binary exports unheadered JSScript and C++ module/import symbols. They are not declared in public SDK headers or Swift overlay and are not used by this trial runner."
             ),
             source(
                 "Chrome extension packaging",
