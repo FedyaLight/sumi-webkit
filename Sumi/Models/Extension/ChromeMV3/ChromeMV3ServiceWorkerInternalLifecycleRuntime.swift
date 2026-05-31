@@ -64,6 +64,7 @@ enum ChromeMV3ServiceWorkerSyntheticListenerEvent:
 {
     case actionPopupEvent
     case alarmsOnAlarm
+    case commandsOnCommand
     case contextMenusOnClicked
     case nativePortOnDisconnect
     case nativePortOnMessage
@@ -72,10 +73,16 @@ enum ChromeMV3ServiceWorkerSyntheticListenerEvent:
     case passwordManagerDetectFields
     case passwordManagerFillFields
     case runtimeOnConnect
+    case runtimeOnInstalled
     case runtimeOnMessage
+    case runtimeOnMessageExternal
+    case runtimeOnStartup
+    case runtimeOnUpdateAvailable
     case storageOnChanged
     case tabsOnConnect
     case tabsOnMessage
+    case tabsOnRemoved
+    case tabsOnUpdated
     case testFixture
     case webNavigationOnBeforeNavigate
     case webNavigationOnCommitted
@@ -84,6 +91,7 @@ enum ChromeMV3ServiceWorkerSyntheticListenerEvent:
     case webNavigationOnErrorOccurred
     case webNavigationOnHistoryStateUpdated
     case webNavigationOnReferenceFragmentUpdated
+    case webRequestOnAuthRequired
     case webRequestOnBeforeRequest
     case webRequestOnBeforeSendHeaders
     case webRequestOnCompleted
@@ -111,15 +119,20 @@ enum ChromeMV3ServiceWorkerSyntheticListenerEvent:
             return .tabsConnectContentScript
         case .nativePortOnMessage, .nativePortOnDisconnect:
             return .nativeMessagingPortListener
-        case .actionPopupEvent, .alarmsOnAlarm, .contextMenusOnClicked,
+        case .actionPopupEvent, .alarmsOnAlarm, .commandsOnCommand,
+             .contextMenusOnClicked,
              .permissionsOnAdded, .permissionsOnRemoved,
              .passwordManagerDetectFields, .passwordManagerFillFields,
+             .runtimeOnInstalled, .runtimeOnMessageExternal,
+             .runtimeOnStartup, .runtimeOnUpdateAvailable,
              .storageOnChanged, .testFixture, .webNavigationOnBeforeNavigate,
+             .tabsOnRemoved, .tabsOnUpdated,
              .webNavigationOnCommitted, .webNavigationOnCompleted,
              .webNavigationOnDOMContentLoaded, .webNavigationOnErrorOccurred,
              .webNavigationOnHistoryStateUpdated,
              .webNavigationOnReferenceFragmentUpdated,
-             .webRequestOnBeforeRequest, .webRequestOnBeforeSendHeaders,
+             .webRequestOnAuthRequired, .webRequestOnBeforeRequest,
+             .webRequestOnBeforeSendHeaders,
              .webRequestOnCompleted, .webRequestOnErrorOccurred,
              .webRequestOnHeadersReceived, .webRequestOnResponseStarted,
              .webRequestOnSendHeaders:

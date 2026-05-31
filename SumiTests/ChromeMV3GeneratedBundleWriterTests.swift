@@ -557,6 +557,63 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
         )
     }
 
+    func testCopiesWebpackComputedImportScriptsChunksFromClassicWorker()
+        throws
+    {
+        let manifest: [String: Any] = [
+            "manifest_version": 3,
+            "name": "Webpack Computed ImportScripts",
+            "version": "1.0",
+            "background": [
+                "service_worker": "background.js",
+            ],
+        ]
+        let stage = try stageBundle(
+            named: "webpack-computed-importscripts-resources",
+            manifest: manifest,
+            files: [
+                "background.js": """
+                (() => {
+                  var o = {};
+                  o.u = e => e + ".background.js";
+                  o.p = chrome.runtime.getURL("");
+                  (() => {
+                    var e = { 792: 1 };
+                    o.f = {};
+                    o.f.i = (t, i) => { e[t] || importScripts(o.p + o.u(t)); };
+                  })();
+                  o.e = e => Promise.all(Object.keys(o.f).reduce((t, i) => (o.f[i](e, t), t), []));
+                  o.e(719);
+                })();
+                """,
+                "719.background.js": "",
+                "runtime-only.background.js": "",
+            ]
+        )
+
+        let result = try makeWriter(rootURL: stage.storeRoot)
+            .writeGeneratedBundle(
+                originalBundleRecord: stage.result.originalBundleRecord,
+                manifestSnapshot: stage.result.manifestSnapshot,
+                planningRecord: stage.result.generatedBundlePlan
+            )
+
+        XCTAssertEqual(
+            result.record.copiedResourcePaths,
+            [
+                "719.background.js",
+                "background.js",
+            ]
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: result.generatedBundleRootURL
+                    .appendingPathComponent("runtime-only.background.js")
+                    .path
+            )
+        )
+    }
+
     func testRejectsSymlinkReferencedResource() throws {
         let stage = try stageBundle(
             named: "symlink-resource",

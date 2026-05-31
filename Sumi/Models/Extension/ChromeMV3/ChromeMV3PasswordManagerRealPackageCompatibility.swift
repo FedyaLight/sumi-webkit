@@ -3232,6 +3232,16 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         let bounded = computed.filter {
             $0.dependencyCandidatePath != nil
         }.count
+        if let resourceLoadResult,
+           resourceLoadResult.importScriptsResolvedCount > 0,
+           resourceLoadResult.importScriptsBlockers.isEmpty
+        {
+            let paths = resourceLoadResult.importedScripts
+                .compactMap(\.resolvedRelativePath)
+                .sorted()
+            return "resolved: bounded computed importScripts resolved \(resourceLoadResult.importScriptsResolvedCount) generated-bundle import(s); bounded inventory candidates \(bounded)/\(computed.count)"
+                + (paths.isEmpty ? "." : " - \(paths.prefix(3).joined(separator: ", ")).")
+        }
         if let blocker = resourceLoadResult?.importScriptsBlockers.first(
             where: {
                 $0 == .computedImportScriptsCandidateSetUnbounded
@@ -5684,6 +5694,12 @@ enum ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventoryScanner 
             }
             guard open < bytes.count, bytes[open] == 40 else { continue }
             guard let close = matchingParenClose(bytes, open: open) else {
+                continue
+            }
+            if rejectMemberAccess,
+               followingSignificantByte(bytes, after: close) == 123
+            {
+                index = close + 1
                 continue
             }
             let argument = String(

@@ -11,6 +11,9 @@
 
 import CryptoKit
 import Foundation
+#if canImport(Security)
+    import Security
+#endif
 #if canImport(JavaScriptCore)
     import JavaScriptCore
 #endif
@@ -1283,7 +1286,8 @@ enum ChromeMV3ServiceWorkerJSResourceLoader {
             } ?? false
         let dynamicImportDetected =
             source.map {
-                containsServiceWorkerJSRegex("\\bimport\\s*\\(", in: $0)
+                dynamicImportArgumentSourcesServiceWorkerJS(in: $0)
+                    .isEmpty == false
             } ?? false
         let dynamicImportCapability =
             ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe.evaluate()
@@ -1473,6 +1477,45 @@ enum ChromeMV3ServiceWorkerJSExecutionStartBlocker:
     }
 }
 
+enum ChromeMV3ServiceWorkerJSExceptionClassification:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case bundlerRuntimeAssumption
+    case missingChromeAPIShim
+    case missingStandardWorkerGlobal
+    case missingWebAPI
+    case unknownVendorCodeAssumption
+    case unsupportedAsyncOrTimerBehavior
+    case unsupportedModuleOrImportShape
+
+    static func < (
+        lhs: ChromeMV3ServiceWorkerJSExceptionClassification,
+        rhs: ChromeMV3ServiceWorkerJSExceptionClassification
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3ServiceWorkerJSExceptionDetails:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var message: String
+    var sourcePath: String?
+    var line: Int?
+    var column: Int?
+    var stack: String?
+    var inferredMissingGlobal: String?
+    var inferredMissingProperty: String?
+    var classification: ChromeMV3ServiceWorkerJSExceptionClassification
+    var diagnostics: [String]
+}
+
 struct ChromeMV3ServiceWorkerJSExecutionStartRecord:
     Codable,
     Equatable,
@@ -1489,6 +1532,7 @@ struct ChromeMV3ServiceWorkerJSExecutionStartRecord:
     var blockedUnsupportedCalls: [String]
     var blockers: [ChromeMV3ServiceWorkerJSExecutionStartBlocker]
     var lastErrorMessage: String?
+    var exceptionDetails: ChromeMV3ServiceWorkerJSExceptionDetails?
     var diagnostics: [String]
 }
 
@@ -1619,6 +1663,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             blockedUnsupportedCalls: [],
             blockers: [],
             lastErrorMessage: nil,
+            exceptionDetails: nil,
             diagnostics: [
                 "The local experimental service-worker JavaScript harness has not started.",
             ]
@@ -1752,6 +1797,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             }
             context.exception = nil
             self.context = context
+            installWorkerGlobalConfiguration(in: context, sourceURL: sourceURL)
+            installCryptoHost(in: context)
             installImportScriptsHost(in: context)
             installDynamicImportRewriteHost(in: context)
             _ = context.evaluateScript(
@@ -1772,19 +1819,20 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             }
             context.exception = nil
             importEvaluationStack = [sourceURL]
-            let message = evaluateScriptInContext(
+            let exceptionDetails = evaluateScriptInContext(
                 source,
                 sourceURL: sourceURL,
                 context: context
             )
             importEvaluationStack.removeAll()
             syncImportRecordsIntoResourceLoad()
-            if let message {
+            if let exceptionDetails {
                 self.context = nil
                 return finishStart(
                     status: .failed,
                     blockers: [.scriptEvaluationFailed],
-                    lastErrorMessage: message,
+                    lastErrorMessage: exceptionDetails.message,
+                    exceptionDetails: exceptionDetails,
                     diagnostics:
                         loaded.record.diagnostics
                             + [
@@ -2435,6 +2483,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         status: ChromeMV3ServiceWorkerJSExecutionStartStatus,
         blockers: [ChromeMV3ServiceWorkerJSExecutionStartBlocker] = [],
         lastErrorMessage: String? = nil,
+        exceptionDetails: ChromeMV3ServiceWorkerJSExceptionDetails? = nil,
         diagnostics: [String]
     ) -> ChromeMV3ServiceWorkerJSExecutionStartRecord {
         startRecord = ChromeMV3ServiceWorkerJSExecutionStartRecord(
@@ -2453,7 +2502,11 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             blockedUnsupportedCalls: blockedUnsupportedCalls,
             blockers: uniqueSortedServiceWorkerJS(blockers),
             lastErrorMessage: lastErrorMessage,
-            diagnostics: uniqueSortedServiceWorkerJS(diagnostics)
+            exceptionDetails: exceptionDetails,
+            diagnostics:
+                uniqueSortedServiceWorkerJS(
+                    diagnostics + (exceptionDetails?.diagnostics ?? [])
+                )
         )
         return startRecord
     }
@@ -2524,6 +2577,120 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
     }
 
     #if canImport(JavaScriptCore)
+        private func installWorkerGlobalConfiguration(
+            in context: JSContext,
+            sourceURL: URL
+        ) {
+            let workerRelativePath =
+                relativePathInGeneratedBundle(sourceURL)
+                ?? resourceLoadRecord?.serviceWorkerRelativePath
+                ?? sourceURL.lastPathComponent
+            let origin = "chrome-extension://\(request.extensionID)"
+            context.setObject(
+                [
+                    "extensionID": request.extensionID,
+                    "extensionOrigin": origin,
+                    "locationHref": "\(origin)/\(workerRelativePath)",
+                    "locationPathname": "/\(workerRelativePath)",
+                    "manifest": workerManifestSnapshotServiceWorkerJS(
+                        request.manifest
+                    ),
+                    "userAgent":
+                        "Sumi local experimental MV3 service-worker harness",
+                ] as NSDictionary,
+                forKeyedSubscript:
+                    "__sumiWorkerGlobalConfig" as NSString
+            )
+        }
+
+        private func workerManifestSnapshotServiceWorkerJS(
+            _ manifest: ChromeMV3Manifest
+        ) -> NSDictionary {
+            var object: [String: Any] = [
+                "manifest_version": manifest.manifestVersion,
+                "name": manifest.name,
+                "version": manifest.version,
+                "permissions": manifest.permissions,
+                "optional_permissions": manifest.optionalPermissions,
+                "host_permissions": manifest.hostPermissions,
+                "optional_host_permissions": manifest.optionalHostPermissions,
+            ]
+            if let description = manifest.description {
+                object["description"] = description
+            }
+            if let background = manifest.background {
+                var backgroundObject: [String: String] = [:]
+                if let serviceWorker = background.serviceWorker {
+                    backgroundObject["service_worker"] = serviceWorker
+                }
+                if let type = background.type {
+                    backgroundObject["type"] = type
+                }
+                object["background"] = backgroundObject
+            }
+            if let action = manifest.action {
+                var actionObject: [String: Any] = [:]
+                if let defaultPopup = action.defaultPopup {
+                    actionObject["default_popup"] = defaultPopup
+                }
+                if let defaultTitle = action.defaultTitle {
+                    actionObject["default_title"] = defaultTitle
+                }
+                if action.defaultIconPaths.isEmpty == false {
+                    actionObject["default_icon"] = action.defaultIconPaths
+                }
+                object["action"] = actionObject
+            }
+            if let optionsPage = manifest.optionsPage {
+                object["options_page"] = optionsPage
+            }
+            if let optionsUI = manifest.optionsUI {
+                var optionsObject: [String: Any] = [:]
+                if let page = optionsUI.page {
+                    optionsObject["page"] = page
+                }
+                if let openInTab = optionsUI.openInTab {
+                    optionsObject["open_in_tab"] = openInTab
+                }
+                object["options_ui"] = optionsObject
+            }
+            return object as NSDictionary
+        }
+
+        private func installCryptoHost(in context: JSContext) {
+            let host: @convention(block) (NSNumber) -> NSArray = { countValue in
+                let count = max(0, min(65_536, countValue.intValue))
+                guard count > 0 else { return [] }
+                var bytes = [UInt8](repeating: 0, count: count)
+                #if canImport(Security)
+                    let status = bytes.withUnsafeMutableBytes { buffer in
+                        SecRandomCopyBytes(
+                            kSecRandomDefault,
+                            count,
+                            buffer.baseAddress!
+                        )
+                    }
+                    if status != errSecSuccess {
+                        var generator = SystemRandomNumberGenerator()
+                        for index in bytes.indices {
+                            bytes[index] = UInt8.random(in: 0...255, using: &generator)
+                        }
+                    }
+                #else
+                    var generator = SystemRandomNumberGenerator()
+                    for index in bytes.indices {
+                        bytes[index] = UInt8.random(in: 0...255, using: &generator)
+                    }
+                #endif
+                return bytes.map { NSNumber(value: $0) } as NSArray
+            }
+            context.setObject(
+                host,
+                forKeyedSubscript:
+                    "__sumiCryptoGetRandomValuesHost" as NSString
+            )
+        }
+
         private func installImportScriptsHost(in context: JSContext) {
             let host: @convention(block) (JSValue) -> NSDictionary = {
                 [weak self] arguments in
@@ -2584,7 +2751,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             _ source: String,
             sourceURL: URL,
             context: JSContext
-        ) -> String? {
+        ) -> ChromeMV3ServiceWorkerJSExceptionDetails? {
             let sourceName =
                 relativePathInGeneratedBundle(sourceURL)
                 ?? sourceURL.lastPathComponent
@@ -2597,7 +2764,14 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             )
             context.exception = nil
             _ = context.evaluateScript(source, withSourceURL: sourceURL)
-            let message = context.exception?.toString()
+            let exceptionDetails = context.exception.map {
+                exceptionDetailsServiceWorkerJS(
+                    exception: $0,
+                    source: source,
+                    sourceURL: sourceURL,
+                    sourceName: sourceName
+                )
+            }
             if let previous {
                 context.setObject(
                     previous,
@@ -2609,7 +2783,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                     forKeyedSubscript: "__sumiCurrentScript" as NSString
                 )
             }
-            return message
+            return exceptionDetails
         }
 
         private func evaluateImportScripts(
@@ -2655,17 +2829,17 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                     return importFailureResponse(loaded.record)
                 }
                 importEvaluationStack.append(sourceURL)
-                let message = evaluateScriptInContext(
+                let exceptionDetails = evaluateScriptInContext(
                     source,
                     sourceURL: sourceURL,
                     context: context
                 )
                 _ = importEvaluationStack.popLast()
-                if let message {
+                if let exceptionDetails {
                     let failed = appendImportScriptBlocker(
                         .scriptEvaluationFailed,
                         message:
-                            "Imported script evaluation failed: \(message)"
+                            "Imported script evaluation failed: \(exceptionDetails.message)"
                     )
                     return importFailureResponse(failed)
                 }
@@ -2707,7 +2881,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 return dynamicImportFailureResponse(loaded.record)
             }
             importEvaluationStack.append(sourceURL)
-            let message = evaluateScriptInContext(
+            let exceptionDetails = evaluateScriptInContext(
                 source,
                 sourceURL: sourceURL,
                 context: context
@@ -2715,7 +2889,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             _ = importEvaluationStack.popLast()
             var record = loaded.record
             record.rewritten = true
-            if let message {
+            if let exceptionDetails {
                 record.evaluated = false
                 record.blockers =
                     uniqueSortedServiceWorkerJS(
@@ -2725,7 +2899,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                     uniqueSortedServiceWorkerJS(
                         record.diagnostics
                             + [
-                                "Rewritten dynamic import dependency evaluation failed: \(message)",
+                                "Rewritten dynamic import dependency evaluation failed: \(exceptionDetails.message)",
                             ]
                     )
                 recordDynamicImport(record)
@@ -2803,7 +2977,10 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                     message: authorization.message
                 )
             }
-            let normalized = normalizeImportScriptsPath(requestPath)
+            let normalized = normalizeImportScriptsPath(
+                requestPath,
+                extensionID: request.extensionID
+            )
             if let blocker = normalized.blocker {
                 return failedImport(
                     requestPath: requestPath,
@@ -2823,9 +3000,17 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                         "importScripts path could not be normalized safely."
                 )
             }
-            let parentDirectory = parentURL?
-                .deletingLastPathComponent()
-                .standardizedFileURL ?? root
+            let parentDirectory =
+                isSameExtensionURLServiceWorkerJS(
+                    requestPath,
+                    extensionID: request.extensionID
+                )
+                    ? root
+                    : (
+                        parentURL?
+                            .deletingLastPathComponent()
+                            .standardizedFileURL ?? root
+                    )
             let candidate = parentDirectory
                 .appendingPathComponent(normalizedPath)
                 .standardizedFileURL
@@ -2952,7 +3137,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                         "Static module import inside imported classic script is unsupported."
                 )
             }
-            if containsServiceWorkerJSRegex("\\bimport\\s*\\(", in: source) {
+            if dynamicImportArgumentSourcesServiceWorkerJS(in: source)
+                .isEmpty == false
+            {
                 let capability =
                     ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe
                     .evaluate()
@@ -3019,8 +3206,16 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             }
             let authorization =
                 boundedImportScriptsAuthorizationServiceWorkerJS(in: source)
-            let matching = authorization.candidateGroups.filter {
-                $0.candidates.contains(requestPath)
+            let matching = authorization.candidateGroups.filter { group in
+                group.candidates.contains { candidate in
+                    importScriptsRequest(
+                        requestPath,
+                        matchesCandidate: candidate,
+                        parentURL: parentURL,
+                        root: root,
+                        extensionID: request.extensionID
+                    )
+                }
             }
             guard matching.isEmpty == false else {
                 return (
@@ -3038,7 +3233,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                         $0,
                         parentURL: parentURL,
                         record: record,
-                        root: root
+                        root: root,
+                        extensionID: request.extensionID
                     ) == false
                 }
                 if group.requiresAllCandidatesContained,
@@ -3058,6 +3254,53 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 .computedImportScriptsCandidateSetUnbounded,
                 "importScripts dependency authorization did not find a bounded generated-bundle candidate."
             )
+        }
+
+        private func importScriptsRequest(
+            _ requestPath: String,
+            matchesCandidate candidate: String,
+            parentURL: URL,
+            root: URL,
+            extensionID: String
+        ) -> Bool {
+            let normalizedRequest = normalizeImportScriptsPath(
+                requestPath,
+                extensionID: extensionID
+            )
+            let normalizedCandidate = normalizeImportScriptsPath(
+                candidate,
+                extensionID: extensionID
+            )
+            guard normalizedRequest.blocker == nil,
+                  normalizedCandidate.blocker == nil,
+                  let requestRelative = normalizedRequest.path,
+                  let candidateRelative = normalizedCandidate.path
+            else {
+                return requestPath == candidate
+            }
+            let parentDirectory = parentURL.deletingLastPathComponent()
+                .standardizedFileURL
+            let requestBase =
+                isSameExtensionURLServiceWorkerJS(
+                    requestPath,
+                    extensionID: extensionID
+                )
+                    ? root
+                    : parentDirectory
+            let candidateBase =
+                isSameExtensionURLServiceWorkerJS(
+                    candidate,
+                    extensionID: extensionID
+                )
+                    ? root
+                    : parentDirectory
+            let requestURL = requestBase
+                .appendingPathComponent(requestRelative)
+                .standardizedFileURL
+            let candidateURL = candidateBase
+                .appendingPathComponent(candidateRelative)
+                .standardizedFileURL
+            return requestURL.path == candidateURL.path
         }
 
         private func resolveDynamicImportModule(
@@ -3094,7 +3337,10 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                         "Generated bundle root is missing for dynamic import rewrite resolution."
                 )
             }
-            let normalized = normalizeDynamicImportPath(requestPath)
+            let normalized = normalizeDynamicImportPath(
+                requestPath,
+                extensionID: request.extensionID
+            )
             if let blocker = normalized.blocker {
                 return failedDynamicImport(
                     requestPath: requestPath,
@@ -3112,9 +3358,17 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                         "Dynamic import rewrite path could not be normalized safely."
                 )
             }
-            let parentDirectory = parentURL?
-                .deletingLastPathComponent()
-                .standardizedFileURL ?? root
+            let parentDirectory =
+                isSameExtensionURLServiceWorkerJS(
+                    requestPath,
+                    extensionID: request.extensionID
+                )
+                    ? root
+                    : (
+                        parentURL?
+                            .deletingLastPathComponent()
+                            .standardizedFileURL ?? root
+                    )
             let candidate = parentDirectory
                 .appendingPathComponent(normalizedPath)
                 .standardizedFileURL
@@ -3595,11 +3849,18 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         [ChromeMV3ServiceWorkerSyntheticListenerEvent] = [
             .runtimeOnMessage,
             .runtimeOnConnect,
+            .runtimeOnInstalled,
+            .runtimeOnMessageExternal,
+            .runtimeOnStartup,
+            .runtimeOnUpdateAvailable,
             .storageOnChanged,
             .permissionsOnAdded,
             .permissionsOnRemoved,
             .alarmsOnAlarm,
+            .commandsOnCommand,
             .contextMenusOnClicked,
+            .tabsOnRemoved,
+            .tabsOnUpdated,
             .webNavigationOnBeforeNavigate,
             .webNavigationOnCommitted,
             .webNavigationOnCompleted,
@@ -3607,6 +3868,14 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             .webNavigationOnErrorOccurred,
             .webNavigationOnHistoryStateUpdated,
             .webNavigationOnReferenceFragmentUpdated,
+            .webRequestOnAuthRequired,
+            .webRequestOnBeforeRequest,
+            .webRequestOnBeforeSendHeaders,
+            .webRequestOnCompleted,
+            .webRequestOnErrorOccurred,
+            .webRequestOnHeadersReceived,
+            .webRequestOnResponseStarted,
+            .webRequestOnSendHeaders,
             .nativePortOnMessage,
             .nativePortOnDisconnect,
         ]
@@ -3621,6 +3890,312 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       const pendingTimeoutIDs = [];
       let registrationOrder = 0;
       let nextTimerID = 1;
+      const workerConfig = globalThis.__sumiWorkerGlobalConfig || {};
+      const extensionID = String(workerConfig.extensionID || '');
+      const extensionOrigin = String(workerConfig.extensionOrigin || `chrome-extension://${extensionID || 'extension'}`);
+      const manifestSnapshot = workerConfig.manifest || { manifest_version: 3 };
+      const defineWorkerGlobal = (name, value) => {
+        if (typeof globalThis[name] !== 'undefined') return;
+        Object.defineProperty(globalThis, name, {
+          value,
+          enumerable: true,
+          configurable: false,
+          writable: false
+        });
+      };
+      globalThis.self = globalThis;
+      if (typeof globalThis.DOMException !== 'function') {
+        const domExceptionCodes = {
+          IndexSizeError: 1,
+          DOMStringSizeError: 2,
+          HierarchyRequestError: 3,
+          WrongDocumentError: 4,
+          InvalidCharacterError: 5,
+          NoDataAllowedError: 6,
+          NoModificationAllowedError: 7,
+          NotFoundError: 8,
+          NotSupportedError: 9,
+          InUseAttributeError: 10,
+          InvalidStateError: 11,
+          SyntaxError: 12,
+          InvalidModificationError: 13,
+          NamespaceError: 14,
+          InvalidAccessError: 15,
+          ValidationError: 16,
+          TypeMismatchError: 17,
+          SecurityError: 18,
+          NetworkError: 19,
+          AbortError: 20,
+          URLMismatchError: 21,
+          QuotaExceededError: 22,
+          TimeoutError: 23,
+          InvalidNodeTypeError: 24,
+          DataCloneError: 25
+        };
+        class SumiDOMException extends Error {
+          constructor(message = '', name = 'Error') {
+            super(String(message));
+            this.name = String(name);
+            this.code = domExceptionCodes[this.name] || 0;
+          }
+        }
+        for (const [name, code] of Object.entries(domExceptionCodes)) {
+          const constant = name
+            .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+            .toUpperCase()
+            .replace(/ERROR$/, 'ERR');
+          Object.defineProperty(SumiDOMException, constant, { value: code });
+          Object.defineProperty(SumiDOMException.prototype, constant, { value: code });
+        }
+        defineWorkerGlobal('DOMException', SumiDOMException);
+      }
+      defineWorkerGlobal('navigator', Object.freeze({
+        appCodeName: 'Mozilla',
+        appName: 'Netscape',
+        appVersion: '5.0',
+        hardwareConcurrency: 1,
+        onLine: true,
+        platform: 'MacIntel',
+        product: 'Gecko',
+        userAgent: String(workerConfig.userAgent || 'Sumi local experimental MV3 service-worker harness')
+      }));
+      const locationHref = String(workerConfig.locationHref || `${extensionOrigin}/background.js`);
+      const locationPathname = String(workerConfig.locationPathname || '/background.js');
+      defineWorkerGlobal('location', Object.freeze({
+        href: locationHref,
+        origin: extensionOrigin,
+        protocol: 'chrome-extension:',
+        host: extensionID,
+        hostname: extensionID,
+        port: '',
+        pathname: locationPathname,
+        search: '',
+        hash: '',
+        toString() { return this.href; }
+      }));
+      const base64Alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+      if (typeof globalThis.btoa !== 'function') {
+        defineWorkerGlobal('btoa', (input) => {
+          const text = String(input);
+          let output = '';
+          for (let block = 0, charCode, index = 0, map = base64Alphabet;
+               text.charAt(index | 0) || (map = '=', index % 1);
+               output += map.charAt(63 & block >> 8 - index % 1 * 8)) {
+            charCode = text.charCodeAt(index += 3 / 4);
+            if (charCode > 0xff) throw new DOMException('The string contains characters outside Latin1.', 'InvalidCharacterError');
+            block = block << 8 | charCode;
+          }
+          return output;
+        });
+      }
+      if (typeof globalThis.atob !== 'function') {
+        defineWorkerGlobal('atob', (input) => {
+          const text = String(input).replace(/=+$/, '');
+          if (text.length % 4 === 1 || /[^+/0-9A-Za-z]/.test(text)) {
+            throw new DOMException('The string is not correctly encoded.', 'InvalidCharacterError');
+          }
+          let output = '';
+          for (let bc = 0, bs = 0, buffer, index = 0;
+               buffer = text.charAt(index++);
+               ~buffer && (bs = bc % 4 ? bs * 64 + buffer : buffer,
+                 bc++ % 4) ? output += String.fromCharCode(255 & bs >> (-2 * bc & 6)) : 0) {
+            buffer = base64Alphabet.indexOf(buffer);
+          }
+          return output;
+        });
+      }
+      if (typeof globalThis.TextEncoder !== 'function') {
+        defineWorkerGlobal('TextEncoder', class TextEncoder {
+          get encoding() { return 'utf-8'; }
+          encode(input = '') {
+            const bytes = [];
+            for (const char of String(input)) {
+              const point = char.codePointAt(0);
+              if (point <= 0x7f) bytes.push(point);
+              else if (point <= 0x7ff) bytes.push(0xc0 | point >> 6, 0x80 | point & 0x3f);
+              else if (point <= 0xffff) bytes.push(0xe0 | point >> 12, 0x80 | point >> 6 & 0x3f, 0x80 | point & 0x3f);
+              else bytes.push(0xf0 | point >> 18, 0x80 | point >> 12 & 0x3f, 0x80 | point >> 6 & 0x3f, 0x80 | point & 0x3f);
+            }
+            return new Uint8Array(bytes);
+          }
+        });
+      }
+      if (typeof globalThis.TextDecoder !== 'function') {
+        defineWorkerGlobal('TextDecoder', class TextDecoder {
+          constructor(label = 'utf-8') {
+            if (!/^utf-?8$/i.test(String(label))) {
+              throw new RangeError('The local harness TextDecoder supports utf-8 only.');
+            }
+            this.encoding = 'utf-8';
+            this.fatal = false;
+            this.ignoreBOM = false;
+          }
+          decode(input = new Uint8Array()) {
+            const bytes = input instanceof Uint8Array
+              ? input
+              : input instanceof ArrayBuffer
+                ? new Uint8Array(input)
+                : new Uint8Array(input.buffer, input.byteOffset || 0, input.byteLength);
+            let output = '';
+            for (let index = 0; index < bytes.length;) {
+              const first = bytes[index++];
+              if (first < 0x80) {
+                output += String.fromCodePoint(first);
+              } else if (first >= 0xc0 && first < 0xe0 && index < bytes.length) {
+                output += String.fromCodePoint(((first & 0x1f) << 6) | (bytes[index++] & 0x3f));
+              } else if (first >= 0xe0 && first < 0xf0 && index + 1 < bytes.length) {
+                output += String.fromCodePoint(((first & 0x0f) << 12) | ((bytes[index++] & 0x3f) << 6) | (bytes[index++] & 0x3f));
+              } else if (first >= 0xf0 && index + 2 < bytes.length) {
+                output += String.fromCodePoint(((first & 0x07) << 18) | ((bytes[index++] & 0x3f) << 12) | ((bytes[index++] & 0x3f) << 6) | (bytes[index++] & 0x3f));
+              } else {
+                output += '\ufffd';
+              }
+            }
+            return output;
+          }
+        });
+      }
+      const decodeParam = (value) => decodeURIComponent(String(value).replace(/\+/g, ' '));
+      const encodeParam = (value) => encodeURIComponent(String(value)).replace(/%20/g, '+');
+      if (typeof globalThis.URLSearchParams !== 'function') {
+        defineWorkerGlobal('URLSearchParams', class URLSearchParams {
+          constructor(init = '') {
+            this._pairs = [];
+            if (typeof init === 'string') {
+              const text = init.startsWith('?') ? init.slice(1) : init;
+              if (text) {
+                for (const pair of text.split('&')) {
+                  if (!pair) continue;
+                  const index = pair.indexOf('=');
+                  this.append(
+                    decodeParam(index >= 0 ? pair.slice(0, index) : pair),
+                    decodeParam(index >= 0 ? pair.slice(index + 1) : '')
+                  );
+                }
+              }
+            } else if (Array.isArray(init)) {
+              for (const pair of init) this.append(pair[0], pair[1]);
+            } else if (init && typeof init === 'object') {
+              for (const key of Object.keys(init)) this.append(key, init[key]);
+            }
+          }
+          append(name, value) { this._pairs.push([String(name), String(value)]); }
+          delete(name) { this._pairs = this._pairs.filter((pair) => pair[0] !== String(name)); }
+          get(name) {
+            const pair = this._pairs.find((item) => item[0] === String(name));
+            return pair ? pair[1] : null;
+          }
+          has(name) { return this._pairs.some((pair) => pair[0] === String(name)); }
+          set(name, value) {
+            const key = String(name);
+            this.delete(key);
+            this.append(key, value);
+          }
+          entries() { return this._pairs[Symbol.iterator](); }
+          keys() { return this._pairs.map((pair) => pair[0])[Symbol.iterator](); }
+          values() { return this._pairs.map((pair) => pair[1])[Symbol.iterator](); }
+          forEach(callback, thisArg) {
+            for (const [key, value] of this._pairs) callback.call(thisArg, value, key, this);
+          }
+          toString() {
+            return this._pairs.map(([key, value]) => `${encodeParam(key)}=${encodeParam(value)}`).join('&');
+          }
+          [Symbol.iterator]() { return this.entries(); }
+        });
+      }
+      if (typeof globalThis.URL !== 'function') {
+        defineWorkerGlobal('URL', class URL {
+          constructor(input, base) {
+            const resolved = URL._resolve(String(input), base === undefined ? undefined : String(base));
+            Object.defineProperty(this, '_href', { value: resolved.href, writable: true });
+            this.protocol = resolved.protocol;
+            this.host = resolved.host;
+            this.hostname = resolved.hostname;
+            this.port = resolved.port;
+            this.pathname = resolved.pathname;
+            this.search = resolved.search;
+            this.hash = resolved.hash;
+            this.origin = resolved.origin;
+            this.searchParams = new URLSearchParams(this.search);
+          }
+          get href() { return this._href; }
+          set href(value) {
+            const next = new URL(value);
+            Object.assign(this, next);
+            this._href = next.href;
+          }
+          toString() { return this.href; }
+          toJSON() { return this.href; }
+          static _resolve(input, base) {
+            let text = input.trim();
+            if (!/^[A-Za-z][A-Za-z0-9+.-]*:/.test(text)) {
+              const baseURL = base ? new URL(base) : null;
+              if (!baseURL) throw new TypeError('Invalid URL');
+              if (text.startsWith('/')) text = `${baseURL.origin}${text}`;
+              else {
+                const directory = baseURL.pathname.replace(/[^/]*$/, '');
+                text = `${baseURL.origin}${directory}${text}`;
+              }
+            }
+            const match = text.match(/^([A-Za-z][A-Za-z0-9+.-]*:)(?:\/\/([^/?#]*))?([^?#]*)(\?[^#]*)?(#.*)?$/);
+            if (!match) throw new TypeError('Invalid URL');
+            const protocol = match[1];
+            const authority = match[2] || '';
+            const path = match[3] || '/';
+            const search = match[4] || '';
+            const hash = match[5] || '';
+            const hostParts = authority.split(':');
+            const hostname = hostParts[0] || '';
+            const port = hostParts.length > 1 ? hostParts.slice(1).join(':') : '';
+            const origin = authority ? `${protocol}//${authority}` : 'null';
+            return {
+              href: `${protocol}//${authority}${path || '/'}${search}${hash}`,
+              protocol,
+              host: authority,
+              hostname,
+              port,
+              pathname: path || '/',
+              search,
+              hash,
+              origin
+            };
+          }
+        });
+      }
+      if (typeof globalThis.crypto !== 'object' || globalThis.crypto === null) {
+        defineWorkerGlobal('crypto', Object.freeze({
+          getRandomValues(array) {
+            const valid =
+              array instanceof Int8Array || array instanceof Uint8Array
+              || array instanceof Uint8ClampedArray || array instanceof Int16Array
+              || array instanceof Uint16Array || array instanceof Int32Array
+              || array instanceof Uint32Array
+              || (typeof BigInt64Array !== 'undefined' && array instanceof BigInt64Array)
+              || (typeof BigUint64Array !== 'undefined' && array instanceof BigUint64Array);
+            if (!valid) throw new TypeError('Expected an integer typed array.');
+            if (array.byteLength > 65536) {
+              throw new DOMException('getRandomValues byte length exceeds 65536.', 'QuotaExceededError');
+            }
+            if (typeof globalThis.__sumiCryptoGetRandomValuesHost !== 'function') {
+              throw new Error('crypto.getRandomValues host is unavailable.');
+            }
+            const bytes = globalThis.__sumiCryptoGetRandomValuesHost(array.byteLength);
+            const view = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
+            for (let index = 0; index < view.length; index += 1) {
+              view[index] = Number(bytes[index]) & 0xff;
+            }
+            return array;
+          }
+        }));
+      }
+      if (typeof globalThis.queueMicrotask !== 'function') {
+        defineWorkerGlobal('queueMicrotask', (callback) => {
+          if (typeof callback !== 'function') {
+            throw new TypeError('queueMicrotask callback must be a function.');
+          }
+          Promise.resolve().then(callback);
+        });
+      }
 
       const clone = (value) => {
         if (value === undefined) return null;
@@ -3686,6 +4261,23 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         };
       };
       const proxiedNamespace = (known, path) => new Proxy(known, {
+        has(target, property) {
+          return Object.prototype.hasOwnProperty.call(target, property);
+        },
+        ownKeys(target) {
+          return Reflect.ownKeys(target);
+        },
+        getOwnPropertyDescriptor(target, property) {
+          if (!Object.prototype.hasOwnProperty.call(target, property)) {
+            return undefined;
+          }
+          return Object.getOwnPropertyDescriptor(target, property) || {
+            configurable: true,
+            enumerable: true,
+            value: target[property],
+            writable: false
+          };
+        },
         get(target, property) {
           if (Object.prototype.hasOwnProperty.call(target, property)) {
             return target[property];
@@ -3758,8 +4350,20 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         return portSnapshot(state);
       };
       const runtime = proxiedNamespace({
+        id: extensionID,
+        getURL(path = '') {
+          const value = String(path || '').replace(/^\/+/, '');
+          return value ? `${extensionOrigin}/${value}` : `${extensionOrigin}/`;
+        },
+        getManifest() {
+          return clone(manifestSnapshot);
+        },
         onMessage: event('runtimeOnMessage'),
-        onConnect: event('runtimeOnConnect')
+        onConnect: event('runtimeOnConnect'),
+        onInstalled: event('runtimeOnInstalled'),
+        onMessageExternal: event('runtimeOnMessageExternal'),
+        onStartup: event('runtimeOnStartup'),
+        onUpdateAvailable: event('runtimeOnUpdateAvailable')
       }, 'chrome.runtime');
       const storage = proxiedNamespace({
         onChanged: event('storageOnChanged')
@@ -3774,6 +4378,13 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       const contextMenus = proxiedNamespace({
         onClicked: event('contextMenusOnClicked')
       }, 'chrome.contextMenus');
+      const tabs = proxiedNamespace({
+        onRemoved: event('tabsOnRemoved'),
+        onUpdated: event('tabsOnUpdated')
+      }, 'chrome.tabs');
+      const commands = proxiedNamespace({
+        onCommand: event('commandsOnCommand')
+      }, 'chrome.commands');
       const webNavigation = proxiedNamespace({
         onBeforeNavigate: event('webNavigationOnBeforeNavigate'),
         onCommitted: event('webNavigationOnCommitted'),
@@ -3783,16 +4394,27 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         onHistoryStateUpdated: event('webNavigationOnHistoryStateUpdated'),
         onReferenceFragmentUpdated: event('webNavigationOnReferenceFragmentUpdated')
       }, 'chrome.webNavigation');
+      const webRequest = proxiedNamespace({
+        onAuthRequired: event('webRequestOnAuthRequired'),
+        onBeforeRequest: event('webRequestOnBeforeRequest'),
+        onBeforeSendHeaders: event('webRequestOnBeforeSendHeaders'),
+        onCompleted: event('webRequestOnCompleted'),
+        onErrorOccurred: event('webRequestOnErrorOccurred'),
+        onHeadersReceived: event('webRequestOnHeadersReceived'),
+        onResponseStarted: event('webRequestOnResponseStarted'),
+        onSendHeaders: event('webRequestOnSendHeaders')
+      }, 'chrome.webRequest');
       globalThis.chrome = proxiedNamespace({
         runtime,
         storage,
         permissions,
         alarms,
+        commands,
         contextMenus,
-        webNavigation
+        tabs,
+        webNavigation,
+        webRequest
       }, 'chrome');
-      globalThis.browser = globalThis.chrome;
-      globalThis.self = globalThis;
       globalThis.importScripts = function (...urls) {
         if (typeof globalThis.__sumiImportScriptsHost !== 'function') {
           noteBlocked('importScripts.hostMissing');
@@ -4315,19 +4937,329 @@ private func containsServiceWorkerJSRegex(
     return expression.firstMatch(in: source, range: range) != nil
 }
 
+#if canImport(JavaScriptCore)
+    private func exceptionDetailsServiceWorkerJS(
+        exception: JSValue,
+        source: String,
+        sourceURL: URL,
+        sourceName: String
+    ) -> ChromeMV3ServiceWorkerJSExceptionDetails {
+        let message = exception.toString() ?? "JavaScript exception"
+        let line = exceptionIntPropertyServiceWorkerJS(exception, "line")
+        let column = exceptionIntPropertyServiceWorkerJS(exception, "column")
+        let sourcePath =
+            exception.objectForKeyedSubscript("sourceURL")?.toString()
+            ?? sourceURL.path
+        let stack = exception.objectForKeyedSubscript("stack")?.toString()
+        let sourceLine = line.flatMap {
+            sourceLineServiceWorkerJS(source, line: $0)
+        }
+        let inference = exceptionInferenceServiceWorkerJS(
+            message: message,
+            sourceLine: sourceLine,
+            stack: stack
+        )
+        var diagnostics = [
+            "JavaScriptCore exception: \(message)",
+            "Exception source: \(sourceName)"
+                + (line.map { ":\($0)" } ?? "")
+                + (column.map { ":\($0)" } ?? "") + ".",
+            "Exception classification: \(inference.classification.rawValue).",
+        ]
+        if let missing = inference.missingGlobal {
+            diagnostics.append("Inferred missing global: \(missing).")
+        }
+        if let missing = inference.missingProperty {
+            diagnostics.append("Inferred missing property: \(missing).")
+        }
+        if let sourceLine {
+            diagnostics.append(
+                "Exception source line preview: \(previewServiceWorkerJS(sourceLine))."
+            )
+        }
+        if let stack, stack.isEmpty == false {
+            diagnostics.append(
+                "Exception stack captured from JavaScriptCore."
+            )
+        }
+        return ChromeMV3ServiceWorkerJSExceptionDetails(
+            message: message,
+            sourcePath: sourcePath,
+            line: line,
+            column: column,
+            stack: stack,
+            inferredMissingGlobal: inference.missingGlobal,
+            inferredMissingProperty: inference.missingProperty,
+            classification: inference.classification,
+            diagnostics: uniqueSortedServiceWorkerJS(diagnostics)
+        )
+    }
+
+    private func exceptionIntPropertyServiceWorkerJS(
+        _ exception: JSValue,
+        _ property: String
+    ) -> Int? {
+        guard let value = exception.objectForKeyedSubscript(property),
+              value.isUndefined == false,
+              value.isNull == false
+        else { return nil }
+        let number = Int(value.toInt32())
+        return number > 0 ? number : nil
+    }
+#endif
+
+private func exceptionInferenceServiceWorkerJS(
+    message: String,
+    sourceLine: String?,
+    stack: String?
+) -> (
+    classification: ChromeMV3ServiceWorkerJSExceptionClassification,
+    missingGlobal: String?,
+    missingProperty: String?
+) {
+    let standardWorkerGlobals: Set<String> = [
+        "DOMException",
+        "URL",
+        "URLSearchParams",
+        "TextDecoder",
+        "TextEncoder",
+        "atob",
+        "btoa",
+        "crypto",
+        "location",
+        "navigator",
+        "queueMicrotask",
+        "self",
+    ]
+    let missingVariable = firstRegexCaptureServiceWorkerJS(
+        #"ReferenceError: Can't find variable: ([A-Za-z_$][\w$]*)"#,
+        in: message
+    )
+    if let missingVariable {
+        if standardWorkerGlobals.contains(missingVariable) {
+            return (.missingStandardWorkerGlobal, missingVariable, nil)
+        }
+        if missingVariable == "chrome" || missingVariable == "browser" {
+            return (.missingChromeAPIShim, missingVariable, nil)
+        }
+        if ["fetch", "XMLHttpRequest", "WebSocket", "EventSource"]
+            .contains(missingVariable)
+        {
+            return (.missingWebAPI, missingVariable, nil)
+        }
+        if ["document", "localStorage", "sessionStorage", "window"]
+            .contains(missingVariable)
+        {
+            return (.missingWebAPI, missingVariable, nil)
+        }
+        return (.unknownVendorCodeAssumption, missingVariable, nil)
+    }
+    if message.localizedCaseInsensitiveContains("Subtle crypto")
+        || message.localizedCaseInsensitiveContains("SubtleCrypto")
+        || message.localizedCaseInsensitiveContains("crypto.subtle")
+    {
+        return (.missingWebAPI, "SubtleCrypto", "crypto.subtle")
+    }
+    let property = firstRegexCaptureServiceWorkerJS(
+        #"\(evaluating '([^']+)'\)"#,
+        in: message
+    )
+    if message.contains("b.prototype"),
+       (sourceLine?.contains("DOMException") == true
+        || stack?.contains("DOMException") == true)
+    {
+        return (.missingStandardWorkerGlobal, "DOMException", "prototype")
+    }
+    if let property, property.contains("chrome.")
+        || property.contains("browser.")
+    {
+        return (.missingChromeAPIShim, nil, property)
+    }
+    if message.localizedCaseInsensitiveContains("import")
+        || message.localizedCaseInsensitiveContains("module")
+    {
+        return (.unsupportedModuleOrImportShape, nil, property)
+    }
+    if message.localizedCaseInsensitiveContains("setTimeout")
+        || message.localizedCaseInsensitiveContains("setInterval")
+    {
+        return (.unsupportedAsyncOrTimerBehavior, nil, property)
+    }
+    if let property {
+        return (.bundlerRuntimeAssumption, nil, property)
+    }
+    return (.unknownVendorCodeAssumption, nil, nil)
+}
+
+private func firstRegexCaptureServiceWorkerJS(
+    _ pattern: String,
+    in source: String
+) -> String? {
+    guard let regex = try? NSRegularExpression(pattern: pattern)
+    else { return nil }
+    let range = NSRange(source.startIndex..., in: source)
+    guard let match = regex.firstMatch(in: source, range: range),
+          match.numberOfRanges > 1,
+          let captureRange = Range(match.range(at: 1), in: source)
+    else { return nil }
+    return String(source[captureRange])
+}
+
+private func sourceLineServiceWorkerJS(
+    _ source: String,
+    line: Int
+) -> String? {
+    guard line > 0 else { return nil }
+    let lines = source.split(
+        separator: "\n",
+        omittingEmptySubsequences: false
+    )
+    guard line <= lines.count else { return nil }
+    return String(lines[line - 1])
+}
+
+private func previewServiceWorkerJS(_ value: String) -> String {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed.count > 240 else { return trimmed }
+    return String(trimmed.prefix(240)) + "..."
+}
+
 private func rewriteDynamicImportsForHarnessServiceWorkerJS(
     _ source: String
 ) -> String {
-    guard let expression = try? NSRegularExpression(
-        pattern: #"\bimport\s*\(\s*(['"])(.*?)\1\s*\)"#
-    ) else { return source }
-    let range = NSRange(source.startIndex..., in: source)
-    return expression.stringByReplacingMatches(
-        in: source,
-        range: range,
-        withTemplate:
-            #"globalThis.__sumiDynamicImportRewrite($1$2$1)"#
-    )
+    var rewritten = source
+    for call in dynamicImportCallRangesServiceWorkerJS(in: source).reversed() {
+        let argument = String(source[call.argumentRange])
+        guard let literal = dynamicImportStringLiteralServiceWorkerJS(argument)
+        else { continue }
+        let escaped = literal
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+        rewritten.replaceSubrange(
+            call.callRange,
+            with:
+                "globalThis.__sumiDynamicImportRewrite('\(escaped)')"
+        )
+    }
+    return rewritten
+}
+
+private struct ChromeMV3ServiceWorkerJSDynamicImportCallRange {
+    var callRange: Range<String.Index>
+    var argumentRange: Range<String.Index>
+}
+
+private func dynamicImportArgumentSourcesServiceWorkerJS(
+    in source: String
+) -> [String] {
+    dynamicImportCallRangesServiceWorkerJS(in: source).map {
+        String(source[$0.argumentRange])
+    }
+}
+
+private func dynamicImportCallRangesServiceWorkerJS(
+    in source: String
+) -> [ChromeMV3ServiceWorkerJSDynamicImportCallRange] {
+    let bytes = Array(source.utf8)
+    var results: [ChromeMV3ServiceWorkerJSDynamicImportCallRange] = []
+    var index = 0
+    while index < bytes.count {
+        if bytes[index] == 34 || bytes[index] == 39 || bytes[index] == 96 {
+            index = skipQuotedServiceWorkerJS(bytes, start: index)
+            continue
+        }
+        if bytes[index] == 47,
+           let regexClose = skipRegexLiteralServiceWorkerJS(
+                bytes,
+                start: index
+           )
+        {
+            index = regexClose
+            continue
+        }
+        if bytes[index] == 47, index + 1 < bytes.count,
+           bytes[index + 1] == 47
+        {
+            index += 2
+            while index < bytes.count, bytes[index] != 10 { index += 1 }
+            continue
+        }
+        if bytes[index] == 47, index + 1 < bytes.count,
+           bytes[index + 1] == 42
+        {
+            index += 2
+            while index + 1 < bytes.count,
+                  !(bytes[index] == 42 && bytes[index + 1] == 47)
+            {
+                index += 1
+            }
+            index = min(bytes.count, index + 2)
+            continue
+        }
+        guard isIdentifierStartServiceWorkerJS(bytes[index]) else {
+            index += 1
+            continue
+        }
+        let start = index
+        index += 1
+        while index < bytes.count,
+              isIdentifierPartServiceWorkerJS(bytes[index])
+        {
+            index += 1
+        }
+        guard String(decoding: bytes[start..<index], as: UTF8.self)
+            == "import"
+        else { continue }
+        if previousSignificantByteServiceWorkerJS(bytes, before: start) == 46 {
+            continue
+        }
+        var open = index
+        while open < bytes.count, isWhitespaceServiceWorkerJS(bytes[open]) {
+            open += 1
+        }
+        guard open < bytes.count, bytes[open] == 40,
+              let close = matchingParenCloseServiceWorkerJS(bytes, open: open)
+        else { continue }
+        if followingSignificantByteServiceWorkerJS(bytes, after: close) == 123 {
+            index = close + 1
+            continue
+        }
+        guard let callStart = stringIndexServiceWorkerJS(start, in: source),
+              let argumentStart = stringIndexServiceWorkerJS(
+                open + 1,
+                in: source
+              ),
+              let argumentEnd = stringIndexServiceWorkerJS(close, in: source),
+              let callEnd = stringIndexServiceWorkerJS(close + 1, in: source)
+        else {
+            index = close + 1
+            continue
+        }
+        results.append(
+            ChromeMV3ServiceWorkerJSDynamicImportCallRange(
+                callRange: callStart..<callEnd,
+                argumentRange: argumentStart..<argumentEnd
+            )
+        )
+        index = close + 1
+    }
+    return results
+}
+
+private func dynamicImportStringLiteralServiceWorkerJS(
+    _ expression: String
+) -> String? {
+    let trimmed = expression.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let first = trimmed.first,
+          let last = trimmed.last,
+          (first == "'" || first == "\""),
+          last == first
+    else { return nil }
+    let value = String(trimmed.dropFirst().dropLast())
+    guard value.contains("\\") == false,
+          value.contains(first) == false
+    else { return nil }
+    return value
 }
 
 private func dynamicImportRecordsServiceWorkerJS(
@@ -4339,70 +5271,56 @@ private func dynamicImportRecordsServiceWorkerJS(
     capability: ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe,
     includeCapabilityBlockers: Bool
 ) -> [ChromeMV3ServiceWorkerJSDynamicImportRecord] {
-    guard let expression = try? NSRegularExpression(
-        pattern: #"\bimport\s*\(\s*(['"])(.*?)\1\s*\)"#
-    ) else { return [] }
-    let range = NSRange(source.startIndex..., in: source)
-    let matches = expression.matches(in: source, range: range)
-    var records: [ChromeMV3ServiceWorkerJSDynamicImportRecord] =
-        matches.compactMap { match in
-            guard let pathRange = Range(match.range(at: 2), in: source)
-            else { return nil }
-            return dynamicImportRecordServiceWorkerJS(
-                requestPath: String(source[pathRange]),
-                parentScriptRelativePath: parentScriptRelativePath,
-                parentURL: parentURL,
-                generatedBundleRecord: generatedBundleRecord,
-                generatedBundleRoot: generatedBundleRoot,
-                capability: capability,
-                includeCapabilityBlockers: includeCapabilityBlockers
+    var records: [ChromeMV3ServiceWorkerJSDynamicImportRecord] = []
+    for argument in dynamicImportArgumentSourcesServiceWorkerJS(in: source) {
+        if let path = dynamicImportStringLiteralServiceWorkerJS(argument) {
+            records.append(
+                dynamicImportRecordServiceWorkerJS(
+                    requestPath: path,
+                    parentScriptRelativePath: parentScriptRelativePath,
+                    parentURL: parentURL,
+                    generatedBundleRecord: generatedBundleRecord,
+                    generatedBundleRoot: generatedBundleRoot,
+                    capability: capability,
+                    includeCapabilityBlockers: includeCapabilityBlockers
+                )
+            )
+        } else {
+            records.append(
+                ChromeMV3ServiceWorkerJSDynamicImportRecord(
+                    requestPath: "<non-string-literal>",
+                    parentScriptRelativePath: parentScriptRelativePath,
+                    resolvedRelativePath: nil,
+                    resolvedPath: nil,
+                    stringLiteral: false,
+                    generatedBundlePathValidated: false,
+                    rewriteEligible: false,
+                    rewritten: false,
+                    evaluated: false,
+                    evaluationOrder: nil,
+                    sourceSHA256: nil,
+                    sourceByteCount: nil,
+                    blockers:
+                        uniqueSortedServiceWorkerJS(
+                            [.dynamicImportArgumentNonString]
+                                + (
+                                    includeCapabilityBlockers
+                                        ? capability.blockers.compactMap(
+                                            dynamicImportBlockerServiceWorkerJS
+                                        )
+                                        : []
+                                )
+                        ),
+                    diagnostics:
+                        uniqueSortedServiceWorkerJS(
+                            [
+                                "Dynamic import uses a non-string-literal specifier; the local harness only permits string-literal generated-bundle imports if support is ever enabled.",
+                            ]
+                                + capability.diagnostics
+                        )
+                )
             )
         }
-    let sourceWithoutStringLiteralImports = expression
-        .stringByReplacingMatches(
-            in: source,
-            range: range,
-            withTemplate: ""
-        )
-    if containsServiceWorkerJSRegex(
-        "\\bimport\\s*\\(",
-        in: sourceWithoutStringLiteralImports
-    )
-    {
-        records.append(
-            ChromeMV3ServiceWorkerJSDynamicImportRecord(
-                requestPath: "<non-string-literal>",
-                parentScriptRelativePath: parentScriptRelativePath,
-                resolvedRelativePath: nil,
-                resolvedPath: nil,
-                stringLiteral: false,
-                generatedBundlePathValidated: false,
-                rewriteEligible: false,
-                rewritten: false,
-                evaluated: false,
-                evaluationOrder: nil,
-                sourceSHA256: nil,
-                sourceByteCount: nil,
-                blockers:
-                    uniqueSortedServiceWorkerJS(
-                        [.dynamicImportArgumentNonString]
-                            + (
-                                includeCapabilityBlockers
-                                    ? capability.blockers.compactMap(
-                                        dynamicImportBlockerServiceWorkerJS
-                                    )
-                                    : []
-                            )
-                    ),
-                diagnostics:
-                    uniqueSortedServiceWorkerJS(
-                        [
-                            "Dynamic import uses a non-string-literal specifier; the local harness only permits string-literal generated-bundle imports if support is ever enabled.",
-                        ]
-                            + capability.diagnostics
-                    )
-            )
-        )
     }
     return records
 }
@@ -4742,6 +5660,8 @@ private func boundedImportScriptsAuthorizationServiceWorkerJS(
     in source: String
 ) -> ChromeMV3ServiceWorkerJSImportScriptsAuthorization {
     let constantMaps = constantImportScriptsMapsServiceWorkerJS(in: source)
+    let webpackChunkGroups =
+        webpackImportScriptsCandidateGroupsServiceWorkerJS(in: source)
     var groups: [ChromeMV3ServiceWorkerJSImportScriptsCandidateGroup] = []
     var unbounded = false
     for argument in importScriptsArgumentSourcesServiceWorkerJS(in: source) {
@@ -4770,6 +5690,14 @@ private func boundedImportScriptsAuthorizationServiceWorkerJS(
             )
             continue
         }
+        if let runtimeName = webpackImportScriptsRuntimeNameServiceWorkerJS(
+            argument
+        ),
+           let webpackGroup = webpackChunkGroups[runtimeName]
+        {
+            groups.append(webpackGroup)
+            continue
+        }
         unbounded = true
     }
     return ChromeMV3ServiceWorkerJSImportScriptsAuthorization(
@@ -4793,13 +5721,25 @@ private func generatedBundleContainsImportScriptServiceWorkerJS(
     _ requestPath: String,
     parentURL: URL,
     record: ChromeMV3GeneratedBundleRecord,
-    root: URL
+    root: URL,
+    extensionID: String? = nil
 ) -> Bool {
-    let normalized = normalizeImportScriptsPath(requestPath)
+    let normalized = normalizeImportScriptsPath(
+        requestPath,
+        extensionID: extensionID
+    )
     guard let normalizedPath = normalized.path,
           normalized.blocker == nil
     else { return false }
-    let candidate = parentURL.deletingLastPathComponent()
+    let baseURL =
+        extensionID.flatMap {
+            isSameExtensionURLServiceWorkerJS(
+                requestPath,
+                extensionID: $0
+            ) ? root : nil
+        } ?? parentURL.deletingLastPathComponent()
+            .standardizedFileURL
+    let candidate = baseURL
         .appendingPathComponent(normalizedPath)
         .standardizedFileURL
     guard
@@ -4870,6 +5810,95 @@ private func constantMapAccessServiceWorkerJS(_ expression: String) -> String? {
     return String(trimmed[nameRange])
 }
 
+private func webpackImportScriptsRuntimeNameServiceWorkerJS(
+    _ expression: String
+) -> String? {
+    let compact = expression.replacingOccurrences(
+        of: #"\s+"#,
+        with: "",
+        options: .regularExpression
+    )
+    guard
+        let regex = try? NSRegularExpression(
+            pattern:
+                #"^([A-Za-z_$][\w$]*)\.p\+\1\.u\([^)]*\)$"#
+        )
+    else { return nil }
+    let range = NSRange(compact.startIndex..., in: compact)
+    guard let match = regex.firstMatch(in: compact, range: range),
+          let runtimeRange = Range(match.range(at: 1), in: compact)
+    else { return nil }
+    return String(compact[runtimeRange])
+}
+
+private func webpackImportScriptsCandidateGroupsServiceWorkerJS(
+    in source: String
+) -> [String: ChromeMV3ServiceWorkerJSImportScriptsCandidateGroup] {
+    let suffixes = webpackChunkFilenameSuffixesServiceWorkerJS(in: source)
+    guard suffixes.isEmpty == false else { return [:] }
+    var groups:
+        [String: ChromeMV3ServiceWorkerJSImportScriptsCandidateGroup] = [:]
+    for (runtimeName, suffix) in suffixes {
+        let chunkIDs = webpackChunkIDsServiceWorkerJS(
+            runtimeName: runtimeName,
+            in: source
+        )
+        guard chunkIDs.isEmpty == false else { continue }
+        let candidates = Array(Set(chunkIDs.map { "\($0)\(suffix)" }))
+            .sorted()
+        groups[runtimeName] =
+            ChromeMV3ServiceWorkerJSImportScriptsCandidateGroup(
+                candidates: candidates,
+                requiresAllCandidatesContained: true,
+                message:
+                    "importScripts dependency was authorized from a statically bounded Webpack chunk filename map whose complete candidate set is generated-root-contained."
+            )
+    }
+    return groups
+}
+
+private func webpackChunkFilenameSuffixesServiceWorkerJS(
+    in source: String
+) -> [String: String] {
+    let patterns = [
+        #"\b([A-Za-z_$][\w$]*)\.u\s*=\s*[A-Za-z_$][\w$]*\s*=>\s*[A-Za-z_$][\w$]*\s*\+\s*(['"])([^'"]+)\2"#,
+        #"\b([A-Za-z_$][\w$]*)\.u\s*=\s*function\s*\(\s*[A-Za-z_$][\w$]*\s*\)\s*\{\s*return\s+[A-Za-z_$][\w$]*\s*\+\s*(['"])([^'"]+)\2"#,
+    ]
+    var suffixes: [String: String] = [:]
+    for pattern in patterns {
+        guard let regex = try? NSRegularExpression(pattern: pattern)
+        else { continue }
+        let range = NSRange(source.startIndex..., in: source)
+        for match in regex.matches(in: source, range: range) {
+            guard let nameRange = Range(match.range(at: 1), in: source),
+                  let suffixRange = Range(match.range(at: 3), in: source)
+            else { continue }
+            suffixes[String(source[nameRange])] = String(source[suffixRange])
+        }
+    }
+    return suffixes
+}
+
+private func webpackChunkIDsServiceWorkerJS(
+    runtimeName: String,
+    in source: String
+) -> [String] {
+    let escaped = NSRegularExpression.escapedPattern(for: runtimeName)
+    guard let regex = try? NSRegularExpression(
+        pattern: #"\b"# + escaped + #"\.e\s*\(\s*([0-9]+)\s*\)"#
+    ) else { return [] }
+    let range = NSRange(source.startIndex..., in: source)
+    return Array(
+        Set(
+            regex.matches(in: source, range: range).compactMap { match in
+                Range(match.range(at: 1), in: source).map {
+                    String(source[$0])
+                }
+            }
+        )
+    ).sorted()
+}
+
 private func staticImportScriptsStringServiceWorkerJS(
     _ expression: String
 ) -> (value: String, kind: String)? {
@@ -4912,6 +5941,15 @@ private func importScriptsArgumentSourcesServiceWorkerJS(
     while index < bytes.count {
         if bytes[index] == 34 || bytes[index] == 39 || bytes[index] == 96 {
             index = skipQuotedServiceWorkerJS(bytes, start: index)
+            continue
+        }
+        if bytes[index] == 47,
+           let regexClose = skipRegexLiteralServiceWorkerJS(
+                bytes,
+                start: index
+           )
+        {
+            index = regexClose
             continue
         }
         if bytes[index] == 47, index + 1 < bytes.count,
@@ -5055,6 +6093,107 @@ private func skipQuotedServiceWorkerJS(
     return index
 }
 
+private func skipRegexLiteralServiceWorkerJS(
+    _ bytes: [UInt8],
+    start: Int
+) -> Int? {
+    guard bytes[start] == 47,
+          start + 1 < bytes.count,
+          bytes[start + 1] != 47,
+          bytes[start + 1] != 42
+    else { return nil }
+    if let previous = previousSignificantByteServiceWorkerJS(
+        bytes,
+        before: start
+    ),
+       regexLiteralCanFollowServiceWorkerJS(previous) == false
+    {
+        return nil
+    }
+
+    var index = start + 1
+    var escaped = false
+    var inCharacterClass = false
+    while index < bytes.count {
+        let byte = bytes[index]
+        if escaped {
+            escaped = false
+        } else if byte == 92 {
+            escaped = true
+        } else if byte == 91 {
+            inCharacterClass = true
+        } else if byte == 93 {
+            inCharacterClass = false
+        } else if byte == 47, inCharacterClass == false {
+            index += 1
+            while index < bytes.count,
+                  isIdentifierPartServiceWorkerJS(bytes[index])
+            {
+                index += 1
+            }
+            return index
+        } else if byte == 10 || byte == 13 {
+            return nil
+        }
+        index += 1
+    }
+    return nil
+}
+
+private func regexLiteralCanFollowServiceWorkerJS(_ byte: UInt8) -> Bool {
+    switch byte {
+    case 33, 37, 38, 40, 42, 43, 44, 45, 58, 59, 60, 61, 62,
+         63, 91, 94, 123, 124, 126:
+        return true
+    default:
+        return false
+    }
+}
+
+private func stringIndexServiceWorkerJS(
+    _ utf8Offset: Int,
+    in source: String
+) -> String.Index? {
+    guard utf8Offset >= 0,
+          utf8Offset <= source.utf8.count
+    else { return nil }
+    let utf8Index = source.utf8.index(
+        source.utf8.startIndex,
+        offsetBy: utf8Offset
+    )
+    return utf8Index.samePosition(in: source)
+}
+
+private func previousSignificantByteServiceWorkerJS(
+    _ bytes: [UInt8],
+    before index: Int
+) -> UInt8? {
+    guard index > 0 else { return nil }
+    var cursor = index - 1
+    while cursor >= 0 {
+        if isWhitespaceServiceWorkerJS(bytes[cursor]) == false {
+            return bytes[cursor]
+        }
+        if cursor == 0 { break }
+        cursor -= 1
+    }
+    return nil
+}
+
+private func followingSignificantByteServiceWorkerJS(
+    _ bytes: [UInt8],
+    after index: Int
+) -> UInt8? {
+    var cursor = index + 1
+    while cursor < bytes.count {
+        if isWhitespaceServiceWorkerJS(bytes[cursor]) == false {
+            return bytes[cursor]
+        }
+        cursor += 1
+    }
+    return nil
+}
+
 private func isIdentifierStartServiceWorkerJS(_ byte: UInt8) -> Bool {
     (65...90).contains(byte) || (97...122).contains(byte)
         || byte == 36 || byte == 95
@@ -5069,7 +6208,8 @@ private func isWhitespaceServiceWorkerJS(_ byte: UInt8) -> Bool {
 }
 
 private func normalizeImportScriptsPath(
-    _ path: String
+    _ path: String,
+    extensionID: String? = nil
 ) -> (
     path: String?,
     blocker: ChromeMV3ServiceWorkerJSImportScriptsBlocker?,
@@ -5088,7 +6228,9 @@ private func normalizeImportScriptsPath(
             "importScripts path is empty or contains unsupported characters."
         )
     }
-    if let scheme = URLComponents(string: trimmed)?.scheme?.lowercased() {
+    if let components = URLComponents(string: trimmed),
+       let scheme = components.scheme?.lowercased()
+    {
         switch scheme {
         case "http", "https":
             return (
@@ -5113,6 +6255,22 @@ private func normalizeImportScriptsPath(
                 nil,
                 .blobURLRejected,
                 "blob: importScripts URL imports are blocked."
+            )
+        case "chrome-extension":
+            guard let extensionID,
+                  components.host == extensionID
+            else {
+                return (
+                    nil,
+                    .unsupportedScheme,
+                    "Cross-extension chrome-extension importScripts URL imports are blocked."
+                )
+            }
+            let relativePath = components.path
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            return normalizeImportScriptsPath(
+                relativePath,
+                extensionID: nil
             )
         default:
             return (
@@ -5167,8 +6325,20 @@ private func normalizeImportScriptsPath(
     )
 }
 
+private func isSameExtensionURLServiceWorkerJS(
+    _ path: String,
+    extensionID: String
+) -> Bool {
+    let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let components = URLComponents(string: trimmed),
+          components.scheme?.lowercased() == "chrome-extension"
+    else { return false }
+    return components.host == extensionID
+}
+
 private func normalizeDynamicImportPath(
-    _ path: String
+    _ path: String,
+    extensionID: String? = nil
 ) -> (
     path: String?,
     blocker: ChromeMV3ServiceWorkerJSDynamicImportBlocker?,
@@ -5187,7 +6357,9 @@ private func normalizeDynamicImportPath(
             "Dynamic import path is empty or contains unsupported characters."
         )
     }
-    if let scheme = URLComponents(string: trimmed)?.scheme?.lowercased() {
+    if let components = URLComponents(string: trimmed),
+       let scheme = components.scheme?.lowercased()
+    {
         switch scheme {
         case "http", "https":
             return (
@@ -5212,6 +6384,22 @@ private func normalizeDynamicImportPath(
                 nil,
                 .blobURLRejected,
                 "blob: dynamic import URL imports are blocked."
+            )
+        case "chrome-extension":
+            guard let extensionID,
+                  components.host == extensionID
+            else {
+                return (
+                    nil,
+                    .unsupportedScheme,
+                    "Cross-extension chrome-extension dynamic import URL imports are blocked."
+                )
+            }
+            let relativePath = components.path
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            return normalizeDynamicImportPath(
+                relativePath,
+                extensionID: nil
             )
         default:
             return (

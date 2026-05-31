@@ -77,6 +77,29 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         }
     }
 
+    func testBitwardenRealPackageWebpackChunkCandidateIsStaticallyBounded()
+        throws
+    {
+        let workerURL = URL(
+            fileURLWithPath:
+                "/Users/fedaefimov/Downloads/Aura/mv3-test-extensions/bitwarden/background.js"
+        )
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: workerURL.path),
+            "Bitwarden real package fixture is not available."
+        )
+
+        let source = try String(contentsOf: workerURL, encoding: .utf8)
+        let candidates = staticallyBoundedImportScriptsCandidatesServiceWorkerJS(
+            in: source
+        )
+
+        XCTAssertTrue(
+            candidates.contains("719.background.js"),
+            "Bounded candidates: \(candidates)"
+        )
+    }
+
     func testMissingRealPackageMarksSkippedAndUsesFixtureFallback()
         throws
     {
@@ -1174,15 +1197,33 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         let proton = try XCTUnwrap(byClass[.protonPass])
         XCTAssertEqual(
             bitwarden.serviceWorkerEventReadiness.nextBlockerClassification,
-            .dynamicImportComputedUnsupported
+            .otherPreciseBlocker
         )
         XCTAssertTrue(
             bitwarden.serviceWorkerEventReadiness.dynamicImportRewriteResult
-                .contains("dynamicImportArgumentNonString")
+                .hasPrefix("notRequired:")
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.importScriptsResult
+                .contains("719.background.js")
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.computedImportScriptsResult
+                .hasPrefix("resolved:")
         )
         XCTAssertTrue(
             bitwarden.serviceWorkerEventReadiness.dependencyInventory
                 .dynamicImportExpressions.isEmpty
+        )
+        XCTAssertEqual(
+            bitwarden.serviceWorkerEventReadiness.executionStartResult?
+                .exceptionDetails?.classification,
+            .missingWebAPI
+        )
+        XCTAssertEqual(
+            bitwarden.serviceWorkerEventReadiness.executionStartResult?
+                .exceptionDetails?.inferredMissingProperty,
+            "crypto.subtle"
         )
         XCTAssertTrue(
             bitwarden.serviceWorkerEventReadiness.dependencyInventory
@@ -1201,7 +1242,15 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertTrue(
             onePassword.serviceWorkerEventReadiness.dynamicImportRewriteResult
-                .contains("dynamicImportArgumentNonString")
+                .hasPrefix("notRequired:")
+        )
+        XCTAssertTrue(
+            onePassword.serviceWorkerEventReadiness.moduleWorkerReadinessResult
+                .hasPrefix("blocked:")
+        )
+        XCTAssertNil(
+            onePassword.serviceWorkerEventReadiness.executionStartResult?
+                .exceptionDetails
         )
         XCTAssertEqual(
             proton.serviceWorkerEventReadiness.nextBlockerClassification,
@@ -1221,11 +1270,29 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertTrue(
             proton.serviceWorkerEventReadiness.nextBlockerDetail
-                .contains("TypeError")
+                .contains("window")
+        )
+        XCTAssertEqual(
+            proton.serviceWorkerEventReadiness.executionStartResult?
+                .exceptionDetails?.classification,
+            .missingWebAPI
+        )
+        XCTAssertEqual(
+            proton.serviceWorkerEventReadiness.executionStartResult?
+                .exceptionDetails?.inferredMissingGlobal,
+            "window"
         )
         XCTAssertFalse(
             proton.serviceWorkerEventReadiness.nextBlockerDetail
                 .contains("setTimeout")
+        )
+        XCTAssertFalse(
+            proton.serviceWorkerEventReadiness.nextBlockerDetail
+                .contains("rp.runtime")
+        )
+        XCTAssertFalse(
+            proton.serviceWorkerEventReadiness.nextBlockerDetail
+                .contains("rp.tabs.onUpdated")
         )
         XCTAssertTrue(
             proton.serviceWorkerEventReadiness.timerShimResult.contains(

@@ -238,11 +238,18 @@ enum ChromeMV3ServiceWorkerDeclarationReadinessEvaluator {
         [ChromeMV3ServiceWorkerSyntheticListenerEvent] = [
             .runtimeOnMessage,
             .runtimeOnConnect,
+            .runtimeOnInstalled,
+            .runtimeOnMessageExternal,
+            .runtimeOnStartup,
+            .runtimeOnUpdateAvailable,
             .storageOnChanged,
             .permissionsOnAdded,
             .permissionsOnRemoved,
+            .tabsOnRemoved,
+            .tabsOnUpdated,
             .contextMenusOnClicked,
             .alarmsOnAlarm,
+            .commandsOnCommand,
             .webNavigationOnBeforeNavigate,
             .webNavigationOnCommitted,
             .webNavigationOnCompleted,
@@ -252,6 +259,14 @@ enum ChromeMV3ServiceWorkerDeclarationReadinessEvaluator {
             .webNavigationOnReferenceFragmentUpdated,
             .nativePortOnMessage,
             .nativePortOnDisconnect,
+            .webRequestOnAuthRequired,
+            .webRequestOnBeforeRequest,
+            .webRequestOnBeforeSendHeaders,
+            .webRequestOnCompleted,
+            .webRequestOnErrorOccurred,
+            .webRequestOnHeadersReceived,
+            .webRequestOnResponseStarted,
+            .webRequestOnSendHeaders,
         ]
 
     private static func listenerCoverage(
@@ -294,6 +309,14 @@ enum ChromeMV3ServiceWorkerDeclarationReadinessEvaluator {
                 "browser.runtime.onConnect.addListener",
                 "runtime.onConnect.addListener",
             ]
+        case .runtimeOnInstalled:
+            return runtimePatterns("onInstalled")
+        case .runtimeOnMessageExternal:
+            return runtimePatterns("onMessageExternal")
+        case .runtimeOnStartup:
+            return runtimePatterns("onStartup")
+        case .runtimeOnUpdateAvailable:
+            return runtimePatterns("onUpdateAvailable")
         case .storageOnChanged:
             return [
                 "chrome.storage.onChanged.addListener",
@@ -324,6 +347,16 @@ enum ChromeMV3ServiceWorkerDeclarationReadinessEvaluator {
                 "browser.alarms.onAlarm.addListener",
                 "alarms.onAlarm.addListener",
             ]
+        case .commandsOnCommand:
+            return [
+                "chrome.commands.onCommand.addListener",
+                "browser.commands.onCommand.addListener",
+                "commands.onCommand.addListener",
+            ]
+        case .tabsOnRemoved:
+            return tabsPatterns("onRemoved")
+        case .tabsOnUpdated:
+            return tabsPatterns("onUpdated")
         case .webNavigationOnBeforeNavigate:
             return webNavigationPatterns("onBeforeNavigate")
         case .webNavigationOnCommitted:
@@ -350,14 +383,43 @@ enum ChromeMV3ServiceWorkerDeclarationReadinessEvaluator {
                 "port.onDisconnect.addListener",
                 "nativePort.onDisconnect.addListener",
             ]
+        case .webRequestOnAuthRequired:
+            return webRequestPatterns("onAuthRequired")
+        case .webRequestOnBeforeRequest:
+            return webRequestPatterns("onBeforeRequest")
+        case .webRequestOnBeforeSendHeaders:
+            return webRequestPatterns("onBeforeSendHeaders")
+        case .webRequestOnCompleted:
+            return webRequestPatterns("onCompleted")
+        case .webRequestOnErrorOccurred:
+            return webRequestPatterns("onErrorOccurred")
+        case .webRequestOnHeadersReceived:
+            return webRequestPatterns("onHeadersReceived")
+        case .webRequestOnResponseStarted:
+            return webRequestPatterns("onResponseStarted")
+        case .webRequestOnSendHeaders:
+            return webRequestPatterns("onSendHeaders")
         case .actionPopupEvent, .passwordManagerDetectFields,
              .passwordManagerFillFields, .tabsOnMessage, .tabsOnConnect,
-             .testFixture, .webRequestOnBeforeRequest,
-             .webRequestOnBeforeSendHeaders, .webRequestOnCompleted,
-             .webRequestOnErrorOccurred, .webRequestOnHeadersReceived,
-             .webRequestOnResponseStarted, .webRequestOnSendHeaders:
+             .testFixture:
             return []
         }
+    }
+
+    private static func runtimePatterns(_ event: String) -> [String] {
+        [
+            "chrome.runtime.\(event).addListener",
+            "browser.runtime.\(event).addListener",
+            "runtime.\(event).addListener",
+        ]
+    }
+
+    private static func tabsPatterns(_ event: String) -> [String] {
+        [
+            "chrome.tabs.\(event).addListener",
+            "browser.tabs.\(event).addListener",
+            "tabs.\(event).addListener",
+        ]
     }
 
     private static func webNavigationPatterns(_ event: String) -> [String] {
@@ -365,6 +427,14 @@ enum ChromeMV3ServiceWorkerDeclarationReadinessEvaluator {
             "chrome.webNavigation.\(event).addListener",
             "browser.webNavigation.\(event).addListener",
             "webNavigation.\(event).addListener",
+        ]
+    }
+
+    private static func webRequestPatterns(_ event: String) -> [String] {
+        [
+            "chrome.webRequest.\(event).addListener",
+            "browser.webRequest.\(event).addListener",
+            "webRequest.\(event).addListener",
         ]
     }
 

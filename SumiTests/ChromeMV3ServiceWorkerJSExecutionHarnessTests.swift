@@ -399,6 +399,367 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         )
     }
 
+    func testWorkerGlobalCompatibilityLayerIsNarrowAndDeterministic()
+        throws
+    {
+        let harness = try startedHarness(
+            source: """
+            chrome.runtime.onMessage.addListener(() => ({
+              domName: new DOMException('blocked', 'InvalidStateError').name,
+              navigatorName: navigator.appName,
+              href: location.href,
+              id: chrome.runtime.id,
+              url: new URL('https://example.com/a?b=1').searchParams.get('b'),
+              text: new TextDecoder().decode(new TextEncoder().encode('ok')),
+              base64: atob(btoa('ok')),
+              randomLength: crypto.getRandomValues(new Uint8Array(4)).length,
+              getURL: chrome.runtime.getURL('dependency.js').startsWith('chrome-extension://service-worker-js-fixture-extension/'),
+              manifestVersion: chrome.runtime.getManifest().manifest_version,
+              browserType: typeof browser,
+              windowType: typeof window,
+              documentType: typeof document
+            }));
+            """
+        )
+
+        let result = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            payloadSummary: "safe worker globals"
+        )
+
+        XCTAssertEqual(
+            result.responsePayload,
+            .object([
+                "base64": .string("ok"),
+                "browserType": .string("undefined"),
+                "documentType": .string("undefined"),
+                "domName": .string("InvalidStateError"),
+                "getURL": .bool(true),
+                "href": .string(
+                    "chrome-extension://service-worker-js-fixture-extension/background.js"
+                ),
+                "id": .string("service-worker-js-fixture-extension"),
+                "manifestVersion": .number(3),
+                "navigatorName": .string("Netscape"),
+                "randomLength": .number(4),
+                "text": .string("ok"),
+                "url": .string("1"),
+                "windowType": .string("undefined"),
+            ])
+        )
+    }
+
+    func testChromeRuntimeIDSurvivesWebExtensionPolyfillWrapping() throws {
+        let harness = try startedHarness(
+            source: """
+            const wrapWebExtensionPolyfillStyle = (chromeGlobal) => {
+              if (!(globalThis.chrome && globalThis.chrome.runtime && globalThis.chrome.runtime.id)) {
+                throw new Error('This script should only be loaded in a browser extension.');
+              }
+              if (globalThis.browser && globalThis.browser.runtime && globalThis.browser.runtime.id) {
+                return globalThis.browser;
+              }
+              const wrapNamespace = (source, metadata = {}) => {
+                const cache = Object.create(null);
+                return new Proxy(Object.create(source), {
+                  has(_target, property) {
+                    return property in source || property in cache;
+                  },
+                  get(_target, property) {
+                    if (property in cache) return cache[property];
+                    if (!(property in source)) return undefined;
+                    const value = source[property];
+                    if (value && typeof value === 'object') {
+                      cache[property] = wrapNamespace(value, metadata[property] || {});
+                      return cache[property];
+                    }
+                    return value;
+                  }
+                });
+              };
+              return wrapNamespace(chromeGlobal, {
+                runtime: {
+                  requestUpdateCheck: { minArgs: 0, maxArgs: 0 }
+                }
+              });
+            };
+            const rp = wrapWebExtensionPolyfillStyle(globalThis.chrome);
+            chrome.runtime.onMessage.addListener(() => ({
+              browserType: typeof browser,
+              extensionID: rp.runtime?.id?.split(' ')[0]
+            }));
+            """
+        )
+
+        let result = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            payloadSummary: "webextension polyfill runtime id"
+        )
+
+        XCTAssertEqual(
+            result.responsePayload,
+            .object([
+                "browserType": .string("undefined"),
+                "extensionID": .string(
+                    "service-worker-js-fixture-extension"
+                ),
+            ])
+        )
+    }
+
+    func testStandardExtensionEventNamespacesAreCapturedNarrowly() throws {
+        let harness = try startedHarness(
+            source: """
+            chrome.runtime.onInstalled.addListener(() => {});
+            chrome.runtime.onMessageExternal.addListener(() => {});
+            chrome.runtime.onStartup.addListener(() => {});
+            chrome.runtime.onUpdateAvailable.addListener(() => {});
+            chrome.tabs.onUpdated.addListener(() => {});
+            chrome.tabs.onRemoved.addListener(() => {});
+            chrome.commands.onCommand.addListener(() => {});
+            chrome.webRequest.onAuthRequired.addListener(() => {});
+            chrome.webRequest.onCompleted.addListener(() => {});
+            """
+        )
+        let captured = Set(harness.snapshot.capturedListeners.map(\.event))
+
+        XCTAssertTrue(captured.contains(.runtimeOnInstalled))
+        XCTAssertTrue(captured.contains(.runtimeOnMessageExternal))
+        XCTAssertTrue(captured.contains(.runtimeOnStartup))
+        XCTAssertTrue(captured.contains(.runtimeOnUpdateAvailable))
+        XCTAssertTrue(captured.contains(.tabsOnUpdated))
+        XCTAssertTrue(captured.contains(.tabsOnRemoved))
+        XCTAssertTrue(captured.contains(.commandsOnCommand))
+        XCTAssertTrue(captured.contains(.webRequestOnAuthRequired))
+        XCTAssertTrue(captured.contains(.webRequestOnCompleted))
+        XCTAssertFalse(
+            harness.snapshot.blockedUnsupportedCalls.contains {
+                $0.hasPrefix("chrome.")
+            }
+        )
+    }
+
+    func testUnsupportedWebAPIRemainsBlockedAndObservable() throws {
+        let harness = try startedHarness(
+            source: """
+            try { fetch('https://example.com/data.json'); } catch (_) {}
+            chrome.runtime.onMessage.addListener(() => 'after-fetch');
+            """
+        )
+
+        XCTAssertTrue(
+            harness.snapshot.blockedUnsupportedCalls.contains(
+                "globalThis.fetch"
+            )
+        )
+        XCTAssertEqual(
+            harness.dispatch(
+                source: .popupOptionsRuntimeMessage,
+                payloadSummary: "after blocked fetch"
+            ).responsePayload,
+            .string("after-fetch")
+        )
+    }
+
+    func testProtonStyleMissingGlobalFailureIsClassified() throws {
+        let fixture = try makeHarness(
+            source: """
+            const i = () => undefined;
+            var g = 'DOMException', b = i(g), w = b.prototype;
+            """,
+            localExperimentalGateAllowed: true
+        )
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request()
+        )
+        let started = harness.start()
+
+        XCTAssertEqual(started.status, .failed)
+        XCTAssertEqual(
+            started.exceptionDetails?.classification,
+            .missingStandardWorkerGlobal
+        )
+        XCTAssertEqual(started.exceptionDetails?.inferredMissingGlobal, "DOMException")
+        XCTAssertEqual(started.exceptionDetails?.inferredMissingProperty, "prototype")
+        XCTAssertNotNil(started.exceptionDetails?.line)
+        XCTAssertNotNil(started.exceptionDetails?.column)
+        XCTAssertTrue(started.exceptionDetails?.stack?.isEmpty == false)
+    }
+
+    func testSubtleCryptoFailureIsClassifiedWithoutImplementingSubtle() throws {
+        let fixture = try makeHarness(
+            source: """
+            throw new Error('Could not instantiate WebCryptoFunctionService. Could not locate Subtle crypto.');
+            """,
+            localExperimentalGateAllowed: true
+        )
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request()
+        )
+        let started = harness.start()
+
+        XCTAssertEqual(started.status, .failed)
+        XCTAssertEqual(started.exceptionDetails?.classification, .missingWebAPI)
+        XCTAssertEqual(
+            started.exceptionDetails?.inferredMissingGlobal,
+            "SubtleCrypto"
+        )
+        XCTAssertEqual(
+            started.exceptionDetails?.inferredMissingProperty,
+            "crypto.subtle"
+        )
+    }
+
+    func testWindowGlobalFailureIsClassifiedWithoutImplementingWindow()
+        throws
+    {
+        let fixture = try makeHarness(
+            source: """
+            window.addEventListener('message', () => {});
+            """,
+            localExperimentalGateAllowed: true
+        )
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request()
+        )
+        let started = harness.start()
+
+        XCTAssertEqual(started.status, .failed)
+        XCTAssertEqual(started.exceptionDetails?.classification, .missingWebAPI)
+        XCTAssertEqual(started.exceptionDetails?.inferredMissingGlobal, "window")
+    }
+
+    func testWebpackBoundedComputedImportScriptsResolvesGeneratedChunk()
+        throws
+    {
+        let fixture = try makeHarness(
+            source: """
+            var o = {};
+            var loaded = {};
+            o.p = '';
+            o.u = e => e + '.background.js';
+            o.f = {};
+            o.f.i = (t) => { loaded[t] || importScripts(o.p + o.u(t)); };
+            o.e = (t) => { o.f.i(t); return Promise.resolve(); };
+            o.e(719);
+            chrome.runtime.onMessage.addListener(() => globalThis.webpackLoaded);
+            """,
+            extraFiles: [
+                "719.background.js":
+                    "globalThis.webpackLoaded = 'bounded';",
+            ],
+            localExperimentalGateAllowed: true
+        )
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request()
+        )
+
+        XCTAssertEqual(harness.start().status, .running)
+        XCTAssertEqual(harness.snapshot.importScriptsResolvedCount, 1)
+        XCTAssertEqual(
+            harness.snapshot.importedScripts.first?.resolvedRelativePath,
+            "719.background.js"
+        )
+        XCTAssertEqual(
+            harness.dispatch(
+                source: .popupOptionsRuntimeMessage,
+                payloadSummary: "webpack bounded chunk"
+            ).responsePayload,
+            .string("bounded")
+        )
+    }
+
+    func testWebpackComputedImportScriptsCanResolveSameExtensionURL()
+        throws
+    {
+        let fixture = try makeHarness(
+            source: """
+            var o = {};
+            var loaded = {};
+            o.p = chrome.runtime.getURL('');
+            o.u = e => e + '.background.js';
+            o.f = {};
+            o.f.i = (t) => { loaded[t] || importScripts(o.p + o.u(t)); };
+            o.e = (t) => { o.f.i(t); return Promise.resolve(); };
+            o.e(719);
+            chrome.runtime.onMessage.addListener(() => globalThis.webpackLoaded);
+            """,
+            extraFiles: [
+                "719.background.js":
+                    "globalThis.webpackLoaded = 'same-extension-url';",
+            ],
+            localExperimentalGateAllowed: true
+        )
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request()
+        )
+
+        XCTAssertEqual(harness.start().status, .running)
+        XCTAssertEqual(
+            harness.snapshot.importedScripts.first?.requestPath,
+            "chrome-extension://service-worker-js-fixture-extension/719.background.js"
+        )
+        XCTAssertEqual(
+            harness.dispatch(
+                source: .popupOptionsRuntimeMessage,
+                payloadSummary: "webpack extension URL chunk"
+            ).responsePayload,
+            .string("same-extension-url")
+        )
+    }
+
+    func testWebpackComputedImportScriptsWithoutLiteralChunkSetStaysBlocked()
+        throws
+    {
+        let fixture = try makeHarness(
+            source: """
+            var o = {};
+            o.p = '';
+            o.u = e => e + '.background.js';
+            o.f = {};
+            o.f.i = (t) => importScripts(o.p + o.u(t));
+            o.f.i(719);
+            """,
+            extraFiles: ["719.background.js": ""],
+            localExperimentalGateAllowed: true
+        )
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request()
+        )
+
+        XCTAssertEqual(harness.start().status, .failed)
+        XCTAssertTrue(
+            harness.snapshot.importScriptsBlockers.contains(
+                .computedImportScriptsRuntimeVariableRejected
+            )
+        )
+    }
+
+    func testMethodNamedImportDoesNotTriggerDynamicImportBlocker() throws {
+        let fixture = try makeHarness(
+            source: """
+            class Loader { import(e, t) { return e || t; } }
+            const loader = new Loader();
+            chrome.runtime.onMessage.addListener(() => loader.import('method', 'fallback'));
+            """,
+            localExperimentalGateAllowed: true
+        )
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request()
+        )
+
+        XCTAssertEqual(harness.start().status, .running)
+        XCTAssertEqual(harness.snapshot.resourceLoad?.dynamicImportDetected, false)
+        XCTAssertEqual(harness.snapshot.resourceLoad?.dynamicImportRecords, [])
+        XCTAssertEqual(
+            harness.dispatch(
+                source: .popupOptionsRuntimeMessage,
+                payloadSummary: "method named import"
+            ).responsePayload,
+            .string("method")
+        )
+    }
+
     func testDeterministicTimerShimQueuesDrainsCancelsAndTicksManually()
         throws
     {
