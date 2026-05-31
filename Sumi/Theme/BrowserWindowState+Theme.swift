@@ -94,4 +94,29 @@ extension BrowserWindowState {
             transitionProgress: transitionProgress
         )
     }
+
+    func resolvedThemeContext(
+        for theme: WorkspaceTheme,
+        global globalScheme: ColorScheme,
+        settings: SumiSettingsService
+    ) -> ResolvedThemeContext {
+        let resolvedChromeScheme = ThemeContrastResolver.resolvedChromeColorScheme(
+            theme: theme,
+            globalWindowScheme: globalScheme,
+            settings: settings,
+            isIncognito: isIncognito
+        )
+
+        return ResolvedThemeContext(
+            globalColorScheme: globalScheme,
+            chromeColorScheme: resolvedChromeScheme,
+            sourceChromeColorScheme: resolvedChromeScheme,
+            targetChromeColorScheme: resolvedChromeScheme,
+            workspaceTheme: theme,
+            sourceWorkspaceTheme: theme,
+            targetWorkspaceTheme: theme,
+            isInteractiveTransition: false,
+            transitionProgress: 1.0
+        )
+    }
 }

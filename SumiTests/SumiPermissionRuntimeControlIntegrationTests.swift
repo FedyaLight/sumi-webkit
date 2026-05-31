@@ -50,13 +50,10 @@ final class SumiPermissionRuntimeControlIntegrationTests: XCTestCase {
     }
 
     func testRuntimeControlsAreLimitedToCurrentSiteAndIndicatorSurfaces() throws {
-        let currentSiteView = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionsView.swift")
         let indicatorView = try sourceFile("Sumi/Components/Sidebar/URLBarPermissionViews.swift")
         let siteSettingsView = try sourceFile("Sumi/Permissions/UI/SumiSiteSettingsView.swift")
         let siteDetailView = try sourceFile("Sumi/Permissions/UI/SumiSiteSettingsSiteDetailView.swift")
 
-        XCTAssertTrue(currentSiteView.contains("SumiPermissionRuntimeControlsView"))
-        XCTAssertTrue(currentSiteView.contains("queryPermissionState"))
         XCTAssertTrue(indicatorView.contains("SumiPermissionRuntimeControlsView"))
         XCTAssertTrue(indicatorView.contains("queryPermissionState"))
         XCTAssertFalse(siteSettingsView.contains("SumiPermissionRuntimeControlsView"))

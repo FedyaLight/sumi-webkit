@@ -134,8 +134,26 @@ struct WebsiteView: View {
         BrowserChromeGeometry(settings: sumiSettings)
     }
 
+    private var tabThemeContext: ResolvedThemeContext {
+        guard let currentTab = browserManager.currentTab(for: windowState) else {
+            return themeContext
+        }
+        let tabTheme: WorkspaceTheme
+        if let spaceId = currentTab.spaceId,
+           let space = browserManager.space(for: spaceId) {
+            tabTheme = space.workspaceTheme
+        } else {
+            tabTheme = windowState.workspaceTheme
+        }
+        return windowState.resolvedThemeContext(
+            for: tabTheme,
+            global: themeContext.globalColorScheme,
+            settings: sumiSettings
+        )
+    }
+
     private var browserContentSurfaceBackground: Color {
-        themeContext.nativeSurfaceThemeContext.tokens(settings: sumiSettings).windowBackground
+        tabThemeContext.nativeSurfaceThemeContext.tokens(settings: sumiSettings).windowBackground
     }
 
     var body: some View {
@@ -205,6 +223,9 @@ struct WebsiteView: View {
 
     @ViewBuilder
     private func nativeSurface(kind: NativeSurfaceKind?) -> some View {
+        let currentTabThemeContext = tabThemeContext
+        let contentBackground = currentTabThemeContext.nativeSurfaceThemeContext.tokens(settings: sumiSettings).windowBackground
+
         switch kind {
         case .history:
             SumiHistoryTabRootView(
@@ -213,9 +234,10 @@ struct WebsiteView: View {
             )
             .environmentObject(browserManager)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .environment(\.resolvedThemeContext, currentTabThemeContext)
             .browserContentSurface(
                 geometry: chromeGeometry,
-                background: browserContentSurfaceBackground
+                background: contentBackground
             )
             .allowsHitTesting(true)
         case .bookmarks:
@@ -225,9 +247,10 @@ struct WebsiteView: View {
             )
             .environmentObject(browserManager)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .environment(\.resolvedThemeContext, currentTabThemeContext)
             .browserContentSurface(
                 geometry: chromeGeometry,
-                background: browserContentSurfaceBackground
+                background: contentBackground
             )
             .allowsHitTesting(true)
         case .settings:
@@ -239,9 +262,10 @@ struct WebsiteView: View {
             .environmentObject(browserManager.extensionSurfaceStore)
             .environment(keyboardShortcutManager)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .environment(\.resolvedThemeContext, currentTabThemeContext)
             .browserContentSurface(
                 geometry: chromeGeometry,
-                background: browserContentSurfaceBackground
+                background: contentBackground
             )
             .allowsHitTesting(true)
         case .empty:

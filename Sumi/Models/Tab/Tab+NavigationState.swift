@@ -26,6 +26,7 @@ extension Tab {
     }
 
     func refresh() {
+        guard !representsSumiNativeSurface else { return }
         beginLoadingPresentationIfNeeded()
         let targetURL = _webView?.url ?? url
         let protectionReloadWasRequired = isProtectionReloadRequired

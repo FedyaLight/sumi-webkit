@@ -219,7 +219,7 @@ struct SumiCommands: Commands {
                 browserManager.refreshCurrentTabInActiveWindow()
             }
             .modifier(dynamicShortcut(.refresh))
-            .disabled(browserManager.activePageTabForActiveWindow() == nil)
+            .disabled(browserManager.activePageTabForActiveWindow() == nil || browserManager.activePageTabForActiveWindow()?.representsSumiNativeSurface == true)
 
             Divider()
 
@@ -247,7 +247,7 @@ struct SumiCommands: Commands {
                 browserManager.hardReloadCurrentPage()
             }
             .modifier(dynamicShortcut(.hardReload))
-            .disabled(browserManager.activePageTabForActiveWindow() == nil)
+            .disabled(browserManager.activePageTabForActiveWindow() == nil || browserManager.activePageTabForActiveWindow()?.representsSumiNativeSurface == true)
 
             Divider()
 

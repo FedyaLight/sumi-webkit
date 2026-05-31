@@ -74,7 +74,7 @@ class ObservableTabWrapper: ObservableObject {
         }
 
         isLoading = (tab?.loadingState.isLoading ?? false) || (webView?.isLoading ?? false)
-        canReload = tab.map { !$0.representsSumiEmptySurface } ?? false
+        canReload = tab.map { !$0.representsSumiEmptySurface && !$0.representsSumiNativeSurface } ?? false
     }
 }
 

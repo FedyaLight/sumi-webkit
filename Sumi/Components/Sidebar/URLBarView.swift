@@ -127,6 +127,15 @@ struct URLBarView: View {
                 permissionPromptPresenter.closeForCurrentTabChange()
             }
         }
+        .onChange(of: currentTab?.url) { _, url in
+            if let url, SumiSurface.isSettingsSurfaceURL(url) || SumiSurface.isHistorySurfaceURL(url) || SumiSurface.isBookmarksSurfaceURL(url) {
+                DispatchQueue.main.async {
+                    closeZoomPopover()
+                    closePermissionIndicatorPopover()
+                    browserManager.closeURLBarHubPopover(in: windowState)
+                }
+            }
+        }
         .onChange(of: permissionPromptPresenter.isPresented) { _, isPresented in
             if isPresented {
                 closePermissionIndicatorPopover()

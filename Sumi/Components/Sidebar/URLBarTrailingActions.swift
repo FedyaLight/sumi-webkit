@@ -13,43 +13,47 @@ import WebKit
 extension URLBarView {
     @ViewBuilder
     func trailingActions(for currentTab: Tab) -> some View {
-        let showsZoomButton = shouldShowZoomButton(for: currentTab)
-        let permissionIndicatorState = permissionIndicatorDisplayState(for: currentTab)
-        HStack(spacing: 6) {
-            copyLinkButton(for: currentTab)
-            hubButton
-            if permissionIndicatorState.isVisible {
-                permissionIndicatorButton(for: currentTab, state: permissionIndicatorState)
-                    .transition(
-                        .asymmetric(
-                            insertion: .scale(scale: 0.82).combined(with: .opacity),
-                            removal: .scale(scale: 0.92).combined(with: .opacity)
+        if currentTab.representsSumiNativeSurface {
+            EmptyView()
+        } else {
+            let showsZoomButton = shouldShowZoomButton(for: currentTab)
+            let permissionIndicatorState = permissionIndicatorDisplayState(for: currentTab)
+            HStack(spacing: 6) {
+                copyLinkButton(for: currentTab)
+                hubButton
+                if permissionIndicatorState.isVisible {
+                    permissionIndicatorButton(for: currentTab, state: permissionIndicatorState)
+                        .transition(
+                            .asymmetric(
+                                insertion: .scale(scale: 0.82).combined(with: .opacity),
+                                removal: .scale(scale: 0.92).combined(with: .opacity)
+                            )
                         )
-                    )
-            }
-            if showsZoomButton {
-                zoomButton(for: currentTab)
-                    .transition(
-                        .asymmetric(
-                            insertion: .scale(scale: 0.82).combined(with: .opacity),
-                            removal: .scale(scale: 0.92).combined(with: .opacity)
+                }
+                if showsZoomButton {
+                    zoomButton(for: currentTab)
+                        .transition(
+                            .asymmetric(
+                                insertion: .scale(scale: 0.82).combined(with: .opacity),
+                                removal: .scale(scale: 0.92).combined(with: .opacity)
+                            )
                         )
-                    )
+                }
             }
+            .task(id: permissionIndicatorTaskKey(for: currentTab)) {
+                refreshPermissionIndicator(for: currentTab)
+                refreshPermissionPrompt(for: currentTab)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .sumiTabNavigationStateDidChange)) { notification in
+                guard let tab = notification.object as? Tab,
+                      tab.id == currentTab.id
+                else { return }
+                refreshPermissionIndicator(for: tab)
+                refreshPermissionPrompt(for: tab)
+            }
+            .animation(.smooth(duration: 0.18), value: showsZoomButton)
+            .animation(.smooth(duration: 0.18), value: permissionIndicatorState.isVisible)
         }
-        .task(id: permissionIndicatorTaskKey(for: currentTab)) {
-            refreshPermissionIndicator(for: currentTab)
-            refreshPermissionPrompt(for: currentTab)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .sumiTabNavigationStateDidChange)) { notification in
-            guard let tab = notification.object as? Tab,
-                  tab.id == currentTab.id
-            else { return }
-            refreshPermissionIndicator(for: tab)
-            refreshPermissionPrompt(for: tab)
-        }
-        .animation(.smooth(duration: 0.18), value: showsZoomButton)
-        .animation(.smooth(duration: 0.18), value: permissionIndicatorState.isVisible)
     }
 
     func copyLinkButton(for currentTab: Tab) -> some View {
