@@ -375,13 +375,8 @@ struct WindowView: View {
     @ViewBuilder
     private func WebContent() -> some View {
         ZStack(alignment: .top) {
-            VStack(spacing: 0) {
-                WebsiteLoadingIndicator()
-                    .zIndex(3000)
-                
-                WebsiteView()
-                    .zIndex(2000)
-            }
+            WebsiteView()
+                .zIndex(2000)
 
             // Find-in-page stays in the browser window's responder chain so window controls keep active appearance.
             FindInPageChromeHost(
@@ -397,6 +392,7 @@ struct WindowView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .zIndex(WindowTransientChromeZIndex.findInPage)
         }
+        .padding(.top, BrowserChromeGeometry.elementSeparation)
         .padding(.bottom, BrowserChromeGeometry.elementSeparation)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
