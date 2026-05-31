@@ -820,6 +820,31 @@ struct ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDelta:
     var diagnostics: [String]
 }
 
+enum ChromeMV3PasswordManagerRealPackageNextBlockerClassification:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case moduleWorkerUnsupported
+    case dynamicImportNamespaceUnsupported
+    case dynamicImportComputedUnsupported
+    case dynamicImportRewriteSucceededButListenerMissing
+    case importScriptsDependencyMissing
+    case unsupportedChromeAPI
+    case promiseCompletionUnsupported = "PromiseCompletionUnsupported"
+    case listenerCaptureSucceeded
+    case otherPreciseBlocker
+
+    static func < (
+        lhs: ChromeMV3PasswordManagerRealPackageNextBlockerClassification,
+        rhs: ChromeMV3PasswordManagerRealPackageNextBlockerClassification
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
 struct ChromeMV3PasswordManagerRealPackageServiceWorkerPortSmoke:
     Codable,
     Equatable,
@@ -867,6 +892,9 @@ struct ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness:
     var staticVsExecutionDelta:
         ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDelta
     var actualDispatchResults: [ChromeMV3ServiceWorkerJSDispatchRecord]
+    var importScriptsResult: String
+    var dynamicImportRewriteResult: String
+    var dispatchSmokeResult: String
     var runtimePortSmoke:
         ChromeMV3PasswordManagerRealPackageServiceWorkerPortSmoke
     var nativeMessagingIntegrationSmoke: String
@@ -885,6 +913,9 @@ struct ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness:
     var eventStatuses:
         [ChromeMV3PasswordManagerRealPackageServiceWorkerEventStatus]
     var blockers: [String]
+    var nextBlockerClassification:
+        ChromeMV3PasswordManagerRealPackageNextBlockerClassification
+    var nextBlockerDetail: String
     var nextRecommendedFix: String
     var diagnostics: [String]
 }
@@ -1244,7 +1275,7 @@ struct ChromeMV3PasswordManagerRealPackageCompatibilityReport:
     Equatable,
     Sendable
 {
-    static let schemaVersion = 5
+    static let schemaVersion = 6
     static let reportFileName =
         "runtime-mv3-real-package-compatibility-report.json"
 
@@ -2307,6 +2338,25 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             executionCaptureAttempted:
                 trialGateSource.allowsScopedExecution
         )
+        let importScriptsResult = serviceWorkerImportScriptsResult(
+            resourceLoadResult: resourceLoadResult
+        )
+        let dynamicImportRewriteResult = serviceWorkerDynamicImportRewriteResult(
+            policy: policy,
+            resourceLoadResult: resourceLoadResult
+        )
+        let dispatchSmokeResult = serviceWorkerDispatchSmokeResult(
+            capturedFamilies: capturedFamilies,
+            dispatchResults: dispatchResults,
+            runtimePortSmoke: runtimePortSmoke
+        )
+        let nextBlocker = serviceWorkerNextBlockerClassification(
+            declared: declared,
+            delta: delta,
+            resourceLoadResult: resourceLoadResult,
+            executionStartResult: executionStartResult,
+            capturedFamilies: capturedFamilies
+        )
         let blockers: [String]
         if declared == false {
             blockers = []
@@ -2363,6 +2413,9 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 resourceLoadResult?.dynamicImportBlockers ?? [],
             staticVsExecutionDelta: delta,
             actualDispatchResults: dispatchResults,
+            importScriptsResult: importScriptsResult,
+            dynamicImportRewriteResult: dynamicImportRewriteResult,
+            dispatchSmokeResult: dispatchSmokeResult,
             runtimePortSmoke: runtimePortSmoke,
             nativeMessagingIntegrationSmoke: nativeMessagingIntegrationSmoke,
             idleTeardownResult: idleTeardownResult,
@@ -2399,6 +2452,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 serviceWorkerStatus(.nativeMessagingMessage, from: statuses),
             eventStatuses: statuses,
             blockers: blockers,
+            nextBlockerClassification: nextBlocker.classification,
+            nextBlockerDetail: nextBlocker.detail,
             nextRecommendedFix:
                 serviceWorkerNextRecommendedFix(
                     declared: declared,
@@ -2830,6 +2885,193 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         case .unsupportedListenerMode:
             return .unsupportedListenerMode
         }
+    }
+
+    private static func serviceWorkerImportScriptsResult(
+        resourceLoadResult: ChromeMV3ServiceWorkerJSResourceLoadRecord?
+    ) -> String {
+        guard let resourceLoadResult else {
+            return "notAttempted: service-worker resource loading was not reached."
+        }
+        if resourceLoadResult.importScriptsDetected == false {
+            return "notRequired: no importScripts call was detected."
+        }
+        if let blocker = resourceLoadResult.importScriptsBlockers.first {
+            return "blocked: \(blocker.rawValue)."
+        }
+        if resourceLoadResult.importScriptsResolvedCount > 0 {
+            let paths = resourceLoadResult.importedScripts
+                .compactMap(\.resolvedRelativePath)
+                .sorted()
+            return "resolved: \(resourceLoadResult.importScriptsResolvedCount) generated-bundle import(s)"
+                + (paths.isEmpty ? "." : " - \(paths.prefix(3).joined(separator: ", ")).")
+        }
+        return "detected: importScripts was present but no generated-bundle dependency was resolved."
+    }
+
+    private static func serviceWorkerDynamicImportRewriteResult(
+        policy: ChromeMV3ServiceWorkerJSExecutionPolicy,
+        resourceLoadResult: ChromeMV3ServiceWorkerJSResourceLoadRecord?
+    ) -> String {
+        guard let resourceLoadResult else {
+            return "notAttempted: service-worker resource loading was not reached."
+        }
+        if resourceLoadResult.dynamicImportDetected == false {
+            return "notRequired: no dynamic import expression was detected."
+        }
+        if policy
+            .dynamicImportRewriteExperimentAvailableInLocalExperimentalGate
+            == false
+        {
+            return "blockedByPolicy: dynamic-import rewrite experiment was unavailable."
+        }
+        if resourceLoadResult.dynamicImportRewriteExperimentApplied {
+            return "applied: evaluated \(resourceLoadResult.dynamicImportRewriteEvaluationCount) generated-bundle dynamic import(s)."
+        }
+        if let blocker = resourceLoadResult.dynamicImportBlockers.first {
+            return "blocked: \(blocker.rawValue)."
+        }
+        let eligibleCount =
+            resourceLoadResult.dynamicImportRecords.filter(\.rewriteEligible)
+            .count
+        return "notApplied: \(eligibleCount) rewrite-eligible import(s), no dependency evaluation needed."
+    }
+
+    private static func serviceWorkerDispatchSmokeResult(
+        capturedFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent],
+        dispatchResults: [ChromeMV3ServiceWorkerJSDispatchRecord],
+        runtimePortSmoke:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerPortSmoke
+    ) -> String {
+        guard dispatchResults.isEmpty == false else {
+            return capturedFamilies.isEmpty
+                ? "notAttempted: no executed listener capture was available."
+                : "notDelivered: captured listeners existed but no synthetic dispatch result was recorded."
+        }
+        let delivered = dispatchResults.filter {
+            $0.resultKind == .delivered
+        }.count
+        var summary = "attempted: \(dispatchResults.count) synthetic dispatch(es), \(delivered) delivered."
+        if runtimePortSmoke.attempted {
+            summary += runtimePortSmoke.portMessageDelivered
+                && runtimePortSmoke.portDisconnected
+                && runtimePortSmoke.keepaliveReleased
+                ? " Runtime Port smoke passed."
+                : " Runtime Port smoke did not fully pass."
+        }
+        return summary
+    }
+
+    private static func serviceWorkerNextBlockerClassification(
+        declared: Bool,
+        delta:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDelta,
+        resourceLoadResult: ChromeMV3ServiceWorkerJSResourceLoadRecord?,
+        executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?,
+        capturedFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent]
+    ) -> (
+        classification:
+            ChromeMV3PasswordManagerRealPackageNextBlockerClassification,
+        detail: String
+    ) {
+        guard declared else {
+            return (
+                .otherPreciseBlocker,
+                "No background.service_worker was declared."
+            )
+        }
+        if capturedFamilies.isEmpty == false {
+            return (
+                .listenerCaptureSucceeded,
+                "Captured executed listener families: \(capturedFamilies.map(\.rawValue).joined(separator: ", "))."
+            )
+        }
+        if resourceLoadResult?.blockers.contains(.moduleWorkerUnsupported)
+            == true
+        {
+            return (
+                .moduleWorkerUnsupported,
+                "Manifest declares a module service worker and module worker execution remains intentionally unsupported."
+            )
+        }
+        if resourceLoadResult?.dynamicImportBlockers.contains(
+            .dynamicImportArgumentNonString
+        ) == true {
+            return (
+                .dynamicImportComputedUnsupported,
+                "Dynamic import uses a non-string-literal/computed specifier, so the safe rewrite prototype cannot run."
+            )
+        }
+        let dynamicNamespaceBlockers:
+            Set<ChromeMV3ServiceWorkerJSDynamicImportBlocker> = [
+                .dynamicImportModuleNamespaceUnsupported,
+                .importedModuleSyntaxUnsupported,
+            ]
+        if let dynamicBlockers = resourceLoadResult?.dynamicImportBlockers,
+           dynamicBlockers.contains(where: dynamicNamespaceBlockers.contains)
+        {
+            return (
+                .dynamicImportNamespaceUnsupported,
+                "Dynamic import dependency syntax or module namespace behavior requires module/export support that is still blocked."
+            )
+        }
+        if resourceLoadResult?.dynamicImportBlockers.contains(
+            .dynamicImportPromiseDrainUnavailable
+        ) == true {
+            return (
+                .promiseCompletionUnsupported,
+                "Dynamic import Promise completion cannot be drained deterministically on the public JavaScriptCore surface."
+            )
+        }
+        let importDependencyBlockers:
+            Set<ChromeMV3ServiceWorkerJSImportScriptsBlocker> = [
+                .generatedBundleRecordMissing,
+                .generatedBundleRootMissing,
+                .importedScriptMissing,
+                .importedScriptNotCopiedFromGeneratedBundleRecord,
+            ]
+        if let importBlockers = resourceLoadResult?.importScriptsBlockers,
+           importBlockers.contains(where: importDependencyBlockers.contains)
+        {
+            return (
+                .importScriptsDependencyMissing,
+                "importScripts dependency resolution failed before all generated-bundle-contained imports could execute."
+            )
+        }
+        if resourceLoadResult?.dynamicImportRewriteExperimentApplied == true,
+           delta.staticListenerFamilies.isEmpty == false,
+           capturedFamilies.isEmpty
+        {
+            return (
+                .dynamicImportRewriteSucceededButListenerMissing,
+                "Dynamic-import rewrite evaluated, but static listener families were still not captured during execution."
+            )
+        }
+        if let unsupportedCall =
+            executionStartResult?.blockedUnsupportedCalls.first,
+            unsupportedCall.hasPrefix("chrome.")
+                || unsupportedCall.hasPrefix("browser.")
+        {
+            return (
+                .unsupportedChromeAPI,
+                "Execution reached unsupported extension API call \(unsupportedCall)."
+            )
+        }
+        if let message = executionStartResult?.lastErrorMessage,
+           message.isEmpty == false
+        {
+            return (.otherPreciseBlocker, message)
+        }
+        if let blocker = resourceLoadResult?.blockers.first {
+            return (
+                .otherPreciseBlocker,
+                "Resource blocker: \(blocker.rawValue)."
+            )
+        }
+        return (
+            .otherPreciseBlocker,
+            "No listener was captured and no more precise blocker was available."
+        )
     }
 
     private static func serviceWorkerNextRecommendedFix(
@@ -4017,6 +4259,21 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 "Chrome service-worker basics",
                 "https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/basics",
                 "Checked background.service_worker, classic versus module workers, importScripts, static module imports, and unsupported dynamic imports."
+            ),
+            source(
+                "WHATWG WorkerGlobalScope importScripts",
+                "https://html.spec.whatwg.org/multipage/workers.html#importing-scripts-and-libraries",
+                "Checked synchronous classic-worker importScripts processing; filesystem/generated-bundle containment remains a Sumi diagnostic policy."
+            ),
+            source(
+                "MDN dynamic import",
+                "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/import",
+                "Checked import() expression semantics and expression-based specifiers; the trial runner reports computed specifiers as outside the safe rewrite prototype."
+            ),
+            source(
+                "TC39 dynamic import proposal",
+                "https://tc39.es/proposal-dynamic-import/",
+                "Checked Promise resolution to module namespace semantics; dependency namespace/export behavior remains intentionally unsupported."
             ),
             source(
                 "Chrome events in service workers",

@@ -357,6 +357,15 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                     && $0.resultKind == .delivered
             }
         )
+        XCTAssertTrue(imported.importScriptsResult.hasPrefix("resolved: 1"))
+        XCTAssertTrue(
+            imported.dynamicImportRewriteResult.hasPrefix("notRequired:")
+        )
+        XCTAssertTrue(imported.dispatchSmokeResult.hasPrefix("attempted:"))
+        XCTAssertEqual(
+            imported.nextBlockerClassification,
+            .listenerCaptureSucceeded
+        )
         XCTAssertTrue(
             imported.staticVsExecutionDelta.unsupportedListenerForms.contains(
                 "importScriptsUnsupported"
@@ -394,6 +403,25 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                     "globalThis.dynamicDependencyValue = 'dependency';",
             ]
         )
+        let blockedDefaultReport = ChromeMV3PasswordManagerRealPackageTrialRunner
+            .run(
+                rootURL: root.appendingPathComponent(
+                    "blocked-default",
+                    isDirectory: true
+                ),
+                targets: [
+                    testTarget(
+                        id: "bitwarden-dynamic-import-default",
+                        targetClass: .bitwarden,
+                        root: package
+                    ),
+                ],
+                writeReport: false,
+                now: { Date(timeIntervalSince1970: 11.8) }
+            )
+        let blockedDefaultReadiness = try XCTUnwrap(
+            blockedDefaultReport.rows.first?.serviceWorkerEventReadiness
+        )
 
         let report = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
             rootURL: root,
@@ -412,6 +440,19 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             report.rows.first?.serviceWorkerEventReadiness
         )
 
+        XCTAssertNil(blockedDefaultReadiness.executionStartResult)
+        XCTAssertEqual(
+            blockedDefaultReadiness.trialGateRecords.map(\.state),
+            [.blockedDefault]
+        )
+        XCTAssertFalse(
+            blockedDefaultReadiness.jsExecutionPolicy
+                .dynamicImportRewriteExperimentAvailableInLocalExperimentalGate
+        )
+        XCTAssertEqual(
+            blockedDefaultReadiness.dynamicImportRewriteResult,
+            "notAttempted: service-worker resource loading was not reached."
+        )
         XCTAssertEqual(readiness.executionStartResult?.status, .running)
         XCTAssertTrue(
             readiness.resourceLoadResult?.dynamicImportDetected == true
@@ -434,6 +475,17 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                 $0.source == .popupOptionsRuntimeMessage
                     && $0.resultKind == .delivered
             }
+        )
+        XCTAssertTrue(readiness.importScriptsResult.hasPrefix("notRequired:"))
+        XCTAssertTrue(readiness.dynamicImportRewriteResult.hasPrefix("applied:"))
+        XCTAssertTrue(readiness.dispatchSmokeResult.hasPrefix("attempted:"))
+        XCTAssertEqual(
+            readiness.nextBlockerClassification,
+            .listenerCaptureSucceeded
+        )
+        XCTAssertFalse(
+            readiness.resourceLoadResult?
+                .dynamicImportRewriteGeneratedBundleArtifactsMutated == true
         )
         XCTAssertTrue(readiness.gateClosedAfterTrial)
         XCTAssertFalse(readiness.jsExecutionPolicy.dynamicImportAvailable)
@@ -699,6 +751,32 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
                 .targetID,
             "proton-manager"
+        )
+        XCTAssertEqual(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .realPackageSource,
+            .realLocalUnpacked
+        )
+        XCTAssertTrue(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .importScriptsResult.hasPrefix("notRequired:") == true
+        )
+        XCTAssertTrue(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .dynamicImportRewriteResult.hasPrefix("notRequired:") == true
+        )
+        XCTAssertTrue(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .dispatchSmokeResult.hasPrefix("notAttempted:") == true
+        )
+        XCTAssertEqual(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .nextBlockerClassification,
+            .otherPreciseBlocker
+        )
+        XCTAssertFalse(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .nextRecommendedFix.isEmpty ?? true
         )
     }
 
@@ -1058,6 +1136,43 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             }?.serviceWorkerEventReadiness.resourceLoadResult?.blockers
                 .contains(.moduleWorkerUnsupported) == true
         )
+        let byClass = Dictionary(
+            uniqueKeysWithValues: decoded.rows.map { ($0.targetClass, $0) }
+        )
+        let bitwarden = try XCTUnwrap(byClass[.bitwarden])
+        let onePassword = try XCTUnwrap(byClass[.onePassword])
+        let proton = try XCTUnwrap(byClass[.protonPass])
+        XCTAssertEqual(
+            bitwarden.serviceWorkerEventReadiness.nextBlockerClassification,
+            .dynamicImportComputedUnsupported
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.dynamicImportRewriteResult
+                .contains("dynamicImportArgumentNonString")
+        )
+        XCTAssertEqual(
+            onePassword.serviceWorkerEventReadiness.nextBlockerClassification,
+            .moduleWorkerUnsupported
+        )
+        XCTAssertTrue(
+            onePassword.serviceWorkerEventReadiness.dynamicImportRewriteResult
+                .contains("dynamicImportArgumentNonString")
+        )
+        XCTAssertEqual(
+            proton.serviceWorkerEventReadiness.nextBlockerClassification,
+            .otherPreciseBlocker
+        )
+        XCTAssertTrue(
+            proton.serviceWorkerEventReadiness.nextBlockerDetail
+                .contains("setTimeout")
+        )
+        XCTAssertTrue(decoded.rows.allSatisfy {
+            $0.serviceWorkerEventReadiness.importScriptsResult.isEmpty == false
+                && $0.serviceWorkerEventReadiness.dynamicImportRewriteResult
+                    .isEmpty == false
+                && $0.serviceWorkerEventReadiness.dispatchSmokeResult.isEmpty
+                    == false
+        })
     }
 
     private func testTarget(

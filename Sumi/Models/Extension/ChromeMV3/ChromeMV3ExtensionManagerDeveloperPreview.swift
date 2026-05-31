@@ -1351,19 +1351,27 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
     Sendable
 {
     var targetID: String
+    var realPackageSource: ChromeMV3PasswordManagerRealPackageSource
     var gateState:
         ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateState
     var gateSource:
         ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateSource
     var listenerRegistrationCaptureStatus: String
     var capturedListenerFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent]
+    var importScriptsResult: String
     var importScriptsResolvedCount: Int
     var importedScriptPaths: [String]
     var importScriptsBlockers: [ChromeMV3ServiceWorkerJSImportScriptsBlocker]
+    var dynamicImportRewriteResult: String
     var remainingDynamicImportModuleBlockers: [String]
     var staticVsExecutionDeltaStatus:
         ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDeltaStatus
+    var dispatchSmokeResult: String
     var dispatchSummaries: [String]
+    var nextBlockerClassification:
+        ChromeMV3PasswordManagerRealPackageNextBlockerClassification
+    var nextBlockerDetail: String
+    var nextRecommendedFix: String
     var idleTeardownResult: String
     var hardTimeoutTeardownResult: String
     var blockers: [String]
@@ -1390,14 +1398,17 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
         let readiness = row.serviceWorkerEventReadiness
         return ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary(
             targetID: row.targetID,
+            realPackageSource: row.packageSource,
             gateState: gate.state,
             gateSource: gate.source,
             listenerRegistrationCaptureStatus:
                 readiness.actualListenerRegistrationCaptureStatus,
             capturedListenerFamilies: readiness.capturedListenerFamilies,
+            importScriptsResult: readiness.importScriptsResult,
             importScriptsResolvedCount: readiness.importScriptsResolvedCount,
             importedScriptPaths: readiness.importedScriptPaths,
             importScriptsBlockers: readiness.importScriptsBlockers,
+            dynamicImportRewriteResult: readiness.dynamicImportRewriteResult,
             remainingDynamicImportModuleBlockers:
                 uniqueSortedExtensionManager(
                     (readiness.resourceLoadResult?.blockers.compactMap {
@@ -1424,10 +1435,15 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
                 ),
             staticVsExecutionDeltaStatus:
                 readiness.staticVsExecutionDelta.status,
+            dispatchSmokeResult: readiness.dispatchSmokeResult,
             dispatchSummaries:
                 readiness.actualDispatchResults.map {
                     "\($0.source.rawValue):\($0.resultKind.rawValue)"
                 }.sorted(),
+            nextBlockerClassification:
+                readiness.nextBlockerClassification,
+            nextBlockerDetail: readiness.nextBlockerDetail,
+            nextRecommendedFix: readiness.nextRecommendedFix,
             idleTeardownResult: readiness.idleTeardownResult,
             hardTimeoutTeardownResult: readiness.hardTimeoutTeardownResult,
             blockers: readiness.blockers,
@@ -3204,6 +3220,10 @@ struct ChromeMV3ExtensionManagerView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    Text("Trial package: \(trial.realPackageSource.rawValue)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(
                         "Trial listeners: "
                             + trial.capturedListenerFamilies
@@ -3227,6 +3247,21 @@ struct ChromeMV3ExtensionManagerView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    Text("Trial importScripts: \(trial.importScriptsResult)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        "Trial dynamic rewrite: "
+                            + trial.dynamicImportRewriteResult
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    Text("Trial dispatch: \(trial.dispatchSmokeResult)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     if trial.importScriptsBlockers.isEmpty == false {
                         Text(
                             "Import blockers: "
@@ -3239,6 +3274,16 @@ struct ChromeMV3ExtensionManagerView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
+                    Text(
+                        "Next blocker: \(trial.nextBlockerClassification.rawValue) - \(trial.nextBlockerDetail)"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    Text(trial.nextRecommendedFix)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(trial.defaultOffDisclaimer)
                         .font(.caption)
                         .foregroundStyle(.secondary)
