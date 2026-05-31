@@ -20,11 +20,12 @@
           }
         }
       ],
+      "lighting" : "combined",
       "shadow" : {
         "kind" : "neutral",
         "opacity" : 0.5
       },
-      "specular" : false,
+      "specular" : true,
       "translucency" : {
         "enabled" : true,
         "value" : 0.5

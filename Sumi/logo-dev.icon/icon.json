@@ -21,14 +21,21 @@
           "position" : {
             "scale" : 1,
             "translation-in-points" : [
-              -8.900142048916791,
-              155.5807914694086
+              -8.67838522231898,
+              136.18832196782523
             ]
           }
         },
         {
           "image-name" : "Mask group (1) 2.png",
-          "name" : "Mask group (1) 2"
+          "name" : "Mask group (1) 2",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              0,
+              -18.632618203320135
+            ]
+          }
         }
       ],
       "lighting" : "combined",

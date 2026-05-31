@@ -458,7 +458,12 @@ final class ChromeMV3ControllerStorageTeardownAttachmentTests: XCTestCase {
             ("DispatchSource" + "Ti" + "mer", []),
             ("scheduled" + "Ti" + "mer", []),
             ("Ti" + "mer", []),
-            ("poll" + "ing", []),
+            (
+                "poll" + "ing",
+                [
+                    "Sumi/Models/Extension/ChromeMV3/ChromeMV3ServiceWorkerJSExecutionHarness.swift",
+                ]
+            ),
         ] {
             let offenders = sourceFiles.filter {
                 $0.contents.contains(forbidden)

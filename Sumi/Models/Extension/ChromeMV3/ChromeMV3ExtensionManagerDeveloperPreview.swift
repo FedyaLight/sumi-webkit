@@ -1345,6 +1345,67 @@ struct ChromeMV3ExtensionManagerTrustedNativeHostActionResult:
     var diagnostics: [String]
 }
 
+struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var targetID: String
+    var gateState:
+        ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateState
+    var gateSource:
+        ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateSource
+    var listenerRegistrationCaptureStatus: String
+    var capturedListenerFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent]
+    var staticVsExecutionDeltaStatus:
+        ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDeltaStatus
+    var dispatchSummaries: [String]
+    var idleTeardownResult: String
+    var hardTimeoutTeardownResult: String
+    var blockers: [String]
+    var defaultOffDisclaimer: String
+
+    static func latest(
+        rootURL: URL,
+        record: ChromeMV3ExtensionLifecycleRecord
+    ) -> ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary? {
+        guard
+            let report =
+                ChromeMV3PasswordManagerRealPackageCompatibilityReportWriter
+                .latestReport(rootURL: rootURL),
+            let row = report.rows.first(where: {
+                $0.serviceWorkerEventReadiness.declarationReadiness?
+                    .extensionID == record.extensionID
+                    && $0.serviceWorkerEventReadiness.declarationReadiness?
+                    .profileID == record.profileID
+            }),
+            let gate = row.serviceWorkerEventReadiness.trialGateRecords.last
+        else {
+            return nil
+        }
+        let readiness = row.serviceWorkerEventReadiness
+        return ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary(
+            targetID: row.targetID,
+            gateState: gate.state,
+            gateSource: gate.source,
+            listenerRegistrationCaptureStatus:
+                readiness.actualListenerRegistrationCaptureStatus,
+            capturedListenerFamilies: readiness.capturedListenerFamilies,
+            staticVsExecutionDeltaStatus:
+                readiness.staticVsExecutionDelta.status,
+            dispatchSummaries:
+                readiness.actualDispatchResults.map {
+                    "\($0.source.rawValue):\($0.resultKind.rawValue)"
+                }.sorted(),
+            idleTeardownResult: readiness.idleTeardownResult,
+            hardTimeoutTeardownResult: readiness.hardTimeoutTeardownResult,
+            blockers: readiness.blockers,
+            defaultOffDisclaimer:
+                "Read-only scoped trial report. Viewing manager detail never executes a worker; stable runtimeLoadable remains false."
+        )
+    }
+}
+
 struct ChromeMV3ExtensionManagerServiceWorkerReadinessPanel:
     Codable,
     Equatable,
@@ -1358,6 +1419,8 @@ struct ChromeMV3ExtensionManagerServiceWorkerReadinessPanel:
     var jsExecutionTeardownState: String
     var lastEventResult: ChromeMV3ServiceWorkerEventRoutingRecord?
     var listenerCoverage: [ChromeMV3ServiceWorkerListenerCoverage]
+    var latestRealPackageTrialReport:
+        ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary?
     var idleTimeoutState: String
     var hardTimeoutState: String
     var defaultOffLocalExperimentalDisclaimer: String
@@ -1366,6 +1429,7 @@ struct ChromeMV3ExtensionManagerServiceWorkerReadinessPanel:
     var diagnostics: [String]
 
     static func make(
+        rootURL: URL,
         record: ChromeMV3ExtensionLifecycleRecord,
         gate: ChromeMV3ExtensionManagerGate
     ) -> ChromeMV3ExtensionManagerServiceWorkerReadinessPanel {
@@ -1416,6 +1480,9 @@ struct ChromeMV3ExtensionManagerServiceWorkerReadinessPanel:
                 "notApplicable: manager detail created no JavaScript surface or lifecycle session.",
             lastEventResult: nil,
             listenerCoverage: readiness?.listenerCoverage ?? [],
+            latestRealPackageTrialReport:
+                ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary
+                .latest(rootURL: rootURL, record: record),
             idleTimeoutState:
                 "No manager-created lifecycle session; idle is test-controlled.",
             hardTimeoutState:
@@ -1439,6 +1506,7 @@ struct ChromeMV3ExtensionManagerServiceWorkerReadinessPanel:
                                 : "Manager detail evaluated service-worker declaration/readiness without constructing a session.",
                             "lastEventResult is nil until a scoped local experimental runtime event is routed.",
                             "Actual JavaScript listener registration capture is not attempted by manager detail.",
+                            "A previously written scoped real-package trial report may be displayed read-only.",
                             "No permanent background page or timer is created by this panel.",
                         ]
                 )
@@ -1853,6 +1921,7 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
                 ),
             serviceWorkerReadinessPanel:
                 ChromeMV3ExtensionManagerServiceWorkerReadinessPanel.make(
+                    rootURL: rootURL,
                     record: record,
                     gate: gate
                 ),
@@ -3071,7 +3140,7 @@ struct ChromeMV3ExtensionManagerView: View {
                     )
                     fact(
                         "runtimeLoadable",
-                        readiness.map { $0.runtimeLoadable ? "true" : "false" }
+                        readiness.map { String($0.runtimeLoadable) }
                             ?? "false"
                     )
                 }
@@ -3091,6 +3160,27 @@ struct ChromeMV3ExtensionManagerView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let trial = panel.latestRealPackageTrialReport {
+                    Text(
+                        "Last scoped trial: \(trial.targetID) - \(trial.gateState.rawValue) - \(trial.staticVsExecutionDeltaStatus.rawValue)"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        "Trial listeners: "
+                            + trial.capturedListenerFamilies
+                            .map(\.rawValue)
+                            .joined(separator: ", ")
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    Text(trial.defaultOffDisclaimer)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Text("Idle: \(panel.idleTimeoutState)")
                     .font(.caption)
                     .foregroundStyle(.secondary)

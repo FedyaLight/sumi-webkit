@@ -161,9 +161,10 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                 .declarationReadiness?.localExperimentalGateState,
             .runtimeGateBlocked
         )
-        XCTAssertFalse(
+        XCTAssertEqual(
             row.serviceWorkerEventReadiness
-                .declarationReadiness?.runtimeLoadable ?? true
+                .declarationReadiness?.runtimeLoadable,
+            false
         )
         XCTAssertTrue(
             row.serviceWorkerEventReadiness.blockers.contains(
@@ -179,11 +180,17 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                 .actualListenerRegistrationCaptureStatus
                 .contains("notAttempted")
         )
+        XCTAssertEqual(
+            row.serviceWorkerEventReadiness.trialGateRecords.map(\.state),
+            [.blockedDefault]
+        )
+        XCTAssertEqual(
+            row.serviceWorkerEventReadiness.staticVsExecutionDelta.status,
+            .noListener
+        )
+        XCTAssertTrue(row.serviceWorkerEventReadiness.gateClosedAfterTrial)
         XCTAssertTrue(
             row.serviceWorkerEventReadiness.capturedListenerFamilies.isEmpty
-        )
-        XCTAssertFalse(
-            row.serviceWorkerEventReadiness.missingListenerFamilies.isEmpty
         )
         XCTAssertTrue(
             row.serviceWorkerEventReadiness.actualDispatchResults.isEmpty
@@ -194,6 +201,156 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertFalse(report.productRuntimeAvailable)
         XCTAssertFalse(report.productRuntimeExposed)
+    }
+
+    func testExplicitScopedServiceWorkerTrialCapturesDispatchesAndClosesGate()
+        throws
+    {
+        let root = try temporaryDirectory(named: "scoped-service-worker-trial")
+        let package = root.appendingPathComponent("bitwarden", isDirectory: true)
+        try writePackage(
+            at: package,
+            manifest: minimalManifest(name: "Bitwarden Trial"),
+            extraFiles: [
+                "background.js": """
+                chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+                  sendResponse({ echoed: message.value });
+                });
+                chrome.runtime.onConnect.addListener((port) => {
+                  port.onMessage.addListener((message) => port.postMessage(message));
+                  port.onDisconnect.addListener(() => {});
+                });
+                chrome.storage.onChanged.addListener(() => {});
+                chrome.permissions.onAdded.addListener(() => {});
+                chrome.permissions.onRemoved.addListener(() => {});
+                chrome.alarms.onAlarm.addListener(() => {});
+                chrome.contextMenus.onClicked.addListener(() => {});
+                chrome.webNavigation.onCommitted.addListener(() => {});
+                """,
+            ]
+        )
+
+        let report = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
+            rootURL: root,
+            targets: [
+                testTarget(
+                    id: "bitwarden-scoped-trial",
+                    targetClass: .bitwarden,
+                    root: package
+                ),
+            ],
+            serviceWorkerTrialGateSource: .explicitTestTrial,
+            writeReport: false,
+            now: { Date(timeIntervalSince1970: 11.5) }
+        )
+        let readiness = try XCTUnwrap(
+            report.rows.first?.serviceWorkerEventReadiness
+        )
+
+        XCTAssertEqual(
+            readiness.trialGateRecords.map(\.state),
+            [.blockedDefault, .openScopedTrial, .closedAfterTrial]
+        )
+        XCTAssertEqual(readiness.executionStartResult?.status, .running)
+        XCTAssertEqual(
+            readiness.staticVsExecutionDelta.status,
+            .executionCaptured
+        )
+        XCTAssertTrue(
+            readiness.capturedListenerFamilies.contains(.runtimeOnMessage)
+        )
+        XCTAssertTrue(
+            readiness.capturedListenerFamilies.contains(.runtimeOnConnect)
+        )
+        XCTAssertTrue(
+            readiness.actualDispatchResults.contains {
+                $0.source == .popupOptionsRuntimeMessage
+                    && $0.resultKind == .delivered
+            }
+        )
+        XCTAssertTrue(readiness.runtimePortSmoke.attempted)
+        XCTAssertTrue(readiness.runtimePortSmoke.portMessageDelivered)
+        XCTAssertTrue(readiness.runtimePortSmoke.portDisconnected)
+        XCTAssertTrue(readiness.runtimePortSmoke.keepaliveReleased)
+        XCTAssertTrue(readiness.idleTeardownResult.contains("verified"))
+        XCTAssertTrue(readiness.hardTimeoutTeardownResult.contains("verified"))
+        XCTAssertTrue(readiness.gateClosedAfterTrial)
+        XCTAssertFalse(readiness.jsExecutionPolicy.permanentBackgroundAvailable)
+        XCTAssertFalse(readiness.jsExecutionPolicy.serviceWorkerJSExecutionAvailableByDefault)
+    }
+
+    func testExplicitScopedServiceWorkerTrialBlocksModuleAndImportScriptsExactly()
+        throws
+    {
+        let root = try temporaryDirectory(named: "blocked-worker-resources")
+        let modulePackage = root.appendingPathComponent(
+            "onepassword",
+            isDirectory: true
+        )
+        var moduleManifest = minimalManifest(name: "1Password Module")
+        moduleManifest["background"] = [
+            "service_worker": "background.js",
+            "type": "module",
+        ]
+        try writePackage(at: modulePackage, manifest: moduleManifest)
+        let importPackage = root.appendingPathComponent(
+            "bitwarden",
+            isDirectory: true
+        )
+        try writePackage(
+            at: importPackage,
+            manifest: minimalManifest(name: "Bitwarden ImportScripts"),
+            extraFiles: [
+                "background.js": "importScripts('dependency.js');\n",
+                "dependency.js": "",
+            ]
+        )
+        let report = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
+            rootURL: root,
+            targets: [
+                testTarget(
+                    id: "onepassword-module",
+                    targetClass: .onePassword,
+                    root: modulePackage
+                ),
+                testTarget(
+                    id: "bitwarden-importscripts",
+                    targetClass: .bitwarden,
+                    root: importPackage
+                ),
+            ],
+            serviceWorkerTrialGateSource: .explicitTestTrial,
+            writeReport: false,
+            now: { Date(timeIntervalSince1970: 11.75) }
+        )
+        let byID = Dictionary(
+            uniqueKeysWithValues: report.rows.map { ($0.targetID, $0) }
+        )
+        let module = try XCTUnwrap(
+            byID["onepassword-module"]?.serviceWorkerEventReadiness
+        )
+        let imported = try XCTUnwrap(
+            byID["bitwarden-importscripts"]?.serviceWorkerEventReadiness
+        )
+
+        XCTAssertTrue(
+            module.resourceLoadResult?.blockers.contains(
+                .moduleWorkerUnsupported
+            ) == true
+        )
+        XCTAssertEqual(module.staticVsExecutionDelta.status, .executionBlocked)
+        XCTAssertTrue(
+            imported.resourceLoadResult?.blockers.contains(
+                .importScriptsUnsupported
+            ) == true
+        )
+        XCTAssertTrue(
+            imported.staticVsExecutionDelta.unsupportedListenerForms.contains(
+                "importScriptsUnsupported"
+            )
+        )
+        XCTAssertTrue(module.gateClosedAfterTrial)
+        XCTAssertTrue(imported.gateClosedAfterTrial)
     }
 
     func testLocalZIPTargetImportsThroughSafeZIPIntake() throws {
@@ -385,6 +542,7 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                     root: package
                 ),
             ],
+            serviceWorkerTrialGateSource: .explicitTestTrial,
             writeReport: true,
             now: { Date(timeIntervalSince1970: 16) }
         )
@@ -441,6 +599,16 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             .runtimeGateBlocked
         )
         XCTAssertNil(detail.serviceWorkerReadinessPanel.lastEventResult)
+        XCTAssertEqual(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .gateState,
+            .closedAfterTrial
+        )
+        XCTAssertEqual(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .targetID,
+            "proton-manager"
+        )
     }
 
     func testMissingNativeFixtureRootIsReportedNotFailure() throws {
@@ -757,6 +925,7 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
 
         let report = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
             rootURL: reportRoot,
+            serviceWorkerTrialGateSource: .explicitTestTrial,
             writeReport: true,
             now: { Date(timeIntervalSince1970: 17) }
         )
@@ -774,6 +943,18 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertFalse(decoded.realVendorNativeHostLaunchAttempted)
         XCTAssertFalse(decoded.productRuntimeAvailable)
         XCTAssertFalse(decoded.productRuntimeExposed)
+        XCTAssertTrue(decoded.rows.allSatisfy {
+            $0.serviceWorkerEventReadiness.executionStartResult != nil
+                && $0.serviceWorkerEventReadiness.gateClosedAfterTrial
+                && $0.serviceWorkerEventReadiness.trialGateRecords.last?
+                .state == .closedAfterTrial
+        })
+        XCTAssertTrue(
+            decoded.rows.first {
+                $0.targetClass == .onePassword
+            }?.serviceWorkerEventReadiness.resourceLoadResult?.blockers
+                .contains(.moduleWorkerUnsupported) == true
+        )
     }
 
     private func testTarget(

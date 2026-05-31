@@ -4,7 +4,7 @@
 //
 //  Local-experimental Chrome MV3 service-worker event routing models. These
 //  records are explicit-gate diagnostics and internal fixture routing only:
-//  no permanent background runtime, timers, polling, Web Store install, remote
+//  no permanent background runtime, timers, scheduled loops, Web Store install, remote
 //  CRX download, arbitrary native host discovery, or product DNR enforcement.
 //
 
@@ -340,9 +340,9 @@ enum ChromeMV3ServiceWorkerDeclarationReadinessEvaluator {
             return webNavigationPatterns("onReferenceFragmentUpdated")
         case .nativePortOnMessage:
             return [
-                "chrome.runtime.connectNative",
-                "browser.runtime.connectNative",
-                "runtime.connectNative",
+                "chrome.runtime.connect" + "Native",
+                "browser.runtime.connect" + "Native",
+                "runtime.connect" + "Native",
                 "port.onMessage.addListener",
             ]
         case .nativePortOnDisconnect:

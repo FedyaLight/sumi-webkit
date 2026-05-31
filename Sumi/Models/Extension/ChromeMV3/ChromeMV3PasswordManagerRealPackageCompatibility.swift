@@ -713,6 +713,138 @@ struct ChromeMV3PasswordManagerRealPackageServiceWorkerEventStatus:
     var diagnostics: [String]
 }
 
+enum ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateSource:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case blockedDefault
+    case explicitTestTrial
+    case managerDiagnosticAction
+
+    static func < (
+        lhs: ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateSource,
+        rhs: ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateSource
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+
+    var allowsScopedExecution: Bool {
+        switch self {
+        case .blockedDefault:
+            return false
+        case .explicitTestTrial, .managerDiagnosticAction:
+            return true
+        }
+    }
+}
+
+enum ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateState:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case blockedDefault
+    case closedAfterTrial
+    case openScopedTrial
+
+    static func < (
+        lhs: ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateState,
+        rhs: ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateState
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var targetID: String
+    var extensionID: String
+    var profileID: String
+    var localPackageRoot: String?
+    var generatedBundleID: String?
+    var state:
+        ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateState
+    var source:
+        ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateSource
+    var reason: String
+    var blockers: [String]
+}
+
+enum ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDeltaStatus:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case executionBlocked
+    case executionCaptured
+    case executionFailed
+    case noListener
+    case staticOnly
+    case unknown
+
+    static func < (
+        lhs:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDeltaStatus,
+        rhs:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDeltaStatus
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDelta:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var status:
+        ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDeltaStatus
+    var staticListenerFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent]
+    var executionCapturedListenerFamilies:
+        [ChromeMV3ServiceWorkerSyntheticListenerEvent]
+    var missingListenerFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent]
+    var extraCapturedListenerFamilies:
+        [ChromeMV3ServiceWorkerSyntheticListenerEvent]
+    var unsupportedListenerForms: [String]
+    var failedExecutionReason: String?
+    var diagnostics: [String]
+}
+
+struct ChromeMV3PasswordManagerRealPackageServiceWorkerPortSmoke:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var attempted: Bool
+    var connectResult: ChromeMV3ServiceWorkerJSDispatchRecord?
+    var portMessageDelivered: Bool
+    var portDisconnected: Bool
+    var keepaliveReleased: Bool
+    var diagnostics: [String]
+
+    static let notAttempted =
+        ChromeMV3PasswordManagerRealPackageServiceWorkerPortSmoke(
+            attempted: false,
+            connectResult: nil,
+            portMessageDelivered: false,
+            portDisconnected: false,
+            keepaliveReleased: false,
+            diagnostics: [
+                "runtime.onConnect smoke was not attempted because no executed listener registration was available.",
+            ]
+        )
+}
+
 struct ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness:
     Codable,
     Equatable,
@@ -720,11 +852,23 @@ struct ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness:
 {
     var declared: Bool
     var declarationReadiness: ChromeMV3ServiceWorkerDeclarationReadiness?
+    var trialGateRecords:
+        [ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateRecord]
     var jsExecutionPolicy: ChromeMV3ServiceWorkerJSExecutionPolicy
+    var resourceLoadResult: ChromeMV3ServiceWorkerJSResourceLoadRecord?
+    var executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?
     var actualListenerRegistrationCaptureStatus: String
     var capturedListenerFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent]
     var missingListenerFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent]
+    var staticVsExecutionDelta:
+        ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDelta
     var actualDispatchResults: [ChromeMV3ServiceWorkerJSDispatchRecord]
+    var runtimePortSmoke:
+        ChromeMV3PasswordManagerRealPackageServiceWorkerPortSmoke
+    var nativeMessagingIntegrationSmoke: String
+    var idleTeardownResult: String
+    var hardTimeoutTeardownResult: String
+    var gateClosedAfterTrial: Bool
     var popupOptionsRuntimeMessage: ChromeMV3PasswordManagerCompatibilityStatus
     var popupOptionsRuntimeConnect: ChromeMV3PasswordManagerCompatibilityStatus
     var contentScriptRuntimeMessage: ChromeMV3PasswordManagerCompatibilityStatus
@@ -1096,7 +1240,7 @@ struct ChromeMV3PasswordManagerRealPackageCompatibilityReport:
     Equatable,
     Sendable
 {
-    static let schemaVersion = 4
+    static let schemaVersion = 5
     static let reportFileName =
         "runtime-mv3-real-package-compatibility-report.json"
 
@@ -1165,6 +1309,9 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 ChromeMV3PasswordManagerRealPackageTargetCatalog
                 .explicitLocalTargets(),
         profileID: String = "password-manager-real-package-profile",
+        serviceWorkerTrialGateSource:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateSource =
+                .blockedDefault,
         trustedHostApprovalRecords:
             [ChromeMV3NativeTrustedHostApprovalRecord] = [],
         writeReport: Bool = true,
@@ -1262,6 +1409,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 resourceScan: resourceScan,
                 fixtureRow: fixtureRow,
                 profileID: targetProfileID,
+                serviceWorkerTrialGateSource: serviceWorkerTrialGateSource,
                 trustedHostApprovalRecords: trustedHostApprovalRecords,
                 fileManager: fileManager
             )
@@ -1588,6 +1736,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         resourceScan: ChromeMV3PasswordManagerRealPackageResourceScan,
         fixtureRow: ChromeMV3PasswordManagerCompatibilityMatrixRow?,
         profileID: String,
+        serviceWorkerTrialGateSource:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateSource,
         trustedHostApprovalRecords:
             [ChromeMV3NativeTrustedHostApprovalRecord],
         fileManager: FileManager
@@ -1643,7 +1793,11 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             manifest: manifest,
             lifecycleResult: trial.lifecycleResult,
             extraction: extraction,
-            selected: selected
+            selected: selected,
+            target: target,
+            trialGateSource: serviceWorkerTrialGateSource,
+            trustedNativeFixturePolicyAllowed:
+                nativeSmoke.fixtureExchangeSucceeded
         )
         let apiBlockers =
             uniqueSortedRealPackages(extraction.unsupportedOrDeferredAPIs)
@@ -1970,20 +2124,29 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         lifecycleResult: ChromeMV3LifecycleOperationResult?,
         extraction:
             ChromeMV3PasswordManagerRealPackageManifestRequirementExtraction,
-        selected: SelectedPackage
+        selected: SelectedPackage,
+        target: ChromeMV3PasswordManagerRealPackageTargetDefinition,
+        trialGateSource:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateSource,
+        trustedNativeFixturePolicyAllowed: Bool
     ) -> ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness {
         let declared = extraction.backgroundServiceWorker != nil
         let extensionID = lifecycleResult?.record?.extensionID
             ?? "password-manager-real-package-extension"
         let profileID = lifecycleResult?.record?.profileID
             ?? "password-manager-real-package-profile"
-        let generatedRootPath =
-            lifecycleResult?.generatedVersion?.generatedBundleRootPath
+        let activeGeneratedVersion =
+            lifecycleResult?.generatedVersion
                 ?? lifecycleResult?.record?.generatedBundleVersions.first {
                     $0.id == lifecycleResult?.record?.activeGeneratedVersionID
-                }?.generatedBundleRootPath
+                }
+        let generatedRootPath =
+            activeGeneratedVersion?.generatedBundleRootPath
                 ?? selected.resourceScanRootPath
                 ?? lifecycleResult?.record?.originalBundleRootPath
+        let generatedRecord = activeGeneratedVersion?.generatedBundleRecord
+        let extensionEnabled =
+            lifecycleResult?.record?.runtimeState.internalRuntimeEnabled ?? true
         let readiness = manifest.map {
             ChromeMV3ServiceWorkerDeclarationReadinessEvaluator.evaluate(
                 manifest: $0,
@@ -1993,25 +2156,151 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 extensionID: extensionID,
                 profileID: profileID,
                 moduleState: .enabled,
-                extensionEnabled:
-                    lifecycleResult?.record?.runtimeState
-                    .internalRuntimeEnabled ?? true,
+                extensionEnabled: extensionEnabled,
                 localExperimentalGateAllowed: false
             )
         }
+        let closedPolicy = ChromeMV3ServiceWorkerJSExecutionPolicy.evaluate(
+            moduleState: .enabled,
+            extensionEnabled: extensionEnabled,
+            localExperimentalGateAllowed: false,
+            generatedBundleRecordAvailable: generatedRecord != nil
+        )
+        let staticFamilies = readiness?.listenerCoverage
+            .filter(\.listenerDetected)
+            .map(\.event)
+            .uniqueSortedRealPackageValues() ?? []
+        var gateRecords = [
+            serviceWorkerTrialGateRecord(
+                target: target,
+                extensionID: extensionID,
+                profileID: profileID,
+                selected: selected,
+                generatedRecord: generatedRecord,
+                state: .blockedDefault,
+                source: .blockedDefault,
+                reason:
+                    "Service-worker execution is default-off outside an explicit scoped local trial.",
+                blockers: closedPolicy.blockers.map(\.rawValue)
+            ),
+        ]
+        var policy = closedPolicy
+        var resourceLoadResult: ChromeMV3ServiceWorkerJSResourceLoadRecord?
+        var executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?
+        var capturedRegistrations:
+            [ChromeMV3ServiceWorkerJSCapturedListenerRegistration] = []
+        var capturedFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent] = []
+        var dispatchResults: [ChromeMV3ServiceWorkerJSDispatchRecord] = []
+        var runtimePortSmoke =
+            ChromeMV3PasswordManagerRealPackageServiceWorkerPortSmoke
+            .notAttempted
+        var nativeMessagingIntegrationSmoke =
+            "trustedNativeFixtureMissingOrBlocked: no native messaging service-worker event was dispatched."
+        var idleTeardownResult =
+            "notAttempted: scoped service-worker execution gate stayed closed."
+        var hardTimeoutTeardownResult =
+            "notAttempted: scoped service-worker execution gate stayed closed."
+        var gateClosedAfterTrial = true
+
+        if declared, let manifest,
+           trialGateSource.allowsScopedExecution
+        {
+            gateRecords.append(
+                serviceWorkerTrialGateRecord(
+                    target: target,
+                    extensionID: extensionID,
+                    profileID: profileID,
+                    selected: selected,
+                    generatedRecord: generatedRecord,
+                    state: .openScopedTrial,
+                    source: trialGateSource,
+                    reason:
+                        "Explicit scoped local real-package service-worker execution trial opened.",
+                    blockers: []
+                )
+            )
+            let request = ChromeMV3ServiceWorkerJSExecutionRequest(
+                manifest: manifest,
+                generatedBundleRecord: generatedRecord,
+                extensionID: extensionID,
+                profileID: profileID,
+                moduleState: .enabled,
+                extensionEnabled: extensionEnabled,
+                localExperimentalGateAllowed: true
+            )
+            let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+                request: request
+            )
+            policy = harness.policy
+            let started = harness.start()
+            executionStartResult = started
+            resourceLoadResult = harness.snapshot.resourceLoad
+            capturedRegistrations = harness.snapshot.capturedListeners
+            capturedFamilies = capturedRegistrations
+                .map(\.event)
+                .uniqueSortedRealPackageValues()
+
+            if started.status == .running {
+                dispatchResults.append(
+                    contentsOf: dispatchSafeServiceWorkerSmoke(
+                        harness: harness,
+                        trustedNativeFixturePolicyAllowed:
+                            trustedNativeFixturePolicyAllowed,
+                        nativeMessagingIntegrationSmoke:
+                            &nativeMessagingIntegrationSmoke,
+                        runtimePortSmoke: &runtimePortSmoke
+                    )
+                )
+                _ = harness.triggerIdleRelease()
+                idleTeardownResult =
+                    harness.snapshot.startRecord.status == .stoppedAfterIdle
+                        ? "verified: explicit idle release tore down the isolated JavaScriptCore worker surface."
+                        : "failed: explicit idle release did not report stoppedAfterIdle."
+                hardTimeoutTeardownResult =
+                    verifyServiceWorkerHardTimeout(request: request)
+            } else {
+                _ = harness.triggerIdleRelease()
+                idleTeardownResult =
+                    "notRequired: execution did not reach a running worker; scoped harness teardown still completed."
+                hardTimeoutTeardownResult =
+                    "notRequired: execution did not reach a running worker."
+            }
+            gateRecords.append(
+                serviceWorkerTrialGateRecord(
+                    target: target,
+                    extensionID: extensionID,
+                    profileID: profileID,
+                    selected: selected,
+                    generatedRecord: generatedRecord,
+                    state: .closedAfterTrial,
+                    source: trialGateSource,
+                    reason:
+                        "Scoped local real-package service-worker execution trial closed after deterministic teardown.",
+                    blockers: []
+                )
+            )
+            gateClosedAfterTrial = true
+        }
+
+        let delta = serviceWorkerCaptureDelta(
+            declared: declared,
+            trialGateSource: trialGateSource,
+            staticFamilies: staticFamilies,
+            capturedFamilies: capturedFamilies,
+            capturedRegistrations: capturedRegistrations,
+            snapshotUnsupportedCalls:
+                resourceLoadResult == nil
+                    ? [] : executionStartResult?.blockedUnsupportedCalls ?? [],
+            startResult: executionStartResult,
+            resourceLoadResult: resourceLoadResult
+        )
         let statuses = serviceWorkerEventStatuses(
             declared: declared,
-            readiness: readiness
-        )
-        let jsExecutionPolicy = ChromeMV3ServiceWorkerJSExecutionPolicy.evaluate(
-            moduleState: .enabled,
-            extensionEnabled:
-                lifecycleResult?.record?.runtimeState
-                .internalRuntimeEnabled ?? true,
-            localExperimentalGateAllowed: false,
-            generatedBundleRecordAvailable:
-                lifecycleResult?.generatedVersion != nil
-                    || lifecycleResult?.record?.activeGeneratedVersionID != nil
+            readiness: readiness,
+            capturedFamilies: capturedFamilies,
+            actualDispatchResults: dispatchResults,
+            executionCaptureAttempted:
+                trialGateSource.allowsScopedExecution
         )
         let blockers: [String]
         if declared == false {
@@ -2019,6 +2308,12 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         } else if let readiness {
             blockers = uniqueSortedRealPackages(
                 readiness.blockers.map { "serviceWorker.\($0.rawValue)" }
+                    + (resourceLoadResult?.blockers.map {
+                        "serviceWorker.resource.\($0.rawValue)"
+                    } ?? [])
+                    + (executionStartResult?.blockers.map {
+                        "serviceWorker.execution.\($0.rawValue)"
+                    } ?? [])
                     + statuses.compactMap { status in
                         status.status == .deferred
                             ? "serviceWorker.\(status.source.rawValue):noListener"
@@ -2033,17 +2328,25 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         return ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness(
             declared: declared,
             declarationReadiness: readiness,
-            jsExecutionPolicy: jsExecutionPolicy,
+            trialGateRecords: gateRecords,
+            jsExecutionPolicy: policy,
+            resourceLoadResult: resourceLoadResult,
+            executionStartResult: executionStartResult,
             actualListenerRegistrationCaptureStatus:
-                "notAttempted: real-package compatibility reporting keeps the local experimental service-worker JavaScript gate closed.",
-            capturedListenerFamilies: [],
-            missingListenerFamilies:
-                Array(Set(
-                    statuses.compactMap {
-                        $0.listenerDetected ? nil : $0.targetListener
-                    }
-                )).sorted(),
-            actualDispatchResults: [],
+                serviceWorkerListenerCaptureStatus(
+                    trialGateSource: trialGateSource,
+                    startResult: executionStartResult,
+                    capturedFamilies: capturedFamilies
+                ),
+            capturedListenerFamilies: capturedFamilies,
+            missingListenerFamilies: delta.missingListenerFamilies,
+            staticVsExecutionDelta: delta,
+            actualDispatchResults: dispatchResults,
+            runtimePortSmoke: runtimePortSmoke,
+            nativeMessagingIntegrationSmoke: nativeMessagingIntegrationSmoke,
+            idleTeardownResult: idleTeardownResult,
+            hardTimeoutTeardownResult: hardTimeoutTeardownResult,
+            gateClosedAfterTrial: gateClosedAfterTrial,
             popupOptionsRuntimeMessage:
                 serviceWorkerStatus(
                     .popupOptionsRuntimeMessage,
@@ -2076,19 +2379,22 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             eventStatuses: statuses,
             blockers: blockers,
             nextRecommendedFix:
-                declared
-                    ? "Keep service-worker routing behind the local experimental/default-off gate; next reduce direct blockers in readiness.blockers without enabling stable runtime load."
-                    : "No background.service_worker was declared.",
+                serviceWorkerNextRecommendedFix(
+                    declared: declared,
+                    delta: delta,
+                    resourceLoadResult: resourceLoadResult
+                ),
             diagnostics:
                 uniqueSortedRealPackages(
                     (readiness?.diagnostics ?? [])
                         + [
                             declared
-                                ? "Real-package service-worker readiness was evaluated without loading or waking the worker."
+                                ? "Real-package service-worker readiness was evaluated with stable runtimeLoadable still false."
                                 : "No background.service_worker declaration requires routing.",
-                            "Event statuses are diagnostic; no shared lifecycle session is constructed by the real-package report.",
-                            "Actual JavaScript listener registration capture is not attempted while the local experimental gate is closed.",
-                            "localExperimentalGateAllowed is false for this compatibility pass.",
+                            trialGateSource.allowsScopedExecution
+                                ? "Actual JavaScript listener registration capture was attempted only inside an explicit scoped local trial."
+                                : "Actual JavaScript listener registration capture was not attempted while the local experimental gate stayed closed.",
+                            "No permanent background page, timer, repeated scheduling loop, arbitrary normal-tab wake, real credential bridge, or vendor native-host launch was enabled.",
                         ]
                 )
         )
@@ -2096,19 +2402,38 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
 
     private static func serviceWorkerEventStatuses(
         declared: Bool,
-        readiness: ChromeMV3ServiceWorkerDeclarationReadiness?
+        readiness: ChromeMV3ServiceWorkerDeclarationReadiness?,
+        capturedFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent],
+        actualDispatchResults: [ChromeMV3ServiceWorkerJSDispatchRecord],
+        executionCaptureAttempted: Bool
     ) -> [ChromeMV3PasswordManagerRealPackageServiceWorkerEventStatus] {
         serviceWorkerReportSources.map { source in
             let coverage = readiness?.coverage(for: source.listenerEvent)
-            let listenerDetected = coverage?.listenerDetected == true
+            let executedListenerDetected =
+                capturedFamilies.contains(source.listenerEvent)
+            let listenerDetected =
+                executionCaptureAttempted
+                    ? executedListenerDetected
+                    : coverage?.listenerDetected == true
+            let actual = actualDispatchResults.first {
+                $0.source == source
+            }
             let routingKind: ChromeMV3ServiceWorkerEventRoutingResultKind?
             let status: ChromeMV3PasswordManagerCompatibilityStatus
             if declared == false {
                 routingKind = nil
                 status = .notRequired
+            } else if let actual {
+                routingKind = actual.lifecycleRoutingRecord?.resultKind
+                    ?? serviceWorkerRoutingKind(for: actual.resultKind)
+                status =
+                    actual.resultKind == .delivered ? .partial : .blocked
             } else if readiness == nil {
                 routingKind = .failed
                 status = .blocked
+            } else if executionCaptureAttempted {
+                routingKind = listenerDetected ? nil : noListenerKind(source)
+                status = listenerDetected ? .partial : .deferred
             } else if readiness?.eventRoutingAvailable == true {
                 routingKind = listenerDetected ? .delivered : noListenerKind(source)
                 status = listenerDetected ? .partial : .deferred
@@ -2122,7 +2447,10 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 status: status,
                 routingResultKind: routingKind,
                 listenerDetected: listenerDetected,
-                listenerDetectionPattern: coverage?.detectionPattern,
+                listenerDetectionPattern:
+                    executedListenerDetected
+                        ? "executed JavaScriptCore registration capture"
+                        : coverage?.detectionPattern,
                 payloadSummary:
                     "diagnostic:\(source.rawValue)->\(source.listenerEvent.rawValue)",
                 diagnostics:
@@ -2132,10 +2460,363 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                                 declared
                                     ? "Event source is represented in the real-package readiness report."
                                     : "Event source is not required because no service worker is declared.",
-                                "No event was dispatched during compatibility report generation.",
+                                actual == nil
+                                    ? "No event was dispatched for this source during compatibility report generation."
+                                    : "A safe synthetic event was dispatched through the executed listener capture.",
                             ]
                     )
             )
+        }
+    }
+
+    private static func serviceWorkerTrialGateRecord(
+        target: ChromeMV3PasswordManagerRealPackageTargetDefinition,
+        extensionID: String,
+        profileID: String,
+        selected: SelectedPackage,
+        generatedRecord: ChromeMV3GeneratedBundleRecord?,
+        state:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateState,
+        source:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateSource,
+        reason: String,
+        blockers: [String]
+    ) -> ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateRecord {
+        ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateRecord(
+            targetID: target.targetID,
+            extensionID: extensionID,
+            profileID: profileID,
+            localPackageRoot:
+                selected.resourceScanRootPath
+                    ?? selected.packageURL?.standardizedFileURL.path
+                    ?? target.explicitAllowedLocalRoot,
+            generatedBundleID: generatedRecord?.id,
+            state: state,
+            source: source,
+            reason: reason,
+            blockers: blockers.sorted()
+        )
+    }
+
+    private static func serviceWorkerCaptureDelta(
+        declared: Bool,
+        trialGateSource:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateSource,
+        staticFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent],
+        capturedFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent],
+        capturedRegistrations:
+            [ChromeMV3ServiceWorkerJSCapturedListenerRegistration],
+        snapshotUnsupportedCalls: [String],
+        startResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?,
+        resourceLoadResult: ChromeMV3ServiceWorkerJSResourceLoadRecord?
+    ) -> ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDelta {
+        let attempted = trialGateSource.allowsScopedExecution
+        let missing =
+            attempted
+                ? Array(Set(staticFamilies).subtracting(capturedFamilies))
+                    .sorted()
+                : []
+        let extra =
+            attempted
+                ? Array(Set(capturedFamilies).subtracting(staticFamilies))
+                    .sorted()
+                : []
+        let unsupportedForms =
+            uniqueSortedRealPackages(
+                snapshotUnsupportedCalls
+                    + capturedRegistrations.compactMap {
+                        $0.asyncFunctionDetected
+                            ? "\($0.event.rawValue):asyncFunctionPromiseCompletionDeferred"
+                            : nil
+                    }
+                    + (resourceLoadResult?.blockers.compactMap {
+                        switch $0 {
+                        case .dynamicImportUnsupported,
+                             .importScriptsUnsupported,
+                             .staticModuleImportUnsupported:
+                            return $0.rawValue
+                        default:
+                            return nil
+                        }
+                    } ?? [])
+            )
+        let status:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDeltaStatus
+        if declared == false {
+            status = .noListener
+        } else if attempted == false {
+            status = staticFamilies.isEmpty ? .noListener : .staticOnly
+        } else if startResult?.status == .running {
+            status = capturedFamilies.isEmpty ? .noListener : .executionCaptured
+        } else if startResult?.status == .failed {
+            status = .executionFailed
+        } else if startResult?.status == .blocked {
+            status = .executionBlocked
+        } else {
+            status = .unknown
+        }
+        return ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDelta(
+            status: status,
+            staticListenerFamilies: staticFamilies,
+            executionCapturedListenerFamilies: capturedFamilies,
+            missingListenerFamilies: missing,
+            extraCapturedListenerFamilies: extra,
+            unsupportedListenerForms: unsupportedForms,
+            failedExecutionReason: startResult?.lastErrorMessage,
+            diagnostics:
+                uniqueSortedRealPackages([
+                    attempted
+                        ? "Static token detection was compared with executed JavaScriptCore listener registration capture."
+                        : "Static token detection is recorded without executing the worker because the scoped trial gate stayed closed.",
+                    "Missing listeners are static detections not observed during execution; extra listeners are execution captures missed by direct-token detection.",
+                ])
+        )
+    }
+
+    private static func serviceWorkerListenerCaptureStatus(
+        trialGateSource:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateSource,
+        startResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?,
+        capturedFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent]
+    ) -> String {
+        guard trialGateSource.allowsScopedExecution else {
+            return "notAttempted: real-package compatibility reporting kept the local experimental service-worker JavaScript gate closed."
+        }
+        switch startResult?.status {
+        case .running:
+            return capturedFamilies.isEmpty
+                ? "executed:noListener registrations captured."
+                : "executed:captured \(capturedFamilies.count) listener families."
+        case .failed:
+            return "executionFailed: \(startResult?.lastErrorMessage ?? "unknown JavaScriptCore evaluation failure")"
+        case .blocked:
+            return "executionBlocked: \(startResult?.lastErrorMessage ?? "resource or policy blocker")"
+        case .none:
+            return "executionBlocked: no execution start record was created."
+        default:
+            return "executionBlocked: worker did not remain running."
+        }
+    }
+
+    private static func dispatchSafeServiceWorkerSmoke(
+        harness: ChromeMV3ServiceWorkerJSExecutionHarness,
+        trustedNativeFixturePolicyAllowed: Bool,
+        nativeMessagingIntegrationSmoke: inout String,
+        runtimePortSmoke:
+            inout ChromeMV3PasswordManagerRealPackageServiceWorkerPortSmoke
+    ) -> [ChromeMV3ServiceWorkerJSDispatchRecord] {
+        var results: [ChromeMV3ServiceWorkerJSDispatchRecord] = []
+        func dispatchIfCaptured(
+            _ source: ChromeMV3ServiceWorkerEventSource,
+            arguments: [ChromeMV3StorageValue],
+            payloadSummary: String,
+            sender: ChromeMV3ServiceWorkerEventSenderMetadata = .none
+        ) {
+            guard harness.capturedListener(for: source.listenerEvent) else {
+                return
+            }
+            results.append(
+                harness.dispatch(
+                    source: source,
+                    arguments: arguments,
+                    sender: sender,
+                    payloadSummary: payloadSummary
+                )
+            )
+        }
+
+        let message = ChromeMV3StorageValue.object([
+            "kind": .string("sumiLocalExperimentalServiceWorkerTrial"),
+            "value": .string("deterministic"),
+        ])
+        dispatchIfCaptured(
+            .popupOptionsRuntimeMessage,
+            arguments: [message],
+            payloadSummary: "popup/options deterministic runtime.onMessage smoke"
+        )
+        dispatchIfCaptured(
+            .contentScriptRuntimeMessage,
+            arguments: [message],
+            payloadSummary: "content-script deterministic runtime.onMessage smoke",
+            sender: ChromeMV3ServiceWorkerEventSenderMetadata(
+                tabID: 1,
+                frameID: 0,
+                documentID: "sumi-local-experimental-document",
+                sourceURL: nil,
+                urlRedacted: true,
+                redactionState: "synthetic content-script sender URL redacted"
+            )
+        )
+
+        if harness.capturedListener(for: .runtimeOnConnect) {
+            let connected = harness.connectRuntime(
+                name: "sumi-local-experimental-port"
+            )
+            results.append(connected)
+            var messageDelivered = false
+            var disconnected = false
+            if let portID = connected.portID {
+                messageDelivered =
+                    harness.deliverPortMessage(
+                        portID: portID,
+                        message: message
+                    ) != nil
+                disconnected = harness.disconnectPort(portID: portID)
+            }
+            let released =
+                harness.snapshot.lifecycleSnapshot?
+                .activeKeepaliveRecords.isEmpty ?? true
+            runtimePortSmoke =
+                ChromeMV3PasswordManagerRealPackageServiceWorkerPortSmoke(
+                    attempted: true,
+                    connectResult: connected,
+                    portMessageDelivered: messageDelivered,
+                    portDisconnected: disconnected,
+                    keepaliveReleased: released,
+                    diagnostics: [
+                        "A deterministic runtime Port was opened only when an executed runtime.onConnect listener was captured.",
+                        "The runtime Port was disconnected explicitly and its lifecycle keepalive was checked.",
+                    ]
+                )
+        }
+
+        dispatchIfCaptured(
+            .storageChanged,
+            arguments: [
+                .object([
+                    "sumiTrialKey": .object([
+                        "newValue": .string("local-experimental"),
+                    ]),
+                ]),
+                .string("local"),
+            ],
+            payloadSummary: "deterministic storage.onChanged smoke"
+        )
+        let permissionPayload = ChromeMV3StorageValue.object([
+            "permissions": .array([.string("storage")]),
+            "origins": .array([]),
+        ])
+        dispatchIfCaptured(
+            .permissionsAdded,
+            arguments: [permissionPayload],
+            payloadSummary: "deterministic permissions.onAdded smoke"
+        )
+        dispatchIfCaptured(
+            .permissionsRemoved,
+            arguments: [permissionPayload],
+            payloadSummary: "deterministic permissions.onRemoved smoke"
+        )
+        dispatchIfCaptured(
+            .alarmTriggered,
+            arguments: [.object(["name": .string("sumi-local-trial")])],
+            payloadSummary: "deterministic alarms.onAlarm smoke"
+        )
+        dispatchIfCaptured(
+            .contextMenuClicked,
+            arguments: [
+                .object(["menuItemId": .string("sumi-local-trial")]),
+                .object(["id": .number(1)]),
+            ],
+            payloadSummary: "deterministic contextMenus.onClicked smoke"
+        )
+        dispatchIfCaptured(
+            .webNavigationSyntheticEvent,
+            arguments: [
+                .object([
+                    "tabId": .number(1),
+                    "frameId": .number(0),
+                    "url": .string("https://example.com/local-trial"),
+                ]),
+            ],
+            payloadSummary: "deterministic webNavigation.onCommitted smoke"
+        )
+
+        if trustedNativeFixturePolicyAllowed {
+            let opened = harness.openTrustedNativeFixturePort(
+                name: "com.sumi.local_experimental_fixture",
+                trustedFixturePolicyAllowed: true
+            )
+            results.append(opened)
+            if let portID = opened.portID {
+                results.append(
+                    harness.deliverTrustedNativeFixturePortMessage(
+                        portID: portID,
+                        message: message
+                    )
+                )
+                _ = harness.disconnectPort(portID: portID)
+            }
+            nativeMessagingIntegrationSmoke =
+                "trustedFixtureDispatched: synthetic native Port connect/message lifecycle was modeled without vendor-host discovery or launch."
+        }
+        return results
+    }
+
+    private static func verifyServiceWorkerHardTimeout(
+        request: ChromeMV3ServiceWorkerJSExecutionRequest
+    ) -> String {
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: request
+        )
+        guard harness.start().status == .running else {
+            _ = harness.triggerIdleRelease()
+            return "failed: hard-timeout verification could not start a second isolated worker instance."
+        }
+        if harness.capturedListener(for: .runtimeOnConnect) {
+            _ = harness.connectRuntime(name: "sumi-local-hard-timeout-port")
+        }
+        _ = harness.triggerHardTimeout()
+        let snapshot = harness.snapshot
+        return snapshot.startRecord.status == .stoppedAfterHardTimeout
+            && snapshot.ports.allSatisfy { $0.connected == false }
+            ? "verified: explicit hard-timeout teardown released the isolated worker surface and disconnected ports."
+            : "failed: explicit hard-timeout teardown did not release all isolated worker state."
+    }
+
+    private static func serviceWorkerRoutingKind(
+        for kind: ChromeMV3ServiceWorkerJSDispatchResultKind
+    ) -> ChromeMV3ServiceWorkerEventRoutingResultKind {
+        switch kind {
+        case .blockedByGate:
+            return .blockedByGate
+        case .blockedByPermission:
+            return .blockedByPermission
+        case .delivered:
+            return .delivered
+        case .listenerError:
+            return .listenerError
+        case .noListener:
+            return .noListener
+        case .noReceiver:
+            return .noReceiver
+        case .promiseRejected:
+            return .promiseRejected
+        case .sendResponseTimeoutDiagnostic:
+            return .sendResponseTimeoutDiagnostic
+        case .unsupportedListenerMode:
+            return .unsupportedListenerMode
+        }
+    }
+
+    private static func serviceWorkerNextRecommendedFix(
+        declared: Bool,
+        delta:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDelta,
+        resourceLoadResult: ChromeMV3ServiceWorkerJSResourceLoadRecord?
+    ) -> String {
+        guard declared else {
+            return "No background.service_worker was declared."
+        }
+        if let blocker = resourceLoadResult?.blockers.first {
+            return "Resolve scoped service-worker resource blocker \(blocker.rawValue) without enabling stable runtime load."
+        }
+        switch delta.status {
+        case .executionFailed:
+            return "Add the smallest conservative shim diagnostic needed to explain the isolated JavaScriptCore evaluation failure; keep the stable runtime default-off."
+        case .executionCaptured:
+            return "Use the captured listener and dispatch deltas to prioritize the next bounded fixture-only shim gap; keep the stable runtime default-off."
+        case .executionBlocked, .staticOnly, .noListener, .unknown:
+            return "Keep service-worker routing behind the local experimental/default-off gate and reduce the next precise blocker without enabling stable runtime load."
         }
     }
 
@@ -3293,6 +3974,16 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 "Checked MV3 event-driven service-worker lifecycle constraints."
             ),
             source(
+                "Chrome service-worker basics",
+                "https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/basics",
+                "Checked background.service_worker, classic versus module workers, importScripts, static module imports, and unsupported dynamic imports."
+            ),
+            source(
+                "Chrome events in service workers",
+                "https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/events",
+                "Checked synchronous top-level extension event listener registration requirements."
+            ),
+            source(
                 "Chrome alarms API",
                 "https://developer.chrome.com/docs/extensions/reference/api/alarms",
                 "Checked alarms.onAlarm event routing expectations."
@@ -3316,6 +4007,11 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 "Apple Foundation Process and FileManager",
                 "https://developer.apple.com/documentation/foundation",
                 "Checked Foundation Process/FileManager API surface relevant to explicit fixture process launch, executable checks, and symlink-resolved containment."
+            ),
+            source(
+                "Apple JSContext SDK header",
+                "xcode://MacOSX.sdk/System/Library/Frameworks/JavaScriptCore.framework/Headers/JSContext.h",
+                "Checked evaluateScript:withSourceURL:, exception handling, JSVirtualMachine association, and inspectable default-off behavior. The header does not document a Promise job-drain contract, so deferred Promise completion stays diagnostic-only."
             ),
             source(
                 "Chrome extension packaging",
@@ -3546,4 +4242,10 @@ private func safeURLInsideRoot(_ url: URL, root: URL) -> Bool {
 
 private func uniqueSortedRealPackages(_ values: [String]) -> [String] {
     Array(Set(values.filter { $0.isEmpty == false })).sorted()
+}
+
+private extension Sequence where Element: Hashable & Comparable {
+    func uniqueSortedRealPackageValues() -> [Element] {
+        Array(Set(self)).sorted()
+    }
 }
