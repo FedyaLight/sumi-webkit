@@ -1357,6 +1357,10 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
         ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateSource
     var listenerRegistrationCaptureStatus: String
     var capturedListenerFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent]
+    var importScriptsResolvedCount: Int
+    var importedScriptPaths: [String]
+    var importScriptsBlockers: [ChromeMV3ServiceWorkerJSImportScriptsBlocker]
+    var remainingDynamicImportModuleBlockers: [String]
     var staticVsExecutionDeltaStatus:
         ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDeltaStatus
     var dispatchSummaries: [String]
@@ -1391,6 +1395,33 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
             listenerRegistrationCaptureStatus:
                 readiness.actualListenerRegistrationCaptureStatus,
             capturedListenerFamilies: readiness.capturedListenerFamilies,
+            importScriptsResolvedCount: readiness.importScriptsResolvedCount,
+            importedScriptPaths: readiness.importedScriptPaths,
+            importScriptsBlockers: readiness.importScriptsBlockers,
+            remainingDynamicImportModuleBlockers:
+                uniqueSortedExtensionManager(
+                    (readiness.resourceLoadResult?.blockers.compactMap {
+                        blocker in
+                        switch blocker {
+                        case .dynamicImportUnsupported,
+                             .moduleWorkerUnsupported,
+                             .staticModuleImportUnsupported:
+                            return blocker.rawValue
+                        default:
+                            return nil
+                        }
+                    } ?? [])
+                        + readiness.importScriptsBlockers.compactMap {
+                            blocker in
+                            switch blocker {
+                            case .dynamicImportUnsupported,
+                                 .staticModuleImportUnsupported:
+                                return "importScripts.\(blocker.rawValue)"
+                            default:
+                                return nil
+                            }
+                        }
+                ),
             staticVsExecutionDeltaStatus:
                 readiness.staticVsExecutionDelta.status,
             dispatchSummaries:
@@ -1495,6 +1526,7 @@ struct ChromeMV3ExtensionManagerServiceWorkerReadinessPanel:
                     blockers.map { "Resolve service-worker readiness blocker: \($0)." }
                         + [
                             "Keep localExperimentalGateAllowed false unless an explicit scoped test creates a shared lifecycle session.",
+                            "Keep importScripts resolution read-only here; scoped trials report generated-bundle imports without manager detail executing a worker.",
                         ]
                 ),
             diagnostics:
@@ -1506,6 +1538,7 @@ struct ChromeMV3ExtensionManagerServiceWorkerReadinessPanel:
                                 : "Manager detail evaluated service-worker declaration/readiness without constructing a session.",
                             "lastEventResult is nil until a scoped local experimental runtime event is routed.",
                             "Actual JavaScript listener registration capture is not attempted by manager detail.",
+                            "importScripts policy is displayed from policy data only; manager detail does not construct the resolver.",
                             "A previously written scoped real-package trial report may be displayed read-only.",
                             "No permanent background page or timer is created by this panel.",
                         ]
@@ -3135,6 +3168,10 @@ struct ChromeMV3ExtensionManagerView: View {
                         panel.jsExecutionPolicy.executionSurface.rawValue
                     )
                     fact(
+                        "importScripts",
+                        panel.jsExecutionPolicy.importScriptsScope.rawValue
+                    )
+                    fact(
                         "Captured",
                         "\(panel.capturedListenerFamilies.count)"
                     )
@@ -3176,6 +3213,32 @@ struct ChromeMV3ExtensionManagerView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        "Trial imports: \(trial.importScriptsResolvedCount)"
+                            + (
+                                trial.importedScriptPaths.isEmpty
+                                    ? ""
+                                    : " - "
+                                        + trial.importedScriptPaths
+                                        .prefix(3)
+                                        .joined(separator: ", ")
+                            )
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    if trial.importScriptsBlockers.isEmpty == false {
+                        Text(
+                            "Import blockers: "
+                                + trial.importScriptsBlockers
+                                .map(\.rawValue)
+                                .prefix(3)
+                                .joined(separator: ", ")
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
                     Text(trial.defaultOffDisclaimer)
                         .font(.caption)
                         .foregroundStyle(.secondary)

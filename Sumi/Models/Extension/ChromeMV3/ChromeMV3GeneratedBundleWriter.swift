@@ -188,7 +188,10 @@ struct ChromeMV3GeneratedBundleWriter {
         )
         let generatedManifestData = try canonicalJSONData(manifestObject)
         let generatedManifestSHA256 = sha256Hex(generatedManifestData)
-        let resources = try manifestReferencedResources(in: manifestObject)
+        let resources = try manifestReferencedResources(
+            in: manifestObject,
+            originalRootURL: originalRootURL
+        )
 
         if fileManager.fileExists(atPath: temporaryBundleRootURL.path) {
             try fileManager.removeItem(at: temporaryBundleRootURL)
@@ -417,7 +420,8 @@ struct ChromeMV3GeneratedBundleWriter {
     }
 
     private func manifestReferencedResources(
-        in manifest: [String: Any]
+        in manifest: [String: Any],
+        originalRootURL: URL
     ) throws -> [ManifestResourceReference] {
         var resources: [ManifestResourceReference] = [
             ManifestResourceReference(
@@ -433,6 +437,18 @@ struct ChromeMV3GeneratedBundleWriter {
                 field: "background.service_worker",
                 to: &resources
             )
+            if let serviceWorker = background["service_worker"] as? String,
+               let normalized = try? normalizedResourcePath(
+                    serviceWorker,
+                    field: "background.service_worker"
+               )
+            {
+                appendImportScriptsDependencies(
+                    startingAt: normalized,
+                    originalRootURL: originalRootURL,
+                    to: &resources
+                )
+            }
         }
 
         if let contentScripts = manifest["content_scripts"] as? [[String: Any]] {
@@ -516,6 +532,141 @@ struct ChromeMV3GeneratedBundleWriter {
         )
 
         return resources.sorted()
+    }
+
+    private func appendImportScriptsDependencies(
+        startingAt serviceWorkerPath: String,
+        originalRootURL: URL,
+        to resources: inout [ManifestResourceReference]
+    ) {
+        var scanned: Set<String> = []
+        appendImportScriptsDependencies(
+            parentPath: serviceWorkerPath,
+            originalRootURL: originalRootURL,
+            scanned: &scanned,
+            to: &resources
+        )
+    }
+
+    private func appendImportScriptsDependencies(
+        parentPath: String,
+        originalRootURL: URL,
+        scanned: inout Set<String>,
+        to resources: inout [ManifestResourceReference]
+    ) {
+        guard scanned.insert(parentPath).inserted else { return }
+        guard
+            let sourceURL = try? safeSourceURL(
+                relativePath: parentPath,
+                rootURL: originalRootURL,
+                field: "background.service_worker.importScripts.scan"
+            ),
+            let source = try? String(contentsOf: sourceURL, encoding: .utf8)
+        else { return }
+
+        for literal in importScriptsStringLiteralArguments(in: source) {
+            guard let resolved = resolveImportScriptsDependencyPath(
+                literal,
+                parentPath: parentPath
+            ) else { continue }
+            guard
+                let dependencyURL = try? safeSourceURL(
+                    relativePath: resolved,
+                    rootURL: originalRootURL,
+                    field: "background.service_worker.importScripts"
+                ),
+                regularFile(at: dependencyURL)
+            else { continue }
+            resources.append(
+                ManifestResourceReference(
+                    field: "background.service_worker.importScripts",
+                    path: resolved,
+                    policy: .exactRequired
+                )
+            )
+            appendImportScriptsDependencies(
+                parentPath: resolved,
+                originalRootURL: originalRootURL,
+                scanned: &scanned,
+                to: &resources
+            )
+        }
+    }
+
+    private func resolveImportScriptsDependencyPath(
+        _ importPath: String,
+        parentPath: String
+    ) -> String? {
+        let trimmed = importPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false,
+              trimmed.hasPrefix("/") == false,
+              trimmed.hasPrefix("~") == false,
+              trimmed.contains("\\") == false,
+              trimmed.contains("\0") == false,
+              trimmed.contains("?") == false,
+              trimmed.contains("#") == false,
+              URLComponents(string: trimmed)?.scheme == nil
+        else { return nil }
+        var components: [String] = []
+        for component in trimmed.split(
+            separator: "/",
+            omittingEmptySubsequences: false
+        ).map(String.init) {
+            if component == "." { continue }
+            guard component != "..", component.isEmpty == false else {
+                return nil
+            }
+            components.append(component)
+        }
+        guard components.isEmpty == false else { return nil }
+        let parentDirectory = (parentPath as NSString).deletingLastPathComponent
+        let resolved =
+            parentDirectory.isEmpty
+                ? components.joined(separator: "/")
+                : "\(parentDirectory)/\(components.joined(separator: "/"))"
+        return try? normalizedResourcePath(
+            resolved,
+            field: "background.service_worker.importScripts"
+        )
+    }
+
+    private func importScriptsStringLiteralArguments(
+        in source: String
+    ) -> [String] {
+        guard
+            let callExpression = try? NSRegularExpression(
+                pattern: "\\bimportScripts\\s*\\(([^)]*)\\)"
+            ),
+            let literalExpression = try? NSRegularExpression(
+                pattern: #""((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'"#
+            )
+        else { return [] }
+        let fullRange = NSRange(source.startIndex..., in: source)
+        return callExpression.matches(in: source, range: fullRange).flatMap {
+            match -> [String] in
+            guard let argumentsRange = Range(match.range(at: 1), in: source)
+            else { return [] }
+            let arguments = String(source[argumentsRange])
+            let argumentRange = NSRange(arguments.startIndex..., in: arguments)
+            return literalExpression.matches(
+                in: arguments,
+                range: argumentRange
+            ).compactMap { literal in
+                let doubleQuoted = Range(literal.range(at: 1), in: arguments)
+                let singleQuoted = Range(literal.range(at: 2), in: arguments)
+                let raw = doubleQuoted.map { String(arguments[$0]) }
+                    ?? singleQuoted.map { String(arguments[$0]) }
+                return raw.map(unescapedImportScriptsLiteral)
+            }
+        }
+    }
+
+    private func unescapedImportScriptsLiteral(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\/", with: "/")
+            .replacingOccurrences(of: "\\'", with: "'")
+            .replacingOccurrences(of: "\\\"", with: "\"")
+            .replacingOccurrences(of: "\\\\", with: "\\")
     }
 
     private func appendExactPath(
@@ -955,6 +1106,11 @@ struct ChromeMV3GeneratedBundleWriter {
 
     private func isSymbolicLink(at url: URL) -> Bool {
         (try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) != nil
+    }
+
+    private func regularFile(at url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isRegularFileKey]))
+            .flatMap(\.isRegularFile) == true
     }
 
     private func relativePath(for url: URL, under rootURL: URL) throws -> String {

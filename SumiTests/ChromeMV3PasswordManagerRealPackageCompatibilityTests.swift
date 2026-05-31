@@ -279,7 +279,7 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertFalse(readiness.jsExecutionPolicy.serviceWorkerJSExecutionAvailableByDefault)
     }
 
-    func testExplicitScopedServiceWorkerTrialBlocksModuleAndImportScriptsExactly()
+    func testExplicitScopedServiceWorkerTrialImportsClassicDependenciesAndBlocksModule()
         throws
     {
         let root = try temporaryDirectory(named: "blocked-worker-resources")
@@ -302,7 +302,8 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             manifest: minimalManifest(name: "Bitwarden ImportScripts"),
             extraFiles: [
                 "background.js": "importScripts('dependency.js');\n",
-                "dependency.js": "",
+                "dependency.js":
+                    "chrome.runtime.onMessage.addListener(() => 'imported');",
             ]
         )
         let report = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
@@ -339,15 +340,27 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             ) == true
         )
         XCTAssertEqual(module.staticVsExecutionDelta.status, .executionBlocked)
-        XCTAssertTrue(
+        XCTAssertFalse(
             imported.resourceLoadResult?.blockers.contains(
                 .importScriptsUnsupported
             ) == true
         )
+        XCTAssertEqual(imported.importScriptsResolvedCount, 1)
+        XCTAssertEqual(imported.importedScriptPaths, ["dependency.js"])
+        XCTAssertEqual(imported.executionStartResult?.status, .running)
+        XCTAssertTrue(
+            imported.capturedListenerFamilies.contains(.runtimeOnMessage)
+        )
+        XCTAssertTrue(
+            imported.actualDispatchResults.contains {
+                $0.source == .popupOptionsRuntimeMessage
+                    && $0.resultKind == .delivered
+            }
+        )
         XCTAssertTrue(
             imported.staticVsExecutionDelta.unsupportedListenerForms.contains(
                 "importScriptsUnsupported"
-            )
+            ) == false
         )
         XCTAssertTrue(module.gateClosedAfterTrial)
         XCTAssertTrue(imported.gateClosedAfterTrial)
@@ -894,6 +907,13 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                 ),
             encoding: .utf8
         )
+        let harness = try String(
+            contentsOf:
+                root.appendingPathComponent(
+                    "Sumi/Models/Extension/ChromeMV3/ChromeMV3ServiceWorkerJSExecutionHarness.swift"
+                ),
+            encoding: .utf8
+        )
         let positive = "tr" + "ue"
 
         XCTAssertFalse(source.contains("URL" + "Session"))
@@ -908,6 +928,11 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertFalse(source.contains("arbitraryHostLaunchAllowed = " + positive))
         XCTAssertFalse(source.contains("productRuntimeAvailable: " + positive))
         XCTAssertFalse(source.contains("productRuntimeExposed: " + positive))
+        XCTAssertFalse(harness.contains("networkImportsAllowed: " + positive))
+        XCTAssertFalse(harness.contains("filesystemAbsoluteImportsAllowed: " + positive))
+        XCTAssertFalse(harness.contains("dynamicImportAvailable: " + positive))
+        XCTAssertFalse(harness.contains("moduleWorkerImportAvailable: " + positive))
+        XCTAssertFalse(harness.contains("permanentBackgroundAvailable: " + positive))
         XCTAssertFalse(validator.contains("manifest_version 2 only"))
     }
 

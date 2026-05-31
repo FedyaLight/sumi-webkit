@@ -52,7 +52,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         )
     }
 
-    func testGeneratedResourceLoaderDiagnosesMissingUnsafeModuleAndImportScripts()
+    func testGeneratedResourceLoaderDiagnosesMissingUnsafeAndModule()
         throws
     {
         let missingFixture = try makeHarness(
@@ -104,18 +104,247 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             ) == true
         )
 
-        let importFixture = try makeHarness(
-            source: "importScripts('dependency.js');\n",
+    }
+
+    func testImportScriptsPolicyAndRelativeImportCaptureListener() throws {
+        let fixture = try makeHarness(
+            source: "importScripts('./dependency.js');\n",
+            extraFiles: [
+                "dependency.js": """
+                chrome.runtime.onMessage.addListener((message) => {
+                  return { fromImport: message.value };
+                });
+                """,
+            ],
             localExperimentalGateAllowed: true
         )
-        let imported = ChromeMV3ServiceWorkerJSExecutionHarness(
-            request: importFixture.request()
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request()
         )
-        XCTAssertEqual(imported.start().status, .blocked)
+        let started = harness.start()
+        let result = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            arguments: [.object(["value": .string("dependency")])],
+            payloadSummary: "imported runtime.onMessage"
+        )
+
+        XCTAssertEqual(started.status, .running)
+        XCTAssertTrue(harness.policy.importScriptsAvailableInLocalExperimentalGate)
+        XCTAssertFalse(harness.policy.importScriptsAvailableByDefault)
+        XCTAssertEqual(harness.policy.importScriptsScope, .generatedBundleOnly)
+        XCTAssertFalse(harness.policy.networkImportsAllowed)
+        XCTAssertFalse(harness.policy.filesystemAbsoluteImportsAllowed)
+        XCTAssertFalse(harness.policy.symlinkEscapeAllowed)
+        XCTAssertFalse(harness.policy.dynamicImportAvailable)
+        XCTAssertFalse(harness.policy.moduleWorkerImportAvailable)
+        XCTAssertEqual(harness.snapshot.importScriptsResolvedCount, 1)
+        XCTAssertEqual(
+            harness.snapshot.importedScripts.map(\.resolvedRelativePath),
+            ["dependency.js"]
+        )
+        XCTAssertEqual(
+            harness.snapshot.capturedListeners.first?.listenerSourceFile,
+            "dependency.js"
+        )
+        XCTAssertEqual(
+            result.responsePayload,
+            .object(["fromImport": .string("dependency")])
+        )
+        XCTAssertEqual(result.resultKind, .delivered)
+    }
+
+    func testMultipleImportScriptsArgumentsExecuteInDeterministicOrder()
+        throws
+    {
+        let fixture = try makeHarness(
+            source: """
+            globalThis.order = [];
+            importScripts('first.js', 'second.js');
+            chrome.runtime.onMessage.addListener(() => order.join(','));
+            """,
+            extraFiles: [
+                "first.js": "order.push('first');",
+                "second.js": "order.push('second');",
+            ],
+            localExperimentalGateAllowed: true
+        )
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request()
+        )
+
+        XCTAssertEqual(harness.start().status, .running)
+        XCTAssertEqual(
+            harness.snapshot.importedScripts.compactMap(\.evaluationOrder),
+            [1, 2]
+        )
+        XCTAssertEqual(
+            harness.snapshot.importedScripts.compactMap(\.resolvedRelativePath),
+            ["first.js", "second.js"]
+        )
+        XCTAssertEqual(
+            harness.dispatch(
+                source: .popupOptionsRuntimeMessage,
+                payloadSummary: "ordered import"
+            ).responsePayload,
+            .string("first,second")
+        )
+    }
+
+    func testImportedRuntimeOnConnectListenerReceivesPortDispatch() throws {
+        let fixture = try makeHarness(
+            source: "importScripts('connect.js');\n",
+            extraFiles: [
+                "connect.js": """
+                chrome.runtime.onConnect.addListener((port) => {
+                  port.onMessage.addListener((message) => {
+                    port.postMessage({ fromImport: message.value });
+                  });
+                });
+                """,
+            ],
+            localExperimentalGateAllowed: true
+        )
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request()
+        )
+
+        XCTAssertEqual(harness.start().status, .running)
+        let connected = harness.connectRuntime(name: "imported")
+        let portID = try XCTUnwrap(connected.portID)
+        let port = harness.deliverPortMessage(
+            portID: portID,
+            message: .object(["value": .string("port")])
+        )
+
+        XCTAssertEqual(connected.resultKind, .delivered)
+        XCTAssertTrue(harness.capturedListener(for: .runtimeOnConnect))
+        XCTAssertEqual(
+            port?.postedMessages,
+            [.object(["fromImport": .string("port")])]
+        )
+    }
+
+    func testUnsafeImportScriptsFormsAreDiagnosedPrecisely() throws {
+        let cases: [(String, ChromeMV3ServiceWorkerJSImportScriptsBlocker)] = [
+            ("importScripts('missing.js');", .importedScriptMissing),
+            ("importScripts('../outside.js');", .importPathTraversalRejected),
+            ("importScripts('/Users/example/outside.js');", .absoluteFilesystemPathRejected),
+            ("importScripts('https://example.com/remote.js');", .remoteURLRejected),
+            ("importScripts('data:text/javascript,0');", .dataURLRejected),
+            ("importScripts('blob:https://example.com/id');", .blobURLRejected),
+            ("importScripts('file:///tmp/worker.js');", .fileURLRejected),
+        ]
+
+        for (source, blocker) in cases {
+            let fixture = try makeHarness(
+                source: source,
+                localExperimentalGateAllowed: true
+            )
+            let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+                request: fixture.request()
+            )
+
+            XCTAssertEqual(harness.start().status, .failed, source)
+            XCTAssertTrue(
+                harness.snapshot.importScriptsBlockers.contains(blocker),
+                source
+            )
+        }
+    }
+
+    func testSymlinkEscapeAndNonUTF8ImportScriptsAreDiagnosed() throws {
+        let symlinkFixture = try makeHarness(
+            source: "importScripts('linked.js');",
+            localExperimentalGateAllowed: true
+        )
+        let outside = try temporaryDirectory()
+            .appendingPathComponent("outside.js")
+        try "chrome.runtime.onMessage.addListener(() => 'outside');"
+            .write(to: outside, atomically: true, encoding: .utf8)
+        let linked = symlinkFixture.generatedRootURL
+            .appendingPathComponent("linked.js")
+        try FileManager.default.createSymbolicLink(
+            at: linked,
+            withDestinationURL: outside
+        )
+        var symlinkRecord = symlinkFixture.generatedRecord
+        symlinkRecord.copiedResourcePaths.append("linked.js")
+        let symlinkHarness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: symlinkFixture.request(generatedRecord: symlinkRecord)
+        )
+
+        XCTAssertEqual(symlinkHarness.start().status, .failed)
         XCTAssertTrue(
-            imported.snapshot.resourceLoad?.blockers.contains(
-                .importScriptsUnsupported
-            ) == true
+            symlinkHarness.snapshot.importScriptsBlockers.contains(
+                .importedScriptSymbolicLinkRejected
+            )
+        )
+
+        let invalidFixture = try makeHarness(
+            source: "importScripts('bad.js');",
+            localExperimentalGateAllowed: true
+        )
+        try Data([0xff, 0xfe, 0xfd]).write(
+            to: invalidFixture.generatedRootURL
+                .appendingPathComponent("bad.js")
+        )
+        var invalidRecord = invalidFixture.generatedRecord
+        invalidRecord.copiedResourcePaths.append("bad.js")
+        let invalidHarness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: invalidFixture.request(generatedRecord: invalidRecord)
+        )
+
+        XCTAssertEqual(invalidHarness.start().status, .failed)
+        XCTAssertTrue(
+            invalidHarness.snapshot.importScriptsBlockers.contains(
+                .importedScriptUTF8Required
+            )
+        )
+    }
+
+    func testCircularImportScriptsBlockedAndDuplicateImportsReevaluate()
+        throws
+    {
+        let circular = try makeHarness(
+            source: "importScripts('loop.js');",
+            extraFiles: [
+                "loop.js": "importScripts('loop.js');",
+            ],
+            localExperimentalGateAllowed: true
+        )
+        let circularHarness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: circular.request()
+        )
+        XCTAssertEqual(circularHarness.start().status, .failed)
+        XCTAssertTrue(
+            circularHarness.snapshot.importScriptsBlockers.contains(
+                .circularImportBlocked
+            )
+        )
+
+        let duplicate = try makeHarness(
+            source: """
+            globalThis.count = 0;
+            importScripts('increment.js', 'increment.js');
+            chrome.runtime.onMessage.addListener(() => count);
+            """,
+            extraFiles: [
+                "increment.js": "count += 1;",
+            ],
+            localExperimentalGateAllowed: true
+        )
+        let duplicateHarness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: duplicate.request()
+        )
+
+        XCTAssertEqual(duplicateHarness.start().status, .running)
+        XCTAssertEqual(duplicateHarness.snapshot.importScriptsResolvedCount, 2)
+        XCTAssertEqual(
+            duplicateHarness.dispatch(
+                source: .popupOptionsRuntimeMessage,
+                payloadSummary: "duplicate import"
+            ).responsePayload,
+            .number(2)
         )
     }
 
@@ -401,12 +630,13 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
 
         func request(
             manifest: ChromeMV3Manifest? = nil,
+            generatedRecord: ChromeMV3GeneratedBundleRecord? = nil,
             moduleState: ChromeMV3ProfileHostModuleState = .enabled,
             extensionEnabled: Bool = true
         ) -> ChromeMV3ServiceWorkerJSExecutionRequest {
             ChromeMV3ServiceWorkerJSExecutionRequest(
                 manifest: manifest ?? self.manifest,
-                generatedBundleRecord: generatedRecord,
+                generatedBundleRecord: generatedRecord ?? self.generatedRecord,
                 extensionID: "service-worker-js-fixture-extension",
                 profileID: "service-worker-js-fixture-profile",
                 moduleState: moduleState,
@@ -419,6 +649,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
 
     private func makeHarness(
         source: String,
+        extraFiles: [String: String] = [:],
         serviceWorkerType: String? = nil,
         localExperimentalGateAllowed: Bool = false
     ) throws -> HarnessFixture {
@@ -452,6 +683,14 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             atomically: true,
             encoding: .utf8
         )
+        for (path, contents) in extraFiles {
+            let url = fixtureDirectory.appendingPathComponent(path)
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try contents.write(to: url, atomically: true, encoding: .utf8)
+        }
 
         let storeRoot = try temporaryDirectory()
         let stage = try ChromeMV3OriginalBundleStore(

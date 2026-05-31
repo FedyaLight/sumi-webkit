@@ -57,6 +57,24 @@ enum ChromeMV3ServiceWorkerJSExecutionPolicyBlocker:
     }
 }
 
+enum ChromeMV3ServiceWorkerJSImportScriptsScope:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case blocked
+    case generatedBundleOnly
+
+    static func < (
+        lhs: ChromeMV3ServiceWorkerJSImportScriptsScope,
+        rhs: ChromeMV3ServiceWorkerJSImportScriptsScope
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
 struct ChromeMV3ServiceWorkerJSExecutionPolicy:
     Codable,
     Equatable,
@@ -68,6 +86,14 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
     var supportsClassicWorker: Bool
     var supportsModuleWorker: Bool
     var listenerCaptureAvailable: Bool
+    var importScriptsAvailableInLocalExperimentalGate: Bool
+    var importScriptsAvailableByDefault: Bool
+    var importScriptsScope: ChromeMV3ServiceWorkerJSImportScriptsScope
+    var networkImportsAllowed: Bool
+    var filesystemAbsoluteImportsAllowed: Bool
+    var symlinkEscapeAllowed: Bool
+    var dynamicImportAvailable: Bool
+    var moduleWorkerImportAvailable: Bool
     var permanentBackgroundAvailable: Bool
     var timersAllowed: Bool
     var pollingAllowed: Bool
@@ -117,6 +143,14 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
             supportsClassicWorker: javaScriptCoreAvailable,
             supportsModuleWorker: false,
             listenerCaptureAvailable: available,
+            importScriptsAvailableInLocalExperimentalGate: available,
+            importScriptsAvailableByDefault: false,
+            importScriptsScope: available ? .generatedBundleOnly : .blocked,
+            networkImportsAllowed: false,
+            filesystemAbsoluteImportsAllowed: false,
+            symlinkEscapeAllowed: false,
+            dynamicImportAvailable: false,
+            moduleWorkerImportAvailable: false,
             permanentBackgroundAvailable: false,
             timersAllowed: false,
             pollingAllowed: false,
@@ -127,6 +161,8 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
                         "JavaScript execution is explicit local-experimental fixture state only.",
                         "The selected JavaScriptCore surface has no normal-tab attachment, hidden page, network bridge, credential bridge, or native-host launch bridge.",
                         "Classic worker execution is supported; module worker execution is precisely blocked until a verified module loader exists.",
+                        "Classic importScripts is available only while the local experimental gate is open and only for generated-bundle-contained extension resources.",
+                        "Network imports, file/data/blob URL imports, absolute filesystem imports, symlink escapes, dynamic import, and module worker import remain blocked.",
                         "Lifetime transitions are explicit fixture calls only.",
                         "Stable product runtime remains default-off.",
                     ]
@@ -151,7 +187,7 @@ struct ChromeMV3ServiceWorkerJSExecutionDocumentationSource:
         source(
             "Chrome extension service-worker basics",
             "https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/basics",
-            "background.service_worker declares one packaged JavaScript file; module workers require background.type=module; dynamic import is unsupported."
+            "background.service_worker declares one packaged JavaScript file; module workers require background.type=module; classic workers may use importScripts; dynamic import is unsupported."
         ),
         source(
             "Chrome extension service-worker lifecycle",
@@ -202,6 +238,16 @@ struct ChromeMV3ServiceWorkerJSExecutionDocumentationSource:
             "Chrome native messaging",
             "https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging",
             "Native Port lifecycle was checked; arbitrary host discovery and launch remain outside this harness."
+        ),
+        source(
+            "WHATWG HTML WorkerGlobalScope importScripts",
+            "https://html.spec.whatwg.org/multipage/workers.html#importing-scripts-and-libraries",
+            "importScripts processes each supplied URL synchronously in argument order, fetches a classic worker-imported script, runs it, and aborts the remaining imports on exception."
+        ),
+        source(
+            "W3C Service Workers importScripts",
+            "https://w3c.github.io/ServiceWorker/v1/#importscripts",
+            "Service workers maintain a script resource map for imported classic scripts; the spec does not define a local filesystem resolver or extension generated-bundle policy."
         ),
         source(
             "Apple JSContext documentation",
@@ -300,6 +346,61 @@ enum ChromeMV3ServiceWorkerJSResourceLoadBlocker:
     }
 }
 
+enum ChromeMV3ServiceWorkerJSImportScriptsBlocker:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case absoluteFilesystemPathRejected
+    case blobURLRejected
+    case circularImportBlocked
+    case dataURLRejected
+    case dynamicImportUnsupported
+    case fileURLRejected
+    case generatedBundleRecordMissing
+    case generatedBundleRootMissing
+    case importArgumentNonString
+    case importPathEscapesGeneratedBundle
+    case importPathTraversalRejected
+    case importPathUnsafe
+    case importedScriptDirectoryRejected
+    case importedScriptMissing
+    case importedScriptNotCopiedFromGeneratedBundleRecord
+    case importedScriptSymbolicLinkRejected
+    case importedScriptUTF8Required
+    case remoteURLRejected
+    case scriptEvaluationFailed
+    case staticModuleImportUnsupported
+    case unsupportedScheme
+
+    static func < (
+        lhs: ChromeMV3ServiceWorkerJSImportScriptsBlocker,
+        rhs: ChromeMV3ServiceWorkerJSImportScriptsBlocker
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3ServiceWorkerJSImportedScriptRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var requestPath: String
+    var parentScriptRelativePath: String
+    var resolvedRelativePath: String?
+    var resolvedPath: String?
+    var importChain: [String]
+    var imported: Bool
+    var evaluationOrder: Int?
+    var sourceSHA256: String?
+    var sourceByteCount: Int?
+    var blockers: [ChromeMV3ServiceWorkerJSImportScriptsBlocker]
+    var diagnostics: [String]
+}
+
 struct ChromeMV3ServiceWorkerJSResourceLoadRecord:
     Codable,
     Equatable,
@@ -318,6 +419,9 @@ struct ChromeMV3ServiceWorkerJSResourceLoadRecord:
     var importScriptsDetected: Bool
     var staticModuleImportDetected: Bool
     var dynamicImportDetected: Bool
+    var importScriptsResolvedCount: Int
+    var importedScripts: [ChromeMV3ServiceWorkerJSImportedScriptRecord]
+    var importScriptsBlockers: [ChromeMV3ServiceWorkerJSImportScriptsBlocker]
     var webAccessibleResourcesRequiredForWorkerLoad: Bool
     var canExecuteClassicWorkerNow: Bool
     var blockers: [ChromeMV3ServiceWorkerJSResourceLoadBlocker]
@@ -458,9 +562,6 @@ enum ChromeMV3ServiceWorkerJSResourceLoader {
             source.map {
                 containsServiceWorkerJSRegex("\\bimport\\s*\\(", in: $0)
             } ?? false
-        if importScriptsDetected {
-            blockers.append(.importScriptsUnsupported)
-        }
         if staticImportDetected {
             blockers.append(.staticModuleImportUnsupported)
         }
@@ -487,6 +588,9 @@ enum ChromeMV3ServiceWorkerJSResourceLoader {
             importScriptsDetected: importScriptsDetected,
             staticModuleImportDetected: staticImportDetected,
             dynamicImportDetected: dynamicImportDetected,
+            importScriptsResolvedCount: 0,
+            importedScripts: [],
+            importScriptsBlockers: [],
             webAccessibleResourcesRequiredForWorkerLoad: false,
             canExecuteClassicWorkerNow: canExecute,
             blockers: blockers,
@@ -495,6 +599,7 @@ enum ChromeMV3ServiceWorkerJSResourceLoader {
                     [
                         "Only an extension-owned resource copied into its generated bundle record may execute.",
                         "The worker path is checked for relative-path safety, generated-root containment, regular-file presence, and symbolic-link rejection.",
+                        "Classic importScripts calls are resolved synchronously at execution time and remain constrained to copied generated-bundle resources.",
                         "web_accessible_resources is not required for internal service-worker package loading.",
                         "Generated inert wrapper and service-worker shim resources must already exist.",
                     ]
@@ -602,6 +707,9 @@ struct ChromeMV3ServiceWorkerJSExecutionStartRecord:
     var capturedListenerCount: Int
     var capturedListenerFamilies:
         [ChromeMV3ServiceWorkerSyntheticListenerEvent]
+    var importScriptsResolvedCount: Int
+    var importedScriptPaths: [String]
+    var importScriptsBlockers: [ChromeMV3ServiceWorkerJSImportScriptsBlocker]
     var blockedUnsupportedCalls: [String]
     var blockers: [ChromeMV3ServiceWorkerJSExecutionStartBlocker]
     var lastErrorMessage: String?
@@ -678,6 +786,9 @@ struct ChromeMV3ServiceWorkerJSExecutionSnapshot:
     var startRecord: ChromeMV3ServiceWorkerJSExecutionStartRecord
     var capturedListeners:
         [ChromeMV3ServiceWorkerJSCapturedListenerRegistration]
+    var importScriptsResolvedCount: Int
+    var importedScripts: [ChromeMV3ServiceWorkerJSImportedScriptRecord]
+    var importScriptsBlockers: [ChromeMV3ServiceWorkerJSImportScriptsBlocker]
     var blockedUnsupportedCalls: [String]
     var dispatchRecords: [ChromeMV3ServiceWorkerJSDispatchRecord]
     var ports: [ChromeMV3ServiceWorkerJSPortRecord]
@@ -701,14 +812,18 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         ChromeMV3ServiceWorkerJSResourceLoadRecord?
     private var capturedListeners:
         [ChromeMV3ServiceWorkerJSCapturedListenerRegistration] = []
+    private var importedScriptRecords:
+        [ChromeMV3ServiceWorkerJSImportedScriptRecord] = []
     private var blockedUnsupportedCalls: [String] = []
     private var dispatchRecords: [ChromeMV3ServiceWorkerJSDispatchRecord] = []
     private var ports: [String: ChromeMV3ServiceWorkerJSPortRecord] = [:]
     private var lifecycleKeepaliveIDsByPort: [String: String] = [:]
     private var nextPortSequence = 1
+    private var nextImportEvaluationOrder = 1
     #if canImport(JavaScriptCore)
         private var virtualMachine: JSVirtualMachine?
         private var context: JSContext?
+        private var importEvaluationStack: [URL] = []
     #endif
     private(set) var startRecord =
         ChromeMV3ServiceWorkerJSExecutionStartRecord(
@@ -716,6 +831,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             executionSurface: .none,
             capturedListenerCount: 0,
             capturedListenerFamilies: [],
+            importScriptsResolvedCount: 0,
+            importedScriptPaths: [],
+            importScriptsBlockers: [],
             blockedUnsupportedCalls: [],
             blockers: [],
             lastErrorMessage: nil,
@@ -744,6 +862,10 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             resourceLoad: resourceLoadRecord,
             startRecord: startRecord,
             capturedListeners: capturedListeners,
+            importScriptsResolvedCount:
+                importedScriptRecords.filter(\.imported).count,
+            importedScripts: importedScriptRecords,
+            importScriptsBlockers: currentImportScriptBlockers(),
             blockedUnsupportedCalls: blockedUnsupportedCalls,
             dispatchRecords: dispatchRecords,
             ports: ports.values.sorted { $0.portID < $1.portID },
@@ -843,12 +965,15 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 context.isInspectable = false
             }
             context.exception = nil
+            self.context = context
+            installImportScriptsHost(in: context)
             _ = context.evaluateScript(
                 Self.registrationShim,
                 withSourceURL:
                     URL(fileURLWithPath: "/sumi-local-experimental/service-worker-shim.js")
             )
             if let message = context.exception?.toString() {
+                self.context = nil
                 return finishStart(
                     status: .failed,
                     blockers: [.shimEvaluationFailed],
@@ -859,8 +984,16 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 )
             }
             context.exception = nil
-            _ = context.evaluateScript(source, withSourceURL: sourceURL)
-            if let message = context.exception?.toString() {
+            importEvaluationStack = [sourceURL]
+            let message = evaluateScriptInContext(
+                source,
+                sourceURL: sourceURL,
+                context: context
+            )
+            importEvaluationStack.removeAll()
+            syncImportRecordsIntoResourceLoad()
+            if let message {
+                self.context = nil
                 return finishStart(
                     status: .failed,
                     blockers: [.scriptEvaluationFailed],
@@ -873,7 +1006,6 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 )
             }
             virtualMachine = vm
-            self.context = context
             refreshJSSnapshot()
             syncCapturedListenersIntoLifecycle()
             return finishStart(
@@ -1211,11 +1343,13 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         lifecycleRegistry.reset()
         resourceLoadRecord = nil
         capturedListeners.removeAll()
+        importedScriptRecords.removeAll()
         blockedUnsupportedCalls.removeAll()
         dispatchRecords.removeAll()
         ports.removeAll()
         lifecycleKeepaliveIDsByPort.removeAll()
         nextPortSequence = 1
+        nextImportEvaluationOrder = 1
         tearDownJavaScriptSurface(status: .stoppedAfterReset)
     }
 
@@ -1463,12 +1597,48 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             capturedListenerCount: capturedListeners.count,
             capturedListenerFamilies:
                 capturedListeners.map(\.event).uniqueSortedServiceWorkerJS(),
+            importScriptsResolvedCount:
+                importedScriptRecords.filter(\.imported).count,
+            importedScriptPaths:
+                importedScriptRecords.compactMap(\.resolvedRelativePath)
+                    .sorted(),
+            importScriptsBlockers: currentImportScriptBlockers(),
             blockedUnsupportedCalls: blockedUnsupportedCalls,
             blockers: uniqueSortedServiceWorkerJS(blockers),
             lastErrorMessage: lastErrorMessage,
             diagnostics: uniqueSortedServiceWorkerJS(diagnostics)
         )
         return startRecord
+    }
+
+    private func syncImportRecordsIntoResourceLoad() {
+        guard var record = resourceLoadRecord else { return }
+        record.importedScripts = importedScriptRecords.sorted { lhs, rhs in
+            let lhsOrder = lhs.evaluationOrder ?? Int.max
+            let rhsOrder = rhs.evaluationOrder ?? Int.max
+            if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
+            return lhs.requestPath < rhs.requestPath
+        }
+        record.importScriptsResolvedCount =
+            importedScriptRecords.filter(\.imported).count
+        record.importScriptsBlockers = currentImportScriptBlockers()
+        resourceLoadRecord = record
+    }
+
+    private func currentImportScriptBlockers()
+        -> [ChromeMV3ServiceWorkerJSImportScriptsBlocker]
+    {
+        uniqueSortedServiceWorkerJS(
+            importedScriptRecords.flatMap(\.blockers)
+        )
+    }
+
+    private func relativePathInGeneratedBundle(_ url: URL) -> String? {
+        guard let rootPath = request.generatedBundleRecord?
+            .generatedBundleRootPath
+        else { return nil }
+        let root = URL(fileURLWithPath: rootPath, isDirectory: true)
+        return Sumi.relativePathInGeneratedBundle(url, root: root)
     }
 
     private func nextPortID(prefix: String) -> String {
@@ -1507,6 +1677,455 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
     }
 
     #if canImport(JavaScriptCore)
+        private func installImportScriptsHost(in context: JSContext) {
+            let host: @convention(block) (JSValue) -> NSDictionary = {
+                [weak self] arguments in
+                guard let self else {
+                    return [
+                        "ok": false,
+                        "blocker":
+                            ChromeMV3ServiceWorkerJSImportScriptsBlocker
+                            .generatedBundleRecordMissing.rawValue,
+                        "error":
+                            "importScripts resolver owner is unavailable.",
+                    ]
+                }
+                return self.evaluateImportScripts(arguments: arguments)
+            }
+            context.setObject(
+                host,
+                forKeyedSubscript:
+                    "__sumiImportScriptsHost" as NSString
+            )
+        }
+
+        private func evaluateScriptInContext(
+            _ source: String,
+            sourceURL: URL,
+            context: JSContext
+        ) -> String? {
+            let sourceName =
+                relativePathInGeneratedBundle(sourceURL)
+                ?? sourceURL.lastPathComponent
+            let previous = context
+                .objectForKeyedSubscript("__sumiCurrentScript")?
+                .toString()
+            context.setObject(
+                sourceName,
+                forKeyedSubscript: "__sumiCurrentScript" as NSString
+            )
+            context.exception = nil
+            _ = context.evaluateScript(source, withSourceURL: sourceURL)
+            let message = context.exception?.toString()
+            if let previous {
+                context.setObject(
+                    previous,
+                    forKeyedSubscript: "__sumiCurrentScript" as NSString
+                )
+            } else {
+                context.setObject(
+                    JSValue(undefinedIn: context),
+                    forKeyedSubscript: "__sumiCurrentScript" as NSString
+                )
+            }
+            return message
+        }
+
+        private func evaluateImportScripts(
+            arguments: JSValue
+        ) -> NSDictionary {
+            guard let values = arguments.toArray() else {
+                return recordFailedImport(
+                    requestPath: "<arguments-unavailable>",
+                    blocker: .importArgumentNonString,
+                    message:
+                        "importScripts arguments could not be inspected as a deterministic argument array."
+                )
+            }
+            guard values.isEmpty == false else {
+                return ["ok": true]
+            }
+            guard let context else {
+                return recordFailedImport(
+                    requestPath: "<context-unavailable>",
+                    blocker: .scriptEvaluationFailed,
+                    message:
+                        "JavaScriptCore context is unavailable during importScripts evaluation."
+                )
+            }
+            for value in values {
+                guard let requestPath = value as? String else {
+                    return recordFailedImport(
+                        requestPath: "<non-string>",
+                        blocker: .importArgumentNonString,
+                        message:
+                            "importScripts accepts only string arguments in the local experimental harness."
+                    )
+                }
+                let loaded = resolveImportScript(requestPath)
+                importedScriptRecords.append(loaded.record)
+                syncImportRecordsIntoResourceLoad()
+                if loaded.record.imported == false {
+                    return importFailureResponse(loaded.record)
+                }
+                guard let source = loaded.source,
+                      let sourceURL = loaded.sourceURL
+                else {
+                    return importFailureResponse(loaded.record)
+                }
+                importEvaluationStack.append(sourceURL)
+                let message = evaluateScriptInContext(
+                    source,
+                    sourceURL: sourceURL,
+                    context: context
+                )
+                _ = importEvaluationStack.popLast()
+                if let message {
+                    let failed = appendImportScriptBlocker(
+                        .scriptEvaluationFailed,
+                        message:
+                            "Imported script evaluation failed: \(message)"
+                    )
+                    return importFailureResponse(failed)
+                }
+            }
+            syncImportRecordsIntoResourceLoad()
+            return ["ok": true]
+        }
+
+        private func resolveImportScript(
+            _ requestPath: String
+        ) -> (
+            record: ChromeMV3ServiceWorkerJSImportedScriptRecord,
+            source: String?,
+            sourceURL: URL?
+        ) {
+            let parentURL = importEvaluationStack.last
+            let parentRelative =
+                parentURL.flatMap(relativePathInGeneratedBundle)
+                    ?? resourceLoadRecord?.serviceWorkerRelativePath
+                    ?? "unknown-worker.js"
+            let chain = importEvaluationStack.compactMap {
+                relativePathInGeneratedBundle($0)
+            }
+            guard let record = request.generatedBundleRecord else {
+                return failedImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    chain: chain,
+                    blocker: .generatedBundleRecordMissing,
+                    message:
+                        "No generated bundle record is available for importScripts resolution."
+                )
+            }
+            let root = URL(
+                fileURLWithPath: record.generatedBundleRootPath,
+                isDirectory: true
+            ).standardizedFileURL
+            guard directoryExistsServiceWorkerJS(root) else {
+                return failedImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    chain: chain,
+                    blocker: .generatedBundleRootMissing,
+                    message:
+                        "Generated bundle root is missing for importScripts resolution."
+                )
+            }
+            let normalized = normalizeImportScriptsPath(requestPath)
+            if let blocker = normalized.blocker {
+                return failedImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    chain: chain,
+                    blocker: blocker,
+                    message: normalized.message
+                )
+            }
+            guard let normalizedPath = normalized.path else {
+                return failedImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    chain: chain,
+                    blocker: .importPathUnsafe,
+                    message:
+                        "importScripts path could not be normalized safely."
+                )
+            }
+            let parentDirectory = parentURL?
+                .deletingLastPathComponent()
+                .standardizedFileURL ?? root
+            let candidate = parentDirectory
+                .appendingPathComponent(normalizedPath)
+                .standardizedFileURL
+            let resolvedRelative =
+                Sumi.relativePathInGeneratedBundle(candidate, root: root)
+            guard let resolvedRelative else {
+                return failedImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    chain: chain,
+                    blocker: .importPathEscapesGeneratedBundle,
+                    message:
+                        "importScripts path resolves outside the generated bundle root."
+                )
+            }
+            if pathContainsSymbolicLinkServiceWorkerJS(
+                candidate,
+                root: root
+            ) {
+                return failedImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    resolvedRelative: resolvedRelative,
+                    resolvedPath: candidate.path,
+                    chain: chain,
+                    blocker: .importedScriptSymbolicLinkRejected,
+                    message:
+                        "Imported script path contains a symbolic link and was rejected."
+                )
+            }
+            guard containsServiceWorkerJS(root: root, candidate: candidate)
+            else {
+                return failedImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    resolvedRelative: resolvedRelative,
+                    resolvedPath: candidate.path,
+                    chain: chain,
+                    blocker: .importPathEscapesGeneratedBundle,
+                    message:
+                        "importScripts path resolves outside the generated bundle root."
+                )
+            }
+            if importEvaluationStack.contains(where: {
+                $0.standardizedFileURL.path == candidate.path
+            }) {
+                return failedImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    resolvedRelative: resolvedRelative,
+                    resolvedPath: candidate.path,
+                    chain: chain,
+                    blocker: .circularImportBlocked,
+                    message:
+                        "Circular importScripts dependency was blocked deterministically."
+                )
+            }
+            var isDirectory: ObjCBool = false
+            let exists = FileManager.default.fileExists(
+                atPath: candidate.path,
+                isDirectory: &isDirectory
+            )
+            guard exists else {
+                return failedImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    resolvedRelative: resolvedRelative,
+                    resolvedPath: candidate.path,
+                    chain: chain,
+                    blocker: .importedScriptMissing,
+                    message: "Imported script is missing."
+                )
+            }
+            guard isDirectory.boolValue == false else {
+                return failedImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    resolvedRelative: resolvedRelative,
+                    resolvedPath: candidate.path,
+                    chain: chain,
+                    blocker: .importedScriptDirectoryRejected,
+                    message:
+                        "importScripts resolved to a directory, not a script file."
+                )
+            }
+            if record.copiedResourcePaths.contains(resolvedRelative) == false {
+                return failedImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    resolvedRelative: resolvedRelative,
+                    resolvedPath: candidate.path,
+                    chain: chain,
+                    blocker: .importedScriptNotCopiedFromGeneratedBundleRecord,
+                    message:
+                        "Imported script is not recorded as a copied generated-bundle resource."
+                )
+            }
+            guard let data = try? Data(contentsOf: candidate),
+                  let source = String(data: data, encoding: .utf8)
+            else {
+                return failedImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    resolvedRelative: resolvedRelative,
+                    resolvedPath: candidate.path,
+                    chain: chain,
+                    blocker: .importedScriptUTF8Required,
+                    message:
+                        "Imported script is not valid UTF-8 JavaScript source."
+                )
+            }
+            if containsServiceWorkerJSRegex(
+                "(?m)^\\s*import\\s+(?!\\()",
+                in: source
+            ) {
+                return failedImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    resolvedRelative: resolvedRelative,
+                    resolvedPath: candidate.path,
+                    chain: chain,
+                    blocker: .staticModuleImportUnsupported,
+                    message:
+                        "Static module import inside imported classic script is unsupported."
+                )
+            }
+            if containsServiceWorkerJSRegex("\\bimport\\s*\\(", in: source) {
+                return failedImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    resolvedRelative: resolvedRelative,
+                    resolvedPath: candidate.path,
+                    chain: chain,
+                    blocker: .dynamicImportUnsupported,
+                    message:
+                        "Dynamic import inside imported classic script is unsupported."
+                )
+            }
+            let order = nextImportEvaluationOrder
+            nextImportEvaluationOrder += 1
+            return (
+                ChromeMV3ServiceWorkerJSImportedScriptRecord(
+                    requestPath: requestPath,
+                    parentScriptRelativePath: parentRelative,
+                    resolvedRelativePath: resolvedRelative,
+                    resolvedPath: candidate.path,
+                    importChain: chain,
+                    imported: true,
+                    evaluationOrder: order,
+                    sourceSHA256: sha256HexServiceWorkerJS(data),
+                    sourceByteCount: data.count,
+                    blockers: [],
+                    diagnostics: [
+                        "Imported script was resolved inside the generated bundle root.",
+                        "Imported script is recorded as a copied generated-bundle resource.",
+                        "Import order is deterministic and synchronous.",
+                    ]
+                ),
+                source,
+                candidate
+            )
+        }
+
+        private func failedImport(
+            requestPath: String,
+            parentRelative: String,
+            resolvedRelative: String? = nil,
+            resolvedPath: String? = nil,
+            chain: [String],
+            blocker: ChromeMV3ServiceWorkerJSImportScriptsBlocker,
+            message: String
+        ) -> (
+            record: ChromeMV3ServiceWorkerJSImportedScriptRecord,
+            source: String?,
+            sourceURL: URL?
+        ) {
+            (
+                ChromeMV3ServiceWorkerJSImportedScriptRecord(
+                    requestPath: requestPath,
+                    parentScriptRelativePath: parentRelative,
+                    resolvedRelativePath: resolvedRelative,
+                    resolvedPath: resolvedPath,
+                    importChain: chain,
+                    imported: false,
+                    evaluationOrder: nil,
+                    sourceSHA256: nil,
+                    sourceByteCount: nil,
+                    blockers: [blocker],
+                    diagnostics: [message]
+                ),
+                nil,
+                nil
+            )
+        }
+
+        private func recordFailedImport(
+            requestPath: String,
+            blocker: ChromeMV3ServiceWorkerJSImportScriptsBlocker,
+            message: String
+        ) -> NSDictionary {
+            let parentRelative = importEvaluationStack.last
+                .flatMap(relativePathInGeneratedBundle)
+                ?? resourceLoadRecord?.serviceWorkerRelativePath
+                ?? "unknown-worker.js"
+            let record = ChromeMV3ServiceWorkerJSImportedScriptRecord(
+                requestPath: requestPath,
+                parentScriptRelativePath: parentRelative,
+                resolvedRelativePath: nil,
+                resolvedPath: nil,
+                importChain: importEvaluationStack.compactMap {
+                    relativePathInGeneratedBundle($0)
+                },
+                imported: false,
+                evaluationOrder: nil,
+                sourceSHA256: nil,
+                sourceByteCount: nil,
+                blockers: [blocker],
+                diagnostics: [message]
+            )
+            importedScriptRecords.append(record)
+            syncImportRecordsIntoResourceLoad()
+            return importFailureResponse(record)
+        }
+
+        @discardableResult
+        private func appendImportScriptBlocker(
+            _ blocker: ChromeMV3ServiceWorkerJSImportScriptsBlocker,
+            message: String
+        ) -> ChromeMV3ServiceWorkerJSImportedScriptRecord {
+            guard importedScriptRecords.isEmpty == false else {
+                let record = ChromeMV3ServiceWorkerJSImportedScriptRecord(
+                    requestPath: "<unknown>",
+                    parentScriptRelativePath: "unknown-worker.js",
+                    resolvedRelativePath: nil,
+                    resolvedPath: nil,
+                    importChain: [],
+                    imported: false,
+                    evaluationOrder: nil,
+                    sourceSHA256: nil,
+                    sourceByteCount: nil,
+                    blockers: [blocker],
+                    diagnostics: [message]
+                )
+                importedScriptRecords.append(record)
+                syncImportRecordsIntoResourceLoad()
+                return record
+            }
+            var record = importedScriptRecords.removeLast()
+            record.imported = false
+            record.blockers =
+                uniqueSortedServiceWorkerJS(record.blockers + [blocker])
+            record.diagnostics =
+                uniqueSortedServiceWorkerJS(record.diagnostics + [message])
+            importedScriptRecords.append(record)
+            syncImportRecordsIntoResourceLoad()
+            return record
+        }
+
+        private func importFailureResponse(
+            _ record: ChromeMV3ServiceWorkerJSImportedScriptRecord
+        ) -> NSDictionary {
+            let blocker = record.blockers.first ?? .scriptEvaluationFailed
+            return [
+                "ok": false,
+                "blocker": blocker.rawValue,
+                "error":
+                    record.diagnostics.first
+                    ?? "importScripts import failed.",
+            ]
+        }
+
         private func refreshJSSnapshot() {
             guard
                 let wire: ChromeMV3ServiceWorkerJSWireSnapshot = callJSON(
@@ -1536,7 +2155,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 return ChromeMV3ServiceWorkerJSCapturedListenerRegistration(
                     listenerID: item.listenerID,
                     event: event,
-                    listenerSourceFile: source,
+                    listenerSourceFile: item.source ?? source,
                     registrationOrder: item.order,
                     listenerArity: item.arity,
                     asyncFunctionDetected: item.asyncFunction,
@@ -1665,6 +2284,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             arity: listener.length,
             asyncFunction: listener.constructor
               && listener.constructor.name === 'AsyncFunction',
+            source: globalThis.__sumiCurrentScript || null,
             listener
           });
         },
@@ -1799,6 +2419,23 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       }, 'chrome');
       globalThis.browser = globalThis.chrome;
       globalThis.self = globalThis;
+      globalThis.importScripts = function (...urls) {
+        if (typeof globalThis.__sumiImportScriptsHost !== 'function') {
+          noteBlocked('importScripts.hostMissing');
+          throw new Error('importScripts host resolver is unavailable.');
+        }
+        const result = globalThis.__sumiImportScriptsHost(urls);
+        if (!result || result.ok !== true) {
+          const blocker = result && result.blocker
+            ? String(result.blocker)
+            : 'unknown';
+          noteBlocked(`importScripts.${blocker}`);
+          throw new Error(result && result.error
+            ? String(result.error)
+            : 'importScripts import failed.');
+        }
+        return undefined;
+      };
       for (const name of [
         'fetch',
         'XMLHttpRequest',
@@ -1894,7 +2531,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           event: item.event,
           order: item.order,
           arity: item.arity,
-          asyncFunction: item.asyncFunction
+          asyncFunction: item.asyncFunction,
+          source: item.source
         })),
         blockedCalls: [...blockedCalls],
         ports: [...ports.values()].map(portSnapshot)
@@ -1930,6 +2568,7 @@ private struct ChromeMV3ServiceWorkerJSWireRegistration: Decodable {
     var order: Int
     var arity: Int
     var asyncFunction: Bool
+    var source: String?
 }
 
 private struct ChromeMV3ServiceWorkerJSWireSnapshot: Decodable {
@@ -2110,6 +2749,36 @@ private func containsServiceWorkerJS(root: URL, candidate: URL) -> Bool {
     return resolvedCandidate.hasPrefix(resolvedRoot + "/")
 }
 
+private func relativePathInGeneratedBundle(
+    _ candidate: URL,
+    root: URL
+) -> String? {
+    let rootPath = root.standardizedFileURL.path
+    let candidatePath = candidate.standardizedFileURL.path
+    let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+    guard candidatePath.hasPrefix(prefix) else { return nil }
+    let relative = String(candidatePath.dropFirst(prefix.count))
+    return relative.isEmpty ? nil : relative
+}
+
+private func pathContainsSymbolicLinkServiceWorkerJS(
+    _ candidate: URL,
+    root: URL
+) -> Bool {
+    guard let relative = relativePathInGeneratedBundle(candidate, root: root)
+    else { return true }
+    var current = root.standardizedFileURL
+    for segment in relative.split(separator: "/").map(String.init) {
+        current = current.appendingPathComponent(segment)
+        if (try? FileManager.default.destinationOfSymbolicLink(
+            atPath: current.path
+        )) != nil {
+            return true
+        }
+    }
+    return false
+}
+
 private func directoryExistsServiceWorkerJS(_ url: URL) -> Bool {
     var isDirectory: ObjCBool = false
     return FileManager.default.fileExists(
@@ -2140,6 +2809,105 @@ private func containsServiceWorkerJSRegex(
     }
     let range = NSRange(source.startIndex..., in: source)
     return expression.firstMatch(in: source, range: range) != nil
+}
+
+private func normalizeImportScriptsPath(
+    _ path: String
+) -> (
+    path: String?,
+    blocker: ChromeMV3ServiceWorkerJSImportScriptsBlocker?,
+    message: String
+) {
+    let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed.isEmpty == false,
+          trimmed.contains("\0") == false,
+          trimmed.contains("\\") == false,
+          trimmed.contains("?") == false,
+          trimmed.contains("#") == false
+    else {
+        return (
+            nil,
+            .importPathUnsafe,
+            "importScripts path is empty or contains unsupported characters."
+        )
+    }
+    if let scheme = URLComponents(string: trimmed)?.scheme?.lowercased() {
+        switch scheme {
+        case "http", "https":
+            return (
+                nil,
+                .remoteURLRejected,
+                "Remote importScripts URL imports are blocked."
+            )
+        case "file":
+            return (
+                nil,
+                .fileURLRejected,
+                "file: importScripts URL imports are blocked."
+            )
+        case "data":
+            return (
+                nil,
+                .dataURLRejected,
+                "data: importScripts URL imports are blocked."
+            )
+        case "blob":
+            return (
+                nil,
+                .blobURLRejected,
+                "blob: importScripts URL imports are blocked."
+            )
+        default:
+            return (
+                nil,
+                .unsupportedScheme,
+                "Unsupported importScripts URL scheme \(scheme) is blocked."
+            )
+        }
+    }
+    guard trimmed.hasPrefix("/") == false,
+          trimmed.hasPrefix("~") == false
+    else {
+        return (
+            nil,
+            .absoluteFilesystemPathRejected,
+            "Absolute importScripts paths are blocked."
+        )
+    }
+    var components: [String] = []
+    for component in trimmed.split(
+        separator: "/",
+        omittingEmptySubsequences: false
+    ).map(String.init) {
+        if component == "." { continue }
+        if component == ".." {
+            return (
+                nil,
+                .importPathTraversalRejected,
+                "Traversal importScripts paths are blocked."
+            )
+        }
+        guard component.isEmpty == false else {
+            return (
+                nil,
+                .importPathUnsafe,
+                "importScripts path contains an empty path segment."
+            )
+        }
+        components.append(component)
+    }
+    guard components.isEmpty == false else {
+        return (
+            nil,
+            .importPathUnsafe,
+            "importScripts path did not contain a file segment."
+        )
+    }
+    return (
+        components.joined(separator: "/"),
+        nil,
+        "importScripts path normalized safely."
+    )
 }
 
 private func jsonStringServiceWorkerJS(_ value: String) -> String {

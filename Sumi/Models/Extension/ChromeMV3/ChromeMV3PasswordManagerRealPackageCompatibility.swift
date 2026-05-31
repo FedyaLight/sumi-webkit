@@ -860,6 +860,9 @@ struct ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness:
     var actualListenerRegistrationCaptureStatus: String
     var capturedListenerFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent]
     var missingListenerFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent]
+    var importScriptsResolvedCount: Int
+    var importedScriptPaths: [String]
+    var importScriptsBlockers: [ChromeMV3ServiceWorkerJSImportScriptsBlocker]
     var staticVsExecutionDelta:
         ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDelta
     var actualDispatchResults: [ChromeMV3ServiceWorkerJSDispatchRecord]
@@ -2311,6 +2314,9 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     + (resourceLoadResult?.blockers.map {
                         "serviceWorker.resource.\($0.rawValue)"
                     } ?? [])
+                    + (resourceLoadResult?.importScriptsBlockers.map {
+                        "serviceWorker.importScripts.\($0.rawValue)"
+                    } ?? [])
                     + (executionStartResult?.blockers.map {
                         "serviceWorker.execution.\($0.rawValue)"
                     } ?? [])
@@ -2340,6 +2346,14 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 ),
             capturedListenerFamilies: capturedFamilies,
             missingListenerFamilies: delta.missingListenerFamilies,
+            importScriptsResolvedCount:
+                resourceLoadResult?.importScriptsResolvedCount ?? 0,
+            importedScriptPaths:
+                resourceLoadResult?.importedScripts
+                    .compactMap(\.resolvedRelativePath)
+                    .sorted() ?? [],
+            importScriptsBlockers:
+                resourceLoadResult?.importScriptsBlockers ?? [],
             staticVsExecutionDelta: delta,
             actualDispatchResults: dispatchResults,
             runtimePortSmoke: runtimePortSmoke,
@@ -2532,12 +2546,14 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     + (resourceLoadResult?.blockers.compactMap {
                         switch $0 {
                         case .dynamicImportUnsupported,
-                             .importScriptsUnsupported,
                              .staticModuleImportUnsupported:
                             return $0.rawValue
                         default:
                             return nil
                         }
+                    } ?? [])
+                    + (resourceLoadResult?.importScriptsBlockers.map {
+                        "importScripts.\($0.rawValue)"
                     } ?? [])
             )
         let status:
@@ -2809,6 +2825,9 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         }
         if let blocker = resourceLoadResult?.blockers.first {
             return "Resolve scoped service-worker resource blocker \(blocker.rawValue) without enabling stable runtime load."
+        }
+        if let blocker = resourceLoadResult?.importScriptsBlockers.first {
+            return "Resolve scoped importScripts blocker \(blocker.rawValue) while keeping imports generated-bundle-contained."
         }
         switch delta.status {
         case .executionFailed:

@@ -442,6 +442,67 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
         XCTAssertTrue(result.record.resourceWarnings.isEmpty)
     }
 
+    func testCopiesStaticImportScriptsDependenciesFromClassicServiceWorker()
+        throws
+    {
+        let manifest: [String: Any] = [
+            "manifest_version": 3,
+            "name": "Static ImportScripts",
+            "version": "1.0",
+            "background": [
+                "service_worker": "scripts/background.js",
+            ],
+        ]
+        let stage = try stageBundle(
+            named: "classic-importscripts-resources",
+            manifest: manifest,
+            files: [
+                "scripts/background.js": """
+                importScripts('./deps/one.js', 'nested/two.js');
+                const dynamicPath = 'dynamic.js';
+                importScripts(dynamicPath);
+                importScripts('../outside.js');
+                """,
+                "scripts/deps/one.js": "globalThis.one = true;\n",
+                "scripts/nested/two.js": """
+                importScripts('child/three.js');
+                """,
+                "scripts/nested/child/three.js": "globalThis.three = true;\n",
+                "scripts/dynamic.js": "throw new Error('not statically copied');\n",
+                "outside.js": "throw new Error('outside worker directory');\n",
+            ]
+        )
+
+        let result = try makeWriter(rootURL: stage.storeRoot)
+            .writeGeneratedBundle(
+                originalBundleRecord: stage.result.originalBundleRecord,
+                manifestSnapshot: stage.result.manifestSnapshot,
+                planningRecord: stage.result.generatedBundlePlan
+            )
+
+        let expectedCopiedPaths = [
+            "scripts/background.js",
+            "scripts/deps/one.js",
+            "scripts/nested/child/three.js",
+            "scripts/nested/two.js",
+        ]
+        XCTAssertEqual(result.record.copiedResourcePaths, expectedCopiedPaths)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: result.generatedBundleRootURL
+                    .appendingPathComponent("scripts/dynamic.js")
+                    .path
+            )
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: result.generatedBundleRootURL
+                    .appendingPathComponent("outside.js")
+                    .path
+            )
+        )
+    }
+
     func testRejectsSymlinkReferencedResource() throws {
         let stage = try stageBundle(
             named: "symlink-resource",
