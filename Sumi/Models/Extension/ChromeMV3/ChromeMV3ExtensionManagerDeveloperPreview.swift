@@ -1363,6 +1363,10 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
     var importedScriptPaths: [String]
     var importScriptsBlockers: [ChromeMV3ServiceWorkerJSImportScriptsBlocker]
     var dynamicImportRewriteResult: String
+    var dynamicImportShapeSummary: [String]
+    var moduleWorkerGraphSummary: [String]
+    var timerAsyncAPISummary: [String]
+    var listenerRegistrationSourceSummary: [String]
     var remainingDynamicImportModuleBlockers: [String]
     var staticVsExecutionDeltaStatus:
         ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDeltaStatus
@@ -1409,6 +1413,29 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
             importedScriptPaths: readiness.importedScriptPaths,
             importScriptsBlockers: readiness.importScriptsBlockers,
             dynamicImportRewriteResult: readiness.dynamicImportRewriteResult,
+            dynamicImportShapeSummary:
+                readiness.dependencyInventory.dynamicImportExpressions.map {
+                    "\($0.sourcePath):\($0.line):\($0.shape.rawValue)"
+                }.sorted(),
+            moduleWorkerGraphSummary:
+                [
+                    "module=\(readiness.dependencyInventory.moduleWorkerInventory.declaredAsModuleWorker)",
+                    "staticImports=\(readiness.dependencyInventory.moduleWorkerInventory.staticImportDeclarations.count)",
+                    "exports=\(readiness.dependencyInventory.moduleWorkerInventory.exportUsageLocations.count)",
+                    "topLevelAwait=\(readiness.dependencyInventory.moduleWorkerInventory.topLevelAwaitDetected)",
+                ],
+            timerAsyncAPISummary:
+                readiness.dependencyInventory.asyncAPIInventory.totals.map {
+                    "\($0.api.rawValue)=\($0.count)"
+                }.sorted(),
+            listenerRegistrationSourceSummary:
+                [
+                    "main=\(readiness.dependencyInventory.listenerRegistrationMap.mainWorkerCount)",
+                    "importScripts=\(readiness.dependencyInventory.listenerRegistrationMap.importScriptsDependencyCount)",
+                    "dynamic=\(readiness.dependencyInventory.listenerRegistrationMap.dynamicImportCandidateCount)",
+                    "module=\(readiness.dependencyInventory.listenerRegistrationMap.moduleDependencyCandidateCount)",
+                    "unknownComputed=\(readiness.dependencyInventory.listenerRegistrationMap.unknownComputedDependencyReferenceCount)",
+                ],
             remainingDynamicImportModuleBlockers:
                 uniqueSortedExtensionManager(
                     (readiness.resourceLoadResult?.blockers.compactMap {
@@ -3254,6 +3281,44 @@ struct ChromeMV3ExtensionManagerView: View {
                     Text(
                         "Trial dynamic rewrite: "
                             + trial.dynamicImportRewriteResult
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    if trial.dynamicImportShapeSummary.isEmpty == false {
+                        Text(
+                            "Dynamic shapes: "
+                                + trial.dynamicImportShapeSummary
+                                .prefix(3)
+                                .joined(separator: ", ")
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text(
+                        "Module graph: "
+                            + trial.moduleWorkerGraphSummary
+                            .joined(separator: ", ")
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    if trial.timerAsyncAPISummary.isEmpty == false {
+                        Text(
+                            "Async APIs: "
+                                + trial.timerAsyncAPISummary
+                                .prefix(5)
+                                .joined(separator: ", ")
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text(
+                        "Listener sources: "
+                            + trial.listenerRegistrationSourceSummary
+                            .joined(separator: ", ")
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)

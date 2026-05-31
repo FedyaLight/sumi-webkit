@@ -653,6 +653,266 @@ struct ChromeMV3PasswordManagerRealPackageResourceScan:
     var diagnostics: [String]
 }
 
+enum ChromeMV3PasswordManagerRealPackageServiceWorkerDependencySourceKind:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case mainWorker
+    case importScriptsDependency
+    case dynamicImportCandidate
+    case moduleDependencyCandidate
+    case unknownComputedDependency
+
+    static func < (
+        lhs:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerDependencySourceKind,
+        rhs:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerDependencySourceKind
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3PasswordManagerRealPackageDynamicImportShape:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case stringLiteralLocal
+    case templateLiteralStatic
+    case templateLiteralDynamic
+    case identifier
+    case memberExpression
+    case callExpression
+    case conditionalExpression
+    case concatenation
+    case unknownComputed
+    case remoteOrUnsafe
+
+    static func < (
+        lhs: ChromeMV3PasswordManagerRealPackageDynamicImportShape,
+        rhs: ChromeMV3PasswordManagerRealPackageDynamicImportShape
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3PasswordManagerRealPackageAsyncAPI:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case asyncFunction
+    case eventSource = "EventSource"
+    case fetch
+    case promiseThen = "Promise.then"
+    case queueMicrotask
+    case setInterval
+    case setTimeout
+    case webSocket = "WebSocket"
+
+    static func < (
+        lhs: ChromeMV3PasswordManagerRealPackageAsyncAPI,
+        rhs: ChromeMV3PasswordManagerRealPackageAsyncAPI
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3PasswordManagerRealPackageServiceWorkerSourceLocation:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var sourceKind:
+        ChromeMV3PasswordManagerRealPackageServiceWorkerDependencySourceKind
+    var sourcePath: String
+    var line: Int
+    var snippet: String
+}
+
+struct ChromeMV3PasswordManagerRealPackageServiceWorkerDynamicImportInventory:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var sourceKind:
+        ChromeMV3PasswordManagerRealPackageServiceWorkerDependencySourceKind
+    var sourcePath: String
+    var line: Int
+    var rawCallPreview: String
+    var specifierPreview: String
+    var shape: ChromeMV3PasswordManagerRealPackageDynamicImportShape
+    var hasOptionsArgument: Bool
+    var dependencyCandidatePath: String?
+    var generatedRootContained: Bool?
+    var diagnostics: [String]
+}
+
+struct ChromeMV3PasswordManagerRealPackageServiceWorkerImportScriptsInventory:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var sourceKind:
+        ChromeMV3PasswordManagerRealPackageServiceWorkerDependencySourceKind
+    var sourcePath: String
+    var line: Int
+    var rawCallPreview: String
+    var specifierPreview: String
+    var shape: ChromeMV3PasswordManagerRealPackageDynamicImportShape
+    var dependencyCandidatePath: String?
+    var generatedRootContained: Bool?
+    var diagnostics: [String]
+}
+
+struct ChromeMV3PasswordManagerRealPackageServiceWorkerModuleImportDeclaration:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var sourcePath: String
+    var line: Int
+    var rawDeclarationPreview: String
+    var specifier: String
+    var dependencyCandidatePath: String?
+    var generatedRootContained: Bool?
+}
+
+struct ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyCandidate:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var sourceKind:
+        ChromeMV3PasswordManagerRealPackageServiceWorkerDependencySourceKind
+    var requestedSpecifier: String
+    var parentSourcePath: String
+    var resolvedCandidatePath: String?
+    var generatedRootContained: Bool?
+    var scanned: Bool
+    var diagnostics: [String]
+}
+
+struct ChromeMV3PasswordManagerRealPackageServiceWorkerModuleWorkerInventory:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var declaredAsModuleWorker: Bool
+    var staticImportDeclarations:
+        [ChromeMV3PasswordManagerRealPackageServiceWorkerModuleImportDeclaration]
+    var exportUsageLocations:
+        [ChromeMV3PasswordManagerRealPackageServiceWorkerSourceLocation]
+    var dynamicImportUsage:
+        [ChromeMV3PasswordManagerRealPackageServiceWorkerDynamicImportInventory]
+    var topLevelAwaitDetected: Bool
+    var topLevelAwaitLocations:
+        [ChromeMV3PasswordManagerRealPackageServiceWorkerSourceLocation]
+    var dependencyCandidatePaths:
+        [ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyCandidate]
+    var diagnostics: [String]
+}
+
+struct ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPITotal:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var api: ChromeMV3PasswordManagerRealPackageAsyncAPI
+    var count: Int
+}
+
+struct ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPIOccurrence:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var api: ChromeMV3PasswordManagerRealPackageAsyncAPI
+    var sourceKind:
+        ChromeMV3PasswordManagerRealPackageServiceWorkerDependencySourceKind
+    var sourcePath: String
+    var line: Int
+    var snippet: String
+}
+
+struct ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPIInventory:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var totals:
+        [ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPITotal]
+    var occurrences:
+        [ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPIOccurrence]
+    var diagnostics: [String]
+
+    func count(
+        _ api: ChromeMV3PasswordManagerRealPackageAsyncAPI
+    ) -> Int {
+        totals.first { $0.api == api }?.count ?? 0
+    }
+}
+
+struct ChromeMV3PasswordManagerRealPackageServiceWorkerListenerRegistration:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var sourceKind:
+        ChromeMV3PasswordManagerRealPackageServiceWorkerDependencySourceKind
+    var sourcePath: String
+    var line: Int
+    var eventTarget: String
+    var snippet: String
+}
+
+struct ChromeMV3PasswordManagerRealPackageServiceWorkerListenerRegistrationMap:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var registrations:
+        [ChromeMV3PasswordManagerRealPackageServiceWorkerListenerRegistration]
+    var mainWorkerCount: Int
+    var importScriptsDependencyCount: Int
+    var dynamicImportCandidateCount: Int
+    var moduleDependencyCandidateCount: Int
+    var unknownComputedDependencyReferenceCount: Int
+    var diagnostics: [String]
+}
+
+struct ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventory:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var serviceWorkerPath: String?
+    var serviceWorkerType: String
+    var packageRootPath: String?
+    var generatedBundleRootPath: String?
+    var scannedSourceFileCount: Int
+    var dynamicImportExpressions:
+        [ChromeMV3PasswordManagerRealPackageServiceWorkerDynamicImportInventory]
+    var importScriptsCalls:
+        [ChromeMV3PasswordManagerRealPackageServiceWorkerImportScriptsInventory]
+    var moduleWorkerInventory:
+        ChromeMV3PasswordManagerRealPackageServiceWorkerModuleWorkerInventory
+    var asyncAPIInventory:
+        ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPIInventory
+    var listenerRegistrationMap:
+        ChromeMV3PasswordManagerRealPackageServiceWorkerListenerRegistrationMap
+    var nextRecommendedImplementationPath: String
+    var diagnostics: [String]
+}
+
 struct ChromeMV3PasswordManagerRealPackagePopupOptionsSmoke:
     Codable,
     Equatable,
@@ -881,6 +1141,8 @@ struct ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness:
         [ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateRecord]
     var jsExecutionPolicy: ChromeMV3ServiceWorkerJSExecutionPolicy
     var resourceLoadResult: ChromeMV3ServiceWorkerJSResourceLoadRecord?
+    var dependencyInventory:
+        ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventory
     var executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?
     var actualListenerRegistrationCaptureStatus: String
     var capturedListenerFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent]
@@ -1275,7 +1537,7 @@ struct ChromeMV3PasswordManagerRealPackageCompatibilityReport:
     Equatable,
     Sendable
 {
-    static let schemaVersion = 6
+    static let schemaVersion = 7
     static let reportFileName =
         "runtime-mv3-real-package-compatibility-report.json"
 
@@ -2180,6 +2442,16 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 ?? selected.resourceScanRootPath
                 ?? lifecycleResult?.record?.originalBundleRootPath
         let generatedRecord = activeGeneratedVersion?.generatedBundleRecord
+        let dependencyInventory =
+            ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventoryScanner
+            .scan(
+                manifest: manifest,
+                packageRootPath:
+                    selected.resourceScanRootPath
+                        ?? lifecycleResult?.record?.originalBundleRootPath
+                        ?? generatedRootPath,
+                generatedBundleRecord: generatedRecord
+            )
         let extensionEnabled =
             lifecycleResult?.record?.runtimeState.internalRuntimeEnabled ?? true
         let readiness = manifest.map {
@@ -2353,6 +2625,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         let nextBlocker = serviceWorkerNextBlockerClassification(
             declared: declared,
             delta: delta,
+            dependencyInventory: dependencyInventory,
             resourceLoadResult: resourceLoadResult,
             executionStartResult: executionStartResult,
             capturedFamilies: capturedFamilies
@@ -2392,6 +2665,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             trialGateRecords: gateRecords,
             jsExecutionPolicy: policy,
             resourceLoadResult: resourceLoadResult,
+            dependencyInventory: dependencyInventory,
             executionStartResult: executionStartResult,
             actualListenerRegistrationCaptureStatus:
                 serviceWorkerListenerCaptureStatus(
@@ -2458,11 +2732,13 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 serviceWorkerNextRecommendedFix(
                     declared: declared,
                     delta: delta,
-                    resourceLoadResult: resourceLoadResult
+                    resourceLoadResult: resourceLoadResult,
+                    dependencyInventory: dependencyInventory
                 ),
             diagnostics:
                 uniqueSortedRealPackages(
                     (readiness?.diagnostics ?? [])
+                        + dependencyInventory.diagnostics
                         + [
                             declared
                                 ? "Real-package service-worker readiness was evaluated with stable runtimeLoadable still false."
@@ -2966,6 +3242,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         declared: Bool,
         delta:
             ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDelta,
+        dependencyInventory:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventory,
         resourceLoadResult: ChromeMV3ServiceWorkerJSResourceLoadRecord?,
         executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?,
         capturedFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent]
@@ -2984,6 +3262,12 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             return (
                 .listenerCaptureSucceeded,
                 "Captured executed listener families: \(capturedFamilies.map(\.rawValue).joined(separator: ", "))."
+            )
+        }
+        if dependencyInventory.serviceWorkerType == "module" {
+            return (
+                .moduleWorkerUnsupported,
+                "Manifest declares a module service worker and module worker execution remains intentionally unsupported."
             )
         }
         if resourceLoadResult?.blockers.contains(.moduleWorkerUnsupported)
@@ -3078,10 +3362,27 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         declared: Bool,
         delta:
             ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDelta,
-        resourceLoadResult: ChromeMV3ServiceWorkerJSResourceLoadRecord?
+        resourceLoadResult: ChromeMV3ServiceWorkerJSResourceLoadRecord?,
+        dependencyInventory:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventory
     ) -> String {
         guard declared else {
             return "No background.service_worker was declared."
+        }
+        if dependencyInventory.serviceWorkerType == "module" {
+            return dependencyInventory.nextRecommendedImplementationPath
+        }
+        if dependencyInventory.dynamicImportExpressions.contains(where: {
+            [.identifier, .memberExpression, .callExpression,
+             .conditionalExpression, .concatenation, .unknownComputed]
+                .contains($0.shape)
+        }) {
+            return dependencyInventory.nextRecommendedImplementationPath
+        }
+        if dependencyInventory.asyncAPIInventory.count(.setTimeout) > 0
+            || dependencyInventory.asyncAPIInventory.count(.setInterval) > 0
+        {
+            return dependencyInventory.nextRecommendedImplementationPath
         }
         if let blocker = resourceLoadResult?.blockers.first {
             return "Resolve scoped service-worker resource blocker \(blocker.rawValue) without enabling stable runtime load."
@@ -4363,6 +4664,1569 @@ private struct NativeFixtureManifestCandidate {
     var executablePath: String?
     var manifest: ChromeMV3NativeHostManifest?
     var diagnostics: [String]
+}
+
+enum ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventoryScanner {
+    static func scan(
+        manifest: ChromeMV3Manifest?,
+        packageRootPath: String?,
+        generatedBundleRecord: ChromeMV3GeneratedBundleRecord?,
+        fileManager: FileManager = .default
+    ) -> ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventory {
+        let serviceWorkerPath = manifest?.background?.serviceWorker
+        let serviceWorkerType = manifest?.background?.type ?? "classic"
+        let generatedRootPath = generatedBundleRecord?.generatedBundleRootPath
+        guard manifest != nil,
+              let serviceWorkerPath,
+              let packageRootPath
+        else {
+            return emptyInventory(
+                serviceWorkerPath: serviceWorkerPath,
+                serviceWorkerType: serviceWorkerType,
+                packageRootPath: packageRootPath,
+                generatedBundleRootPath: generatedRootPath,
+                diagnostics: [
+                    "Service-worker dependency inventory was skipped because the manifest, package root, or background.service_worker was unavailable.",
+                ]
+            )
+        }
+        let root = URL(fileURLWithPath: packageRootPath, isDirectory: true)
+            .standardizedFileURL
+        guard fileManager.fileExists(atPath: root.path),
+              isSafeRelativeInventoryPath(serviceWorkerPath)
+        else {
+            return emptyInventory(
+                serviceWorkerPath: serviceWorkerPath,
+                serviceWorkerType: serviceWorkerType,
+                packageRootPath: packageRootPath,
+                generatedBundleRootPath: generatedRootPath,
+                diagnostics: [
+                    "Service-worker dependency inventory could not read a safe package-root-contained worker path.",
+                ]
+            )
+        }
+        let workerURL = root.appendingPathComponent(serviceWorkerPath)
+            .standardizedFileURL
+        guard safeURLInsideRoot(workerURL.resolvingSymlinksInPath(), root: root),
+              fileManager.fileExists(atPath: workerURL.path),
+              let workerSource = try? String(
+                contentsOf: workerURL,
+                encoding: .utf8
+              )
+        else {
+            return emptyInventory(
+                serviceWorkerPath: serviceWorkerPath,
+                serviceWorkerType: serviceWorkerType,
+                packageRootPath: packageRootPath,
+                generatedBundleRootPath: generatedRootPath,
+                diagnostics: [
+                    "Service-worker dependency inventory could not load the local worker source as UTF-8.",
+                ]
+            )
+        }
+
+        let generatedRoot = generatedBundleRecord.map {
+            URL(fileURLWithPath: $0.generatedBundleRootPath, isDirectory: true)
+                .standardizedFileURL
+        }
+        var scannedSources = [
+            InventorySource(
+                kind: .mainWorker,
+                relativePath: serviceWorkerPath,
+                url: workerURL,
+                source: workerSource
+            ),
+        ]
+        var candidates:
+            [ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyCandidate] = []
+        var scannedKeys = Set(["mainWorker:\(serviceWorkerPath)"])
+
+        let mainDynamicImports = dynamicImportInventory(
+            source: scannedSources[0],
+            root: root,
+            generatedBundleRecord: generatedBundleRecord,
+            generatedRoot: generatedRoot
+        )
+        let mainImportScripts = importScriptsInventory(
+            source: scannedSources[0],
+            root: root,
+            generatedBundleRecord: generatedBundleRecord,
+            generatedRoot: generatedRoot
+        )
+        let mainStaticImports = staticImportDeclarations(
+            source: scannedSources[0],
+            root: root,
+            generatedBundleRecord: generatedBundleRecord,
+            generatedRoot: generatedRoot
+        )
+
+        for item in mainImportScripts {
+            candidates.append(
+                dependencyCandidate(
+                    sourceKind: .importScriptsDependency,
+                    requestedSpecifier: item.specifierPreview,
+                    parentSourcePath: item.sourcePath,
+                    resolvedCandidatePath: item.dependencyCandidatePath,
+                    generatedRootContained: item.generatedRootContained,
+                    scanned: false,
+                    diagnostics: item.diagnostics
+                )
+            )
+            addScannedDependency(
+                kind: .importScriptsDependency,
+                relativePath: item.dependencyCandidatePath,
+                root: root,
+                scannedSources: &scannedSources,
+                scannedKeys: &scannedKeys,
+                fileManager: fileManager
+            )
+        }
+        for item in mainDynamicImports {
+            candidates.append(
+                dependencyCandidate(
+                    sourceKind: .dynamicImportCandidate,
+                    requestedSpecifier: item.specifierPreview,
+                    parentSourcePath: item.sourcePath,
+                    resolvedCandidatePath: item.dependencyCandidatePath,
+                    generatedRootContained: item.generatedRootContained,
+                    scanned: false,
+                    diagnostics: item.diagnostics
+                )
+            )
+            addScannedDependency(
+                kind: .dynamicImportCandidate,
+                relativePath: item.dependencyCandidatePath,
+                root: root,
+                scannedSources: &scannedSources,
+                scannedKeys: &scannedKeys,
+                fileManager: fileManager
+            )
+        }
+        for item in mainStaticImports {
+            candidates.append(
+                dependencyCandidate(
+                    sourceKind: .moduleDependencyCandidate,
+                    requestedSpecifier: item.specifier,
+                    parentSourcePath: item.sourcePath,
+                    resolvedCandidatePath: item.dependencyCandidatePath,
+                    generatedRootContained: item.generatedRootContained,
+                    scanned: false,
+                    diagnostics: [
+                        "Static module import candidate was discovered by diagnostics-only inventory.",
+                    ]
+                )
+            )
+            addScannedDependency(
+                kind: .moduleDependencyCandidate,
+                relativePath: item.dependencyCandidatePath,
+                root: root,
+                scannedSources: &scannedSources,
+                scannedKeys: &scannedKeys,
+                fileManager: fileManager
+            )
+        }
+
+        var dynamicImports: [ChromeMV3PasswordManagerRealPackageServiceWorkerDynamicImportInventory] = []
+        var importScriptsCalls: [ChromeMV3PasswordManagerRealPackageServiceWorkerImportScriptsInventory] = []
+        var staticImports: [ChromeMV3PasswordManagerRealPackageServiceWorkerModuleImportDeclaration] = []
+        var exportLocations:
+            [ChromeMV3PasswordManagerRealPackageServiceWorkerSourceLocation] = []
+        var topLevelAwaitLocations:
+            [ChromeMV3PasswordManagerRealPackageServiceWorkerSourceLocation] = []
+        var asyncOccurrences:
+            [ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPIOccurrence] = []
+        var asyncTotalsByAPI:
+            [ChromeMV3PasswordManagerRealPackageAsyncAPI: Int] = [:]
+        var listenerRegistrationRecords:
+            [ChromeMV3PasswordManagerRealPackageServiceWorkerListenerRegistration] = []
+
+        for scannedSource in scannedSources {
+            dynamicImports.append(
+                contentsOf: dynamicImportInventory(
+                    source: scannedSource,
+                    root: root,
+                    generatedBundleRecord: generatedBundleRecord,
+                    generatedRoot: generatedRoot
+                )
+            )
+            importScriptsCalls.append(
+                contentsOf: importScriptsInventory(
+                    source: scannedSource,
+                    root: root,
+                    generatedBundleRecord: generatedBundleRecord,
+                    generatedRoot: generatedRoot
+                )
+            )
+            staticImports.append(
+                contentsOf: staticImportDeclarations(
+                    source: scannedSource,
+                    root: root,
+                    generatedBundleRecord: generatedBundleRecord,
+                    generatedRoot: generatedRoot
+                )
+            )
+            exportLocations.append(contentsOf: exportUsageLocations(scannedSource))
+            topLevelAwaitLocations.append(
+                contentsOf: topLevelAwaitUsageLocations(scannedSource)
+            )
+            let asyncScan = asyncAPIScan(scannedSource)
+            asyncOccurrences.append(contentsOf: asyncScan.occurrences)
+            for total in asyncScan.totals {
+                asyncTotalsByAPI[total.api, default: 0] += total.count
+            }
+            listenerRegistrationRecords.append(
+                contentsOf: listenerRegistrations(in: scannedSource)
+            )
+        }
+
+        candidates = candidates.map { candidate in
+            var updated = candidate
+            updated.scanned =
+                candidate.resolvedCandidatePath.map { relativePath in
+                    scannedSources.contains {
+                        $0.relativePath == relativePath
+                            && $0.kind == candidate.sourceKind
+                    }
+                } ?? false
+            return updated
+        }
+
+        let unknownComputedReferences =
+            dynamicImports.filter { $0.dependencyCandidatePath == nil }.count
+                + importScriptsCalls.filter { $0.dependencyCandidatePath == nil }
+                .count
+        let listenerMap = listenerRegistrationMap(
+            registrations: listenerRegistrationRecords,
+            unknownComputedReferences: unknownComputedReferences
+        )
+        let asyncInventory = asyncAPIInventory(
+            asyncOccurrences,
+            totalsByAPI: asyncTotalsByAPI
+        )
+        let moduleInventory =
+            ChromeMV3PasswordManagerRealPackageServiceWorkerModuleWorkerInventory(
+                declaredAsModuleWorker: serviceWorkerType == "module",
+                staticImportDeclarations:
+                    staticImports.sorted(by: moduleImportSort),
+                exportUsageLocations:
+                    exportLocations.sorted(by: sourceLocationSort),
+                dynamicImportUsage:
+                    dynamicImports.sorted(by: dynamicImportSort),
+                topLevelAwaitDetected: topLevelAwaitLocations.isEmpty == false,
+                topLevelAwaitLocations:
+                    topLevelAwaitLocations.sorted(by: sourceLocationSort),
+                dependencyCandidatePaths:
+                    candidates.filter {
+                        $0.sourceKind == .moduleDependencyCandidate
+                    }.sorted(by: dependencyCandidateSort),
+                diagnostics:
+                    uniqueSortedRealPackages([
+                        serviceWorkerType == "module"
+                            ? "Manifest declares background.type=module; this inventory is static-only and does not enable module worker execution."
+                            : "Manifest does not declare a module service worker.",
+                        staticImports.isEmpty
+                            ? "No static module import declarations were detected in scanned service-worker sources."
+                            : "Static module import declarations were inventoried without evaluating module code.",
+                        exportLocations.isEmpty
+                            ? "No export usage was detected in scanned service-worker sources."
+                            : "Export usage was detected and remains diagnostics-only.",
+                        topLevelAwaitLocations.isEmpty
+                            ? "No top-level await was detected by conservative lexical scan."
+                            : "Top-level await was detected by conservative lexical scan.",
+                    ])
+            )
+        let nextPath = nextImplementationPath(
+            serviceWorkerType: serviceWorkerType,
+            dynamicImports: dynamicImports,
+            moduleInventory: moduleInventory,
+            asyncInventory: asyncInventory,
+            importScriptsCalls: importScriptsCalls
+        )
+        return ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventory(
+            serviceWorkerPath: serviceWorkerPath,
+            serviceWorkerType: serviceWorkerType,
+            packageRootPath: root.path,
+            generatedBundleRootPath: generatedRootPath,
+            scannedSourceFileCount: scannedSources.count,
+            dynamicImportExpressions:
+                dynamicImports.sorted(by: dynamicImportSort),
+            importScriptsCalls:
+                importScriptsCalls.sorted(by: importScriptsSort),
+            moduleWorkerInventory: moduleInventory,
+            asyncAPIInventory: asyncInventory,
+            listenerRegistrationMap: listenerMap,
+            nextRecommendedImplementationPath: nextPath,
+            diagnostics:
+                uniqueSortedRealPackages([
+                    "Service-worker dependency inventory scanned only package-root-contained local text resources.",
+                    "Dynamic import, importScripts, module import/export, async API, and listener registration findings are diagnostics-only.",
+                    "No service-worker runtime behavior, timer, module loader, dynamic import resolver, or generated-bundle mutation was enabled.",
+                ])
+        )
+    }
+
+    private static func emptyInventory(
+        serviceWorkerPath: String?,
+        serviceWorkerType: String,
+        packageRootPath: String?,
+        generatedBundleRootPath: String?,
+        diagnostics: [String]
+    ) -> ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventory {
+        ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventory(
+            serviceWorkerPath: serviceWorkerPath,
+            serviceWorkerType: serviceWorkerType,
+            packageRootPath: packageRootPath,
+            generatedBundleRootPath: generatedBundleRootPath,
+            scannedSourceFileCount: 0,
+            dynamicImportExpressions: [],
+            importScriptsCalls: [],
+            moduleWorkerInventory:
+                ChromeMV3PasswordManagerRealPackageServiceWorkerModuleWorkerInventory(
+                    declaredAsModuleWorker: serviceWorkerType == "module",
+                    staticImportDeclarations: [],
+                    exportUsageLocations: [],
+                    dynamicImportUsage: [],
+                    topLevelAwaitDetected: false,
+                    topLevelAwaitLocations: [],
+                    dependencyCandidatePaths: [],
+                    diagnostics: diagnostics
+                ),
+            asyncAPIInventory:
+                ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPIInventory(
+                    totals: [],
+                    occurrences: [],
+                    diagnostics: diagnostics
+                ),
+            listenerRegistrationMap:
+                ChromeMV3PasswordManagerRealPackageServiceWorkerListenerRegistrationMap(
+                    registrations: [],
+                    mainWorkerCount: 0,
+                    importScriptsDependencyCount: 0,
+                    dynamicImportCandidateCount: 0,
+                    moduleDependencyCandidateCount: 0,
+                    unknownComputedDependencyReferenceCount: 0,
+                    diagnostics: diagnostics
+                ),
+            nextRecommendedImplementationPath:
+                "No service-worker source was available for dependency inventory.",
+            diagnostics: uniqueSortedRealPackages(diagnostics)
+        )
+    }
+
+    private struct InventorySource {
+        var kind:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerDependencySourceKind
+        var relativePath: String
+        var url: URL
+        var source: String
+    }
+
+    private struct InventoryCall {
+        var line: Int
+        var rawCallPreview: String
+        var argumentSource: String
+    }
+
+    private struct CandidateResolution {
+        var requestedSpecifier: String
+        var resolvedCandidatePath: String?
+        var generatedRootContained: Bool?
+        var diagnostics: [String]
+    }
+
+    private static func addScannedDependency(
+        kind:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerDependencySourceKind,
+        relativePath: String?,
+        root: URL,
+        scannedSources: inout [InventorySource],
+        scannedKeys: inout Set<String>,
+        fileManager: FileManager
+    ) {
+        guard let relativePath,
+              isSafeRelativeInventoryPath(relativePath)
+        else { return }
+        let key = "\(kind.rawValue):\(relativePath)"
+        guard scannedKeys.contains(key) == false else { return }
+        let url = root.appendingPathComponent(relativePath).standardizedFileURL
+        guard safeURLInsideRoot(url.resolvingSymlinksInPath(), root: root),
+              fileManager.fileExists(atPath: url.path),
+              isScannableServiceWorkerInventoryResource(url),
+              let source = try? String(contentsOf: url, encoding: .utf8)
+        else { return }
+        scannedKeys.insert(key)
+        scannedSources.append(
+            InventorySource(
+                kind: kind,
+                relativePath: relativePath,
+                url: url,
+                source: source
+            )
+        )
+    }
+
+    private static func dynamicImportInventory(
+        source: InventorySource,
+        root: URL,
+        generatedBundleRecord: ChromeMV3GeneratedBundleRecord?,
+        generatedRoot: URL?
+    ) -> [ChromeMV3PasswordManagerRealPackageServiceWorkerDynamicImportInventory] {
+        javascriptCalls(
+            named: "import",
+            in: source.source,
+            rejectMemberAccess: true
+        ).map { call in
+            let split = firstTopLevelArgument(call.argumentSource)
+            let shape = importShape(split.first)
+            let resolution = resolveCandidate(
+                specifier: split.first,
+                shape: shape,
+                parentSource: source,
+                root: root,
+                generatedBundleRecord: generatedBundleRecord,
+                generatedRoot: generatedRoot
+            )
+            return ChromeMV3PasswordManagerRealPackageServiceWorkerDynamicImportInventory(
+                sourceKind: source.kind,
+                sourcePath: source.relativePath,
+                line: call.line,
+                rawCallPreview: call.rawCallPreview,
+                specifierPreview: previewInventory(split.first),
+                shape: shape,
+                hasOptionsArgument: split.hasAdditionalArguments,
+                dependencyCandidatePath: resolution.resolvedCandidatePath,
+                generatedRootContained: resolution.generatedRootContained,
+                diagnostics:
+                    uniqueSortedRealPackages(
+                        [
+                            "Dynamic import expression was classified without execution.",
+                            split.hasAdditionalArguments
+                                ? "Dynamic import uses an options argument; only the first specifier argument determines dependency shape."
+                                : "Dynamic import has a single specifier argument.",
+                        ] + resolution.diagnostics
+                    )
+            )
+        }
+    }
+
+    private static func importScriptsInventory(
+        source: InventorySource,
+        root: URL,
+        generatedBundleRecord: ChromeMV3GeneratedBundleRecord?,
+        generatedRoot: URL?
+    ) -> [ChromeMV3PasswordManagerRealPackageServiceWorkerImportScriptsInventory] {
+        javascriptCalls(
+            named: "importScripts",
+            in: source.source,
+            rejectMemberAccess: false
+        ).map { call in
+            let split = firstTopLevelArgument(call.argumentSource)
+            let shape = importShape(split.first)
+            let resolution = resolveCandidate(
+                specifier: split.first,
+                shape: shape,
+                parentSource: source,
+                root: root,
+                generatedBundleRecord: generatedBundleRecord,
+                generatedRoot: generatedRoot
+            )
+            return ChromeMV3PasswordManagerRealPackageServiceWorkerImportScriptsInventory(
+                sourceKind: source.kind,
+                sourcePath: source.relativePath,
+                line: call.line,
+                rawCallPreview: call.rawCallPreview,
+                specifierPreview: previewInventory(split.first),
+                shape: shape,
+                dependencyCandidatePath: resolution.resolvedCandidatePath,
+                generatedRootContained: resolution.generatedRootContained,
+                diagnostics:
+                    uniqueSortedRealPackages(
+                        [
+                            "importScripts call was inventoried without executing the worker.",
+                            split.hasAdditionalArguments
+                                ? "Only the first importScripts argument is used for dependency-source mapping; all arguments remain diagnostics."
+                                : "Single importScripts argument was inventoried.",
+                        ] + resolution.diagnostics
+                    )
+            )
+        }
+    }
+
+    private static func staticImportDeclarations(
+        source: InventorySource,
+        root: URL,
+        generatedBundleRecord: ChromeMV3GeneratedBundleRecord?,
+        generatedRoot: URL?
+    ) -> [ChromeMV3PasswordManagerRealPackageServiceWorkerModuleImportDeclaration] {
+        regexMatches(
+            pattern:
+                #"(?m)(^|;)\s*import\s+(?!\()(?:(?:[^;"']+?\s+from\s*)?["']([^"']+)["']|["']([^"']+)["'])"#,
+            in: source.source
+        ).compactMap { match in
+            let specifier = match.capture(2) ?? match.capture(3)
+            guard let specifier else { return nil }
+            let quotedSpecifier = "'\(specifier)'"
+            let resolution = resolveCandidate(
+                specifier: quotedSpecifier,
+                shape: importShape(quotedSpecifier),
+                parentSource: source,
+                root: root,
+                generatedBundleRecord: generatedBundleRecord,
+                generatedRoot: generatedRoot
+            )
+            return ChromeMV3PasswordManagerRealPackageServiceWorkerModuleImportDeclaration(
+                sourcePath: source.relativePath,
+                line: lineNumber(in: source.source, utf16Offset: match.range.location),
+                rawDeclarationPreview: previewInventory(match.text),
+                specifier: specifier,
+                dependencyCandidatePath: resolution.resolvedCandidatePath,
+                generatedRootContained: resolution.generatedRootContained
+            )
+        }
+    }
+
+    private static func exportUsageLocations(
+        _ source: InventorySource
+    ) -> [ChromeMV3PasswordManagerRealPackageServiceWorkerSourceLocation] {
+        regexMatches(
+            pattern: #"(?m)(^|;)\s*export\s+"#,
+            in: source.source
+        ).prefix(20).map { match in
+            sourceLocation(
+                source: source,
+                line: lineNumber(in: source.source, utf16Offset: match.range.location),
+                snippet: match.text
+            )
+        }
+    }
+
+    private static func topLevelAwaitUsageLocations(
+        _ source: InventorySource
+    ) -> [ChromeMV3PasswordManagerRealPackageServiceWorkerSourceLocation] {
+        topLevelTokenLocations(token: "await", in: source)
+    }
+
+    private static func asyncAPIScan(
+        _ source: InventorySource
+    ) -> (
+        occurrences:
+            [ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPIOccurrence],
+        totals:
+            [ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPITotal]
+    ) {
+        let patterns:
+            [(ChromeMV3PasswordManagerRealPackageAsyncAPI, String)] = [
+            (.setTimeout, #"\bsetTimeout\s*\("#),
+            (.setInterval, #"\bsetInterval\s*\("#),
+            (.queueMicrotask, #"\bqueueMicrotask\s*\("#),
+            (.promiseThen, #"\.then\s*\("#),
+            (.asyncFunction, #"\basync\s+function\b|\basync\s*(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>"#),
+            (.fetch, #"\bfetch\s*\("#),
+            (.webSocket, #"\bWebSocket\b"#),
+            (.eventSource, #"\bEventSource\b"#),
+        ]
+        var occurrences:
+            [ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPIOccurrence] = []
+        var totals:
+            [ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPITotal] = []
+        for (api, pattern) in patterns {
+            let matches = regexMatches(pattern: pattern, in: source.source)
+            if matches.isEmpty == false {
+                totals.append(
+                    ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPITotal(
+                        api: api,
+                        count: matches.count
+                    )
+                )
+            }
+            occurrences.append(
+                contentsOf:
+                    matches.prefix(20).map { match in
+                    ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPIOccurrence(
+                        api: api,
+                        sourceKind: source.kind,
+                        sourcePath: source.relativePath,
+                        line: lineNumber(
+                            in: source.source,
+                            utf16Offset: match.range.location
+                        ),
+                        snippet: previewInventory(match.text)
+                    )
+                }
+            )
+        }
+        return (occurrences, totals)
+    }
+
+    private static func listenerRegistrations(
+        in source: InventorySource
+    ) -> [ChromeMV3PasswordManagerRealPackageServiceWorkerListenerRegistration] {
+        regexMatches(
+            pattern:
+                #"([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\.addListener\s*\("#,
+            in: source.source
+        ).prefix(200).compactMap { match in
+            guard let target = match.capture(1) else { return nil }
+            return ChromeMV3PasswordManagerRealPackageServiceWorkerListenerRegistration(
+                sourceKind: source.kind,
+                sourcePath: source.relativePath,
+                line: lineNumber(in: source.source, utf16Offset: match.range.location),
+                eventTarget: target,
+                snippet: previewInventory(match.text)
+            )
+        }
+    }
+
+    private static func asyncAPIInventory(
+        _ occurrences:
+            [ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPIOccurrence],
+        totalsByAPI:
+            [ChromeMV3PasswordManagerRealPackageAsyncAPI: Int]
+    ) -> ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPIInventory {
+        let totals = ChromeMV3PasswordManagerRealPackageAsyncAPI.allCases
+            .map { api in
+                ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPITotal(
+                    api: api,
+                    count: totalsByAPI[api] ?? 0
+                )
+            }
+            .filter { $0.count > 0 }
+            .sorted { $0.api < $1.api }
+        return ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPIInventory(
+            totals: totals,
+            occurrences:
+                occurrences.sorted {
+                    if $0.sourcePath != $1.sourcePath {
+                        return $0.sourcePath < $1.sourcePath
+                    }
+                    if $0.line != $1.line { return $0.line < $1.line }
+                    return $0.api < $1.api
+                },
+            diagnostics:
+                uniqueSortedRealPackages([
+                    totals.isEmpty
+                        ? "No requested timer/async API tokens were detected."
+                        : "Timer, microtask, Promise, async function, fetch, WebSocket, and EventSource tokens were counted statically.",
+                    "Counts are diagnostic tokens and do not imply execution or API enablement.",
+                ])
+        )
+    }
+
+    private static func listenerRegistrationMap(
+        registrations:
+            [ChromeMV3PasswordManagerRealPackageServiceWorkerListenerRegistration],
+        unknownComputedReferences: Int
+    ) -> ChromeMV3PasswordManagerRealPackageServiceWorkerListenerRegistrationMap {
+        func count(
+            _ kind:
+                ChromeMV3PasswordManagerRealPackageServiceWorkerDependencySourceKind
+        ) -> Int {
+            registrations.filter { $0.sourceKind == kind }.count
+        }
+        return ChromeMV3PasswordManagerRealPackageServiceWorkerListenerRegistrationMap(
+            registrations:
+                registrations.sorted {
+                    if $0.sourceKind != $1.sourceKind {
+                        return $0.sourceKind < $1.sourceKind
+                    }
+                    if $0.sourcePath != $1.sourcePath {
+                        return $0.sourcePath < $1.sourcePath
+                    }
+                    if $0.line != $1.line { return $0.line < $1.line }
+                    return $0.eventTarget < $1.eventTarget
+                },
+            mainWorkerCount: count(.mainWorker),
+            importScriptsDependencyCount: count(.importScriptsDependency),
+            dynamicImportCandidateCount: count(.dynamicImportCandidate),
+            moduleDependencyCandidateCount: count(.moduleDependencyCandidate),
+            unknownComputedDependencyReferenceCount: unknownComputedReferences,
+            diagnostics:
+                uniqueSortedRealPackages([
+                    "Listener registration locations were mapped by static addListener token scan.",
+                    unknownComputedReferences == 0
+                        ? "No unknown/computed dependency reference required a listener-location caveat."
+                        : "Computed dependency references may contain additional listeners that this diagnostics-only scan did not execute or resolve.",
+                ])
+        )
+    }
+
+    private static func nextImplementationPath(
+        serviceWorkerType: String,
+        dynamicImports:
+            [ChromeMV3PasswordManagerRealPackageServiceWorkerDynamicImportInventory],
+        moduleInventory:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerModuleWorkerInventory,
+        asyncInventory:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerAsyncAPIInventory,
+        importScriptsCalls:
+            [ChromeMV3PasswordManagerRealPackageServiceWorkerImportScriptsInventory]
+    ) -> String {
+        if serviceWorkerType == "module" {
+            let staticCount =
+                moduleInventory.staticImportDeclarations.count
+            return "Classify and design a default-off module-worker loader boundary first; this worker declares type=module with \(staticCount) static module import candidate(s)."
+        }
+        if dynamicImports.contains(where: {
+            [.identifier, .memberExpression, .callExpression,
+             .conditionalExpression, .concatenation, .unknownComputed]
+                .contains($0.shape)
+        }) {
+            let shapes = uniqueSortedRealPackages(
+                dynamicImports.map(\.shape.rawValue)
+            ).joined(separator: ", ")
+            return "Inventory the computed dynamic-import and chunk-loader contract next; detected shape(s): \(shapes). Do not enable computed import execution yet."
+        }
+        if importScriptsCalls.contains(where: { $0.dependencyCandidatePath == nil }) {
+            return "Resolve computed importScripts dependency mapping as diagnostics before adding any runtime import behavior."
+        }
+        if asyncInventory.count(.setTimeout) > 0
+            || asyncInventory.count(.setInterval) > 0
+        {
+            return "Design timer lifecycle semantics and cancellation diagnostics before enabling any setTimeout or setInterval behavior."
+        }
+        return "Use listener registration and dependency inventory to choose the next smallest diagnostics-only compatibility probe."
+    }
+
+    private static func resolveCandidate(
+        specifier: String,
+        shape: ChromeMV3PasswordManagerRealPackageDynamicImportShape,
+        parentSource: InventorySource,
+        root: URL,
+        generatedBundleRecord: ChromeMV3GeneratedBundleRecord?,
+        generatedRoot: URL?
+    ) -> CandidateResolution {
+        guard [.stringLiteralLocal, .templateLiteralStatic].contains(shape),
+              let literal = literalSpecifierValue(specifier)
+        else {
+            return CandidateResolution(
+                requestedSpecifier: specifier,
+                resolvedCandidatePath: nil,
+                generatedRootContained: nil,
+                diagnostics: [
+                    "No dependency candidate path was resolved because the specifier is not a static local literal.",
+                ]
+            )
+        }
+        let normalized = normalizeInventoryImportPath(literal)
+        guard normalized.path != nil else {
+            return CandidateResolution(
+                requestedSpecifier: specifier,
+                resolvedCandidatePath: nil,
+                generatedRootContained: false,
+                diagnostics: [normalized.message]
+            )
+        }
+        guard let normalizedPath = normalized.path else {
+            return CandidateResolution(
+                requestedSpecifier: specifier,
+                resolvedCandidatePath: nil,
+                generatedRootContained: false,
+                diagnostics: [normalized.message]
+            )
+        }
+        let parentDirectory = parentSource.url.deletingLastPathComponent()
+        let candidate = parentDirectory.appendingPathComponent(normalizedPath)
+            .standardizedFileURL
+        let resolvedRelative = relativeInventoryPath(candidate, root: root)
+        guard let resolvedRelative else {
+            return CandidateResolution(
+                requestedSpecifier: specifier,
+                resolvedCandidatePath: nil,
+                generatedRootContained: false,
+                diagnostics: [
+                    "Dependency candidate resolves outside the package root.",
+                ]
+            )
+        }
+        let generatedContained: Bool? = generatedRoot.map { generatedRoot in
+            let generatedCandidate = generatedRoot
+                .appendingPathComponent(resolvedRelative)
+                .standardizedFileURL
+            return safeURLInsideRoot(
+                generatedCandidate.resolvingSymlinksInPath(),
+                root: generatedRoot
+            )
+                && generatedBundleRecord?.copiedResourcePaths
+                    .contains(resolvedRelative) == true
+                && FileManager.default.fileExists(atPath: generatedCandidate.path)
+        }
+        return CandidateResolution(
+            requestedSpecifier: specifier,
+            resolvedCandidatePath: resolvedRelative,
+            generatedRootContained: generatedContained,
+            diagnostics: [
+                generatedContained == true
+                    ? "Dependency candidate is generated-root-contained and recorded as a copied generated-bundle resource."
+                    : "Dependency candidate is not proven generated-root-contained.",
+            ]
+        )
+    }
+
+    private static func dependencyCandidate(
+        sourceKind:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerDependencySourceKind,
+        requestedSpecifier: String,
+        parentSourcePath: String,
+        resolvedCandidatePath: String?,
+        generatedRootContained: Bool?,
+        scanned: Bool,
+        diagnostics: [String]
+    ) -> ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyCandidate {
+        ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyCandidate(
+            sourceKind: sourceKind,
+            requestedSpecifier: previewInventory(requestedSpecifier),
+            parentSourcePath: parentSourcePath,
+            resolvedCandidatePath: resolvedCandidatePath,
+            generatedRootContained: generatedRootContained,
+            scanned: scanned,
+            diagnostics: uniqueSortedRealPackages(diagnostics)
+        )
+    }
+
+    private struct RegexMatch {
+        var text: String
+        var range: NSRange
+        var captures: [String?]
+
+        func capture(_ index: Int) -> String? {
+            guard index > 0, index <= captures.count else { return nil }
+            return captures[index - 1]
+        }
+    }
+
+    private static func regexMatches(
+        pattern: String,
+        in source: String
+    ) -> [RegexMatch] {
+        guard let regex = try? NSRegularExpression(pattern: pattern)
+        else { return [] }
+        let range = NSRange(source.startIndex..., in: source)
+        return regex.matches(in: source, range: range).compactMap { match in
+            guard let fullRange = Range(match.range, in: source)
+            else { return nil }
+            let captures = (1..<match.numberOfRanges).map { index -> String? in
+                guard let range = Range(match.range(at: index), in: source)
+                else { return nil }
+                return String(source[range])
+            }
+            return RegexMatch(
+                text: String(source[fullRange]),
+                range: match.range,
+                captures: captures
+            )
+        }
+    }
+
+    private static func javascriptCalls(
+        named name: String,
+        in source: String,
+        rejectMemberAccess: Bool
+    ) -> [InventoryCall] {
+        let bytes = Array(source.utf8)
+        let newlines = bytes.enumerated().compactMap {
+            $0.element == 10 ? $0.offset : nil
+        }
+        var calls: [InventoryCall] = []
+        var index = 0
+        var quote: UInt8?
+        var escaped = false
+        while index < bytes.count {
+            let byte = bytes[index]
+            if let activeQuote = quote {
+                if escaped {
+                    escaped = false
+                } else if byte == 92 {
+                    escaped = true
+                } else if byte == activeQuote {
+                    quote = nil
+                }
+                index += 1
+                continue
+            }
+            if byte == 34 || byte == 39 || byte == 96 {
+                quote = byte
+                index += 1
+                continue
+            }
+            if byte == 47, index + 1 < bytes.count, bytes[index + 1] == 47 {
+                index += 2
+                while index < bytes.count, bytes[index] != 10 {
+                    index += 1
+                }
+                continue
+            }
+            if byte == 47, index + 1 < bytes.count, bytes[index + 1] == 42 {
+                index += 2
+                while index + 1 < bytes.count,
+                      !(bytes[index] == 42 && bytes[index + 1] == 47)
+                {
+                    index += 1
+                }
+                index += 2
+                continue
+            }
+            guard isIdentifierStart(byte) else {
+                index += 1
+                continue
+            }
+            let start = index
+            index += 1
+            while index < bytes.count, isIdentifierPart(bytes[index]) {
+                index += 1
+            }
+            guard String(decoding: bytes[start..<index], as: UTF8.self) == name
+            else { continue }
+            if rejectMemberAccess,
+               previousSignificantByte(bytes, before: start) == 46
+            {
+                continue
+            }
+            var open = index
+            while open < bytes.count, isASCIIWhitespace(bytes[open]) {
+                open += 1
+            }
+            guard open < bytes.count, bytes[open] == 40 else { continue }
+            guard let close = matchingParenClose(bytes, open: open) else {
+                continue
+            }
+            let argument = String(
+                decoding: bytes[(open + 1)..<close],
+                as: UTF8.self
+            )
+            let raw = String(decoding: bytes[start...(close)], as: UTF8.self)
+            calls.append(
+                InventoryCall(
+                    line: lineNumber(newlines: newlines, offset: start),
+                    rawCallPreview: previewInventory(raw),
+                    argumentSource: argument
+                )
+            )
+            index = close + 1
+        }
+        for fallback in fallbackJavascriptCalls(
+            named: name,
+            in: source,
+            rejectMemberAccess: rejectMemberAccess
+        ) {
+            guard calls.contains(where: {
+                $0.line == fallback.line
+                    && $0.rawCallPreview == fallback.rawCallPreview
+            }) == false else { continue }
+            calls.append(fallback)
+        }
+        return calls
+    }
+
+    private static func fallbackJavascriptCalls(
+        named name: String,
+        in source: String,
+        rejectMemberAccess: Bool
+    ) -> [InventoryCall] {
+        let bytes = Array(source.utf8)
+        let newlines = bytes.enumerated().compactMap {
+            $0.element == 10 ? $0.offset : nil
+        }
+        var calls: [InventoryCall] = []
+        var index = 0
+        while index < bytes.count {
+            guard isIdentifierStart(bytes[index]) else {
+                index += 1
+                continue
+            }
+            let start = index
+            index += 1
+            while index < bytes.count, isIdentifierPart(bytes[index]) {
+                index += 1
+            }
+            guard String(decoding: bytes[start..<index], as: UTF8.self) == name
+            else { continue }
+            if rejectMemberAccess,
+               previousSignificantByte(bytes, before: start) == 46
+            {
+                continue
+            }
+            var open = index
+            while open < bytes.count, isASCIIWhitespace(bytes[open]) {
+                open += 1
+            }
+            guard open < bytes.count, bytes[open] == 40,
+                  let close = matchingParenClose(bytes, open: open)
+            else { continue }
+            if rejectMemberAccess,
+               followingSignificantByte(bytes, after: close) == 123
+            {
+                index = close + 1
+                continue
+            }
+            let argument = String(
+                decoding: bytes[(open + 1)..<close],
+                as: UTF8.self
+            )
+            let raw = String(decoding: bytes[start...close], as: UTF8.self)
+            calls.append(
+                InventoryCall(
+                    line: lineNumber(newlines: newlines, offset: start),
+                    rawCallPreview: previewInventory(raw),
+                    argumentSource: argument
+                )
+            )
+            index = close + 1
+        }
+        return calls
+    }
+
+    private static func matchingParenClose(
+        _ bytes: [UInt8],
+        open: Int
+    ) -> Int? {
+        var depth = 1
+        var index = open + 1
+        var quote: UInt8?
+        var escaped = false
+        while index < bytes.count {
+            let byte = bytes[index]
+            if let activeQuote = quote {
+                if escaped {
+                    escaped = false
+                } else if byte == 92 {
+                    escaped = true
+                } else if byte == activeQuote {
+                    quote = nil
+                }
+                index += 1
+                continue
+            }
+            if byte == 34 || byte == 39 || byte == 96 {
+                quote = byte
+            } else if byte == 47, index + 1 < bytes.count,
+                      bytes[index + 1] == 47
+            {
+                index += 2
+                while index < bytes.count, bytes[index] != 10 {
+                    index += 1
+                }
+                continue
+            } else if byte == 47, index + 1 < bytes.count,
+                      bytes[index + 1] == 42
+            {
+                index += 2
+                while index + 1 < bytes.count,
+                      !(bytes[index] == 42 && bytes[index + 1] == 47)
+                {
+                    index += 1
+                }
+                index += 2
+                continue
+            } else if byte == 40 {
+                depth += 1
+            } else if byte == 41 {
+                depth -= 1
+                if depth == 0 { return index }
+            }
+            index += 1
+        }
+        return nil
+    }
+
+    private static func firstTopLevelArgument(
+        _ arguments: String
+    ) -> (first: String, hasAdditionalArguments: Bool) {
+        let bytes = Array(arguments.utf8)
+        var quote: UInt8?
+        var escaped = false
+        var parenDepth = 0
+        var braceDepth = 0
+        var bracketDepth = 0
+        for index in bytes.indices {
+            let byte = bytes[index]
+            if let activeQuote = quote {
+                if escaped {
+                    escaped = false
+                } else if byte == 92 {
+                    escaped = true
+                } else if byte == activeQuote {
+                    quote = nil
+                }
+                continue
+            }
+            if byte == 34 || byte == 39 || byte == 96 {
+                quote = byte
+            } else if byte == 40 {
+                parenDepth += 1
+            } else if byte == 41 {
+                parenDepth = max(0, parenDepth - 1)
+            } else if byte == 123 {
+                braceDepth += 1
+            } else if byte == 125 {
+                braceDepth = max(0, braceDepth - 1)
+            } else if byte == 91 {
+                bracketDepth += 1
+            } else if byte == 93 {
+                bracketDepth = max(0, bracketDepth - 1)
+            } else if byte == 44,
+                      parenDepth == 0,
+                      braceDepth == 0,
+                      bracketDepth == 0
+            {
+                let first = String(
+                    decoding: bytes[..<index],
+                    as: UTF8.self
+                )
+                return (
+                    first.trimmingCharacters(in: .whitespacesAndNewlines),
+                    true
+                )
+            }
+        }
+        return (
+            arguments.trimmingCharacters(in: .whitespacesAndNewlines),
+            false
+        )
+    }
+
+    private static func importShape(
+        _ argument: String
+    ) -> ChromeMV3PasswordManagerRealPackageDynamicImportShape {
+        let value = argument.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard value.isEmpty == false else { return .unknownComputed }
+        if let literal = literalSpecifierValue(value) {
+            return isRemoteOrUnsafeInventoryImport(literal)
+                ? .remoteOrUnsafe : .stringLiteralLocal
+        }
+        if value.hasPrefix("`"), value.hasSuffix("`") {
+            let literal = String(value.dropFirst().dropLast())
+            if literal.contains("${") { return .templateLiteralDynamic }
+            return isRemoteOrUnsafeInventoryImport(literal)
+                ? .remoteOrUnsafe : .templateLiteralStatic
+        }
+        if containsTopLevelToken("?", in: value)
+            && containsTopLevelToken(":", in: value)
+        {
+            return .conditionalExpression
+        }
+        if containsTopLevelToken("+", in: value) {
+            return .concatenation
+        }
+        if matchesInventoryRegex(#"^[A-Za-z_$][\w$]*$"#, value) {
+            return .identifier
+        }
+        if matchesInventoryRegex(
+            #"^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])+$"#,
+            value
+        ) {
+            return .memberExpression
+        }
+        if matchesInventoryRegex(
+            #"^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?\s*\("#,
+            value
+        ) {
+            return .callExpression
+        }
+        return .unknownComputed
+    }
+
+    private static func literalSpecifierValue(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let bytes = Array(trimmed.utf8)
+        guard let first = bytes.first,
+              (first == 34 || first == 39),
+              bytes.last == first,
+              bytes.count >= 2
+        else { return nil }
+        var escaped = false
+        for byte in bytes.dropFirst().dropLast() {
+            if escaped {
+                escaped = false
+            } else if byte == 92 {
+                escaped = true
+            } else if byte == first {
+                return nil
+            }
+        }
+        return String(trimmed.dropFirst().dropLast())
+    }
+
+    private static func containsTopLevelToken(
+        _ token: Character,
+        in source: String
+    ) -> Bool {
+        let needle = String(token).utf8.first
+        let bytes = Array(source.utf8)
+        var quote: UInt8?
+        var escaped = false
+        var parenDepth = 0
+        var braceDepth = 0
+        var bracketDepth = 0
+        for byte in bytes {
+            if let activeQuote = quote {
+                if escaped {
+                    escaped = false
+                } else if byte == 92 {
+                    escaped = true
+                } else if byte == activeQuote {
+                    quote = nil
+                }
+                continue
+            }
+            if byte == 34 || byte == 39 || byte == 96 {
+                quote = byte
+            } else if byte == 40 {
+                parenDepth += 1
+            } else if byte == 41 {
+                parenDepth = max(0, parenDepth - 1)
+            } else if byte == 123 {
+                braceDepth += 1
+            } else if byte == 125 {
+                braceDepth = max(0, braceDepth - 1)
+            } else if byte == 91 {
+                bracketDepth += 1
+            } else if byte == 93 {
+                bracketDepth = max(0, bracketDepth - 1)
+            } else if byte == needle,
+                      parenDepth == 0,
+                      braceDepth == 0,
+                      bracketDepth == 0
+            {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func topLevelTokenLocations(
+        token: String,
+        in source: InventorySource
+    ) -> [ChromeMV3PasswordManagerRealPackageServiceWorkerSourceLocation] {
+        let bytes = Array(source.source.utf8)
+        let tokenBytes = Array(token.utf8)
+        let newlines = bytes.enumerated().compactMap {
+            $0.element == 10 ? $0.offset : nil
+        }
+        var locations:
+            [ChromeMV3PasswordManagerRealPackageServiceWorkerSourceLocation] = []
+        var index = 0
+        var quote: UInt8?
+        var escaped = false
+        var parenDepth = 0
+        var braceDepth = 0
+        var bracketDepth = 0
+        while index < bytes.count {
+            let byte = bytes[index]
+            if let activeQuote = quote {
+                if escaped {
+                    escaped = false
+                } else if byte == 92 {
+                    escaped = true
+                } else if byte == activeQuote {
+                    quote = nil
+                }
+                index += 1
+                continue
+            }
+            if byte == 34 || byte == 39 || byte == 96 {
+                quote = byte
+                index += 1
+                continue
+            }
+            if byte == 47, index + 1 < bytes.count, bytes[index + 1] == 47 {
+                index += 2
+                while index < bytes.count, bytes[index] != 10 {
+                    index += 1
+                }
+                continue
+            }
+            if byte == 47, index + 1 < bytes.count, bytes[index + 1] == 42 {
+                index += 2
+                while index + 1 < bytes.count,
+                      !(bytes[index] == 42 && bytes[index + 1] == 47)
+                {
+                    index += 1
+                }
+                index += 2
+                continue
+            }
+            if byte == 123 {
+                braceDepth += 1
+            } else if byte == 125 {
+                braceDepth = max(0, braceDepth - 1)
+            } else if byte == 40 {
+                parenDepth += 1
+            } else if byte == 41 {
+                parenDepth = max(0, parenDepth - 1)
+            } else if byte == 91 {
+                bracketDepth += 1
+            } else if byte == 93 {
+                bracketDepth = max(0, bracketDepth - 1)
+            }
+            if braceDepth == 0,
+               parenDepth == 0,
+               bracketDepth == 0,
+               index + tokenBytes.count <= bytes.count,
+               Array(bytes[index..<(index + tokenBytes.count)]) == tokenBytes,
+               (index == 0 || isIdentifierPart(bytes[index - 1]) == false),
+               index + tokenBytes.count == bytes.count
+                    || isIdentifierPart(bytes[index + tokenBytes.count])
+                    == false
+            {
+                locations.append(
+                    sourceLocation(
+                        source: source,
+                        line: lineNumber(newlines: newlines, offset: index),
+                        snippet: token
+                    )
+                )
+                if locations.count >= 20 { break }
+            }
+            index += 1
+        }
+        return locations
+    }
+
+    private static func sourceLocation(
+        source: InventorySource,
+        line: Int,
+        snippet: String
+    ) -> ChromeMV3PasswordManagerRealPackageServiceWorkerSourceLocation {
+        ChromeMV3PasswordManagerRealPackageServiceWorkerSourceLocation(
+            sourceKind: source.kind,
+            sourcePath: source.relativePath,
+            line: line,
+            snippet: previewInventory(snippet)
+        )
+    }
+
+    private static func normalizeInventoryImportPath(
+        _ path: String
+    ) -> (path: String?, message: String) {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false,
+              trimmed.contains("\0") == false,
+              trimmed.contains("\\") == false,
+              trimmed.contains("?") == false,
+              trimmed.contains("#") == false
+        else {
+            return (
+                nil,
+                "Import path is empty or contains unsupported characters."
+            )
+        }
+        guard isRemoteOrUnsafeInventoryImport(trimmed) == false else {
+            return (
+                nil,
+                "Import path is remote, absolute, or otherwise unsafe."
+            )
+        }
+        var components: [String] = []
+        for component in trimmed.split(
+            separator: "/",
+            omittingEmptySubsequences: false
+        ).map(String.init) {
+            if component == "." { continue }
+            guard component != "..", component.isEmpty == false else {
+                return (
+                    nil,
+                    "Import path traversal or empty segment was rejected."
+                )
+            }
+            components.append(component)
+        }
+        return (
+            components.isEmpty ? nil : components.joined(separator: "/"),
+            "Import path normalized safely."
+        )
+    }
+
+    private static func isRemoteOrUnsafeInventoryImport(_ value: String) -> Bool {
+        let lower = value.lowercased()
+        return lower.hasPrefix("http:")
+            || lower.hasPrefix("https:")
+            || lower.hasPrefix("data:")
+            || lower.hasPrefix("blob:")
+            || lower.hasPrefix("file:")
+            || value.hasPrefix("/")
+            || value.hasPrefix("~")
+            || value.hasPrefix("../")
+            || value.contains("\\")
+    }
+
+    private static func isSafeRelativeInventoryPath(_ path: String) -> Bool {
+        normalizeInventoryImportPath(path).path != nil
+    }
+
+    private static func relativeInventoryPath(
+        _ candidate: URL,
+        root: URL
+    ) -> String? {
+        guard safeURLInsideRoot(candidate.resolvingSymlinksInPath(), root: root)
+        else { return nil }
+        let rootPath = root.standardizedFileURL.path
+        let candidatePath = candidate.standardizedFileURL.path
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        guard candidatePath.hasPrefix(prefix) else { return nil }
+        let relative = String(candidatePath.dropFirst(prefix.count))
+        return relative.isEmpty ? nil : relative
+    }
+
+    private static func isScannableServiceWorkerInventoryResource(
+        _ url: URL
+    ) -> Bool {
+        ["js", "mjs"].contains(url.pathExtension.lowercased())
+    }
+
+    private static func previousSignificantByte(
+        _ bytes: [UInt8],
+        before index: Int
+    ) -> UInt8? {
+        guard index > 0 else { return nil }
+        var cursor = index - 1
+        while cursor >= 0 {
+            if isASCIIWhitespace(bytes[cursor]) == false {
+                return bytes[cursor]
+            }
+            if cursor == 0 { break }
+            cursor -= 1
+        }
+        return nil
+    }
+
+    private static func followingSignificantByte(
+        _ bytes: [UInt8],
+        after index: Int
+    ) -> UInt8? {
+        var cursor = index + 1
+        while cursor < bytes.count {
+            if isASCIIWhitespace(bytes[cursor]) == false {
+                return bytes[cursor]
+            }
+            cursor += 1
+        }
+        return nil
+    }
+
+    private static func matchesInventoryRegex(
+        _ pattern: String,
+        _ value: String
+    ) -> Bool {
+        guard let regex = try? NSRegularExpression(pattern: pattern)
+        else { return false }
+        let range = NSRange(value.startIndex..., in: value)
+        return regex.firstMatch(in: value, range: range) != nil
+    }
+
+    private static func lineNumber(
+        in source: String,
+        utf16Offset: Int
+    ) -> Int {
+        let utf16 = Array(source.utf16)
+        guard utf16Offset > 0 else { return 1 }
+        return utf16.prefix(min(utf16Offset, utf16.count))
+            .filter { $0 == 10 }
+            .count + 1
+    }
+
+    private static func lineNumber(newlines: [Int], offset: Int) -> Int {
+        var low = 0
+        var high = newlines.count
+        while low < high {
+            let mid = (low + high) / 2
+            if newlines[mid] < offset {
+                low = mid + 1
+            } else {
+                high = mid
+            }
+        }
+        return low + 1
+    }
+
+    private static func previewInventory(_ value: String) -> String {
+        let collapsed = value
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\t", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard collapsed.count > 160 else { return collapsed }
+        return String(collapsed.prefix(157)) + "..."
+    }
+
+    private static func isIdentifierStart(_ byte: UInt8) -> Bool {
+        (byte >= 65 && byte <= 90)
+            || (byte >= 97 && byte <= 122)
+            || byte == 95
+            || byte == 36
+    }
+
+    private static func isIdentifierPart(_ byte: UInt8) -> Bool {
+        isIdentifierStart(byte) || (byte >= 48 && byte <= 57)
+    }
+
+    private static func isASCIIWhitespace(_ byte: UInt8) -> Bool {
+        byte == 9 || byte == 10 || byte == 11 || byte == 12 || byte == 13
+            || byte == 32
+    }
+
+    private static func dynamicImportSort(
+        _ lhs:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerDynamicImportInventory,
+        _ rhs:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerDynamicImportInventory
+    ) -> Bool {
+        if lhs.sourcePath != rhs.sourcePath {
+            return lhs.sourcePath < rhs.sourcePath
+        }
+        if lhs.line != rhs.line { return lhs.line < rhs.line }
+        return lhs.specifierPreview < rhs.specifierPreview
+    }
+
+    private static func importScriptsSort(
+        _ lhs:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerImportScriptsInventory,
+        _ rhs:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerImportScriptsInventory
+    ) -> Bool {
+        if lhs.sourcePath != rhs.sourcePath {
+            return lhs.sourcePath < rhs.sourcePath
+        }
+        if lhs.line != rhs.line { return lhs.line < rhs.line }
+        return lhs.specifierPreview < rhs.specifierPreview
+    }
+
+    private static func moduleImportSort(
+        _ lhs:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerModuleImportDeclaration,
+        _ rhs:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerModuleImportDeclaration
+    ) -> Bool {
+        if lhs.sourcePath != rhs.sourcePath {
+            return lhs.sourcePath < rhs.sourcePath
+        }
+        if lhs.line != rhs.line { return lhs.line < rhs.line }
+        return lhs.specifier < rhs.specifier
+    }
+
+    private static func sourceLocationSort(
+        _ lhs:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerSourceLocation,
+        _ rhs:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerSourceLocation
+    ) -> Bool {
+        if lhs.sourcePath != rhs.sourcePath {
+            return lhs.sourcePath < rhs.sourcePath
+        }
+        if lhs.line != rhs.line { return lhs.line < rhs.line }
+        return lhs.snippet < rhs.snippet
+    }
+
+    private static func dependencyCandidateSort(
+        _ lhs:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyCandidate,
+        _ rhs:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyCandidate
+    ) -> Bool {
+        if lhs.parentSourcePath != rhs.parentSourcePath {
+            return lhs.parentSourcePath < rhs.parentSourcePath
+        }
+        return (lhs.resolvedCandidatePath ?? lhs.requestedSpecifier)
+            < (rhs.resolvedCandidatePath ?? rhs.requestedSpecifier)
+    }
 }
 
 enum ChromeMV3PasswordManagerRealPackageResourceScanner {

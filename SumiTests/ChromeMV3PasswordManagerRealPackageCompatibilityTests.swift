@@ -1150,9 +1150,24 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             bitwarden.serviceWorkerEventReadiness.dynamicImportRewriteResult
                 .contains("dynamicImportArgumentNonString")
         )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.dependencyInventory
+                .dynamicImportExpressions.isEmpty
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.dependencyInventory
+                .importScriptsCalls.contains {
+                    $0.shape == .concatenation
+                        || $0.shape == .unknownComputed
+                }
+        )
         XCTAssertEqual(
             onePassword.serviceWorkerEventReadiness.nextBlockerClassification,
             .moduleWorkerUnsupported
+        )
+        XCTAssertTrue(
+            onePassword.serviceWorkerEventReadiness.dependencyInventory
+                .moduleWorkerInventory.declaredAsModuleWorker
         )
         XCTAssertTrue(
             onePassword.serviceWorkerEventReadiness.dynamicImportRewriteResult
@@ -1161,6 +1176,18 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertEqual(
             proton.serviceWorkerEventReadiness.nextBlockerClassification,
             .otherPreciseBlocker
+        )
+        XCTAssertGreaterThan(
+            proton.serviceWorkerEventReadiness.dependencyInventory
+                .asyncAPIInventory.count(.setTimeout),
+            0
+        )
+        XCTAssertTrue(
+            proton.serviceWorkerEventReadiness.dependencyInventory
+                .importScriptsCalls.contains {
+                    $0.shape == .concatenation
+                        || $0.shape == .unknownComputed
+                }
         )
         XCTAssertTrue(
             proton.serviceWorkerEventReadiness.nextBlockerDetail
@@ -1173,6 +1200,320 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                 && $0.serviceWorkerEventReadiness.dispatchSmokeResult.isEmpty
                     == false
         })
+    }
+
+    func testServiceWorkerInventoryClassifiesDynamicImportShapes()
+        throws
+    {
+        let root = try temporaryDirectory(named: "dynamic-import-inventory")
+        let package = root.appendingPathComponent("bitwarden", isDirectory: true)
+        try writePackage(
+            at: package,
+            manifest: minimalManifest(name: "Dynamic Inventory"),
+            extraFiles: [
+                "background.js": """
+                import('./literal.js');
+                import(`./static-template.js`);
+                import(`./${name}.js`);
+                import(chunkID);
+                import(loader.path);
+                import(makePath());
+                import(flag ? './a.js' : './b.js');
+                import('./chunks/' + name + '.js');
+                import({ path: './object.js' });
+                import('https://example.com/remote.js');
+                """,
+                "literal.js": "",
+                "static-template.js": "",
+            ]
+        )
+
+        let report = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
+            rootURL: root,
+            targets: [
+                testTarget(
+                    id: "dynamic-inventory",
+                    targetClass: .bitwarden,
+                    root: package
+                ),
+            ],
+            writeReport: false,
+            now: { Date(timeIntervalSince1970: 18) }
+        )
+        let inventory = try XCTUnwrap(
+            report.rows.first?.serviceWorkerEventReadiness
+                .dependencyInventory
+        )
+        let shapes = Set(inventory.dynamicImportExpressions.map(\.shape))
+
+        XCTAssertTrue(shapes.contains(.stringLiteralLocal))
+        XCTAssertTrue(shapes.contains(.templateLiteralStatic))
+        XCTAssertTrue(shapes.contains(.templateLiteralDynamic))
+        XCTAssertTrue(shapes.contains(.identifier))
+        XCTAssertTrue(shapes.contains(.memberExpression))
+        XCTAssertTrue(shapes.contains(.callExpression))
+        XCTAssertTrue(shapes.contains(.conditionalExpression))
+        XCTAssertTrue(shapes.contains(.concatenation))
+        XCTAssertTrue(shapes.contains(.unknownComputed))
+        XCTAssertTrue(shapes.contains(.remoteOrUnsafe))
+        XCTAssertTrue(inventory.dynamicImportExpressions.contains {
+            $0.specifierPreview == "'./literal.js'"
+                && $0.dependencyCandidatePath == "literal.js"
+                && $0.generatedRootContained == false
+        })
+        XCTAssertFalse(
+            report.rows.first?.serviceWorkerEventReadiness
+                .jsExecutionPolicy.dynamicImportAvailable == true
+        )
+    }
+
+    func testServiceWorkerInventoryClassifiesModuleGraph()
+        throws
+    {
+        let root = try temporaryDirectory(named: "module-inventory")
+        let package = root.appendingPathComponent("onepassword", isDirectory: true)
+        var manifest = minimalManifest(name: "Module Inventory")
+        manifest["background"] = [
+            "service_worker": "background/module.js",
+            "type": "module",
+        ]
+        try writePackage(
+            at: package,
+            manifest: manifest,
+            extraFiles: [
+                "background/module.js": """
+                import './module-listener.js';
+                import value from './module-export.js';
+                export const ready = true;
+                await Promise.resolve(value);
+                """,
+                "background/module-listener.js":
+                    "chrome.runtime.onMessage.addListener(() => {});",
+                "background/module-export.js": "export default 1;",
+            ]
+        )
+
+        let report = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
+            rootURL: root,
+            targets: [
+                testTarget(
+                    id: "module-inventory",
+                    targetClass: .onePassword,
+                    root: package
+                ),
+            ],
+            writeReport: false,
+            now: { Date(timeIntervalSince1970: 19) }
+        )
+        let inventory = try XCTUnwrap(
+            report.rows.first?.serviceWorkerEventReadiness
+                .dependencyInventory
+        )
+        XCTAssertTrue(inventory.moduleWorkerInventory.declaredAsModuleWorker)
+        XCTAssertEqual(
+            inventory.moduleWorkerInventory.staticImportDeclarations
+                .map(\.dependencyCandidatePath)
+                .compactMap { $0 }
+                .sorted(),
+            ["background/module-export.js", "background/module-listener.js"]
+        )
+        XCTAssertTrue(
+            inventory.moduleWorkerInventory.staticImportDeclarations
+                .allSatisfy { $0.generatedRootContained == false }
+        )
+        XCTAssertGreaterThan(
+            inventory.moduleWorkerInventory.exportUsageLocations.count,
+            0
+        )
+        XCTAssertTrue(inventory.moduleWorkerInventory.topLevelAwaitDetected)
+        XCTAssertEqual(
+            inventory.listenerRegistrationMap.moduleDependencyCandidateCount,
+            1
+        )
+        XCTAssertEqual(
+            report.rows.first?.serviceWorkerEventReadiness
+                .nextBlockerClassification,
+            .moduleWorkerUnsupported
+        )
+        XCTAssertFalse(
+            report.rows.first?.serviceWorkerEventReadiness
+                .jsExecutionPolicy.moduleWorkerImportAvailable == true
+        )
+    }
+
+    func testServiceWorkerInventoryClassifiesTimerAndAsyncAPIs()
+        throws
+    {
+        let root = try temporaryDirectory(named: "async-api-inventory")
+        let package = root.appendingPathComponent("proton", isDirectory: true)
+        try writePackage(
+            at: package,
+            manifest: minimalManifest(name: "Async Inventory"),
+            extraFiles: [
+                "background.js": """
+                setTimeout(() => {}, 1);
+                setInterval(() => {}, 2);
+                queueMicrotask(() => {});
+                Promise.resolve().then(() => {});
+                async function load() { return fetch('/local.json'); }
+                const fn = async () => new WebSocket('wss://example.test');
+                const es = new EventSource('/events');
+                """,
+            ]
+        )
+
+        let report = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
+            rootURL: root,
+            targets: [
+                testTarget(
+                    id: "async-inventory",
+                    targetClass: .protonPass,
+                    root: package
+                ),
+            ],
+            writeReport: false,
+            now: { Date(timeIntervalSince1970: 20) }
+        )
+        let asyncInventory = try XCTUnwrap(
+            report.rows.first?.serviceWorkerEventReadiness
+                .dependencyInventory.asyncAPIInventory
+        )
+
+        XCTAssertEqual(asyncInventory.count(.setTimeout), 1)
+        XCTAssertEqual(asyncInventory.count(.setInterval), 1)
+        XCTAssertEqual(asyncInventory.count(.queueMicrotask), 1)
+        XCTAssertEqual(asyncInventory.count(.promiseThen), 1)
+        XCTAssertEqual(asyncInventory.count(.asyncFunction), 2)
+        XCTAssertEqual(asyncInventory.count(.fetch), 1)
+        XCTAssertEqual(asyncInventory.count(.webSocket), 1)
+        XCTAssertEqual(asyncInventory.count(.eventSource), 1)
+        XCTAssertFalse(
+            report.rows.first?.serviceWorkerEventReadiness
+                .jsExecutionPolicy.timersAllowed == true
+        )
+    }
+
+    func testServiceWorkerInventoryMapsListenerRegistrationSources()
+        throws
+    {
+        let root = try temporaryDirectory(named: "listener-map-inventory")
+        let package = root.appendingPathComponent("bitwarden", isDirectory: true)
+        try writePackage(
+            at: package,
+            manifest: minimalManifest(name: "Listener Inventory"),
+            extraFiles: [
+                "background.js": """
+                importScripts('imported.js');
+                import('./dynamic-listener.js');
+                import(computedChunk);
+                importScripts(computedScript);
+                chrome.runtime.onInstalled.addListener(() => {});
+                """,
+                "imported.js":
+                    "chrome.runtime.onMessage.addListener(() => {});",
+                "dynamic-listener.js":
+                    "chrome.runtime.onConnect.addListener(() => {});",
+            ]
+        )
+
+        let report = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
+            rootURL: root,
+            targets: [
+                testTarget(
+                    id: "listener-map",
+                    targetClass: .bitwarden,
+                    root: package
+                ),
+            ],
+            writeReport: false,
+            now: { Date(timeIntervalSince1970: 21) }
+        )
+        let map = try XCTUnwrap(
+            report.rows.first?.serviceWorkerEventReadiness
+                .dependencyInventory.listenerRegistrationMap
+        )
+
+        XCTAssertEqual(map.mainWorkerCount, 1)
+        XCTAssertEqual(map.importScriptsDependencyCount, 1)
+        XCTAssertEqual(map.dynamicImportCandidateCount, 1)
+        XCTAssertEqual(map.unknownComputedDependencyReferenceCount, 2)
+        XCTAssertTrue(map.registrations.contains {
+            $0.sourceKind == .importScriptsDependency
+                && $0.sourcePath == "imported.js"
+        })
+        XCTAssertTrue(map.registrations.contains {
+            $0.sourceKind == .dynamicImportCandidate
+                && $0.sourcePath == "dynamic-listener.js"
+        })
+    }
+
+    func testServiceWorkerInventoryDoesNotEnableRuntimeBehavior()
+        throws
+    {
+        let root = try temporaryDirectory(named: "inventory-runtime-guard")
+        let package = root.appendingPathComponent("bitwarden", isDirectory: true)
+        try writePackage(
+            at: package,
+            manifest: minimalManifest(name: "Runtime Guard"),
+            extraFiles: [
+                "background.js": """
+                import('./dep.js');
+                setTimeout(() => {}, 0);
+                chrome.runtime.onMessage.addListener(() => {});
+                """,
+                "dep.js": "",
+            ]
+        )
+
+        let report = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
+            rootURL: root,
+            targets: [
+                testTarget(
+                    id: "runtime-guard",
+                    targetClass: .bitwarden,
+                    root: package
+                ),
+            ],
+            writeReport: false,
+            now: { Date(timeIntervalSince1970: 22) }
+        )
+        let readiness = try XCTUnwrap(
+            report.rows.first?.serviceWorkerEventReadiness
+        )
+
+        XCTAssertNil(readiness.executionStartResult)
+        XCTAssertGreaterThan(
+            readiness.dependencyInventory.dynamicImportExpressions.count,
+            0
+        )
+        XCTAssertFalse(
+            readiness.jsExecutionPolicy
+                .serviceWorkerJSExecutionAvailableByDefault
+        )
+        XCTAssertFalse(readiness.jsExecutionPolicy.dynamicImportAvailable)
+        XCTAssertFalse(readiness.jsExecutionPolicy.timersAllowed)
+        XCTAssertFalse(report.productRuntimeAvailable)
+        XCTAssertFalse(report.productRuntimeExposed)
+    }
+
+    func testDisabledModulePolicyRemainsZeroCostForDiagnostics()
+        throws
+    {
+        let policy = ChromeMV3ServiceWorkerJSExecutionPolicy.evaluate(
+            moduleState: .disabled,
+            extensionEnabled: true,
+            localExperimentalGateAllowed: true,
+            generatedBundleRecordAvailable: true,
+            dynamicImportRewriteExperimentAllowed: true
+        )
+
+        XCTAssertFalse(
+            policy.serviceWorkerJSExecutionAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(policy.dynamicImportCapabilityProbe.probeExecuted)
+        XCTAssertFalse(policy.dynamicImportAvailable)
+        XCTAssertFalse(policy.moduleWorkerImportAvailable)
+        XCTAssertFalse(policy.timersAllowed)
     }
 
     private func testTarget(
