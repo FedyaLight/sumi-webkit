@@ -220,6 +220,7 @@ class BrowserWindowState {
             interactionState: sidebarInteractionState,
             transientSessionCoordinator: sidebarTransientSessionCoordinator
         )
+        self.sidebarContextMenuController.windowState = self
         self.windowThemeState = initialThemeState
         sidebarTransientSessionCoordinator.scheduleSidebarInputRehydrate = { [weak self] reason in
             self?.scheduleSidebarInputRehydrate(reason: reason)

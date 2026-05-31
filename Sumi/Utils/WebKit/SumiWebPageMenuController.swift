@@ -1,5 +1,6 @@
 import AppKit
 import WebKit
+import SwiftUI
 
 /// Shapes the contextual menu after WebKit has resolved the page element under
 /// the pointer. Element commands keep their native WebKit actions and targets.
@@ -25,6 +26,17 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
             selectedText: selectedText
         ).compose()
         updateOwnedItemState(in: menu)
+
+        if let tab = webView.owningTab,
+           let browserManager = tab.browserManager,
+           let windowState = browserManager.windowState(containing: tab),
+           let settings = browserManager.sumiSettings {
+            let globalScheme: ColorScheme = webView.window?.effectiveAppearance.name == .darkAqua ? .dark : .light
+            let themeContext = windowState.resolvedThemeContext(global: globalScheme, settings: settings)
+            let colorScheme = themeContext.nativeSurfaceColorScheme
+            let appearance = NSAppearance.sumiChromeAppearance(for: colorScheme, fallback: webView.window?.effectiveAppearance)
+            menu.sumiApplyAppearance(appearance)
+        }
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {

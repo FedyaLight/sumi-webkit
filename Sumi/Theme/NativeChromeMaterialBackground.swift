@@ -79,3 +79,13 @@ extension ColorScheme {
         self = bestMatch == .darkAqua ? .dark : .light
     }
 }
+
+extension NSMenu {
+    func sumiApplyAppearance(_ appearance: NSAppearance) {
+        self.appearance = appearance
+        for item in items {
+            item.submenu?.sumiApplyAppearance(appearance)
+        }
+    }
+}
+

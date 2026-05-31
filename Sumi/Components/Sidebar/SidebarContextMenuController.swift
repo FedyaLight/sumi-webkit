@@ -262,6 +262,7 @@ final class SidebarContextMenuController {
     let interactionState: SidebarInteractionState
     let transientSessionCoordinator: SidebarTransientSessionCoordinator
     var sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator.shared
+    weak var windowState: BrowserWindowState?
 
     private let interactiveOwnerRegistry = SidebarInteractiveOwnerRegistry()
     private weak var activeOwnerView: NSView?
@@ -452,6 +453,15 @@ final class SidebarContextMenuController {
         activeMenuBuilder = builder
 
         let menu = builder.buildMenu()
+        if let windowState,
+           let window = ownerView.window {
+            let globalScheme: ColorScheme = window.effectiveAppearance.name == .darkAqua ? .dark : .light
+            let settings = windowState.tabManager?.browserManager?.sumiSettings ?? SumiSettingsService()
+            let themeContext = windowState.resolvedThemeContext(global: globalScheme, settings: settings)
+            let colorScheme = themeContext.nativeSurfaceColorScheme
+            let appearance = NSAppearance.sumiChromeAppearance(for: colorScheme, fallback: window.effectiveAppearance)
+            menu.sumiApplyAppearance(appearance)
+        }
         observeMenuEndTracking(for: menu, sessionID: sessionID)
         let point = ownerView.convert(event.locationInWindow, from: nil)
         switch SidebarContextMenuRoutingPolicy.presentationStyle(for: trigger) {
