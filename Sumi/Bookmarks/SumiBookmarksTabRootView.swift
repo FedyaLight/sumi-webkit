@@ -260,15 +260,18 @@ struct SumiBookmarksTabRootView: View {
                     Button("Open") {
                         viewModel.openSelected()
                     }
+                    .chromeCursor(.pointingHand, isEnabled: scrollHoverCoordinator.hoverUpdatesEnabled)
                     
                     Button("Delete") {
                         viewModel.deleteSelected()
                     }
                     .disabled(!viewModel.canDeleteSelection)
+                    .chromeCursor(.pointingHand, isEnabled: scrollHoverCoordinator.hoverUpdatesEnabled)
                     
                     Button("Clear Selection") {
                         viewModel.clearSelection()
                     }
+                    .chromeCursor(.pointingHand, isEnabled: scrollHoverCoordinator.hoverUpdatesEnabled)
                 }
                 .font(.callout)
             } else if let message = viewModel.statusMessage {
