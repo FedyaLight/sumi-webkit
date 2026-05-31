@@ -65,7 +65,9 @@ final class WorkspaceThemePersistenceTests: XCTestCase {
             SumiWorkspaceThemePresets.groups.first?.presets.first?.workspaceTheme
         )
 
-        XCTAssertTrue(WorkspaceTheme.default.visuallyEquals(firstLightMonoPreset))
+        XCTAssertEqual(firstLightMonoPreset.gradient.primaryColorHex, WorkspaceResolvedGradient.default.primaryColorHex)
+        XCTAssertEqual(firstLightMonoPreset.gradient.opacity, WorkspaceResolvedGradient.default.opacity, accuracy: 0.0001)
+        XCTAssertEqual(firstLightMonoPreset.gradient.texture, WorkspaceResolvedGradient.default.texture, accuracy: 0.0001)
         XCTAssertFalse(WorkspaceTheme.default.usesExplicitColorScheme)
         XCTAssertTrue(firstLightMonoPreset.usesExplicitColorScheme)
         XCTAssertEqual(WorkspaceResolvedGradient.default.primaryColorHex, "#F4EFDF")

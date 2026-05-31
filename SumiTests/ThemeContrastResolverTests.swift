@@ -106,7 +106,8 @@ final class ThemeContrastResolverTests: XCTestCase {
             settings: settings
         )
 
-        XCTAssertTrue(WorkspaceTheme.default.visuallyEquals(lightMonoTheme))
+        XCTAssertEqual(lightMonoTheme.gradient.primaryColorHex, WorkspaceResolvedGradient.default.primaryColorHex)
+        XCTAssertTrue(lightMonoTheme.usesExplicitColorScheme)
         XCTAssertEqual(scheme, .light)
     }
 

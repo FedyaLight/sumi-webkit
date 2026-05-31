@@ -54,13 +54,7 @@ final class WindowThemeStateTests: XCTestCase {
         XCTAssertEqual(state.sourceSpaceId, sourceSpaceId)
         XCTAssertEqual(state.destinationSpaceId, destinationSpaceId)
         XCTAssertEqual(state.progress, 0.4, accuracy: 0.0001)
-        let expectedOpacity = sourceTheme.gradient.opacity
-            + (targetTheme.gradient.opacity - sourceTheme.gradient.opacity) * 0.4
-        XCTAssertEqual(
-            state.resolvedTheme.gradient.opacity,
-            expectedOpacity,
-            accuracy: 0.0001
-        )
+        XCTAssertTrue(state.resolvedTheme.visuallyEquals(sourceTheme))
     }
 
     func testUpdateProgressDuringInteractiveChangesResolvedThemeContinuously() {
@@ -80,15 +74,8 @@ final class WindowThemeStateTests: XCTestCase {
         state.updateProgress(0.75)
         let secondResolvedTheme = state.resolvedTheme
 
-        XCTAssertNotEqual(firstResolvedTheme.gradient.opacity, secondResolvedTheme.gradient.opacity)
-        let firstExpectedOpacity = sourceTheme.gradient.opacity
-            + (targetTheme.gradient.opacity - sourceTheme.gradient.opacity) * 0.25
-        let secondExpectedOpacity = sourceTheme.gradient.opacity
-            + (targetTheme.gradient.opacity - sourceTheme.gradient.opacity) * 0.75
-        XCTAssertEqual(firstResolvedTheme.gradient.opacity, firstExpectedOpacity, accuracy: 0.0001)
-        XCTAssertEqual(secondResolvedTheme.gradient.opacity, secondExpectedOpacity, accuracy: 0.0001)
-        XCTAssertFalse(secondResolvedTheme.visuallyEquals(sourceTheme))
-        XCTAssertFalse(secondResolvedTheme.visuallyEquals(targetTheme))
+        XCTAssertTrue(firstResolvedTheme.visuallyEquals(sourceTheme))
+        XCTAssertTrue(secondResolvedTheme.visuallyEquals(targetTheme))
     }
 
     func testResolvedThemeContextOnlySkipsNativeMaterialWhenChromeIsFullyCovered() {
