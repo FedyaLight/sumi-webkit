@@ -1362,7 +1362,11 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
     var importScriptsResolvedCount: Int
     var importedScriptPaths: [String]
     var importScriptsBlockers: [ChromeMV3ServiceWorkerJSImportScriptsBlocker]
+    var computedImportScriptsResult: String
     var dynamicImportRewriteResult: String
+    var timerPolicyResult: String
+    var timerShimResult: String
+    var moduleWorkerReadinessResult: String
     var dynamicImportShapeSummary: [String]
     var moduleWorkerGraphSummary: [String]
     var timerAsyncAPISummary: [String]
@@ -1412,7 +1416,14 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
             importScriptsResolvedCount: readiness.importScriptsResolvedCount,
             importedScriptPaths: readiness.importedScriptPaths,
             importScriptsBlockers: readiness.importScriptsBlockers,
+            computedImportScriptsResult:
+                readiness.computedImportScriptsResult,
             dynamicImportRewriteResult: readiness.dynamicImportRewriteResult,
+            timerPolicyResult:
+                "localExperimental=\(readiness.jsExecutionPolicy.timersAvailableInLocalExperimentalGate), default=\(readiness.jsExecutionPolicy.timersAvailableByDefault), wallClock=\(readiness.jsExecutionPolicy.wallClockTimersAllowed), polling=\(readiness.jsExecutionPolicy.pollingAllowed)",
+            timerShimResult: readiness.timerShimResult,
+            moduleWorkerReadinessResult:
+                readiness.moduleWorkerReadinessResult,
             dynamicImportShapeSummary:
                 readiness.dependencyInventory.dynamicImportExpressions.map {
                     "\($0.sourcePath):\($0.line):\($0.shape.rawValue)"
@@ -3215,6 +3226,22 @@ struct ChromeMV3ExtensionManagerView: View {
                         panel.jsExecutionPolicy.importScriptsScope.rawValue
                     )
                     fact(
+                        "Queued Callback Shim",
+                        panel.jsExecutionPolicy
+                            .timersAvailableInLocalExperimentalGate
+                            ? "manual queue" : "blocked"
+                    )
+                    fact(
+                        "Wall Clock Scheduling",
+                        panel.jsExecutionPolicy.wallClockTimersAllowed
+                            ? "allowed" : "blocked"
+                    )
+                    fact(
+                        "Module Worker",
+                        panel.jsExecutionPolicy.moduleWorkerImportAvailable
+                            ? "available" : "blocked"
+                    )
+                    fact(
                         "Captured",
                         "\(panel.capturedListenerFamilies.count)"
                     )
@@ -3279,6 +3306,21 @@ struct ChromeMV3ExtensionManagerView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(
+                        "Trial computed importScripts: "
+                            + trial.computedImportScriptsResult
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    Text("Queued callback policy: \(trial.timerPolicyResult)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Queued callback shim: \(trial.timerShimResult)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(
                         "Trial dynamic rewrite: "
                             + trial.dynamicImportRewriteResult
                     )
@@ -3300,6 +3342,13 @@ struct ChromeMV3ExtensionManagerView: View {
                         "Module graph: "
                             + trial.moduleWorkerGraphSummary
                             .joined(separator: ", ")
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        "Module readiness: "
+                            + trial.moduleWorkerReadinessResult
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)

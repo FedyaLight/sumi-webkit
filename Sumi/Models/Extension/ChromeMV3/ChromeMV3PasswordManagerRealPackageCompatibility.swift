@@ -1155,7 +1155,10 @@ struct ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness:
         ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDelta
     var actualDispatchResults: [ChromeMV3ServiceWorkerJSDispatchRecord]
     var importScriptsResult: String
+    var computedImportScriptsResult: String
     var dynamicImportRewriteResult: String
+    var timerShimResult: String
+    var moduleWorkerReadinessResult: String
     var dispatchSmokeResult: String
     var runtimePortSmoke:
         ChromeMV3PasswordManagerRealPackageServiceWorkerPortSmoke
@@ -1537,7 +1540,7 @@ struct ChromeMV3PasswordManagerRealPackageCompatibilityReport:
     Equatable,
     Sendable
 {
-    static let schemaVersion = 7
+    static let schemaVersion = 8
     static let reportFileName =
         "runtime-mv3-real-package-compatibility-report.json"
 
@@ -2503,6 +2506,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             .notAttempted
         var nativeMessagingIntegrationSmoke =
             "trustedNativeFixtureMissingOrBlocked: no native messaging service-worker event was dispatched."
+        var timerShimResult =
+            "notAttempted: scoped service-worker execution gate stayed closed."
         var idleTeardownResult =
             "notAttempted: scoped service-worker execution gate stayed closed."
         var hardTimeoutTeardownResult =
@@ -2541,6 +2546,20 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             )
             policy = harness.policy
             let started = harness.start()
+            if started.status == .running {
+                let drain = harness.drainQueuedTimeouts()
+                timerShimResult = serviceWorkerTimerShimResult(
+                    policy: harness.policy,
+                    snapshot: harness.snapshot,
+                    drain: drain
+                )
+            } else {
+                timerShimResult = serviceWorkerTimerShimResult(
+                    policy: harness.policy,
+                    snapshot: harness.snapshot,
+                    drain: nil
+                )
+            }
             executionStartResult = started
             resourceLoadResult = harness.snapshot.resourceLoad
             capturedRegistrations = harness.snapshot.capturedListeners
@@ -2613,10 +2632,20 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         let importScriptsResult = serviceWorkerImportScriptsResult(
             resourceLoadResult: resourceLoadResult
         )
+        let computedImportScriptsResult =
+            serviceWorkerComputedImportScriptsResult(
+                dependencyInventory: dependencyInventory,
+                resourceLoadResult: resourceLoadResult
+            )
         let dynamicImportRewriteResult = serviceWorkerDynamicImportRewriteResult(
             policy: policy,
             resourceLoadResult: resourceLoadResult
         )
+        let moduleWorkerReadinessResult =
+            serviceWorkerModuleWorkerReadinessResult(
+                policy: policy,
+                dependencyInventory: dependencyInventory
+            )
         let dispatchSmokeResult = serviceWorkerDispatchSmokeResult(
             capturedFamilies: capturedFamilies,
             dispatchResults: dispatchResults,
@@ -2688,7 +2717,10 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             staticVsExecutionDelta: delta,
             actualDispatchResults: dispatchResults,
             importScriptsResult: importScriptsResult,
+            computedImportScriptsResult: computedImportScriptsResult,
             dynamicImportRewriteResult: dynamicImportRewriteResult,
+            timerShimResult: timerShimResult,
+            moduleWorkerReadinessResult: moduleWorkerReadinessResult,
             dispatchSmokeResult: dispatchSmokeResult,
             runtimePortSmoke: runtimePortSmoke,
             nativeMessagingIntegrationSmoke: nativeMessagingIntegrationSmoke,
@@ -3183,6 +3215,69 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 + (paths.isEmpty ? "." : " - \(paths.prefix(3).joined(separator: ", ")).")
         }
         return "detected: importScripts was present but no generated-bundle dependency was resolved."
+    }
+
+    private static func serviceWorkerComputedImportScriptsResult(
+        dependencyInventory:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventory,
+        resourceLoadResult: ChromeMV3ServiceWorkerJSResourceLoadRecord?
+    ) -> String {
+        let computed = dependencyInventory.importScriptsCalls.filter {
+            $0.shape != .stringLiteralLocal
+                && $0.shape != .templateLiteralStatic
+        }
+        guard computed.isEmpty == false else {
+            return "notRequired: no computed importScripts dependency expression was inventoried."
+        }
+        let bounded = computed.filter {
+            $0.dependencyCandidatePath != nil
+        }.count
+        if let blocker = resourceLoadResult?.importScriptsBlockers.first(
+            where: {
+                $0 == .computedImportScriptsCandidateSetUnbounded
+                    || $0 == .computedImportScriptsConstantMapCandidateUnsafe
+                    || $0 == .computedImportScriptsRuntimeVariableRejected
+            }
+        ) {
+            return "blocked: \(blocker.rawValue); bounded inventory candidates \(bounded)/\(computed.count)."
+        }
+        if bounded < computed.count {
+            return "guarded: bounded inventory candidates \(bounded)/\(computed.count); runtime-variable or otherwise unbounded importScripts paths remain rejected unless the runtime call matches a statically authorized generated-root-contained candidate set."
+        }
+        return "inventoried: bounded computed candidates \(bounded)/\(computed.count); runtime authorization remains generated-root-contained."
+    }
+
+    private static func serviceWorkerTimerShimResult(
+        policy: ChromeMV3ServiceWorkerJSExecutionPolicy,
+        snapshot: ChromeMV3ServiceWorkerJSExecutionSnapshot,
+        drain: ChromeMV3ServiceWorkerJSTimerDrainRecord?
+    ) -> String {
+        guard policy.timersAvailableInLocalExperimentalGate else {
+            return "blockedByPolicy: deterministic timer shim requires the explicit local experimental gate."
+        }
+        guard let drain else {
+            return "available: manual timer queue installed; worker did not reach an explicit timeout drain."
+        }
+        let activeIntervals = snapshot.timers.filter {
+            $0.kind == .interval && $0.active
+        }.count
+        return "drained: \(drain.callbackCount) timeout callback(s), \(drain.callbackErrors.count) callback error(s), \(drain.pendingTimeoutCount) queued timeout(s), \(activeIntervals) manual interval(s); wallClockTimersAllowed=false."
+    }
+
+    private static func serviceWorkerModuleWorkerReadinessResult(
+        policy: ChromeMV3ServiceWorkerJSExecutionPolicy,
+        dependencyInventory:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventory
+    ) -> String {
+        guard dependencyInventory.moduleWorkerInventory.declaredAsModuleWorker
+        else {
+            return "notRequired: background.type is classic."
+        }
+        let inventory = dependencyInventory.moduleWorkerInventory
+        let blockers = policy.moduleWorkerReadinessProbe.blockers
+            .map(\.rawValue)
+            .joined(separator: ", ")
+        return "blocked: staticImports=\(inventory.staticImportDeclarations.count), exports=\(inventory.exportUsageLocations.count), topLevelAwait=\(inventory.topLevelAwaitDetected), dynamicImports=\(inventory.dynamicImportUsage.count); public JavaScriptCore module loader unavailable; blockers=\(blockers)."
     }
 
     private static func serviceWorkerDynamicImportRewriteResult(
@@ -5395,8 +5490,10 @@ enum ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventoryScanner 
         generatedBundleRecord: ChromeMV3GeneratedBundleRecord?,
         generatedRoot: URL?
     ) -> CandidateResolution {
-        guard [.stringLiteralLocal, .templateLiteralStatic].contains(shape),
-              let literal = literalSpecifierValue(specifier)
+        guard
+            [.stringLiteralLocal, .templateLiteralStatic, .concatenation]
+                .contains(shape),
+            let literal = staticInventorySpecifierValue(specifier)
         else {
             return CandidateResolution(
                 requestedSpecifier: specifier,
@@ -5844,6 +5941,86 @@ enum ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventoryScanner 
             }
         }
         return String(trimmed.dropFirst().dropLast())
+    }
+
+    private static func staticInventorySpecifierValue(
+        _ value: String
+    ) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let literal = literalSpecifierValue(trimmed) {
+            return literal
+        }
+        if trimmed.first == "`", trimmed.last == "`" {
+            let literal = String(trimmed.dropFirst().dropLast())
+            return literal.contains("${") || literal.contains("\\")
+                ? nil : literal
+        }
+        let parts = topLevelInventorySegments(trimmed, separator: 43)
+        guard parts.count > 1 else { return nil }
+        var result = ""
+        for part in parts {
+            guard let literal = staticInventorySpecifierValue(part)
+            else { return nil }
+            result += literal
+        }
+        return result
+    }
+
+    private static func topLevelInventorySegments(
+        _ source: String,
+        separator: UInt8
+    ) -> [String] {
+        let bytes = Array(source.utf8)
+        var results: [String] = []
+        var start = 0
+        var quote: UInt8?
+        var escaped = false
+        var parenDepth = 0
+        var braceDepth = 0
+        var bracketDepth = 0
+        for index in bytes.indices {
+            let byte = bytes[index]
+            if let activeQuote = quote {
+                if escaped {
+                    escaped = false
+                } else if byte == 92 {
+                    escaped = true
+                } else if byte == activeQuote {
+                    quote = nil
+                }
+                continue
+            }
+            if byte == 34 || byte == 39 || byte == 96 {
+                quote = byte
+            } else if byte == 40 {
+                parenDepth += 1
+            } else if byte == 41 {
+                parenDepth = max(0, parenDepth - 1)
+            } else if byte == 123 {
+                braceDepth += 1
+            } else if byte == 125 {
+                braceDepth = max(0, braceDepth - 1)
+            } else if byte == 91 {
+                bracketDepth += 1
+            } else if byte == 93 {
+                bracketDepth = max(0, bracketDepth - 1)
+            } else if byte == separator,
+                      parenDepth == 0,
+                      braceDepth == 0,
+                      bracketDepth == 0
+            {
+                results.append(
+                    String(decoding: bytes[start..<index], as: UTF8.self)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+                start = index + 1
+            }
+        }
+        results.append(
+            String(decoding: bytes[start...], as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        return results
     }
 
     private static func containsTopLevelToken(

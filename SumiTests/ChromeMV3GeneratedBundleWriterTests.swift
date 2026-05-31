@@ -503,6 +503,60 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
         )
     }
 
+    func testCopiesBoundedComputedImportScriptsDependenciesFromClassicWorker()
+        throws
+    {
+        let manifest: [String: Any] = [
+            "manifest_version": 3,
+            "name": "Bounded Computed ImportScripts",
+            "version": "1.0",
+            "background": [
+                "service_worker": "background.js",
+            ],
+        ]
+        let stage = try stageBundle(
+            named: "bounded-computed-importscripts-resources",
+            manifest: manifest,
+            files: [
+                "background.js": """
+                importScripts('./' + 'concat.js');
+                const dependencies = { first: './map-one.js', second: './map-two.js' };
+                importScripts(dependencies.first);
+                const runtimePath = './runtime-only.js';
+                importScripts(runtimePath);
+                """,
+                "concat.js": "",
+                "map-one.js": "",
+                "map-two.js": "",
+                "runtime-only.js": "",
+            ]
+        )
+
+        let result = try makeWriter(rootURL: stage.storeRoot)
+            .writeGeneratedBundle(
+                originalBundleRecord: stage.result.originalBundleRecord,
+                manifestSnapshot: stage.result.manifestSnapshot,
+                planningRecord: stage.result.generatedBundlePlan
+            )
+
+        XCTAssertEqual(
+            result.record.copiedResourcePaths,
+            [
+                "background.js",
+                "concat.js",
+                "map-one.js",
+                "map-two.js",
+            ]
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: result.generatedBundleRootURL
+                    .appendingPathComponent("runtime-only.js")
+                    .path
+            )
+        )
+    }
+
     func testRejectsSymlinkReferencedResource() throws {
         let stage = try stageBundle(
             named: "symlink-resource",

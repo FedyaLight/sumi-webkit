@@ -277,6 +277,10 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertTrue(readiness.gateClosedAfterTrial)
         XCTAssertFalse(readiness.jsExecutionPolicy.permanentBackgroundAvailable)
         XCTAssertFalse(readiness.jsExecutionPolicy.serviceWorkerJSExecutionAvailableByDefault)
+        XCTAssertTrue(readiness.jsExecutionPolicy.timersAvailableInLocalExperimentalGate)
+        XCTAssertFalse(readiness.jsExecutionPolicy.timersAvailableByDefault)
+        XCTAssertFalse(readiness.jsExecutionPolicy.wallClockTimersAllowed)
+        XCTAssertTrue(readiness.timerShimResult.hasPrefix("drained:"))
     }
 
     func testExplicitScopedServiceWorkerTrialImportsClassicDependenciesAndBlocksModule()
@@ -358,6 +362,14 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             }
         )
         XCTAssertTrue(imported.importScriptsResult.hasPrefix("resolved: 1"))
+        XCTAssertTrue(
+            module.moduleWorkerReadinessResult.contains(
+                "sourceTextModuleLoaderUnavailable"
+            )
+        )
+        XCTAssertTrue(
+            imported.moduleWorkerReadinessResult.hasPrefix("notRequired:")
+        )
         XCTAssertTrue(
             imported.dynamicImportRewriteResult.hasPrefix("notRequired:")
         )
@@ -767,6 +779,22 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertTrue(
             detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .computedImportScriptsResult.hasPrefix("notRequired:") == true
+        )
+        XCTAssertTrue(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .timerPolicyResult.contains("wallClock=false") == true
+        )
+        XCTAssertTrue(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .timerShimResult.hasPrefix("drained:") == true
+        )
+        XCTAssertTrue(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .moduleWorkerReadinessResult.hasPrefix("notRequired:") == true
+        )
+        XCTAssertTrue(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
                 .dispatchSmokeResult.hasPrefix("notAttempted:") == true
         )
         XCTAssertEqual(
@@ -1089,6 +1117,8 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertFalse(harness.contains("dynamicImportAvailable: " + positive))
         XCTAssertFalse(harness.contains("moduleWorkerImportAvailable: " + positive))
         XCTAssertFalse(harness.contains("permanentBackgroundAvailable: " + positive))
+        XCTAssertFalse(harness.contains("DispatchSource" + "Ti" + "mer"))
+        XCTAssertFalse(harness.contains("Ti" + "mer" + "("))
         XCTAssertFalse(validator.contains("manifest_version 2 only"))
     }
 
@@ -1191,12 +1221,27 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertTrue(
             proton.serviceWorkerEventReadiness.nextBlockerDetail
+                .contains("TypeError")
+        )
+        XCTAssertFalse(
+            proton.serviceWorkerEventReadiness.nextBlockerDetail
                 .contains("setTimeout")
+        )
+        XCTAssertTrue(
+            proton.serviceWorkerEventReadiness.timerShimResult.contains(
+                "manual timer queue installed"
+            )
         )
         XCTAssertTrue(decoded.rows.allSatisfy {
             $0.serviceWorkerEventReadiness.importScriptsResult.isEmpty == false
                 && $0.serviceWorkerEventReadiness.dynamicImportRewriteResult
                     .isEmpty == false
+                && $0.serviceWorkerEventReadiness.computedImportScriptsResult
+                    .isEmpty == false
+                && $0.serviceWorkerEventReadiness.timerShimResult.isEmpty
+                    == false
+                && $0.serviceWorkerEventReadiness
+                    .moduleWorkerReadinessResult.isEmpty == false
                 && $0.serviceWorkerEventReadiness.dispatchSmokeResult.isEmpty
                     == false
         })
@@ -1338,6 +1383,26 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertFalse(
             report.rows.first?.serviceWorkerEventReadiness
                 .jsExecutionPolicy.moduleWorkerImportAvailable == true
+        )
+        let readiness = try XCTUnwrap(
+            report.rows.first?.serviceWorkerEventReadiness
+        )
+        XCTAssertTrue(
+            readiness.jsExecutionPolicy.moduleWorkerReadinessProbe
+                .probeExecuted
+        )
+        XCTAssertTrue(
+            readiness.jsExecutionPolicy.moduleWorkerReadinessProbe
+                .staticImportGraphInspectionAvailable
+        )
+        XCTAssertFalse(
+            readiness.jsExecutionPolicy.moduleWorkerReadinessProbe
+                .sourceTextModuleLoaderAvailable
+        )
+        XCTAssertTrue(
+            readiness.moduleWorkerReadinessResult.contains(
+                "sourceTextModuleLoaderUnavailable"
+            )
         )
     }
 
@@ -1491,6 +1556,11 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                 .serviceWorkerJSExecutionAvailableByDefault
         )
         XCTAssertFalse(readiness.jsExecutionPolicy.dynamicImportAvailable)
+        XCTAssertFalse(
+            readiness.jsExecutionPolicy.timersAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(readiness.jsExecutionPolicy.timersAvailableByDefault)
+        XCTAssertFalse(readiness.jsExecutionPolicy.wallClockTimersAllowed)
         XCTAssertFalse(readiness.jsExecutionPolicy.timersAllowed)
         XCTAssertFalse(report.productRuntimeAvailable)
         XCTAssertFalse(report.productRuntimeExposed)
@@ -1513,6 +1583,10 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertFalse(policy.dynamicImportCapabilityProbe.probeExecuted)
         XCTAssertFalse(policy.dynamicImportAvailable)
         XCTAssertFalse(policy.moduleWorkerImportAvailable)
+        XCTAssertFalse(policy.moduleWorkerReadinessProbe.probeExecuted)
+        XCTAssertFalse(policy.timersAvailableInLocalExperimentalGate)
+        XCTAssertFalse(policy.timersAvailableByDefault)
+        XCTAssertFalse(policy.wallClockTimersAllowed)
         XCTAssertFalse(policy.timersAllowed)
     }
 

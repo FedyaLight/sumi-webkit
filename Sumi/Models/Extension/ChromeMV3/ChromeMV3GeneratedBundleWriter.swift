@@ -633,40 +633,7 @@ struct ChromeMV3GeneratedBundleWriter {
     private func importScriptsStringLiteralArguments(
         in source: String
     ) -> [String] {
-        guard
-            let callExpression = try? NSRegularExpression(
-                pattern: "\\bimportScripts\\s*\\(([^)]*)\\)"
-            ),
-            let literalExpression = try? NSRegularExpression(
-                pattern: #""((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'"#
-            )
-        else { return [] }
-        let fullRange = NSRange(source.startIndex..., in: source)
-        return callExpression.matches(in: source, range: fullRange).flatMap {
-            match -> [String] in
-            guard let argumentsRange = Range(match.range(at: 1), in: source)
-            else { return [] }
-            let arguments = String(source[argumentsRange])
-            let argumentRange = NSRange(arguments.startIndex..., in: arguments)
-            return literalExpression.matches(
-                in: arguments,
-                range: argumentRange
-            ).compactMap { literal in
-                let doubleQuoted = Range(literal.range(at: 1), in: arguments)
-                let singleQuoted = Range(literal.range(at: 2), in: arguments)
-                let raw = doubleQuoted.map { String(arguments[$0]) }
-                    ?? singleQuoted.map { String(arguments[$0]) }
-                return raw.map(unescapedImportScriptsLiteral)
-            }
-        }
-    }
-
-    private func unescapedImportScriptsLiteral(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "\\/", with: "/")
-            .replacingOccurrences(of: "\\'", with: "'")
-            .replacingOccurrences(of: "\\\"", with: "\"")
-            .replacingOccurrences(of: "\\\\", with: "\\")
+        staticallyBoundedImportScriptsCandidatesServiceWorkerJS(in: source)
     }
 
     private func appendExactPath(

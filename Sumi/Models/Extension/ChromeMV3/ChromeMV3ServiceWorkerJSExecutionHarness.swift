@@ -118,6 +118,106 @@ enum ChromeMV3ServiceWorkerJSDynamicImportCapabilityBlocker:
     }
 }
 
+enum ChromeMV3ServiceWorkerJSModuleWorkerReadinessBlocker:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case deterministicPromiseDrainUnavailable
+    case generatedRootContainedModuleGraphUnproven
+    case moduleNamespaceAccessUnavailable
+    case moduleResolutionHookUnavailable
+    case sourceTextModuleLoaderUnavailable
+    case topLevelAwaitContainmentUnproven
+
+    static func < (
+        lhs: ChromeMV3ServiceWorkerJSModuleWorkerReadinessBlocker,
+        rhs: ChromeMV3ServiceWorkerJSModuleWorkerReadinessBlocker
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3ServiceWorkerJSModuleWorkerReadinessProbe:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var probeExecuted: Bool
+    var staticImportGraphInspectionAvailable: Bool
+    var sourceTextModuleLoaderAvailable: Bool
+    var moduleResolutionHookAvailable: Bool
+    var generatedRootContainedModuleGraphProven: Bool
+    var moduleNamespaceAccessAvailable: Bool
+    var topLevelAwaitContainmentProven: Bool
+    var deterministicPromiseDrainAvailable: Bool
+    var moduleWorkerExecutionAvailableInLocalExperimentalGate: Bool
+    var moduleWorkerExecutionAvailableByDefault: Bool
+    var blockers: [ChromeMV3ServiceWorkerJSModuleWorkerReadinessBlocker]
+    var diagnostics: [String]
+
+    static func evaluate(
+        moduleState: ChromeMV3ProfileHostModuleState,
+        extensionEnabled: Bool
+    ) -> ChromeMV3ServiceWorkerJSModuleWorkerReadinessProbe {
+        guard moduleState == .enabled, extensionEnabled else {
+            return ChromeMV3ServiceWorkerJSModuleWorkerReadinessProbe(
+                probeExecuted: false,
+                staticImportGraphInspectionAvailable: false,
+                sourceTextModuleLoaderAvailable: false,
+                moduleResolutionHookAvailable: false,
+                generatedRootContainedModuleGraphProven: false,
+                moduleNamespaceAccessAvailable: false,
+                topLevelAwaitContainmentProven: false,
+                deterministicPromiseDrainAvailable: false,
+                moduleWorkerExecutionAvailableInLocalExperimentalGate: false,
+                moduleWorkerExecutionAvailableByDefault: false,
+                blockers: [],
+                diagnostics: [
+                    moduleState != .enabled
+                        ? "Module-disabled state skipped module-worker readiness probing."
+                        : "Extension-disabled state skipped module-worker readiness probing.",
+                ]
+            )
+        }
+        let blockers:
+            [ChromeMV3ServiceWorkerJSModuleWorkerReadinessBlocker] = [
+                .sourceTextModuleLoaderUnavailable,
+                .moduleResolutionHookUnavailable,
+                .generatedRootContainedModuleGraphUnproven,
+                .moduleNamespaceAccessUnavailable,
+                .topLevelAwaitContainmentUnproven,
+                .deterministicPromiseDrainUnavailable,
+            ]
+        return ChromeMV3ServiceWorkerJSModuleWorkerReadinessProbe(
+            probeExecuted: true,
+            staticImportGraphInspectionAvailable: true,
+            sourceTextModuleLoaderAvailable: false,
+            moduleResolutionHookAvailable: false,
+            generatedRootContainedModuleGraphProven: false,
+            moduleNamespaceAccessAvailable: false,
+            topLevelAwaitContainmentProven: false,
+            deterministicPromiseDrainAvailable: false,
+            moduleWorkerExecutionAvailableInLocalExperimentalGate: false,
+            moduleWorkerExecutionAvailableByDefault: false,
+            blockers: blockers,
+            diagnostics:
+                uniqueSortedServiceWorkerJS(
+                    [
+                        "Static module import/export, top-level await, and dynamic import tokens can be inventoried without executing a module worker.",
+                        "The public JavaScriptCore JSContext and C API headers do not expose a source-text module loader, module-resolution hook, module namespace accessor, or deterministic Promise job-drain API.",
+                        "Module-worker execution remains blocked until generated-root containment and lifecycle teardown can be proven through a public execution surface.",
+                    ]
+                        + blockers.map {
+                            "Module-worker readiness blocker: \($0.rawValue)."
+                        }
+                )
+        )
+    }
+}
+
 struct ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe:
     Codable,
     Equatable,
@@ -494,8 +594,13 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
         ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe
     var dynamicImportCapabilityBlockers:
         [ChromeMV3ServiceWorkerJSDynamicImportCapabilityBlocker]
+    var moduleWorkerReadinessProbe:
+        ChromeMV3ServiceWorkerJSModuleWorkerReadinessProbe
     var moduleWorkerImportAvailable: Bool
     var permanentBackgroundAvailable: Bool
+    var timersAvailableInLocalExperimentalGate: Bool
+    var timersAvailableByDefault: Bool
+    var wallClockTimersAllowed: Bool
     var timersAllowed: Bool
     var pollingAllowed: Bool
     var blockers: [ChromeMV3ServiceWorkerJSExecutionPolicyBlocker]
@@ -553,6 +658,11 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
         let dynamicImportRewriteAvailable =
             available
             && dynamicImportRewriteExperimentAllowed
+        let moduleWorkerReadiness =
+            ChromeMV3ServiceWorkerJSModuleWorkerReadinessProbe.evaluate(
+                moduleState: moduleState,
+                extensionEnabled: extensionEnabled
+            )
         let surface: ChromeMV3ServiceWorkerJSExecutionSurface
         if moduleState != .enabled || extensionEnabled == false {
             surface = .none
@@ -593,9 +703,13 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
             dynamicImportRewriteExperimentMutatesGeneratedBundle: false,
             dynamicImportCapabilityProbe: dynamicImportCapability,
             dynamicImportCapabilityBlockers: dynamicImportCapability.blockers,
+            moduleWorkerReadinessProbe: moduleWorkerReadiness,
             moduleWorkerImportAvailable: false,
             permanentBackgroundAvailable: false,
-            timersAllowed: false,
+            timersAvailableInLocalExperimentalGate: available,
+            timersAvailableByDefault: false,
+            wallClockTimersAllowed: false,
+            timersAllowed: available,
             pollingAllowed: false,
             blockers: blockers,
             diagnostics:
@@ -608,11 +722,13 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
                         "Dynamic import policy is local-experimental only, default-off, string-literal-only if ever enabled, and constrained to generated-bundle-contained extension resources.",
                         "Dynamic import rewrite experiment is an explicit harness-only transform, default-off, generated-bundle-only, string-literal-only, and never mutates generated bundle artifacts.",
                         "Network imports, file/data/blob URL imports, absolute filesystem imports, symlink escapes, and module worker import remain blocked.",
+                        "setTimeout, clearTimeout, setInterval, and clearInterval are available only as an explicit manually drained harness queue; no wall-clock timer or polling loop is created.",
                         "Lifetime transitions are explicit fixture calls only.",
                         "Stable product runtime remains default-off.",
                     ]
                         + blockers.map { "Policy blocker: \($0.rawValue)." }
                         + dynamicImportCapability.diagnostics
+                        + moduleWorkerReadiness.diagnostics
                 )
         )
     }
@@ -689,6 +805,16 @@ struct ChromeMV3ServiceWorkerJSExecutionDocumentationSource:
             "WHATWG HTML WorkerGlobalScope importScripts",
             "https://html.spec.whatwg.org/multipage/workers.html#importing-scripts-and-libraries",
             "importScripts processes each supplied URL synchronously in argument order, fetches a classic worker-imported script, runs it, and aborts the remaining imports on exception."
+        ),
+        source(
+            "MDN WorkerGlobalScope setTimeout",
+            "https://developer.mozilla.org/en-US/docs/Web/API/WorkerGlobalScope/setTimeout",
+            "Worker timers return cancellable integer identifiers and invoke callbacks after a delay. The local experimental harness intentionally substitutes an explicit manual queue and never waits on wall clock time."
+        ),
+        source(
+            "WHATWG HTML timers",
+            "https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timers",
+            "WindowOrWorkerGlobalScope timers use positive identifiers shared by setTimeout/setInterval and removable by clearTimeout/clearInterval. The harness keeps those cancellation semantics while replacing elapsed-time scheduling with explicit test drains."
         ),
         source(
             "W3C Service Workers importScripts",
@@ -824,6 +950,9 @@ enum ChromeMV3ServiceWorkerJSImportScriptsBlocker:
     case absoluteFilesystemPathRejected
     case blobURLRejected
     case circularImportBlocked
+    case computedImportScriptsCandidateSetUnbounded
+    case computedImportScriptsConstantMapCandidateUnsafe
+    case computedImportScriptsRuntimeVariableRejected
     case dataURLRejected
     case dynamicImportExecutionSurfaceUnsupported
     case dynamicImportGeneratedRootContainmentUnproven
@@ -857,6 +986,51 @@ enum ChromeMV3ServiceWorkerJSImportScriptsBlocker:
     ) -> Bool {
         lhs.rawValue < rhs.rawValue
     }
+}
+
+enum ChromeMV3ServiceWorkerJSTimerKind:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case interval
+    case timeout
+
+    static func < (
+        lhs: ChromeMV3ServiceWorkerJSTimerKind,
+        rhs: ChromeMV3ServiceWorkerJSTimerKind
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3ServiceWorkerJSTimerRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var timerID: Int
+    var kind: ChromeMV3ServiceWorkerJSTimerKind
+    var delayMilliseconds: Double
+    var active: Bool
+    var queued: Bool
+    var invocationCount: Int
+}
+
+struct ChromeMV3ServiceWorkerJSTimerDrainRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var mode: String
+    var callbackCount: Int
+    var callbackErrors: [String]
+    var pendingTimeoutCount: Int
+    var activeIntervalCount: Int
+    var limitReached: Bool
+    var diagnostics: [String]
 }
 
 enum ChromeMV3ServiceWorkerJSDynamicImportBlocker:
@@ -1394,6 +1568,8 @@ struct ChromeMV3ServiceWorkerJSExecutionSnapshot:
     var blockedUnsupportedCalls: [String]
     var dispatchRecords: [ChromeMV3ServiceWorkerJSDispatchRecord]
     var ports: [ChromeMV3ServiceWorkerJSPortRecord]
+    var timers: [ChromeMV3ServiceWorkerJSTimerRecord]
+    var timerDrainRecords: [ChromeMV3ServiceWorkerJSTimerDrainRecord]
     var lifecycleSnapshot: ChromeMV3ServiceWorkerInternalLifecycleSnapshot?
     var documentationSources:
         [ChromeMV3ServiceWorkerJSExecutionDocumentationSource]
@@ -1419,6 +1595,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
     private var blockedUnsupportedCalls: [String] = []
     private var dispatchRecords: [ChromeMV3ServiceWorkerJSDispatchRecord] = []
     private var ports: [String: ChromeMV3ServiceWorkerJSPortRecord] = [:]
+    private var timers: [ChromeMV3ServiceWorkerJSTimerRecord] = []
+    private var timerDrainRecords:
+        [ChromeMV3ServiceWorkerJSTimerDrainRecord] = []
     private var lifecycleKeepaliveIDsByPort: [String: String] = [:]
     private var nextPortSequence = 1
     private var nextImportEvaluationOrder = 1
@@ -1474,6 +1653,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             blockedUnsupportedCalls: blockedUnsupportedCalls,
             dispatchRecords: dispatchRecords,
             ports: ports.values.sorted { $0.portID < $1.portID },
+            timers: timers.sorted { $0.timerID < $1.timerID },
+            timerDrainRecords: timerDrainRecords,
             lifecycleSnapshot: lifecycleSession?.runtimeOwner.snapshot,
             documentationSources:
                 ChromeMV3ServiceWorkerJSExecutionDocumentationSource
@@ -1918,6 +2099,46 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
     }
 
     @discardableResult
+    func drainQueuedTimeouts(
+        maxCallbacks: Int = 100
+    ) -> ChromeMV3ServiceWorkerJSTimerDrainRecord? {
+        guard start().status == .running else { return nil }
+        #if canImport(JavaScriptCore)
+            guard
+                let record: ChromeMV3ServiceWorkerJSTimerDrainRecord =
+                    callJSON(
+                        "__sumiHarness.drainTimeouts(\(max(0, maxCallbacks)))"
+                    )
+            else { return nil }
+            timerDrainRecords.append(record)
+            refreshJSSnapshot()
+            return record
+        #else
+            return nil
+        #endif
+    }
+
+    @discardableResult
+    func tickIntervals(
+        maxCallbacks: Int = 100
+    ) -> ChromeMV3ServiceWorkerJSTimerDrainRecord? {
+        guard start().status == .running else { return nil }
+        #if canImport(JavaScriptCore)
+            guard
+                let record: ChromeMV3ServiceWorkerJSTimerDrainRecord =
+                    callJSON(
+                        "__sumiHarness.tickIntervals(\(max(0, maxCallbacks)))"
+                    )
+            else { return nil }
+            timerDrainRecords.append(record)
+            refreshJSSnapshot()
+            return record
+        #else
+            return nil
+        #endif
+    }
+
+    @discardableResult
     func triggerIdleRelease()
         -> ChromeMV3ServiceWorkerInternalWakeResult?
     {
@@ -1970,6 +2191,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         blockedUnsupportedCalls.removeAll()
         dispatchRecords.removeAll()
         ports.removeAll()
+        timers.removeAll()
+        timerDrainRecords.removeAll()
         lifecycleKeepaliveIDsByPort.removeAll()
         nextPortSequence = 1
         nextImportEvaluationOrder = 1
@@ -2565,6 +2788,21 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                         "Generated bundle root is missing for importScripts resolution."
                 )
             }
+            let authorization = authorizeImportScriptRequest(
+                requestPath,
+                parentURL: parentURL,
+                record: record,
+                root: root
+            )
+            if let blocker = authorization.blocker {
+                return failedImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    chain: chain,
+                    blocker: blocker,
+                    message: authorization.message
+                )
+            }
             let normalized = normalizeImportScriptsPath(requestPath)
             if let blocker = normalized.blocker {
                 return failedImport(
@@ -2750,10 +2988,75 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                         "Imported script was resolved inside the generated bundle root.",
                         "Imported script is recorded as a copied generated-bundle resource.",
                         "Import order is deterministic and synchronous.",
+                        authorization.message,
                     ]
                 ),
                 source,
                 candidate
+            )
+        }
+
+        private func authorizeImportScriptRequest(
+            _ requestPath: String,
+            parentURL: URL?,
+            record: ChromeMV3GeneratedBundleRecord,
+            root: URL
+        ) -> (
+            blocker: ChromeMV3ServiceWorkerJSImportScriptsBlocker?,
+            message: String
+        ) {
+            guard let parentURL,
+                  containsServiceWorkerJS(root: root, candidate: parentURL),
+                  let source = try? String(
+                    contentsOf: parentURL,
+                    encoding: .utf8
+                  )
+            else {
+                return (
+                    .computedImportScriptsCandidateSetUnbounded,
+                    "importScripts parent source could not be inspected for a statically bounded candidate set."
+                )
+            }
+            let authorization =
+                boundedImportScriptsAuthorizationServiceWorkerJS(in: source)
+            let matching = authorization.candidateGroups.filter {
+                $0.candidates.contains(requestPath)
+            }
+            guard matching.isEmpty == false else {
+                return (
+                    authorization.unboundedExpressionDetected
+                        ? .computedImportScriptsRuntimeVariableRejected
+                        : .computedImportScriptsCandidateSetUnbounded,
+                    authorization.unboundedExpressionDetected
+                        ? "Runtime-variable or otherwise unbounded importScripts dependency paths are blocked."
+                        : "importScripts dependency path was not present in a statically bounded candidate set."
+                )
+            }
+            for group in matching {
+                let rejectedCandidates = group.candidates.filter {
+                    generatedBundleContainsImportScriptServiceWorkerJS(
+                        $0,
+                        parentURL: parentURL,
+                        record: record,
+                        root: root
+                    ) == false
+                }
+                if group.requiresAllCandidatesContained,
+                   rejectedCandidates.isEmpty == false
+                {
+                    return (
+                        .computedImportScriptsConstantMapCandidateUnsafe,
+                        "Known constant-map importScripts resolution was blocked because every statically visible candidate was not proven generated-root-contained: \(rejectedCandidates.joined(separator: ", "))."
+                    )
+                }
+                return (
+                    nil,
+                    group.message
+                )
+            }
+            return (
+                .computedImportScriptsCandidateSetUnbounded,
+                "importScripts dependency authorization did not find a bounded generated-bundle candidate."
             )
         }
 
@@ -3269,6 +3572,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                         )
                     }
             )
+            timers = wire.timers.sorted { $0.timerID < $1.timerID }
         }
 
         private func callJSON<T: Decodable>(_ expression: String) -> T? {
@@ -3313,7 +3617,10 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       const registrations = [];
       const blockedCalls = [];
       const ports = new Map();
+      const timers = new Map();
+      const pendingTimeoutIDs = [];
       let registrationOrder = 0;
+      let nextTimerID = 1;
 
       const clone = (value) => {
         if (value === undefined) return null;
@@ -3524,13 +3831,111 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           ? String(result.error)
           : 'Dynamic import rewrite failed.'));
       };
+      const normalizeDelay = (delay) => {
+        const number = Number(delay);
+        if (!Number.isFinite(number) || number < 0) return 0;
+        return Math.min(number, 2147483647);
+      };
+      const scheduleQueuedCallback = (kind, callback, delay, args) => {
+        if (typeof callback !== 'function') {
+          noteBlocked(`globalThis.${kind === 'timeout' ? 'setTimeout' : 'setInterval'}.nonFunction`);
+          throw new TypeError('The local experimental timer shim accepts function callbacks only.');
+        }
+        const timerID = nextTimerID++;
+        timers.set(timerID, {
+          timerID,
+          kind,
+          delayMilliseconds: normalizeDelay(delay),
+          active: true,
+          queued: kind === 'timeout',
+          invocationCount: 0,
+          callback,
+          args
+        });
+        if (kind === 'timeout') pendingTimeoutIDs.push(timerID);
+        return timerID;
+      };
+      const clearTimer = (timerID) => {
+        const state = timers.get(Number(timerID));
+        if (!state) return;
+        state.active = false;
+        state.queued = false;
+        timers.delete(state.timerID);
+      };
+      const invokeQueuedCallback = (state, callbackErrors) => {
+        if (!state || !state.active) return false;
+        if (state.kind === 'timeout') {
+          state.active = false;
+          state.queued = false;
+          timers.delete(state.timerID);
+        }
+        state.invocationCount += 1;
+        try { state.callback(...state.args); }
+        catch (error) {
+          const message = String(error && error.message ? error.message : error);
+          callbackErrors.push(message);
+          noteBlocked(`timer.${state.timerID}.callbackError`);
+        }
+        return true;
+      };
+      const timerDrainSnapshot = (mode, callbackCount, callbackErrors, limitReached) => ({
+        mode,
+        callbackCount,
+        callbackErrors,
+        pendingTimeoutCount: pendingTimeoutIDs.filter((timerID) => timers.has(timerID)).length,
+        activeIntervalCount: [...timers.values()].filter((state) =>
+          state.kind === 'interval' && state.active).length,
+        limitReached,
+        diagnostics: [
+          'Queued callbacks run only when the explicit local experimental harness drains or ticks them.',
+          'No wall-clock wait, background wake loop, or polling scheduler is created.'
+        ]
+      });
+      const drainTimeouts = (maxCallbacks = 100) => {
+        const limit = Math.max(0, Math.floor(Number(maxCallbacks) || 0));
+        const callbackErrors = [];
+        let callbackCount = 0;
+        while (pendingTimeoutIDs.length && callbackCount < limit) {
+          const timerID = pendingTimeoutIDs.shift();
+          const state = timers.get(timerID);
+          if (invokeQueuedCallback(state, callbackErrors)) callbackCount += 1;
+        }
+        return timerDrainSnapshot(
+          'drainTimeouts',
+          callbackCount,
+          callbackErrors,
+          pendingTimeoutIDs.some((timerID) => timers.has(timerID))
+        );
+      };
+      const tickIntervals = (maxCallbacks = 100) => {
+        const limit = Math.max(0, Math.floor(Number(maxCallbacks) || 0));
+        const callbackErrors = [];
+        let callbackCount = 0;
+        const activeIntervals = [...timers.values()]
+          .filter((state) => state.kind === 'interval' && state.active)
+          .sort((lhs, rhs) => lhs.timerID - rhs.timerID);
+        for (const state of activeIntervals) {
+          if (callbackCount >= limit) break;
+          if (invokeQueuedCallback(state, callbackErrors)) callbackCount += 1;
+        }
+        return timerDrainSnapshot(
+          'tickIntervals',
+          callbackCount,
+          callbackErrors,
+          activeIntervals.length > callbackCount
+        );
+      };
+      globalThis.setTimeout = (callback, delay, ...args) =>
+        scheduleQueuedCallback('timeout', callback, delay, args);
+      globalThis.clearTimeout = clearTimer;
+      globalThis.setInterval = (callback, delay, ...args) =>
+        scheduleQueuedCallback('interval', callback, delay, args);
+      globalThis.clearInterval = clearTimer;
       for (const name of [
         'fetch',
         'XMLHttpRequest',
         'WebSocket',
         'EventSource',
-        'setTimeout',
-        'setInterval',
         'requestAnimationFrame'
       ]) {
         globalThis[name] = function () {
@@ -3623,14 +4028,24 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           source: item.source
         })),
         blockedCalls: [...blockedCalls],
-        ports: [...ports.values()].map(portSnapshot)
+        ports: [...ports.values()].map(portSnapshot),
+        timers: [...timers.values()].map((state) => ({
+          timerID: state.timerID,
+          kind: state.kind,
+          delayMilliseconds: state.delayMilliseconds,
+          active: state.active,
+          queued: state.queued,
+          invocationCount: state.invocationCount
+        }))
       });
       globalThis.__sumiHarness = {
         snapshot,
         dispatch,
         createPort,
         deliverPortMessage,
-        disconnectPort
+        disconnectPort,
+        drainTimeouts,
+        tickIntervals
       };
     })();
     """#
@@ -3663,6 +4078,7 @@ private struct ChromeMV3ServiceWorkerJSWireSnapshot: Decodable {
     var registrations: [ChromeMV3ServiceWorkerJSWireRegistration]
     var blockedCalls: [String]
     var ports: [ChromeMV3ServiceWorkerJSWirePort]
+    var timers: [ChromeMV3ServiceWorkerJSTimerRecord]
 }
 
 private struct ChromeMV3ServiceWorkerJSWirePort: Decodable {
@@ -4309,6 +4725,347 @@ private func dynamicImportBlockerServiceWorkerJS(
     default:
         return nil
     }
+}
+
+private struct ChromeMV3ServiceWorkerJSImportScriptsCandidateGroup {
+    var candidates: [String]
+    var requiresAllCandidatesContained: Bool
+    var message: String
+}
+
+private struct ChromeMV3ServiceWorkerJSImportScriptsAuthorization {
+    var candidateGroups: [ChromeMV3ServiceWorkerJSImportScriptsCandidateGroup]
+    var unboundedExpressionDetected: Bool
+}
+
+private func boundedImportScriptsAuthorizationServiceWorkerJS(
+    in source: String
+) -> ChromeMV3ServiceWorkerJSImportScriptsAuthorization {
+    let constantMaps = constantImportScriptsMapsServiceWorkerJS(in: source)
+    var groups: [ChromeMV3ServiceWorkerJSImportScriptsCandidateGroup] = []
+    var unbounded = false
+    for argument in importScriptsArgumentSourcesServiceWorkerJS(in: source) {
+        if let literal = staticImportScriptsStringServiceWorkerJS(argument) {
+            groups.append(
+                ChromeMV3ServiceWorkerJSImportScriptsCandidateGroup(
+                    candidates: [literal.value],
+                    requiresAllCandidatesContained: false,
+                    message:
+                        "importScripts dependency was authorized from a statically bounded \(literal.kind) expression."
+                )
+            )
+            continue
+        }
+        if let mapName = constantMapAccessServiceWorkerJS(argument),
+           let candidates = constantMaps[mapName],
+           candidates.isEmpty == false
+        {
+            groups.append(
+                ChromeMV3ServiceWorkerJSImportScriptsCandidateGroup(
+                    candidates: candidates,
+                    requiresAllCandidatesContained: true,
+                    message:
+                        "importScripts dependency was authorized from a statically visible constant map whose complete candidate set is generated-root-contained."
+                )
+            )
+            continue
+        }
+        unbounded = true
+    }
+    return ChromeMV3ServiceWorkerJSImportScriptsAuthorization(
+        candidateGroups: groups,
+        unboundedExpressionDetected: unbounded
+    )
+}
+
+func staticallyBoundedImportScriptsCandidatesServiceWorkerJS(
+    in source: String
+) -> [String] {
+    Array(
+        Set(
+            boundedImportScriptsAuthorizationServiceWorkerJS(in: source)
+                .candidateGroups.flatMap(\.candidates)
+        )
+    ).sorted()
+}
+
+private func generatedBundleContainsImportScriptServiceWorkerJS(
+    _ requestPath: String,
+    parentURL: URL,
+    record: ChromeMV3GeneratedBundleRecord,
+    root: URL
+) -> Bool {
+    let normalized = normalizeImportScriptsPath(requestPath)
+    guard let normalizedPath = normalized.path,
+          normalized.blocker == nil
+    else { return false }
+    let candidate = parentURL.deletingLastPathComponent()
+        .appendingPathComponent(normalizedPath)
+        .standardizedFileURL
+    guard
+        let relative = Sumi.relativePathInGeneratedBundle(
+            candidate,
+            root: root
+        ),
+        containsServiceWorkerJS(root: root, candidate: candidate),
+        pathContainsSymbolicLinkServiceWorkerJS(candidate, root: root) == false,
+        regularFileExistsServiceWorkerJS(candidate),
+        record.copiedResourcePaths.contains(relative)
+    else { return false }
+    return true
+}
+
+private func constantImportScriptsMapsServiceWorkerJS(
+    in source: String
+) -> [String: [String]] {
+    guard
+        let regex = try? NSRegularExpression(
+            pattern:
+                #"\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*\{([^{}]*)\}\s*;"#
+        )
+    else { return [:] }
+    let range = NSRange(source.startIndex..., in: source)
+    var maps: [String: [String]] = [:]
+    for match in regex.matches(in: source, range: range) {
+        guard
+            let nameRange = Range(match.range(at: 1), in: source),
+            let bodyRange = Range(match.range(at: 2), in: source)
+        else { continue }
+        let name = String(source[nameRange])
+        let entries = splitTopLevelServiceWorkerJS(
+            String(source[bodyRange]),
+            separator: ","
+        )
+        var values: [String] = []
+        var valid = entries.isEmpty == false
+        for entry in entries {
+            let pair = splitTopLevelServiceWorkerJS(entry, separator: ":")
+            guard pair.count == 2,
+                  let value = staticImportScriptsStringServiceWorkerJS(pair[1])
+            else {
+                valid = false
+                break
+            }
+            values.append(value.value)
+        }
+        if valid {
+            maps[name] = Array(Set(values)).sorted()
+        }
+    }
+    return maps
+}
+
+private func constantMapAccessServiceWorkerJS(_ expression: String) -> String? {
+    let trimmed = expression.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard
+        let regex = try? NSRegularExpression(
+            pattern:
+                #"^([A-Za-z_$][\w$]*)(?:\.[A-Za-z_$][\w$]*|\[\s*["'][^"']+["']\s*\])$"#
+        )
+    else { return nil }
+    let range = NSRange(trimmed.startIndex..., in: trimmed)
+    guard let match = regex.firstMatch(in: trimmed, range: range),
+          let nameRange = Range(match.range(at: 1), in: trimmed)
+    else { return nil }
+    return String(trimmed[nameRange])
+}
+
+private func staticImportScriptsStringServiceWorkerJS(
+    _ expression: String
+) -> (value: String, kind: String)? {
+    let trimmed = expression.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed.isEmpty == false else { return nil }
+    if let first = trimmed.first, let last = trimmed.last,
+       (first == "'" || first == "\""), last == first
+    {
+        let value = String(trimmed.dropFirst().dropLast())
+        if value.contains("\\") == false,
+           value.contains(first) == false
+        {
+            return (value, "string-literal")
+        }
+    }
+    if trimmed.first == "`", trimmed.last == "`" {
+        let value = String(trimmed.dropFirst().dropLast())
+        guard value.contains("${") == false,
+              value.contains("\\") == false
+        else { return nil }
+        return (value, "static-template-literal")
+    }
+    let parts = splitTopLevelServiceWorkerJS(trimmed, separator: "+")
+    guard parts.count > 1 else { return nil }
+    var result = ""
+    for part in parts {
+        guard let value = staticImportScriptsStringServiceWorkerJS(part)
+        else { return nil }
+        result += value.value
+    }
+    return (result, "static-string-concatenation")
+}
+
+private func importScriptsArgumentSourcesServiceWorkerJS(
+    in source: String
+) -> [String] {
+    let bytes = Array(source.utf8)
+    var results: [String] = []
+    var index = 0
+    while index < bytes.count {
+        if bytes[index] == 34 || bytes[index] == 39 || bytes[index] == 96 {
+            index = skipQuotedServiceWorkerJS(bytes, start: index)
+            continue
+        }
+        if bytes[index] == 47, index + 1 < bytes.count,
+           bytes[index + 1] == 47
+        {
+            index += 2
+            while index < bytes.count, bytes[index] != 10 { index += 1 }
+            continue
+        }
+        if bytes[index] == 47, index + 1 < bytes.count,
+           bytes[index + 1] == 42
+        {
+            index += 2
+            while index + 1 < bytes.count,
+                  !(bytes[index] == 42 && bytes[index + 1] == 47)
+            {
+                index += 1
+            }
+            index = min(bytes.count, index + 2)
+            continue
+        }
+        guard isIdentifierStartServiceWorkerJS(bytes[index]) else {
+            index += 1
+            continue
+        }
+        let start = index
+        index += 1
+        while index < bytes.count,
+              isIdentifierPartServiceWorkerJS(bytes[index])
+        {
+            index += 1
+        }
+        guard String(decoding: bytes[start..<index], as: UTF8.self)
+            == "importScripts"
+        else { continue }
+        var open = index
+        while open < bytes.count, isWhitespaceServiceWorkerJS(bytes[open]) {
+            open += 1
+        }
+        guard open < bytes.count, bytes[open] == 40,
+              let close = matchingParenCloseServiceWorkerJS(bytes, open: open)
+        else { continue }
+        results.append(
+            contentsOf:
+                splitTopLevelServiceWorkerJS(
+                    String(
+                        decoding: bytes[(open + 1)..<close],
+                        as: UTF8.self
+                    ),
+                    separator: ","
+                )
+        )
+        index = close + 1
+    }
+    return results
+}
+
+private func matchingParenCloseServiceWorkerJS(
+    _ bytes: [UInt8],
+    open: Int
+) -> Int? {
+    var depth = 1
+    var index = open + 1
+    while index < bytes.count {
+        if bytes[index] == 34 || bytes[index] == 39 || bytes[index] == 96 {
+            index = skipQuotedServiceWorkerJS(bytes, start: index)
+            continue
+        }
+        if bytes[index] == 40 {
+            depth += 1
+        } else if bytes[index] == 41 {
+            depth -= 1
+            if depth == 0 { return index }
+        }
+        index += 1
+    }
+    return nil
+}
+
+private func splitTopLevelServiceWorkerJS(
+    _ source: String,
+    separator: Character
+) -> [String] {
+    let bytes = Array(source.utf8)
+    guard let needle = String(separator).utf8.first else { return [source] }
+    var results: [String] = []
+    var start = 0
+    var index = 0
+    var parenDepth = 0
+    var braceDepth = 0
+    var bracketDepth = 0
+    while index < bytes.count {
+        if bytes[index] == 34 || bytes[index] == 39 || bytes[index] == 96 {
+            index = skipQuotedServiceWorkerJS(bytes, start: index)
+            continue
+        }
+        switch bytes[index] {
+        case 40: parenDepth += 1
+        case 41: parenDepth = max(0, parenDepth - 1)
+        case 123: braceDepth += 1
+        case 125: braceDepth = max(0, braceDepth - 1)
+        case 91: bracketDepth += 1
+        case 93: bracketDepth = max(0, bracketDepth - 1)
+        default:
+            if bytes[index] == needle,
+               parenDepth == 0, braceDepth == 0, bracketDepth == 0
+            {
+                results.append(
+                    String(decoding: bytes[start..<index], as: UTF8.self)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+                start = index + 1
+            }
+        }
+        index += 1
+    }
+    results.append(
+        String(decoding: bytes[start...], as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    )
+    return results
+}
+
+private func skipQuotedServiceWorkerJS(
+    _ bytes: [UInt8],
+    start: Int
+) -> Int {
+    let quote = bytes[start]
+    var index = start + 1
+    var escaped = false
+    while index < bytes.count {
+        if escaped {
+            escaped = false
+        } else if bytes[index] == 92 {
+            escaped = true
+        } else if bytes[index] == quote {
+            return index + 1
+        }
+        index += 1
+    }
+    return index
+}
+
+private func isIdentifierStartServiceWorkerJS(_ byte: UInt8) -> Bool {
+    (65...90).contains(byte) || (97...122).contains(byte)
+        || byte == 36 || byte == 95
+}
+
+private func isIdentifierPartServiceWorkerJS(_ byte: UInt8) -> Bool {
+    isIdentifierStartServiceWorkerJS(byte) || (48...57).contains(byte)
+}
+
+private func isWhitespaceServiceWorkerJS(_ byte: UInt8) -> Bool {
+    byte == 9 || byte == 10 || byte == 13 || byte == 32
 }
 
 private func normalizeImportScriptsPath(

@@ -957,7 +957,12 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         let managerAndSettings = managerSource + "\n" + settingsSource
         let positiveBoolean = "tr" + "ue"
 
-        for token in ["Ti" + "mer", "DispatchSource" + "Ti" + "mer"] {
+        for token in [
+            "DispatchSource" + "Ti" + "mer",
+            "Ti" + "mer" + "(",
+            "Ti" + "mer" + ".publish",
+            "Ti" + "mer" + ".scheduled",
+        ] {
             XCTAssertFalse(managerAndSettings.contains(token))
         }
         XCTAssertFalse(managerAndSettings.contains("Process" + "("))

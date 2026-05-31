@@ -45,7 +45,18 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             moduleDisabled.policy.dynamicImportCapabilityProbe.probeExecuted
         )
         XCTAssertFalse(
+            moduleDisabled.policy.timersAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(moduleDisabled.policy.timersAvailableByDefault)
+        XCTAssertFalse(moduleDisabled.policy.wallClockTimersAllowed)
+        XCTAssertFalse(
+            moduleDisabled.policy.moduleWorkerReadinessProbe.probeExecuted
+        )
+        XCTAssertFalse(
             extensionDisabled.policy.dynamicImportCapabilityProbe.probeExecuted
+        )
+        XCTAssertFalse(
+            extensionDisabled.policy.moduleWorkerReadinessProbe.probeExecuted
         )
         XCTAssertTrue(
             moduleDisabled.policy.diagnostics.contains {
@@ -75,6 +86,10 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertFalse(harness.policy.dynamicImportAvailableByDefault)
         XCTAssertFalse(harness.policy.dynamicImportAvailable)
         XCTAssertEqual(harness.policy.dynamicImportScope, .blocked)
+        XCTAssertFalse(harness.policy.timersAvailableInLocalExperimentalGate)
+        XCTAssertFalse(harness.policy.timersAvailableByDefault)
+        XCTAssertFalse(harness.policy.wallClockTimersAllowed)
+        XCTAssertFalse(harness.policy.timersAllowed)
     }
 
     func testDynamicImportCapabilityProbeReportsSupportedOrPreciseBlockers() {
@@ -190,6 +205,16 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             ) == true
         )
         XCTAssertFalse(module.policy.moduleWorkerImportAvailable)
+        XCTAssertTrue(module.policy.moduleWorkerReadinessProbe.probeExecuted)
+        XCTAssertTrue(
+            module.policy.moduleWorkerReadinessProbe.blockers.contains(
+                .sourceTextModuleLoaderUnavailable
+            )
+        )
+        XCTAssertFalse(
+            module.policy.moduleWorkerReadinessProbe
+                .moduleWorkerExecutionAvailableInLocalExperimentalGate
+        )
 
     }
 
@@ -279,6 +304,155 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             ).responsePayload,
             .string("first,second")
         )
+    }
+
+    func testStaticConcatenationImportScriptsResolvesInsideGeneratedRoot()
+        throws
+    {
+        let fixture = try makeHarness(
+            source: "importScripts('./' + 'dependency.js');\n",
+            extraFiles: [
+                "dependency.js":
+                    "chrome.runtime.onMessage.addListener(() => 'concat');",
+            ],
+            localExperimentalGateAllowed: true
+        )
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request()
+        )
+
+        XCTAssertEqual(harness.start().status, .running)
+        XCTAssertEqual(harness.snapshot.importScriptsResolvedCount, 1)
+        XCTAssertEqual(
+            harness.snapshot.importedScripts.first?.resolvedRelativePath,
+            "dependency.js"
+        )
+    }
+
+    func testRuntimeVariableImportScriptsIsBlockedEvenWhenValueIsLocal()
+        throws
+    {
+        let fixture = try makeHarness(
+            source: """
+            const dependency = './dependency.js';
+            importScripts(dependency);
+            """,
+            extraFiles: ["dependency.js": ""],
+            localExperimentalGateAllowed: true
+        )
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request()
+        )
+
+        XCTAssertEqual(harness.start().status, .failed)
+        XCTAssertTrue(
+            harness.snapshot.importScriptsBlockers.contains(
+                .computedImportScriptsRuntimeVariableRejected
+            )
+        )
+    }
+
+    func testKnownConstantMapImportScriptsRequiresEveryCandidateContained()
+        throws
+    {
+        let safeFixture = try makeHarness(
+            source: """
+            const dependencies = { first: './first.js', second: './second.js' };
+            importScripts(dependencies.first);
+            """,
+            extraFiles: [
+                "first.js": "",
+                "second.js": "",
+            ],
+            localExperimentalGateAllowed: true
+        )
+        let safeHarness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: safeFixture.request()
+        )
+        XCTAssertEqual(
+            safeHarness.start().status,
+            .running,
+            "\(safeHarness.snapshot)"
+        )
+        XCTAssertEqual(
+            safeHarness.snapshot.importScriptsResolvedCount,
+            1,
+            "\(safeHarness.snapshot)"
+        )
+
+        let unsafeFixture = try makeHarness(
+            source: """
+            const dependencies = { first: './first.js', second: '../outside.js' };
+            importScripts(dependencies.first);
+            """,
+            extraFiles: ["first.js": ""],
+            localExperimentalGateAllowed: true
+        )
+        let unsafeHarness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: unsafeFixture.request()
+        )
+        XCTAssertEqual(unsafeHarness.start().status, .failed)
+        XCTAssertTrue(
+            unsafeHarness.snapshot.importScriptsBlockers.contains(
+                .computedImportScriptsConstantMapCandidateUnsafe
+            )
+        )
+    }
+
+    func testDeterministicTimerShimQueuesDrainsCancelsAndTicksManually()
+        throws
+    {
+        let harness = try startedHarness(
+            source: """
+            globalThis.callbackLog = [];
+            setTimeout((value) => callbackLog.push(value), 10, 'timeout');
+            const cancelledTimeout = setTimeout(() => callbackLog.push('cancelled-timeout'), 10);
+            clearTimeout(cancelledTimeout);
+            setInterval(() => callbackLog.push('interval'), 20);
+            const cancelledInterval = setInterval(() => callbackLog.push('cancelled-interval'), 20);
+            clearInterval(cancelledInterval);
+            chrome.runtime.onMessage.addListener(() => callbackLog.join(','));
+            """
+        )
+
+        XCTAssertTrue(harness.policy.timersAvailableInLocalExperimentalGate)
+        XCTAssertFalse(harness.policy.timersAvailableByDefault)
+        XCTAssertFalse(harness.policy.wallClockTimersAllowed)
+        XCTAssertFalse(harness.policy.pollingAllowed)
+        XCTAssertEqual(harness.snapshot.timers.count, 2)
+        XCTAssertEqual(
+            harness.dispatch(
+                source: .popupOptionsRuntimeMessage,
+                arguments: [],
+                payloadSummary: "before explicit timeout drain"
+            ).responsePayload,
+            .string("")
+        )
+
+        let drained = try XCTUnwrap(harness.drainQueuedTimeouts())
+        XCTAssertEqual(drained.callbackCount, 1)
+        XCTAssertEqual(drained.callbackErrors, [])
+        XCTAssertEqual(drained.pendingTimeoutCount, 0)
+        XCTAssertEqual(
+            harness.dispatch(
+                source: .popupOptionsRuntimeMessage,
+                arguments: [],
+                payloadSummary: "after explicit timeout drain"
+            ).responsePayload,
+            .string("timeout")
+        )
+
+        let ticked = try XCTUnwrap(harness.tickIntervals())
+        XCTAssertEqual(ticked.callbackCount, 1)
+        XCTAssertEqual(
+            harness.dispatch(
+                source: .popupOptionsRuntimeMessage,
+                arguments: [],
+                payloadSummary: "after explicit interval tick"
+            ).responsePayload,
+            .string("timeout,interval")
+        )
+        XCTAssertEqual(harness.snapshot.timers.map(\.kind), [.interval])
     }
 
     func testImportedRuntimeOnConnectListenerReceivesPortDispatch() throws {
@@ -1099,7 +1273,10 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertFalse(policy.dynamicImportRewriteExperimentAvailableByDefault)
         XCTAssertFalse(policy.dynamicImportRewriteExperimentMutatesGeneratedBundle)
         XCTAssertFalse(policy.permanentBackgroundAvailable)
-        XCTAssertFalse(policy.timersAllowed)
+        XCTAssertTrue(policy.timersAvailableInLocalExperimentalGate)
+        XCTAssertFalse(policy.timersAvailableByDefault)
+        XCTAssertFalse(policy.wallClockTimersAllowed)
+        XCTAssertTrue(policy.timersAllowed)
         XCTAssertFalse(policy.pollingAllowed)
     }
 
