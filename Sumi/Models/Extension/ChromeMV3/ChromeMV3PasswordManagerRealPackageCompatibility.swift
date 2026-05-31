@@ -2230,7 +2230,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 profileID: profileID,
                 moduleState: .enabled,
                 extensionEnabled: extensionEnabled,
-                localExperimentalGateAllowed: true
+                localExperimentalGateAllowed: true,
+                dynamicImportRewriteExperimentAllowed: true
             )
             let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
                 request: request

@@ -484,6 +484,12 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
     var dynamicImportGeneratedBundleOnly: Bool
     var dynamicImportStringLiteralLocalOnly: Bool
     var dynamicImportAvailable: Bool
+    var dynamicImportRewriteExperimentAvailableInLocalExperimentalGate: Bool
+    var dynamicImportRewriteExperimentAvailableByDefault: Bool
+    var dynamicImportRewriteExperimentScope:
+        ChromeMV3ServiceWorkerJSDynamicImportScope
+    var dynamicImportRewriteExperimentAllowed: Bool
+    var dynamicImportRewriteExperimentMutatesGeneratedBundle: Bool
     var dynamicImportCapabilityProbe:
         ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe
     var dynamicImportCapabilityBlockers:
@@ -499,7 +505,8 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
         moduleState: ChromeMV3ProfileHostModuleState,
         extensionEnabled: Bool,
         localExperimentalGateAllowed: Bool,
-        generatedBundleRecordAvailable: Bool
+        generatedBundleRecordAvailable: Bool,
+        dynamicImportRewriteExperimentAllowed: Bool = false
     ) -> ChromeMV3ServiceWorkerJSExecutionPolicy {
         var blockers: [ChromeMV3ServiceWorkerJSExecutionPolicyBlocker] = []
         if moduleState != .enabled {
@@ -543,6 +550,9 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
             available
             && dynamicImportCapability
                 .dynamicImportAvailableInLocalExperimentalGate
+        let dynamicImportRewriteAvailable =
+            available
+            && dynamicImportRewriteExperimentAllowed
         let surface: ChromeMV3ServiceWorkerJSExecutionSurface
         if moduleState != .enabled || extensionEnabled == false {
             surface = .none
@@ -573,6 +583,14 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
             dynamicImportGeneratedBundleOnly: true,
             dynamicImportStringLiteralLocalOnly: true,
             dynamicImportAvailable: dynamicImportAvailable,
+            dynamicImportRewriteExperimentAvailableInLocalExperimentalGate:
+                dynamicImportRewriteAvailable,
+            dynamicImportRewriteExperimentAvailableByDefault: false,
+            dynamicImportRewriteExperimentScope:
+                dynamicImportRewriteAvailable ? .generatedBundleOnly : .blocked,
+            dynamicImportRewriteExperimentAllowed:
+                dynamicImportRewriteExperimentAllowed,
+            dynamicImportRewriteExperimentMutatesGeneratedBundle: false,
             dynamicImportCapabilityProbe: dynamicImportCapability,
             dynamicImportCapabilityBlockers: dynamicImportCapability.blockers,
             moduleWorkerImportAvailable: false,
@@ -588,6 +606,7 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
                         "Classic worker execution is supported; module worker execution is precisely blocked until a verified module loader exists.",
                         "Classic importScripts is available only while the local experimental gate is open and only for generated-bundle-contained extension resources.",
                         "Dynamic import policy is local-experimental only, default-off, string-literal-only if ever enabled, and constrained to generated-bundle-contained extension resources.",
+                        "Dynamic import rewrite experiment is an explicit harness-only transform, default-off, generated-bundle-only, string-literal-only, and never mutates generated bundle artifacts.",
                         "Network imports, file/data/blob URL imports, absolute filesystem imports, symlink escapes, and module worker import remain blocked.",
                         "Lifetime transitions are explicit fixture calls only.",
                         "Stable product runtime remains default-off.",
@@ -724,6 +743,7 @@ struct ChromeMV3ServiceWorkerJSExecutionRequest {
     var moduleState: ChromeMV3ProfileHostModuleState
     var extensionEnabled: Bool
     var localExperimentalGateAllowed: Bool
+    var dynamicImportRewriteExperimentAllowed: Bool
 
     init(
         manifest: ChromeMV3Manifest,
@@ -732,7 +752,8 @@ struct ChromeMV3ServiceWorkerJSExecutionRequest {
         profileID: String,
         moduleState: ChromeMV3ProfileHostModuleState = .enabled,
         extensionEnabled: Bool = true,
-        localExperimentalGateAllowed: Bool = false
+        localExperimentalGateAllowed: Bool = false,
+        dynamicImportRewriteExperimentAllowed: Bool = false
     ) {
         self.manifest = manifest
         self.generatedBundleRecord = generatedBundleRecord
@@ -747,6 +768,8 @@ struct ChromeMV3ServiceWorkerJSExecutionRequest {
         self.moduleState = moduleState
         self.extensionEnabled = extensionEnabled
         self.localExperimentalGateAllowed = localExperimentalGateAllowed
+        self.dynamicImportRewriteExperimentAllowed =
+            dynamicImportRewriteExperimentAllowed
     }
 }
 
@@ -845,6 +868,7 @@ enum ChromeMV3ServiceWorkerJSDynamicImportBlocker:
 {
     case absoluteFilesystemPathRejected
     case blobURLRejected
+    case circularImportBlocked
     case dataURLRejected
     case dynamicImportArgumentNonString
     case dynamicImportExecutionSurfaceUnsupported
@@ -863,10 +887,13 @@ enum ChromeMV3ServiceWorkerJSDynamicImportBlocker:
     case importPathUnsafe
     case importedModuleDirectoryRejected
     case importedModuleMissing
+    case importedModuleSyntaxUnsupported
     case importedModuleNotCopiedFromGeneratedBundleRecord
     case importedModuleSymbolicLinkRejected
     case importedModuleUTF8Required
     case remoteURLRejected
+    case scriptEvaluationFailed
+    case staticModuleImportUnsupported
     case unsupportedScheme
 
     static func < (
@@ -906,6 +933,10 @@ struct ChromeMV3ServiceWorkerJSDynamicImportRecord:
     var resolvedPath: String?
     var stringLiteral: Bool
     var generatedBundlePathValidated: Bool
+    var rewriteEligible: Bool
+    var rewritten: Bool
+    var evaluated: Bool
+    var evaluationOrder: Int?
     var sourceSHA256: String?
     var sourceByteCount: Int?
     var blockers: [ChromeMV3ServiceWorkerJSDynamicImportBlocker]
@@ -934,6 +965,9 @@ struct ChromeMV3ServiceWorkerJSResourceLoadRecord:
         ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe
     var dynamicImportRecords: [ChromeMV3ServiceWorkerJSDynamicImportRecord]
     var dynamicImportBlockers: [ChromeMV3ServiceWorkerJSDynamicImportBlocker]
+    var dynamicImportRewriteExperimentApplied: Bool
+    var dynamicImportRewriteEvaluationCount: Int
+    var dynamicImportRewriteGeneratedBundleArtifactsMutated: Bool
     var importScriptsResolvedCount: Int
     var importedScripts: [ChromeMV3ServiceWorkerJSImportedScriptRecord]
     var importScriptsBlockers: [ChromeMV3ServiceWorkerJSImportScriptsBlocker]
@@ -1079,6 +1113,11 @@ enum ChromeMV3ServiceWorkerJSResourceLoader {
             } ?? false
         let dynamicImportCapability =
             ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe.evaluate()
+        let dynamicImportRewriteAllowed =
+            request.localExperimentalGateAllowed
+            && request.dynamicImportRewriteExperimentAllowed
+            && request.moduleState == .enabled
+            && request.extensionEnabled
         let dynamicImportRecords =
             source.map {
                 dynamicImportRecordsServiceWorkerJS(
@@ -1087,7 +1126,9 @@ enum ChromeMV3ServiceWorkerJSResourceLoader {
                     parentURL: candidate,
                     generatedBundleRecord: record,
                     generatedBundleRoot: root,
-                    capability: dynamicImportCapability
+                    capability: dynamicImportCapability,
+                    includeCapabilityBlockers:
+                        dynamicImportRewriteAllowed == false
                 )
             } ?? []
         let dynamicImportBlockers = uniqueSortedServiceWorkerJS(
@@ -1097,18 +1138,29 @@ enum ChromeMV3ServiceWorkerJSResourceLoader {
             blockers.append(.staticModuleImportUnsupported)
         }
         if dynamicImportDetected {
-            blockers.append(
-                contentsOf:
-                    dynamicImportCapability.blockers.compactMap(
-                        resourceLoadBlockerServiceWorkerJS
-                    )
-            )
+            if dynamicImportRewriteAllowed == false {
+                blockers.append(
+                    contentsOf:
+                        dynamicImportCapability.blockers.compactMap(
+                            resourceLoadBlockerServiceWorkerJS
+                        )
+                )
+            }
         }
         blockers = uniqueSortedServiceWorkerJS(blockers)
+        let transformedSource =
+            dynamicImportDetected
+                && dynamicImportRewriteAllowed
+                && dynamicImportBlockers.isEmpty
+                && staticImportDetected == false
+                ? source.map(rewriteDynamicImportsForHarnessServiceWorkerJS)
+                : nil
+        let executionSource = transformedSource ?? source
         let canExecute =
             blockers.isEmpty
+            && dynamicImportBlockers.isEmpty
             && type == "classic"
-            && source != nil
+            && executionSource != nil
         let data = source.map { Data($0.utf8) }
         let loadRecord = ChromeMV3ServiceWorkerJSResourceLoadRecord(
             generatedBundleRecordID: record?.id,
@@ -1127,6 +1179,10 @@ enum ChromeMV3ServiceWorkerJSResourceLoader {
             dynamicImportCapabilityProbe: dynamicImportCapability,
             dynamicImportRecords: dynamicImportRecords,
             dynamicImportBlockers: dynamicImportBlockers,
+            dynamicImportRewriteExperimentApplied:
+                transformedSource != nil,
+            dynamicImportRewriteEvaluationCount: 0,
+            dynamicImportRewriteGeneratedBundleArtifactsMutated: false,
             importScriptsResolvedCount: 0,
             importedScripts: [],
             importScriptsBlockers: [],
@@ -1139,7 +1195,10 @@ enum ChromeMV3ServiceWorkerJSResourceLoader {
                         "Only an extension-owned resource copied into its generated bundle record may execute.",
                         "The worker path is checked for relative-path safety, generated-root containment, regular-file presence, and symbolic-link rejection.",
                         "Classic importScripts calls are resolved synchronously at execution time and remain constrained to copied generated-bundle resources.",
-                        "Dynamic import expressions are capability-probed separately; without a JavaScriptCore module loader hook they remain blocked before execution.",
+                        dynamicImportRewriteAllowed
+                            ? "Dynamic import expressions were scanned for a harness-only string-literal rewrite; safe candidates may execute through the generated-root-contained helper."
+                            : "Dynamic import expressions are capability-probed separately; without a JavaScriptCore module loader hook they remain blocked before execution.",
+                        "The dynamic-import rewrite experiment uses transformed in-memory source and does not mutate generated bundle artifacts.",
                         "web_accessible_resources is not required for internal service-worker package loading.",
                         "Generated inert wrapper and service-worker shim resources must already exist.",
                     ]
@@ -1151,7 +1210,7 @@ enum ChromeMV3ServiceWorkerJSResourceLoader {
         )
         return ChromeMV3ServiceWorkerJSLoadedResource(
             record: loadRecord,
-            source: canExecute ? source : nil,
+            source: canExecute ? executionSource : nil,
             sourceURL: canExecute ? candidate : nil
         )
     }
@@ -1363,6 +1422,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
     private var lifecycleKeepaliveIDsByPort: [String: String] = [:]
     private var nextPortSequence = 1
     private var nextImportEvaluationOrder = 1
+    private var nextDynamicImportEvaluationOrder = 1
     #if canImport(JavaScriptCore)
         private var virtualMachine: JSVirtualMachine?
         private var context: JSContext?
@@ -1393,7 +1453,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             localExperimentalGateAllowed:
                 request.localExperimentalGateAllowed,
             generatedBundleRecordAvailable:
-                request.generatedBundleRecord != nil
+                request.generatedBundleRecord != nil,
+            dynamicImportRewriteExperimentAllowed:
+                request.dynamicImportRewriteExperimentAllowed
         )
     }
 
@@ -1510,6 +1572,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             context.exception = nil
             self.context = context
             installImportScriptsHost(in: context)
+            installDynamicImportRewriteHost(in: context)
             _ = context.evaluateScript(
                 Self.registrationShim,
                 withSourceURL:
@@ -1545,6 +1608,23 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                         loaded.record.diagnostics
                             + [
                                 "Extension-owned classic worker evaluation failed inside the isolated JavaScriptCore surface.",
+                            ]
+                )
+            }
+            if loaded.record.dynamicImportRewriteExperimentApplied,
+               let blocker = resourceLoadRecord?.dynamicImportBlockers.first
+            {
+                self.context = nil
+                return finishStart(
+                    status: .failed,
+                    blockers: [.scriptEvaluationFailed],
+                    lastErrorMessage:
+                        "Rewritten dynamic import blocked by \(blocker.rawValue).",
+                    diagnostics:
+                        (resourceLoadRecord?.diagnostics
+                            ?? loaded.record.diagnostics)
+                            + [
+                                "Harness-only dynamic import rewrite dependency evaluation did not complete safely.",
                             ]
                 )
             }
@@ -1893,6 +1973,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         lifecycleKeepaliveIDsByPort.removeAll()
         nextPortSequence = 1
         nextImportEvaluationOrder = 1
+        nextDynamicImportEvaluationOrder = 1
         tearDownJavaScriptSurface(status: .stoppedAfterReset)
     }
 
@@ -2242,6 +2323,40 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             )
         }
 
+        private func installDynamicImportRewriteHost(in context: JSContext) {
+            let host: @convention(block) (JSValue) -> NSDictionary = {
+                [weak self] specifier in
+                guard let self else {
+                    return [
+                        "ok": false,
+                        "blocker":
+                            ChromeMV3ServiceWorkerJSDynamicImportBlocker
+                            .generatedBundleRecordMissing.rawValue,
+                        "error":
+                            "Dynamic import rewrite resolver owner is unavailable.",
+                    ]
+                }
+                guard let requestPath = specifier.toString(),
+                      requestPath.isEmpty == false
+                else {
+                    return self.recordFailedDynamicImport(
+                        requestPath: "<non-string>",
+                        blocker: .dynamicImportArgumentNonString,
+                        message:
+                            "Dynamic import rewrite accepts only string specifiers."
+                    )
+                }
+                return self.evaluateDynamicImportRewrite(
+                    requestPath: requestPath
+                )
+            }
+            context.setObject(
+                host,
+                forKeyedSubscript:
+                    "__sumiDynamicImportRewriteHost" as NSString
+            )
+        }
+
         private func evaluateScriptInContext(
             _ source: String,
             sourceURL: URL,
@@ -2334,6 +2449,81 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             }
             syncImportRecordsIntoResourceLoad()
             return ["ok": true]
+        }
+
+        private func evaluateDynamicImportRewrite(
+            requestPath: String
+        ) -> NSDictionary {
+            guard policy
+                .dynamicImportRewriteExperimentAvailableInLocalExperimentalGate
+            else {
+                return recordFailedDynamicImport(
+                    requestPath: requestPath,
+                    blocker: .dynamicImportExecutionSurfaceUnsupported,
+                    message:
+                        "Dynamic import rewrite experiment is not enabled for this local scoped harness run."
+                )
+            }
+            guard let context else {
+                return recordFailedDynamicImport(
+                    requestPath: requestPath,
+                    blocker: .scriptEvaluationFailed,
+                    message:
+                        "JavaScriptCore context is unavailable during dynamic import rewrite evaluation."
+                )
+            }
+            let loaded = resolveDynamicImportModule(requestPath)
+            if loaded.record.rewriteEligible == false {
+                recordDynamicImport(loaded.record)
+                return dynamicImportFailureResponse(loaded.record)
+            }
+            guard let source = loaded.source,
+                  let sourceURL = loaded.sourceURL
+            else {
+                recordDynamicImport(loaded.record)
+                return dynamicImportFailureResponse(loaded.record)
+            }
+            importEvaluationStack.append(sourceURL)
+            let message = evaluateScriptInContext(
+                source,
+                sourceURL: sourceURL,
+                context: context
+            )
+            _ = importEvaluationStack.popLast()
+            var record = loaded.record
+            record.rewritten = true
+            if let message {
+                record.evaluated = false
+                record.blockers =
+                    uniqueSortedServiceWorkerJS(
+                        record.blockers + [.scriptEvaluationFailed]
+                    )
+                record.diagnostics =
+                    uniqueSortedServiceWorkerJS(
+                        record.diagnostics
+                            + [
+                                "Rewritten dynamic import dependency evaluation failed: \(message)",
+                            ]
+                    )
+                recordDynamicImport(record)
+                return dynamicImportFailureResponse(record)
+            }
+            record.evaluated = true
+            record.evaluationOrder = nextDynamicImportEvaluationOrder
+            nextDynamicImportEvaluationOrder += 1
+            record.diagnostics =
+                uniqueSortedServiceWorkerJS(
+                    record.diagnostics
+                        + [
+                            "Rewritten dynamic import dependency executed inside the same JavaScriptCore context.",
+                            "The modeled module namespace is intentionally empty; CommonJS/global side effects and listener registration are the only supported diagnostic effects.",
+                        ]
+                )
+            recordDynamicImport(record)
+            return [
+                "ok": true,
+                "namespace": [:],
+            ]
         }
 
         private func resolveImportScript(
@@ -2567,6 +2757,272 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             )
         }
 
+        private func resolveDynamicImportModule(
+            _ requestPath: String
+        ) -> (
+            record: ChromeMV3ServiceWorkerJSDynamicImportRecord,
+            source: String?,
+            sourceURL: URL?
+        ) {
+            let parentURL = importEvaluationStack.last
+            let parentRelative =
+                parentURL.flatMap(relativePathInGeneratedBundle)
+                    ?? resourceLoadRecord?.serviceWorkerRelativePath
+                    ?? "unknown-worker.js"
+            guard let record = request.generatedBundleRecord else {
+                return failedDynamicImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    blocker: .generatedBundleRecordMissing,
+                    message:
+                        "No generated bundle record is available for dynamic import rewrite resolution."
+                )
+            }
+            let root = URL(
+                fileURLWithPath: record.generatedBundleRootPath,
+                isDirectory: true
+            ).standardizedFileURL
+            guard directoryExistsServiceWorkerJS(root) else {
+                return failedDynamicImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    blocker: .generatedBundleRootMissing,
+                    message:
+                        "Generated bundle root is missing for dynamic import rewrite resolution."
+                )
+            }
+            let normalized = normalizeDynamicImportPath(requestPath)
+            if let blocker = normalized.blocker {
+                return failedDynamicImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    blocker: blocker,
+                    message: normalized.message
+                )
+            }
+            guard let normalizedPath = normalized.path else {
+                return failedDynamicImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    blocker: .importPathUnsafe,
+                    message:
+                        "Dynamic import rewrite path could not be normalized safely."
+                )
+            }
+            let parentDirectory = parentURL?
+                .deletingLastPathComponent()
+                .standardizedFileURL ?? root
+            let candidate = parentDirectory
+                .appendingPathComponent(normalizedPath)
+                .standardizedFileURL
+            let resolvedRelative =
+                Sumi.relativePathInGeneratedBundle(candidate, root: root)
+            guard let resolvedRelative else {
+                return failedDynamicImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    resolvedPath: candidate.path,
+                    blocker: .importPathEscapesGeneratedBundle,
+                    message:
+                        "Dynamic import rewrite path resolves outside the generated bundle root."
+                )
+            }
+            if pathContainsSymbolicLinkServiceWorkerJS(
+                candidate,
+                root: root
+            ) {
+                return failedDynamicImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    resolvedRelative: resolvedRelative,
+                    resolvedPath: candidate.path,
+                    blocker: .importedModuleSymbolicLinkRejected,
+                    message:
+                        "Dynamic import rewrite path contains a symbolic link and was rejected."
+                )
+            }
+            guard containsServiceWorkerJS(root: root, candidate: candidate)
+            else {
+                return failedDynamicImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    resolvedRelative: resolvedRelative,
+                    resolvedPath: candidate.path,
+                    blocker: .importPathEscapesGeneratedBundle,
+                    message:
+                        "Dynamic import rewrite path resolves outside the generated bundle root after symlink resolution."
+                )
+            }
+            if importEvaluationStack.contains(where: {
+                $0.standardizedFileURL.path == candidate.path
+            }) {
+                return failedDynamicImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    resolvedRelative: resolvedRelative,
+                    resolvedPath: candidate.path,
+                    blocker: .circularImportBlocked,
+                    message:
+                        "Circular dynamic import rewrite dependency was blocked deterministically."
+                )
+            }
+            var isDirectory: ObjCBool = false
+            let exists = FileManager.default.fileExists(
+                atPath: candidate.path,
+                isDirectory: &isDirectory
+            )
+            guard exists else {
+                return failedDynamicImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    resolvedRelative: resolvedRelative,
+                    resolvedPath: candidate.path,
+                    blocker: .importedModuleMissing,
+                    message:
+                        "Dynamic import rewrite dependency is missing."
+                )
+            }
+            guard isDirectory.boolValue == false else {
+                return failedDynamicImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    resolvedRelative: resolvedRelative,
+                    resolvedPath: candidate.path,
+                    blocker: .importedModuleDirectoryRejected,
+                    message:
+                        "Dynamic import rewrite dependency resolved to a directory, not a script file."
+                )
+            }
+            if record.copiedResourcePaths.contains(resolvedRelative) == false {
+                return failedDynamicImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    resolvedRelative: resolvedRelative,
+                    resolvedPath: candidate.path,
+                    blocker:
+                        .importedModuleNotCopiedFromGeneratedBundleRecord,
+                    message:
+                        "Dynamic import rewrite dependency is not recorded as a copied generated-bundle resource."
+                )
+            }
+            guard let data = try? Data(contentsOf: candidate),
+                  let source = String(data: data, encoding: .utf8)
+            else {
+                return failedDynamicImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    resolvedRelative: resolvedRelative,
+                    resolvedPath: candidate.path,
+                    blocker: .importedModuleUTF8Required,
+                    message:
+                        "Dynamic import rewrite dependency is not valid UTF-8 JavaScript source."
+                )
+            }
+            if containsServiceWorkerJSRegex(
+                "(?m)^\\s*import\\s+(?!\\()",
+                in: source
+            ) {
+                return failedDynamicImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    resolvedRelative: resolvedRelative,
+                    resolvedPath: candidate.path,
+                    blocker: .staticModuleImportUnsupported,
+                    message:
+                        "Static module import inside a rewritten dynamic dependency is unsupported."
+                )
+            }
+            if containsServiceWorkerJSRegex(
+                "(?m)^\\s*export\\s+",
+                in: source
+            ) {
+                return failedDynamicImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    resolvedRelative: resolvedRelative,
+                    resolvedPath: candidate.path,
+                    blocker: .importedModuleSyntaxUnsupported,
+                    message:
+                        "ES module export syntax inside a rewritten dependency is unsupported by the classic JavaScriptCore harness."
+                )
+            }
+            let nestedRecords = dynamicImportRecordsServiceWorkerJS(
+                in: source,
+                parentScriptRelativePath: resolvedRelative,
+                parentURL: candidate,
+                generatedBundleRecord: record,
+                generatedBundleRoot: root,
+                capability: policy.dynamicImportCapabilityProbe,
+                includeCapabilityBlockers: false
+            )
+            let nestedBlockers = uniqueSortedServiceWorkerJS(
+                nestedRecords.flatMap(\.blockers)
+            )
+            if let blocker = nestedBlockers.first {
+                return failedDynamicImport(
+                    requestPath: requestPath,
+                    parentRelative: parentRelative,
+                    resolvedRelative: resolvedRelative,
+                    resolvedPath: candidate.path,
+                    blocker: blocker,
+                    message:
+                        "Nested dynamic import rewrite dependency failed validation with \(blocker.rawValue)."
+                )
+            }
+            let transformedSource =
+                nestedRecords.isEmpty
+                    ? source
+                    : rewriteDynamicImportsForHarnessServiceWorkerJS(source)
+            return (
+                dynamicImportRecordServiceWorkerJS(
+                    requestPath: requestPath,
+                    parentScriptRelativePath: parentRelative,
+                    resolvedRelativePath: resolvedRelative,
+                    resolvedPath: candidate.path,
+                    stringLiteral: true,
+                    generatedBundlePathValidated: true,
+                    sourceData: data,
+                    blockers: [],
+                    diagnostics: [
+                        "Dynamic import rewrite dependency was resolved inside the generated bundle root.",
+                        "Dynamic import rewrite dependency is recorded as a copied generated-bundle resource.",
+                        "Dependency source will be evaluated as classic script in the existing JavaScriptCore context.",
+                    ]
+                ),
+                transformedSource,
+                candidate
+            )
+        }
+
+        private func failedDynamicImport(
+            requestPath: String,
+            parentRelative: String,
+            resolvedRelative: String? = nil,
+            resolvedPath: String? = nil,
+            blocker: ChromeMV3ServiceWorkerJSDynamicImportBlocker,
+            message: String
+        ) -> (
+            record: ChromeMV3ServiceWorkerJSDynamicImportRecord,
+            source: String?,
+            sourceURL: URL?
+        ) {
+            (
+                dynamicImportRecordServiceWorkerJS(
+                    requestPath: requestPath,
+                    parentScriptRelativePath: parentRelative,
+                    resolvedRelativePath: resolvedRelative,
+                    resolvedPath: resolvedPath,
+                    stringLiteral: true,
+                    generatedBundlePathValidated: false,
+                    sourceData: nil,
+                    blockers: [blocker],
+                    diagnostics: [message]
+                ),
+                nil,
+                nil
+            )
+        }
+
         private func failedImport(
             requestPath: String,
             parentRelative: String,
@@ -2672,6 +3128,68 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 "error":
                     record.diagnostics.first
                     ?? "importScripts import failed.",
+            ]
+        }
+
+        private func recordFailedDynamicImport(
+            requestPath: String,
+            blocker: ChromeMV3ServiceWorkerJSDynamicImportBlocker,
+            message: String
+        ) -> NSDictionary {
+            let parentRelative = importEvaluationStack.last
+                .flatMap(relativePathInGeneratedBundle)
+                ?? resourceLoadRecord?.serviceWorkerRelativePath
+                ?? "unknown-worker.js"
+            let record = dynamicImportRecordServiceWorkerJS(
+                requestPath: requestPath,
+                parentScriptRelativePath: parentRelative,
+                resolvedRelativePath: nil,
+                resolvedPath: nil,
+                stringLiteral: requestPath != "<non-string>",
+                generatedBundlePathValidated: false,
+                sourceData: nil,
+                blockers: [blocker],
+                diagnostics: [message]
+            )
+            recordDynamicImport(record)
+            return dynamicImportFailureResponse(record)
+        }
+
+        private func recordDynamicImport(
+            _ record: ChromeMV3ServiceWorkerJSDynamicImportRecord
+        ) {
+            guard var load = resourceLoadRecord else { return }
+            let existingIndex = load.dynamicImportRecords.firstIndex {
+                $0.requestPath == record.requestPath
+                    && $0.parentScriptRelativePath
+                        == record.parentScriptRelativePath
+                    && $0.resolvedRelativePath == record.resolvedRelativePath
+                    && $0.evaluated == false
+            }
+            if let existingIndex {
+                load.dynamicImportRecords[existingIndex] = record
+            } else {
+                load.dynamicImportRecords.append(record)
+            }
+            load.dynamicImportBlockers = uniqueSortedServiceWorkerJS(
+                load.dynamicImportRecords.flatMap(\.blockers)
+            )
+            load.dynamicImportRewriteEvaluationCount =
+                load.dynamicImportRecords.filter(\.evaluated).count
+            resourceLoadRecord = load
+        }
+
+        private func dynamicImportFailureResponse(
+            _ record: ChromeMV3ServiceWorkerJSDynamicImportRecord
+        ) -> NSDictionary {
+            let blocker =
+                record.blockers.first ?? .dynamicImportExecutionSurfaceUnsupported
+            return [
+                "ok": false,
+                "blocker": blocker.rawValue,
+                "error":
+                    record.diagnostics.first
+                    ?? "Dynamic import rewrite failed.",
             ]
         }
 
@@ -2984,6 +3502,27 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             : 'importScripts import failed.');
         }
         return undefined;
+      };
+      globalThis.__sumiDynamicImportRewrite = function (specifier) {
+        if (typeof specifier !== 'string') {
+          noteBlocked('dynamicImportRewrite.nonStringSpecifier');
+          return Promise.reject(new Error('Dynamic import rewrite requires a string specifier.'));
+        }
+        if (typeof globalThis.__sumiDynamicImportRewriteHost !== 'function') {
+          noteBlocked('dynamicImportRewrite.hostMissing');
+          return Promise.reject(new Error('Dynamic import rewrite host resolver is unavailable.'));
+        }
+        const result = globalThis.__sumiDynamicImportRewriteHost(specifier);
+        if (result && result.ok === true) {
+          return Promise.resolve(result.namespace || {});
+        }
+        const blocker = result && result.blocker
+          ? String(result.blocker)
+          : 'unknown';
+        noteBlocked(`dynamicImportRewrite.${blocker}`);
+        return Promise.reject(new Error(result && result.error
+          ? String(result.error)
+          : 'Dynamic import rewrite failed.'));
       };
       for (const name of [
         'fetch',
@@ -3360,13 +3899,29 @@ private func containsServiceWorkerJSRegex(
     return expression.firstMatch(in: source, range: range) != nil
 }
 
+private func rewriteDynamicImportsForHarnessServiceWorkerJS(
+    _ source: String
+) -> String {
+    guard let expression = try? NSRegularExpression(
+        pattern: #"\bimport\s*\(\s*(['"])(.*?)\1\s*\)"#
+    ) else { return source }
+    let range = NSRange(source.startIndex..., in: source)
+    return expression.stringByReplacingMatches(
+        in: source,
+        range: range,
+        withTemplate:
+            #"globalThis.__sumiDynamicImportRewrite($1$2$1)"#
+    )
+}
+
 private func dynamicImportRecordsServiceWorkerJS(
     in source: String,
     parentScriptRelativePath: String,
     parentURL: URL?,
     generatedBundleRecord: ChromeMV3GeneratedBundleRecord?,
     generatedBundleRoot: URL?,
-    capability: ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe
+    capability: ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe,
+    includeCapabilityBlockers: Bool
 ) -> [ChromeMV3ServiceWorkerJSDynamicImportRecord] {
     guard let expression = try? NSRegularExpression(
         pattern: #"\bimport\s*\(\s*(['"])(.*?)\1\s*\)"#
@@ -3383,7 +3938,8 @@ private func dynamicImportRecordsServiceWorkerJS(
                 parentURL: parentURL,
                 generatedBundleRecord: generatedBundleRecord,
                 generatedBundleRoot: generatedBundleRoot,
-                capability: capability
+                capability: capability,
+                includeCapabilityBlockers: includeCapabilityBlockers
             )
         }
     let sourceWithoutStringLiteralImports = expression
@@ -3405,13 +3961,21 @@ private func dynamicImportRecordsServiceWorkerJS(
                 resolvedPath: nil,
                 stringLiteral: false,
                 generatedBundlePathValidated: false,
+                rewriteEligible: false,
+                rewritten: false,
+                evaluated: false,
+                evaluationOrder: nil,
                 sourceSHA256: nil,
                 sourceByteCount: nil,
                 blockers:
                     uniqueSortedServiceWorkerJS(
                         [.dynamicImportArgumentNonString]
-                            + capability.blockers.compactMap(
-                                dynamicImportBlockerServiceWorkerJS
+                            + (
+                                includeCapabilityBlockers
+                                    ? capability.blockers.compactMap(
+                                        dynamicImportBlockerServiceWorkerJS
+                                    )
+                                    : []
                             )
                     ),
                 diagnostics:
@@ -3433,12 +3997,21 @@ private func dynamicImportRecordServiceWorkerJS(
     parentURL: URL?,
     generatedBundleRecord: ChromeMV3GeneratedBundleRecord?,
     generatedBundleRoot: URL?,
-    capability: ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe
+    capability: ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe,
+    includeCapabilityBlockers: Bool
 ) -> ChromeMV3ServiceWorkerJSDynamicImportRecord {
-    var blockers = capability.blockers.compactMap(
-        dynamicImportBlockerServiceWorkerJS
-    )
-    var diagnostics = capability.diagnostics
+    var blockers =
+        includeCapabilityBlockers
+            ? capability.blockers.compactMap(
+                dynamicImportBlockerServiceWorkerJS
+            )
+            : []
+    var diagnostics =
+        includeCapabilityBlockers
+            ? capability.diagnostics
+            : [
+                "Dynamic import native JavaScriptCore capability blockers are reported by policy, but omitted from this rewrite-candidate path validation.",
+            ]
     guard let record = generatedBundleRecord else {
         blockers.append(.generatedBundleRecordMissing)
         diagnostics.append(
@@ -3586,7 +4159,11 @@ private func dynamicImportRecordServiceWorkerJS(
     }
     diagnostics.append(
         pathBlockers.isEmpty
-            ? "Dynamic import string-literal path was validated inside the generated bundle root, but execution remains blocked by JavaScriptCore capability."
+            ? (
+                includeCapabilityBlockers
+                    ? "Dynamic import string-literal path was validated inside the generated bundle root, but execution remains blocked by JavaScriptCore capability."
+                    : "Dynamic import string-literal path is eligible for harness-only generated-root-contained rewrite."
+            )
             : "Dynamic import string-literal path failed generated-bundle validation."
     )
     return dynamicImportRecordServiceWorkerJS(
@@ -3613,16 +4190,23 @@ private func dynamicImportRecordServiceWorkerJS(
     blockers: [ChromeMV3ServiceWorkerJSDynamicImportBlocker],
     diagnostics: [String]
 ) -> ChromeMV3ServiceWorkerJSDynamicImportRecord {
-    ChromeMV3ServiceWorkerJSDynamicImportRecord(
+    let uniqueBlockers = uniqueSortedServiceWorkerJS(blockers)
+    return ChromeMV3ServiceWorkerJSDynamicImportRecord(
         requestPath: requestPath,
         parentScriptRelativePath: parentScriptRelativePath,
         resolvedRelativePath: resolvedRelativePath,
         resolvedPath: resolvedPath,
         stringLiteral: stringLiteral,
         generatedBundlePathValidated: generatedBundlePathValidated,
+        rewriteEligible:
+            stringLiteral && generatedBundlePathValidated
+                && uniqueBlockers.isEmpty,
+        rewritten: false,
+        evaluated: false,
+        evaluationOrder: nil,
         sourceSHA256: sourceData.map(sha256HexServiceWorkerJS),
         sourceByteCount: sourceData?.count,
-        blockers: uniqueSortedServiceWorkerJS(blockers),
+        blockers: uniqueBlockers,
         diagnostics: uniqueSortedServiceWorkerJS(diagnostics)
     )
 }

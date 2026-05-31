@@ -374,15 +374,24 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             "bitwarden-dynamic",
             isDirectory: true
         )
+        var manifest = minimalManifest(name: "Bitwarden Dynamic Import")
+        manifest["web_accessible_resources"] = [
+            [
+                "resources": ["dependency.js"],
+                "matches": ["https://example.com/*"],
+            ],
+        ]
         try writePackage(
             at: package,
-            manifest: minimalManifest(name: "Bitwarden Dynamic Import"),
+            manifest: manifest,
             extraFiles: [
                 "background.js": """
-                import('./dependency.js');
-                chrome.runtime.onMessage.addListener(() => 'dynamic');
+                import('./dependency.js').then(() => {
+                  chrome.runtime.onMessage.addListener(() => globalThis.dynamicDependencyValue);
+                });
                 """,
-                "dependency.js": "export const value = 'dependency';",
+                "dependency.js":
+                    "globalThis.dynamicDependencyValue = 'dependency';",
             ]
         )
 
@@ -403,54 +412,35 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             report.rows.first?.serviceWorkerEventReadiness
         )
 
-        XCTAssertEqual(readiness.executionStartResult?.status, .blocked)
+        XCTAssertEqual(readiness.executionStartResult?.status, .running)
         XCTAssertTrue(
             readiness.resourceLoadResult?.dynamicImportDetected == true
         )
         XCTAssertTrue(
-            readiness.resourceLoadResult?.blockers.contains(
-                .dynamicImportLowerLevelAPINotAvailable
-            ) == true
+            readiness.resourceLoadResult?
+                .dynamicImportRewriteExperimentApplied == true
         )
-        XCTAssertTrue(
-            readiness.resourceLoadResult?.blockers.contains(
-                .dynamicImportResolverHookUnavailable
-            ) == true
+        XCTAssertEqual(
+            readiness.resourceLoadResult?.dynamicImportRewriteEvaluationCount,
+            1
         )
+        XCTAssertEqual(readiness.dynamicImportBlockers, [])
         XCTAssertTrue(
-            readiness.resourceLoadResult?.blockers.contains(
-                .dynamicImportGeneratedRootContainmentUnproven
-            ) == true
+            readiness.capturedListenerFamilies.contains(.runtimeOnMessage)
         )
+        XCTAssertEqual(readiness.staticVsExecutionDelta.status, .executionCaptured)
         XCTAssertTrue(
-            readiness.dynamicImportBlockers.contains(
-                .dynamicImportLowerLevelAPINotAvailable
-            )
-        )
-        XCTAssertTrue(
-            readiness.dynamicImportBlockers.contains(
-                .dynamicImportResolverHookUnavailable
-            )
-        )
-        XCTAssertTrue(
-            readiness.dynamicImportBlockers.contains(
-                .dynamicImportGeneratedRootContainmentUnproven
-            )
-        )
-        XCTAssertTrue(
-            readiness.staticVsExecutionDelta.unsupportedListenerForms
-                .contains(
-                    "dynamicImport.dynamicImportLowerLevelAPINotAvailable"
-                )
-        )
-        XCTAssertTrue(
-            readiness.staticVsExecutionDelta.unsupportedListenerForms
-                .contains(
-                    "dynamicImport.dynamicImportResolverHookUnavailable"
-                )
+            readiness.actualDispatchResults.contains {
+                $0.source == .popupOptionsRuntimeMessage
+                    && $0.resultKind == .delivered
+            }
         )
         XCTAssertTrue(readiness.gateClosedAfterTrial)
         XCTAssertFalse(readiness.jsExecutionPolicy.dynamicImportAvailable)
+        XCTAssertTrue(
+            readiness.jsExecutionPolicy
+                .dynamicImportRewriteExperimentAvailableInLocalExperimentalGate
+        )
         XCTAssertFalse(readiness.jsExecutionPolicy.moduleWorkerImportAvailable)
     }
 

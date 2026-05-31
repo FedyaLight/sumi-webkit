@@ -479,6 +479,241 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         }
     }
 
+    func testDynamicImportRewriteExperimentIsExplicitAndPolicyBlocked()
+        throws
+    {
+        let fixture = try makeHarness(
+            source: "import('./dependency.js');",
+            localExperimentalGateAllowed: true
+        )
+        let defaultHarness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request()
+        )
+        XCTAssertEqual(defaultHarness.start().status, .blocked)
+        XCTAssertFalse(
+            defaultHarness.policy
+                .dynamicImportRewriteExperimentAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(
+            defaultHarness.snapshot.resourceLoad?
+                .dynamicImportRewriteExperimentApplied == true
+        )
+
+        let rewriteFixture = try makeHarness(
+            source: "import('./dependency.js');",
+            localExperimentalGateAllowed: true,
+            dynamicImportRewriteExperimentAllowed: true
+        )
+        let moduleDisabled = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: rewriteFixture.request(moduleState: .disabled)
+        )
+        let extensionDisabled = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: rewriteFixture.request(extensionEnabled: false)
+        )
+
+        XCTAssertEqual(moduleDisabled.start().status, .blocked)
+        XCTAssertEqual(extensionDisabled.start().status, .blocked)
+        XCTAssertNil(moduleDisabled.snapshot.resourceLoad)
+        XCTAssertNil(extensionDisabled.snapshot.resourceLoad)
+        XCTAssertFalse(
+            moduleDisabled.policy
+                .dynamicImportRewriteExperimentAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(
+            extensionDisabled.policy
+                .dynamicImportRewriteExperimentAvailableInLocalExperimentalGate
+        )
+    }
+
+    func testDynamicImportRewriteExecutesGeneratedDependencyAndCapturesListener()
+        throws
+    {
+        let fixture = try makeHarness(
+            source: """
+            import('./dependency.js').then(() => {
+              chrome.runtime.onMessage.addListener((message) => {
+                return { loaded: globalThis.dynamicDependencyValue, value: message.value };
+              });
+            });
+            """,
+            localExperimentalGateAllowed: true,
+            dynamicImportRewriteExperimentAllowed: true
+        )
+        let generatedRecord = try generatedRecord(
+            fixture,
+            adding: [
+                "dependency.js":
+                    "globalThis.dynamicDependencyValue = 'dependency-loaded';",
+            ]
+        )
+        let backgroundURL = fixture.generatedRootURL
+            .appendingPathComponent("background.js")
+        let backgroundBefore = try Data(contentsOf: backgroundURL)
+        let dependencyURL = fixture.generatedRootURL
+            .appendingPathComponent("dependency.js")
+        let dependencyBefore = try Data(contentsOf: dependencyURL)
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request(generatedRecord: generatedRecord)
+        )
+
+        let started = harness.start()
+        let result = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            arguments: [.object(["value": .string("after-rewrite")])],
+            payloadSummary: "rewritten dynamic import listener"
+        )
+        let resource = try XCTUnwrap(harness.snapshot.resourceLoad)
+
+        XCTAssertEqual(started.status, .running)
+        XCTAssertTrue(
+            harness.policy
+                .dynamicImportRewriteExperimentAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(harness.policy.dynamicImportAvailable)
+        XCTAssertEqual(
+            harness.policy.dynamicImportRewriteExperimentScope,
+            .generatedBundleOnly
+        )
+        XCTAssertTrue(resource.dynamicImportRewriteExperimentApplied)
+        XCTAssertEqual(resource.dynamicImportRewriteEvaluationCount, 1)
+        XCTAssertFalse(
+            resource.dynamicImportRewriteGeneratedBundleArtifactsMutated
+        )
+        XCTAssertEqual(resource.dynamicImportBlockers, [])
+        XCTAssertEqual(
+            resource.dynamicImportRecords.first?.resolvedRelativePath,
+            "dependency.js"
+        )
+        XCTAssertEqual(resource.dynamicImportRecords.first?.rewritten, true)
+        XCTAssertEqual(resource.dynamicImportRecords.first?.evaluated, true)
+        XCTAssertTrue(harness.capturedListener(for: .runtimeOnMessage))
+        XCTAssertEqual(
+            result.responsePayload,
+            .object([
+                "loaded": .string("dependency-loaded"),
+                "value": .string("after-rewrite"),
+            ])
+        )
+        XCTAssertEqual(result.resultKind, .delivered)
+        XCTAssertEqual(try Data(contentsOf: backgroundURL), backgroundBefore)
+        XCTAssertEqual(try Data(contentsOf: dependencyURL), dependencyBefore)
+    }
+
+    func testDynamicImportRewriteBlocksUnsafeAndComputedSpecifiers() throws {
+        let cases: [(String, ChromeMV3ServiceWorkerJSDynamicImportBlocker)] = [
+            ("import('missing.js');", .importedModuleMissing),
+            ("import('../outside.js');", .importPathTraversalRejected),
+            ("import('/Users/example/outside.js');", .absoluteFilesystemPathRejected),
+            ("import('https://example.com/remote.js');", .remoteURLRejected),
+            ("import('data:text/javascript,0');", .dataURLRejected),
+            ("import('blob:https://example.com/id');", .blobURLRejected),
+            ("import('file:///tmp/worker.js');", .fileURLRejected),
+            ("const path = './dependency.js'; import(path);", .dynamicImportArgumentNonString),
+            ("import(`./dependency.js`);", .dynamicImportArgumentNonString),
+        ]
+
+        for (source, blocker) in cases {
+            let fixture = try makeHarness(
+                source: source,
+                localExperimentalGateAllowed: true,
+                dynamicImportRewriteExperimentAllowed: true
+            )
+            let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+                request: fixture.request()
+            )
+
+            XCTAssertEqual(harness.start().status, .blocked, source)
+            XCTAssertTrue(
+                harness.policy
+                    .dynamicImportRewriteExperimentAvailableInLocalExperimentalGate,
+                source
+            )
+            XCTAssertTrue(
+                harness.snapshot.resourceLoad?.dynamicImportBlockers.contains(
+                    blocker
+                ) == true,
+                source
+            )
+            XCTAssertFalse(
+                harness.snapshot.resourceLoad?
+                    .dynamicImportRewriteExperimentApplied == true,
+                source
+            )
+        }
+    }
+
+    func testDynamicImportRewriteBlocksSymlinkUncopiedAndModuleSyntax()
+        throws
+    {
+        let symlinkFixture = try makeHarness(
+            source: "import('linked.js');",
+            localExperimentalGateAllowed: true,
+            dynamicImportRewriteExperimentAllowed: true
+        )
+        let outside = try temporaryDirectory()
+            .appendingPathComponent("outside-module.js")
+        try "globalThis.outside = true;"
+            .write(to: outside, atomically: true, encoding: .utf8)
+        let linked = symlinkFixture.generatedRootURL
+            .appendingPathComponent("linked.js")
+        try FileManager.default.createSymbolicLink(
+            at: linked,
+            withDestinationURL: outside
+        )
+        var symlinkRecord = symlinkFixture.generatedRecord
+        symlinkRecord.copiedResourcePaths.append("linked.js")
+        let symlinkHarness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: symlinkFixture.request(generatedRecord: symlinkRecord)
+        )
+
+        XCTAssertEqual(symlinkHarness.start().status, .blocked)
+        XCTAssertTrue(
+            symlinkHarness.snapshot.resourceLoad?.dynamicImportBlockers
+                .contains(.importedModuleSymbolicLinkRejected) == true
+        )
+
+        let uncopiedFixture = try makeHarness(
+            source: "import('./dependency.js');",
+            localExperimentalGateAllowed: true,
+            dynamicImportRewriteExperimentAllowed: true
+        )
+        try "globalThis.uncopied = true;".write(
+            to: uncopiedFixture.generatedRootURL
+                .appendingPathComponent("dependency.js"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let uncopiedHarness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: uncopiedFixture.request()
+        )
+
+        XCTAssertEqual(uncopiedHarness.start().status, .blocked)
+        XCTAssertTrue(
+            uncopiedHarness.snapshot.resourceLoad?.dynamicImportBlockers
+                .contains(.importedModuleNotCopiedFromGeneratedBundleRecord)
+                == true
+        )
+
+        let moduleFixture = try makeHarness(
+            source: "import('./module.js');",
+            localExperimentalGateAllowed: true,
+            dynamicImportRewriteExperimentAllowed: true
+        )
+        let moduleRecord = try generatedRecord(
+            moduleFixture,
+            adding: ["module.js": "export const value = 'unsupported';"]
+        )
+        let moduleHarness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: moduleFixture.request(generatedRecord: moduleRecord)
+        )
+
+        XCTAssertEqual(moduleHarness.start().status, .failed)
+        XCTAssertTrue(
+            moduleHarness.snapshot.resourceLoad?.dynamicImportBlockers
+                .contains(.importedModuleSyntaxUnsupported) == true
+        )
+    }
+
     func testUnsafeDynamicImportFormsAreDiagnosedPrecisely() throws {
         let cases: [(String, ChromeMV3ServiceWorkerJSDynamicImportBlocker)] = [
             ("import('missing.js');", .importedModuleMissing),
@@ -856,10 +1091,13 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             moduleState: .enabled,
             extensionEnabled: true,
             localExperimentalGateAllowed: true,
-            generatedBundleRecordAvailable: true
+            generatedBundleRecordAvailable: true,
+            dynamicImportRewriteExperimentAllowed: true
         )
 
         XCTAssertFalse(policy.serviceWorkerJSExecutionAvailableByDefault)
+        XCTAssertFalse(policy.dynamicImportRewriteExperimentAvailableByDefault)
+        XCTAssertFalse(policy.dynamicImportRewriteExperimentMutatesGeneratedBundle)
         XCTAssertFalse(policy.permanentBackgroundAvailable)
         XCTAssertFalse(policy.timersAllowed)
         XCTAssertFalse(policy.pollingAllowed)
@@ -884,12 +1122,14 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         var generatedRecord: ChromeMV3GeneratedBundleRecord
         var generatedRootURL: URL
         var localExperimentalGateAllowed: Bool
+        var dynamicImportRewriteExperimentAllowed: Bool
 
         func request(
             manifest: ChromeMV3Manifest? = nil,
             generatedRecord: ChromeMV3GeneratedBundleRecord? = nil,
             moduleState: ChromeMV3ProfileHostModuleState = .enabled,
-            extensionEnabled: Bool = true
+            extensionEnabled: Bool = true,
+            dynamicImportRewriteExperimentAllowed: Bool? = nil
         ) -> ChromeMV3ServiceWorkerJSExecutionRequest {
             ChromeMV3ServiceWorkerJSExecutionRequest(
                 manifest: manifest ?? self.manifest,
@@ -899,7 +1139,10 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
                 moduleState: moduleState,
                 extensionEnabled: extensionEnabled,
                 localExperimentalGateAllowed:
-                    localExperimentalGateAllowed
+                    localExperimentalGateAllowed,
+                dynamicImportRewriteExperimentAllowed:
+                    dynamicImportRewriteExperimentAllowed
+                    ?? self.dynamicImportRewriteExperimentAllowed
             )
         }
     }
@@ -908,7 +1151,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         source: String,
         extraFiles: [String: String] = [:],
         serviceWorkerType: String? = nil,
-        localExperimentalGateAllowed: Bool = false
+        localExperimentalGateAllowed: Bool = false,
+        dynamicImportRewriteExperimentAllowed: Bool = false
     ) throws -> HarnessFixture {
         let fixtureDirectory = try temporaryDirectory()
             .appendingPathComponent("extension", isDirectory: true)
@@ -964,8 +1208,30 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             manifest: stage.manifestSnapshot.normalizedManifest,
             generatedRecord: generated.record,
             generatedRootURL: generated.generatedBundleRootURL,
-            localExperimentalGateAllowed: localExperimentalGateAllowed
+            localExperimentalGateAllowed: localExperimentalGateAllowed,
+            dynamicImportRewriteExperimentAllowed:
+                dynamicImportRewriteExperimentAllowed
         )
+    }
+
+    private func generatedRecord(
+        _ fixture: HarnessFixture,
+        adding files: [String: String]
+    ) throws -> ChromeMV3GeneratedBundleRecord {
+        var record = fixture.generatedRecord
+        for (path, source) in files {
+            let url = fixture.generatedRootURL.appendingPathComponent(path)
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try source.write(to: url, atomically: true, encoding: .utf8)
+            if record.copiedResourcePaths.contains(path) == false {
+                record.copiedResourcePaths.append(path)
+            }
+        }
+        record.copiedResourcePaths.sort()
+        return record
     }
 
     private func temporaryDirectory() throws -> URL {
