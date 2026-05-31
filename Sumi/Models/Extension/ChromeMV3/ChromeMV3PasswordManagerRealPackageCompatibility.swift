@@ -863,6 +863,7 @@ struct ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness:
     var importScriptsResolvedCount: Int
     var importedScriptPaths: [String]
     var importScriptsBlockers: [ChromeMV3ServiceWorkerJSImportScriptsBlocker]
+    var dynamicImportBlockers: [ChromeMV3ServiceWorkerJSDynamicImportBlocker]
     var staticVsExecutionDelta:
         ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDelta
     var actualDispatchResults: [ChromeMV3ServiceWorkerJSDispatchRecord]
@@ -2317,6 +2318,9 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     + (resourceLoadResult?.importScriptsBlockers.map {
                         "serviceWorker.importScripts.\($0.rawValue)"
                     } ?? [])
+                    + (resourceLoadResult?.dynamicImportBlockers.map {
+                        "serviceWorker.dynamicImport.\($0.rawValue)"
+                    } ?? [])
                     + (executionStartResult?.blockers.map {
                         "serviceWorker.execution.\($0.rawValue)"
                     } ?? [])
@@ -2354,6 +2358,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     .sorted() ?? [],
             importScriptsBlockers:
                 resourceLoadResult?.importScriptsBlockers ?? [],
+            dynamicImportBlockers:
+                resourceLoadResult?.dynamicImportBlockers ?? [],
             staticVsExecutionDelta: delta,
             actualDispatchResults: dispatchResults,
             runtimePortSmoke: runtimePortSmoke,
@@ -2545,7 +2551,12 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     }
                     + (resourceLoadResult?.blockers.compactMap {
                         switch $0 {
-                        case .dynamicImportUnsupported,
+                        case .dynamicImportExecutionSurfaceUnsupported,
+                             .dynamicImportModuleNamespaceUnsupported,
+                             .dynamicImportNoLoader,
+                             .dynamicImportParseUnsupported,
+                             .dynamicImportPromiseDrainUnavailable,
+                             .dynamicImportUnsupported,
                              .staticModuleImportUnsupported:
                             return $0.rawValue
                         default:
@@ -2554,6 +2565,9 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     } ?? [])
                     + (resourceLoadResult?.importScriptsBlockers.map {
                         "importScripts.\($0.rawValue)"
+                    } ?? [])
+                    + (resourceLoadResult?.dynamicImportBlockers.map {
+                        "dynamicImport.\($0.rawValue)"
                     } ?? [])
             )
         let status:
@@ -2825,6 +2839,9 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         }
         if let blocker = resourceLoadResult?.blockers.first {
             return "Resolve scoped service-worker resource blocker \(blocker.rawValue) without enabling stable runtime load."
+        }
+        if let blocker = resourceLoadResult?.dynamicImportBlockers.first {
+            return "Resolve scoped dynamic import blocker \(blocker.rawValue) while keeping imports generated-bundle-contained and default-off."
         }
         if let blocker = resourceLoadResult?.importScriptsBlockers.first {
             return "Resolve scoped importScripts blocker \(blocker.rawValue) while keeping imports generated-bundle-contained."

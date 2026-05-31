@@ -366,6 +366,74 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertTrue(imported.gateClosedAfterTrial)
     }
 
+    func testScopedServiceWorkerTrialReportsPreciseDynamicImportBlocker()
+        throws
+    {
+        let root = try temporaryDirectory(named: "dynamic-import-real-package")
+        let package = root.appendingPathComponent(
+            "bitwarden-dynamic",
+            isDirectory: true
+        )
+        try writePackage(
+            at: package,
+            manifest: minimalManifest(name: "Bitwarden Dynamic Import"),
+            extraFiles: [
+                "background.js": """
+                import('./dependency.js');
+                chrome.runtime.onMessage.addListener(() => 'dynamic');
+                """,
+                "dependency.js": "export const value = 'dependency';",
+            ]
+        )
+
+        let report = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
+            rootURL: root,
+            targets: [
+                testTarget(
+                    id: "bitwarden-dynamic-import",
+                    targetClass: .bitwarden,
+                    root: package
+                ),
+            ],
+            serviceWorkerTrialGateSource: .explicitTestTrial,
+            writeReport: false,
+            now: { Date(timeIntervalSince1970: 11.875) }
+        )
+        let readiness = try XCTUnwrap(
+            report.rows.first?.serviceWorkerEventReadiness
+        )
+
+        XCTAssertEqual(readiness.executionStartResult?.status, .blocked)
+        XCTAssertTrue(
+            readiness.resourceLoadResult?.dynamicImportDetected == true
+        )
+        XCTAssertTrue(
+            readiness.resourceLoadResult?.blockers.contains(
+                .dynamicImportNoLoader
+            ) == true
+                || readiness.resourceLoadResult?.blockers.contains(
+                    .dynamicImportExecutionSurfaceUnsupported
+                ) == true
+        )
+        XCTAssertTrue(
+            readiness.dynamicImportBlockers.contains(.dynamicImportNoLoader)
+                || readiness.dynamicImportBlockers.contains(
+                    .dynamicImportExecutionSurfaceUnsupported
+                )
+        )
+        XCTAssertTrue(
+            readiness.staticVsExecutionDelta.unsupportedListenerForms
+                .contains("dynamicImport.dynamicImportNoLoader")
+                || readiness.staticVsExecutionDelta.unsupportedListenerForms
+                    .contains(
+                        "dynamicImport.dynamicImportExecutionSurfaceUnsupported"
+                    )
+        )
+        XCTAssertTrue(readiness.gateClosedAfterTrial)
+        XCTAssertFalse(readiness.jsExecutionPolicy.dynamicImportAvailable)
+        XCTAssertFalse(readiness.jsExecutionPolicy.moduleWorkerImportAvailable)
+    }
+
     func testLocalZIPTargetImportsThroughSafeZIPIntake() throws {
         let root = try temporaryDirectory(named: "zip-real-package")
         let allowed = root.appendingPathComponent("proton", isDirectory: true)

@@ -75,6 +75,262 @@ enum ChromeMV3ServiceWorkerJSImportScriptsScope:
     }
 }
 
+enum ChromeMV3ServiceWorkerJSDynamicImportScope:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case blocked
+    case generatedBundleOnly
+
+    static func < (
+        lhs: ChromeMV3ServiceWorkerJSDynamicImportScope,
+        rhs: ChromeMV3ServiceWorkerJSDynamicImportScope
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3ServiceWorkerJSDynamicImportCapabilityBlocker:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case dynamicImportExecutionSurfaceUnsupported
+    case dynamicImportModuleNamespaceUnsupported
+    case dynamicImportNoLoader
+    case dynamicImportParseUnsupported
+    case dynamicImportPromiseDrainUnavailable
+    case javaScriptCoreUnavailable
+
+    static func < (
+        lhs: ChromeMV3ServiceWorkerJSDynamicImportCapabilityBlocker,
+        rhs: ChromeMV3ServiceWorkerJSDynamicImportCapabilityBlocker
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var importExpressionParses: Bool
+    var moduleLoadingCanBeIntercepted: Bool
+    var promiseCompletionObservableWithoutTimers: Bool
+    var moduleNamespaceSupported: Bool
+    var executionSurfaceSupported: Bool
+    var dynamicImportAvailableInLocalExperimentalGate: Bool
+    var dynamicImportAvailableByDefault: Bool
+    var dynamicImportScope: ChromeMV3ServiceWorkerJSDynamicImportScope
+    var blockers: [ChromeMV3ServiceWorkerJSDynamicImportCapabilityBlocker]
+    var diagnostics: [String]
+
+    static func evaluate()
+        -> ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe
+    {
+        #if canImport(JavaScriptCore)
+            guard let context = JSContext() else {
+                return blocked(
+                    importExpressionParses: false,
+                    moduleLoadingCanBeIntercepted: false,
+                    promiseCompletionObservableWithoutTimers: false,
+                    moduleNamespaceSupported: false,
+                    executionSurfaceSupported: false,
+                    blockers: [.javaScriptCoreUnavailable],
+                    diagnostics: [
+                        "JavaScriptCore context construction failed during dynamic import capability probing.",
+                    ]
+                )
+            }
+            if #available(macOS 13.3, *) {
+                context.isInspectable = false
+            }
+            let sourceURL = URL(
+                fileURLWithPath:
+                    "/sumi-local-experimental/dynamic-import-probe/background.js"
+            )
+            context.exception = nil
+            let parseValue = context.evaluateScript(
+                "(() => import('./dependency.js')); 'dynamicImportParsed';",
+                withSourceURL: sourceURL
+            )
+            let importExpressionParses =
+                context.exception == nil
+                && parseValue?.toString() == "dynamicImportParsed"
+
+            context.exception = nil
+            _ = context.evaluateScript(
+                """
+                globalThis.__sumiPromiseProbe = 'pending';
+                Promise.resolve('drained').then((value) => {
+                  globalThis.__sumiPromiseProbe = value;
+                });
+                'scheduled';
+                """,
+                withSourceURL: sourceURL
+            )
+            let promiseCompletionObservable =
+                context.exception == nil
+                && context.objectForKeyedSubscript("__sumiPromiseProbe")?
+                    .toString() == "drained"
+
+            context.exception = nil
+            _ = context.evaluateScript(
+                """
+                globalThis.__sumiDynamicImportProbe = {
+                  state: 'pending',
+                  message: null,
+                  namespaceType: null
+                };
+                import('./dependency.js').then(
+                  (namespace) => {
+                    globalThis.__sumiDynamicImportProbe = {
+                      state: 'resolved',
+                      message: null,
+                      namespaceType: typeof namespace
+                    };
+                  },
+                  (error) => {
+                    globalThis.__sumiDynamicImportProbe = {
+                      state: 'rejected',
+                      message: String(error && error.message ? error.message : error),
+                      namespaceType: null
+                    };
+                  }
+                );
+                'scheduled';
+                """,
+                withSourceURL: sourceURL
+            )
+            let dynamicImportProbe = context
+                .objectForKeyedSubscript("__sumiDynamicImportProbe")
+            let importState = dynamicImportProbe?
+                .objectForKeyedSubscript("state")?.toString()
+            let importMessage = dynamicImportProbe?
+                .objectForKeyedSubscript("message")?.toString()
+            let namespaceType = dynamicImportProbe?
+                .objectForKeyedSubscript("namespaceType")?.toString()
+
+            let moduleNamespaceSupported =
+                importState == "resolved" && namespaceType == "object"
+            let moduleLoadingCanBeIntercepted = false
+            var blockers:
+                [ChromeMV3ServiceWorkerJSDynamicImportCapabilityBlocker] = []
+            if importExpressionParses == false {
+                blockers.append(.dynamicImportParseUnsupported)
+            }
+            if promiseCompletionObservable == false {
+                blockers.append(.dynamicImportPromiseDrainUnavailable)
+            }
+            if importExpressionParses,
+               moduleLoadingCanBeIntercepted == false
+            {
+                blockers.append(.dynamicImportNoLoader)
+            }
+            if moduleNamespaceSupported == false {
+                blockers.append(.dynamicImportModuleNamespaceUnsupported)
+            }
+            let executionSurfaceSupported =
+                importExpressionParses
+                && moduleLoadingCanBeIntercepted
+                && promiseCompletionObservable
+                && moduleNamespaceSupported
+            if executionSurfaceSupported == false {
+                blockers.append(.dynamicImportExecutionSurfaceUnsupported)
+            }
+            blockers = uniqueSortedServiceWorkerJS(blockers)
+            let available = blockers.isEmpty
+            var diagnostics = [
+                importExpressionParses
+                    ? "JavaScriptCore parses dynamic import expressions in the JSContext script surface."
+                    : "JavaScriptCore did not parse dynamic import expressions in the JSContext script surface.",
+                promiseCompletionObservable
+                    ? "Promise microtask completion is observable immediately after evaluateScript without timers."
+                    : "Promise completion could not be observed deterministically without timers.",
+                "The public JavaScriptCore JSContext SDK surface exposes evaluateScript and Promise helpers, but no module-loader interception API.",
+                "Dynamic import module loading cannot be constrained to Sumi's generated bundle root on this surface.",
+            ]
+            if let importState {
+                diagnostics.append("Dynamic import probe state: \(importState).")
+            }
+            if let importMessage, importMessage != "null" {
+                diagnostics.append(
+                    "Dynamic import probe message: \(importMessage)."
+                )
+            }
+            return ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe(
+                importExpressionParses: importExpressionParses,
+                moduleLoadingCanBeIntercepted: moduleLoadingCanBeIntercepted,
+                promiseCompletionObservableWithoutTimers:
+                    promiseCompletionObservable,
+                moduleNamespaceSupported: moduleNamespaceSupported,
+                executionSurfaceSupported: executionSurfaceSupported,
+                dynamicImportAvailableInLocalExperimentalGate: available,
+                dynamicImportAvailableByDefault: false,
+                dynamicImportScope:
+                    available ? .generatedBundleOnly : .blocked,
+                blockers: blockers,
+                diagnostics:
+                    uniqueSortedServiceWorkerJS(
+                        diagnostics
+                            + blockers.map {
+                                "Dynamic import capability blocker: \($0.rawValue)."
+                            }
+                    )
+            )
+        #else
+            return blocked(
+                importExpressionParses: false,
+                moduleLoadingCanBeIntercepted: false,
+                promiseCompletionObservableWithoutTimers: false,
+                moduleNamespaceSupported: false,
+                executionSurfaceSupported: false,
+                blockers: [.javaScriptCoreUnavailable],
+                diagnostics: [
+                    "JavaScriptCore is unavailable, so dynamic import capability probing cannot run.",
+                ]
+            )
+        #endif
+    }
+
+    private static func blocked(
+        importExpressionParses: Bool,
+        moduleLoadingCanBeIntercepted: Bool,
+        promiseCompletionObservableWithoutTimers: Bool,
+        moduleNamespaceSupported: Bool,
+        executionSurfaceSupported: Bool,
+        blockers: [ChromeMV3ServiceWorkerJSDynamicImportCapabilityBlocker],
+        diagnostics: [String]
+    ) -> ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe {
+        let uniqueBlockers = uniqueSortedServiceWorkerJS(blockers)
+        return ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe(
+            importExpressionParses: importExpressionParses,
+            moduleLoadingCanBeIntercepted: moduleLoadingCanBeIntercepted,
+            promiseCompletionObservableWithoutTimers:
+                promiseCompletionObservableWithoutTimers,
+            moduleNamespaceSupported: moduleNamespaceSupported,
+            executionSurfaceSupported: executionSurfaceSupported,
+            dynamicImportAvailableInLocalExperimentalGate: false,
+            dynamicImportAvailableByDefault: false,
+            dynamicImportScope: .blocked,
+            blockers: uniqueBlockers,
+            diagnostics:
+                uniqueSortedServiceWorkerJS(
+                    diagnostics
+                        + uniqueBlockers.map {
+                            "Dynamic import capability blocker: \($0.rawValue)."
+                        }
+                )
+        )
+    }
+}
+
 struct ChromeMV3ServiceWorkerJSExecutionPolicy:
     Codable,
     Equatable,
@@ -92,7 +348,14 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
     var networkImportsAllowed: Bool
     var filesystemAbsoluteImportsAllowed: Bool
     var symlinkEscapeAllowed: Bool
+    var dynamicImportAvailableInLocalExperimentalGate: Bool
+    var dynamicImportAvailableByDefault: Bool
+    var dynamicImportScope: ChromeMV3ServiceWorkerJSDynamicImportScope
+    var dynamicImportGeneratedBundleOnly: Bool
+    var dynamicImportStringLiteralLocalOnly: Bool
     var dynamicImportAvailable: Bool
+    var dynamicImportCapabilityBlockers:
+        [ChromeMV3ServiceWorkerJSDynamicImportCapabilityBlocker]
     var moduleWorkerImportAvailable: Bool
     var permanentBackgroundAvailable: Bool
     var timersAllowed: Bool
@@ -125,8 +388,14 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
             let javaScriptCoreAvailable = false
             blockers.append(.javaScriptCoreUnavailable)
         #endif
+        let dynamicImportCapability =
+            ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe.evaluate()
         blockers = uniqueSortedServiceWorkerJS(blockers)
         let available = blockers.isEmpty && javaScriptCoreAvailable
+        let dynamicImportAvailable =
+            available
+            && dynamicImportCapability
+                .dynamicImportAvailableInLocalExperimentalGate
         let surface: ChromeMV3ServiceWorkerJSExecutionSurface
         if moduleState != .enabled || extensionEnabled == false {
             surface = .none
@@ -149,7 +418,15 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
             networkImportsAllowed: false,
             filesystemAbsoluteImportsAllowed: false,
             symlinkEscapeAllowed: false,
-            dynamicImportAvailable: false,
+            dynamicImportAvailableInLocalExperimentalGate:
+                dynamicImportAvailable,
+            dynamicImportAvailableByDefault: false,
+            dynamicImportScope:
+                dynamicImportAvailable ? .generatedBundleOnly : .blocked,
+            dynamicImportGeneratedBundleOnly: true,
+            dynamicImportStringLiteralLocalOnly: true,
+            dynamicImportAvailable: dynamicImportAvailable,
+            dynamicImportCapabilityBlockers: dynamicImportCapability.blockers,
             moduleWorkerImportAvailable: false,
             permanentBackgroundAvailable: false,
             timersAllowed: false,
@@ -162,11 +439,13 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
                         "The selected JavaScriptCore surface has no normal-tab attachment, hidden page, network bridge, credential bridge, or native-host launch bridge.",
                         "Classic worker execution is supported; module worker execution is precisely blocked until a verified module loader exists.",
                         "Classic importScripts is available only while the local experimental gate is open and only for generated-bundle-contained extension resources.",
-                        "Network imports, file/data/blob URL imports, absolute filesystem imports, symlink escapes, dynamic import, and module worker import remain blocked.",
+                        "Dynamic import policy is local-experimental only, default-off, string-literal-only if ever enabled, and constrained to generated-bundle-contained extension resources.",
+                        "Network imports, file/data/blob URL imports, absolute filesystem imports, symlink escapes, and module worker import remain blocked.",
                         "Lifetime transitions are explicit fixture calls only.",
                         "Stable product runtime remains default-off.",
                     ]
                         + blockers.map { "Policy blocker: \($0.rawValue)." }
+                        + dynamicImportCapability.diagnostics
                 )
         )
     }
@@ -321,6 +600,11 @@ enum ChromeMV3ServiceWorkerJSResourceLoadBlocker:
     Sendable
 {
     case backgroundServiceWorkerMissing
+    case dynamicImportExecutionSurfaceUnsupported
+    case dynamicImportModuleNamespaceUnsupported
+    case dynamicImportNoLoader
+    case dynamicImportParseUnsupported
+    case dynamicImportPromiseDrainUnavailable
     case dynamicImportUnsupported
     case generatedBundleRecordMissing
     case generatedBundleRootMismatch
@@ -357,6 +641,11 @@ enum ChromeMV3ServiceWorkerJSImportScriptsBlocker:
     case blobURLRejected
     case circularImportBlocked
     case dataURLRejected
+    case dynamicImportExecutionSurfaceUnsupported
+    case dynamicImportModuleNamespaceUnsupported
+    case dynamicImportNoLoader
+    case dynamicImportParseUnsupported
+    case dynamicImportPromiseDrainUnavailable
     case dynamicImportUnsupported
     case fileURLRejected
     case generatedBundleRecordMissing
@@ -383,6 +672,44 @@ enum ChromeMV3ServiceWorkerJSImportScriptsBlocker:
     }
 }
 
+enum ChromeMV3ServiceWorkerJSDynamicImportBlocker:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case absoluteFilesystemPathRejected
+    case blobURLRejected
+    case dataURLRejected
+    case dynamicImportArgumentNonString
+    case dynamicImportExecutionSurfaceUnsupported
+    case dynamicImportModuleNamespaceUnsupported
+    case dynamicImportNoLoader
+    case dynamicImportParseUnsupported
+    case dynamicImportPromiseDrainUnavailable
+    case fileURLRejected
+    case generatedBundleRecordMissing
+    case generatedBundleRootMissing
+    case importPathEscapesGeneratedBundle
+    case importPathTraversalRejected
+    case importPathUnsafe
+    case importedModuleDirectoryRejected
+    case importedModuleMissing
+    case importedModuleNotCopiedFromGeneratedBundleRecord
+    case importedModuleSymbolicLinkRejected
+    case importedModuleUTF8Required
+    case remoteURLRejected
+    case unsupportedScheme
+
+    static func < (
+        lhs: ChromeMV3ServiceWorkerJSDynamicImportBlocker,
+        rhs: ChromeMV3ServiceWorkerJSDynamicImportBlocker
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
 struct ChromeMV3ServiceWorkerJSImportedScriptRecord:
     Codable,
     Equatable,
@@ -398,6 +725,23 @@ struct ChromeMV3ServiceWorkerJSImportedScriptRecord:
     var sourceSHA256: String?
     var sourceByteCount: Int?
     var blockers: [ChromeMV3ServiceWorkerJSImportScriptsBlocker]
+    var diagnostics: [String]
+}
+
+struct ChromeMV3ServiceWorkerJSDynamicImportRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var requestPath: String
+    var parentScriptRelativePath: String
+    var resolvedRelativePath: String?
+    var resolvedPath: String?
+    var stringLiteral: Bool
+    var generatedBundlePathValidated: Bool
+    var sourceSHA256: String?
+    var sourceByteCount: Int?
+    var blockers: [ChromeMV3ServiceWorkerJSDynamicImportBlocker]
     var diagnostics: [String]
 }
 
@@ -419,6 +763,10 @@ struct ChromeMV3ServiceWorkerJSResourceLoadRecord:
     var importScriptsDetected: Bool
     var staticModuleImportDetected: Bool
     var dynamicImportDetected: Bool
+    var dynamicImportCapabilityProbe:
+        ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe
+    var dynamicImportRecords: [ChromeMV3ServiceWorkerJSDynamicImportRecord]
+    var dynamicImportBlockers: [ChromeMV3ServiceWorkerJSDynamicImportBlocker]
     var importScriptsResolvedCount: Int
     var importedScripts: [ChromeMV3ServiceWorkerJSImportedScriptRecord]
     var importScriptsBlockers: [ChromeMV3ServiceWorkerJSImportScriptsBlocker]
@@ -562,11 +910,32 @@ enum ChromeMV3ServiceWorkerJSResourceLoader {
             source.map {
                 containsServiceWorkerJSRegex("\\bimport\\s*\\(", in: $0)
             } ?? false
+        let dynamicImportCapability =
+            ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe.evaluate()
+        let dynamicImportRecords =
+            source.map {
+                dynamicImportRecordsServiceWorkerJS(
+                    in: $0,
+                    parentScriptRelativePath: path ?? "unknown-worker.js",
+                    parentURL: candidate,
+                    generatedBundleRecord: record,
+                    generatedBundleRoot: root,
+                    capability: dynamicImportCapability
+                )
+            } ?? []
+        let dynamicImportBlockers = uniqueSortedServiceWorkerJS(
+            dynamicImportRecords.flatMap(\.blockers)
+        )
         if staticImportDetected {
             blockers.append(.staticModuleImportUnsupported)
         }
         if dynamicImportDetected {
-            blockers.append(.dynamicImportUnsupported)
+            blockers.append(
+                contentsOf:
+                    dynamicImportCapability.blockers.compactMap(
+                        resourceLoadBlockerServiceWorkerJS
+                    )
+            )
         }
         blockers = uniqueSortedServiceWorkerJS(blockers)
         let canExecute =
@@ -588,6 +957,9 @@ enum ChromeMV3ServiceWorkerJSResourceLoader {
             importScriptsDetected: importScriptsDetected,
             staticModuleImportDetected: staticImportDetected,
             dynamicImportDetected: dynamicImportDetected,
+            dynamicImportCapabilityProbe: dynamicImportCapability,
+            dynamicImportRecords: dynamicImportRecords,
+            dynamicImportBlockers: dynamicImportBlockers,
             importScriptsResolvedCount: 0,
             importedScripts: [],
             importScriptsBlockers: [],
@@ -600,10 +972,14 @@ enum ChromeMV3ServiceWorkerJSResourceLoader {
                         "Only an extension-owned resource copied into its generated bundle record may execute.",
                         "The worker path is checked for relative-path safety, generated-root containment, regular-file presence, and symbolic-link rejection.",
                         "Classic importScripts calls are resolved synchronously at execution time and remain constrained to copied generated-bundle resources.",
+                        "Dynamic import expressions are capability-probed separately; without a JavaScriptCore module loader hook they remain blocked before execution.",
                         "web_accessible_resources is not required for internal service-worker package loading.",
                         "Generated inert wrapper and service-worker shim resources must already exist.",
                     ]
                         + blockers.map { "Resource blocker: \($0.rawValue)." }
+                        + dynamicImportBlockers.map {
+                            "Dynamic import blocker: \($0.rawValue)."
+                        }
                 )
         )
         return ChromeMV3ServiceWorkerJSLoadedResource(
@@ -1982,15 +2358,21 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 )
             }
             if containsServiceWorkerJSRegex("\\bimport\\s*\\(", in: source) {
+                let capability =
+                    ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe
+                    .evaluate()
+                let blocker = capability.blockers
+                    .compactMap(importScriptsBlockerServiceWorkerJS)
+                    .first ?? .dynamicImportUnsupported
                 return failedImport(
                     requestPath: requestPath,
                     parentRelative: parentRelative,
                     resolvedRelative: resolvedRelative,
                     resolvedPath: candidate.path,
                     chain: chain,
-                    blocker: .dynamicImportUnsupported,
+                    blocker: blocker,
                     message:
-                        "Dynamic import inside imported classic script is unsupported."
+                        "Dynamic import inside imported classic script is blocked by \(blocker.rawValue)."
                 )
             }
             let order = nextImportEvaluationOrder
@@ -2811,6 +3193,349 @@ private func containsServiceWorkerJSRegex(
     return expression.firstMatch(in: source, range: range) != nil
 }
 
+private func dynamicImportRecordsServiceWorkerJS(
+    in source: String,
+    parentScriptRelativePath: String,
+    parentURL: URL?,
+    generatedBundleRecord: ChromeMV3GeneratedBundleRecord?,
+    generatedBundleRoot: URL?,
+    capability: ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe
+) -> [ChromeMV3ServiceWorkerJSDynamicImportRecord] {
+    guard let expression = try? NSRegularExpression(
+        pattern: #"\bimport\s*\(\s*(['"])(.*?)\1\s*\)"#
+    ) else { return [] }
+    let range = NSRange(source.startIndex..., in: source)
+    let matches = expression.matches(in: source, range: range)
+    var records: [ChromeMV3ServiceWorkerJSDynamicImportRecord] =
+        matches.compactMap { match in
+            guard let pathRange = Range(match.range(at: 2), in: source)
+            else { return nil }
+            return dynamicImportRecordServiceWorkerJS(
+                requestPath: String(source[pathRange]),
+                parentScriptRelativePath: parentScriptRelativePath,
+                parentURL: parentURL,
+                generatedBundleRecord: generatedBundleRecord,
+                generatedBundleRoot: generatedBundleRoot,
+                capability: capability
+            )
+        }
+    let sourceWithoutStringLiteralImports = expression
+        .stringByReplacingMatches(
+            in: source,
+            range: range,
+            withTemplate: ""
+        )
+    if containsServiceWorkerJSRegex(
+        "\\bimport\\s*\\(",
+        in: sourceWithoutStringLiteralImports
+    )
+    {
+        records.append(
+            ChromeMV3ServiceWorkerJSDynamicImportRecord(
+                requestPath: "<non-string-literal>",
+                parentScriptRelativePath: parentScriptRelativePath,
+                resolvedRelativePath: nil,
+                resolvedPath: nil,
+                stringLiteral: false,
+                generatedBundlePathValidated: false,
+                sourceSHA256: nil,
+                sourceByteCount: nil,
+                blockers:
+                    uniqueSortedServiceWorkerJS(
+                        [.dynamicImportArgumentNonString]
+                            + capability.blockers.compactMap(
+                                dynamicImportBlockerServiceWorkerJS
+                            )
+                    ),
+                diagnostics:
+                    uniqueSortedServiceWorkerJS(
+                        [
+                            "Dynamic import uses a non-string-literal specifier; the local harness only permits string-literal generated-bundle imports if support is ever enabled.",
+                        ]
+                            + capability.diagnostics
+                    )
+            )
+        )
+    }
+    return records
+}
+
+private func dynamicImportRecordServiceWorkerJS(
+    requestPath: String,
+    parentScriptRelativePath: String,
+    parentURL: URL?,
+    generatedBundleRecord: ChromeMV3GeneratedBundleRecord?,
+    generatedBundleRoot: URL?,
+    capability: ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe
+) -> ChromeMV3ServiceWorkerJSDynamicImportRecord {
+    var blockers = capability.blockers.compactMap(
+        dynamicImportBlockerServiceWorkerJS
+    )
+    var diagnostics = capability.diagnostics
+    guard let record = generatedBundleRecord else {
+        blockers.append(.generatedBundleRecordMissing)
+        diagnostics.append(
+            "No generated bundle record is available for dynamic import path validation."
+        )
+        return dynamicImportRecordServiceWorkerJS(
+            requestPath: requestPath,
+            parentScriptRelativePath: parentScriptRelativePath,
+            resolvedRelativePath: nil,
+            resolvedPath: nil,
+            stringLiteral: true,
+            generatedBundlePathValidated: false,
+            sourceData: nil,
+            blockers: blockers,
+            diagnostics: diagnostics
+        )
+    }
+    guard let root = generatedBundleRoot,
+          directoryExistsServiceWorkerJS(root)
+    else {
+        blockers.append(.generatedBundleRootMissing)
+        diagnostics.append(
+            "Generated bundle root is missing for dynamic import path validation."
+        )
+        return dynamicImportRecordServiceWorkerJS(
+            requestPath: requestPath,
+            parentScriptRelativePath: parentScriptRelativePath,
+            resolvedRelativePath: nil,
+            resolvedPath: nil,
+            stringLiteral: true,
+            generatedBundlePathValidated: false,
+            sourceData: nil,
+            blockers: blockers,
+            diagnostics: diagnostics
+        )
+    }
+    let normalized = normalizeDynamicImportPath(requestPath)
+    if let blocker = normalized.blocker {
+        blockers.append(blocker)
+        diagnostics.append(normalized.message)
+        return dynamicImportRecordServiceWorkerJS(
+            requestPath: requestPath,
+            parentScriptRelativePath: parentScriptRelativePath,
+            resolvedRelativePath: nil,
+            resolvedPath: nil,
+            stringLiteral: true,
+            generatedBundlePathValidated: false,
+            sourceData: nil,
+            blockers: blockers,
+            diagnostics: diagnostics
+        )
+    }
+    guard let normalizedPath = normalized.path else {
+        blockers.append(.importPathUnsafe)
+        diagnostics.append(
+            "Dynamic import path could not be normalized safely."
+        )
+        return dynamicImportRecordServiceWorkerJS(
+            requestPath: requestPath,
+            parentScriptRelativePath: parentScriptRelativePath,
+            resolvedRelativePath: nil,
+            resolvedPath: nil,
+            stringLiteral: true,
+            generatedBundlePathValidated: false,
+            sourceData: nil,
+            blockers: blockers,
+            diagnostics: diagnostics
+        )
+    }
+    let parentDirectory = parentURL?
+        .deletingLastPathComponent()
+        .standardizedFileURL ?? root
+    let candidate = parentDirectory
+        .appendingPathComponent(normalizedPath)
+        .standardizedFileURL
+    let resolvedRelative =
+        Sumi.relativePathInGeneratedBundle(candidate, root: root)
+    guard let resolvedRelative else {
+        blockers.append(.importPathEscapesGeneratedBundle)
+        diagnostics.append(
+            "Dynamic import path resolves outside the generated bundle root."
+        )
+        return dynamicImportRecordServiceWorkerJS(
+            requestPath: requestPath,
+            parentScriptRelativePath: parentScriptRelativePath,
+            resolvedRelativePath: nil,
+            resolvedPath: candidate.path,
+            stringLiteral: true,
+            generatedBundlePathValidated: false,
+            sourceData: nil,
+            blockers: blockers,
+            diagnostics: diagnostics
+        )
+    }
+    if pathContainsSymbolicLinkServiceWorkerJS(candidate, root: root) {
+        blockers.append(.importedModuleSymbolicLinkRejected)
+        diagnostics.append(
+            "Dynamic import path contains a symbolic link and was rejected."
+        )
+    }
+    if containsServiceWorkerJS(root: root, candidate: candidate) == false {
+        blockers.append(.importPathEscapesGeneratedBundle)
+        diagnostics.append(
+            "Dynamic import path resolves outside the generated bundle root after symlink resolution."
+        )
+    }
+    var isDirectory: ObjCBool = false
+    let exists = FileManager.default.fileExists(
+        atPath: candidate.path,
+        isDirectory: &isDirectory
+    )
+    if exists == false {
+        blockers.append(.importedModuleMissing)
+        diagnostics.append("Dynamic import module is missing.")
+    } else if isDirectory.boolValue {
+        blockers.append(.importedModuleDirectoryRejected)
+        diagnostics.append(
+            "Dynamic import resolved to a directory, not a JavaScript module file."
+        )
+    }
+    if record.copiedResourcePaths.contains(resolvedRelative) == false {
+        blockers.append(.importedModuleNotCopiedFromGeneratedBundleRecord)
+        diagnostics.append(
+            "Dynamic import module is not recorded as a copied generated-bundle resource."
+        )
+    }
+    let sourceData = try? Data(contentsOf: candidate)
+    if exists, isDirectory.boolValue == false {
+        if let sourceData,
+           String(data: sourceData, encoding: .utf8) == nil
+        {
+            blockers.append(.importedModuleUTF8Required)
+            diagnostics.append(
+                "Dynamic import module is not valid UTF-8 JavaScript source."
+            )
+        } else if sourceData == nil {
+            blockers.append(.importedModuleMissing)
+            diagnostics.append(
+                "Dynamic import module data could not be read."
+            )
+        }
+    }
+    let pathBlockers = blockers.filter {
+        dynamicImportBlockerServiceWorkerJS($0) == nil
+    }
+    diagnostics.append(
+        pathBlockers.isEmpty
+            ? "Dynamic import string-literal path was validated inside the generated bundle root, but execution remains blocked by JavaScriptCore capability."
+            : "Dynamic import string-literal path failed generated-bundle validation."
+    )
+    return dynamicImportRecordServiceWorkerJS(
+        requestPath: requestPath,
+        parentScriptRelativePath: parentScriptRelativePath,
+        resolvedRelativePath: resolvedRelative,
+        resolvedPath: candidate.path,
+        stringLiteral: true,
+        generatedBundlePathValidated: pathBlockers.isEmpty,
+        sourceData: sourceData,
+        blockers: blockers,
+        diagnostics: diagnostics
+    )
+}
+
+private func dynamicImportRecordServiceWorkerJS(
+    requestPath: String,
+    parentScriptRelativePath: String,
+    resolvedRelativePath: String?,
+    resolvedPath: String?,
+    stringLiteral: Bool,
+    generatedBundlePathValidated: Bool,
+    sourceData: Data?,
+    blockers: [ChromeMV3ServiceWorkerJSDynamicImportBlocker],
+    diagnostics: [String]
+) -> ChromeMV3ServiceWorkerJSDynamicImportRecord {
+    ChromeMV3ServiceWorkerJSDynamicImportRecord(
+        requestPath: requestPath,
+        parentScriptRelativePath: parentScriptRelativePath,
+        resolvedRelativePath: resolvedRelativePath,
+        resolvedPath: resolvedPath,
+        stringLiteral: stringLiteral,
+        generatedBundlePathValidated: generatedBundlePathValidated,
+        sourceSHA256: sourceData.map(sha256HexServiceWorkerJS),
+        sourceByteCount: sourceData?.count,
+        blockers: uniqueSortedServiceWorkerJS(blockers),
+        diagnostics: uniqueSortedServiceWorkerJS(diagnostics)
+    )
+}
+
+private func resourceLoadBlockerServiceWorkerJS(
+    _ blocker: ChromeMV3ServiceWorkerJSDynamicImportCapabilityBlocker
+) -> ChromeMV3ServiceWorkerJSResourceLoadBlocker? {
+    switch blocker {
+    case .dynamicImportExecutionSurfaceUnsupported:
+        return .dynamicImportExecutionSurfaceUnsupported
+    case .dynamicImportModuleNamespaceUnsupported:
+        return .dynamicImportModuleNamespaceUnsupported
+    case .dynamicImportNoLoader:
+        return .dynamicImportNoLoader
+    case .dynamicImportParseUnsupported:
+        return .dynamicImportParseUnsupported
+    case .dynamicImportPromiseDrainUnavailable:
+        return .dynamicImportPromiseDrainUnavailable
+    case .javaScriptCoreUnavailable:
+        return nil
+    }
+}
+
+private func importScriptsBlockerServiceWorkerJS(
+    _ blocker: ChromeMV3ServiceWorkerJSDynamicImportCapabilityBlocker
+) -> ChromeMV3ServiceWorkerJSImportScriptsBlocker? {
+    switch blocker {
+    case .dynamicImportExecutionSurfaceUnsupported:
+        return .dynamicImportExecutionSurfaceUnsupported
+    case .dynamicImportModuleNamespaceUnsupported:
+        return .dynamicImportModuleNamespaceUnsupported
+    case .dynamicImportNoLoader:
+        return .dynamicImportNoLoader
+    case .dynamicImportParseUnsupported:
+        return .dynamicImportParseUnsupported
+    case .dynamicImportPromiseDrainUnavailable:
+        return .dynamicImportPromiseDrainUnavailable
+    case .javaScriptCoreUnavailable:
+        return nil
+    }
+}
+
+private func dynamicImportBlockerServiceWorkerJS(
+    _ blocker: ChromeMV3ServiceWorkerJSDynamicImportCapabilityBlocker
+) -> ChromeMV3ServiceWorkerJSDynamicImportBlocker? {
+    switch blocker {
+    case .dynamicImportExecutionSurfaceUnsupported:
+        return .dynamicImportExecutionSurfaceUnsupported
+    case .dynamicImportModuleNamespaceUnsupported:
+        return .dynamicImportModuleNamespaceUnsupported
+    case .dynamicImportNoLoader:
+        return .dynamicImportNoLoader
+    case .dynamicImportParseUnsupported:
+        return .dynamicImportParseUnsupported
+    case .dynamicImportPromiseDrainUnavailable:
+        return .dynamicImportPromiseDrainUnavailable
+    case .javaScriptCoreUnavailable:
+        return .dynamicImportExecutionSurfaceUnsupported
+    }
+}
+
+private func dynamicImportBlockerServiceWorkerJS(
+    _ blocker: ChromeMV3ServiceWorkerJSDynamicImportBlocker
+) -> ChromeMV3ServiceWorkerJSDynamicImportCapabilityBlocker? {
+    switch blocker {
+    case .dynamicImportExecutionSurfaceUnsupported:
+        return .dynamicImportExecutionSurfaceUnsupported
+    case .dynamicImportModuleNamespaceUnsupported:
+        return .dynamicImportModuleNamespaceUnsupported
+    case .dynamicImportNoLoader:
+        return .dynamicImportNoLoader
+    case .dynamicImportParseUnsupported:
+        return .dynamicImportParseUnsupported
+    case .dynamicImportPromiseDrainUnavailable:
+        return .dynamicImportPromiseDrainUnavailable
+    default:
+        return nil
+    }
+}
+
 private func normalizeImportScriptsPath(
     _ path: String
 ) -> (
@@ -2907,6 +3632,105 @@ private func normalizeImportScriptsPath(
         components.joined(separator: "/"),
         nil,
         "importScripts path normalized safely."
+    )
+}
+
+private func normalizeDynamicImportPath(
+    _ path: String
+) -> (
+    path: String?,
+    blocker: ChromeMV3ServiceWorkerJSDynamicImportBlocker?,
+    message: String
+) {
+    let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed.isEmpty == false,
+          trimmed.contains("\0") == false,
+          trimmed.contains("\\") == false,
+          trimmed.contains("?") == false,
+          trimmed.contains("#") == false
+    else {
+        return (
+            nil,
+            .importPathUnsafe,
+            "Dynamic import path is empty or contains unsupported characters."
+        )
+    }
+    if let scheme = URLComponents(string: trimmed)?.scheme?.lowercased() {
+        switch scheme {
+        case "http", "https":
+            return (
+                nil,
+                .remoteURLRejected,
+                "Remote dynamic import URL imports are blocked."
+            )
+        case "file":
+            return (
+                nil,
+                .fileURLRejected,
+                "file: dynamic import URL imports are blocked."
+            )
+        case "data":
+            return (
+                nil,
+                .dataURLRejected,
+                "data: dynamic import URL imports are blocked."
+            )
+        case "blob":
+            return (
+                nil,
+                .blobURLRejected,
+                "blob: dynamic import URL imports are blocked."
+            )
+        default:
+            return (
+                nil,
+                .unsupportedScheme,
+                "Unsupported dynamic import URL scheme \(scheme) is blocked."
+            )
+        }
+    }
+    guard trimmed.hasPrefix("/") == false,
+          trimmed.hasPrefix("~") == false
+    else {
+        return (
+            nil,
+            .absoluteFilesystemPathRejected,
+            "Absolute dynamic import paths are blocked."
+        )
+    }
+    var components: [String] = []
+    for component in trimmed.split(
+        separator: "/",
+        omittingEmptySubsequences: false
+    ).map(String.init) {
+        if component == "." { continue }
+        if component == ".." {
+            return (
+                nil,
+                .importPathTraversalRejected,
+                "Traversal dynamic import paths are blocked."
+            )
+        }
+        guard component.isEmpty == false else {
+            return (
+                nil,
+                .importPathUnsafe,
+                "Dynamic import path contains an empty path segment."
+            )
+        }
+        components.append(component)
+    }
+    guard components.isEmpty == false else {
+        return (
+            nil,
+            .importPathUnsafe,
+            "Dynamic import path did not contain a file segment."
+        )
+    }
+    return (
+        components.joined(separator: "/"),
+        nil,
+        "Dynamic import path normalized safely."
     )
 }
 

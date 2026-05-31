@@ -35,6 +35,12 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertEqual(moduleDisabled.policy.executionSurface, .none)
         XCTAssertEqual(extensionDisabled.policy.executionSurface, .none)
         XCTAssertFalse(moduleDisabled.policy.serviceWorkerJSExecutionAvailableByDefault)
+        XCTAssertFalse(
+            moduleDisabled.policy.dynamicImportAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(
+            extensionDisabled.policy.dynamicImportAvailableInLocalExperimentalGate
+        )
     }
 
     func testDefaultOffGateBlocksExecutionBeforeResourceLoad() throws {
@@ -50,6 +56,40 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertTrue(
             harness.policy.blockers.contains(.localExperimentalGateRequired)
         )
+        XCTAssertFalse(harness.policy.dynamicImportAvailableByDefault)
+        XCTAssertFalse(harness.policy.dynamicImportAvailable)
+        XCTAssertEqual(harness.policy.dynamicImportScope, .blocked)
+    }
+
+    func testDynamicImportCapabilityProbeReportsSupportedOrPreciseBlockers() {
+        let probe = ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe
+            .evaluate()
+
+        XCTAssertFalse(probe.dynamicImportAvailableByDefault)
+        if probe.dynamicImportAvailableInLocalExperimentalGate {
+            XCTAssertTrue(probe.blockers.isEmpty)
+            XCTAssertEqual(probe.dynamicImportScope, .generatedBundleOnly)
+            XCTAssertTrue(probe.importExpressionParses)
+            XCTAssertTrue(probe.moduleLoadingCanBeIntercepted)
+            XCTAssertTrue(probe.promiseCompletionObservableWithoutTimers)
+            XCTAssertTrue(probe.moduleNamespaceSupported)
+            XCTAssertTrue(probe.executionSurfaceSupported)
+        } else {
+            XCTAssertEqual(probe.dynamicImportScope, .blocked)
+            XCTAssertFalse(probe.blockers.isEmpty)
+            XCTAssertTrue(
+                probe.blockers.contains(.dynamicImportNoLoader)
+                    || probe.blockers.contains(
+                        .dynamicImportPromiseDrainUnavailable
+                    )
+                    || probe.blockers.contains(
+                        .dynamicImportModuleNamespaceUnsupported
+                    )
+                    || probe.blockers.contains(
+                        .dynamicImportExecutionSurfaceUnsupported
+                    )
+            )
+        }
     }
 
     func testGeneratedResourceLoaderDiagnosesMissingUnsafeAndModule()
@@ -103,6 +143,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
                 .moduleWorkerUnsupported
             ) == true
         )
+        XCTAssertFalse(module.policy.moduleWorkerImportAvailable)
 
     }
 
@@ -135,6 +176,10 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertFalse(harness.policy.networkImportsAllowed)
         XCTAssertFalse(harness.policy.filesystemAbsoluteImportsAllowed)
         XCTAssertFalse(harness.policy.symlinkEscapeAllowed)
+        XCTAssertFalse(harness.policy.dynamicImportAvailableByDefault)
+        XCTAssertEqual(harness.policy.dynamicImportScope, .blocked)
+        XCTAssertTrue(harness.policy.dynamicImportGeneratedBundleOnly)
+        XCTAssertTrue(harness.policy.dynamicImportStringLiteralLocalOnly)
         XCTAssertFalse(harness.policy.dynamicImportAvailable)
         XCTAssertFalse(harness.policy.moduleWorkerImportAvailable)
         XCTAssertEqual(harness.snapshot.importScriptsResolvedCount, 1)
@@ -299,6 +344,158 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             invalidHarness.snapshot.importScriptsBlockers.contains(
                 .importedScriptUTF8Required
             )
+        )
+    }
+
+    func testLocalGeneratedBundleDynamicImportIsPreciselyBlockedUntilSupported()
+        throws
+    {
+        let fixture = try makeHarness(
+            source: """
+            import('./dependency.js').then((module) => {
+              globalThis.dynamicValue = module.value;
+            });
+            chrome.runtime.onMessage.addListener(() => globalThis.dynamicValue || 'pending');
+            """,
+            extraFiles: [
+                "dependency.js": "export const value = 'dependency';",
+            ],
+            localExperimentalGateAllowed: true
+        )
+        let probe = ChromeMV3ServiceWorkerJSDynamicImportCapabilityProbe
+            .evaluate()
+        var generatedRecord = fixture.generatedRecord
+        if generatedRecord.copiedResourcePaths.contains("dependency.js")
+            == false
+        {
+            generatedRecord.copiedResourcePaths.append("dependency.js")
+        }
+        let generatedDependency = fixture.generatedRootURL
+            .appendingPathComponent("dependency.js")
+        if FileManager.default.fileExists(atPath: generatedDependency.path)
+            == false
+        {
+            try "export const value = 'dependency';".write(
+                to: generatedDependency,
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request(generatedRecord: generatedRecord)
+        )
+        let started = harness.start()
+
+        if probe.dynamicImportAvailableInLocalExperimentalGate {
+            XCTAssertEqual(started.status, .running)
+            XCTAssertTrue(
+                harness.snapshot.resourceLoad?.dynamicImportBlockers.isEmpty
+                    == true
+            )
+        } else {
+            XCTAssertEqual(started.status, .blocked)
+            let record = try XCTUnwrap(
+                harness.snapshot.resourceLoad?.dynamicImportRecords.first
+            )
+            XCTAssertEqual(record.requestPath, "./dependency.js")
+            XCTAssertEqual(record.resolvedRelativePath, "dependency.js")
+            XCTAssertTrue(record.generatedBundlePathValidated)
+            XCTAssertTrue(
+                harness.snapshot.resourceLoad?.dynamicImportBlockers.contains(
+                    .dynamicImportNoLoader
+                ) == true
+                    || harness.snapshot.resourceLoad?.dynamicImportBlockers
+                        .contains(.dynamicImportExecutionSurfaceUnsupported)
+                        == true
+            )
+            XCTAssertTrue(
+                harness.snapshot.resourceLoad?.blockers.contains(
+                    .dynamicImportNoLoader
+                ) == true
+                    || harness.snapshot.resourceLoad?.blockers.contains(
+                        .dynamicImportExecutionSurfaceUnsupported
+                    ) == true
+            )
+        }
+    }
+
+    func testUnsafeDynamicImportFormsAreDiagnosedPrecisely() throws {
+        let cases: [(String, ChromeMV3ServiceWorkerJSDynamicImportBlocker)] = [
+            ("import('missing.js');", .importedModuleMissing),
+            ("import('../outside.js');", .importPathTraversalRejected),
+            ("import('/Users/example/outside.js');", .absoluteFilesystemPathRejected),
+            ("import('https://example.com/remote.js');", .remoteURLRejected),
+            ("import('data:text/javascript,0');", .dataURLRejected),
+            ("import('blob:https://example.com/id');", .blobURLRejected),
+            ("import('file:///tmp/worker.js');", .fileURLRejected),
+            ("const path = './dependency.js'; import(path);", .dynamicImportArgumentNonString),
+            ("import('./missing.js'); const path = './dependency.js'; import(path);", .dynamicImportArgumentNonString),
+        ]
+
+        for (source, blocker) in cases {
+            let fixture = try makeHarness(
+                source: source,
+                localExperimentalGateAllowed: true
+            )
+            let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+                request: fixture.request()
+            )
+
+            XCTAssertEqual(harness.start().status, .blocked, source)
+            XCTAssertTrue(
+                harness.snapshot.resourceLoad?.dynamicImportBlockers.contains(
+                    blocker
+                ) == true,
+                source
+            )
+        }
+    }
+
+    func testSymlinkEscapeAndNonUTF8DynamicImportsAreDiagnosed() throws {
+        let symlinkFixture = try makeHarness(
+            source: "import('linked.js');",
+            localExperimentalGateAllowed: true
+        )
+        let outside = try temporaryDirectory()
+            .appendingPathComponent("outside-module.js")
+        try "export const value = 'outside';"
+            .write(to: outside, atomically: true, encoding: .utf8)
+        let linked = symlinkFixture.generatedRootURL
+            .appendingPathComponent("linked.js")
+        try FileManager.default.createSymbolicLink(
+            at: linked,
+            withDestinationURL: outside
+        )
+        var symlinkRecord = symlinkFixture.generatedRecord
+        symlinkRecord.copiedResourcePaths.append("linked.js")
+        let symlinkHarness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: symlinkFixture.request(generatedRecord: symlinkRecord)
+        )
+
+        XCTAssertEqual(symlinkHarness.start().status, .blocked)
+        XCTAssertTrue(
+            symlinkHarness.snapshot.resourceLoad?.dynamicImportBlockers
+                .contains(.importedModuleSymbolicLinkRejected) == true
+        )
+
+        let invalidFixture = try makeHarness(
+            source: "import('bad.js');",
+            localExperimentalGateAllowed: true
+        )
+        try Data([0xff, 0xfe, 0xfd]).write(
+            to: invalidFixture.generatedRootURL
+                .appendingPathComponent("bad.js")
+        )
+        var invalidRecord = invalidFixture.generatedRecord
+        invalidRecord.copiedResourcePaths.append("bad.js")
+        let invalidHarness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: invalidFixture.request(generatedRecord: invalidRecord)
+        )
+
+        XCTAssertEqual(invalidHarness.start().status, .blocked)
+        XCTAssertTrue(
+            invalidHarness.snapshot.resourceLoad?.dynamicImportBlockers
+                .contains(.importedModuleUTF8Required) == true
         )
     }
 
