@@ -50,6 +50,19 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertFalse(moduleDisabled.policy.timersAvailableByDefault)
         XCTAssertFalse(moduleDisabled.policy.wallClockTimersAllowed)
         XCTAssertFalse(
+            moduleDisabled.policy.webCryptoAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(moduleDisabled.policy.webCryptoAvailableByDefault)
+        XCTAssertFalse(moduleDisabled.policy.cryptoGetRandomValuesAvailable)
+        XCTAssertFalse(moduleDisabled.policy.cryptoRandomUUIDAvailable)
+        XCTAssertFalse(
+            moduleDisabled.policy.subtleCryptoAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(
+            extensionDisabled.policy.webCryptoAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(extensionDisabled.policy.webCryptoAvailableByDefault)
+        XCTAssertFalse(
             moduleDisabled.policy.moduleWorkerReadinessProbe.probeExecuted
         )
         XCTAssertFalse(
@@ -90,6 +103,13 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertFalse(harness.policy.timersAvailableByDefault)
         XCTAssertFalse(harness.policy.wallClockTimersAllowed)
         XCTAssertFalse(harness.policy.timersAllowed)
+        XCTAssertFalse(harness.policy.webCryptoAvailableInLocalExperimentalGate)
+        XCTAssertFalse(harness.policy.webCryptoAvailableByDefault)
+        XCTAssertFalse(harness.policy.cryptoGetRandomValuesAvailable)
+        XCTAssertFalse(harness.policy.cryptoRandomUUIDAvailable)
+        XCTAssertFalse(
+            harness.policy.subtleCryptoAvailableInLocalExperimentalGate
+        )
     }
 
     func testDynamicImportCapabilityProbeReportsSupportedOrPreciseBlockers() {
@@ -413,6 +433,12 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
               text: new TextDecoder().decode(new TextEncoder().encode('ok')),
               base64: atob(btoa('ok')),
               randomLength: crypto.getRandomValues(new Uint8Array(4)).length,
+              randomUUIDValid: /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(crypto.randomUUID()),
+              subtleType: typeof crypto.subtle,
+              subtleDigestType: typeof crypto.subtle.digest,
+              workerGlobalScopeType: typeof WorkerGlobalScope,
+              serviceWorkerGlobalScopeType: typeof ServiceWorkerGlobalScope,
+              workerInstance: self instanceof WorkerGlobalScope,
               getURL: chrome.runtime.getURL('dependency.js').startsWith('chrome-extension://service-worker-js-fixture-extension/'),
               manifestVersion: chrome.runtime.getManifest().manifest_version,
               browserType: typeof browser,
@@ -442,8 +468,279 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
                 "manifestVersion": .number(3),
                 "navigatorName": .string("Netscape"),
                 "randomLength": .number(4),
+                "randomUUIDValid": .bool(true),
+                "serviceWorkerGlobalScopeType": .string("function"),
+                "subtleDigestType": .string("function"),
+                "subtleType": .string("object"),
                 "text": .string("ok"),
                 "url": .string("1"),
+                "workerGlobalScopeType": .string("function"),
+                "workerInstance": .bool(true),
+                "windowType": .string("undefined"),
+            ])
+        )
+        XCTAssertTrue(harness.policy.webCryptoAvailableInLocalExperimentalGate)
+        XCTAssertFalse(harness.policy.webCryptoAvailableByDefault)
+        XCTAssertEqual(harness.policy.subtleCryptoSupportedMethods, ["digest"])
+        XCTAssertTrue(
+            harness.policy.subtleCryptoBlockedMethods.contains("importKey")
+        )
+        XCTAssertTrue(
+            harness.snapshot.cryptoOperationRecords.contains {
+                $0.operation == "getRandomValues" && $0.status == "fulfilled"
+            }
+        )
+        XCTAssertTrue(
+            harness.snapshot.cryptoOperationRecords.contains {
+                $0.operation == "randomUUID" && $0.status == "fulfilled"
+            }
+        )
+    }
+
+    func testWebCryptoGetRandomValuesUsesSecureNonDummyRandomness() throws {
+        let harness = try startedHarness(
+            source: """
+            const first = new Uint8Array(32);
+            const second = new Uint8Array(32);
+            crypto.getRandomValues(first);
+            crypto.getRandomValues(second);
+            chrome.runtime.onMessage.addListener(() => ({
+              firstZero: first.every((value) => value === 0),
+              secondZero: second.every((value) => value === 0),
+              equal: first.every((value, index) => value === second[index])
+            }));
+            """
+        )
+
+        let result = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            payloadSummary: "secure random"
+        )
+
+        XCTAssertEqual(
+            result.responsePayload,
+            .object([
+                "equal": .bool(false),
+                "firstZero": .bool(false),
+                "secondZero": .bool(false),
+            ])
+        )
+        XCTAssertEqual(
+            harness.snapshot.cryptoOperationRecords.filter {
+                $0.operation == "getRandomValues"
+                    && $0.status == "fulfilled"
+            }.count,
+            2
+        )
+    }
+
+    func testSubtleCryptoDigestSHA256WorksAndDoesNotRecordMaterial()
+        throws
+    {
+        let harness = try startedHarness(
+            source: """
+            const hex = (buffer) => Array.from(new Uint8Array(buffer))
+              .map((value) => value.toString(16).padStart(2, '0'))
+              .join('');
+            crypto.subtle.digest('SHA-256', new TextEncoder().encode('abc'))
+              .then((buffer) => { globalThis.digestHex = hex(buffer); })
+              .catch((error) => { globalThis.digestError = error.name; });
+            chrome.runtime.onMessage.addListener(() => ({
+              digestHex: globalThis.digestHex || null,
+              digestError: globalThis.digestError || null
+            }));
+            """
+        )
+
+        let result = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            payloadSummary: "subtle digest"
+        )
+
+        XCTAssertEqual(
+            result.responsePayload,
+            .object([
+                "digestError": .null,
+                "digestHex":
+                    .string(
+                        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+                    ),
+            ])
+        )
+        let record = try XCTUnwrap(
+            harness.snapshot.cryptoOperationRecords.first {
+                $0.operation == "subtle.digest"
+            }
+        )
+        XCTAssertEqual(record.algorithm, "SHA-256")
+        XCTAssertEqual(record.byteCount, 3)
+        XCTAssertEqual(record.status, "fulfilled")
+        let serializedRecords = String(
+            data: try JSONEncoder().encode(
+                harness.snapshot.cryptoOperationRecords
+            ),
+            encoding: .utf8
+        )
+        XCTAssertFalse(serializedRecords?.contains("abc") == true)
+    }
+
+    func testUnsupportedSubtleCryptoRejectsDeterministically() throws {
+        let harness = try startedHarness(
+            source: """
+            crypto.subtle.digest('MD5', new Uint8Array([1, 2, 3]))
+              .catch((error) => { globalThis.md5Error = `${error.name}:${error.message.includes('unsupported algorithm')}`; });
+            crypto.subtle.importKey('raw', new Uint8Array([1, 2, 3]), { name: 'PBKDF2' }, false, ['deriveBits'])
+              .catch((error) => { globalThis.importKeyError = `${error.name}:${error.message.includes('not supported')}`; });
+            chrome.runtime.onMessage.addListener(() => ({
+              md5Error: globalThis.md5Error || null,
+              importKeyError: globalThis.importKeyError || null
+            }));
+            """
+        )
+
+        let result = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            payloadSummary: "unsupported subtle"
+        )
+
+        XCTAssertEqual(
+            result.responsePayload,
+            .object([
+                "importKeyError": .string("NotSupportedError:true"),
+                "md5Error": .string("NotSupportedError:true"),
+            ])
+        )
+        XCTAssertTrue(
+            harness.snapshot.cryptoOperationRecords.contains {
+                $0.operation == "subtle.digest"
+                    && $0.status == "blocked"
+                    && $0.blocker == "unsupportedAlgorithm"
+                    && $0.algorithm == "MD5"
+            }
+        )
+        XCTAssertTrue(
+            harness.snapshot.cryptoOperationRecords.contains {
+                $0.operation == "subtle.importKey"
+                    && $0.status == "blocked"
+                    && $0.blocker == "unsupportedMethod"
+                    && $0.algorithm == "PBKDF2"
+            }
+        )
+    }
+
+    func testUnsupportedSubtleCryptoDoesNotLogKeyMaterial() throws {
+        let harness = try startedHarness(
+            source: """
+            const keyMaterial = new Uint8Array([115, 101, 99, 114, 101, 116]);
+            crypto.subtle.importKey('raw', keyMaterial, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+              .catch((error) => { globalThis.keyRejected = error.name; });
+            chrome.runtime.onMessage.addListener(() => globalThis.keyRejected || 'pending');
+            """
+        )
+
+        XCTAssertEqual(
+            harness.dispatch(
+                source: .popupOptionsRuntimeMessage,
+                payloadSummary: "unsupported importKey key material"
+            ).responsePayload,
+            .string("NotSupportedError")
+        )
+        let serializedRecords = String(
+            data: try JSONEncoder().encode(
+                harness.snapshot.cryptoOperationRecords
+            ),
+            encoding: .utf8
+        )
+        XCTAssertFalse(serializedRecords?.contains("secret") == true)
+        XCTAssertFalse(serializedRecords?.contains("115,101,99") == true)
+    }
+
+    func testBitwardenStyleWebCryptoConstructorAdvancesAndBlocksPrecisely()
+        throws
+    {
+        let harness = try startedHarness(
+            source: """
+            class WebCryptoFunctionService {
+              constructor(scope) {
+                if (scope?.crypto?.subtle == null) {
+                  throw new Error('Could not instantiate WebCryptoFunctionService. Could not locate Subtle crypto.');
+                }
+                this.crypto = scope.crypto;
+                this.subtle = scope.crypto.subtle;
+              }
+              hash(value) {
+                return this.subtle.digest({ name: 'SHA-256' }, new TextEncoder().encode(value))
+                  .then((buffer) => Array.from(new Uint8Array(buffer))
+                    .map((byte) => byte.toString(16).padStart(2, '0')).join(''));
+              }
+              pbkdf2() {
+                return this.subtle.importKey('raw', new Uint8Array([1, 2, 3]), { name: 'PBKDF2' }, false, ['deriveBits']);
+              }
+            }
+            const service = new WebCryptoFunctionService(globalThis);
+            globalThis.constructorAdvanced = true;
+            service.hash('abc').then((hex) => { globalThis.hashHex = hex; });
+            service.pbkdf2().catch((error) => { globalThis.pbkdf2Blocked = `${error.name}:${error.message.includes('not supported')}`; });
+            chrome.runtime.onMessage.addListener(() => ({
+              constructorAdvanced: globalThis.constructorAdvanced === true,
+              hashHex: globalThis.hashHex || null,
+              pbkdf2Blocked: globalThis.pbkdf2Blocked || null
+            }));
+            """
+        )
+
+        let result = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            payloadSummary: "Bitwarden-style crypto"
+        )
+
+        XCTAssertEqual(
+            result.responsePayload,
+            .object([
+                "constructorAdvanced": .bool(true),
+                "hashHex":
+                    .string(
+                        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+                    ),
+                "pbkdf2Blocked": .string("NotSupportedError:true"),
+            ])
+        )
+        XCTAssertTrue(
+            harness.snapshot.cryptoOperationRecords.contains {
+                $0.operation == "subtle.digest"
+                    && $0.algorithm == "SHA-256"
+                    && $0.status == "fulfilled"
+            }
+        )
+        XCTAssertTrue(
+            harness.snapshot.cryptoOperationRecords.contains {
+                $0.operation == "subtle.importKey"
+                    && $0.algorithm == "PBKDF2"
+                    && $0.blocker == "unsupportedMethod"
+            }
+        )
+    }
+
+    func testWorkerGlobalScopeAvoidsProtonStyleWindowFallback() throws {
+        let harness = try startedHarness(
+            source: """
+            const target = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope ? self : window;
+            chrome.runtime.onMessage.addListener(() => ({
+              targetIsSelf: target === self,
+              windowType: typeof window,
+              documentType: typeof document
+            }));
+            """
+        )
+
+        XCTAssertEqual(
+            harness.dispatch(
+                source: .popupOptionsRuntimeMessage,
+                payloadSummary: "Proton worker global fallback"
+            ).responsePayload,
+            .object([
+                "documentType": .string("undefined"),
+                "targetIsSelf": .bool(true),
                 "windowType": .string("undefined"),
             ])
         )
@@ -1639,6 +1936,18 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertFalse(policy.wallClockTimersAllowed)
         XCTAssertTrue(policy.timersAllowed)
         XCTAssertFalse(policy.pollingAllowed)
+        XCTAssertTrue(policy.webCryptoAvailableInLocalExperimentalGate)
+        XCTAssertFalse(policy.webCryptoAvailableByDefault)
+        XCTAssertTrue(policy.cryptoGetRandomValuesAvailable)
+        XCTAssertTrue(policy.cryptoRandomUUIDAvailable)
+        XCTAssertTrue(policy.subtleCryptoAvailableInLocalExperimentalGate)
+        XCTAssertFalse(policy.subtleCryptoAvailableByDefault)
+        XCTAssertEqual(policy.subtleCryptoSupportedMethods, ["digest"])
+        XCTAssertTrue(policy.subtleCryptoBlockedMethods.contains("deriveBits"))
+        XCTAssertTrue(
+            policy.subtleCryptoSupportedAlgorithms.contains("digest:SHA-256")
+        )
+        XCTAssertTrue(policy.subtleCryptoBlockedAlgorithms.contains("PBKDF2"))
     }
 
     private func startedHarness(

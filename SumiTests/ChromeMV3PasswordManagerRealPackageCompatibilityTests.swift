@@ -1140,6 +1140,30 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertFalse(harness.contains("dynamicImportAvailable: " + positive))
         XCTAssertFalse(harness.contains("moduleWorkerImportAvailable: " + positive))
         XCTAssertFalse(harness.contains("permanentBackgroundAvailable: " + positive))
+        XCTAssertFalse(
+            harness.contains("webCryptoAvailableByDefault: " + positive)
+        )
+        XCTAssertFalse(
+            harness.contains(
+                "subtleCryptoAvailableByDefault: " + positive
+            )
+        )
+        XCTAssertFalse(harness.contains("SystemRandomNumberGenerator"))
+        XCTAssertTrue(harness.contains("SecRandomCopyBytes(kSecRandomDefault"))
+        XCTAssertTrue(
+            harness.contains(
+                "No dummy keys, signatures, ciphertexts, or derived bits are returned."
+            )
+        )
+        XCTAssertTrue(
+            harness.contains(
+                "return Promise.reject(new DOMException("
+            )
+        )
+        XCTAssertFalse(harness.contains("defineWorkerGlobal('window'"))
+        XCTAssertFalse(harness.contains("defineWorkerGlobal('document'"))
+        XCTAssertFalse(harness.contains("globalThis.window ="))
+        XCTAssertFalse(harness.contains("globalThis.document ="))
         XCTAssertFalse(harness.contains("DispatchSource" + "Ti" + "mer"))
         XCTAssertFalse(harness.contains("Ti" + "mer" + "("))
         XCTAssertFalse(validator.contains("manifest_version 2 only"))
@@ -1197,7 +1221,31 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         let proton = try XCTUnwrap(byClass[.protonPass])
         XCTAssertEqual(
             bitwarden.serviceWorkerEventReadiness.nextBlockerClassification,
-            .otherPreciseBlocker
+            .unsupportedChromeAPI
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
+                .contains("chrome.i18n.getUILanguage")
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.cryptoCapabilityResult
+                .contains("subtleMethods=digest")
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.jsExecutionPolicy
+                .webCryptoAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(
+            bitwarden.serviceWorkerEventReadiness.jsExecutionPolicy
+                .webCryptoAvailableByDefault
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness
+                .cryptoSubtleSupportedAlgorithms.contains("digest:SHA-256")
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness
+                .cryptoSubtleBlockedAlgorithms.contains("PBKDF2")
         )
         XCTAssertTrue(
             bitwarden.serviceWorkerEventReadiness.dynamicImportRewriteResult
@@ -1215,12 +1263,12 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             bitwarden.serviceWorkerEventReadiness.dependencyInventory
                 .dynamicImportExpressions.isEmpty
         )
-        XCTAssertEqual(
+        XCTAssertNotEqual(
             bitwarden.serviceWorkerEventReadiness.executionStartResult?
                 .exceptionDetails?.classification,
             .missingWebAPI
         )
-        XCTAssertEqual(
+        XCTAssertNotEqual(
             bitwarden.serviceWorkerEventReadiness.executionStartResult?
                 .exceptionDetails?.inferredMissingProperty,
             "crypto.subtle"
@@ -1254,7 +1302,15 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertEqual(
             proton.serviceWorkerEventReadiness.nextBlockerClassification,
-            .otherPreciseBlocker
+            .workerWindowDOMUnsupported
+        )
+        XCTAssertTrue(
+            proton.serviceWorkerEventReadiness.cryptoCapabilityResult
+                .contains("fulfilled=1")
+        )
+        XCTAssertTrue(
+            proton.serviceWorkerEventReadiness.cryptoOperationSummary
+                .contains("getRandomValues:none:fulfilled:none")
         )
         XCTAssertGreaterThan(
             proton.serviceWorkerEventReadiness.dependencyInventory
@@ -1270,17 +1326,17 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertTrue(
             proton.serviceWorkerEventReadiness.nextBlockerDetail
-                .contains("window")
+                .contains("addEventListener")
         )
         XCTAssertEqual(
             proton.serviceWorkerEventReadiness.executionStartResult?
                 .exceptionDetails?.classification,
-            .missingWebAPI
+            .unknownVendorCodeAssumption
         )
-        XCTAssertEqual(
-            proton.serviceWorkerEventReadiness.executionStartResult?
-                .exceptionDetails?.inferredMissingGlobal,
-            "window"
+        XCTAssertTrue(
+            proton.serviceWorkerEventReadiness
+                .workerWindowFailureClassification
+                .hasPrefix("workerGlobalEventTargetMissing:")
         )
         XCTAssertFalse(
             proton.serviceWorkerEventReadiness.nextBlockerDetail

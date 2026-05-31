@@ -1364,6 +1364,11 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
     var importScriptsBlockers: [ChromeMV3ServiceWorkerJSImportScriptsBlocker]
     var computedImportScriptsResult: String
     var dynamicImportRewriteResult: String
+    var cryptoCapabilityResult: String
+    var cryptoOperationSummary: [String]
+    var cryptoSubtleSupportedAlgorithms: [String]
+    var cryptoSubtleBlockedAlgorithms: [String]
+    var workerWindowFailureClassification: String
     var timerPolicyResult: String
     var timerShimResult: String
     var moduleWorkerReadinessResult: String
@@ -1419,6 +1424,14 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
             computedImportScriptsResult:
                 readiness.computedImportScriptsResult,
             dynamicImportRewriteResult: readiness.dynamicImportRewriteResult,
+            cryptoCapabilityResult: readiness.cryptoCapabilityResult,
+            cryptoOperationSummary: readiness.cryptoOperationSummary,
+            cryptoSubtleSupportedAlgorithms:
+                readiness.cryptoSubtleSupportedAlgorithms,
+            cryptoSubtleBlockedAlgorithms:
+                readiness.cryptoSubtleBlockedAlgorithms,
+            workerWindowFailureClassification:
+                readiness.workerWindowFailureClassification,
             timerPolicyResult:
                 "localExperimental=\(readiness.jsExecutionPolicy.timersAvailableInLocalExperimentalGate), default=\(readiness.jsExecutionPolicy.timersAvailableByDefault), wallClock=\(readiness.jsExecutionPolicy.wallClockTimersAllowed), polling=\(readiness.jsExecutionPolicy.pollingAllowed)",
             timerShimResult: readiness.timerShimResult,
@@ -3320,6 +3333,28 @@ struct ChromeMV3ExtensionManagerView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    Text("WebCrypto slice: \(trial.cryptoCapabilityResult)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if trial.cryptoOperationSummary.isEmpty == false {
+                        Text(
+                            "Crypto operations: "
+                                + trial.cryptoOperationSummary
+                                .prefix(4)
+                                .joined(separator: ", ")
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text(
+                        "Worker window: "
+                            + trial.workerWindowFailureClassification
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                     Text(
                         "Trial dynamic rewrite: "
                             + trial.dynamicImportRewriteResult

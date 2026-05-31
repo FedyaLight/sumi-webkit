@@ -606,6 +606,16 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
     var wallClockTimersAllowed: Bool
     var timersAllowed: Bool
     var pollingAllowed: Bool
+    var webCryptoAvailableInLocalExperimentalGate: Bool
+    var webCryptoAvailableByDefault: Bool
+    var cryptoGetRandomValuesAvailable: Bool
+    var cryptoRandomUUIDAvailable: Bool
+    var subtleCryptoAvailableInLocalExperimentalGate: Bool
+    var subtleCryptoAvailableByDefault: Bool
+    var subtleCryptoSupportedMethods: [String]
+    var subtleCryptoBlockedMethods: [String]
+    var subtleCryptoSupportedAlgorithms: [String]
+    var subtleCryptoBlockedAlgorithms: [String]
     var blockers: [ChromeMV3ServiceWorkerJSExecutionPolicyBlocker]
     var diagnostics: [String]
 
@@ -666,6 +676,45 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
                 moduleState: moduleState,
                 extensionEnabled: extensionEnabled
             )
+        let webCryptoAvailable = available
+        let supportedSubtleMethods = webCryptoAvailable ? ["digest"] : []
+        let blockedSubtleMethods =
+            webCryptoAvailable
+            ? [
+                "decrypt",
+                "deriveBits",
+                "deriveKey",
+                "encrypt",
+                "exportKey",
+                "generateKey",
+                "importKey",
+                "sign",
+                "unwrapKey",
+                "verify",
+                "wrapKey",
+            ] : []
+        let supportedSubtleAlgorithms =
+            webCryptoAvailable
+            ? [
+                "digest:SHA-1",
+                "digest:SHA-256",
+                "digest:SHA-384",
+                "digest:SHA-512",
+            ] : []
+        let blockedSubtleAlgorithms =
+            webCryptoAvailable
+            ? [
+                "AES-CBC",
+                "AES-CTR",
+                "AES-GCM",
+                "ECDH",
+                "ECDSA",
+                "HKDF",
+                "HMAC",
+                "PBKDF2",
+                "RSA-OAEP",
+                "RSASSA-PKCS1-v1_5",
+            ] : []
         let surface: ChromeMV3ServiceWorkerJSExecutionSurface
         if moduleState != .enabled || extensionEnabled == false {
             surface = .none
@@ -714,6 +763,16 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
             wallClockTimersAllowed: false,
             timersAllowed: available,
             pollingAllowed: false,
+            webCryptoAvailableInLocalExperimentalGate: webCryptoAvailable,
+            webCryptoAvailableByDefault: false,
+            cryptoGetRandomValuesAvailable: webCryptoAvailable,
+            cryptoRandomUUIDAvailable: webCryptoAvailable,
+            subtleCryptoAvailableInLocalExperimentalGate: webCryptoAvailable,
+            subtleCryptoAvailableByDefault: false,
+            subtleCryptoSupportedMethods: supportedSubtleMethods,
+            subtleCryptoBlockedMethods: blockedSubtleMethods,
+            subtleCryptoSupportedAlgorithms: supportedSubtleAlgorithms,
+            subtleCryptoBlockedAlgorithms: blockedSubtleAlgorithms,
             blockers: blockers,
             diagnostics:
                 uniqueSortedServiceWorkerJS(
@@ -726,6 +785,8 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
                         "Dynamic import rewrite experiment is an explicit harness-only transform, default-off, generated-bundle-only, string-literal-only, and never mutates generated bundle artifacts.",
                         "Network imports, file/data/blob URL imports, absolute filesystem imports, symlink escapes, and module worker import remain blocked.",
                         "setTimeout, clearTimeout, setInterval, and clearInterval are available only as an explicit manually drained harness queue; no wall-clock timer or polling loop is created.",
+                        "WebCrypto is exposed only inside the local experimental MV3 gate; getRandomValues and randomUUID require Security.framework secure random bytes.",
+                        "SubtleCrypto is local-experimental and default-off; this slice supports digest only and rejects key, signing, derivation, encryption, wrapping, and unsupported algorithm calls precisely.",
                         "Lifetime transitions are explicit fixture calls only.",
                         "Stable product runtime remains default-off.",
                     ]
@@ -810,6 +871,36 @@ struct ChromeMV3ServiceWorkerJSExecutionDocumentationSource:
             "importScripts processes each supplied URL synchronously in argument order, fetches a classic worker-imported script, runs it, and aborts the remaining imports on exception."
         ),
         source(
+            "MDN WorkerGlobalScope self",
+            "https://developer.mozilla.org/en-US/docs/Web/API/WorkerGlobalScope/self",
+            "Worker self is a reference to the WorkerGlobalScope itself; the harness exposes self and WorkerGlobalScope without adding window or document."
+        ),
+        source(
+            "MDN Web Crypto API",
+            "https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API",
+            "WebCrypto is available in workers and exposes Crypto.subtle for low-level primitives; the harness keeps only explicitly implemented methods available."
+        ),
+        source(
+            "MDN Crypto.getRandomValues",
+            "https://developer.mozilla.org/en-US/docs/Web/API/Crypto/getRandomValues",
+            "getRandomValues accepts integer typed arrays, writes in place, and rejects requests over 65,536 bytes."
+        ),
+        source(
+            "MDN Crypto.randomUUID",
+            "https://developer.mozilla.org/en-US/docs/Web/API/Crypto/randomUUID",
+            "randomUUID returns a 36-character v4 UUID generated with cryptographically secure random bytes."
+        ),
+        source(
+            "MDN SubtleCrypto.digest",
+            "https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/digest",
+            "digest accepts SHA-1, SHA-256, SHA-384, and SHA-512 with ArrayBuffer or ArrayBufferView data and returns a Promise for an ArrayBuffer digest."
+        ),
+        source(
+            "W3C Web Cryptography API Level 2",
+            "https://w3c.github.io/webcrypto/",
+            "Checked Crypto, getRandomValues, randomUUID, and SubtleCrypto.digest semantics before exposing the local experimental compatibility slice."
+        ),
+        source(
             "MDN WorkerGlobalScope setTimeout",
             "https://developer.mozilla.org/en-US/docs/Web/API/WorkerGlobalScope/setTimeout",
             "Worker timers return cancellable integer identifiers and invoke callbacks after a delay. The local experimental harness intentionally substitutes an explicit manual queue and never waits on wall clock time."
@@ -843,6 +934,21 @@ struct ChromeMV3ServiceWorkerJSExecutionDocumentationSource:
             "Apple JavaScriptCore binary symbol table",
             "xcode://MacOSX.sdk/System/Library/Frameworks/JavaScriptCore.framework/JavaScriptCore.tbd",
             "The local SDK binary exports unheadered JSScript and C++ module/import symbols. They are not declared in public SDK headers or Swift overlay and are not used by the harness."
+        ),
+        source(
+            "Apple Security randomization services",
+            "https://developer.apple.com/documentation/security/randomization-services",
+            "SecRandomCopyBytes generates cryptographically secure random bytes; the harness treats any SecRandom failure as a precise WebCrypto blocker."
+        ),
+        source(
+            "Apple Security SecRandom SDK header",
+            "xcode://MacOSX.sdk/System/Library/Frameworks/Security.framework/Headers/SecRandom.h",
+            "The local SDK documents kSecRandomDefault as the default cryptographically secure RNG and requires SecRandomCopyBytes return status checks."
+        ),
+        source(
+            "Apple CryptoKit SDK interface",
+            "xcode://MacOSX.sdk/System/Library/Frameworks/CryptoKit.framework/Modules/CryptoKit.swiftmodule",
+            "The local SDK exposes SHA-1 through Insecure.SHA1 and SHA-256/SHA-384/SHA-512 digest implementations used by the digest-only SubtleCrypto slice."
         ),
         source(
             "Apple WKWebExtensionController SDK header",
@@ -1530,9 +1636,24 @@ struct ChromeMV3ServiceWorkerJSExecutionStartRecord:
     var importedScriptPaths: [String]
     var importScriptsBlockers: [ChromeMV3ServiceWorkerJSImportScriptsBlocker]
     var blockedUnsupportedCalls: [String]
+    var cryptoOperationRecords:
+        [ChromeMV3ServiceWorkerJSCryptoOperationRecord]
     var blockers: [ChromeMV3ServiceWorkerJSExecutionStartBlocker]
     var lastErrorMessage: String?
     var exceptionDetails: ChromeMV3ServiceWorkerJSExceptionDetails?
+    var diagnostics: [String]
+}
+
+struct ChromeMV3ServiceWorkerJSCryptoOperationRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var operation: String
+    var algorithm: String?
+    var byteCount: Int?
+    var status: String
+    var blocker: String?
     var diagnostics: [String]
 }
 
@@ -1610,6 +1731,8 @@ struct ChromeMV3ServiceWorkerJSExecutionSnapshot:
     var importedScripts: [ChromeMV3ServiceWorkerJSImportedScriptRecord]
     var importScriptsBlockers: [ChromeMV3ServiceWorkerJSImportScriptsBlocker]
     var blockedUnsupportedCalls: [String]
+    var cryptoOperationRecords:
+        [ChromeMV3ServiceWorkerJSCryptoOperationRecord]
     var dispatchRecords: [ChromeMV3ServiceWorkerJSDispatchRecord]
     var ports: [ChromeMV3ServiceWorkerJSPortRecord]
     var timers: [ChromeMV3ServiceWorkerJSTimerRecord]
@@ -1637,6 +1760,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
     private var importedScriptRecords:
         [ChromeMV3ServiceWorkerJSImportedScriptRecord] = []
     private var blockedUnsupportedCalls: [String] = []
+    private var cryptoOperationRecords:
+        [ChromeMV3ServiceWorkerJSCryptoOperationRecord] = []
     private var dispatchRecords: [ChromeMV3ServiceWorkerJSDispatchRecord] = []
     private var ports: [String: ChromeMV3ServiceWorkerJSPortRecord] = [:]
     private var timers: [ChromeMV3ServiceWorkerJSTimerRecord] = []
@@ -1661,6 +1786,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             importedScriptPaths: [],
             importScriptsBlockers: [],
             blockedUnsupportedCalls: [],
+            cryptoOperationRecords: [],
             blockers: [],
             lastErrorMessage: nil,
             exceptionDetails: nil,
@@ -1696,6 +1822,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             importedScripts: importedScriptRecords,
             importScriptsBlockers: currentImportScriptBlockers(),
             blockedUnsupportedCalls: blockedUnsupportedCalls,
+            cryptoOperationRecords: cryptoOperationRecords,
             dispatchRecords: dispatchRecords,
             ports: ports.values.sorted { $0.portID < $1.portID },
             timers: timers.sorted { $0.timerID < $1.timerID },
@@ -1827,6 +1954,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             importEvaluationStack.removeAll()
             syncImportRecordsIntoResourceLoad()
             if let exceptionDetails {
+                refreshJSSnapshot()
                 self.context = nil
                 return finishStart(
                     status: .failed,
@@ -1843,6 +1971,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             if loaded.record.dynamicImportRewriteExperimentApplied,
                let blocker = resourceLoadRecord?.dynamicImportBlockers.first
             {
+                refreshJSSnapshot()
                 self.context = nil
                 return finishStart(
                     status: .failed,
@@ -2500,6 +2629,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                     .sorted(),
             importScriptsBlockers: currentImportScriptBlockers(),
             blockedUnsupportedCalls: blockedUnsupportedCalls,
+            cryptoOperationRecords: cryptoOperationRecords,
             blockers: uniqueSortedServiceWorkerJS(blockers),
             lastErrorMessage: lastErrorMessage,
             exceptionDetails: exceptionDetails,
@@ -2658,36 +2788,97 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         }
 
         private func installCryptoHost(in context: JSContext) {
-            let host: @convention(block) (NSNumber) -> NSArray = { countValue in
-                let count = max(0, min(65_536, countValue.intValue))
-                guard count > 0 else { return [] }
-                var bytes = [UInt8](repeating: 0, count: count)
-                #if canImport(Security)
-                    let status = bytes.withUnsafeMutableBytes { buffer in
-                        SecRandomCopyBytes(
-                            kSecRandomDefault,
-                            count,
-                            buffer.baseAddress!
+            let randomHost: @convention(block) (NSNumber) -> NSDictionary = {
+                countValue in
+                let count = countValue.intValue
+                guard count >= 0 && count <= 65_536 else {
+                    return webCryptoHostErrorServiceWorkerJS(
+                        "Requested random byte count is outside the WebCrypto getRandomValues limit."
+                    )
+                }
+                switch secureRandomBytesServiceWorkerJS(count: count) {
+                case .success(let bytes):
+                    return [
+                        "ok": true,
+                        "bytes":
+                            bytes.map { NSNumber(value: $0) } as NSArray,
+                    ] as NSDictionary
+                case .failure(let error):
+                    return webCryptoHostErrorServiceWorkerJS(error.message)
+                }
+            }
+            let uuidHost: @convention(block) () -> NSDictionary = {
+                switch secureRandomBytesServiceWorkerJS(count: 16) {
+                case .success(var bytes):
+                    bytes[6] = (bytes[6] & 0x0f) | 0x40
+                    bytes[8] = (bytes[8] & 0x3f) | 0x80
+                    return [
+                        "ok": true,
+                        "uuid": uuidV4StringServiceWorkerJS(bytes),
+                    ] as NSDictionary
+                case .failure(let error):
+                    return webCryptoHostErrorServiceWorkerJS(error.message)
+                }
+            }
+            let digestHost:
+                @convention(block) (NSString, JSValue) -> NSDictionary =
+            { algorithmValue, byteValues in
+                let algorithm = String(algorithmValue)
+                guard let values = byteValues.toArray() else {
+                    return webCryptoHostErrorServiceWorkerJS(
+                        "SubtleCrypto.digest received non-array byte material from the JavaScript bridge."
+                    )
+                }
+                var bytes: [UInt8] = []
+                bytes.reserveCapacity(values.count)
+                for value in values {
+                    guard let number = value as? NSNumber else {
+                        return webCryptoHostErrorServiceWorkerJS(
+                            "SubtleCrypto.digest received a non-numeric byte."
                         )
                     }
-                    if status != errSecSuccess {
-                        var generator = SystemRandomNumberGenerator()
-                        for index in bytes.indices {
-                            bytes[index] = UInt8.random(in: 0...255, using: &generator)
-                        }
+                    let intValue = number.intValue
+                    guard intValue >= 0 && intValue <= 255 else {
+                        return webCryptoHostErrorServiceWorkerJS(
+                            "SubtleCrypto.digest received a byte outside 0...255."
+                        )
                     }
-                #else
-                    var generator = SystemRandomNumberGenerator()
-                    for index in bytes.indices {
-                        bytes[index] = UInt8.random(in: 0...255, using: &generator)
-                    }
-                #endif
-                return bytes.map { NSNumber(value: $0) } as NSArray
+                    bytes.append(UInt8(intValue))
+                }
+                guard
+                    let normalized =
+                        normalizedWebCryptoDigestAlgorithmServiceWorkerJS(
+                            algorithm
+                        ),
+                    let digest = webCryptoDigestBytesServiceWorkerJS(
+                        algorithm: normalized,
+                        bytes: bytes
+                    )
+                else {
+                    return webCryptoHostErrorServiceWorkerJS(
+                        "Unsupported SubtleCrypto.digest algorithm \(algorithm)."
+                    )
+                }
+                return [
+                    "ok": true,
+                    "algorithm": normalized,
+                    "bytes": digest.map { NSNumber(value: $0) } as NSArray,
+                ] as NSDictionary
             }
             context.setObject(
-                host,
+                randomHost,
                 forKeyedSubscript:
                     "__sumiCryptoGetRandomValuesHost" as NSString
+            )
+            context.setObject(
+                uuidHost,
+                forKeyedSubscript:
+                    "__sumiCryptoRandomUUIDHost" as NSString
+            )
+            context.setObject(
+                digestHost,
+                forKeyedSubscript:
+                    "__sumiCryptoDigestHost" as NSString
             )
         }
 
@@ -3801,6 +3992,16 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             }
             blockedUnsupportedCalls =
                 uniqueSortedServiceWorkerJS(wire.blockedCalls)
+            cryptoOperationRecords = wire.cryptoOperations.map {
+                ChromeMV3ServiceWorkerJSCryptoOperationRecord(
+                    operation: $0.operation,
+                    algorithm: $0.algorithm,
+                    byteCount: $0.byteCount,
+                    status: $0.status,
+                    blocker: $0.blocker,
+                    diagnostics: $0.diagnostics
+                )
+            }
             ports = Dictionary(
                 uniqueKeysWithValues:
                     wire.ports.map {
@@ -3885,6 +4086,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       'use strict';
       const registrations = [];
       const blockedCalls = [];
+      const cryptoOperations = [];
       const ports = new Map();
       const timers = new Map();
       const pendingTimeoutIDs = [];
@@ -3904,6 +4106,18 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         });
       };
       globalThis.self = globalThis;
+      if (typeof globalThis.WorkerGlobalScope !== 'function') {
+        function SumiWorkerGlobalScope() {
+          throw new TypeError('Illegal constructor');
+        }
+        if (typeof Symbol === 'function' && Symbol.hasInstance) {
+          Object.defineProperty(SumiWorkerGlobalScope, Symbol.hasInstance, {
+            value(value) { return value === globalThis; }
+          });
+        }
+        defineWorkerGlobal('WorkerGlobalScope', SumiWorkerGlobalScope);
+        defineWorkerGlobal('ServiceWorkerGlobalScope', SumiWorkerGlobalScope);
+      }
       if (typeof globalThis.DOMException !== 'function') {
         const domExceptionCodes = {
           IndexSizeError: 1,
@@ -4163,6 +4377,141 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         });
       }
       if (typeof globalThis.crypto !== 'object' || globalThis.crypto === null) {
+        const cryptoHostError = (message) => new DOMException(String(message), 'OperationError');
+        const recordCryptoOperation = (operation, algorithm, byteCount, status, blocker, diagnostics = []) => {
+          cryptoOperations.push({
+            operation: String(operation),
+            algorithm: algorithm ? String(algorithm) : null,
+            byteCount: Number.isFinite(byteCount) ? Number(byteCount) : null,
+            status: String(status),
+            blocker: blocker ? String(blocker) : null,
+            diagnostics: diagnostics.map((value) => String(value))
+          });
+        };
+        const algorithmName = (algorithm) => {
+          if (typeof algorithm === 'string') return algorithm;
+          if (algorithm && typeof algorithm.name === 'string') return algorithm.name;
+          return null;
+        };
+        const normalizeDigestAlgorithm = (algorithm) => {
+          const name = algorithmName(algorithm);
+          if (!name) return null;
+          const normalized = String(name).trim().toUpperCase().replace(/_/g, '-');
+          if (normalized === 'SHA-1' || normalized === 'SHA1') return 'SHA-1';
+          if (normalized === 'SHA-256' || normalized === 'SHA256') return 'SHA-256';
+          if (normalized === 'SHA-384' || normalized === 'SHA384') return 'SHA-384';
+          if (normalized === 'SHA-512' || normalized === 'SHA512') return 'SHA-512';
+          return null;
+        };
+        const bufferSourceBytes = (data) => {
+          if (data instanceof ArrayBuffer) return new Uint8Array(data);
+          if (ArrayBuffer.isView(data)) {
+            return new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength);
+          }
+          throw new TypeError('SubtleCrypto.digest requires an ArrayBuffer or ArrayBufferView.');
+        };
+        const unsupportedSubtleAlgorithmName = (method, args) => {
+          if (method === 'importKey') return algorithmName(args[2]);
+          if (method === 'exportKey') return String(args[0] || '');
+          return algorithmName(args[0]);
+        };
+        const unsupportedSubtleMethod = (method) => function (...args) {
+          const name = unsupportedSubtleAlgorithmName(method, args);
+          recordCryptoOperation(
+            `subtle.${method}`,
+            name,
+            null,
+            'blocked',
+            'unsupportedMethod',
+            [
+              'SubtleCrypto method is outside the digest-only local experimental MV3 slice.',
+              'No dummy keys, signatures, ciphertexts, or derived bits are returned.'
+            ]
+          );
+          return Promise.reject(new DOMException(
+            `SubtleCrypto.${method} is not supported by the digest-only local experimental MV3 service-worker harness.`,
+            'NotSupportedError'
+          ));
+        };
+        const subtle = Object.freeze({
+          digest(algorithm, data) {
+            try {
+              const normalized = normalizeDigestAlgorithm(algorithm);
+              const bytes = bufferSourceBytes(data);
+              if (!normalized) {
+                const requested = algorithmName(algorithm) || 'unknown';
+                recordCryptoOperation(
+                  'subtle.digest',
+                  requested,
+                  bytes.byteLength,
+                  'blocked',
+                  'unsupportedAlgorithm',
+                  ['Unsupported digest algorithm rejected deterministically.']
+                );
+                return Promise.reject(new DOMException(
+                  `SubtleCrypto.digest unsupported algorithm: ${requested}.`,
+                  'NotSupportedError'
+                ));
+              }
+              if (typeof globalThis.__sumiCryptoDigestHost !== 'function') {
+                recordCryptoOperation(
+                  'subtle.digest',
+                  normalized,
+                  bytes.byteLength,
+                  'blocked',
+                  'hostUnavailable',
+                  ['Native digest host is unavailable.']
+                );
+                return Promise.reject(cryptoHostError('SubtleCrypto.digest host is unavailable.'));
+              }
+              const result = globalThis.__sumiCryptoDigestHost(normalized, Array.from(bytes));
+              if (!result || result.ok !== true) {
+                recordCryptoOperation(
+                  'subtle.digest',
+                  normalized,
+                  bytes.byteLength,
+                  'blocked',
+                  'hostUnavailable',
+                  ['Native digest host rejected the request.']
+                );
+                return Promise.reject(cryptoHostError(result && result.error
+                  ? String(result.error)
+                  : 'SubtleCrypto.digest host failed.'));
+              }
+              const output = Uint8Array.from(Array.from(result.bytes || []));
+              recordCryptoOperation(
+                'subtle.digest',
+                String(result.algorithm || normalized),
+                bytes.byteLength,
+                'fulfilled',
+                null,
+                ['Digest fulfilled with native CryptoKit-backed bytes; input material is not recorded.']
+              );
+              return Promise.resolve(output.buffer);
+            } catch (error) {
+              recordCryptoOperation(
+                'subtle.digest',
+                algorithmName(algorithm),
+                null,
+                'blocked',
+                'invalidInput',
+                ['Digest rejected invalid BufferSource or algorithm input.']
+              );
+              return Promise.reject(error);
+            }
+          },
+          decrypt: unsupportedSubtleMethod('decrypt'),
+          deriveBits: unsupportedSubtleMethod('deriveBits'),
+          deriveKey: unsupportedSubtleMethod('deriveKey'),
+          encrypt: unsupportedSubtleMethod('encrypt'),
+          exportKey: unsupportedSubtleMethod('exportKey'),
+          generateKey: unsupportedSubtleMethod('generateKey'),
+          importKey: unsupportedSubtleMethod('importKey'),
+          sign: unsupportedSubtleMethod('sign'),
+          unwrapKey: unsupportedSubtleMethod('unwrapKey'),
+          verify: unsupportedSubtleMethod('verify'),
+          wrapKey: unsupportedSubtleMethod('wrapKey')
+        });
         defineWorkerGlobal('crypto', Object.freeze({
           getRandomValues(array) {
             const valid =
@@ -4177,15 +4526,82 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
               throw new DOMException('getRandomValues byte length exceeds 65536.', 'QuotaExceededError');
             }
             if (typeof globalThis.__sumiCryptoGetRandomValuesHost !== 'function') {
-              throw new Error('crypto.getRandomValues host is unavailable.');
+              recordCryptoOperation(
+                'getRandomValues',
+                null,
+                array.byteLength,
+                'blocked',
+                'hostUnavailable',
+                ['Secure random host is unavailable.']
+              );
+              throw cryptoHostError('crypto.getRandomValues host is unavailable.');
             }
-            const bytes = globalThis.__sumiCryptoGetRandomValuesHost(array.byteLength);
+            const result = globalThis.__sumiCryptoGetRandomValuesHost(array.byteLength);
+            if (!result || result.ok !== true) {
+              recordCryptoOperation(
+                'getRandomValues',
+                null,
+                array.byteLength,
+                'blocked',
+                'secureRandomUnavailable',
+                ['Security.framework secure random bytes were unavailable.']
+              );
+              throw cryptoHostError(result && result.error
+                ? String(result.error)
+                : 'crypto.getRandomValues host failed.');
+            }
+            const bytes = Array.from(result.bytes || []);
             const view = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
             for (let index = 0; index < view.length; index += 1) {
               view[index] = Number(bytes[index]) & 0xff;
             }
+            recordCryptoOperation(
+              'getRandomValues',
+              null,
+              array.byteLength,
+              'fulfilled',
+              null,
+              ['Secure random bytes came from the native Security.framework host and were not recorded.']
+            );
             return array;
-          }
+          },
+          randomUUID() {
+            if (typeof globalThis.__sumiCryptoRandomUUIDHost !== 'function') {
+              recordCryptoOperation(
+                'randomUUID',
+                null,
+                16,
+                'blocked',
+                'hostUnavailable',
+                ['Secure UUID host is unavailable.']
+              );
+              throw cryptoHostError('crypto.randomUUID host is unavailable.');
+            }
+            const result = globalThis.__sumiCryptoRandomUUIDHost();
+            if (!result || result.ok !== true || typeof result.uuid !== 'string') {
+              recordCryptoOperation(
+                'randomUUID',
+                null,
+                16,
+                'blocked',
+                'secureRandomUnavailable',
+                ['Security.framework secure random bytes were unavailable for UUID generation.']
+              );
+              throw cryptoHostError(result && result.error
+                ? String(result.error)
+                : 'crypto.randomUUID host failed.');
+            }
+            recordCryptoOperation(
+              'randomUUID',
+              null,
+              16,
+              'fulfilled',
+              null,
+              ['UUID v4 was generated from native secure random bytes; random bytes are not recorded.']
+            );
+            return result.uuid;
+          },
+          subtle
         }));
       }
       if (typeof globalThis.queueMicrotask !== 'function') {
@@ -4650,6 +5066,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           source: item.source
         })),
         blockedCalls: [...blockedCalls],
+        cryptoOperations: cryptoOperations.map((item) => clone(item)),
         ports: [...ports.values()].map(portSnapshot),
         timers: [...timers.values()].map((state) => ({
           timerID: state.timerID,
@@ -4699,8 +5116,18 @@ private struct ChromeMV3ServiceWorkerJSWireRegistration: Decodable {
 private struct ChromeMV3ServiceWorkerJSWireSnapshot: Decodable {
     var registrations: [ChromeMV3ServiceWorkerJSWireRegistration]
     var blockedCalls: [String]
+    var cryptoOperations: [ChromeMV3ServiceWorkerJSWireCryptoOperation]
     var ports: [ChromeMV3ServiceWorkerJSWirePort]
     var timers: [ChromeMV3ServiceWorkerJSTimerRecord]
+}
+
+private struct ChromeMV3ServiceWorkerJSWireCryptoOperation: Decodable {
+    var operation: String
+    var algorithm: String?
+    var byteCount: Int?
+    var status: String
+    var blocker: String?
+    var diagnostics: [String]
 }
 
 private struct ChromeMV3ServiceWorkerJSWirePort: Decodable {
@@ -5021,8 +5448,10 @@ private func exceptionInferenceServiceWorkerJS(
         "DOMException",
         "URL",
         "URLSearchParams",
+        "ServiceWorkerGlobalScope",
         "TextDecoder",
         "TextEncoder",
+        "WorkerGlobalScope",
         "atob",
         "btoa",
         "crypto",
@@ -5122,6 +5551,109 @@ private func previewServiceWorkerJS(_ value: String) -> String {
     let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard trimmed.count > 240 else { return trimmed }
     return String(trimmed.prefix(240)) + "..."
+}
+
+private func webCryptoHostErrorServiceWorkerJS(_ message: String)
+    -> NSDictionary
+{
+    [
+        "ok": false,
+        "error": message,
+    ] as NSDictionary
+}
+
+private struct WebCryptoHostBridgeErrorServiceWorkerJS: Error {
+    var message: String
+}
+
+private func secureRandomBytesServiceWorkerJS(count: Int)
+    -> Result<[UInt8], WebCryptoHostBridgeErrorServiceWorkerJS>
+{
+    guard count >= 0 && count <= 65_536 else {
+        return .failure(
+            WebCryptoHostBridgeErrorServiceWorkerJS(
+                message:
+                    "Requested secure random byte count is outside the supported range."
+            )
+        )
+    }
+    guard count > 0 else { return .success([]) }
+    #if canImport(Security)
+        var bytes = [UInt8](repeating: 0, count: count)
+        let status = bytes.withUnsafeMutableBytes { buffer in
+            SecRandomCopyBytes(kSecRandomDefault, count, buffer.baseAddress!)
+        }
+        guard status == errSecSuccess else {
+            return .failure(
+                WebCryptoHostBridgeErrorServiceWorkerJS(
+                    message: "SecRandomCopyBytes failed with status \(status)."
+                )
+            )
+        }
+        return .success(bytes)
+    #else
+        return .failure(
+            WebCryptoHostBridgeErrorServiceWorkerJS(
+                message:
+                    "Security.framework SecRandomCopyBytes is unavailable."
+            )
+        )
+    #endif
+}
+
+private func uuidV4StringServiceWorkerJS(_ bytes: [UInt8]) -> String {
+    guard bytes.count == 16 else { return "" }
+    let hex = Array("0123456789abcdef")
+    let byteString: (UInt8) -> String = { byte in
+        String(hex[Int(byte >> 4)]) + String(hex[Int(byte & 0x0f)])
+    }
+    return [
+        bytes[0...3].map(byteString).joined(),
+        bytes[4...5].map(byteString).joined(),
+        bytes[6...7].map(byteString).joined(),
+        bytes[8...9].map(byteString).joined(),
+        bytes[10...15].map(byteString).joined(),
+    ].joined(separator: "-")
+}
+
+private func normalizedWebCryptoDigestAlgorithmServiceWorkerJS(
+    _ algorithm: String
+) -> String? {
+    let value = algorithm
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .uppercased()
+        .replacingOccurrences(of: "_", with: "-")
+    switch value {
+    case "SHA-1", "SHA1":
+        return "SHA-1"
+    case "SHA-256", "SHA256":
+        return "SHA-256"
+    case "SHA-384", "SHA384":
+        return "SHA-384"
+    case "SHA-512", "SHA512":
+        return "SHA-512"
+    default:
+        return nil
+    }
+}
+
+private func webCryptoDigestBytesServiceWorkerJS(
+    algorithm: String,
+    bytes: [UInt8]
+) -> [UInt8]? {
+    let data = Data(bytes)
+    switch normalizedWebCryptoDigestAlgorithmServiceWorkerJS(algorithm) {
+    case "SHA-1":
+        return Array(Insecure.SHA1.hash(data: data))
+    case "SHA-256":
+        return Array(SHA256.hash(data: data))
+    case "SHA-384":
+        return Array(SHA384.hash(data: data))
+    case "SHA-512":
+        return Array(SHA512.hash(data: data))
+    default:
+        return nil
+    }
 }
 
 private func rewriteDynamicImportsForHarnessServiceWorkerJS(

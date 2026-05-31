@@ -1093,6 +1093,8 @@ enum ChromeMV3PasswordManagerRealPackageNextBlockerClassification:
     case dynamicImportRewriteSucceededButListenerMissing
     case importScriptsDependencyMissing
     case unsupportedChromeAPI
+    case webCryptoUnsupported
+    case workerWindowDOMUnsupported
     case promiseCompletionUnsupported = "PromiseCompletionUnsupported"
     case listenerCaptureSucceeded
     case otherPreciseBlocker
@@ -1157,6 +1159,11 @@ struct ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness:
     var importScriptsResult: String
     var computedImportScriptsResult: String
     var dynamicImportRewriteResult: String
+    var cryptoCapabilityResult: String
+    var cryptoOperationSummary: [String]
+    var cryptoSubtleSupportedAlgorithms: [String]
+    var cryptoSubtleBlockedAlgorithms: [String]
+    var workerWindowFailureClassification: String
     var timerShimResult: String
     var moduleWorkerReadinessResult: String
     var dispatchSmokeResult: String
@@ -2641,6 +2648,17 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             policy: policy,
             resourceLoadResult: resourceLoadResult
         )
+        let cryptoCapabilityResult = serviceWorkerCryptoCapabilityResult(
+            policy: policy,
+            executionStartResult: executionStartResult
+        )
+        let cryptoOperationSummary = serviceWorkerCryptoOperationSummary(
+            executionStartResult: executionStartResult
+        )
+        let workerWindowFailureClassification =
+            serviceWorkerWorkerWindowFailureClassification(
+                executionStartResult: executionStartResult
+            )
         let moduleWorkerReadinessResult =
             serviceWorkerModuleWorkerReadinessResult(
                 policy: policy,
@@ -2719,6 +2737,14 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             importScriptsResult: importScriptsResult,
             computedImportScriptsResult: computedImportScriptsResult,
             dynamicImportRewriteResult: dynamicImportRewriteResult,
+            cryptoCapabilityResult: cryptoCapabilityResult,
+            cryptoOperationSummary: cryptoOperationSummary,
+            cryptoSubtleSupportedAlgorithms:
+                policy.subtleCryptoSupportedAlgorithms,
+            cryptoSubtleBlockedAlgorithms:
+                policy.subtleCryptoBlockedAlgorithms,
+            workerWindowFailureClassification:
+                workerWindowFailureClassification,
             timerShimResult: timerShimResult,
             moduleWorkerReadinessResult: moduleWorkerReadinessResult,
             dispatchSmokeResult: dispatchSmokeResult,
@@ -2765,7 +2791,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     declared: declared,
                     delta: delta,
                     resourceLoadResult: resourceLoadResult,
-                    dependencyInventory: dependencyInventory
+                    dependencyInventory: dependencyInventory,
+                    executionStartResult: executionStartResult
                 ),
             diagnostics:
                 uniqueSortedRealPackages(
@@ -3318,6 +3345,74 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         return "notApplied: \(eligibleCount) rewrite-eligible import(s), no dependency evaluation needed."
     }
 
+    private static func serviceWorkerCryptoCapabilityResult(
+        policy: ChromeMV3ServiceWorkerJSExecutionPolicy,
+        executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?
+    ) -> String {
+        guard policy.webCryptoAvailableInLocalExperimentalGate else {
+            return "blockedByPolicy: WebCrypto requires the explicit local experimental MV3 gate."
+        }
+        let operations = executionStartResult?.cryptoOperationRecords ?? []
+        let blocked = operations.filter { $0.status == "blocked" }
+        let fulfilled = operations.filter { $0.status == "fulfilled" }
+        return "available: crypto.getRandomValues=\(policy.cryptoGetRandomValuesAvailable), crypto.randomUUID=\(policy.cryptoRandomUUIDAvailable), subtleMethods=\(policy.subtleCryptoSupportedMethods.joined(separator: ",")), default=\(policy.webCryptoAvailableByDefault), fulfilled=\(fulfilled.count), blocked=\(blocked.count)."
+    }
+
+    private static func serviceWorkerCryptoOperationSummary(
+        executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?
+    ) -> [String] {
+        (executionStartResult?.cryptoOperationRecords ?? []).map { record in
+            [
+                record.operation,
+                record.algorithm ?? "none",
+                record.status,
+                record.blocker ?? "none",
+            ].joined(separator: ":")
+        }
+        .sorted()
+    }
+
+    private static func serviceWorkerWorkerWindowFailureClassification(
+        executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?
+    ) -> String {
+        guard
+            let exception = executionStartResult?.exceptionDetails
+        else {
+            return "notObserved: no unguarded worker window access failure was observed."
+        }
+        if exception.message.contains("addEventListener is not a function") {
+            return "workerGlobalEventTargetMissing: vendor code advanced past WorkerGlobalScope/self detection and now requires addEventListener on the worker global; DOM Window and document remain intentionally absent."
+        }
+        guard
+            exception.classification == .missingWebAPI,
+            exception.inferredMissingGlobal == "window"
+        else {
+            return "notObserved: no unguarded worker window access failure was observed."
+        }
+        let sourcePreview =
+            exception.diagnostics.first {
+                $0.contains("Exception source line preview:")
+            } ?? ""
+        if sourcePreview.contains("WorkerGlobalScope") {
+            return "workerGlobalAliasFallback: vendor code fell back from WorkerGlobalScope/self detection to window; the harness keeps WorkerGlobalScope narrow and does not expose DOM Window or document."
+        }
+        return "domWindowDependency: vendor code required window inside a service worker; DOM Window and document remain intentionally absent."
+    }
+
+    private static func serviceWorkerWorkerWindowFailureObserved(
+        executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?
+    ) -> Bool {
+        guard let exception = executionStartResult?.exceptionDetails else {
+            return false
+        }
+        if exception.classification == .missingWebAPI,
+           exception.inferredMissingGlobal == "window"
+        {
+            return true
+        }
+        return exception.message.contains("addEventListener is not a function")
+    }
+
     private static func serviceWorkerDispatchSmokeResult(
         capturedFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent],
         dispatchResults: [ChromeMV3ServiceWorkerJSDispatchRecord],
@@ -3363,10 +3458,28 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 "No background.service_worker was declared."
             )
         }
-        if capturedFamilies.isEmpty == false {
+        if let exception = executionStartResult?.exceptionDetails,
+           exception.inferredMissingProperty == "crypto.subtle"
+                || exception.message.localizedCaseInsensitiveContains(
+                    "SubtleCrypto"
+                )
+                || exception.message.localizedCaseInsensitiveContains(
+                    "Subtle crypto"
+                )
+        {
             return (
-                .listenerCaptureSucceeded,
-                "Captured executed listener families: \(capturedFamilies.map(\.rawValue).joined(separator: ", "))."
+                .webCryptoUnsupported,
+                "Execution requires WebCrypto/SubtleCrypto beyond the currently enabled local experimental slice: \(exception.message)"
+            )
+        }
+        if serviceWorkerWorkerWindowFailureObserved(
+            executionStartResult: executionStartResult
+        ) {
+            return (
+                .workerWindowDOMUnsupported,
+                serviceWorkerWorkerWindowFailureClassification(
+                    executionStartResult: executionStartResult
+                )
             )
         }
         if dependencyInventory.serviceWorkerType == "module" {
@@ -3446,6 +3559,25 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 "Execution reached unsupported extension API call \(unsupportedCall)."
             )
         }
+        if let cryptoBlocker =
+            executionStartResult?.cryptoOperationRecords.first(where: {
+                $0.status == "blocked"
+            })
+        {
+            let algorithm = cryptoBlocker.algorithm.map {
+                " algorithm \($0)"
+            } ?? ""
+            return (
+                .webCryptoUnsupported,
+                "Execution reached unsupported WebCrypto operation \(cryptoBlocker.operation)\(algorithm): \(cryptoBlocker.blocker ?? "blocked")."
+            )
+        }
+        if capturedFamilies.isEmpty == false {
+            return (
+                .listenerCaptureSucceeded,
+                "Captured executed listener families: \(capturedFamilies.map(\.rawValue).joined(separator: ", "))."
+            )
+        }
         if let message = executionStartResult?.lastErrorMessage,
            message.isEmpty == false
         {
@@ -3469,10 +3601,32 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             ChromeMV3PasswordManagerRealPackageServiceWorkerCaptureDelta,
         resourceLoadResult: ChromeMV3ServiceWorkerJSResourceLoadRecord?,
         dependencyInventory:
-            ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventory
+            ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventory,
+        executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?
     ) -> String {
         guard declared else {
             return "No background.service_worker was declared."
+        }
+        if executionStartResult?.cryptoOperationRecords.contains(where: {
+            $0.status == "blocked"
+        }) == true {
+            return "Implement only the next audited WebCrypto method or algorithm behind the local experimental MV3 gate; keep unsupported key, signing, derivation, encryption, and wrapping calls rejected precisely."
+        }
+        if let exception = executionStartResult?.exceptionDetails,
+           exception.inferredMissingProperty == "crypto.subtle"
+                || exception.message.localizedCaseInsensitiveContains(
+                    "SubtleCrypto"
+                )
+                || exception.message.localizedCaseInsensitiveContains(
+                    "Subtle crypto"
+                )
+        {
+            return "Expose only the safely implemented WebCrypto/SubtleCrypto surface needed for the next local experimental service-worker trial; keep stable runtime default-off."
+        }
+        if serviceWorkerWorkerWindowFailureObserved(
+            executionStartResult: executionStartResult
+        ) {
+            return "Classify the worker window/global dependency narrowly and prefer WorkerGlobalScope-compatible shims only; do not expose DOM Window or document."
         }
         if dependencyInventory.serviceWorkerType == "module" {
             return dependencyInventory.nextRecommendedImplementationPath
