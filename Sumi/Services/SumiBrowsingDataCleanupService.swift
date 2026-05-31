@@ -279,6 +279,9 @@ final class SumiBrowsingDataCleanupService {
             )
         }
 
+        siteDataDomains.formUnion(visitedDomains)
+        cacheDomains.formUnion(visitedDomains)
+
         return SumiBrowsingDataSummary(
             historyVisitCount: historyVisitCount,
             siteDataSiteCount: siteDataDomains.count,
