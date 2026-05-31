@@ -374,6 +374,147 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertEqual(resultRecorder.result, .found(matches: 3))
     }
 
+    func testImmediateVisualHandoffHandlerIsWindowScopedAndRemovedWithContainer() {
+        let coordinator = WebViewCoordinator()
+        let windowID = UUID()
+        var handoffCount = 0
+
+        coordinator.setImmediateVisualHandoffHandler({
+            handoffCount += 1
+            return true
+        }, for: windowID)
+
+        XCTAssertTrue(coordinator.performImmediateVisualHandoffIfPossible(in: windowID))
+        XCTAssertEqual(handoffCount, 1)
+
+        coordinator.removeCompositorContainerView(for: windowID)
+
+        XCTAssertFalse(coordinator.performImmediateVisualHandoffIfPossible(in: windowID))
+        XCTAssertEqual(handoffCount, 1)
+    }
+
+    func testVisualHandoffProtectionIsReleasedExplicitly() {
+        let coordinator = WebViewCoordinator()
+        let webView = WKWebView()
+
+        coordinator.beginVisualHandoffProtection(for: webView)
+        XCTAssertTrue(coordinator.isWebViewProtectedFromCompositorMutation(webView))
+
+        coordinator.finishVisualHandoffProtection(for: webView)
+        XCTAssertFalse(coordinator.isWebViewProtectedFromCompositorMutation(webView))
+    }
+
+    func testClosingAndSpaceSwitchPathsPerformVisualHandoffBeforeRuntimeCleanup() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let browserManagerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/BrowserManager/BrowserManager.swift"
+            ),
+            encoding: .utf8
+        )
+        let splitShortcutsSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/BrowserManager/BrowserManager+SplitShortcuts.swift"
+            ),
+            encoding: .utf8
+        )
+        let compositorSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Components/WebsiteView/WebsiteCompositorView.swift"
+            ),
+            encoding: .utf8
+        )
+
+        let regularClose = try sourceSlice(
+            browserManagerSource,
+            from: "func closeTab(_ tab: Tab, in windowState: BrowserWindowState)",
+            to: "isolated deinit"
+        )
+        XCTAssertLessThan(
+            try XCTUnwrap(regularClose.range(of: "performImmediateVisualHandoffIfPossible")).lowerBound,
+            try XCTUnwrap(regularClose.range(of: "tabManager.removeTab(tab.id)")).lowerBound
+        )
+
+        let shortcutClose = try sourceSlice(
+            browserManagerSource,
+            from: "private func closeShortcutLiveTab",
+            to: "private func captureClosedShortcutLiveInstance"
+        )
+        XCTAssertLessThan(
+            try XCTUnwrap(shortcutClose.range(of: "performImmediateVisualHandoffIfPossible")).lowerBound,
+            try XCTUnwrap(shortcutClose.range(of: "tabManager.deactivateShortcutLiveTab")).lowerBound
+        )
+
+        let spaceSwitch = try sourceSlice(
+            browserManagerSource,
+            from: "func setActiveSpace(_ space: Space, in windowState: BrowserWindowState)",
+            to: "private func selectionTargetForSpaceActivation"
+        )
+        XCTAssertTrue(spaceSwitch.contains("performImmediateVisualHandoffIfPossible(in: windowState)"))
+
+        let splitUnload = try sourceSlice(
+            splitShortcutsSource,
+            from: "func unloadShortcutHostedSplitGroup",
+            to: "@discardableResult"
+        )
+        XCTAssertLessThan(
+            try XCTUnwrap(splitUnload.range(of: "performImmediateVisualHandoffIfPossible")).lowerBound,
+            try XCTUnwrap(splitUnload.range(of: "tabManager.deactivateShortcutLiveTab")).lowerBound
+        )
+
+        let splitMemberRestore = try sourceSlice(
+            splitShortcutsSource,
+            from: "func restoreShortcutSplitMember",
+            to: "func unloadShortcutHostedSplitGroup"
+        )
+        XCTAssertLessThan(
+            try XCTUnwrap(splitMemberRestore.range(of: "performImmediateVisualHandoffIfPossible")).lowerBound,
+            try XCTUnwrap(splitMemberRestore.range(of: "tabManager.deactivateShortcutLiveTab")).lowerBound
+        )
+
+        XCTAssertTrue(compositorSource.contains("setImmediateVisualHandoffHandler"))
+        XCTAssertTrue(compositorSource.contains("private func performImmediateVisualHandoffIfPossible()"))
+        XCTAssertTrue(compositorSource.contains("placeVisualHandoffCover"))
+        XCTAssertTrue(compositorSource.contains("scheduleVisualHandoffCoverRelease"))
+
+        let compositorApply = try sourceSlice(
+            compositorSource,
+            from: "private func apply(displayState: WebsiteDisplayState, currentTab: Tab?)",
+            to: "private func performImmediateVisualHandoffIfPossible()"
+        )
+        XCTAssertTrue(compositorApply.contains("beginSinglePaneVisualHandoffIfNeeded"))
+        XCTAssertTrue(compositorApply.contains("beginVisualHandoffCovers(excluding: Set(group.tabIds))"))
+        XCTAssertTrue(compositorSource.contains("guard displayedHost(for: tab.id) == nil else { return false }"))
+
+        let coverRelease = try sourceSlice(
+            compositorSource,
+            from: "private func scheduleVisualHandoffCoverRelease()",
+            to: "private func releaseVisualHandoffCovers()"
+        )
+        XCTAssertTrue(coverRelease.contains("CATransaction.flush()"))
+        XCTAssertTrue(coverRelease.contains("containerView.displayIfNeeded()"))
+        XCTAssertTrue(coverRelease.contains("visualHandoffCoverReleaseGeneration == generation"))
+
+        let splitLayout = try sourceSlice(
+            compositorSource,
+            from: "private func showSplitGroup(_ group: SplitGroup, tabs: [Tab])",
+            to: "private func restoreFocusIfNeeded"
+        )
+        XCTAssertLessThan(
+            try XCTUnwrap(splitLayout.range(of: "for tab in tabs")).lowerBound,
+            try XCTUnwrap(splitLayout.range(of: "clearSinglePane()")).lowerBound
+        )
+
+        let webViewHost = try sourceSlice(
+            compositorSource,
+            from: "private func webViewHost(for tab: Tab, slot: PaneSlot)",
+            to: "private func attach(_ host: SumiWebViewContainerView"
+        )
+        XCTAssertTrue(webViewHost.contains("if let displayedHost = displayedHost(for: tab.id)"))
+    }
+
     func testWebViewContainerLayoutDoesNotReparentDisplayedContent() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -486,6 +627,12 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
 
         let violations = forbiddenTokens.filter { featureSource.contains($0) }
         XCTAssertTrue(violations.isEmpty, violations.joined(separator: "\n"))
+    }
+
+    private func sourceSlice(_ source: String, from startToken: String, to endToken: String) throws -> Substring {
+        let start = try XCTUnwrap(source.range(of: startToken)).lowerBound
+        let end = try XCTUnwrap(source.range(of: endToken, range: start..<source.endIndex)).lowerBound
+        return source[start..<end]
     }
 
     private func loadHTML(_ html: String, into webView: WKWebView) async throws {

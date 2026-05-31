@@ -463,6 +463,9 @@ class WebViewCoordinator {
     @ObservationIgnored
     private var compositorContainerViews: [UUID: WeakNSView] = [:]
 
+    @ObservationIgnored
+    private var immediateVisualHandoffHandlersByWindow: [UUID: @MainActor () -> Bool] = [:]
+
     /// Coalesce WebView creation requests so SwiftUI update passes never create WebViews inline.
     @ObservationIgnored
     private var scheduledPrepareWindowIds: Set<UUID> = []
@@ -472,6 +475,9 @@ class WebViewCoordinator {
 
     @ObservationIgnored
     private var activeHistorySwipeProtections: [ObjectIdentifier: HistorySwipeProtectionContext] = [:]
+
+    @ObservationIgnored
+    private var visualHandoffProtectedWebViewIDs: Set<ObjectIdentifier> = []
 
     @ObservationIgnored
     private let fullscreenProtection = FullscreenWebViewProtection()
@@ -495,16 +501,30 @@ class WebViewCoordinator {
         }
     }
 
+    func setImmediateVisualHandoffHandler(
+        _ handler: (@MainActor () -> Bool)?,
+        for windowId: UUID
+    ) {
+        immediateVisualHandoffHandlersByWindow[windowId] = handler
+    }
+
+    @discardableResult
+    func performImmediateVisualHandoffIfPossible(in windowId: UUID) -> Bool {
+        immediateVisualHandoffHandlersByWindow[windowId]?() ?? false
+    }
+
     func compositorContainerView(for windowId: UUID) -> NSView? {
         if let view = compositorContainerViews[windowId]?.view {
             return view
         }
         compositorContainerViews.removeValue(forKey: windowId)
+        immediateVisualHandoffHandlersByWindow.removeValue(forKey: windowId)
         return nil
     }
 
     func removeCompositorContainerView(for windowId: UUID) {
         compositorContainerViews.removeValue(forKey: windowId)
+        immediateVisualHandoffHandlersByWindow.removeValue(forKey: windowId)
         scheduledPrepareWindowIds.remove(windowId)
         recentlyVisibleTabIDsByWindow.removeValue(forKey: windowId)
         pruneInvalidDeferredProtectedCommands(reason: "removeCompositorContainerView")
@@ -522,6 +542,7 @@ class WebViewCoordinator {
         }
         for id in staleIdentifiers {
             compositorContainerViews.removeValue(forKey: id)
+            immediateVisualHandoffHandlersByWindow.removeValue(forKey: id)
         }
         return result
     }
@@ -756,7 +777,20 @@ class WebViewCoordinator {
     func isWebViewProtectedFromCompositorMutation(_ webView: WKWebView) -> Bool {
         let webViewID = ObjectIdentifier(webView)
         return activeHistorySwipeProtections[webViewID] != nil
+            || visualHandoffProtectedWebViewIDs.contains(webViewID)
             || fullscreenProtection.isProtected(webViewID)
+    }
+
+    func beginVisualHandoffProtection(for webView: WKWebView) {
+        let webViewID = ObjectIdentifier(webView)
+        noteWeakWebView(webView)
+        visualHandoffProtectedWebViewIDs.insert(webViewID)
+    }
+
+    func finishVisualHandoffProtection(for webView: WKWebView) {
+        let webViewID = ObjectIdentifier(webView)
+        guard visualHandoffProtectedWebViewIDs.remove(webViewID) != nil else { return }
+        flushDeferredProtectedCommands(for: webViewID)
     }
 
     private func beginFullscreenProtectionIfNeeded(for webView: WKWebView) {
@@ -853,6 +887,7 @@ class WebViewCoordinator {
 
     private func flushDeferredProtectedCommands(for webViewID: ObjectIdentifier) {
         guard activeHistorySwipeProtections[webViewID] == nil,
+              visualHandoffProtectedWebViewIDs.contains(webViewID) == false,
               fullscreenProtection.isProtected(webViewID) == false
         else { return }
         pruneInvalidDeferredProtectedCommands(reason: "flush.preflight")
@@ -1252,7 +1287,9 @@ class WebViewCoordinator {
             webViewOwnersByIdentifier.removeAll()
             recentlyVisibleTabIDsByWindow.removeAll()
             compositorContainerViews.removeAll()
+            immediateVisualHandoffHandlersByWindow.removeAll()
             scheduledPrepareWindowIds.removeAll()
+            visualHandoffProtectedWebViewIDs.removeAll()
             fullscreenProtection.removeAll()
             nowPlayingSessionCancellablesByWebViewID.values.forEach { $0.cancel() }
             nowPlayingSessionCancellablesByWebViewID.removeAll()
@@ -1420,6 +1457,7 @@ class WebViewCoordinator {
             reason: reason
         ) { webViewID in
             activeHistorySwipeProtections[webViewID] != nil
+                || visualHandoffProtectedWebViewIDs.contains(webViewID)
                 || fullscreenProtection.isProtected(webViewID)
         }
     }
@@ -1577,6 +1615,7 @@ class WebViewCoordinator {
         for id in staleIDs {
             weakWebViewsByIdentifier.removeValue(forKey: id)
             activeHistorySwipeProtections.removeValue(forKey: id)
+            visualHandoffProtectedWebViewIDs.remove(id)
             fullscreenProtection.remove(id)
             deferredProtectedWebViewCommands.removeValue(forKey: id)
         }

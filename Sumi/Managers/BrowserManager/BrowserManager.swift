@@ -1535,13 +1535,15 @@ class BrowserManager: ObservableObject {
 
         let wasCurrent = windowState.currentTabId == tab.id
         let fallback = wasCurrent ? fallbackTab(afterClosing: tab, in: windowState) : nil
+        if let fallback {
+            selectTab(fallback, in: windowState)
+            performImmediateVisualHandoffIfPossible(in: windowState)
+        }
         tabManager.removeTab(tab.id)
         windowState.removeFromRegularTabHistory(tab.id)
 
         if wasCurrent {
-            if let fallback {
-                selectTab(fallback, in: windowState)
-            } else {
+            if fallback == nil {
                 showEmptyState(in: windowState)
             }
         } else {
@@ -2072,6 +2074,12 @@ class BrowserManager: ObservableObject {
     }
 
     @discardableResult
+    func performImmediateVisualHandoffIfPossible(in windowState: BrowserWindowState) -> Bool {
+        guard !isBackForwardGestureActive(in: windowState) else { return false }
+        return webViewCoordinator?.performImmediateVisualHandoffIfPossible(in: windowState.id) ?? false
+    }
+
+    @discardableResult
     func prepareVisibleWebViews(for windowState: BrowserWindowState) -> Bool {
         guard let webViewCoordinator else { return false }
         return webViewCoordinator.prepareVisibleWebViews(
@@ -2202,6 +2210,7 @@ class BrowserManager: ObservableObject {
                 rememberSelection: true,
                 persistSelection: false
             )
+            performImmediateVisualHandoffIfPossible(in: windowState)
         } else {
             showEmptyState(in: windowState)
         }
@@ -2480,6 +2489,15 @@ class BrowserManager: ObservableObject {
         let wasCurrent =
             windowState.currentTabId == tab.id
             || (tab.shortcutPinId != nil && windowState.currentShortcutPinId == tab.shortcutPinId)
+        let fallback = wasCurrent
+            ? historicalFallbackTab(afterClosing: tab, in: windowState)
+                ?? preferredRegularTabForWindow(windowState)
+            : nil
+
+        if let fallback {
+            selectTab(fallback, in: windowState)
+            performImmediateVisualHandoffIfPossible(in: windowState)
+        }
 
         if let pinId = tab.shortcutPinId {
             tabManager.deactivateShortcutLiveTab(pinId: pinId, in: windowState.id)
@@ -2492,17 +2510,16 @@ class BrowserManager: ObservableObject {
             return
         }
 
+        if fallback != nil {
+            persistWindowSession(for: windowState)
+            return
+        }
+
         windowState.currentShortcutPinId = nil
         windowState.currentShortcutPinRole = nil
         windowState.currentTabId = nil
 
-        if let fallback = historicalFallbackTab(afterClosing: tab, in: windowState) {
-            selectTab(fallback, in: windowState)
-        } else if let fallback = preferredRegularTabForWindow(windowState) {
-            selectTab(fallback, in: windowState)
-        } else {
-            showEmptyState(in: windowState)
-        }
+        showEmptyState(in: windowState)
     }
 
     private func captureClosedShortcutLiveInstance(_ tab: Tab, in windowState: BrowserWindowState) {

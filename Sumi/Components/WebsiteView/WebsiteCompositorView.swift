@@ -43,6 +43,7 @@ struct WebsiteDisplayState: Equatable {
 @MainActor
 final class WindowWebContentController: NSViewController {
     private static let mediaTouchBarRecoveryRetryDelays: [TimeInterval] = [0, 0.2, 0.5]
+    private static let visualHandoffCoverReleaseDelay: TimeInterval = 0.1
 
     private let browserManager: BrowserManager
     private let webViewCoordinator: WebViewCoordinator
@@ -64,6 +65,9 @@ final class WindowWebContentController: NSViewController {
     private var singlePaneHost: SumiWebViewContainerView?
     private var splitPaneHostsByTabId: [UUID: SumiWebViewContainerView] = [:]
     private var parkedProtectedHosts: [ObjectIdentifier: SumiWebViewContainerView] = [:]
+    private var visualHandoffCoverHosts: [ObjectIdentifier: SumiWebViewContainerView] = [:]
+    private var visualHandoffCoverReleaseWorkItem: DispatchWorkItem?
+    private var visualHandoffCoverReleaseGeneration = 0
     private var mediaTouchBarRecoveryCancellable: AnyCancellable?
 
     init(
@@ -87,6 +91,9 @@ final class WindowWebContentController: NSViewController {
     override func loadView() {
         view = containerView
         webViewCoordinator.setCompositorContainerView(containerView, for: windowState.id)
+        webViewCoordinator.setImmediateVisualHandoffHandler({ [weak self] in
+            self?.performImmediateVisualHandoffIfPossible() ?? false
+        }, for: windowState.id)
         installMediaTouchBarRecoveryObservation()
 
         DispatchQueue.main.async { [weak self] in
@@ -99,10 +106,12 @@ final class WindowWebContentController: NSViewController {
         if webViewCoordinator.hasActiveFullscreen(in: windowState.id) {
             webViewCoordinator.closeActiveFullscreenMedia(in: windowState.id)
         }
+        releaseVisualHandoffCovers()
         clearSinglePane()
         clearAllSplitPaneHosts()
         mediaTouchBarRecoveryCancellable?.cancel()
         mediaTouchBarRecoveryCancellable = nil
+        webViewCoordinator.setImmediateVisualHandoffHandler(nil, for: windowState.id)
         webViewCoordinator.removeCompositorContainerView(for: windowState.id)
     }
 
@@ -211,15 +220,127 @@ final class WindowWebContentController: NSViewController {
         {
             let tabs = group.tabIds.compactMap { browserManager.tabManager.tab(for: $0) }
             guard tabs.count == group.tabIds.count else {
+                let didBeginVisualHandoff = beginSinglePaneVisualHandoffIfNeeded(to: currentTab)
                 scheduleSplitRepair(groupId: group.id)
                 showSinglePane(tab: currentTab)
+                scheduleVisualHandoffCoverRelease(if: didBeginVisualHandoff)
                 return
             }
+            let didBeginVisualHandoff = beginVisualHandoffCovers(excluding: Set(group.tabIds))
             showSplitGroup(group, tabs: tabs)
+            scheduleVisualHandoffCoverRelease(if: didBeginVisualHandoff)
             return
         }
 
+        let didBeginVisualHandoff = beginSinglePaneVisualHandoffIfNeeded(to: currentTab)
         showSinglePane(tab: currentTab)
+        scheduleVisualHandoffCoverRelease(if: didBeginVisualHandoff)
+    }
+
+    private func performImmediateVisualHandoffIfPossible() -> Bool {
+        guard !webViewCoordinator.hasActiveHistorySwipe(in: windowState.id),
+              let currentTab = browserManager.currentTab(for: windowState),
+              currentTab.requiresPrimaryWebView
+        else {
+            return false
+        }
+
+        if let group = browserManager.splitManager.splitGroup(for: windowState.id),
+           group.contains(currentTab.id)
+        {
+            let tabs = group.tabIds.compactMap { browserManager.tabManager.tab(for: $0) }
+            guard tabs.count == group.tabIds.count else { return false }
+            let didBeginVisualHandoff = beginVisualHandoffCovers(excluding: Set(group.tabIds))
+            showSplitGroup(group, tabs: tabs)
+            scheduleVisualHandoffCoverRelease(if: didBeginVisualHandoff)
+        } else {
+            let didBeginVisualHandoff = beginSinglePaneVisualHandoffIfNeeded(to: currentTab)
+            showSinglePane(tab: currentTab)
+            scheduleVisualHandoffCoverRelease(if: didBeginVisualHandoff)
+        }
+
+        return displayedHost(for: currentTab.id) != nil
+    }
+
+    private func beginSinglePaneVisualHandoffIfNeeded(to tab: Tab?) -> Bool {
+        guard let tab, tab.requiresPrimaryWebView else { return false }
+        guard displayedHost(for: tab.id) == nil else { return false }
+        return beginVisualHandoffCovers(excluding: [tab.id])
+    }
+
+    @discardableResult
+    private func beginVisualHandoffCovers(excluding incomingTabIDs: Set<UUID>) -> Bool {
+        var seenWebViewIDs = Set<ObjectIdentifier>()
+        let outgoingHosts = ([singlePaneHost].compactMap { $0 } + Array(splitPaneHostsByTabId.values))
+            .filter { !incomingTabIDs.contains($0.tabID) }
+        guard !outgoingHosts.isEmpty else { return false }
+
+        releaseVisualHandoffCovers()
+
+        for host in outgoingHosts {
+            let webViewID = ObjectIdentifier(host.webView)
+            guard seenWebViewIDs.insert(webViewID).inserted else { continue }
+
+            let frameInContainer = host.convert(host.bounds, to: containerView)
+            webViewCoordinator.beginVisualHandoffProtection(for: host.webView)
+            clearPaneHostReferences(to: host)
+            parkedProtectedHosts[webViewID] = host
+            containerView.placeVisualHandoffCover(host, frameInContainer: frameInContainer)
+            visualHandoffCoverHosts[webViewID] = host
+        }
+
+        return !visualHandoffCoverHosts.isEmpty
+    }
+
+    private func scheduleVisualHandoffCoverRelease(if didBeginVisualHandoff: Bool) {
+        guard didBeginVisualHandoff else { return }
+        scheduleVisualHandoffCoverRelease()
+    }
+
+    private func scheduleVisualHandoffCoverRelease() {
+        guard !visualHandoffCoverHosts.isEmpty else { return }
+
+        visualHandoffCoverReleaseWorkItem?.cancel()
+        visualHandoffCoverReleaseGeneration &+= 1
+        let generation = visualHandoffCoverReleaseGeneration
+        CATransaction.flush()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self,
+                  self.visualHandoffCoverReleaseGeneration == generation
+            else {
+                return
+            }
+            self.containerView.layoutSubtreeIfNeeded()
+            self.containerView.displayIfNeeded()
+            DispatchQueue.main.async { [weak self] in
+                guard let self,
+                      self.visualHandoffCoverReleaseGeneration == generation
+                else {
+                    return
+                }
+                self.releaseVisualHandoffCovers()
+            }
+        }
+        visualHandoffCoverReleaseWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.visualHandoffCoverReleaseDelay,
+            execute: workItem
+        )
+    }
+
+    private func releaseVisualHandoffCovers() {
+        visualHandoffCoverReleaseGeneration &+= 1
+        visualHandoffCoverReleaseWorkItem?.cancel()
+        visualHandoffCoverReleaseWorkItem = nil
+
+        let covers = visualHandoffCoverHosts
+        visualHandoffCoverHosts.removeAll(keepingCapacity: true)
+        for (webViewID, host) in covers {
+            containerView.removeVisualHandoffCover(host)
+            parkedProtectedHosts.removeValue(forKey: webViewID)
+            webViewCoordinator.finishVisualHandoffProtection(for: host.webView)
+        }
     }
 
     private func compositorSubtreeHasStaleWebViews(
@@ -270,7 +391,6 @@ final class WindowWebContentController: NSViewController {
     private func showSplitGroup(_ group: SplitGroup, tabs: [Tab]) {
         containerView.setPaneLayout(.split(group))
         containerView.layoutSubtreeIfNeeded()
-        clearSinglePane()
 
         let visibleIds = Set(group.tabIds)
         for tabId in Array(splitPaneHostsByTabId.keys) where visibleIds.contains(tabId) == false {
@@ -299,6 +419,8 @@ final class WindowWebContentController: NSViewController {
                 clearSplitPaneHost(tab.id)
             }
         }
+
+        clearSinglePane()
     }
 
     private func restoreFocusIfNeeded(for tabId: UUID?) {
@@ -435,6 +557,15 @@ final class WindowWebContentController: NSViewController {
             return promotedHost
         }
 
+        if let displayedHost = displayedHost(for: tab.id),
+           displayedHost.webView === webView {
+            clearPaneHost(slot)
+            configureViewportStyle(on: displayedHost)
+            clearPaneHostReferences(to: displayedHost)
+            setPaneHost(displayedHost, for: slot)
+            return displayedHost
+        }
+
         if webViewCoordinator.isWebViewProtectedFromCompositorMutation(webView),
            let existingHost = protectedHost(for: webView) {
             clearPaneHost(slot)
@@ -456,6 +587,7 @@ final class WindowWebContentController: NSViewController {
         performWithoutImplicitAnimations {
             parkedProtectedHosts.removeValue(forKey: ObjectIdentifier(host.webView))
             if host.superview != nil && host.superview !== paneView {
+                host.prepareForSuperviewTransferPreservingDisplayedContent()
                 host.removeFromSuperview()
             }
             if host.superview == nil || host.superview === paneView {
@@ -744,6 +876,7 @@ private final class ContainerView: NSView {
 
     let singlePaneView = PaneContainerView()
     private let splitRootView = SplitRootView()
+    private let visualHandoffOverlayView = VisualHandoffOverlayView()
     private let splitDropCaptureView = SplitDropCaptureView(frame: .zero)
     private var paneLayout: PaneLayout = .single
     private var chromeGeometry: BrowserChromeGeometry
@@ -771,6 +904,8 @@ private final class ContainerView: NSView {
 
         addSubview(singlePaneView)
         addSubview(splitRootView)
+        visualHandoffOverlayView.isHidden = true
+        addSubview(visualHandoffOverlayView)
 
         setSplitDropCaptureActive(
             false,
@@ -788,6 +923,7 @@ private final class ContainerView: NSView {
     override func layout() {
         super.layout()
         applyPaneLayout()
+        visualHandoffOverlayView.frame = bounds
         if splitDropCaptureView.superview === self {
             splitDropCaptureView.frame = bounds
         }
@@ -838,6 +974,23 @@ private final class ContainerView: NSView {
         splitRootView.clear()
     }
 
+    func placeVisualHandoffCover(
+        _ host: SumiWebViewContainerView,
+        frameInContainer: NSRect
+    ) {
+        host.prepareForSuperviewTransferPreservingDisplayedContent()
+        visualHandoffOverlayView.addSubview(host)
+        host.frame = frameInContainer
+        host.autoresizingMask = []
+        host.isHidden = false
+        visualHandoffOverlayView.isHidden = false
+    }
+
+    func removeVisualHandoffCover(_ host: SumiWebViewContainerView) {
+        host.removeFromSuperview()
+        visualHandoffOverlayView.isHidden = visualHandoffOverlayView.subviews.isEmpty
+    }
+
     override var acceptsFirstResponder: Bool { false }
 
     override func resetCursorRects() {}
@@ -869,6 +1022,12 @@ private final class ContainerView: NSView {
                 }
             )
         }
+    }
+}
+
+private final class VisualHandoffOverlayView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
     }
 }
 

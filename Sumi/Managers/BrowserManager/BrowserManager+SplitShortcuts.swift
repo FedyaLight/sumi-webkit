@@ -80,6 +80,21 @@ extension BrowserManager {
 
         restoreShortcutLauncherPosition(for: member)
 
+        var didPrepareReplacementBeforeDeactivation = false
+        if !preserveLiveInstance, wasSelected {
+            if let remainingGroup {
+                focusSplitGroup(remainingGroup, in: windowState)
+                didPrepareReplacementBeforeDeactivation = true
+            } else if let fallback = fallbackVisibleRegularTab(in: windowState) {
+                selectTab(fallback, in: windowState)
+                didPrepareReplacementBeforeDeactivation = true
+            }
+
+            if didPrepareReplacementBeforeDeactivation {
+                performImmediateVisualHandoffIfPossible(in: windowState)
+            }
+        }
+
         if !preserveLiveInstance, let pinId = member.pinId {
             tabManager.deactivateShortcutLiveTab(pinId: pinId, in: windowState.id)
         }
@@ -87,7 +102,9 @@ extension BrowserManager {
         if remainingGroup == nil, preserveLiveInstance, let restoredLiveTab {
             selectTab(restoredLiveTab, in: windowState)
         } else if wasSelected {
-            if preserveLiveInstance, let restoredLiveTab {
+            if didPrepareReplacementBeforeDeactivation {
+                persistWindowSession(for: windowState)
+            } else if preserveLiveInstance, let restoredLiveTab {
                 selectTab(restoredLiveTab, in: windowState)
             } else if let remainingGroup {
                 focusSplitGroup(remainingGroup, in: windowState)
@@ -107,6 +124,12 @@ extension BrowserManager {
     func unloadShortcutHostedSplitGroup(_ group: SplitGroup, in windowState: BrowserWindowState) {
         guard group.isShortcutHosted else { return }
 
+        let fallback = fallbackVisibleRegularTab(in: windowState)
+        if let fallback {
+            selectTab(fallback, in: windowState)
+            performImmediateVisualHandoffIfPossible(in: windowState)
+        }
+
         var updatedGroup = group
         for member in group.members where member.isShortcutBacked {
             guard let pinId = member.pinId else { continue }
@@ -117,13 +140,10 @@ extension BrowserManager {
         }
 
         tabManager.upsertSplitGroup(updatedGroup.settingActiveTab(updatedGroup.tabIds.first))
-        windowState.currentShortcutPinId = nil
-        windowState.currentShortcutPinRole = nil
-        windowState.currentTabId = nil
-
-        if let fallback = fallbackVisibleRegularTab(in: windowState) {
-            selectTab(fallback, in: windowState)
-        } else {
+        if fallback == nil {
+            windowState.currentShortcutPinId = nil
+            windowState.currentShortcutPinRole = nil
+            windowState.currentTabId = nil
             showEmptyState(in: windowState)
         }
         splitManager.refreshPublishedState(for: windowState.id)
