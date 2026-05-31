@@ -177,6 +177,7 @@ struct SumiBookmarksTabRootView: View {
                 }
             }
         }
+        .chromeCursor(.pointingHand, isEnabled: scrollHoverCoordinator.hoverUpdatesEnabled)
     }
 
     private var content: some View {
@@ -248,6 +249,7 @@ struct SumiBookmarksTabRootView: View {
                 .menuIndicator(.hidden)
                 .frame(width: 28, height: 28)
                 .help("More actions")
+                .chromeCursor(.pointingHand, isEnabled: scrollHoverCoordinator.hoverUpdatesEnabled)
             }
 
             if viewModel.hasSelection {
@@ -374,6 +376,7 @@ private struct SumiBookmarkEntityRow: View {
     let searchActive: Bool
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.nativeSurfaceHoverUpdatesEnabled) private var hoverUpdatesEnabled
     @State private var isHovering = false
     @State private var faviconImage: NSImage?
 
@@ -423,6 +426,7 @@ private struct SumiBookmarkEntityRow: View {
         }
         .contextMenu { contextMenu }
         .modifier(SumiBookmarkDragDropModifier(canDrag: canDrag, beginDrag: beginDrag, drop: drop))
+        .chromeCursor(.pointingHand, isEnabled: hoverUpdatesEnabled)
     }
 
     @ViewBuilder
