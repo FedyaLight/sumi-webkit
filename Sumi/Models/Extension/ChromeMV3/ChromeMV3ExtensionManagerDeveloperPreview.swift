@@ -682,6 +682,75 @@ struct ChromeMV3ExtensionManagerManualSmokeRuntimeBehavior:
     var timersOrPollingEnabled: Bool
 }
 
+struct ChromeMV3ExtensionManagerManualSmokeSchemaBoundary:
+    Codable,
+    Equatable
+{
+    var diagnosticScope: String
+    var localExperimentalOnly: Bool
+    var stableProductSupportClaimed: Bool
+    var generalMV3CapabilityFields: [String]
+    var productNormalTabReadinessFields: [String]
+    var manualSmokeDiagnosticFields: [String]
+    var bitwardenFixtureSpecificFields: [String]
+    var protonFixtureSpecificFields: [String]
+    var onePasswordFixtureSpecificFields: [String]
+    var deprecatedOrAmbiguousFields: [String]
+
+    static let current = Self(
+        diagnosticScope: "localExperimentalManualSmoke",
+        localExperimentalOnly: true,
+        stableProductSupportClaimed: false,
+        generalMV3CapabilityFields: [
+            "reviewedScriptPath",
+            "reviewedScriptHash",
+            "syntheticOrigin",
+            "gatePreflightEligible",
+            "gatePreflightBlockers",
+        ],
+        productNormalTabReadinessFields: [
+            "runtimeBehaviorIntentionallyUnchanged.productDefaultRuntimeAvailable",
+            "runtimeBehaviorIntentionallyUnchanged.productRuntimeExposed",
+            "runtimeBehaviorIntentionallyUnchanged.arbitraryScriptingEnabled",
+            "runtimeBehaviorIntentionallyUnchanged.mainWorldEnabled",
+            "runtimeBehaviorIntentionallyUnchanged.multiFrameEnabled",
+            "runtimeBehaviorIntentionallyUnchanged.fileSchemeEnabled",
+            "runtimeBehaviorIntentionallyUnchanged.networkAuthNativeHostEnabled",
+            "runtimeBehaviorIntentionallyUnchanged.webStoreOrRemoteCRXEnabled",
+            "runtimeBehaviorIntentionallyUnchanged.timersOrPollingEnabled",
+        ],
+        manualSmokeDiagnosticFields: [
+            "schemaVersion",
+            "smokeKind",
+            "generatedAt",
+            "runID",
+            "actionManualOnly",
+            "managerReadoutExecutedSmoke",
+            "domBefore",
+            "domAfter",
+            "fieldsTouched",
+            "dummyValueMarkers",
+            "teardownStatus",
+            "retainedObjectCount",
+            "blockers",
+            "noRealSecrets",
+            "noRawCredentials",
+            "noRealWebsiteData",
+            "notProductSupportWarning",
+            "diagnostics",
+        ],
+        bitwardenFixtureSpecificFields: [
+            "smokeKind=bitwardenManualNormalTabSmoke",
+            "reviewedScriptPath=content/bootstrap-autofill.js",
+            "fieldsTouched=sumi-login-email/sumi-login-password",
+            "dummyValueMarkers=username/password synthetic dummy markers",
+        ],
+        protonFixtureSpecificFields: [],
+        onePasswordFixtureSpecificFields: [],
+        deprecatedOrAmbiguousFields: []
+    )
+}
+
 struct ChromeMV3ExtensionManagerManualSmokeArtifact:
     Codable,
     Equatable
@@ -701,6 +770,8 @@ struct ChromeMV3ExtensionManagerManualSmokeArtifact:
     var reviewedScriptHash: String?
     var syntheticURL: String
     var syntheticOrigin: String
+    var schemaBoundary:
+        ChromeMV3ExtensionManagerManualSmokeSchemaBoundary
     var gatePreflightEligible: Bool
     var gatePreflightBlockers: [String]
     var actionManualOnly: Bool
@@ -720,6 +791,199 @@ struct ChromeMV3ExtensionManagerManualSmokeArtifact:
     var noRealWebsiteData: Bool
     var notProductSupportWarning: String
     var diagnostics: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case generatedAt
+        case runID
+        case profileID
+        case extensionID
+        case packageSource
+        case packagePath
+        case smokeKind
+        case reviewedScriptPath
+        case reviewedScriptHash
+        case syntheticURL
+        case syntheticOrigin
+        case schemaBoundary
+        case gatePreflightEligible
+        case gatePreflightBlockers
+        case actionManualOnly
+        case managerReadoutExecutedSmoke
+        case domBefore
+        case domAfter
+        case fieldsTouched
+        case dummyValueMarkers
+        case teardownCompleted
+        case teardownStatus
+        case retainedObjectCount
+        case runtimeBehaviorIntentionallyUnchanged
+        case blockers
+        case noRealSecrets
+        case noRawCredentials
+        case noRealWebsiteData
+        case notProductSupportWarning
+        case diagnostics
+    }
+
+    init(
+        schemaVersion: Int,
+        generatedAt: Date,
+        runID: String,
+        profileID: String,
+        extensionID: String,
+        packageSource: ChromeMV3PackageSourceKind,
+        packagePath: String,
+        smokeKind: String,
+        reviewedScriptPath: String,
+        reviewedScriptHash: String?,
+        syntheticURL: String,
+        syntheticOrigin: String,
+        schemaBoundary:
+            ChromeMV3ExtensionManagerManualSmokeSchemaBoundary =
+            .current,
+        gatePreflightEligible: Bool,
+        gatePreflightBlockers: [String],
+        actionManualOnly: Bool,
+        managerReadoutExecutedSmoke: Bool,
+        domBefore: ChromeMV3ExtensionManagerManualSmokeDOMSummary,
+        domAfter: ChromeMV3ExtensionManagerManualSmokeDOMSummary,
+        fieldsTouched: [String],
+        dummyValueMarkers: [String],
+        teardownCompleted: Bool,
+        teardownStatus: ChromeMV3LocalExperimentalNormalTabManualSmokeTeardown,
+        retainedObjectCount: Int,
+        runtimeBehaviorIntentionallyUnchanged:
+            ChromeMV3ExtensionManagerManualSmokeRuntimeBehavior,
+        blockers: [String],
+        noRealSecrets: Bool,
+        noRawCredentials: Bool,
+        noRealWebsiteData: Bool,
+        notProductSupportWarning: String,
+        diagnostics: [String]
+    ) {
+        self.schemaVersion = schemaVersion
+        self.generatedAt = generatedAt
+        self.runID = runID
+        self.profileID = profileID
+        self.extensionID = extensionID
+        self.packageSource = packageSource
+        self.packagePath = packagePath
+        self.smokeKind = smokeKind
+        self.reviewedScriptPath = reviewedScriptPath
+        self.reviewedScriptHash = reviewedScriptHash
+        self.syntheticURL = syntheticURL
+        self.syntheticOrigin = syntheticOrigin
+        self.schemaBoundary = schemaBoundary
+        self.gatePreflightEligible = gatePreflightEligible
+        self.gatePreflightBlockers = gatePreflightBlockers
+        self.actionManualOnly = actionManualOnly
+        self.managerReadoutExecutedSmoke = managerReadoutExecutedSmoke
+        self.domBefore = domBefore
+        self.domAfter = domAfter
+        self.fieldsTouched = fieldsTouched
+        self.dummyValueMarkers = dummyValueMarkers
+        self.teardownCompleted = teardownCompleted
+        self.teardownStatus = teardownStatus
+        self.retainedObjectCount = retainedObjectCount
+        self.runtimeBehaviorIntentionallyUnchanged =
+            runtimeBehaviorIntentionallyUnchanged
+        self.blockers = blockers
+        self.noRealSecrets = noRealSecrets
+        self.noRawCredentials = noRawCredentials
+        self.noRealWebsiteData = noRealWebsiteData
+        self.notProductSupportWarning = notProductSupportWarning
+        self.diagnostics = diagnostics
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        generatedAt = try container.decode(Date.self, forKey: .generatedAt)
+        runID = try container.decode(String.self, forKey: .runID)
+        profileID = try container.decode(String.self, forKey: .profileID)
+        extensionID = try container.decode(String.self, forKey: .extensionID)
+        packageSource = try container.decode(
+            ChromeMV3PackageSourceKind.self,
+            forKey: .packageSource
+        )
+        packagePath = try container.decode(String.self, forKey: .packagePath)
+        smokeKind = try container.decode(String.self, forKey: .smokeKind)
+        reviewedScriptPath = try container.decode(
+            String.self,
+            forKey: .reviewedScriptPath
+        )
+        reviewedScriptHash = try container.decodeIfPresent(
+            String.self,
+            forKey: .reviewedScriptHash
+        )
+        syntheticURL = try container.decode(String.self, forKey: .syntheticURL)
+        syntheticOrigin = try container.decode(
+            String.self,
+            forKey: .syntheticOrigin
+        )
+        schemaBoundary = try container.decodeIfPresent(
+            ChromeMV3ExtensionManagerManualSmokeSchemaBoundary.self,
+            forKey: .schemaBoundary
+        ) ?? .current
+        gatePreflightEligible = try container.decode(
+            Bool.self,
+            forKey: .gatePreflightEligible
+        )
+        gatePreflightBlockers = try container.decode(
+            [String].self,
+            forKey: .gatePreflightBlockers
+        )
+        actionManualOnly = try container.decode(
+            Bool.self,
+            forKey: .actionManualOnly
+        )
+        managerReadoutExecutedSmoke = try container.decode(
+            Bool.self,
+            forKey: .managerReadoutExecutedSmoke
+        )
+        domBefore = try container.decode(
+            ChromeMV3ExtensionManagerManualSmokeDOMSummary.self,
+            forKey: .domBefore
+        )
+        domAfter = try container.decode(
+            ChromeMV3ExtensionManagerManualSmokeDOMSummary.self,
+            forKey: .domAfter
+        )
+        fieldsTouched = try container.decode([String].self, forKey: .fieldsTouched)
+        dummyValueMarkers = try container.decode(
+            [String].self,
+            forKey: .dummyValueMarkers
+        )
+        teardownCompleted = try container.decode(
+            Bool.self,
+            forKey: .teardownCompleted
+        )
+        teardownStatus = try container.decode(
+            ChromeMV3LocalExperimentalNormalTabManualSmokeTeardown.self,
+            forKey: .teardownStatus
+        )
+        retainedObjectCount = try container.decode(
+            Int.self,
+            forKey: .retainedObjectCount
+        )
+        runtimeBehaviorIntentionallyUnchanged = try container.decode(
+            ChromeMV3ExtensionManagerManualSmokeRuntimeBehavior.self,
+            forKey: .runtimeBehaviorIntentionallyUnchanged
+        )
+        blockers = try container.decode([String].self, forKey: .blockers)
+        noRealSecrets = try container.decode(Bool.self, forKey: .noRealSecrets)
+        noRawCredentials = try container.decode(Bool.self, forKey: .noRawCredentials)
+        noRealWebsiteData = try container.decode(
+            Bool.self,
+            forKey: .noRealWebsiteData
+        )
+        notProductSupportWarning = try container.decode(
+            String.self,
+            forKey: .notProductSupportWarning
+        )
+        diagnostics = try container.decode([String].self, forKey: .diagnostics)
+    }
 
     static func make(
         result: ChromeMV3LocalExperimentalNormalTabManualSmokeResult,
@@ -741,6 +1005,7 @@ struct ChromeMV3ExtensionManagerManualSmokeArtifact:
             reviewedScriptHash: result.injectionPlan.generatedResourceHash,
             syntheticURL: result.injectionPlan.syntheticURL,
             syntheticOrigin: result.injectionPlan.syntheticOrigin,
+            schemaBoundary: .current,
             gatePreflightEligible: result.eligibility.eligible,
             gatePreflightBlockers:
                 result.eligibility.blockers.map(\.rawValue).sorted(),

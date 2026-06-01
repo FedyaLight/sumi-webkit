@@ -526,6 +526,34 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
             artifact.runtimeBehaviorIntentionallyUnchanged
                 .timersOrPollingEnabled
         )
+        XCTAssertEqual(
+            artifact.schemaBoundary.diagnosticScope,
+            "localExperimentalManualSmoke"
+        )
+        XCTAssertTrue(artifact.schemaBoundary.localExperimentalOnly)
+        XCTAssertFalse(artifact.schemaBoundary.stableProductSupportClaimed)
+        XCTAssertTrue(
+            artifact.schemaBoundary.generalMV3CapabilityFields
+                .contains("reviewedScriptHash")
+        )
+        XCTAssertTrue(
+            artifact.schemaBoundary.productNormalTabReadinessFields
+                .contains(
+                    "runtimeBehaviorIntentionallyUnchanged.productRuntimeExposed"
+                )
+        )
+        XCTAssertTrue(
+            artifact.schemaBoundary.bitwardenFixtureSpecificFields.contains {
+                $0.contains("content/bootstrap-autofill.js")
+            }
+        )
+        XCTAssertTrue(artifact.schemaBoundary.protonFixtureSpecificFields.isEmpty)
+        XCTAssertTrue(
+            artifact.schemaBoundary.onePasswordFixtureSpecificFields.isEmpty
+        )
+        XCTAssertTrue(
+            artifact.schemaBoundary.deprecatedOrAmbiguousFields.isEmpty
+        )
         XCTAssertFalse(artifactString.contains("sumi-test-user@example.test"))
         XCTAssertFalse(artifactString.contains("sumi-test-password-not-secret"))
         XCTAssertFalse(artifactString.contains("masterPassword"))
@@ -538,6 +566,113 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
             "stable product path"
         ))
         XCTAssertFalse(fixture.module.hasLoadedRuntime)
+    }
+
+    func testManualSmokeArtifactSchemaRequiresVersionAndToleratesEvolution()
+        throws
+    {
+        let root = try makeTemporaryDirectory()
+        let profileID = "profile-schema-evolution"
+        let extensionID = "extension-schema-evolution"
+        var object = manualSmokeArtifactJSONObject(
+            profileID: profileID,
+            extensionID: extensionID
+        )
+        object["futureSchemaField"] = [
+            "futureBoolean": true,
+            "futureArray": ["ignored"],
+        ]
+        object.removeValue(forKey: "reviewedScriptHash")
+        object.removeValue(forKey: "schemaBoundary")
+        try writeJSONObject(
+            object,
+            to: ChromeMV3ExtensionManagerManualSmokeArtifactWriter.reportURL(
+                rootURL: root,
+                profileID: profileID,
+                extensionID: extensionID
+            )
+        )
+
+        let decoded = try XCTUnwrap(
+            ChromeMV3ExtensionManagerManualSmokeArtifactWriter.latestArtifact(
+                rootURL: root,
+                profileID: profileID,
+                extensionID: extensionID
+            )
+        )
+        XCTAssertEqual(decoded.schemaVersion, 1)
+        XCTAssertNil(decoded.reviewedScriptHash)
+        XCTAssertEqual(
+            decoded.schemaBoundary,
+            ChromeMV3ExtensionManagerManualSmokeSchemaBoundary.current
+        )
+        XCTAssertTrue(decoded.noRealSecrets)
+        XCTAssertTrue(decoded.noRawCredentials)
+        XCTAssertTrue(decoded.noRealWebsiteData)
+        XCTAssertFalse(decoded.managerReadoutExecutedSmoke)
+
+        object.removeValue(forKey: "schemaVersion")
+        let data = try JSONSerialization.data(
+            withJSONObject: object,
+            options: [.sortedKeys]
+        )
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        XCTAssertThrowsError(
+            try decoder.decode(
+                ChromeMV3ExtensionManagerManualSmokeArtifact.self,
+                from: data
+            )
+        )
+    }
+
+    @MainActor
+    func testManagerReadoutLoadsLegacyManualSmokeArtifactWithoutRuntimeObjects()
+        throws
+    {
+        let fixture = try installBitwardenManualSmokeFixture(
+            named: "manual-smoke-legacy-artifact",
+            profileID: "profile-manual-legacy-artifact",
+            enableInternal: true
+        )
+        var object = manualSmokeArtifactJSONObject(
+            profileID: fixture.record.profileID,
+            extensionID: fixture.record.extensionID
+        )
+        object.removeValue(forKey: "schemaBoundary")
+        object.removeValue(forKey: "reviewedScriptHash")
+        try writeJSONObject(
+            object,
+            to: ChromeMV3ExtensionManagerManualSmokeArtifactWriter.reportURL(
+                rootURL: fixture.root,
+                profileID: fixture.record.profileID,
+                extensionID: fixture.record.extensionID
+            )
+        )
+
+        let detail = try XCTUnwrap(
+            fixture.module.chromeMV3ExtensionManagerDetailViewModelIfEnabled(
+                rootURL: fixture.root,
+                profileID: fixture.record.profileID,
+                extensionID: fixture.record.extensionID
+            )
+        )
+
+        XCTAssertEqual(detail.manualSmokeAction.lastRunStatus, .succeeded)
+        XCTAssertEqual(detail.manualSmokeAction.lastRetainedObjectCount, 0)
+        XCTAssertEqual(detail.manualSmokeAction.lastTeardownStatus, "completed")
+        XCTAssertTrue(detail.manualSmokeAction.manualOnly)
+        XCTAssertTrue(
+            detail.manualSmokeAction.notProductSupportWarning
+                .contains("stable product path")
+        )
+        XCTAssertFalse(
+            detail.manualSmokeAction.gateState["managerReadoutExecutesSmoke"]
+                ?? true
+        )
+        XCTAssertFalse(fixture.module.hasLoadedRuntime)
+        XCTAssertFalse(fixture.record.productFlags.productRuntimeExposed)
+        XCTAssertFalse(fixture.record.productFlags.runtimeLoadable)
     }
 
     @MainActor
@@ -1579,6 +1714,164 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
           };
         })();
         """
+    }
+
+    private func manualSmokeArtifactJSONObject(
+        profileID: String,
+        extensionID: String
+    ) -> [String: Any] {
+        [
+            "schemaVersion": 1,
+            "generatedAt": "2024-07-03T09:46:40Z",
+            "runID": "manual-smoke-test-\(profileID)-\(extensionID)",
+            "profileID": profileID,
+            "extensionID": extensionID,
+            "packageSource": "unpackedDirectory",
+            "packagePath": "/tmp/sumi-manual-smoke-fixture",
+            "smokeKind": "bitwardenManualNormalTabSmoke",
+            "reviewedScriptPath": "content/bootstrap-autofill.js",
+            "reviewedScriptHash": "abc123",
+            "syntheticURL": "https://sumi.local.test/login",
+            "syntheticOrigin": "https://sumi.local.test",
+            "schemaBoundary": [
+                "diagnosticScope": "localExperimentalManualSmoke",
+                "localExperimentalOnly": true,
+                "stableProductSupportClaimed": false,
+                "generalMV3CapabilityFields": [
+                    "reviewedScriptPath",
+                    "reviewedScriptHash",
+                    "syntheticOrigin",
+                    "gatePreflightEligible",
+                    "gatePreflightBlockers",
+                ],
+                "productNormalTabReadinessFields": [
+                    "runtimeBehaviorIntentionallyUnchanged.productRuntimeExposed",
+                ],
+                "manualSmokeDiagnosticFields": [
+                    "schemaVersion",
+                    "smokeKind",
+                    "domBefore",
+                    "domAfter",
+                ],
+                "bitwardenFixtureSpecificFields": [
+                    "reviewedScriptPath=content/bootstrap-autofill.js",
+                ],
+                "protonFixtureSpecificFields": [],
+                "onePasswordFixtureSpecificFields": [],
+                "deprecatedOrAmbiguousFields": [],
+            ],
+            "gatePreflightEligible": true,
+            "gatePreflightBlockers": [],
+            "actionManualOnly": true,
+            "managerReadoutExecutedSmoke": false,
+            "domBefore": manualSmokeDOMJSONObject(
+                phase: "before",
+                finalValuesMatchDummyFill: false,
+                usernameValueMarker: "empty",
+                passwordValueMarker: "empty"
+            ),
+            "domAfter": manualSmokeDOMJSONObject(
+                phase: "after",
+                finalValuesMatchDummyFill: true,
+                usernameValueMarker: "synthetic-dummy-username-present",
+                passwordValueMarker: "synthetic-dummy-password-present"
+            ),
+            "fieldsTouched": [
+                "sumi-login-email",
+                "sumi-login-password",
+            ],
+            "dummyValueMarkers": [
+                "passwordSyntheticDummyMatched",
+                "usernameSyntheticDummyMatched",
+            ],
+            "teardownCompleted": true,
+            "teardownStatus": [
+                "required": true,
+                "completed": true,
+                "verifiedTriggers": [
+                    "navigation",
+                    "tabClose",
+                    "extensionDisable",
+                    "moduleDisable",
+                    "profileClose",
+                    "permissionRevoke",
+                    "resetOrUninstall",
+                    "smokeCompletion",
+                ],
+                "webKitObjectsCreated": [
+                    "WKWebViewConfiguration(normal-tab manual smoke)",
+                    "WKWebView(synthetic normal-tab test page)",
+                ],
+                "handlersCreated": ["sumiManualSmokeCompletion"],
+                "userScriptsCreated": [],
+                "endpointsCreated": ["sumiBitwardenSyntheticCompletion"],
+                "objectsRemoved": [
+                    "navigationDelegate",
+                    "scriptMessageHandler:sumiManualSmokeCompletion",
+                    "WKWebView reference",
+                    "WKWebViewConfiguration reference",
+                ],
+                "retainedObjectCountAfterTeardown": 0,
+                "diagnostics": ["teardown completed"],
+            ],
+            "retainedObjectCount": 0,
+            "runtimeBehaviorIntentionallyUnchanged": [
+                "productDefaultRuntimeAvailable": false,
+                "productRuntimeExposed": false,
+                "arbitraryScriptingEnabled": false,
+                "mainWorldEnabled": false,
+                "multiFrameEnabled": false,
+                "fileSchemeEnabled": false,
+                "auxiliaryWebViewEnabled": false,
+                "networkAuthNativeHostEnabled": false,
+                "webStoreOrRemoteCRXEnabled": false,
+                "timersOrPollingEnabled": false,
+            ],
+            "blockers": [],
+            "noRealSecrets": true,
+            "noRawCredentials": true,
+            "noRealWebsiteData": true,
+            "notProductSupportWarning":
+                "Local experimental diagnostic only; this is not a Bitwarden support claim and does not enable product/default runtime.",
+            "diagnostics": [
+                "Artifact redacts dummy values and records only synthetic dummy markers.",
+                "No real website data, credentials, vault state, account tokens, device identity, network auth, native host, Web Store, or remote CRX path was used.",
+            ],
+        ]
+    }
+
+    private func manualSmokeDOMJSONObject(
+        phase: String,
+        finalValuesMatchDummyFill: Bool,
+        usernameValueMarker: String,
+        passwordValueMarker: String
+    ) -> [String: Any] {
+        [
+            "phase": phase,
+            "url": "https://sumi.local.test/login",
+            "origin": "https://sumi.local.test",
+            "documentID": "sumi-manual-smoke-document",
+            "navigationSequence": phase == "before" ? 1 : 2,
+            "usernameFieldExists": true,
+            "passwordFieldExists": true,
+            "submitButtonExists": true,
+            "initialValuesEmpty": phase == "before",
+            "finalValuesMatchDummyFill": finalValuesMatchDummyFill,
+            "usernameValueMarker": usernameValueMarker,
+            "passwordValueMarker": passwordValueMarker,
+        ]
+    }
+
+    private func writeJSONObject(_ object: [String: Any], to url: URL) throws {
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let data = try JSONSerialization.data(
+            withJSONObject: object,
+            options: [.sortedKeys]
+        )
+        try data.write(to: url)
     }
 
     private func makeFixture(
