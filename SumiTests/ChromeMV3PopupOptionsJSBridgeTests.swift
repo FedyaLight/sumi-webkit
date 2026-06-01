@@ -106,6 +106,72 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(response.runtimeLoadable)
     }
 
+    func testRuntimeSendMessageNoListenerStaysPreciseWithSharedLifecycle()
+        throws
+    {
+        let session = try makeSharedLifecycleSession()
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(),
+            sharedLifecycleSession: session
+        )
+
+        let response = handler.handle(request(
+            namespace: "runtime",
+            methodName: "sendMessage",
+            arguments: [.object(["ping": .bool(true)])]
+        ))
+
+        XCTAssertFalse(response.succeeded)
+        XCTAssertEqual(response.lastErrorCode, "noReceivingEnd")
+        XCTAssertTrue(response.serviceWorkerWakeAttempted)
+        XCTAssertEqual(
+            response.serviceWorkerLifecycleWakeResult?.listenerEvent,
+            .runtimeOnMessage
+        )
+        XCTAssertEqual(
+            response.serviceWorkerLifecycleWakeResult?.blockers,
+            ["No synthetic/model listener is registered."]
+        )
+        XCTAssertFalse(response.runtimeLoadable)
+    }
+
+    func testRuntimeConnectRoutesThroughSharedLifecycleWhenProvided()
+        throws
+    {
+        let session = try makeSharedLifecycleSession()
+        session.registerListener(
+            event: .runtimeOnConnect,
+            listenerID: "popup-runtime-on-connect"
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(),
+            sharedLifecycleSession: session
+        )
+
+        let response = handler.handle(request(
+            namespace: "runtime",
+            methodName: "connect",
+            arguments: [.object(["name": .string("popup-runtime")])],
+            invocationMode: .fireAndForget
+        ))
+
+        XCTAssertTrue(response.succeeded)
+        XCTAssertEqual(
+            stringValue(objectValue(response.resultPayload)?["portKind"]),
+            "serviceWorkerRuntimePort"
+        )
+        XCTAssertTrue(response.serviceWorkerWakeAttempted)
+        XCTAssertEqual(
+            response.serviceWorkerLifecycleWakeResult?.listenerEvent,
+            .runtimeOnConnect
+        )
+        XCTAssertEqual(
+            response.serviceWorkerLifecycleWakeResult?.keepaliveRecord?.kind,
+            .runtimePort
+        )
+        XCTAssertFalse(response.runtimeLoadable)
+    }
+
     func testStorageAndPermissionEventsRouteThroughSharedLifecycleWhenProvided()
         throws
     {

@@ -3594,8 +3594,33 @@ struct ChromeMV3ExtensionManagerView: View {
                         Text(
                             "Bitwarden E2E routes: "
                                 + smoke.messageRoutesTested.map {
-                                    "\($0.route.rawValue):\($0.status.rawValue)"
+                                    "\($0.route.rawValue):\($0.status.rawValue):\($0.deliveryStatus)"
                                 }.joined(separator: ", ")
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            "Bitwarden E2E service-worker listeners: "
+                                + (smoke.serviceWorkerCapturedListenerFamilies
+                                    ?? [])
+                                .map(\.rawValue)
+                                .joined(separator: ", ")
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            "Bitwarden E2E service-worker routes: "
+                                + smoke.messageRoutesTested
+                                .filter {
+                                    $0.selectedServiceWorkerListenerFamily
+                                        != nil
+                                }
+                                .map {
+                                    "\($0.route.rawValue)=\($0.deliveryStatus):\($0.selectedServiceWorkerListenerFamily?.rawValue ?? "none"):\($0.serviceWorkerRouteReason ?? "none")"
+                                }
+                                .joined(separator: ", ")
                         )
                         .font(.caption)
                         .foregroundStyle(.secondary)

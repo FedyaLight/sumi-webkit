@@ -991,6 +991,51 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         )
     }
 
+    func testContentScriptRuntimeSendMessageNoListenerStaysPrecise()
+        throws
+    {
+        let fixture = try makePreflightFixture()
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+        _ = registry.registerEndpoint(
+            preflight: fixture.preflight,
+            messageListenerRegistered: true
+        )
+        let session = try makeSharedLifecycleSession()
+        let host = ChromeMV3ContentScriptBridgeHost(
+            extensionID: extensionID,
+            profileID: profileID,
+            tabID: 7,
+            frameID: 0,
+            documentID: "document-1",
+            urlString: "https://example.com/login",
+            permissionBroker:
+                permissionBroker(hostPermissions: ["https://example.com/*"]),
+            endpointRegistry: registry,
+            sharedLifecycleSession: session
+        )
+
+        let response = host.handle([
+            "namespace": "runtime",
+            "methodName": "sendMessage",
+            "bridgeCallID": "content-script-send-message-no-listener",
+            "arguments": [["ping": true]],
+        ])
+
+        XCTAssertFalse(response.succeeded)
+        XCTAssertEqual(response.lastErrorCode, "noReceivingEnd")
+        XCTAssertTrue(response.serviceWorkerWakeAttempted)
+        XCTAssertEqual(
+            response.serviceWorkerLifecycleWakeResult?.listenerEvent,
+            .runtimeOnMessage
+        )
+        XCTAssertEqual(
+            response.serviceWorkerLifecycleWakeResult?.blockers,
+            ["No synthetic/model listener is registered."]
+        )
+        XCTAssertTrue(response.diagnostics.joined(separator: "\n")
+            .contains("no listener accepted"))
+    }
+
     func testContentScriptRuntimeConnectBlockedDiagnostic() throws {
         let fixture = try makePreflightFixture()
         let registry = ChromeMV3ContentScriptEndpointRegistry()

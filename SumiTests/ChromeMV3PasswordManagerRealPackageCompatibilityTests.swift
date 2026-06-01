@@ -1798,9 +1798,31 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertEqual(routes[.popupRuntimeSendMessage]?.status, .blocked)
         XCTAssertEqual(
             routes[.popupRuntimeSendMessage]?.noReceiverClassification,
-            .serviceWorkerListenerMissing
+            .serviceWorkerRuntimeOnMessageListenerMissing
+        )
+        XCTAssertEqual(
+            routes[.popupRuntimeSendMessage]?
+                .selectedServiceWorkerListenerFamily,
+            .runtimeOnMessage
+        )
+        XCTAssertEqual(
+            routes[.popupRuntimeSendMessage]?.listenerCount,
+            0
+        )
+        XCTAssertEqual(
+            routes[.popupRuntimeSendMessage]?.serviceWorkerRouteReason,
+            "no runtime.onMessage listener captured for popupRuntimeSendMessage"
         )
         XCTAssertEqual(routes[.popupRuntimeConnect]?.status, .partial)
+        XCTAssertEqual(
+            routes[.popupRuntimeConnect]?.selectedServiceWorkerListenerFamily,
+            .runtimeOnConnect
+        )
+        XCTAssertEqual(routes[.popupRuntimeConnect]?.listenerCount, 1)
+        XCTAssertTrue(
+            routes[.popupRuntimeConnect]?.serviceWorkerRouteResult?
+                .contains("listener=runtimeOnConnect") == true
+        )
         XCTAssertEqual(routes[.popupTabsQuery]?.status, .partial)
         XCTAssertEqual(routes[.popupTabsSendMessage]?.status, .partial)
         XCTAssertNil(routes[.popupTabsSendMessage]?.noReceiverClassification)
@@ -1824,9 +1846,36 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertEqual(
             routes[.contentScriptRuntimeSendMessage]?
                 .noReceiverClassification,
-            .serviceWorkerListenerMissing
+            .serviceWorkerRuntimeOnMessageListenerMissing
+        )
+        XCTAssertEqual(
+            routes[.contentScriptRuntimeSendMessage]?
+                .selectedServiceWorkerListenerFamily,
+            .runtimeOnMessage
+        )
+        XCTAssertEqual(
+            routes[.contentScriptRuntimeSendMessage]?.listenerCount,
+            0
+        )
+        XCTAssertEqual(
+            routes[.contentScriptRuntimeSendMessage]?
+                .serviceWorkerRouteReason,
+            "no runtime.onMessage listener captured for contentScriptRuntimeSendMessage"
         )
         XCTAssertEqual(routes[.contentScriptRuntimeConnect]?.status, .partial)
+        XCTAssertEqual(
+            routes[.contentScriptRuntimeConnect]?
+                .selectedServiceWorkerListenerFamily,
+            .runtimeOnConnect
+        )
+        XCTAssertEqual(
+            routes[.contentScriptRuntimeConnect]?.listenerCount,
+            1
+        )
+        XCTAssertTrue(
+            routes[.contentScriptRuntimeConnect]?.senderMetadataSummary
+                .contains("tab=1;frame=0;document=bitwarden-e2e-login-main-frame") == true
+        )
         XCTAssertEqual(routes[.popupTabsConnect]?.status, .blocked)
         XCTAssertEqual(
             routes[.popupTabsConnect]?.noReceiverClassification,
@@ -1845,10 +1894,21 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertEqual(routes[.popupTabsConnect]?.disconnectResult, "notOpened")
         XCTAssertEqual(
             smoke.nextBlockerClassification,
-            .serviceWorkerListenerMissing
+            .serviceWorkerRuntimeOnMessageListenerMissing
+        )
+        XCTAssertTrue(
+            smoke.serviceWorkerCapturedListenerFamilies?
+                .contains(.runtimeOnConnect) == true
+        )
+        XCTAssertFalse(
+            smoke.serviceWorkerCapturedListenerFamilies?
+                .contains(.runtimeOnMessage) == true
         )
         XCTAssertFalse(smoke.messageRoutesTested.contains {
             $0.noReceiverClassification == .unsupportedContentScriptBridge
+        })
+        XCTAssertFalse(smoke.messageRoutesTested.contains {
+            $0.noReceiverClassification == .serviceWorkerListenerMissing
         })
         XCTAssertTrue(smoke.serviceWorkerWakeAttempted)
         XCTAssertFalse(smoke.nativeHostLaunchAttempted)
@@ -1905,7 +1965,7 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertEqual(
             detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
                 .bitwardenE2ESmoke?.nextBlockerClassification,
-            .serviceWorkerListenerMissing
+            .serviceWorkerRuntimeOnMessageListenerMissing
         )
     }
 
