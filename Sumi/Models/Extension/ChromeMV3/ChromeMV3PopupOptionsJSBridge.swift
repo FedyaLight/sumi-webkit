@@ -2100,21 +2100,43 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         ) {
             return permissionFailure
         }
-        guard let registry = contentScriptEndpointRegistry,
-              let endpoint = registry.targetEndpoint(
-                extensionID: configuration.extensionID,
-                profileID: configuration.profileID,
-                tabID: tabID,
-                frameID: frameID,
-                documentID: documentID
-              )
-        else {
+        guard let registry = contentScriptEndpointRegistry else {
             return runtimeLastErrorResponse(
                 request,
                 error: .noReceivingEnd,
                 diagnostics: [
-                    "No content-script endpoint exists for tabs.sendMessage target tab/frame/document."
+                    "No content-script endpoint registry is available for tabs.sendMessage target tab/frame/document.",
+                    "Endpoint lookup classification: endpointMissing.",
                 ]
+            )
+        }
+        let lookup = registry.targetEndpointLookup(
+            extensionID: configuration.extensionID,
+            profileID: configuration.profileID,
+            tabID: tabID,
+            frameID: frameID,
+            documentID: documentID
+        )
+        guard let endpoint = lookup.endpoint else {
+            return runtimeLastErrorResponse(
+                request,
+                error: .noReceivingEnd,
+                diagnostics:
+                    lookup.diagnostics
+                    + [
+                        "No content-script endpoint exists for tabs.sendMessage target tab/frame/document."
+                    ]
+            )
+        }
+        guard endpoint.messageListenerRegistered else {
+            return runtimeLastErrorResponse(
+                request,
+                error: .noReceivingEnd,
+                diagnostics:
+                    lookup.diagnostics
+                    + [
+                        "Target content-script endpoint is present but has no runtime.onMessage listener.",
+                    ]
             )
         }
         let route = ChromeMV3RuntimeMessagingRoute.make(
@@ -2158,7 +2180,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             return runtimeLastErrorResponse(
                 request,
                 contract: error,
-                diagnostics: dispatch.diagnostics
+                diagnostics: lookup.diagnostics + dispatch.diagnostics
             )
         }
         return response(
@@ -2166,7 +2188,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             succeeded: true,
             payload: dispatch.responsePayload ?? .null,
             diagnostics:
-                dispatch.diagnostics
+                lookup.diagnostics
+                    + dispatch.diagnostics
                     + [
                         "tabs.sendMessage routed to a registered developer-preview content-script endpoint.",
                         "No arbitrary scripting.executeScript path was used.",
@@ -2214,21 +2237,32 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         ) {
             return permissionFailure
         }
-        guard let registry = contentScriptEndpointRegistry,
-              let endpoint = registry.targetEndpoint(
-                extensionID: configuration.extensionID,
-                profileID: configuration.profileID,
-                tabID: tabID,
-                frameID: frameID,
-                documentID: documentID
-              )
-        else {
+        guard let registry = contentScriptEndpointRegistry else {
             return runtimeLastErrorResponse(
                 request,
                 error: .noReceivingEnd,
                 diagnostics: [
-                    "No content-script endpoint exists for tabs.connect target tab/frame/document."
+                    "No content-script endpoint registry is available for tabs.connect target tab/frame/document.",
+                    "Endpoint lookup classification: endpointMissing.",
                 ]
+            )
+        }
+        let lookup = registry.targetEndpointLookup(
+            extensionID: configuration.extensionID,
+            profileID: configuration.profileID,
+            tabID: tabID,
+            frameID: frameID,
+            documentID: documentID
+        )
+        guard let endpoint = lookup.endpoint else {
+            return runtimeLastErrorResponse(
+                request,
+                error: .noReceivingEnd,
+                diagnostics:
+                    lookup.diagnostics
+                    + [
+                        "No content-script endpoint exists for tabs.connect target tab/frame/document."
+                    ]
             )
         }
         let route = ChromeMV3RuntimeMessagingRoute.make(
@@ -2267,9 +2301,11 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             return runtimeLastErrorResponse(
                 request,
                 error: .noReceivingEnd,
-                diagnostics: [
-                    "Target content-script endpoint has no runtime.onConnect listener."
-                ]
+                diagnostics:
+                    lookup.diagnostics
+                    + [
+                        "Target content-script endpoint is present but has no runtime.onConnect listener."
+                    ]
             )
         }
         syntheticPortIDs.insert(port.portID)
@@ -2286,7 +2322,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 "runtimeLoadable": .bool(false),
             ]),
             diagnostics:
-                port.diagnostics
+                lookup.diagnostics
+                    + port.diagnostics
                     + [
                         "tabs.connect created a modeled Port to a content-script endpoint.",
                         "No product service-worker wake or native host launch occurred.",

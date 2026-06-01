@@ -1468,6 +1468,37 @@ struct ChromeMV3ContentScriptSenderMetadata:
     var redactionReason: String?
 }
 
+struct ChromeMV3ContentScriptEndpointMetadata:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var endpointID: String
+    var extensionID: String
+    var profileID: String
+    var tabID: Int
+    var frameID: Int
+    var parentFrameID: Int?
+    var documentID: String
+    var navigationSequence: Int
+    var frameScope: ChromeMV3ContentScriptFrameSupport
+    var url: String?
+    var origin: String?
+    var urlRedacted: Bool
+    var originRedacted: Bool
+    var redactionReason: String?
+    var hostPermissionStatus: ChromeMV3PermissionBrokerDecisionStatus
+    var hostPermissionSource: ChromeMV3PermissionBrokerGrantSource
+    var matchedHostPatterns: [String]
+    var allowedByActiveTab: Bool
+    var teardownPolicy: String
+    var active: Bool
+    var messageListenerRegistered: Bool
+    var connectListenerRegistered: Bool
+    var attachedScriptIDs: [String]
+    var attachedCSSResourceIDs: [String]
+}
+
 struct ChromeMV3ContentScriptEndpointRecord:
     Codable,
     Equatable,
@@ -1481,12 +1512,18 @@ struct ChromeMV3ContentScriptEndpointRecord:
     var documentID: String
     var navigationSequence: Int
     var frameTarget: ChromeMV3ContentScriptFrameTarget
+    var frameScope: ChromeMV3ContentScriptFrameSupport
     var attachedScriptIDs: [String]
     var attachedCSSResourceIDs: [String]
     var messageListenerRegistered: Bool
     var connectListenerRegistered: Bool
     var endpointState: ChromeMV3ContentScriptEndpointLifecycleState
     var senderMetadata: ChromeMV3ContentScriptSenderMetadata
+    var hostPermissionStatus: ChromeMV3PermissionBrokerDecisionStatus
+    var hostPermissionSource: ChromeMV3PermissionBrokerGrantSource
+    var matchedHostPatterns: [String]
+    var allowedByActiveTab: Bool
+    var teardownPolicy: String
     var teardownReason: String?
     var diagnostics: [String]
 
@@ -1498,6 +1535,35 @@ struct ChromeMV3ContentScriptEndpointRecord:
         default:
             return false
         }
+    }
+
+    var metadata: ChromeMV3ContentScriptEndpointMetadata {
+        ChromeMV3ContentScriptEndpointMetadata(
+            endpointID: endpointID,
+            extensionID: extensionID,
+            profileID: profileID,
+            tabID: tabID,
+            frameID: frameID,
+            parentFrameID: senderMetadata.parentFrameID,
+            documentID: documentID,
+            navigationSequence: navigationSequence,
+            frameScope: frameScope,
+            url: senderMetadata.url,
+            origin: senderMetadata.origin,
+            urlRedacted: senderMetadata.urlRedacted,
+            originRedacted: senderMetadata.originRedacted,
+            redactionReason: senderMetadata.redactionReason,
+            hostPermissionStatus: hostPermissionStatus,
+            hostPermissionSource: hostPermissionSource,
+            matchedHostPatterns: matchedHostPatterns,
+            allowedByActiveTab: allowedByActiveTab,
+            teardownPolicy: teardownPolicy,
+            active: active,
+            messageListenerRegistered: messageListenerRegistered,
+            connectListenerRegistered: connectListenerRegistered,
+            attachedScriptIDs: attachedScriptIDs,
+            attachedCSSResourceIDs: attachedCSSResourceIDs
+        )
     }
 }
 
@@ -1583,8 +1649,39 @@ struct ChromeMV3ContentScriptEndpointRegistrySummary:
     var endpointIDs: [String]
     var portIDs: [String]
     var tabsWithEndpoints: [Int]
+    var endpointMetadata: [ChromeMV3ContentScriptEndpointMetadata]
     var lifecycleStates: [ChromeMV3ContentScriptEndpointLifecycleState]
     var portDisconnectReasons: [String]
+    var diagnostics: [String]
+}
+
+enum ChromeMV3ContentScriptEndpointLookupClassification:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case found
+    case endpointMissing
+    case wrongFrame
+    case wrongTab
+
+    static func < (
+        lhs: ChromeMV3ContentScriptEndpointLookupClassification,
+        rhs: ChromeMV3ContentScriptEndpointLookupClassification
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3ContentScriptEndpointLookupResult:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var classification: ChromeMV3ContentScriptEndpointLookupClassification
+    var endpoint: ChromeMV3ContentScriptEndpointRecord?
     var diagnostics: [String]
 }
 
@@ -1612,7 +1709,7 @@ final class ChromeMV3ContentScriptEndpointRegistry {
                 active.filter(\.messageListenerRegistered).count,
             connectListenerEndpointCount:
                 active.filter(\.connectListenerRegistered).count,
-            portCount: activePorts.count,
+            portCount: ports.count,
             activePortCount: activePorts.count,
             disconnectedPortCount: ports.filter { $0.opened == false }.count,
             portMessageCount: portMessages.count,
@@ -1620,6 +1717,10 @@ final class ChromeMV3ContentScriptEndpointRegistry {
             portIDs: ports.map(\.portID).sorted(),
             tabsWithEndpoints:
                 Array(Set(active.map(\.tabID))).sorted(),
+            endpointMetadata:
+                endpoints.map(\.metadata).sorted {
+                    $0.endpointID < $1.endpointID
+                },
             lifecycleStates:
                 Array(Set(lifecycleRecords.map(\.state))).sorted(),
             portDisconnectReasons:
@@ -1672,6 +1773,7 @@ final class ChromeMV3ContentScriptEndpointRegistry {
             documentID: preflight.documentID,
             navigationSequence: preflight.navigationSequence,
             frameTarget: preflight.frameTarget,
+            frameScope: .topFrameOnly,
             attachedScriptIDs:
                 preflight.matchedScripts.map(\.contentScriptID).sorted(),
             attachedCSSResourceIDs:
@@ -1724,6 +1826,14 @@ final class ChromeMV3ContentScriptEndpointRegistry {
                         ? nil
                         : "URL and origin are redacted because host permission or activeTab access is missing."
             ),
+            hostPermissionStatus: preflight.hostAccessDecision.status,
+            hostPermissionSource: preflight.hostAccessDecision.grantSource,
+            matchedHostPatterns:
+                preflight.hostAccessDecision.matchingHostPatterns,
+            allowedByActiveTab:
+                preflight.hostAccessDecision.allowedByActiveTab,
+            teardownPolicy:
+                "teardown on navigation, tab close, extension disable, uninstall, reset, WebView replacement, WebView suspension, WebView discard, or host-permission revoke",
             teardownReason: nil,
             diagnostics:
                 uniqueSortedContentScripts(
@@ -1819,6 +1929,10 @@ final class ChromeMV3ContentScriptEndpointRegistry {
                                 "navigationSequence": .number(
                                     Double(endpoint.navigationSequence)
                                 ),
+                                "listenerCount": .number(1),
+                                "sender": senderMetadataPayload(
+                                    endpoint.senderMetadata
+                                ),
                             ]),
                             diagnostics: [
                                 "tabs.sendMessage reached a registered content-script endpoint."
@@ -1840,6 +1954,10 @@ final class ChromeMV3ContentScriptEndpointRegistry {
                                 "documentId": .string(endpoint.documentID),
                                 "navigationSequence": .number(
                                     Double(endpoint.navigationSequence)
+                                ),
+                                "listenerCount": .number(1),
+                                "sender": senderMetadataPayload(
+                                    endpoint.senderMetadata
                                 ),
                             ]),
                             diagnostics: [
@@ -1877,22 +1995,56 @@ final class ChromeMV3ContentScriptEndpointRegistry {
         )
     }
 
-    func targetEndpoint(
+    private func senderMetadataPayload(
+        _ sender: ChromeMV3ContentScriptSenderMetadata
+    ) -> ChromeMV3StorageValue {
+        var object: [String: ChromeMV3StorageValue] = [
+            "id": .string(sender.extensionID),
+            "extensionID": .string(sender.extensionID),
+            "profileID": .string(sender.profileID),
+            "tabId": .number(Double(sender.tabID)),
+            "frameId": .number(Double(sender.frameID)),
+            "documentId": .string(sender.documentID),
+            "navigationSequence": .number(Double(sender.navigationSequence)),
+            "lifecycleSessionID": .string(sender.lifecycleSessionID),
+            "endpointID": .string(sender.endpointID),
+            "urlRedacted": .bool(sender.urlRedacted),
+            "originRedacted": .bool(sender.originRedacted),
+        ]
+        if let parentFrameID = sender.parentFrameID {
+            object["parentFrameId"] = .number(Double(parentFrameID))
+        }
+        if let url = sender.url {
+            object["url"] = .string(url)
+        }
+        if let origin = sender.origin {
+            object["origin"] = .string(origin)
+        }
+        if let redactionReason = sender.redactionReason {
+            object["redactionReason"] = .string(redactionReason)
+        }
+        return .object(object)
+    }
+
+    func targetEndpointLookup(
         extensionID: String,
         profileID: String,
         tabID: Int,
         frameID: Int?,
         documentID: String?
-    ) -> ChromeMV3ContentScriptEndpointRecord? {
-        endpoints
-            .filter {
-                $0.active
-                    && $0.extensionID == extensionID
-                    && $0.profileID == profileID
-                    && $0.tabID == tabID
-                    && (frameID == nil || $0.frameID == frameID)
-                    && (documentID == nil || $0.documentID == documentID)
-            }
+    ) -> ChromeMV3ContentScriptEndpointLookupResult {
+        let scoped = endpoints.filter {
+            $0.active
+                && $0.extensionID == extensionID
+                && $0.profileID == profileID
+        }
+        let inTab = scoped.filter { $0.tabID == tabID }
+        let inFrame = inTab.filter { frameID == nil || $0.frameID == frameID }
+        let matched = inFrame.filter {
+            documentID == nil || $0.documentID == documentID
+        }
+        if let endpoint = (
+            matched
             .sorted {
                 if $0.navigationSequence != $1.navigationSequence {
                     return $0.navigationSequence > $1.navigationSequence
@@ -1900,6 +2052,53 @@ final class ChromeMV3ContentScriptEndpointRegistry {
                 return $0.endpointID < $1.endpointID
             }
             .first
+        )
+        {
+            return ChromeMV3ContentScriptEndpointLookupResult(
+                classification: .found,
+                endpoint: endpoint,
+                diagnostics: [
+                    "Endpoint lookup classification: found.",
+                    "Selected content-script endpoint \(endpoint.endpointID) for tab=\(tabID), frame=\(frameID.map { String($0) } ?? "any"), document=\(documentID ?? "any").",
+                ]
+            )
+        }
+
+        let classification:
+            ChromeMV3ContentScriptEndpointLookupClassification
+        if scoped.isEmpty {
+            classification = .endpointMissing
+        } else if inTab.isEmpty {
+            classification = .wrongTab
+        } else if frameID != nil && inFrame.isEmpty {
+            classification = .wrongFrame
+        } else {
+            classification = .endpointMissing
+        }
+        return ChromeMV3ContentScriptEndpointLookupResult(
+            classification: classification,
+            endpoint: nil,
+            diagnostics: [
+                "Endpoint lookup classification: \(classification.rawValue).",
+                "No active content-script endpoint matched tab=\(tabID), frame=\(frameID.map { String($0) } ?? "any"), document=\(documentID ?? "any").",
+            ]
+        )
+    }
+
+    func targetEndpoint(
+        extensionID: String,
+        profileID: String,
+        tabID: Int,
+        frameID: Int?,
+        documentID: String?
+    ) -> ChromeMV3ContentScriptEndpointRecord? {
+        targetEndpointLookup(
+            extensionID: extensionID,
+            profileID: profileID,
+            tabID: tabID,
+            frameID: frameID,
+            documentID: documentID
+        ).endpoint
     }
 
     func openPortIfAvailable(

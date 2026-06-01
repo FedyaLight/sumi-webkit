@@ -45,6 +45,32 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         XCTAssertEqual(registry.summary.portCount, 0)
     }
 
+    func testEndpointDoesNotRegisterWhenDefaultGateIsClosed()
+        throws
+    {
+        let fixture = try makePreflightFixture(gate: .defaultBlocked())
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+
+        XCTAssertFalse(fixture.preflight.canRegisterEndpointNow)
+        XCTAssertNil(registry.registerEndpoint(preflight: fixture.preflight))
+        XCTAssertEqual(registry.summary.endpointCount, 0)
+    }
+
+    func testEndpointDoesNotRegisterForBlockedFileTarget()
+        throws
+    {
+        let fixture = try makePreflightFixture(
+            urlString: "file:///Users/test/login.html",
+            hostPermissions: ["<all_urls>"],
+            contentScriptMatches: ["file:///*"]
+        )
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+
+        XCTAssertFalse(fixture.preflight.canRegisterEndpointNow)
+        XCTAssertNil(registry.registerEndpoint(preflight: fixture.preflight))
+        XCTAssertEqual(registry.summary.endpointCount, 0)
+    }
+
     func testNonMatchingURLBlocksAttachment() throws {
         let fixture = try makePreflightFixture(
             urlString: "https://other.example/login"
@@ -576,6 +602,10 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
             stringValue(objectValue(message.resultPayload)?["target"]),
             "contentScriptEndpoint"
         )
+        XCTAssertEqual(
+            objectValue(message.resultPayload)?["listenerCount"],
+            .number(1)
+        )
         XCTAssertTrue(connect.succeeded)
         XCTAssertEqual(
             stringValue(objectValue(connect.resultPayload)?["portKind"]),
@@ -583,6 +613,17 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         )
         XCTAssertEqual(registry.summary.portCount, 1)
         XCTAssertEqual(registry.summary.activePortCount, 1)
+        XCTAssertEqual(registry.summary.endpointMetadata.count, 1)
+        XCTAssertEqual(
+            registry.summary.endpointMetadata.first?.hostPermissionSource,
+            .requiredHostPermission
+        )
+        XCTAssertEqual(
+            registry.summary.endpointMetadata.first?.teardownPolicy.contains(
+                "navigation"
+            ),
+            true
+        )
 
         registry.navigationStarted(
             profileID: profileID,
@@ -822,6 +863,51 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
 
         XCTAssertFalse(response.succeeded)
         XCTAssertEqual(response.lastErrorCode, "noReceivingEnd")
+        XCTAssertTrue(response.diagnostics.joined(separator: "\n")
+            .contains("present but has no runtime.onMessage listener"))
+    }
+
+    func testEndpointLookupClassifiesWrongTabAndFrame() throws {
+        let fixture = try makePreflightFixture()
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+        _ = registry.registerEndpoint(
+            preflight: fixture.preflight,
+            messageListenerRegistered: true
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration:
+                popupConfiguration(
+                    hostPermissions: ["https://example.com/*"]
+                ),
+            contentScriptEndpointRegistry: registry
+        )
+
+        let wrongTab = handler.handle(request(
+            namespace: "tabs",
+            methodName: "sendMessage",
+            arguments: [
+                .number(8),
+                .object(["ping": .bool(true)]),
+            ]
+        ))
+        let wrongFrame = handler.handle(request(
+            namespace: "tabs",
+            methodName: "sendMessage",
+            arguments: [
+                .number(7),
+                .object(["ping": .bool(true)]),
+                .object(["frameId": .number(9)]),
+            ]
+        ))
+
+        XCTAssertFalse(wrongTab.succeeded)
+        XCTAssertEqual(wrongTab.lastErrorCode, "noReceivingEnd")
+        XCTAssertTrue(wrongTab.diagnostics.joined(separator: "\n")
+            .contains("Endpoint lookup classification: wrongTab"))
+        XCTAssertFalse(wrongFrame.succeeded)
+        XCTAssertEqual(wrongFrame.lastErrorCode, "noReceivingEnd")
+        XCTAssertTrue(wrongFrame.diagnostics.joined(separator: "\n")
+            .contains("Endpoint lookup classification: wrongFrame"))
     }
 
     func testContentScriptRuntimeSendMessageIsDeterministicNoReceiver()

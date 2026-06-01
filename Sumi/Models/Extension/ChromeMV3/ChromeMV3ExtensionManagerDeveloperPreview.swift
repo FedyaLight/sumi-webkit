@@ -3601,7 +3601,33 @@ struct ChromeMV3ExtensionManagerView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         Text(
-                            "Bitwarden E2E endpoints: active=\(smoke.endpointRegistryState.activeEndpointCount), message=\(smoke.endpointRegistryState.messageListenerEndpointCount), connect=\(smoke.endpointRegistryState.connectListenerEndpointCount)"
+                            "Bitwarden E2E endpoints: total=\(smoke.endpointRegistryState.endpointCount), active=\(smoke.endpointRegistryState.activeEndpointCount), message=\(smoke.endpointRegistryState.messageListenerEndpointCount), connect=\(smoke.endpointRegistryState.connectListenerEndpointCount)"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            "Bitwarden E2E delivery: "
+                                + smoke.messageRoutesTested
+                                .filter {
+                                    $0.route == .popupTabsSendMessage
+                                        || $0.route == .popupTabsConnect
+                                }
+                                .map {
+                                    "\($0.route.rawValue)=\($0.deliveryStatus)"
+                                }
+                                .joined(separator: ", ")
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            "Bitwarden E2E endpoint metadata: "
+                                + smoke.endpointRegistryState.endpointMetadata
+                                .map {
+                                    "\($0.endpointID):tab=\($0.tabID):frame=\($0.frameID):document=\($0.documentID):host=\($0.hostPermissionSource.rawValue):scope=\($0.frameScope.rawValue)"
+                                }
+                                .joined(separator: ", ")
                         )
                         .font(.caption)
                         .foregroundStyle(.secondary)

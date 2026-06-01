@@ -1738,6 +1738,8 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertEqual(smoke.syntheticLoginSurface.declaredContentScriptCount, 2)
         XCTAssertEqual(smoke.syntheticLoginSurface.matchedContentScriptCount, 2)
         XCTAssertEqual(smoke.syntheticLoginSurface.attachedContentScriptCount, 2)
+        XCTAssertEqual(smoke.syntheticLoginSurface.attachedJSFileCount, 2)
+        XCTAssertEqual(smoke.syntheticLoginSurface.attachedCSSFileCount, 1)
         XCTAssertEqual(smoke.syntheticLoginSurface.allFramesDeclared, true)
         XCTAssertEqual(smoke.syntheticLoginSurface.frameSupport, .topFrameOnly)
         XCTAssertEqual(smoke.syntheticLoginSurface.multiFrameDeferred, true)
@@ -1753,6 +1755,30 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             } == true
         )
         XCTAssertEqual(smoke.endpointRegistryState.activeEndpointCount, 1)
+        XCTAssertEqual(smoke.endpointRegistryState.endpointCount, 1)
+        XCTAssertEqual(smoke.endpointRegistryState.endpointMetadata.count, 1)
+        XCTAssertEqual(
+            smoke.endpointRegistryState.endpointMetadata.first?
+                .extensionID,
+            row.serviceWorkerEventReadiness.declarationReadiness?.extensionID
+        )
+        XCTAssertEqual(
+            smoke.endpointRegistryState.endpointMetadata.first?.tabID,
+            1
+        )
+        XCTAssertEqual(
+            smoke.endpointRegistryState.endpointMetadata.first?.documentID,
+            "bitwarden-e2e-login-main-frame"
+        )
+        XCTAssertEqual(
+            smoke.endpointRegistryState.endpointMetadata.first?.frameScope,
+            .topFrameOnly
+        )
+        XCTAssertEqual(
+            smoke.endpointRegistryState.endpointMetadata.first?
+                .hostPermissionSource,
+            .requiredHostPermission
+        )
         XCTAssertEqual(
             smoke.endpointRegistryState.messageListenerEndpointCount,
             1
@@ -1778,6 +1804,19 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertEqual(routes[.popupTabsQuery]?.status, .partial)
         XCTAssertEqual(routes[.popupTabsSendMessage]?.status, .partial)
         XCTAssertNil(routes[.popupTabsSendMessage]?.noReceiverClassification)
+        XCTAssertEqual(routes[.popupTabsSendMessage]?.delivered, true)
+        XCTAssertEqual(routes[.popupTabsSendMessage]?.deliveryStatus, "delivered")
+        XCTAssertEqual(routes[.popupTabsSendMessage]?.listenerCount, 1)
+        XCTAssertEqual(routes[.popupTabsSendMessage]?.selectedTabID, 1)
+        XCTAssertEqual(routes[.popupTabsSendMessage]?.targetFrameID, 0)
+        XCTAssertEqual(
+            routes[.popupTabsSendMessage]?.targetDocumentID,
+            "bitwarden-e2e-login-main-frame"
+        )
+        XCTAssertEqual(
+            routes[.popupTabsSendMessage]?.responseShape,
+            "object:documentId,endpointID,frameId,listenerCount,navigationSequence,ok,sender,tabId,target"
+        )
         XCTAssertEqual(
             routes[.contentScriptRuntimeSendMessage]?.status,
             .blocked
@@ -1791,14 +1830,25 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertEqual(routes[.popupTabsConnect]?.status, .blocked)
         XCTAssertEqual(
             routes[.popupTabsConnect]?.noReceiverClassification,
-            .expectedNoListener
+            .endpointPresentNoListener
         )
+        XCTAssertEqual(
+            routes[.popupTabsConnect]?.deliveryStatus,
+            "endpointPresentNoListener"
+        )
+        XCTAssertEqual(routes[.popupTabsConnect]?.listenerCount, 0)
+        XCTAssertEqual(routes[.popupTabsConnect]?.portName, "sumi-bitwarden-e2e")
+        XCTAssertEqual(
+            routes[.popupTabsConnect]?.postMessageResult,
+            "notModeled:no content-script runtime.onConnect listener"
+        )
+        XCTAssertEqual(routes[.popupTabsConnect]?.disconnectResult, "notOpened")
         XCTAssertEqual(
             smoke.nextBlockerClassification,
             .serviceWorkerListenerMissing
         )
         XCTAssertFalse(smoke.messageRoutesTested.contains {
-            $0.noReceiverClassification == .actualUnsupportedAPI
+            $0.noReceiverClassification == .unsupportedContentScriptBridge
         })
         XCTAssertTrue(smoke.serviceWorkerWakeAttempted)
         XCTAssertFalse(smoke.nativeHostLaunchAttempted)
@@ -1830,6 +1880,27 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                 .bitwardenE2ESmoke?.endpointRegistryState
                 .messageListenerEndpointCount,
             1
+        )
+        let managerRoutes = Dictionary(
+            uniqueKeysWithValues:
+                (detail.serviceWorkerReadinessPanel
+                    .latestRealPackageTrialReport?
+                    .bitwardenE2ESmoke?.messageRoutesTested ?? [])
+                .map { ($0.route, $0) }
+        )
+        XCTAssertEqual(
+            managerRoutes[.popupTabsSendMessage]?.deliveryStatus,
+            "delivered"
+        )
+        XCTAssertEqual(
+            managerRoutes[.popupTabsConnect]?.deliveryStatus,
+            "endpointPresentNoListener"
+        )
+        XCTAssertEqual(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .bitwardenE2ESmoke?.endpointRegistryState.endpointMetadata
+                .first?.documentID,
+            "bitwarden-e2e-login-main-frame"
         )
         XCTAssertEqual(
             detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
