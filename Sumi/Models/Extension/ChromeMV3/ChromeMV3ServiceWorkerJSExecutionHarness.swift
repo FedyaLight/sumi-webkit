@@ -629,6 +629,9 @@ private struct ChromeMV3ServiceWorkerJSUILanguageSelection: Equatable {
     }
 }
 
+private let chromeMV3ServiceWorkerJSHarnessUserAgent =
+    "Sumi local experimental MV3 service-worker harness Chrome/0"
+
 struct ChromeMV3ServiceWorkerJSExecutionPolicy:
     Codable,
     Equatable,
@@ -669,6 +672,10 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
     var runtimeLastErrorAvailableInLocalExperimentalGate: Bool
     var runtimeLastErrorAvailableByDefault: Bool
     var runtimeLastErrorCallbackScoped: Bool
+    var workerNavigatorUserAgentAvailableInLocalExperimentalGate: Bool
+    var workerNavigatorUserAgentAvailableByDefault: Bool
+    var workerNavigatorUserAgent: String?
+    var workerNavigatorChromeCompatibilityTokenAvailable: Bool
     var timersAvailableInLocalExperimentalGate: Bool
     var timersAvailableByDefault: Bool
     var wallClockTimersAllowed: Bool
@@ -870,6 +877,11 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
             runtimeLastErrorAvailableInLocalExperimentalGate: available,
             runtimeLastErrorAvailableByDefault: false,
             runtimeLastErrorCallbackScoped: available,
+            workerNavigatorUserAgentAvailableInLocalExperimentalGate: available,
+            workerNavigatorUserAgentAvailableByDefault: false,
+            workerNavigatorUserAgent:
+                available ? chromeMV3ServiceWorkerJSHarnessUserAgent : nil,
+            workerNavigatorChromeCompatibilityTokenAvailable: available,
             timersAvailableInLocalExperimentalGate: available,
             timersAvailableByDefault: false,
             wallClockTimersAllowed: false,
@@ -925,6 +937,8 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
                         "fetch is local-experimental and default-off; remote/network fetch remains blocked, while generated-bundle-contained extension-local resources can return a minimal modeled Response after containment checks.",
                         "chrome.runtime.lastError is local-experimental and default-off; failing callback paths expose a callback-scoped object with a string message and clear it after callback return.",
                         "Chrome documents the generic callback-scoped runtime.lastError contract, but individual API references do not exhaustively specify every unsupported-method failure shape; this harness sets lastError only when an existing failing callback path or unsupported call with a final callback is observed.",
+                        "WorkerNavigator.userAgent is local-experimental and default-off; the deterministic Chrome/0 token identifies only the harness Chrome-extension compatibility family and does not create browser, account, vault, session, or device identity.",
+                        "Chrome extension-worker documentation does not prescribe a WorkerNavigator.userAgent browser-family token contract, so the harness records its deterministic Chrome/0 compatibility marker explicitly instead of imitating a product browser user agent.",
                         "Lifetime transitions are explicit fixture calls only.",
                         "Stable product runtime remains default-off.",
                     ]
@@ -1753,6 +1767,38 @@ enum ChromeMV3ServiceWorkerJSExceptionClassification:
     }
 }
 
+enum ChromeMV3ServiceWorkerJSNullishReceiverValue:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case nullValue
+    case undefinedValue
+    case unknown
+
+    static func < (
+        lhs: ChromeMV3ServiceWorkerJSNullishReceiverValue,
+        rhs: ChromeMV3ServiceWorkerJSNullishReceiverValue
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3ServiceWorkerJSNullishReceiverDetails:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var evaluationPath: String
+    var receiverPath: String?
+    var accessedProperty: String?
+    var receiverValue: ChromeMV3ServiceWorkerJSNullishReceiverValue
+    var receiverObjectSummary: String
+    var diagnostics: [String]
+}
+
 struct ChromeMV3ServiceWorkerJSExceptionDetails:
     Codable,
     Equatable,
@@ -1765,7 +1811,26 @@ struct ChromeMV3ServiceWorkerJSExceptionDetails:
     var stack: String?
     var inferredMissingGlobal: String?
     var inferredMissingProperty: String?
+    var nullishReceiverDetails: ChromeMV3ServiceWorkerJSNullishReceiverDetails?
+    var precedingChromeAPICalls: [String]
+    var precedingStorageOperations: [ChromeMV3ServiceWorkerJSStorageOperationRecord]
     var classification: ChromeMV3ServiceWorkerJSExceptionClassification
+    var diagnostics: [String]
+}
+
+struct ChromeMV3ServiceWorkerJSStorageOperationRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var area: String
+    var operation: String
+    var keySelectorKind: String
+    var keyCount: Int
+    var keyFingerprints: [String]
+    var callbackProvided: Bool
+    var promiseReturned: Bool
+    var valuesRecorded: Bool
     var diagnostics: [String]
 }
 
@@ -1783,6 +1848,8 @@ struct ChromeMV3ServiceWorkerJSExecutionStartRecord:
     var importedScriptPaths: [String]
     var importScriptsBlockers: [ChromeMV3ServiceWorkerJSImportScriptsBlocker]
     var blockedUnsupportedCalls: [String]
+    var precedingChromeAPICalls: [String]
+    var storageOperationRecords: [ChromeMV3ServiceWorkerJSStorageOperationRecord]
     var cryptoOperationRecords:
         [ChromeMV3ServiceWorkerJSCryptoOperationRecord]
     var i18nOperationRecords:
@@ -1997,6 +2064,8 @@ struct ChromeMV3ServiceWorkerJSExecutionSnapshot:
     var importedScripts: [ChromeMV3ServiceWorkerJSImportedScriptRecord]
     var importScriptsBlockers: [ChromeMV3ServiceWorkerJSImportScriptsBlocker]
     var blockedUnsupportedCalls: [String]
+    var precedingChromeAPICalls: [String]
+    var storageOperationRecords: [ChromeMV3ServiceWorkerJSStorageOperationRecord]
     var cryptoOperationRecords:
         [ChromeMV3ServiceWorkerJSCryptoOperationRecord]
     var i18nOperationRecords:
@@ -2034,6 +2103,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
     private var importedScriptRecords:
         [ChromeMV3ServiceWorkerJSImportedScriptRecord] = []
     private var blockedUnsupportedCalls: [String] = []
+    private var precedingChromeAPICalls: [String] = []
+    private var storageOperationRecords:
+        [ChromeMV3ServiceWorkerJSStorageOperationRecord] = []
     private var cryptoOperationRecords:
         [ChromeMV3ServiceWorkerJSCryptoOperationRecord] = []
     private var i18nOperationRecords:
@@ -2068,6 +2140,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             importedScriptPaths: [],
             importScriptsBlockers: [],
             blockedUnsupportedCalls: [],
+            precedingChromeAPICalls: [],
+            storageOperationRecords: [],
             cryptoOperationRecords: [],
             i18nOperationRecords: [],
             workerGlobalEventRecords: [],
@@ -2109,6 +2183,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             importedScripts: importedScriptRecords,
             importScriptsBlockers: currentImportScriptBlockers(),
             blockedUnsupportedCalls: blockedUnsupportedCalls,
+            precedingChromeAPICalls: precedingChromeAPICalls,
+            storageOperationRecords: storageOperationRecords,
             cryptoOperationRecords: cryptoOperationRecords,
             i18nOperationRecords: i18nOperationRecords,
             workerGlobalEventRecords: workerGlobalEventRecords,
@@ -2274,7 +2350,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                     status: .failed,
                     blockers: [.scriptEvaluationFailed],
                     lastErrorMessage: exceptionDetails.message,
-                    exceptionDetails: exceptionDetails,
+                    exceptionDetails:
+                        enrichExceptionDetailsServiceWorkerJS(exceptionDetails),
                     diagnostics:
                         loaded.record.diagnostics
                             + [
@@ -2696,6 +2773,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         capturedListeners.removeAll()
         importedScriptRecords.removeAll()
         blockedUnsupportedCalls.removeAll()
+        precedingChromeAPICalls.removeAll()
+        storageOperationRecords.removeAll()
         cryptoOperationRecords.removeAll()
         i18nOperationRecords.removeAll()
         workerGlobalEventRecords.removeAll()
@@ -2970,6 +3049,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                     .sorted(),
             importScriptsBlockers: currentImportScriptBlockers(),
             blockedUnsupportedCalls: blockedUnsupportedCalls,
+            precedingChromeAPICalls: precedingChromeAPICalls,
+            storageOperationRecords: storageOperationRecords,
             cryptoOperationRecords: cryptoOperationRecords,
             i18nOperationRecords: i18nOperationRecords,
             workerGlobalEventRecords: workerGlobalEventRecords,
@@ -2984,6 +3065,21 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 )
         )
         return startRecord
+    }
+
+    private func enrichExceptionDetailsServiceWorkerJS(
+        _ details: ChromeMV3ServiceWorkerJSExceptionDetails
+    ) -> ChromeMV3ServiceWorkerJSExceptionDetails {
+        var updated = details
+        updated.precedingChromeAPICalls = precedingChromeAPICalls
+        updated.precedingStorageOperations = storageOperationRecords
+        updated.diagnostics = uniqueSortedServiceWorkerJS(
+            updated.diagnostics + [
+                "Captured \(precedingChromeAPICalls.count) preceding Chrome API call path(s) without arguments or return values.",
+                "Captured \(storageOperationRecords.count) preceding storage operation record(s) with redacted key fingerprints and no values.",
+            ]
+        )
+        return updated
     }
 
     private func syncImportRecordsIntoResourceLoad() {
@@ -3076,8 +3172,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                     ),
                     "uiLanguage": uiLanguage.language,
                     "uiLanguageSource": uiLanguage.source,
-                    "userAgent":
-                        "Sumi local experimental MV3 service-worker harness",
+                    "userAgent": chromeMV3ServiceWorkerJSHarnessUserAgent,
                 ] as NSDictionary,
                 forKeyedSubscript:
                     "__sumiWorkerGlobalConfig" as NSString
@@ -4775,6 +4870,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             }
             blockedUnsupportedCalls =
                 uniqueSortedServiceWorkerJS(wire.blockedCalls)
+            precedingChromeAPICalls = wire.chromeAPICalls
+            storageOperationRecords = wire.storageOperations
             cryptoOperationRecords = wire.cryptoOperations.map {
                 ChromeMV3ServiceWorkerJSCryptoOperationRecord(
                     operation: $0.operation,
@@ -4873,6 +4970,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       'use strict';
       const registrations = [];
       const blockedCalls = [];
+      const chromeAPICalls = [];
+      const storageOperations = [];
       const cryptoOperations = [];
       const i18nOperations = [];
       const workerGlobalEvents = [];
@@ -5147,7 +5246,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         onLine: true,
         platform: 'MacIntel',
         product: 'Gecko',
-        userAgent: String(workerConfig.userAgent || 'Sumi local experimental MV3 service-worker harness')
+        userAgent: String(workerConfig.userAgent || 'Sumi local experimental MV3 service-worker harness Chrome/0')
       }));
       const locationHref = String(workerConfig.locationHref || `${extensionOrigin}/background.js`);
       const locationPathname = String(workerConfig.locationPathname || '/background.js');
@@ -5597,6 +5696,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       const noteBlocked = (path) => {
         if (!blockedCalls.includes(path)) blockedCalls.push(path);
       };
+      const noteChromeAPICall = (path) => {
+        if (chromeAPICalls.length < 128) chromeAPICalls.push(String(path));
+      };
       let runtimeLastErrorValue;
       const invokeCallbackNow = (callback, errorMessage, ...values) => {
         if (typeof callback !== 'function') return;
@@ -5628,6 +5730,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           return unsupported(`${path}.${String(property)}`);
         },
         apply(_target, _thisArg, args) {
+          noteChromeAPICall(path);
           noteBlocked(path);
           const callback = args.length ? args[args.length - 1] : undefined;
           callbackErrorLater(callback, `Unsupported API call ${path}.`);
@@ -5723,25 +5826,64 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         try { return new TextEncoder().encode(JSON.stringify(selected)).length; }
         catch (_) { return 0; }
       };
+      const storageKeyFingerprint = (key) => {
+        const value = String(key);
+        let hash = 2166136261;
+        for (let index = 0; index < value.length; index += 1) {
+          hash ^= value.charCodeAt(index);
+          hash = Math.imul(hash, 16777619);
+        }
+        return `redacted-key:length=${value.length}:fnv1a=${(hash >>> 0).toString(16).padStart(8, '0')}`;
+      };
+      const storageSelectorKind = (keys) => {
+        if (keys == null) return 'all';
+        if (typeof keys === 'string') return 'string';
+        if (Array.isArray(keys)) return 'array';
+        if (typeof keys === 'object') return 'defaultsObject';
+        return typeof keys;
+      };
+      const recordStorageOperation = (areaName, operation, keys, store, callback) => {
+        const selectedKeys = storageKeys(keys, store);
+        noteChromeAPICall(`chrome.storage.${areaName}.${operation}`);
+        if (storageOperations.length >= 128) return;
+        storageOperations.push({
+          area: String(areaName),
+          operation: String(operation),
+          keySelectorKind: storageSelectorKind(keys),
+          keyCount: selectedKeys.length,
+          keyFingerprints: selectedKeys.map(storageKeyFingerprint).sort(),
+          callbackProvided: typeof callback === 'function',
+          promiseReturned: true,
+          valuesRecorded: false,
+          diagnostics: [
+            'Storage operation diagnostics intentionally omit values and plaintext key names.',
+            'Storage remains scoped in-memory harness state only.'
+          ]
+        });
+      };
       const storageArea = (areaName, readOnly = false) => {
         const store = storageStores[areaName];
         return {
           get(keys, callback) {
+            recordStorageOperation(areaName, 'get', keys, store, callback);
             const result = storageGet(keys, store);
             callbackLater(callback, clone(result));
             return Promise.resolve(clone(result));
           },
           getBytesInUse(keys, callback) {
+            recordStorageOperation(areaName, 'getBytesInUse', keys, store, callback);
             const result = storageBytes(keys, store);
             callbackLater(callback, result);
             return Promise.resolve(result);
           },
           getKeys(callback) {
+            recordStorageOperation(areaName, 'getKeys', null, store, callback);
             const result = Object.keys(store);
             callbackLater(callback, result.slice());
             return Promise.resolve(result.slice());
           },
           set(items, callback) {
+            recordStorageOperation(areaName, 'set', items, store, callback);
             if (readOnly) {
               const error = new Error('chrome.storage.managed is read-only.');
               callbackErrorLater(callback, error.message);
@@ -5756,6 +5898,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             return Promise.resolve();
           },
           remove(keys, callback) {
+            recordStorageOperation(areaName, 'remove', keys, store, callback);
             if (readOnly) {
               const error = new Error('chrome.storage.managed is read-only.');
               callbackErrorLater(callback, error.message);
@@ -5766,6 +5909,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             return Promise.resolve();
           },
           clear(callback) {
+            recordStorageOperation(areaName, 'clear', null, store, callback);
             if (readOnly) {
               const error = new Error('chrome.storage.managed is read-only.');
               callbackErrorLater(callback, error.message);
@@ -5776,6 +5920,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             return Promise.resolve();
           },
           setAccessLevel(_details, callback) {
+            noteChromeAPICall(`chrome.storage.${areaName}.setAccessLevel`);
             callbackLater(callback);
             return Promise.resolve();
           }
@@ -5985,10 +6130,12 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           return runtimeLastErrorValue;
         },
         getURL(path = '') {
+          noteChromeAPICall('chrome.runtime.getURL');
           const value = String(path || '').replace(/^\/+/, '');
           return value ? `${extensionOrigin}/${value}` : `${extensionOrigin}/`;
         },
         getManifest() {
+          noteChromeAPICall('chrome.runtime.getManifest');
           return clone(manifestSnapshot);
         },
         onMessage: event('runtimeOnMessage'),
@@ -6053,6 +6200,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       };
       const unsupportedI18nMethod = (name) => function () {
         const path = `chrome.i18n.${name}`;
+        noteChromeAPICall(path);
         noteBlocked(path);
         recordI18nOperation(
           path,
@@ -6069,6 +6217,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       };
       const i18n = proxiedNamespace({
         getUILanguage() {
+          noteChromeAPICall('chrome.i18n.getUILanguage');
           recordI18nOperation(
             'chrome.i18n.getUILanguage',
             'fulfilled',
@@ -6666,6 +6815,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           source: item.source
         })),
         blockedCalls: [...blockedCalls],
+        chromeAPICalls: [...chromeAPICalls],
+        storageOperations: storageOperations.map((item) => clone(item)),
         cryptoOperations: cryptoOperations.map((item) => clone(item)),
         i18nOperations: i18nOperations.map((item) => clone(item)),
         workerGlobalEvents: workerGlobalEvents.map((item) => clone(item)),
@@ -6721,6 +6872,8 @@ private struct ChromeMV3ServiceWorkerJSWireRegistration: Decodable {
 private struct ChromeMV3ServiceWorkerJSWireSnapshot: Decodable {
     var registrations: [ChromeMV3ServiceWorkerJSWireRegistration]
     var blockedCalls: [String]
+    var chromeAPICalls: [String]
+    var storageOperations: [ChromeMV3ServiceWorkerJSStorageOperationRecord]
     var cryptoOperations: [ChromeMV3ServiceWorkerJSWireCryptoOperation]
     var i18nOperations: [ChromeMV3ServiceWorkerJSI18nOperationRecord]
     var workerGlobalEvents: [ChromeMV3ServiceWorkerJSWorkerGlobalEventRecord]
@@ -7255,6 +7408,10 @@ private func containsServiceWorkerJSRegex(
             sourceLine: sourceLine,
             stack: stack
         )
+        let nullishReceiver = nullishReceiverDetailsServiceWorkerJS(
+            message: message,
+            evaluationPath: inference.missingProperty
+        )
         var diagnostics = [
             "JavaScriptCore exception: \(message)",
             "Exception source: \(sourceName)"
@@ -7286,6 +7443,9 @@ private func containsServiceWorkerJSRegex(
             stack: stack,
             inferredMissingGlobal: inference.missingGlobal,
             inferredMissingProperty: inference.missingProperty,
+            nullishReceiverDetails: nullishReceiver,
+            precedingChromeAPICalls: [],
+            precedingStorageOperations: [],
             classification: inference.classification,
             diagnostics: uniqueSortedServiceWorkerJS(diagnostics)
         )
@@ -7303,6 +7463,48 @@ private func containsServiceWorkerJSRegex(
         return number > 0 ? number : nil
     }
 #endif
+
+private func nullishReceiverDetailsServiceWorkerJS(
+    message: String,
+    evaluationPath: String?
+) -> ChromeMV3ServiceWorkerJSNullishReceiverDetails? {
+    let receiverValue: ChromeMV3ServiceWorkerJSNullishReceiverValue
+    if message.localizedCaseInsensitiveContains("null is not an object") {
+        receiverValue = .nullValue
+    } else if message.localizedCaseInsensitiveContains(
+        "undefined is not an object"
+    ) {
+        receiverValue = .undefinedValue
+    } else {
+        return nil
+    }
+    guard let evaluationPath else { return nil }
+    let components = evaluationPath.split(separator: ".").map(String.init)
+    let accessedProperty = components.last
+    let receiverPath =
+        components.count > 1
+            ? components.dropLast().joined(separator: ".")
+            : nil
+    let receiverSummary: String
+    if evaluationPath.hasPrefix("this.") {
+        receiverSummary =
+            "JavaScriptCore exposed the lexical evaluation path but not the concrete this receiver object; no receiver object state was synthesized."
+    } else {
+        receiverSummary =
+            "JavaScriptCore exposed the lexical evaluation path but not a concrete receiver object; no receiver object state was synthesized."
+    }
+    return ChromeMV3ServiceWorkerJSNullishReceiverDetails(
+        evaluationPath: evaluationPath,
+        receiverPath: receiverPath,
+        accessedProperty: accessedProperty,
+        receiverValue: receiverValue,
+        receiverObjectSummary: receiverSummary,
+        diagnostics: [
+            "Nullish receiver classification comes only from the uncaught JavaScriptCore exception message.",
+            "Storage, runtime Port metadata, account state, vault state, and device identity provenance remain unknown unless independently observed.",
+        ]
+    )
+}
 
 private func exceptionInferenceServiceWorkerJS(
     message: String,

@@ -1272,11 +1272,35 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         let proton = try XCTUnwrap(byClass[.protonPass])
         XCTAssertEqual(
             bitwarden.serviceWorkerEventReadiness.nextBlockerClassification,
-            .dispatchDelivered
+            .unsupportedChromeAPI
         )
         XCTAssertTrue(
             bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
-                .contains("dispatched successfully")
+                .contains("chrome.alarms.create")
+        )
+        XCTAssertEqual(
+            bitwarden.serviceWorkerEventReadiness.deviceFailureClassification,
+            .resolvedWorkerNavigatorBrowserFamilySignal
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.deviceFailureDetail
+                .contains("without inserting fake device identity")
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.workerNavigatorUserAgentResult
+                .contains("Chrome/0")
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.precedingChromeAPICalls
+                .contains("chrome.i18n.getUILanguage")
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.storageOperationSummary
+                .allSatisfy {
+                    !$0.contains("token")
+                        && !$0.contains("secret")
+                        && !$0.contains("vault")
+                }
         )
         XCTAssertTrue(
             bitwarden.serviceWorkerEventReadiness.fetchClassificationSummary
@@ -1875,6 +1899,14 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertFalse(policy.runtimeLastErrorAvailableByDefault)
         XCTAssertFalse(policy.runtimeLastErrorCallbackScoped)
+        XCTAssertFalse(
+            policy.workerNavigatorUserAgentAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(policy.workerNavigatorUserAgentAvailableByDefault)
+        XCTAssertNil(policy.workerNavigatorUserAgent)
+        XCTAssertFalse(
+            policy.workerNavigatorChromeCompatibilityTokenAvailable
+        )
         XCTAssertFalse(policy.timersAllowed)
     }
 

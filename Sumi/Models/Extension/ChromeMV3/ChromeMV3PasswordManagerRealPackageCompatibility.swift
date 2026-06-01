@@ -931,6 +931,8 @@ struct ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventory:
         [ChromeMV3PasswordManagerRealPackageServiceWorkerFetchClassification]
     var listenerRegistrationMap:
         ChromeMV3PasswordManagerRealPackageServiceWorkerListenerRegistrationMap
+    var browserPlatformDeviceToStringDetected: Bool
+    var chromeUserAgentBrowserFamilyCheckDetected: Bool
     var nextRecommendedImplementationPath: String
     var diagnostics: [String]
 }
@@ -1141,6 +1143,31 @@ enum ChromeMV3PasswordManagerRealPackageNextBlockerClassification:
     }
 }
 
+enum ChromeMV3PasswordManagerRealPackageDeviceFailureClassification:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case notObserved
+    case resolvedWorkerNavigatorBrowserFamilySignal
+    case workerNavigatorBrowserFamilySignalRequired
+    case realAccountStateRequired
+    case deviceIdentityRequired
+    case vaultStateRequired
+    case nativeMessagingRequired
+    case networkAuthRequired
+    case unknown
+
+    static func < (
+        lhs: ChromeMV3PasswordManagerRealPackageDeviceFailureClassification,
+        rhs: ChromeMV3PasswordManagerRealPackageDeviceFailureClassification
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
 struct ChromeMV3PasswordManagerRealPackageServiceWorkerPortSmoke:
     Codable,
     Equatable,
@@ -1199,6 +1226,12 @@ struct ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness:
     var cryptoSubtleBlockedAlgorithms: [String]
     var i18nCapabilityResult: String
     var i18nOperationSummary: [String]
+    var workerNavigatorUserAgentResult: String
+    var deviceFailureClassification:
+        ChromeMV3PasswordManagerRealPackageDeviceFailureClassification
+    var deviceFailureDetail: String
+    var precedingChromeAPICalls: [String]
+    var storageOperationSummary: [String]
     var runtimeLastErrorObjectShapeResult: String
     var runtimeLastErrorCallbackLifecycleResult: String
     var workerGlobalEventTargetResult: String
@@ -2713,6 +2746,18 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         let i18nOperationSummary = serviceWorkerI18nOperationSummary(
             executionStartResult: executionStartResult
         )
+        let workerNavigatorUserAgentResult =
+            serviceWorkerWorkerNavigatorUserAgentResult(policy: policy)
+        let deviceFailure = serviceWorkerDeviceFailureClassification(
+            policy: policy,
+            dependencyInventory: dependencyInventory,
+            executionStartResult: executionStartResult
+        )
+        let precedingChromeAPICalls =
+            executionStartResult?.precedingChromeAPICalls ?? []
+        let storageOperationSummary = serviceWorkerStorageOperationSummary(
+            executionStartResult: executionStartResult
+        )
         let runtimeLastErrorObjectShapeResult =
             serviceWorkerRuntimeLastErrorObjectShapeResult(
                 policy: policy
@@ -2840,6 +2885,11 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 policy.subtleCryptoBlockedAlgorithms,
             i18nCapabilityResult: i18nCapabilityResult,
             i18nOperationSummary: i18nOperationSummary,
+            workerNavigatorUserAgentResult: workerNavigatorUserAgentResult,
+            deviceFailureClassification: deviceFailure.classification,
+            deviceFailureDetail: deviceFailure.detail,
+            precedingChromeAPICalls: precedingChromeAPICalls,
+            storageOperationSummary: storageOperationSummary,
             runtimeLastErrorObjectShapeResult:
                 runtimeLastErrorObjectShapeResult,
             runtimeLastErrorCallbackLifecycleResult:
@@ -3513,6 +3563,76 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         .sorted()
     }
 
+    private static func serviceWorkerWorkerNavigatorUserAgentResult(
+        policy: ChromeMV3ServiceWorkerJSExecutionPolicy
+    ) -> String {
+        guard
+            policy.workerNavigatorUserAgentAvailableInLocalExperimentalGate
+        else {
+            return "blockedByPolicy: WorkerNavigator.userAgent requires the explicit local experimental MV3 gate."
+        }
+        return "available: deterministic harness-only Chrome/0 compatibility-family marker, default=\(policy.workerNavigatorUserAgentAvailableByDefault); this is not a product browser user agent or account/vault/session/device identity."
+    }
+
+    private static func serviceWorkerDeviceFailureClassification(
+        policy: ChromeMV3ServiceWorkerJSExecutionPolicy,
+        dependencyInventory:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventory,
+        executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?
+    ) -> (
+        classification:
+            ChromeMV3PasswordManagerRealPackageDeviceFailureClassification,
+        detail: String
+    ) {
+        if let receiver =
+            executionStartResult?.exceptionDetails?.nullishReceiverDetails,
+           receiver.receiverPath == "this.device"
+        {
+            if dependencyInventory.chromeUserAgentBrowserFamilyCheckDetected,
+               policy.workerNavigatorChromeCompatibilityTokenAvailable == false
+            {
+                return (
+                    .workerNavigatorBrowserFamilySignalRequired,
+                    "this.device was \(receiver.receiverValue.rawValue) before \(receiver.accessedProperty ?? "property") access. Static local source inventory found a Chrome-family navigator.userAgent check; no fake device, account, vault, session, storage, runtime Port, or network-auth state was inserted."
+                )
+            }
+            return (
+                .unknown,
+                "this.device was \(receiver.receiverValue.rawValue) before \(receiver.accessedProperty ?? "property") access. JavaScriptCore did not expose the concrete this receiver object, and storage/runtime Port/account/vault/device/network provenance remains unknown."
+            )
+        }
+        if dependencyInventory.browserPlatformDeviceToStringDetected,
+           dependencyInventory.chromeUserAgentBrowserFamilyCheckDetected,
+           policy.workerNavigatorChromeCompatibilityTokenAvailable
+        {
+            return (
+                .resolvedWorkerNavigatorBrowserFamilySignal,
+                "Local source inventory contains this.device.toString and a Chrome-family navigator.userAgent check. The deterministic harness-only Chrome/0 WorkerNavigator marker let evaluation advance without inserting fake device identity, account, vault, session, storage, runtime Port, or network-auth state."
+            )
+        }
+        return (
+            .notObserved,
+            "No Bitwarden-style this.device nullish receiver failure was observed or inferred from local source inventory."
+        )
+    }
+
+    private static func serviceWorkerStorageOperationSummary(
+        executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?
+    ) -> [String] {
+        (executionStartResult?.storageOperationRecords ?? []).map { record in
+            [
+                record.area,
+                record.operation,
+                record.keySelectorKind,
+                "keys=\(record.keyCount)",
+                "fingerprints=\(record.keyFingerprints.joined(separator: ","))",
+                "callback=\(record.callbackProvided)",
+                "promise=\(record.promiseReturned)",
+                "valuesRecorded=\(record.valuesRecorded)",
+            ].joined(separator: ":")
+        }
+    }
+
     private static func serviceWorkerRuntimeLastErrorObjectShapeResult(
         policy: ChromeMV3ServiceWorkerJSExecutionPolicy
     ) -> String {
@@ -4066,6 +4186,13 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         }
         if dependencyInventory.serviceWorkerType == "module" {
             return dependencyInventory.nextRecommendedImplementationPath
+        }
+        if let unsupportedCall =
+            executionStartResult?.blockedUnsupportedCalls.first,
+           unsupportedCall.hasPrefix("chrome.")
+                || unsupportedCall.hasPrefix("browser.")
+        {
+            return "Inspect \(unsupportedCall) as the next bounded local-experimental Chrome API shape; add only general deterministic semantics if independently justified, and keep stable runtime default-off."
         }
         if dependencyInventory.dynamicImportExpressions.contains(where: {
             [.identifier, .memberExpression, .callExpression,
@@ -5234,7 +5361,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             source(
                 "Chrome storage API",
                 "https://developer.chrome.com/docs/extensions/reference/api/storage",
-                "Checked storage.local behavior for extension pages and content scripts."
+                "Checked storage.local and storage.session callback/Promise behavior, missing-key empty objects, defaults-object reads, mutation APIs, and storage.onChanged. The harness keeps values scoped in-memory and reports only redacted key fingerprints."
             ),
             source(
                 "Chrome native messaging",
@@ -5259,7 +5386,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             source(
                 "Chrome service-worker basics",
                 "https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/basics",
-                "Checked background.service_worker, classic versus module workers, importScripts, static module imports, and unsupported dynamic imports."
+                "Checked background.service_worker, classic versus module workers, importScripts, static module imports, and unsupported dynamic imports. Chrome extension-worker docs do not prescribe a WorkerNavigator.userAgent browser-family token contract, so the harness reports its deterministic Chrome/0 compatibility-family marker explicitly."
             ),
             source(
                 "WHATWG WorkerGlobalScope importScripts",
@@ -5613,6 +5740,15 @@ enum ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventoryScanner 
             asyncOccurrences,
             totalsByAPI: asyncTotalsByAPI
         )
+        let browserPlatformDeviceToStringDetected = scannedSources.contains {
+            $0.source.contains("this.device.toString")
+        }
+        let chromeUserAgentBrowserFamilyCheckDetected = scannedSources.contains {
+            $0.source.contains(#"navigator.userAgent.indexOf(" Chrome/")"#)
+                || $0.source.contains(
+                    #"navigator.userAgent.indexOf(' Chrome/')"#
+                )
+        }
         let moduleInventory =
             ChromeMV3PasswordManagerRealPackageServiceWorkerModuleWorkerInventory(
                 declaredAsModuleWorker: serviceWorkerType == "module",
@@ -5667,6 +5803,10 @@ enum ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventoryScanner 
             fetchClassifications:
                 fetchClassifications.sorted(by: fetchClassificationSort),
             listenerRegistrationMap: listenerMap,
+            browserPlatformDeviceToStringDetected:
+                browserPlatformDeviceToStringDetected,
+            chromeUserAgentBrowserFamilyCheckDetected:
+                chromeUserAgentBrowserFamilyCheckDetected,
             nextRecommendedImplementationPath: nextPath,
             diagnostics:
                 uniqueSortedRealPackages([
@@ -5720,6 +5860,8 @@ enum ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventoryScanner 
                     unknownComputedDependencyReferenceCount: 0,
                     diagnostics: diagnostics
                 ),
+            browserPlatformDeviceToStringDetected: false,
+            chromeUserAgentBrowserFamilyCheckDetected: false,
             nextRecommendedImplementationPath:
                 "No service-worker source was available for dependency inventory.",
             diagnostics: uniqueSortedRealPackages(diagnostics)

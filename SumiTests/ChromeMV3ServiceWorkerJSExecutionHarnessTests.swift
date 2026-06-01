@@ -58,6 +58,17 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         )
         XCTAssertFalse(moduleDisabled.policy.runtimeLastErrorCallbackScoped)
         XCTAssertFalse(
+            moduleDisabled.policy
+                .workerNavigatorUserAgentAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(
+            moduleDisabled.policy.workerNavigatorUserAgentAvailableByDefault
+        )
+        XCTAssertNil(moduleDisabled.policy.workerNavigatorUserAgent)
+        XCTAssertFalse(
+            moduleDisabled.policy.workerNavigatorChromeCompatibilityTokenAvailable
+        )
+        XCTAssertFalse(
             moduleDisabled.policy.webCryptoAvailableInLocalExperimentalGate
         )
         XCTAssertFalse(moduleDisabled.policy.webCryptoAvailableByDefault)
@@ -142,6 +153,15 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         )
         XCTAssertFalse(harness.policy.runtimeLastErrorAvailableByDefault)
         XCTAssertFalse(harness.policy.runtimeLastErrorCallbackScoped)
+        XCTAssertFalse(
+            harness.policy
+                .workerNavigatorUserAgentAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(harness.policy.workerNavigatorUserAgentAvailableByDefault)
+        XCTAssertNil(harness.policy.workerNavigatorUserAgent)
+        XCTAssertFalse(
+            harness.policy.workerNavigatorChromeCompatibilityTokenAvailable
+        )
         XCTAssertFalse(harness.policy.webCryptoAvailableInLocalExperimentalGate)
         XCTAssertFalse(harness.policy.webCryptoAvailableByDefault)
         XCTAssertFalse(
@@ -488,6 +508,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             chrome.runtime.onMessage.addListener(() => ({
               domName: new DOMException('blocked', 'InvalidStateError').name,
               navigatorName: navigator.appName,
+              navigatorChromeFamily: navigator.userAgent.includes(' Chrome/0'),
               href: location.href,
               id: chrome.runtime.id,
               url: new URL('https://example.com/a?b=1').searchParams.get('b'),
@@ -528,6 +549,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
                 "id": .string("service-worker-js-fixture-extension"),
                 "manifestVersion": .number(3),
                 "navigatorName": .string("Netscape"),
+                "navigatorChromeFamily": .bool(true),
                 "randomLength": .number(4),
                 "randomUUIDValid": .bool(true),
                 "serviceWorkerGlobalScopeType": .string("function"),
@@ -542,6 +564,16 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         )
         XCTAssertTrue(harness.policy.webCryptoAvailableInLocalExperimentalGate)
         XCTAssertFalse(harness.policy.webCryptoAvailableByDefault)
+        XCTAssertTrue(
+            harness.policy
+                .workerNavigatorUserAgentAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(
+            harness.policy.workerNavigatorUserAgentAvailableByDefault
+        )
+        XCTAssertTrue(
+            harness.policy.workerNavigatorChromeCompatibilityTokenAvailable
+        )
         XCTAssertEqual(harness.policy.subtleCryptoSupportedMethods, ["digest"])
         XCTAssertTrue(
             harness.policy.subtleCryptoBlockedMethods.contains("importKey")
@@ -1373,6 +1405,52 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertEqual(
             started.exceptionDetails?.inferredMissingProperty,
             "crypto.subtle"
+        )
+    }
+
+    func testBitwardenStyleNullDeviceReceiverIsClassifiedConservatively()
+        throws
+    {
+        let fixture = try makeHarness(
+            source: """
+            class ApiService {
+              constructor(platformUtilsService) {
+                this.device = platformUtilsService.getDevice();
+                this.deviceType = this.device.toString();
+              }
+            }
+            new ApiService({ getDevice: () => null });
+            """,
+            localExperimentalGateAllowed: true
+        )
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request()
+        )
+        let started = harness.start()
+        let receiver = try XCTUnwrap(
+            started.exceptionDetails?.nullishReceiverDetails
+        )
+
+        XCTAssertEqual(started.status, .failed)
+        XCTAssertEqual(
+            started.exceptionDetails?.classification,
+            .bundlerRuntimeAssumption
+        )
+        XCTAssertEqual(
+            started.exceptionDetails?.inferredMissingProperty,
+            "this.device.toString"
+        )
+        XCTAssertEqual(receiver.receiverPath, "this.device")
+        XCTAssertEqual(receiver.accessedProperty, "toString")
+        XCTAssertEqual(receiver.receiverValue, .nullValue)
+        XCTAssertTrue(
+            receiver.receiverObjectSummary.contains(
+                "not the concrete this receiver object"
+            )
+        )
+        XCTAssertTrue(started.exceptionDetails?.precedingChromeAPICalls.isEmpty == true)
+        XCTAssertTrue(
+            started.exceptionDetails?.precedingStorageOperations.isEmpty == true
         )
     }
 
@@ -2656,6 +2734,82 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
                 "sessionDefault": .string("default-value"),
             ])
         )
+    }
+
+    func testChromeStorageMissingKeysCallbacksPromisesAndReportsAreRedacted()
+        throws
+    {
+        let harness = try startedHarness(
+            source: """
+            chrome.runtime.onMessage.addListener((message) => {
+              if (message && message.kind === 'write') {
+                chrome.storage.local.get('missing-key', (items) => {
+                  globalThis.callbackMissingKeys = Object.keys(items).length;
+                });
+                chrome.storage.local.get('missing-key').then((items) => {
+                  globalThis.promiseMissingKeys = Object.keys(items).length;
+                });
+                chrome.storage.session.get({ missingDefault: 'fallback' }).then((items) => {
+                  globalThis.promiseDefault = items.missingDefault;
+                });
+                chrome.storage.local.set({
+                  'vault-token-super-secret': 'secret-value'
+                });
+                return { accepted: true };
+              }
+              return {
+                callbackMissingKeys: globalThis.callbackMissingKeys,
+                promiseMissingKeys: globalThis.promiseMissingKeys,
+                promiseDefault: globalThis.promiseDefault
+              };
+            });
+            """
+        )
+
+        XCTAssertEqual(
+            harness.dispatch(
+                source: .popupOptionsRuntimeMessage,
+                arguments: [.object(["kind": .string("write")])],
+                payloadSummary: "write redacted scoped storage"
+            ).responsePayload,
+            .object(["accepted": .bool(true)])
+        )
+        XCTAssertEqual(
+            harness.dispatch(
+                source: .popupOptionsRuntimeMessage,
+                payloadSummary: "observe redacted scoped storage"
+            ).responsePayload,
+            .object([
+                "callbackMissingKeys": .number(0),
+                "promiseDefault": .string("fallback"),
+                "promiseMissingKeys": .number(0),
+            ])
+        )
+
+        let snapshot = harness.snapshot
+        XCTAssertTrue(snapshot.storageOperationRecords.contains {
+            $0.area == "local"
+                && $0.operation == "get"
+                && $0.keySelectorKind == "string"
+                && $0.callbackProvided
+                && $0.promiseReturned
+                && !$0.valuesRecorded
+        })
+        XCTAssertTrue(snapshot.storageOperationRecords.contains {
+            $0.area == "session"
+                && $0.operation == "get"
+                && $0.keySelectorKind == "defaultsObject"
+                && !$0.valuesRecorded
+        })
+        XCTAssertTrue(snapshot.storageOperationRecords.allSatisfy {
+            $0.keyFingerprints.allSatisfy {
+                $0.hasPrefix("redacted-key:length=")
+            }
+        })
+        let encoded = try JSONEncoder().encode(snapshot)
+        let report = try XCTUnwrap(String(data: encoded, encoding: .utf8))
+        XCTAssertFalse(report.contains("vault-token-super-secret"))
+        XCTAssertFalse(report.contains("secret-value"))
     }
 
     func testTrustedNativeFixturePortRequiresPolicyRoutesAndRevokes() throws {

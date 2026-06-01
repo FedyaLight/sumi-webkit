@@ -1370,6 +1370,12 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
     var cryptoSubtleBlockedAlgorithms: [String]
     var i18nCapabilityResult: String
     var i18nOperationSummary: [String]
+    var workerNavigatorUserAgentResult: String
+    var deviceFailureClassification:
+        ChromeMV3PasswordManagerRealPackageDeviceFailureClassification
+    var deviceFailureDetail: String
+    var precedingChromeAPICalls: [String]
+    var storageOperationSummary: [String]
     var runtimeLastErrorObjectShapeResult: String
     var runtimeLastErrorCallbackLifecycleResult: String
     var workerGlobalEventTargetResult: String
@@ -1440,6 +1446,13 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
                 readiness.cryptoSubtleBlockedAlgorithms,
             i18nCapabilityResult: readiness.i18nCapabilityResult,
             i18nOperationSummary: readiness.i18nOperationSummary,
+            workerNavigatorUserAgentResult:
+                readiness.workerNavigatorUserAgentResult,
+            deviceFailureClassification:
+                readiness.deviceFailureClassification,
+            deviceFailureDetail: readiness.deviceFailureDetail,
+            precedingChromeAPICalls: readiness.precedingChromeAPICalls,
+            storageOperationSummary: readiness.storageOperationSummary,
             runtimeLastErrorObjectShapeResult:
                 readiness.runtimeLastErrorObjectShapeResult,
             runtimeLastErrorCallbackLifecycleResult:
@@ -3498,6 +3511,30 @@ struct ChromeMV3ExtensionManagerView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        "Worker navigator: "
+                            + trial.workerNavigatorUserAgentResult
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        "Device-path classification: \(trial.deviceFailureClassification.rawValue) - \(trial.deviceFailureDetail)"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    if trial.storageOperationSummary.isEmpty == false {
+                        Text(
+                            "Storage diagnostics: "
+                                + trial.storageOperationSummary
+                                .prefix(3)
+                                .joined(separator: ", ")
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
                     if trial.importScriptsBlockers.isEmpty == false {
                         Text(
                             "Import blockers: "

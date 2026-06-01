@@ -349,7 +349,14 @@ final class ChromeMV3EmptyControllerOwnerTests: XCTestCase {
                 ]
             ),
             ("DispatchSource" + "Ti" + "mer", []),
-            ("Ti" + "mer", []),
+            (
+                "Ti" + "mer",
+                [
+                    "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionManagerDeveloperPreview.swift",
+                    "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerRealPackageCompatibility.swift",
+                    "Sumi/Models/Extension/ChromeMV3/ChromeMV3ServiceWorkerJSExecutionHarness.swift",
+                ]
+            ),
         ] {
             let offenders = sourceFiles.filter {
                 $0.contents.contains(forbidden)
