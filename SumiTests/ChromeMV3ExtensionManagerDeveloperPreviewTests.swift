@@ -105,6 +105,11 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         )
         XCTAssertFalse(
             FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(".diagnostics").path
+            )
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
                 atPath: root.appendingPathComponent("originals").path
             )
         )
@@ -320,6 +325,59 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
     }
 
     @MainActor
+    func testManualSmokeActionUnavailableWhenInternalRecordDisabled()
+        async
+        throws
+    {
+        let fixture = try installBitwardenManualSmokeFixture(
+            named: "manual-smoke-disabled-record",
+            profileID: "profile-manual-disabled-record",
+            enableInternal: false
+        )
+        let detail = try XCTUnwrap(
+            fixture.module.chromeMV3ExtensionManagerDetailViewModelIfEnabled(
+                rootURL: fixture.root,
+                profileID: fixture.record.profileID,
+                extensionID: fixture.record.extensionID
+            )
+        )
+        let artifactURL =
+            ChromeMV3ExtensionManagerManualSmokeArtifactWriter.reportURL(
+                rootURL: fixture.root,
+                profileID: fixture.record.profileID,
+                extensionID: fixture.record.extensionID
+            )
+
+        XCTAssertFalse(detail.manualSmokeAction.available)
+        XCTAssertTrue(detail.manualSmokeAction.gateState[
+            "extensionInternalRecordEnabled"
+        ] == false)
+        XCTAssertTrue(detail.manualSmokeAction.unavailableDiagnostics.contains {
+            $0.code == .manualSmokeExtensionDisabled
+        })
+        XCTAssertTrue(detail.actions.contains {
+            $0.action == .runBitwardenManualSmoke && !$0.available
+        })
+
+        let result = await fixture.module
+            .chromeMV3RunBitwardenManualSmokeThroughManager(
+                rootURL: fixture.root,
+                profileID: fixture.record.profileID,
+                extensionID: fixture.record.extensionID,
+                now: { self.fixedDate }
+            )
+
+        XCTAssertEqual(result.status, .blocked)
+        XCTAssertNil(result.manualSmokeResult)
+        XCTAssertNil(result.manualSmokeArtifact)
+        XCTAssertTrue(result.blockedDiagnostics.contains {
+            $0.code == .manualSmokeExtensionDisabled
+        })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: artifactURL.path))
+        assertNoRuntimeSideEffects(result, module: fixture.module)
+    }
+
+    @MainActor
     func testManualSmokeActionReadoutDoesNotExecuteOrWriteArtifact()
         throws
     {
@@ -398,6 +456,19 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         XCTAssertEqual(result.status, .succeeded, result.diagnostics.joined(separator: "\n"))
         XCTAssertTrue(result.manualSmokeResult?.allowed == true)
         XCTAssertTrue(FileManager.default.fileExists(atPath: artifactURL.path))
+        let artifactDirectoryContents =
+            try FileManager.default.contentsOfDirectory(
+                at: artifactURL.deletingLastPathComponent(),
+                includingPropertiesForKeys: nil
+            )
+        XCTAssertEqual(
+            artifactDirectoryContents.filter {
+                $0.lastPathComponent
+                    == ChromeMV3ExtensionManagerManualSmokeArtifactWriter
+                    .reportFileName
+            }.count,
+            1
+        )
         XCTAssertEqual(artifact.schemaVersion, 1)
         XCTAssertEqual(artifact.profileID, fixture.record.profileID)
         XCTAssertEqual(artifact.extensionID, fixture.record.extensionID)
@@ -1206,6 +1277,10 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         )
         let managerAndSettings = managerSource + "\n" + settingsSource
         let positiveBoolean = "tr" + "ue"
+        let manualSmokeRunnerCall =
+            ".run" + "Manual" + "Normal" + "Tab" + "Smoke(request)"
+        let artifactWriterCall =
+            ".write(artifact, rootURL: rootURL)"
 
         for token in [
             "DispatchSource" + "Ti" + "mer",
@@ -1222,6 +1297,25 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         )
         XCTAssertFalse(managerAndSettings.contains("WKContent" + "RuleList"))
         XCTAssertFalse(managerAndSettings.contains("chrome" + ".google"))
+        XCTAssertFalse(settingsSource.contains(manualSmokeRunnerCall))
+        XCTAssertFalse(settingsSource.contains(artifactWriterCall))
+        XCTAssertEqual(
+            managerSource.components(separatedBy: manualSmokeRunnerCall).count - 1,
+            1
+        )
+        XCTAssertEqual(
+            managerSource.components(separatedBy: artifactWriterCall).count - 1,
+            1
+        )
+        XCTAssertTrue(managerSource.contains("rendersDetailAction"))
+        XCTAssertTrue(
+            managerSource.contains(
+                "return detail.gate.managerAvailableInDeveloperPreview"
+            )
+        )
+        XCTAssertTrue(
+            managerSource.contains("!listViewModel.gate.localArchiveImportAvailable")
+        )
         XCTAssertFalse(
             managerAndSettings.contains(
                 "productRuntimeAvailable: " + positiveBoolean

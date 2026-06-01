@@ -3650,7 +3650,10 @@ struct ChromeMV3ExtensionManagerView: View {
                         Label("Import Archive", systemImage: "archivebox")
                     }
                     .buttonStyle(.bordered)
-                    .disabled(onImportArchive == nil)
+                    .disabled(
+                        !listViewModel.gate.localArchiveImportAvailable
+                            || onImportArchive == nil
+                    )
 
                     Button {
                         onRunAction?(
@@ -4830,13 +4833,7 @@ struct ChromeMV3ExtensionManagerView: View {
                     spacing: 8
                 ) {
                     ForEach(detail.actions.filter {
-                        $0.action != .installUnpacked
-                            && $0.action != .importZipArchive
-                            && $0.action != .importCRXArchive
-                            && $0.action != .chromeWebStoreInstall
-                            && $0.action != .openActionPopup
-                            && $0.action != .openOptions
-                            && $0.action != .closePopupOptions
+                        rendersDetailAction($0, detail: detail)
                     }) { descriptor in
                         Button(descriptor.title) {
                             if descriptor.action == .exportDiagnosticsJSON {
@@ -4854,9 +4851,37 @@ struct ChromeMV3ExtensionManagerView: View {
                         }
                         .buttonStyle(.bordered)
                         .disabled(!descriptor.available)
+                        .help(detailActionHelp(descriptor, detail: detail))
                     }
                 }
             }
+        }
+
+        private func rendersDetailAction(
+            _ descriptor: ChromeMV3ExtensionManagerActionDescriptor,
+            detail: ChromeMV3ExtensionManagerDetailViewModel
+        ) -> Bool {
+            switch descriptor.action {
+            case .installUnpacked, .importZipArchive, .importCRXArchive,
+                 .chromeWebStoreInstall, .openActionPopup, .openOptions,
+                 .closePopupOptions:
+                return false
+            case .runBitwardenManualSmoke:
+                return detail.gate.managerAvailableInDeveloperPreview
+            default:
+                return true
+            }
+        }
+
+        private func detailActionHelp(
+            _ descriptor: ChromeMV3ExtensionManagerActionDescriptor,
+            detail: ChromeMV3ExtensionManagerDetailViewModel
+        ) -> String {
+            if descriptor.action == .runBitwardenManualSmoke {
+                return detail.manualSmokeAction.notProductSupportWarning
+            }
+            return descriptor.unavailableDiagnostics.first?.message
+                ?? descriptor.title
         }
 
         private func gateFlag(_ title: String, _ value: Bool) -> some View {
