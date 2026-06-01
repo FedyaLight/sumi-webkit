@@ -666,6 +666,9 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
         ChromeMV3ServiceWorkerJSModuleWorkerReadinessProbe
     var moduleWorkerImportAvailable: Bool
     var permanentBackgroundAvailable: Bool
+    var runtimeLastErrorAvailableInLocalExperimentalGate: Bool
+    var runtimeLastErrorAvailableByDefault: Bool
+    var runtimeLastErrorCallbackScoped: Bool
     var timersAvailableInLocalExperimentalGate: Bool
     var timersAvailableByDefault: Bool
     var wallClockTimersAllowed: Bool
@@ -864,6 +867,9 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
             moduleWorkerReadinessProbe: moduleWorkerReadiness,
             moduleWorkerImportAvailable: false,
             permanentBackgroundAvailable: false,
+            runtimeLastErrorAvailableInLocalExperimentalGate: available,
+            runtimeLastErrorAvailableByDefault: false,
+            runtimeLastErrorCallbackScoped: available,
             timersAvailableInLocalExperimentalGate: available,
             timersAvailableByDefault: false,
             wallClockTimersAllowed: false,
@@ -917,6 +923,8 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
                         "chrome.i18n.getUILanguage is available only in the local experimental gate and returns a deterministic UI language string; message catalogs and language detection remain unsupported.",
                         "Worker-global addEventListener/removeEventListener/dispatchEvent are modeled as a non-DOM EventTarget surface without window or document.",
                         "fetch is local-experimental and default-off; remote/network fetch remains blocked, while generated-bundle-contained extension-local resources can return a minimal modeled Response after containment checks.",
+                        "chrome.runtime.lastError is local-experimental and default-off; failing callback paths expose a callback-scoped object with a string message and clear it after callback return.",
+                        "Chrome documents the generic callback-scoped runtime.lastError contract, but individual API references do not exhaustively specify every unsupported-method failure shape; this harness sets lastError only when an existing failing callback path or unsupported call with a final callback is observed.",
                         "Lifetime transitions are explicit fixture calls only.",
                         "Stable product runtime remains default-off.",
                     ]
@@ -964,12 +972,17 @@ struct ChromeMV3ServiceWorkerJSExecutionDocumentationSource:
         source(
             "Chrome runtime API",
             "https://developer.chrome.com/docs/extensions/reference/api/runtime",
-            "runtime.onMessage, runtime.onConnect, MessageSender, Port, native messaging permission, and Port lifecycle were checked."
+            "runtime.lastError is an object defined only within a failing API callback, its optional message is a string, Promise-returning APIs do not set it, and Port disconnect callbacks may expose it after an error."
+        ),
+        source(
+            "MDN Symbol.toPrimitive",
+            "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Symbol/toPrimitive",
+            "JavaScript coercion checks Symbol.toPrimitive on objects before valueOf/toString fallback; runtime.lastError.message is modeled as a primitive string so String(), templates, concatenation, and Symbol.toPrimitive property access stay ordinary."
         ),
         source(
             "Chrome storage API",
             "https://developer.chrome.com/docs/extensions/reference/api/storage",
-            "storage.onChanged dispatch shape was checked."
+            "storage.onChanged dispatch shape was checked; documented callback quota failures set runtime.lastError while Promise failures reject."
         ),
         source(
             "Chrome permissions API",
@@ -2569,12 +2582,15 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
     @discardableResult
     func disconnectPort(
         portID: String,
-        reason: String = "explicitPortDisconnect"
+        reason: String = "explicitPortDisconnect",
+        lastErrorMessage: String? = nil
     ) -> Bool {
         guard ports[portID] != nil else { return false }
         #if canImport(JavaScriptCore)
+            let lastErrorJSON =
+                lastErrorMessage.map(jsonStringServiceWorkerJS) ?? "null"
             let _: ChromeMV3ServiceWorkerJSWirePort? = callJSON(
-                "__sumiHarness.disconnectPort(\(jsonStringServiceWorkerJS(portID)), \(jsonStringServiceWorkerJS(reason)))"
+                "__sumiHarness.disconnectPort(\(jsonStringServiceWorkerJS(portID)), \(jsonStringServiceWorkerJS(reason)), \(lastErrorJSON))"
             )
         #endif
         if let keepaliveID = lifecycleKeepaliveIDsByPort.removeValue(
@@ -5581,6 +5597,28 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       const noteBlocked = (path) => {
         if (!blockedCalls.includes(path)) blockedCalls.push(path);
       };
+      let runtimeLastErrorValue;
+      const invokeCallbackNow = (callback, errorMessage, ...values) => {
+        if (typeof callback !== 'function') return;
+        runtimeLastErrorValue = errorMessage == null
+          ? undefined
+          : Object.freeze({ message: String(errorMessage) });
+        try {
+          callback(...values);
+        } finally {
+          runtimeLastErrorValue = undefined;
+        }
+      };
+      const callbackLater = (callback, ...values) => {
+        if (typeof callback === 'function') {
+          Promise.resolve().then(() => invokeCallbackNow(callback, null, ...values));
+        }
+      };
+      const callbackErrorLater = (callback, errorMessage, ...values) => {
+        if (typeof callback === 'function') {
+          Promise.resolve().then(() => invokeCallbackNow(callback, errorMessage, ...values));
+        }
+      };
       const unsupported = (path) => new Proxy(function () {
         noteBlocked(path);
         return undefined;
@@ -5589,8 +5627,10 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           if (property === 'then') return undefined;
           return unsupported(`${path}.${String(property)}`);
         },
-        apply() {
+        apply(_target, _thisArg, args) {
           noteBlocked(path);
+          const callback = args.length ? args[args.length - 1] : undefined;
+          callbackErrorLater(callback, `Unsupported API call ${path}.`);
           return undefined;
         }
       });
@@ -5641,11 +5681,6 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         sync: Object.create(null),
         session: Object.create(null),
         managed: Object.create(null)
-      };
-      const callbackLater = (callback, ...values) => {
-        if (typeof callback === 'function') {
-          Promise.resolve().then(() => callback(...values));
-        }
       };
       const storageKeys = (keys, store) => {
         if (keys == null) return Object.keys(store);
@@ -5709,7 +5744,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           set(items, callback) {
             if (readOnly) {
               const error = new Error('chrome.storage.managed is read-only.');
-              callbackLater(callback);
+              callbackErrorLater(callback, error.message);
               return Promise.reject(error);
             }
             if (items && typeof items === 'object') {
@@ -5723,7 +5758,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           remove(keys, callback) {
             if (readOnly) {
               const error = new Error('chrome.storage.managed is read-only.');
-              callbackLater(callback);
+              callbackErrorLater(callback, error.message);
               return Promise.reject(error);
             }
             for (const key of storageKeys(keys, store)) delete store[key];
@@ -5733,7 +5768,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           clear(callback) {
             if (readOnly) {
               const error = new Error('chrome.storage.managed is read-only.');
-              callbackLater(callback);
+              callbackErrorLater(callback, error.message);
               return Promise.reject(error);
             }
             for (const key of Object.keys(store)) delete store[key];
@@ -5913,13 +5948,13 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         ports.set(state.portID, state);
         return state.port;
       };
-      const disconnectPort = (portID, reason) => {
+      const disconnectPort = (portID, reason, errorMessage = null) => {
         const state = ports.get(portID);
         if (!state || !state.connected) return state ? portSnapshot(state) : null;
         state.connected = false;
         state.disconnectReason = reason || 'explicitDisconnect';
         for (const listener of [...state.onDisconnect.listeners]) {
-          try { listener(state.port); }
+          try { invokeCallbackNow(listener, errorMessage, state.port); }
           catch (_) { noteBlocked(`port.${portID}.onDisconnect.listenerError`); }
         }
         return portSnapshot(state);
@@ -5939,13 +5974,16 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         const state = ports.get(portID);
         if (!state || !state.connected) return state ? portSnapshot(state) : null;
         for (const listener of [...state.onMessage.listeners]) {
-          try { listener(clone(message), state.port); }
+          try { invokeCallbackNow(listener, null, clone(message), state.port); }
           catch (_) { noteBlocked(`port.${portID}.onMessage.listenerError`); }
         }
         return portSnapshot(state);
       };
       const runtime = proxiedNamespace({
         id: extensionID,
+        get lastError() {
+          return runtimeLastErrorValue;
+        },
         getURL(path = '') {
           const value = String(path || '').replace(/^\/+/, '');
           return value ? `${extensionOrigin}/${value}` : `${extensionOrigin}/`;

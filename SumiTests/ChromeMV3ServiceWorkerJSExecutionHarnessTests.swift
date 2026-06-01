@@ -50,6 +50,14 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertFalse(moduleDisabled.policy.timersAvailableByDefault)
         XCTAssertFalse(moduleDisabled.policy.wallClockTimersAllowed)
         XCTAssertFalse(
+            moduleDisabled.policy
+                .runtimeLastErrorAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(
+            moduleDisabled.policy.runtimeLastErrorAvailableByDefault
+        )
+        XCTAssertFalse(moduleDisabled.policy.runtimeLastErrorCallbackScoped)
+        XCTAssertFalse(
             moduleDisabled.policy.webCryptoAvailableInLocalExperimentalGate
         )
         XCTAssertFalse(moduleDisabled.policy.webCryptoAvailableByDefault)
@@ -129,6 +137,11 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertFalse(harness.policy.timersAvailableByDefault)
         XCTAssertFalse(harness.policy.wallClockTimersAllowed)
         XCTAssertFalse(harness.policy.timersAllowed)
+        XCTAssertFalse(
+            harness.policy.runtimeLastErrorAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(harness.policy.runtimeLastErrorAvailableByDefault)
+        XCTAssertFalse(harness.policy.runtimeLastErrorCallbackScoped)
         XCTAssertFalse(harness.policy.webCryptoAvailableInLocalExperimentalGate)
         XCTAssertFalse(harness.policy.webCryptoAvailableByDefault)
         XCTAssertFalse(
@@ -2211,6 +2224,140 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         )
         XCTAssertEqual(failure.resultKind, .listenerError)
         XCTAssertEqual(failure.lastErrorMessage, "listener failed")
+    }
+
+    func testRuntimeLastErrorIsCallbackScopedStringAndProtonCoercionSafe()
+        throws
+    {
+        let harness = try startedHarness(
+            source: """
+            globalThis.lastErrorOutsideBefore = typeof chrome.runtime.lastError;
+            globalThis.unsupportedError = null;
+            globalThis.storageError = null;
+            chrome.permissions.request({ permissions: ['clipboardRead'] }, () => {
+              const error = chrome.runtime.lastError;
+              const message = error.message;
+              globalThis.unsupportedError = {
+                errorType: typeof error,
+                messageType: typeof message,
+                message,
+                stringValue: String(message),
+                templateValue: `${message}`,
+                concatenatedValue: message + '',
+                symbolToPrimitiveType: typeof message[Symbol.toPrimitive]
+              };
+            });
+            chrome.storage.managed.set({ blocked: true }, () => {
+              globalThis.storageError = chrome.runtime.lastError.message;
+            }).catch(() => {});
+            chrome.runtime.onMessage.addListener(() => ({
+              outsideBefore: globalThis.lastErrorOutsideBefore,
+              outsideAfter: typeof chrome.runtime.lastError,
+              unsupportedError: globalThis.unsupportedError,
+              storageError: globalThis.storageError
+            }));
+            """
+        )
+
+        let result = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            payloadSummary: "observe callback-scoped runtime.lastError"
+        )
+
+        XCTAssertTrue(
+            harness.policy.runtimeLastErrorAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(harness.policy.runtimeLastErrorAvailableByDefault)
+        XCTAssertTrue(harness.policy.runtimeLastErrorCallbackScoped)
+        XCTAssertEqual(
+            result.responsePayload,
+            .object([
+                "outsideAfter": .string("undefined"),
+                "outsideBefore": .string("undefined"),
+                "storageError": .string("chrome.storage.managed is read-only."),
+                "unsupportedError": .object([
+                    "concatenatedValue":
+                        .string(
+                            "Unsupported API call chrome.permissions.request."
+                        ),
+                    "errorType": .string("object"),
+                    "message":
+                        .string(
+                            "Unsupported API call chrome.permissions.request."
+                        ),
+                    "messageType": .string("string"),
+                    "stringValue":
+                        .string(
+                            "Unsupported API call chrome.permissions.request."
+                        ),
+                    "symbolToPrimitiveType": .string("undefined"),
+                    "templateValue":
+                        .string(
+                            "Unsupported API call chrome.permissions.request."
+                        ),
+                ]),
+            ])
+        )
+        XCTAssertTrue(
+            harness.snapshot.blockedUnsupportedCalls.contains(
+                "chrome.permissions.request"
+            )
+        )
+        XCTAssertFalse(
+            harness.snapshot.blockedUnsupportedCalls.contains {
+                $0.contains(
+                    "chrome.runtime.lastError.message.Symbol(Symbol.toPrimitive)"
+                )
+            }
+        )
+    }
+
+    func testRuntimeLastErrorIsVisibleDuringPortDisconnectErrorOnly() throws {
+        let harness = try startedHarness(
+            source: """
+            globalThis.disconnectScope = null;
+            chrome.runtime.onConnect.addListener((port) => {
+              port.onDisconnect.addListener(() => {
+                const error = chrome.runtime.lastError;
+                globalThis.disconnectScope = {
+                  errorType: typeof error,
+                  message: error.message,
+                  messageType: typeof error.message
+                };
+              });
+            });
+            chrome.runtime.onMessage.addListener(() => ({
+              disconnectScope: globalThis.disconnectScope,
+              outsideType: typeof chrome.runtime.lastError
+            }));
+            """
+        )
+        let connected = harness.connectRuntime(name: "last-error-port")
+        let portID = try XCTUnwrap(connected.portID)
+
+        XCTAssertTrue(
+            harness.disconnectPort(
+                portID: portID,
+                reason: "fixturePortError",
+                lastErrorMessage: "Fixture Port disconnected."
+            )
+        )
+        let observed = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            payloadSummary: "observe Port disconnect runtime.lastError"
+        )
+
+        XCTAssertEqual(
+            observed.responsePayload,
+            .object([
+                "disconnectScope": .object([
+                    "errorType": .string("object"),
+                    "message": .string("Fixture Port disconnected."),
+                    "messageType": .string("string"),
+                ]),
+                "outsideType": .string("undefined"),
+            ])
+        )
     }
 
     func testRuntimeConnectPortMessageDeliveryDisconnectAndKeepaliveRelease()

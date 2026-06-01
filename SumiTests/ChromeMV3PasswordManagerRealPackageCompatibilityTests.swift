@@ -822,6 +822,18 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertTrue(
             detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .runtimeLastErrorObjectShapeResult.contains(
+                    "active message is a primitive string"
+                ) == true
+        )
+        XCTAssertTrue(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .runtimeLastErrorCallbackLifecycleResult.contains(
+                    "cleared in finally"
+                ) == true
+        )
+        XCTAssertTrue(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
                 .workerGlobalEventTargetResult.contains(
                     "windowDocumentExposed=false"
                 ) == true
@@ -1447,6 +1459,24 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             proton.serviceWorkerEventReadiness.nextBlockerDetail
                 .contains("rp.tabs.onUpdated")
         )
+        XCTAssertFalse(
+            proton.serviceWorkerEventReadiness.nextBlockerDetail
+                .contains(
+                    "chrome.runtime.lastError.message.Symbol(Symbol.toPrimitive)"
+                )
+        )
+        XCTAssertTrue(
+            proton.serviceWorkerEventReadiness
+                .runtimeLastErrorObjectShapeResult.contains(
+                    "active message is a primitive string"
+                )
+        )
+        XCTAssertTrue(
+            proton.serviceWorkerEventReadiness
+                .runtimeLastErrorCallbackLifecycleResult.contains(
+                    "visible during callback execution"
+                )
+        )
         XCTAssertTrue(
             proton.serviceWorkerEventReadiness.timerShimResult
                 .hasPrefix("available:")
@@ -1469,6 +1499,10 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                     .workerGlobalEventTargetResult.isEmpty == false
                 && $0.serviceWorkerEventReadiness
                     .fetchClassificationResult.isEmpty == false
+                && $0.serviceWorkerEventReadiness
+                    .runtimeLastErrorObjectShapeResult.isEmpty == false
+                && $0.serviceWorkerEventReadiness
+                    .runtimeLastErrorCallbackLifecycleResult.isEmpty == false
                 && $0.serviceWorkerEventReadiness.dispatchSmokeResult.isEmpty
                     == false
         })
@@ -1836,6 +1870,11 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertFalse(policy.timersAvailableInLocalExperimentalGate)
         XCTAssertFalse(policy.timersAvailableByDefault)
         XCTAssertFalse(policy.wallClockTimersAllowed)
+        XCTAssertFalse(
+            policy.runtimeLastErrorAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(policy.runtimeLastErrorAvailableByDefault)
+        XCTAssertFalse(policy.runtimeLastErrorCallbackScoped)
         XCTAssertFalse(policy.timersAllowed)
     }
 

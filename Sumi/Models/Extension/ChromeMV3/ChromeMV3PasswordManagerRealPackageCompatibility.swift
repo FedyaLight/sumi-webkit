@@ -1199,6 +1199,8 @@ struct ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness:
     var cryptoSubtleBlockedAlgorithms: [String]
     var i18nCapabilityResult: String
     var i18nOperationSummary: [String]
+    var runtimeLastErrorObjectShapeResult: String
+    var runtimeLastErrorCallbackLifecycleResult: String
     var workerGlobalEventTargetResult: String
     var workerGlobalEventSummary: [String]
     var fetchClassificationResult: String
@@ -2711,6 +2713,14 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         let i18nOperationSummary = serviceWorkerI18nOperationSummary(
             executionStartResult: executionStartResult
         )
+        let runtimeLastErrorObjectShapeResult =
+            serviceWorkerRuntimeLastErrorObjectShapeResult(
+                policy: policy
+            )
+        let runtimeLastErrorCallbackLifecycleResult =
+            serviceWorkerRuntimeLastErrorCallbackLifecycleResult(
+                policy: policy
+            )
         let workerGlobalEventTargetResult =
             serviceWorkerWorkerGlobalEventTargetResult(
                 policy: policy,
@@ -2830,6 +2840,10 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 policy.subtleCryptoBlockedAlgorithms,
             i18nCapabilityResult: i18nCapabilityResult,
             i18nOperationSummary: i18nOperationSummary,
+            runtimeLastErrorObjectShapeResult:
+                runtimeLastErrorObjectShapeResult,
+            runtimeLastErrorCallbackLifecycleResult:
+                runtimeLastErrorCallbackLifecycleResult,
             workerGlobalEventTargetResult: workerGlobalEventTargetResult,
             workerGlobalEventSummary: workerGlobalEventSummary,
             fetchClassificationResult: fetchClassificationResult,
@@ -3497,6 +3511,26 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             ].joined(separator: ":")
         }
         .sorted()
+    }
+
+    private static func serviceWorkerRuntimeLastErrorObjectShapeResult(
+        policy: ChromeMV3ServiceWorkerJSExecutionPolicy
+    ) -> String {
+        guard
+            policy.runtimeLastErrorAvailableInLocalExperimentalGate
+        else {
+            return "blockedByPolicy: chrome.runtime.lastError requires the explicit local experimental MV3 gate."
+        }
+        return "available: chrome.runtime.lastError is object-or-undefined, active message is a primitive string, String/template/concatenation coercion is ordinary string coercion, default=\(policy.runtimeLastErrorAvailableByDefault)."
+    }
+
+    private static func serviceWorkerRuntimeLastErrorCallbackLifecycleResult(
+        policy: ChromeMV3ServiceWorkerJSExecutionPolicy
+    ) -> String {
+        guard policy.runtimeLastErrorCallbackScoped else {
+            return "blockedByPolicy: callback-scoped chrome.runtime.lastError lifecycle is unavailable."
+        }
+        return "available: set before failing callback invocation, visible during callback execution, cleared in finally after callback return; Promise-returning APIs reject without setting runtime.lastError."
     }
 
     private static func serviceWorkerWorkerGlobalEventTargetResult(
@@ -5210,7 +5244,12 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             source(
                 "Chrome runtime API",
                 "https://developer.chrome.com/docs/extensions/reference/api/runtime",
-                "Checked runtime.connectNative, runtime.sendNativeMessage, Port lifecycle, and lastError behavior."
+                "Checked runtime.connectNative, runtime.sendNativeMessage, Port lifecycle, and callback-scoped lastError object behavior; lastError.message is an optional string and Promise APIs do not set lastError."
+            ),
+            source(
+                "MDN Symbol.toPrimitive",
+                "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Symbol/toPrimitive",
+                "Checked ordinary object-to-primitive lookup semantics; runtime.lastError.message remains a primitive string rather than a custom coercion object."
             ),
             source(
                 "Chrome service-worker lifecycle",

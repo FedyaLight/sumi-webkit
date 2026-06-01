@@ -1370,6 +1370,8 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
     var cryptoSubtleBlockedAlgorithms: [String]
     var i18nCapabilityResult: String
     var i18nOperationSummary: [String]
+    var runtimeLastErrorObjectShapeResult: String
+    var runtimeLastErrorCallbackLifecycleResult: String
     var workerGlobalEventTargetResult: String
     var workerGlobalEventSummary: [String]
     var fetchClassificationResult: String
@@ -1438,6 +1440,10 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
                 readiness.cryptoSubtleBlockedAlgorithms,
             i18nCapabilityResult: readiness.i18nCapabilityResult,
             i18nOperationSummary: readiness.i18nOperationSummary,
+            runtimeLastErrorObjectShapeResult:
+                readiness.runtimeLastErrorObjectShapeResult,
+            runtimeLastErrorCallbackLifecycleResult:
+                readiness.runtimeLastErrorCallbackLifecycleResult,
             workerGlobalEventTargetResult:
                 readiness.workerGlobalEventTargetResult,
             workerGlobalEventSummary: readiness.workerGlobalEventSummary,
@@ -3252,6 +3258,12 @@ struct ChromeMV3ExtensionManagerView: View {
                         panel.jsExecutionPolicy.importScriptsScope.rawValue
                     )
                     fact(
+                        "runtime.lastError",
+                        panel.jsExecutionPolicy
+                            .runtimeLastErrorAvailableInLocalExperimentalGate
+                            ? "callback-scoped" : "blocked"
+                    )
+                    fact(
                         "Queued Callback Shim",
                         panel.jsExecutionPolicy
                             .timersAvailableInLocalExperimentalGate
@@ -3376,6 +3388,20 @@ struct ChromeMV3ExtensionManagerView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
+                    Text(
+                        "runtime.lastError shape: "
+                            + trial.runtimeLastErrorObjectShapeResult
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        "runtime.lastError lifecycle: "
+                            + trial.runtimeLastErrorCallbackLifecycleResult
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                     Text(
                         "Worker global events: "
                             + trial.workerGlobalEventTargetResult
