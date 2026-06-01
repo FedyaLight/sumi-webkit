@@ -3666,8 +3666,27 @@ struct ChromeMV3ExtensionManagerView: View {
                         Text(
                             "Bitwarden detect/fill routes: "
                                 + smoke.detectFillSmoke.routeRecords.map {
-                                    "\($0.purpose):\($0.status.rawValue):\($0.messageClassification.rawValue)"
+                                    "\($0.purpose):\($0.status.rawValue):\($0.messageClassification.rawValue):domChanged=\($0.domChanged)"
                                 }.joined(separator: ", ")
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            "Bitwarden detect/fill contracts: "
+                                + smoke.detectFillSmoke
+                                .messageContractEvidence.map {
+                                    "\($0.messageName)@\($0.sourcePath):\($0.role):attached=\($0.attachedByManifest)"
+                                }
+                                .joined(separator: ", ")
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            "Bitwarden dummy fill payload: "
+                                + smoke.detectFillSmoke
+                                .dummyFillPayloadSummary
                         )
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -3675,8 +3694,19 @@ struct ChromeMV3ExtensionManagerView: View {
                         Text(
                             "Bitwarden synthetic login DOM: "
                                 + smoke.detectFillSmoke.domObservationResult
+                                + "; before username=\(smoke.detectFillSmoke.domObservationBefore.usernameValue), password=\(smoke.detectFillSmoke.domObservationBefore.passwordValue)"
+                                + "; after username=\(smoke.detectFillSmoke.domObservationAfter.usernameValue), password=\(smoke.detectFillSmoke.domObservationAfter.passwordValue)"
                                 + "; dummy fill: "
                                 + smoke.detectFillSmoke.dummyFillResult
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            "Bitwarden reverse tabs.sendMessage: "
+                                + smoke.detectFillSmoke
+                                .reverseTabsSendMessageClassification
+                                .classificationSummary
                         )
                         .font(.caption)
                         .foregroundStyle(.secondary)

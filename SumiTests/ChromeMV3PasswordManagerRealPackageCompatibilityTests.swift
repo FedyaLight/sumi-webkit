@@ -1934,6 +1934,73 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                 "sumi-login-submit",
             ]
         )
+        XCTAssertEqual(
+            detectFill.syntheticLoginPage.fields.compactMap(\.opid),
+            [
+                "sumi-login-email",
+                "sumi-login-password",
+            ]
+        )
+        XCTAssertEqual(detectFill.domObservationBefore.phase, "before")
+        XCTAssertTrue(detectFill.domObservationBefore.usernameFieldExists)
+        XCTAssertTrue(detectFill.domObservationBefore.passwordFieldExists)
+        XCTAssertTrue(detectFill.domObservationBefore.submitButtonExists)
+        XCTAssertEqual(detectFill.domObservationBefore.usernameValue, "")
+        XCTAssertEqual(detectFill.domObservationBefore.passwordValue, "")
+        XCTAssertTrue(detectFill.domObservationBefore.initialValuesEmpty)
+        XCTAssertEqual(detectFill.domObservationAfter.phase, "after")
+        XCTAssertEqual(detectFill.domObservationAfter.usernameValue, "")
+        XCTAssertEqual(detectFill.domObservationAfter.passwordValue, "")
+        XCTAssertFalse(detectFill.domObservationAfter.domChanged)
+        XCTAssertFalse(detectFill.domObservationAfter.finalValuesMatchDummyFill)
+        XCTAssertEqual(
+            detectFill.dummyUsername,
+            "sumi-test-user@example.test"
+        )
+        XCTAssertEqual(
+            detectFill.dummyPassword,
+            "sumi-test-password-not-secret"
+        )
+        XCTAssertTrue(
+            detectFill.dummyFillPayloadSummary
+                .contains("fillScript.script=2 fill_by_opid actions")
+        )
+        XCTAssertTrue(
+            detectFill.dummyFillPayloadSummary
+                .contains("sumi-test-user@example.test")
+        )
+        XCTAssertTrue(
+            detectFill.dummyFillPayloadSummary
+                .contains("sumi-test-password-not-secret")
+        )
+        XCTAssertTrue(detectFill.messageContractEvidence.allSatisfy {
+            $0.packageDiscovered
+        })
+        XCTAssertTrue(detectFill.messageContractEvidence.contains {
+            $0.messageName == "collectPageDetailsImmediately"
+                && $0.role == "detectForm"
+                && $0.sourcePath == "content/bootstrap-autofill.js"
+                && $0.attachedByManifest == false
+        })
+        XCTAssertTrue(detectFill.messageContractEvidence.contains {
+            $0.messageName == "fillForm"
+                && $0.role == "fillCredentials"
+                && $0.expectedPayloadShape
+                    == "object:command,fillScript,pageDetailsUrl,showAnimations"
+        })
+        XCTAssertTrue(detectFill.messageContractEvidence.contains {
+            $0.messageName == "fill_by_opid"
+                && $0.role == "fieldInteraction"
+                && $0.expectedPayloadShape == "array:[action,opid,value]"
+        })
+        XCTAssertTrue(detectFill.messageContractEvidence.contains {
+            $0.messageName == "generate_password"
+                && $0.role == "generatePassword"
+                && $0.sourcePath == "manifest.json"
+        })
+        XCTAssertFalse(detectFill.messageContractEvidence.contains {
+            $0.messageName == "sumiDetectFillSmoke"
+        })
         XCTAssertTrue(detectFill.discoveredMessageEvidence.contains {
             $0.commandName == "triggerAutofillScriptInjection"
                 && $0.attachedByManifest
@@ -1964,6 +2031,11 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             detectFillRoutes["detect"]?.actualMessageType,
             "command:collectPageDetailsImmediately"
         )
+        XCTAssertTrue(
+            detectFillRoutes["detect"]?.payloadSummary
+                .contains("collectPageDetailsImmediately") == true
+        )
+        XCTAssertFalse(detectFillRoutes["detect"]?.domChanged == true)
         XCTAssertEqual(
             detectFillRoutes["detect"]?.messageClassification,
             .programmaticInjectionRequired
@@ -1982,13 +2054,26 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             detectFillRoutes["fill"]?.requestShapeSummary,
             "object:command,fillScript,pageDetailsUrl,showAnimations"
         )
+        XCTAssertTrue(
+            detectFillRoutes["fill"]?.payloadSummary
+                .contains("fill_by_opid") == true
+        )
+        XCTAssertEqual(
+            detectFillRoutes["fill"]?.handlerDeliveryResult,
+            "tabs.sendMessage reached a content-script runtime.onMessage listener"
+        )
+        XCTAssertEqual(
+            detectFillRoutes["fill"]?.responseResult,
+            "response:object:documentId,endpointID,frameId,listenerCount,navigationSequence,ok,sender,tabId,target"
+        )
+        XCTAssertFalse(detectFillRoutes["fill"]?.domChanged == true)
         XCTAssertEqual(
             detectFillRoutes["fill"]?.messageClassification,
             .programmaticInjectionRequired
         )
         XCTAssertTrue(
             detectFillRoutes["fill"]?.domWriteResult
-                .contains("no fields were touched") == true
+                .contains("stayed empty") == true
         )
         XCTAssertEqual(
             detectFillRoutes["serviceWorkerPort"]?.routeUsed,
@@ -2008,12 +2093,32 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertEqual(
             detectFillRoutes["serviceWorkerTabsSendMessage"]?.status,
-            .blocked
+            .notRequired
         )
         XCTAssertEqual(
             detectFillRoutes["serviceWorkerTabsSendMessage"]?
                 .messageClassification,
-            .unsupportedAPIRequired
+            .reverseRouteIrrelevant
+        )
+        XCTAssertFalse(
+            detectFill.reverseTabsSendMessageClassification
+                .actuallyNeededForDetectFill
+        )
+        XCTAssertTrue(
+            detectFill.reverseTabsSendMessageClassification
+                .irrelevantForThisSmoke
+        )
+        XCTAssertTrue(
+            detectFill.reverseTabsSendMessageClassification
+                .contentScriptToServiceWorkerShouldUseRuntimeSendMessage
+        )
+        XCTAssertTrue(
+            detectFill.reverseTabsSendMessageClassification
+                .unsupportedDirection
+        )
+        XCTAssertTrue(
+            detectFill.reverseTabsSendMessageClassification
+                .routeShapeMismatch
         )
         XCTAssertEqual(
             detectFill.nextBlockerClassification,
@@ -2021,10 +2126,10 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertTrue(
             detectFill.domObservationResult
-                .contains("syntheticModelObserved")
+                .contains("observedSyntheticDOM")
         )
         XCTAssertTrue(
-            detectFill.dummyFillResult.contains("skipped")
+            detectFill.dummyFillResult.contains("notChanged")
         )
         XCTAssertTrue(detectFill.touchedSyntheticFieldIDs.isEmpty)
         XCTAssertTrue(detectFill.touchedNonSyntheticFieldIDs.isEmpty)
@@ -2123,6 +2228,79 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertFalse(smoke.serviceWorkerWakeAttempted)
         XCTAssertFalse(smoke.nativeHostLaunchAttempted)
         XCTAssertTrue(smoke.noCredentialsOrNetwork)
+    }
+
+    @MainActor
+    func testBitwardenDetectFillSmokeUsesPackageContractsAndDummyDOMState()
+        throws
+    {
+        let root = try temporaryDirectory(named: "bitwarden-dom-contract-smoke")
+        let target = try realBitwardenTarget()
+        let report = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
+            rootURL: root,
+            targets: [target],
+            serviceWorkerTrialGateSource: .explicitTestTrial,
+            writeReport: false,
+            now: { Date(timeIntervalSince1970: 21) }
+        )
+        let detectFill = try XCTUnwrap(
+            report.rows.first?.bitwardenE2ESmoke.detectFillSmoke
+        )
+        let packageRoot = URL(
+            fileURLWithPath:
+                try XCTUnwrap(target.explicitAllowedLocalRoot),
+            isDirectory: true
+        )
+
+        XCTAssertFalse(detectFill.messageContractEvidence.isEmpty)
+        for item in detectFill.messageContractEvidence {
+            let source = try String(
+                contentsOf:
+                    packageRoot.appendingPathComponent(item.sourcePath),
+                encoding: .utf8
+            )
+            XCTAssertTrue(
+                source.contains(item.messageName),
+                "\(item.messageName) must come from \(item.sourcePath)"
+            )
+        }
+
+        XCTAssertEqual(detectFill.domObservationBefore.usernameValue, "")
+        XCTAssertEqual(detectFill.domObservationBefore.passwordValue, "")
+        XCTAssertTrue(detectFill.domObservationBefore.initialValuesEmpty)
+        XCTAssertEqual(detectFill.domObservationAfter.usernameValue, "")
+        XCTAssertEqual(detectFill.domObservationAfter.passwordValue, "")
+        XCTAssertFalse(detectFill.domObservationAfter.domChanged)
+        XCTAssertEqual(
+            detectFill.dummyUsername,
+            "sumi-test-user@example.test"
+        )
+        XCTAssertEqual(
+            detectFill.dummyPassword,
+            "sumi-test-password-not-secret"
+        )
+        XCTAssertTrue(detectFill.dummyPassword.contains("not-secret"))
+        XCTAssertTrue(detectFill.touchedSyntheticFieldIDs.isEmpty)
+        XCTAssertTrue(detectFill.touchedNonSyntheticFieldIDs.isEmpty)
+        XCTAssertTrue(detectFill.noRealCredentialsOrSecrets)
+        XCTAssertTrue(detectFill.noNetworkAuthNativeHost)
+        XCTAssertEqual(
+            detectFill.nextBlockerClassification,
+            .programmaticInjectionRequired
+        )
+        XCTAssertTrue(
+            detectFill.nextBlocker.contains("non-manifest autofill bootstrap")
+        )
+        XCTAssertEqual(
+            detectFill.reverseTabsSendMessageClassification
+                .actuallyNeededForDetectFill,
+            false
+        )
+        XCTAssertEqual(
+            detectFill.reverseTabsSendMessageClassification
+                .irrelevantForThisSmoke,
+            true
+        )
     }
 
     func testBitwardenE2ESmokeDisabledModuleBlocksRuntimeWork()

@@ -156,8 +156,9 @@ enum ChromeMV3ServiceWorkerDeclarationReadinessEvaluator {
             fileExists($0.appendingPathComponent(shimPath))
         } ?? false
         let source = serviceWorkerURL.flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+        let detectedListenerPatterns = source.map(detectedListenerPatterns)
         let coverageRecords = listenerEvents.map {
-            listenerCoverage(for: $0, source: source)
+            listenerCoverage(for: $0, detectedPatterns: detectedListenerPatterns)
         }
         var blockers: [ChromeMV3ServiceWorkerReadinessBlocker] = []
         if path == nil {
@@ -271,11 +272,11 @@ enum ChromeMV3ServiceWorkerDeclarationReadinessEvaluator {
 
     private static func listenerCoverage(
         for event: ChromeMV3ServiceWorkerSyntheticListenerEvent,
-        source: String?
+        detectedPatterns: Set<String>?
     ) -> ChromeMV3ServiceWorkerListenerCoverage {
         let patterns = listenerPatterns(for: event)
-        let detected = source.flatMap { source in
-            patterns.first { source.contains($0) }
+        let detected = patterns.first {
+            detectedPatterns?.contains($0) == true
         }
         return ChromeMV3ServiceWorkerListenerCoverage(
             event: event,
@@ -292,6 +293,33 @@ enum ChromeMV3ServiceWorkerDeclarationReadinessEvaluator {
             )
         )
     }
+
+    private static func detectedListenerPatterns(in source: String) -> Set<String> {
+        guard source.contains(".addListener") else { return [] }
+        let range = NSRange(source.startIndex..., in: source)
+        return Set(
+            listenerPatternRegex?.matches(in: source, range: range).compactMap {
+                match -> String? in
+                guard let matchRange = Range(match.range, in: source)
+                else { return nil }
+                return String(source[matchRange])
+            } ?? []
+        )
+    }
+
+    private static let allListenerPatterns: [String] = {
+        var seen = Set<String>()
+        return listenerEvents.flatMap { listenerPatterns(for: $0) }.filter {
+            seen.insert($0).inserted
+        }
+    }()
+
+    private static let listenerPatternRegex: NSRegularExpression? = {
+        let pattern = allListenerPatterns
+            .map { NSRegularExpression.escapedPattern(for: $0) }
+            .joined(separator: "|")
+        return try? NSRegularExpression(pattern: pattern)
+    }()
 
     private static func listenerPatterns(
         for event: ChromeMV3ServiceWorkerSyntheticListenerEvent
