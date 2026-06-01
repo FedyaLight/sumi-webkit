@@ -3626,16 +3626,20 @@ enum ChromeMV3ExtensionManagerActionRunner {
             ]
         )
         let resolution = attempt.resourceResolutions.first
+        let generatedResourceSHA256 =
+            attempt.shapeAudit.reviewedResourceAudit?
+            .generatedResourceSHA256
+                ?? attempt.shapeAudit.reviewedBootstrapSHA256
         let reviewedResource = ChromeMV3ProductNormalTabReviewedResource(
             reviewedScriptPath:
                 ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
                 .bitwardenDetectFillBootstrapFile,
-            generatedResourceHash: attempt.shapeAudit.reviewedBootstrapSHA256,
+            generatedResourceHash: generatedResourceSHA256,
             generatedResourceFileSystemPath:
                 resolution?.resolvedFileSystemPath,
             present:
                 resolution?.status == .copiedGeneratedBundleFile
-                    && attempt.shapeAudit.reviewedBootstrapSHA256 != nil,
+                    && generatedResourceSHA256 != nil,
             packageOwned:
                 resolution?.status == .copiedGeneratedBundleFile,
             diagnostics:
@@ -4860,6 +4864,13 @@ struct ChromeMV3ExtensionManagerView: View {
                         Text(
                             verbatim:
                             "Bitwarden product-normal-tab experiment: attempted=\(smoke.detectFillSmoke.productNormalTabExecutionExperimentResult.attempted); allowed=\(smoke.detectFillSmoke.productNormalTabExecutionExperimentResult.allowed); localGate=\(smoke.detectFillSmoke.productNormalTabExecutionExperimentResult.productNormalTabExperimentAvailableInLocalExperimentalGate); default=\(smoke.detectFillSmoke.productNormalTabExecutionExperimentResult.productNormalTabExperimentAvailableByDefault); productDefaultRuntime=\(smoke.detectFillSmoke.productNormalTabExecutionExperimentResult.productDefaultRuntimeAvailable); reviewedHashMatched=\(smoke.detectFillSmoke.productNormalTabExecutionExperimentResult.reviewedScriptHashMatched); syntheticOrigin=\(smoke.detectFillSmoke.productNormalTabExecutionExperimentResult.origin); isolated=\(smoke.detectFillSmoke.productNormalTabExecutionExperimentResult.isolatedWorldUsed); topFrame=\(smoke.detectFillSmoke.productNormalTabExecutionExperimentResult.topFrameUsed); finalDummy=\(smoke.detectFillSmoke.productNormalTabExecutionExperimentResult.finalValuesMatchDummyFill); teardown=\(smoke.detectFillSmoke.productNormalTabExecutionExperimentResult.teardown.completed); retained=\(smoke.detectFillSmoke.productNormalTabExecutionExperimentResult.runtimeCost.retainedObjectCountAfterTeardown); readoutExecuted=\(smoke.detectFillSmoke.productNormalTabExecutionExperimentResult.managerReadoutExecutedExperiment); blocker=\(smoke.detectFillSmoke.productNormalTabExecutionExperimentResult.currentBlocker)"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            verbatim:
+                            "Bitwarden reviewed-resource audit: reason=\(smoke.detectFillSmoke.productNormalTabExecutionExperimentResult.reviewedResourceAudit?.reviewReason ?? "missing"); sourceHash=\(smoke.detectFillSmoke.productNormalTabExecutionExperimentResult.reviewedResourceAudit?.sourcePackageSHA256 ?? "missing"); generatedHash=\(smoke.detectFillSmoke.productNormalTabExecutionExperimentResult.reviewedResourceAudit?.generatedResourceSHA256 ?? "missing"); expectedHash=\(smoke.detectFillSmoke.productNormalTabExecutionExperimentResult.reviewedResourceAudit?.expectedReviewedSHA256 ?? "missing"); previousHash=\(smoke.detectFillSmoke.productNormalTabExecutionExperimentResult.reviewedResourceAudit?.previousReviewedSHA256 ?? "none"); equal=\(smoke.detectFillSmoke.productNormalTabExecutionExperimentResult.reviewedResourceAudit?.sourceAndGeneratedByteEqual ?? false); shapeEquivalent=\(smoke.detectFillSmoke.productNormalTabExecutionExperimentResult.reviewedResourceAudit?.shapeEquivalentToReviewedRecord ?? false)"
                         )
                         .font(.caption)
                         .foregroundStyle(.secondary)

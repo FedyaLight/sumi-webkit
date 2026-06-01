@@ -131,6 +131,46 @@ struct ChromeMV3LocalExperimentalProgrammaticInjectionGeneratedBundle:
     }
 }
 
+struct ChromeMV3LocalExperimentalReviewedResourceRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var resourcePath: String
+    var reviewedSHA256: String
+    var previousReviewedSHA256: String?
+    var reviewReason: String
+    var packageName: String
+    var packageVersion: String
+    var shapeSummary: [String]
+}
+
+enum ChromeMV3LocalExperimentalReviewedResourceRegistry {
+    static let bitwardenBootstrapAutofill =
+        ChromeMV3LocalExperimentalReviewedResourceRecord(
+            resourcePath:
+                ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
+                .bitwardenDetectFillBootstrapFile,
+            reviewedSHA256:
+                "7d3a88b4b1b8ae882a20ba4decd2df6fc9859c72fe1e7d3a5a60eabb6e7d5d8e",
+            previousReviewedSHA256:
+                "89b0c2ce4d57431ddbfc8a28992ddf2cd36f2d2bbe64657c89bc164c76fe2b58",
+            reviewReason: "reviewedLocalPackageHashUpdated",
+            packageName: "Bitwarden",
+            packageVersion: "2026.4.1",
+            shapeSummary: [
+                "resourcePath=content/bootstrap-autofill.js",
+                "generated-bundle-contained",
+                "package-owned",
+                "no function injection",
+                "no args",
+                "isolated world",
+                "top frame",
+                "synthetic HTTPS only",
+            ]
+        )
+}
+
 struct ChromeMV3LocalExperimentalProgrammaticInjectionResourceResolution:
     Codable,
     Equatable,
@@ -141,6 +181,35 @@ struct ChromeMV3LocalExperimentalProgrammaticInjectionResourceResolution:
     var resolvedFileSystemPath: String?
     var status: ChromeMV3LocalExperimentalProgrammaticInjectionResourceStatus
     var blockers: [ChromeMV3LocalExperimentalProgrammaticInjectionBlocker]
+    var diagnostics: [String]
+}
+
+struct ChromeMV3LocalExperimentalReviewedResourceAudit:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var resourcePath: String
+    var sourcePackagePath: String?
+    var generatedResourcePath: String?
+    var sourcePackageSHA256: String?
+    var generatedResourceSHA256: String?
+    var expectedReviewedSHA256: String
+    var previousReviewedSHA256: String?
+    var manifestSHA256: String?
+    var packageName: String?
+    var packageVersion: String?
+    var sourceAndGeneratedByteEqual: Bool
+    var generatedBundleContained: Bool
+    var reviewedResourcePathExact: Bool
+    var packageOwned: Bool
+    var noRemoteScript: Bool
+    var noRuntimeGeneratedJS: Bool
+    var noNetworkAuthNativeHostRequirement: Bool
+    var compatibleWithIsolatedTopFrameSyntheticHTTPS: Bool
+    var shapeEquivalentToReviewedRecord: Bool
+    var reviewReason: String
+    var shapeBlockers: [String]
     var diagnostics: [String]
 }
 
@@ -161,6 +230,8 @@ struct ChromeMV3LocalExperimentalProgrammaticInjectionShapeAudit:
     var packageOwnedFunction: Bool
     var packageShapeMatched: Bool
     var reviewedBootstrapSHA256: String?
+    var reviewedResourceAudit:
+        ChromeMV3LocalExperimentalReviewedResourceAudit?
     var tabID: Int
     var frameIDs: [Int]
     var allFrames: Bool
@@ -188,6 +259,7 @@ struct ChromeMV3LocalExperimentalProgrammaticInjectionShapeAudit:
             packageOwnedFunction: false,
             packageShapeMatched: false,
             reviewedBootstrapSHA256: nil,
+            reviewedResourceAudit: nil,
             tabID: -1,
             frameIDs: [],
             allFrames: false,
@@ -330,6 +402,11 @@ final class ChromeMV3LocalExperimentalProgrammaticInjectionSession {
             blockers.append(.unsupportedTargetShape)
         }
         if audit.packageShapeMatched == false {
+            blockers.append(.unsupportedTargetShape)
+        }
+        if audit.reviewedResourceAudit?.shapeEquivalentToReviewedRecord
+            == false
+        {
             blockers.append(.unsupportedTargetShape)
         }
 
@@ -570,24 +647,150 @@ enum ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog {
         let root = request.packageRootPath.map {
             URL(fileURLWithPath: $0, isDirectory: true)
         }
+        let reviewedRecord =
+            ChromeMV3LocalExperimentalReviewedResourceRegistry
+            .bitwardenBootstrapAutofill
         let background = root.flatMap {
             read($0.appendingPathComponent("background.js"))
         } ?? ""
         let contentMessageHandler = root.flatMap {
             read($0.appendingPathComponent("content/content-message-handler.js"))
         } ?? ""
-        let bootstrap = root.flatMap {
-            read($0.appendingPathComponent(bitwardenDetectFillBootstrapFile))
+        let sourceBootstrapURL = root?
+            .appendingPathComponent(bitwardenDetectFillBootstrapFile)
+            .standardizedFileURL
+        let sourceBootstrapData = sourceBootstrapURL.flatMap { readData($0) }
+        let bootstrap = sourceBootstrapData.flatMap {
+            String(data: $0, encoding: .utf8)
         } ?? ""
+        let generatedRootURL = request.generatedBundle.rootPath.map {
+            URL(fileURLWithPath: $0, isDirectory: true)
+                .standardizedFileURL
+        }
+        let generatedBootstrapURL = generatedRootURL?
+            .appendingPathComponent(bitwardenDetectFillBootstrapFile)
+            .standardizedFileURL
+        let generatedBundleContained =
+            request.generatedBundle.copiedResourcePaths.contains(
+                bitwardenDetectFillBootstrapFile
+            )
+                && generatedRootURL.map { root in
+                    generatedBootstrapURL.map {
+                        contains(root: root, candidate: $0)
+                    } ?? false
+                } == true
+        let generatedBootstrapData =
+            generatedBundleContained
+                ? generatedBootstrapURL.flatMap { readData($0) }
+                : nil
+        let sourceBootstrapSHA256 = sourceBootstrapData.map(sha256)
+        let generatedBootstrapSHA256 = generatedBootstrapData.map(sha256)
+        let sourceAndGeneratedByteEqual =
+            sourceBootstrapData != nil
+                && generatedBootstrapData != nil
+                && sourceBootstrapData == generatedBootstrapData
+        let manifestURL = root?.appendingPathComponent("manifest.json")
+        let manifestData = manifestURL.flatMap { readData($0) }
+        let manifestMetadata = metadata(fromManifestData: manifestData)
         let packageOwnedFiles =
             request.files == [bitwardenDetectFillBootstrapFile]
             && bootstrap.isEmpty == false
-        let packageShapeMatched =
+        let basePackageShapeMatched =
             background.contains("chrome.scripting.executeScript")
             && background.contains("triggerAutofillScriptInjection")
             && background.contains("bootstrap-autofill.js")
             && bootstrap.contains("collectPageDetailsImmediately")
             && bootstrap.contains("fillForm")
+        let reviewedResourcePathExact =
+            request.files == [bitwardenDetectFillBootstrapFile]
+        let noRemoteScript =
+            bootstrap.contains("document.createElement(\"script") == false
+                && bootstrap.contains("document.createElement('script") == false
+        let noRuntimeGeneratedJS =
+            bootstrap.contains("eval(") == false
+                && bootstrap.contains("new Function(") == false
+                && bootstrap.contains("import(") == false
+        let noNetworkAuthNativeHostRequirement =
+            bootstrap.contains("fetch(") == false
+                && bootstrap.contains("XMLHttpRequest") == false
+                && bootstrap.contains("WebSocket") == false
+                && bootstrap.contains("connect" + "Native") == false
+                && bootstrap.contains("send" + "NativeMessage") == false
+        let compatibleWithIsolatedTopFrameSyntheticHTTPS =
+            request.world == "ISOLATED"
+                && request.frameIDs == [0]
+                && request.allFrames == false
+                && (request.functionSource?.isEmpty ?? true)
+                && request.arguments.isEmpty
+                && URL(string: request.targetURL)?.scheme?.lowercased()
+                    == "https"
+                && request.targetURL == request.syntheticLoginURL
+        var shapeBlockers: [String] = []
+        if reviewedResourcePathExact == false {
+            shapeBlockers.append("reviewedResourcePathChanged")
+        }
+        if generatedBundleContained == false {
+            shapeBlockers.append("generatedBundleContainmentMissing")
+        }
+        if sourceAndGeneratedByteEqual == false {
+            shapeBlockers.append("sourceGeneratedCopyMismatch")
+        }
+        if basePackageShapeMatched == false {
+            shapeBlockers.append("reviewedShapeChanged")
+        }
+        if noRemoteScript == false {
+            shapeBlockers.append("remoteScriptInjectionDetected")
+        }
+        if noRuntimeGeneratedJS == false {
+            shapeBlockers.append("runtimeGeneratedJavaScriptDetected")
+        }
+        if noNetworkAuthNativeHostRequirement == false {
+            shapeBlockers.append("networkAuthOrNativeHostRequirementDetected")
+        }
+        if compatibleWithIsolatedTopFrameSyntheticHTTPS == false {
+            shapeBlockers.append("isolatedTopFrameSyntheticHTTPSShapeChanged")
+        }
+        let shapeEquivalentToReviewedRecord = shapeBlockers.isEmpty
+        let reviewedResourceAudit =
+            ChromeMV3LocalExperimentalReviewedResourceAudit(
+                resourcePath: bitwardenDetectFillBootstrapFile,
+                sourcePackagePath: sourceBootstrapURL?.path,
+                generatedResourcePath: generatedBootstrapURL?.path,
+                sourcePackageSHA256: sourceBootstrapSHA256,
+                generatedResourceSHA256: generatedBootstrapSHA256,
+                expectedReviewedSHA256: reviewedRecord.reviewedSHA256,
+                previousReviewedSHA256:
+                    reviewedRecord.previousReviewedSHA256,
+                manifestSHA256: manifestData.map(sha256),
+                packageName: manifestMetadata.name,
+                packageVersion: manifestMetadata.version,
+                sourceAndGeneratedByteEqual: sourceAndGeneratedByteEqual,
+                generatedBundleContained: generatedBundleContained,
+                reviewedResourcePathExact: reviewedResourcePathExact,
+                packageOwned: packageOwnedFiles && generatedBundleContained,
+                noRemoteScript: noRemoteScript,
+                noRuntimeGeneratedJS: noRuntimeGeneratedJS,
+                noNetworkAuthNativeHostRequirement:
+                    noNetworkAuthNativeHostRequirement,
+                compatibleWithIsolatedTopFrameSyntheticHTTPS:
+                    compatibleWithIsolatedTopFrameSyntheticHTTPS,
+                shapeEquivalentToReviewedRecord:
+                    shapeEquivalentToReviewedRecord,
+                reviewReason: reviewedRecord.reviewReason,
+                shapeBlockers: shapeBlockers.sorted(),
+                diagnostics: [
+                    "Reviewed resource audit reason: \(reviewedRecord.reviewReason).",
+                    "Reviewed resource expected SHA-256: \(reviewedRecord.reviewedSHA256).",
+                    "Previous reviewed SHA-256: \(reviewedRecord.previousReviewedSHA256 ?? "none").",
+                    "Source package SHA-256: \(sourceBootstrapSHA256 ?? "missing").",
+                    "Generated resource SHA-256: \(generatedBootstrapSHA256 ?? "missing").",
+                    "Source/generated byte-equal: \(sourceAndGeneratedByteEqual).",
+                    "Package metadata: name=\(manifestMetadata.name ?? "unknown"), version=\(manifestMetadata.version ?? "unknown").",
+                    shapeEquivalentToReviewedRecord
+                        ? "Reviewed resource shape is equivalent to the local experimental reviewed record."
+                        : "Reviewed resource shape is blocked pending review: \(shapeBlockers.sorted().joined(separator: ", ")).",
+                ]
+            )
         return ChromeMV3LocalExperimentalProgrammaticInjectionShapeAudit(
             apiUsed: "chrome.scripting.executeScript",
             sourceFile: "background.js",
@@ -606,9 +809,9 @@ enum ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog {
             otherInjectionPresent: false,
             packageOwnedFiles: packageOwnedFiles,
             packageOwnedFunction: false,
-            packageShapeMatched: packageShapeMatched,
-            reviewedBootstrapSHA256:
-                bootstrap.isEmpty ? nil : sha256(bootstrap),
+            packageShapeMatched: basePackageShapeMatched,
+            reviewedBootstrapSHA256: generatedBootstrapSHA256,
+            reviewedResourceAudit: reviewedResourceAudit,
             tabID: request.tabID,
             frameIDs: request.frameIDs,
             allFrames: request.allFrames,
@@ -623,9 +826,11 @@ enum ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog {
             hostPermissionOrActiveTabAllowed:
                 request.hostPermissionOrActiveTabAllowed,
             diagnostics: [
-                packageShapeMatched
+                basePackageShapeMatched
                     ? "Matched the reviewed local Bitwarden worker-triggered bootstrap injection shape."
                     : "Did not match the reviewed local Bitwarden worker-triggered bootstrap injection shape.",
+                "Reviewed resource source/generated equality recorded as \(sourceAndGeneratedByteEqual).",
+                "Reviewed resource audit blockers: \(shapeBlockers.sorted().joined(separator: ", ")).",
             ]
         )
     }
@@ -660,10 +865,41 @@ enum ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog {
         try? String(contentsOf: url, encoding: .utf8)
     }
 
+    private static func readData(_ url: URL) -> Data? {
+        try? Data(contentsOf: url)
+    }
+
     private static func sha256(_ source: String) -> String {
         SHA256.hash(data: Data(source.utf8))
             .map { String(format: "%02x", $0) }
             .joined()
+    }
+
+    private static func sha256(_ data: Data) -> String {
+        SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
+    private static func metadata(
+        fromManifestData data: Data?
+    ) -> (name: String?, version: String?) {
+        guard let data,
+              let object = try? JSONSerialization.jsonObject(with: data)
+                as? [String: Any]
+        else { return (nil, nil) }
+        return (
+            object["short_name"] as? String
+                ?? object["name"] as? String,
+            object["version"] as? String
+        )
+    }
+
+    private static func contains(root: URL, candidate: URL) -> Bool {
+        let rootPath = root.standardizedFileURL.path
+        let candidatePath = candidate.standardizedFileURL.path
+        return candidatePath == rootPath
+            || candidatePath.hasPrefix(rootPath + "/")
     }
 }
 

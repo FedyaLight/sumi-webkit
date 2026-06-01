@@ -2072,6 +2072,42 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                 .status,
             .copiedGeneratedBundleFile
         )
+        let reviewedAudit = try XCTUnwrap(
+            detectFill.programmaticInjectionAttempt.shapeAudit
+                .reviewedResourceAudit
+        )
+        XCTAssertEqual(reviewedAudit.resourcePath, "content/bootstrap-autofill.js")
+        XCTAssertEqual(
+            reviewedAudit.sourcePackageSHA256,
+            "7d3a88b4b1b8ae882a20ba4decd2df6fc9859c72fe1e7d3a5a60eabb6e7d5d8e"
+        )
+        XCTAssertEqual(
+            reviewedAudit.sourcePackageSHA256,
+            reviewedAudit.generatedResourceSHA256
+        )
+        XCTAssertEqual(
+            reviewedAudit.expectedReviewedSHA256,
+            ChromeMV3LocalExperimentalProductNormalTabExperimentPolicy
+                .reviewedBitwardenBootstrapAutofillSHA256
+        )
+        XCTAssertEqual(
+            reviewedAudit.previousReviewedSHA256,
+            "89b0c2ce4d57431ddbfc8a28992ddf2cd36f2d2bbe64657c89bc164c76fe2b58"
+        )
+        XCTAssertEqual(reviewedAudit.reviewReason, "reviewedLocalPackageHashUpdated")
+        XCTAssertEqual(reviewedAudit.packageVersion, "2026.4.1")
+        XCTAssertTrue(reviewedAudit.sourceAndGeneratedByteEqual)
+        XCTAssertTrue(reviewedAudit.generatedBundleContained)
+        XCTAssertTrue(reviewedAudit.reviewedResourcePathExact)
+        XCTAssertTrue(reviewedAudit.packageOwned)
+        XCTAssertTrue(reviewedAudit.noRemoteScript)
+        XCTAssertTrue(reviewedAudit.noRuntimeGeneratedJS)
+        XCTAssertTrue(reviewedAudit.noNetworkAuthNativeHostRequirement)
+        XCTAssertTrue(
+            reviewedAudit.compatibleWithIsolatedTopFrameSyntheticHTTPS
+        )
+        XCTAssertTrue(reviewedAudit.shapeEquivalentToReviewedRecord)
+        XCTAssertTrue(reviewedAudit.shapeBlockers.isEmpty)
         let detectFillRoutes = Dictionary(
             uniqueKeysWithValues:
                 detectFill.routeRecords.map { ($0.purpose, $0) }

@@ -291,6 +291,107 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
     }
 
     @MainActor
+    func testFixtureSuccessDoesNotImplyCurrentRealPackageReviewedHash()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Named WKContentWorld execution requires macOS 15.5.")
+        }
+        let manualRequest = try makeFixture().manualSmokeRequest()
+        let result = await
+            ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter
+            .runProductNormalTabExecutionExperiment(
+                ChromeMV3LocalExperimentalProductNormalTabExecutionExperimentRequest(
+                    normalTabExecutionRequest: manualRequest,
+                    localProductNormalTabExperimentGateAllowed: true,
+                    requiredReviewedScriptSHA256:
+                        ChromeMV3LocalExperimentalProductNormalTabExperimentPolicy
+                        .reviewedBitwardenBootstrapAutofillSHA256
+                )
+            )
+
+        XCTAssertFalse(result.allowed)
+        XCTAssertTrue(result.attempted)
+        XCTAssertFalse(result.reviewedScriptHashMatched)
+        XCTAssertFalse(result.reviewedScriptExecutedByWebKit)
+        XCTAssertTrue(result.blockers.contains(.blockedByMissingReviewedResource))
+        XCTAssertTrue(result.runtimeCost.runtimeObjectsCreatedDuringExperiment.isEmpty)
+        XCTAssertNotEqual(
+            manualRequest.injectionPlan.generatedResourceHash,
+            ChromeMV3LocalExperimentalProductNormalTabExperimentPolicy
+                .reviewedBitwardenBootstrapAutofillSHA256
+        )
+    }
+
+    func testReviewedResourceAuditRecordsSourceGeneratedEqualityAndRegistry()
+        throws
+    {
+        let attempt =
+            ChromeMV3LocalExperimentalProgrammaticInjectionSession()
+            .attempt(try makeFixture().modeledRequest())
+        let audit = try XCTUnwrap(attempt.shapeAudit.reviewedResourceAudit)
+
+        XCTAssertTrue(attempt.allowed)
+        XCTAssertEqual(audit.resourcePath, "content/bootstrap-autofill.js")
+        XCTAssertTrue(audit.sourceAndGeneratedByteEqual)
+        XCTAssertEqual(audit.sourcePackageSHA256, audit.generatedResourceSHA256)
+        XCTAssertEqual(
+            audit.expectedReviewedSHA256,
+            ChromeMV3LocalExperimentalProductNormalTabExperimentPolicy
+                .reviewedBitwardenBootstrapAutofillSHA256
+        )
+        XCTAssertEqual(
+            audit.previousReviewedSHA256,
+            "89b0c2ce4d57431ddbfc8a28992ddf2cd36f2d2bbe64657c89bc164c76fe2b58"
+        )
+        XCTAssertEqual(audit.reviewReason, "reviewedLocalPackageHashUpdated")
+        XCTAssertTrue(audit.generatedBundleContained)
+        XCTAssertTrue(audit.reviewedResourcePathExact)
+        XCTAssertTrue(audit.packageOwned)
+        XCTAssertTrue(audit.noRemoteScript)
+        XCTAssertTrue(audit.noRuntimeGeneratedJS)
+        XCTAssertTrue(audit.noNetworkAuthNativeHostRequirement)
+        XCTAssertTrue(audit.compatibleWithIsolatedTopFrameSyntheticHTTPS)
+        XCTAssertTrue(audit.shapeEquivalentToReviewedRecord)
+        XCTAssertTrue(audit.shapeBlockers.isEmpty)
+    }
+
+    @MainActor
+    func testReviewedResourceAuditBlocksGeneratedCopyMismatchBeforeObjects()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Named WKContentWorld execution requires macOS 15.5.")
+        }
+        let fixture = try makeFixture()
+        try write(
+            "changed generated copy",
+            to:
+                fixture.generated.appendingPathComponent(
+                    "content/bootstrap-autofill.js"
+                )
+        )
+        let request = fixture.adapterRequest()
+        let audit = try XCTUnwrap(
+            request.modeledInjectionAttempt.shapeAudit.reviewedResourceAudit
+        )
+        let result = await
+            ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter
+            .run(request)
+
+        XCTAssertFalse(request.modeledInjectionAttempt.allowed)
+        XCTAssertFalse(audit.sourceAndGeneratedByteEqual)
+        XCTAssertTrue(audit.shapeBlockers.contains("sourceGeneratedCopyMismatch"))
+        XCTAssertFalse(audit.shapeEquivalentToReviewedRecord)
+        XCTAssertFalse(result.allowed)
+        XCTAssertFalse(result.hiddenSyntheticWebViewCreated)
+        XCTAssertTrue(
+            result.blockers.contains(.reviewedScriptResolutionBlocked)
+        )
+        XCTAssertFalse(result.reviewedScriptExecutedByWebKit)
+    }
+
+    @MainActor
     func testManualNormalTabSmokeBlocksUnsafeGatesBeforeWebKitObjects()
         async throws
     {
@@ -476,29 +577,39 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
             ChromeMV3LocalExperimentalProductNormalTabExperimentPolicy
                 .reviewedBitwardenBootstrapAutofillSHA256
         )
-        if productExperiment.reviewedScriptHashMatched {
-            XCTAssertTrue(
-                productExperiment.allowed,
-                productExperiment.diagnostics.joined(separator: "\n")
-            )
-            XCTAssertTrue(productExperiment.finalValuesMatchDummyFill)
-            XCTAssertEqual(
-                productExperiment.runtimeCost.retainedObjectCountAfterTeardown,
-                0
-            )
-        } else {
-            XCTAssertFalse(productExperiment.allowed)
-            XCTAssertTrue(
-                productExperiment.blockers.contains(
-                    .blockedByMissingReviewedResource
-                )
-            )
-            XCTAssertFalse(productExperiment.reviewedScriptExecutedByWebKit)
-            XCTAssertTrue(
-                productExperiment.runtimeCost
-                    .runtimeObjectsCreatedDuringExperiment.isEmpty
-            )
-        }
+        XCTAssertEqual(
+            productExperiment.reviewedScriptSHA256,
+            ChromeMV3LocalExperimentalProductNormalTabExperimentPolicy
+                .reviewedBitwardenBootstrapAutofillSHA256
+        )
+        XCTAssertTrue(productExperiment.reviewedScriptHashMatched)
+        XCTAssertTrue(
+            productExperiment.allowed,
+            productExperiment.diagnostics.joined(separator: "\n")
+        )
+        XCTAssertTrue(productExperiment.reviewedScriptExecutedByWebKit)
+        XCTAssertTrue(productExperiment.finalValuesMatchDummyFill)
+        XCTAssertEqual(
+            productExperiment.runtimeCost.retainedObjectCountAfterTeardown,
+            0
+        )
+        let audit = try XCTUnwrap(productExperiment.reviewedResourceAudit)
+        XCTAssertEqual(audit.reviewReason, "reviewedLocalPackageHashUpdated")
+        XCTAssertEqual(
+            audit.sourcePackageSHA256,
+            "7d3a88b4b1b8ae882a20ba4decd2df6fc9859c72fe1e7d3a5a60eabb6e7d5d8e"
+        )
+        XCTAssertEqual(audit.sourcePackageSHA256, audit.generatedResourceSHA256)
+        XCTAssertEqual(
+            audit.expectedReviewedSHA256,
+            ChromeMV3LocalExperimentalProductNormalTabExperimentPolicy
+                .reviewedBitwardenBootstrapAutofillSHA256
+        )
+        XCTAssertEqual(audit.packageVersion, "2026.4.1")
+        XCTAssertTrue(audit.sourceAndGeneratedByteEqual)
+        XCTAssertTrue(audit.generatedBundleContained)
+        XCTAssertTrue(audit.shapeEquivalentToReviewedRecord)
+        XCTAssertTrue(audit.shapeBlockers.isEmpty)
         XCTAssertFalse(productExperiment.managerReadoutExecutedExperiment)
         XCTAssertTrue(detectFill.modeledDummyFillChangedDOM)
         XCTAssertEqual(
@@ -792,11 +903,15 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
                     hostPermissions: hostPermissions
                 )
             )
+            let generatedResourceSHA256 =
+                attempt.shapeAudit.reviewedResourceAudit?
+                .generatedResourceSHA256
+                    ?? attempt.shapeAudit.reviewedBootstrapSHA256
             let resource = ChromeMV3ProductNormalTabReviewedResource(
                 reviewedScriptPath: "content/bootstrap-autofill.js",
                 generatedResourceHash:
                     reviewedResourcePresent
-                        ? attempt.shapeAudit.reviewedBootstrapSHA256
+                        ? generatedResourceSHA256
                         : nil,
                 generatedResourceFileSystemPath:
                     reviewedResourcePresent
