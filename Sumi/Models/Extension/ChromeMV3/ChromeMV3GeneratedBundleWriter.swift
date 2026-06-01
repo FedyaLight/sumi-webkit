@@ -3,8 +3,8 @@
 //  Sumi
 //
 //  Deterministic generated-bundle draft writer for staged Chrome MV3 originals.
-//  This layer copies manifest-referenced files only; it does not generate,
-//  load, register, or execute extension runtime code.
+//  This layer copies manifest-referenced files and manifest locale catalogs;
+//  it does not generate, load, register, or execute extension runtime code.
 //
 
 import CryptoKit
@@ -538,6 +538,11 @@ struct ChromeMV3GeneratedBundleWriter {
         }
 
         try appendIconPaths(manifest["icons"], field: "icons", to: &resources)
+        try appendLocaleCatalogPaths(
+            manifest["default_locale"],
+            originalRootURL: originalRootURL,
+            to: &resources
+        )
 
         if let entries = manifest["web_accessible_resources"] as? [[String: Any]] {
             for (index, entry) in entries.enumerated() {
@@ -581,6 +586,75 @@ struct ChromeMV3GeneratedBundleWriter {
                 serviceWorkerFetchResourceRecords
                     .sorted(by: serviceWorkerFetchResourceRecordSort)
         )
+    }
+
+    private func appendLocaleCatalogPaths(
+        _ defaultLocaleValue: Any?,
+        originalRootURL: URL,
+        to resources: inout [ManifestResourceReference]
+    ) throws {
+        guard let defaultLocale = defaultLocaleValue as? String,
+              normalizedLocaleDirectoryGeneratedBundleWriter(defaultLocale)
+                != nil
+        else { return }
+        let localesRoot = originalRootURL
+            .appendingPathComponent("_locales", isDirectory: true)
+            .standardizedFileURL
+        guard containsGeneratedBundleWriter(
+            root: originalRootURL,
+            candidate: localesRoot
+        ),
+              directoryExistsGeneratedBundleWriter(localesRoot)
+        else { return }
+        guard
+            let localeDirectories = try? FileManager.default
+                .contentsOfDirectory(
+                    at: localesRoot,
+                    includingPropertiesForKeys: [
+                        .isDirectoryKey,
+                        .isSymbolicLinkKey,
+                    ],
+                    options: [.skipsHiddenFiles]
+                )
+        else { return }
+        for directory in localeDirectories.sorted(by: { $0.path < $1.path }) {
+            let directory = directory.standardizedFileURL
+            guard containsGeneratedBundleWriter(
+                root: originalRootURL,
+                candidate: directory
+            ) else { continue }
+            let locale = directory.lastPathComponent
+            guard normalizedLocaleDirectoryGeneratedBundleWriter(locale)
+                != nil
+            else { continue }
+            let values = try directory.resourceValues(forKeys: [
+                .isDirectoryKey,
+                .isSymbolicLinkKey,
+            ])
+            guard values.isSymbolicLink != true,
+                  values.isDirectory == true
+            else { continue }
+            let messages = directory.appendingPathComponent("messages.json")
+            let messageValues = try? messages.resourceValues(forKeys: [
+                .isRegularFileKey,
+                .isSymbolicLinkKey,
+            ])
+            guard messageValues?.isSymbolicLink != true,
+                  messageValues?.isRegularFile == true
+            else { continue }
+            let relative = "_locales/\(locale)/messages.json"
+            _ = try normalizedResourcePath(
+                relative,
+                field: "_locales.messages"
+            )
+            resources.append(
+                ManifestResourceReference(
+                    field: "_locales.messages",
+                    path: relative,
+                    policy: .exactRequired
+                )
+            )
+        }
     }
 
     private func appendServiceWorkerGeneratedBundleDependencies(
@@ -2136,6 +2210,31 @@ private func containsGeneratedBundleWriter(root: URL, candidate: URL) -> Bool {
         candidate.resolvingSymlinksInPath().standardizedFileURL.path
     return resolvedCandidate == resolvedRoot
         || resolvedCandidate.hasPrefix(resolvedRoot + "/")
+}
+
+private func normalizedLocaleDirectoryGeneratedBundleWriter(
+    _ value: String
+) -> String? {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        .replacingOccurrences(of: "-", with: "_")
+    guard trimmed.isEmpty == false else { return nil }
+    let parts = trimmed.split(separator: "_", omittingEmptySubsequences: true)
+    guard let language = parts.first,
+          language.range(
+            of: #"^[A-Za-z]{2,3}$"#,
+            options: .regularExpression
+          ) != nil
+    else { return nil }
+    let normalizedLanguage = language.lowercased()
+    guard parts.count > 1 else { return normalizedLanguage }
+    guard parts.count == 2,
+          let region = parts.dropFirst().first,
+          region.range(
+            of: #"^(?:[A-Za-z]{2}|\d{3})$"#,
+            options: .regularExpression
+          ) != nil
+    else { return nil }
+    return "\(normalizedLanguage)_\(region.uppercased())"
 }
 
 private func directoryExistsGeneratedBundleWriter(_ url: URL) -> Bool {

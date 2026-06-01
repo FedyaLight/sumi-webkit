@@ -3555,7 +3555,10 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         let operations = executionStartResult?.i18nOperationRecords ?? []
         let fulfilled = operations.filter { $0.status == "fulfilled" }.count
         let blocked = operations.filter { $0.status == "blocked" }.count
-        return "available: getUILanguage=true, default=\(policy.i18nGetUILanguageAvailableByDefault), uiLanguage=\(policy.i18nSelectedUILanguage), source=\(policy.i18nSelectedUILanguageSource), fulfilled=\(fulfilled), blocked=\(blocked), unsupported=\(policy.i18nUnsupportedAPIs.joined(separator: ","))."
+        let requestedMessages =
+            uniqueSortedRealPackages(operations.compactMap(\.messageName))
+                .joined(separator: ",")
+        return "available: getUILanguage=true, getMessage=\(policy.i18nGetMessageAvailableInLocalExperimentalGate), defaultUILanguage=\(policy.i18nGetUILanguageAvailableByDefault), defaultGetMessage=\(policy.i18nGetMessageAvailableByDefault), generatedBundleLocalesOnly=\(policy.i18nGeneratedBundleLocalesOnly), networkLocales=\(policy.i18nNetworkLocalesAllowed), filesystemLocaleFallback=\(policy.i18nFilesystemLocaleFallbackAllowed), uiLanguage=\(policy.i18nSelectedUILanguage), localeSource=\(policy.i18nLocaleSource), selectedLocale=\(policy.i18nSelectedLocale), fallbackLocale=\(policy.i18nFallbackLocale ?? "none"), defaultLocale=\(policy.i18nDefaultLocale ?? "none"), availableLocales=\(policy.i18nAvailableLocales.joined(separator: ",")), missingCatalogs=\(policy.i18nMissingCatalogLocales.joined(separator: ",")), invalidCatalogs=\(policy.i18nInvalidCatalogPaths.joined(separator: ",")), malformedMessages=\(policy.i18nMalformedMessages.joined(separator: ",")), requestedMessages=\(requestedMessages), fulfilled=\(fulfilled), blocked=\(blocked), unsupported=\(policy.i18nUnsupportedAPIs.joined(separator: ","))."
     }
 
     private static func serviceWorkerI18nOperationSummary(
@@ -3565,6 +3568,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             [
                 record.operation,
                 record.status,
+                record.messageName ?? "none",
                 record.value ?? "none",
                 record.source ?? "none",
                 record.blocker ?? "none",

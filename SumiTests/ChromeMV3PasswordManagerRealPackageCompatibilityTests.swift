@@ -1215,6 +1215,20 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             harness.contains("i18nGetUILanguageAvailableByDefault: " + positive)
         )
         XCTAssertFalse(
+            harness.contains("i18nGetMessageAvailableByDefault: " + positive)
+        )
+        XCTAssertTrue(
+            harness.contains("generatedBundleLocalesOnly: " + positive)
+        )
+        XCTAssertFalse(
+            harness.contains("i18nNetworkLocalesAllowed: " + positive)
+        )
+        XCTAssertFalse(
+            harness.contains(
+                "i18nFilesystemLocaleFallbackAllowed: " + positive
+            )
+        )
+        XCTAssertFalse(
             harness.contains(
                 "workerGlobalEventTargetAvailableByDefault: " + positive
             )
@@ -1312,6 +1326,10 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertTrue(
             bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
+                .contains("chrome.runtime.sendMessage")
+        )
+        XCTAssertFalse(
+            bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
                 .contains("chrome.i18n.getMessage")
         )
         XCTAssertFalse(
@@ -1386,6 +1404,14 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                 .contains("getUILanguage=true")
         )
         XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.i18nCapabilityResult
+                .contains("getMessage=true")
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.i18nCapabilityResult
+                .contains("requestedMessages=addCardMenu")
+        )
+        XCTAssertTrue(
             bitwarden.serviceWorkerEventReadiness.alarmPolicyResult
                 .contains("explicitTriggerOnly=true")
         )
@@ -1423,6 +1449,14 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                 .contains {
                     $0.hasPrefix(
                         "chrome.i18n.getUILanguage:fulfilled:"
+                    )
+                }
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.i18nOperationSummary
+                .contains {
+                    $0.hasPrefix(
+                        "chrome.i18n.getMessage:fulfilled:copyPassword:"
                     )
                 }
         )

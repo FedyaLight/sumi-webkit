@@ -629,6 +629,312 @@ private struct ChromeMV3ServiceWorkerJSUILanguageSelection: Equatable {
     }
 }
 
+struct ChromeMV3ServiceWorkerJSI18nCatalogStatus:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var getMessageAvailableInLocalExperimentalGate: Bool
+    var getMessageAvailableByDefault: Bool
+    var generatedBundleLocalesOnly: Bool
+    var networkLocalesAllowed: Bool
+    var filesystemLocaleFallbackAllowed: Bool
+    var localeSource: String
+    var defaultLocale: String?
+    var selectedLocale: String
+    var fallbackLocale: String?
+    var localeLookupOrder: [String]
+    var availableLocales: [String]
+    var missingCatalogLocales: [String]
+    var invalidCatalogPaths: [String]
+    var malformedMessages: [String]
+    var blockers: [String]
+    var diagnostics: [String]
+}
+
+private struct ChromeMV3ServiceWorkerJSI18nCatalogMessage {
+    var originalName: String
+    var message: String
+    var placeholders: [String: String]
+}
+
+private struct ChromeMV3ServiceWorkerJSI18nCatalogSnapshot {
+    var status: ChromeMV3ServiceWorkerJSI18nCatalogStatus
+    var catalogs: [String: [String: ChromeMV3ServiceWorkerJSI18nCatalogMessage]]
+
+    var jsonObject: NSDictionary {
+        var localeObjects: [String: Any] = [:]
+        for (locale, messages) in catalogs {
+            var messageObjects: [String: Any] = [:]
+            for (key, message) in messages {
+                messageObjects[key] = [
+                    "name": message.originalName,
+                    "message": message.message,
+                    "placeholders": message.placeholders,
+                ] as NSDictionary
+            }
+            localeObjects[locale] = messageObjects as NSDictionary
+        }
+        return [
+            "available": status.getMessageAvailableInLocalExperimentalGate,
+            "availableByDefault": status.getMessageAvailableByDefault,
+            "generatedBundleLocalesOnly": status.generatedBundleLocalesOnly,
+            "networkLocalesAllowed": status.networkLocalesAllowed,
+            "filesystemLocaleFallbackAllowed":
+                status.filesystemLocaleFallbackAllowed,
+            "localeSource": status.localeSource,
+            "defaultLocale": status.defaultLocale as Any,
+            "selectedLocale": status.selectedLocale,
+            "fallbackLocale": status.fallbackLocale as Any,
+            "localeLookupOrder": status.localeLookupOrder,
+            "availableLocales": status.availableLocales,
+            "missingCatalogLocales": status.missingCatalogLocales,
+            "invalidCatalogPaths": status.invalidCatalogPaths,
+            "malformedMessages": status.malformedMessages,
+            "blockers": status.blockers,
+            "diagnostics": status.diagnostics,
+            "catalogs": localeObjects as NSDictionary,
+        ] as NSDictionary
+    }
+
+    static func make(
+        manifest: ChromeMV3Manifest?,
+        generatedBundleRecord record: ChromeMV3GeneratedBundleRecord?,
+        uiLanguage: String,
+        uiLanguageSource: String,
+        discoveryAllowed: Bool,
+        policyBlockers: [String]
+    ) -> ChromeMV3ServiceWorkerJSI18nCatalogSnapshot {
+        let selectedLocale =
+            normalizedChromeI18nLocaleIdentifierServiceWorkerJS(uiLanguage)
+            ?? "en_US"
+        let defaultLocale =
+            normalizedChromeI18nLocaleIdentifierServiceWorkerJS(
+                manifest?.defaultLocale
+            )
+        let baseLocale =
+            selectedLocale.split(separator: "_").first.map(String.init)
+        let fallbackLocale = defaultLocale ?? baseLocale
+        let lookupOrder = uniqueSortedByFirstOccurrenceServiceWorkerJS(
+            [
+                selectedLocale,
+                selectedLocale.contains("_") ? baseLocale : nil,
+                defaultLocale,
+            ].compactMap { $0 }
+        )
+        var blockers = policyBlockers
+        var diagnostics = [
+            "chrome.i18n.getMessage is local-experimental and default-off.",
+            "Locale catalogs are discovered only from generated-bundle copied resource records under _locales/<locale>/messages.json.",
+            "Network locale downloads, arbitrary filesystem fallback, traversal, and symbolic-link locale access are blocked.",
+        ]
+        var invalidCatalogs: [String] = []
+        var malformedMessages: [String] = []
+        var catalogs: [String: [String: ChromeMV3ServiceWorkerJSI18nCatalogMessage]] = [:]
+
+        guard discoveryAllowed else {
+            blockers = uniqueSortedServiceWorkerJS(
+                blockers
+                    + ["i18nCatalogDiscoveryBlockedByPolicy"]
+            )
+            diagnostics.append(
+                "Locale catalog discovery did not run because the local experimental worker gate is closed or execution is otherwise blocked."
+            )
+            return ChromeMV3ServiceWorkerJSI18nCatalogSnapshot(
+                status: ChromeMV3ServiceWorkerJSI18nCatalogStatus(
+                    getMessageAvailableInLocalExperimentalGate: false,
+                    getMessageAvailableByDefault: false,
+                    generatedBundleLocalesOnly: true,
+                    networkLocalesAllowed: false,
+                    filesystemLocaleFallbackAllowed: false,
+                    localeSource: uiLanguageSource,
+                    defaultLocale: defaultLocale,
+                    selectedLocale: selectedLocale,
+                    fallbackLocale: fallbackLocale,
+                    localeLookupOrder: lookupOrder,
+                    availableLocales: [],
+                    missingCatalogLocales: lookupOrder,
+                    invalidCatalogPaths: [],
+                    malformedMessages: [],
+                    blockers: blockers,
+                    diagnostics: uniqueSortedServiceWorkerJS(diagnostics)
+                ),
+                catalogs: [:]
+            )
+        }
+
+        guard let record else {
+            blockers = uniqueSortedServiceWorkerJS(
+                blockers + ["generatedBundleRecordMissing"]
+            )
+            return ChromeMV3ServiceWorkerJSI18nCatalogSnapshot(
+                status: ChromeMV3ServiceWorkerJSI18nCatalogStatus(
+                    getMessageAvailableInLocalExperimentalGate: false,
+                    getMessageAvailableByDefault: false,
+                    generatedBundleLocalesOnly: true,
+                    networkLocalesAllowed: false,
+                    filesystemLocaleFallbackAllowed: false,
+                    localeSource: uiLanguageSource,
+                    defaultLocale: defaultLocale,
+                    selectedLocale: selectedLocale,
+                    fallbackLocale: fallbackLocale,
+                    localeLookupOrder: lookupOrder,
+                    availableLocales: [],
+                    missingCatalogLocales: lookupOrder,
+                    invalidCatalogPaths: [],
+                    malformedMessages: [],
+                    blockers: blockers,
+                    diagnostics: uniqueSortedServiceWorkerJS(diagnostics)
+                ),
+                catalogs: [:]
+            )
+        }
+
+        let root = URL(
+            fileURLWithPath: record.generatedBundleRootPath,
+            isDirectory: true
+        ).standardizedFileURL
+        if directoryExistsServiceWorkerJS(root) == false {
+            blockers.append("generatedBundleRootMissing")
+        }
+
+        for copiedPath in record.copiedResourcePaths.sorted()
+        where copiedPath.hasPrefix("_locales/") {
+            guard isSafeRelativeServiceWorkerJSPath(copiedPath),
+                  copiedPath.split(separator: "/").count == 3,
+                  copiedPath.hasSuffix("/messages.json")
+            else {
+                invalidCatalogs.append(copiedPath)
+                continue
+            }
+            let parts = copiedPath.split(separator: "/").map(String.init)
+            guard parts.first == "_locales",
+                  parts.last == "messages.json",
+                  let locale =
+                    normalizedChromeI18nLocaleIdentifierServiceWorkerJS(
+                        parts[1]
+                    )
+            else {
+                invalidCatalogs.append(copiedPath)
+                continue
+            }
+            let candidate = root
+                .appendingPathComponent(copiedPath)
+                .standardizedFileURL
+            guard
+                let relative = relativePathInGeneratedBundle(
+                    candidate,
+                    root: root
+                ),
+                relative == copiedPath,
+                containsServiceWorkerJS(root: root, candidate: candidate)
+            else {
+                invalidCatalogs.append(copiedPath)
+                continue
+            }
+            guard
+                pathContainsSymbolicLinkServiceWorkerJS(candidate, root: root)
+                    == false
+            else {
+                invalidCatalogs.append(copiedPath)
+                continue
+            }
+            guard regularFileExistsServiceWorkerJS(candidate),
+                  let data = try? Data(contentsOf: candidate),
+                  let object = try? JSONSerialization.jsonObject(with: data)
+                    as? [String: Any]
+            else {
+                invalidCatalogs.append(copiedPath)
+                continue
+            }
+            var parsedMessages:
+                [String: ChromeMV3ServiceWorkerJSI18nCatalogMessage] =
+                    catalogs[locale] ?? [:]
+            for (rawName, rawEntry) in object {
+                let key = rawName.lowercased()
+                guard isSafeChromeI18nMessageNameServiceWorkerJS(rawName),
+                      rawName.hasPrefix("@@") == false,
+                      let entry = rawEntry as? [String: Any],
+                      let message = entry["message"] as? String
+                else {
+                    malformedMessages.append("\(locale):\(rawName)")
+                    continue
+                }
+                var placeholders: [String: String] = [:]
+                if let placeholderObject =
+                    entry["placeholders"] as? [String: Any]
+                {
+                    for (placeholderName, placeholderValue)
+                    in placeholderObject {
+                        guard
+                            isSafeChromeI18nMessageNameServiceWorkerJS(
+                                placeholderName
+                            ),
+                            let placeholderEntry =
+                                placeholderValue as? [String: Any],
+                            let content = placeholderEntry["content"]
+                                as? String
+                        else {
+                            malformedMessages.append(
+                                "\(locale):\(rawName).\(placeholderName)"
+                            )
+                            continue
+                        }
+                        placeholders[placeholderName.lowercased()] = content
+                    }
+                }
+                parsedMessages[key] =
+                    ChromeMV3ServiceWorkerJSI18nCatalogMessage(
+                        originalName: rawName,
+                        message: message,
+                        placeholders: placeholders
+                    )
+            }
+            catalogs[locale] = parsedMessages
+        }
+
+        let availableLocales = catalogs.keys.sorted()
+        let missingCatalogs =
+            lookupOrder.filter { availableLocales.contains($0) == false }
+        if defaultLocale != nil, availableLocales.contains(defaultLocale!) == false {
+            blockers.append("defaultLocaleCatalogMissing")
+        }
+        if invalidCatalogs.isEmpty == false {
+            blockers.append("invalidLocaleCatalogBlocked")
+        }
+        if malformedMessages.isEmpty == false {
+            blockers.append("malformedLocaleMessagesSkipped")
+        }
+        diagnostics.append(
+            "Selected locale \(selectedLocale) from \(uiLanguageSource); lookup order is \(lookupOrder.joined(separator: ","))."
+        )
+        return ChromeMV3ServiceWorkerJSI18nCatalogSnapshot(
+            status: ChromeMV3ServiceWorkerJSI18nCatalogStatus(
+                getMessageAvailableInLocalExperimentalGate:
+                    policyBlockers.isEmpty,
+                getMessageAvailableByDefault: false,
+                generatedBundleLocalesOnly: true,
+                networkLocalesAllowed: false,
+                filesystemLocaleFallbackAllowed: false,
+                localeSource: uiLanguageSource,
+                defaultLocale: defaultLocale,
+                selectedLocale: selectedLocale,
+                fallbackLocale: fallbackLocale,
+                localeLookupOrder: lookupOrder,
+                availableLocales: availableLocales,
+                missingCatalogLocales: missingCatalogs,
+                invalidCatalogPaths:
+                    uniqueSortedServiceWorkerJS(invalidCatalogs),
+                malformedMessages:
+                    uniqueSortedServiceWorkerJS(malformedMessages),
+                blockers: uniqueSortedServiceWorkerJS(blockers),
+                diagnostics: uniqueSortedServiceWorkerJS(diagnostics)
+            ),
+            catalogs: catalogs
+        )
+    }
+}
+
 private let chromeMV3ServiceWorkerJSHarnessUserAgent =
     "Sumi local experimental MV3 service-worker harness Chrome/0"
 
@@ -693,8 +999,24 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
     var subtleCryptoBlockedAlgorithms: [String]
     var i18nGetUILanguageAvailableInLocalExperimentalGate: Bool
     var i18nGetUILanguageAvailableByDefault: Bool
+    var i18nGetMessageAvailableInLocalExperimentalGate: Bool
+    var i18nGetMessageAvailableByDefault: Bool
+    var i18nGeneratedBundleLocalesOnly: Bool
+    var i18nNetworkLocalesAllowed: Bool
+    var i18nFilesystemLocaleFallbackAllowed: Bool
     var i18nSelectedUILanguage: String
     var i18nSelectedUILanguageSource: String
+    var i18nLocaleSource: String
+    var i18nDefaultLocale: String?
+    var i18nSelectedLocale: String
+    var i18nFallbackLocale: String?
+    var i18nLocaleLookupOrder: [String]
+    var i18nAvailableLocales: [String]
+    var i18nMissingCatalogLocales: [String]
+    var i18nInvalidCatalogPaths: [String]
+    var i18nMalformedMessages: [String]
+    var i18nGetMessageBlockers: [String]
+    var i18nCatalogStatus: ChromeMV3ServiceWorkerJSI18nCatalogStatus
     var i18nUnsupportedAPIs: [String]
     var alarmsAvailableInLocalExperimentalGate: Bool
     var alarmsAvailableByDefault: Bool
@@ -725,7 +1047,9 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
         localExperimentalGateAllowed: Bool,
         generatedBundleRecordAvailable: Bool,
         dynamicImportRewriteExperimentAllowed: Bool = false,
-        uiLanguageOverride: String? = nil
+        uiLanguageOverride: String? = nil,
+        i18nCatalogStatus:
+            ChromeMV3ServiceWorkerJSI18nCatalogStatus? = nil
     ) -> ChromeMV3ServiceWorkerJSExecutionPolicy {
         var blockers: [ChromeMV3ServiceWorkerJSExecutionPolicyBlocker] = []
         if moduleState != .enabled {
@@ -819,6 +1143,38 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
         let uiLanguage = ChromeMV3ServiceWorkerJSUILanguageSelection.select(
             override: uiLanguageOverride
         )
+        let selectedLocale =
+            normalizedChromeI18nLocaleIdentifierServiceWorkerJS(
+                uiLanguage.language
+            ) ?? "en_US"
+        let fallbackLocale =
+            selectedLocale.split(separator: "_").first.map(String.init)
+        let defaultI18nCatalogStatus =
+            ChromeMV3ServiceWorkerJSI18nCatalogStatus(
+                getMessageAvailableInLocalExperimentalGate: available,
+                getMessageAvailableByDefault: false,
+                generatedBundleLocalesOnly: true,
+                networkLocalesAllowed: false,
+                filesystemLocaleFallbackAllowed: false,
+                localeSource: uiLanguage.source,
+                defaultLocale: nil,
+                selectedLocale: selectedLocale,
+                fallbackLocale: fallbackLocale,
+                localeLookupOrder:
+                    uniqueSortedByFirstOccurrenceServiceWorkerJS(
+                        [selectedLocale, fallbackLocale].compactMap { $0 }
+                    ),
+                availableLocales: [],
+                missingCatalogLocales: [],
+                invalidCatalogPaths: [],
+                malformedMessages: [],
+                blockers: available ? [] : blockers.map(\.rawValue),
+                diagnostics: [
+                    "chrome.i18n.getMessage policy was evaluated before locale catalog discovery.",
+                ]
+            )
+        let resolvedI18nCatalogStatus =
+            i18nCatalogStatus ?? defaultI18nCatalogStatus
         let workerGlobalEventTypes =
             available
                 ? [
@@ -834,7 +1190,6 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
                 ? [
                     "chrome.i18n.detectLanguage",
                     "chrome.i18n.getAcceptLanguages",
-                    "chrome.i18n.getMessage",
                 ] : []
         let surface: ChromeMV3ServiceWorkerJSExecutionSurface
         if moduleState != .enabled || extensionEnabled == false {
@@ -904,8 +1259,34 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
             subtleCryptoBlockedAlgorithms: blockedSubtleAlgorithms,
             i18nGetUILanguageAvailableInLocalExperimentalGate: available,
             i18nGetUILanguageAvailableByDefault: false,
+            i18nGetMessageAvailableInLocalExperimentalGate:
+                resolvedI18nCatalogStatus
+                .getMessageAvailableInLocalExperimentalGate,
+            i18nGetMessageAvailableByDefault:
+                resolvedI18nCatalogStatus.getMessageAvailableByDefault,
+            i18nGeneratedBundleLocalesOnly:
+                resolvedI18nCatalogStatus.generatedBundleLocalesOnly,
+            i18nNetworkLocalesAllowed:
+                resolvedI18nCatalogStatus.networkLocalesAllowed,
+            i18nFilesystemLocaleFallbackAllowed:
+                resolvedI18nCatalogStatus.filesystemLocaleFallbackAllowed,
             i18nSelectedUILanguage: uiLanguage.language,
             i18nSelectedUILanguageSource: uiLanguage.source,
+            i18nLocaleSource: resolvedI18nCatalogStatus.localeSource,
+            i18nDefaultLocale: resolvedI18nCatalogStatus.defaultLocale,
+            i18nSelectedLocale: resolvedI18nCatalogStatus.selectedLocale,
+            i18nFallbackLocale: resolvedI18nCatalogStatus.fallbackLocale,
+            i18nLocaleLookupOrder:
+                resolvedI18nCatalogStatus.localeLookupOrder,
+            i18nAvailableLocales: resolvedI18nCatalogStatus.availableLocales,
+            i18nMissingCatalogLocales:
+                resolvedI18nCatalogStatus.missingCatalogLocales,
+            i18nInvalidCatalogPaths:
+                resolvedI18nCatalogStatus.invalidCatalogPaths,
+            i18nMalformedMessages:
+                resolvedI18nCatalogStatus.malformedMessages,
+            i18nGetMessageBlockers: resolvedI18nCatalogStatus.blockers,
+            i18nCatalogStatus: resolvedI18nCatalogStatus,
             i18nUnsupportedAPIs: i18nUnsupportedAPIs,
             alarmsAvailableInLocalExperimentalGate: available,
             alarmsAvailableByDefault: false,
@@ -942,7 +1323,8 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
                         "setTimeout, clearTimeout, setInterval, and clearInterval are available only as an explicit manually drained harness queue; no wall-clock timer or polling loop is created.",
                         "WebCrypto is exposed only inside the local experimental MV3 gate; getRandomValues and randomUUID require Security.framework secure random bytes.",
                         "SubtleCrypto is local-experimental and default-off; this slice supports digest only and rejects key, signing, derivation, encryption, wrapping, and unsupported algorithm calls precisely.",
-                        "chrome.i18n.getUILanguage is available only in the local experimental gate and returns a deterministic UI language string; message catalogs and language detection remain unsupported.",
+                        "chrome.i18n.getUILanguage is available only in the local experimental gate and returns a deterministic UI language string.",
+                        "chrome.i18n.getMessage is available only in the local experimental gate, default-off, synchronous, and backed only by generated-bundle-contained _locales messages.json catalogs.",
                         "chrome.alarms create/get/clear state is available only in the local experimental gate, default-off, scoped to the harness session, and never starts wall-clock scheduling.",
                         "chrome.alarms.onAlarm dispatch is explicit synthetic-trigger only; no polling or automatic background wake is created.",
                         "Worker-global addEventListener/removeEventListener/dispatchEvent are modeled as a non-DOM EventTarget surface without window or document.",
@@ -956,6 +1338,10 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
                     ]
                         + blockers.map { "Policy blocker: \($0.rawValue)." }
                         + uiLanguage.diagnostics
+                        + resolvedI18nCatalogStatus.diagnostics
+                        + resolvedI18nCatalogStatus.blockers.map {
+                            "i18n getMessage/catalog blocker: \($0)."
+                        }
                         + dynamicImportCapability.diagnostics
                         + moduleWorkerReadiness.diagnostics
                 )
@@ -1019,6 +1405,16 @@ struct ChromeMV3ServiceWorkerJSExecutionDocumentationSource:
             "Chrome alarms API",
             "https://developer.chrome.com/docs/extensions/reference/api/alarms",
             "create replaces same-name alarms, the default name is the empty string, get returns an Alarm or undefined, and onAlarm is the event payload shape checked by this harness."
+        ),
+        source(
+            "Chrome i18n API",
+            "https://developer.chrome.com/docs/extensions/reference/api/i18n",
+            "getMessage is synchronous, returns an empty string for missing messages, returns undefined for malformed calls, supports up to nine substitution strings, and exposes documented predefined messages."
+        ),
+        source(
+            "Chrome localization message formats",
+            "https://developer.chrome.com/docs/extensions/how-to/ui/localization-message-formats",
+            "messages.json entries require a message string, placeholders may expand getMessage substitutions, direct $1-style substitutions are documented, and $$ emits a literal dollar sign."
         ),
         source(
             "Chrome contextMenus API",
@@ -1913,6 +2309,7 @@ struct ChromeMV3ServiceWorkerJSI18nOperationRecord:
 {
     var operation: String
     var status: String
+    var messageName: String?
     var value: String?
     var source: String?
     var blocker: String?
@@ -2153,6 +2550,8 @@ struct ChromeMV3ServiceWorkerJSExecutionSnapshot:
 final class ChromeMV3ServiceWorkerJSExecutionHarness {
     let request: ChromeMV3ServiceWorkerJSExecutionRequest
     let policy: ChromeMV3ServiceWorkerJSExecutionPolicy
+    private let i18nCatalogSnapshot:
+        ChromeMV3ServiceWorkerJSI18nCatalogSnapshot
 
     private let lifecycleRegistry =
         ChromeMV3ServiceWorkerSharedLifecycleSessionRegistry()
@@ -2224,7 +2623,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
 
     init(request: ChromeMV3ServiceWorkerJSExecutionRequest) {
         self.request = request
-        self.policy = ChromeMV3ServiceWorkerJSExecutionPolicy.evaluate(
+        let preliminaryPolicy =
+            ChromeMV3ServiceWorkerJSExecutionPolicy.evaluate(
             moduleState: request.moduleState,
             extensionEnabled: request.extensionEnabled,
             localExperimentalGateAllowed:
@@ -2234,6 +2634,31 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             dynamicImportRewriteExperimentAllowed:
                 request.dynamicImportRewriteExperimentAllowed,
             uiLanguageOverride: request.uiLanguageOverride
+        )
+        let catalogSnapshot =
+            ChromeMV3ServiceWorkerJSI18nCatalogSnapshot.make(
+                manifest: request.manifest,
+                generatedBundleRecord: request.generatedBundleRecord,
+                uiLanguage: preliminaryPolicy.i18nSelectedUILanguage,
+                uiLanguageSource:
+                    preliminaryPolicy.i18nSelectedUILanguageSource,
+                discoveryAllowed:
+                    preliminaryPolicy
+                    .serviceWorkerJSExecutionAvailableInLocalExperimentalGate,
+                policyBlockers: preliminaryPolicy.blockers.map(\.rawValue)
+            )
+        self.i18nCatalogSnapshot = catalogSnapshot
+        self.policy = ChromeMV3ServiceWorkerJSExecutionPolicy.evaluate(
+            moduleState: request.moduleState,
+            extensionEnabled: request.extensionEnabled,
+            localExperimentalGateAllowed:
+                request.localExperimentalGateAllowed,
+            generatedBundleRecordAvailable:
+                request.generatedBundleRecord != nil,
+            dynamicImportRewriteExperimentAllowed:
+                request.dynamicImportRewriteExperimentAllowed,
+            uiLanguageOverride: request.uiLanguageOverride,
+            i18nCatalogStatus: catalogSnapshot.status
         )
     }
 
@@ -3266,6 +3691,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 [
                     "extensionID": request.extensionID,
                     "extensionOrigin": origin,
+                    "i18nCatalog": i18nCatalogSnapshot.jsonObject,
                     "locationHref": "\(origin)/\(workerRelativePath)",
                     "locationPathname": "/\(workerRelativePath)",
                     "manifest": workerManifestSnapshotServiceWorkerJS(
@@ -3292,6 +3718,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 "host_permissions": manifest.hostPermissions,
                 "optional_host_permissions": manifest.optionalHostPermissions,
             ]
+            if let defaultLocale = manifest.defaultLocale {
+                object["default_locale"] = defaultLocale
+            }
             if let description = manifest.description {
                 object["description"] = description
             }
@@ -5101,6 +5530,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       const extensionOrigin = String(workerConfig.extensionOrigin || `chrome-extension://${extensionID || 'extension'}`);
       const uiLanguage = String(workerConfig.uiLanguage || 'en-US');
       const uiLanguageSource = String(workerConfig.uiLanguageSource || 'deterministicFallback');
+      const i18nCatalog = workerConfig.i18nCatalog && typeof workerConfig.i18nCatalog === 'object'
+        ? workerConfig.i18nCatalog
+        : {};
       const manifestSnapshot = workerConfig.manifest || { manifest_version: 3 };
       const webAssemblyCapability = (() => {
         const wasm = globalThis.WebAssembly;
@@ -6535,10 +6967,11 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         onResponseStarted: event('webRequestOnResponseStarted'),
         onSendHeaders: event('webRequestOnSendHeaders')
       }, 'chrome.webRequest');
-      const recordI18nOperation = (operation, status, value, source, blocker, diagnostics = []) => {
+      const recordI18nOperation = (operation, status, messageName, value, source, blocker, diagnostics = []) => {
         i18nOperations.push({
           operation: String(operation),
           status: String(status),
+          messageName: messageName == null ? null : String(messageName),
           value: value == null ? null : String(value),
           source: source == null ? null : String(source),
           blocker: blocker == null ? null : String(blocker),
@@ -6554,13 +6987,158 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           'blocked',
           null,
           null,
+          null,
           'unsupportedI18nAPI',
           [
-            'Only chrome.i18n.getUILanguage is implemented in this local experimental service-worker slice.',
+            'Only chrome.i18n.getUILanguage and narrow chrome.i18n.getMessage are implemented in this local experimental service-worker slice.',
             'No message catalog, accept-language list, or CLD language detection result is faked.'
           ]
         );
         return undefined;
+      };
+      const normalizeGetMessageSubstitutions = (substitutions) => {
+        if (substitutions === undefined || substitutions === null) {
+          return { ok: true, values: [] };
+        }
+        if (typeof substitutions === 'string') {
+          return { ok: true, values: [substitutions] };
+        }
+        if (Array.isArray(substitutions)) {
+          if (substitutions.length > 9) {
+            return {
+              ok: false,
+              blocker: 'tooManySubstitutions',
+              diagnostics: ['Chrome documents at most nine getMessage substitution strings.']
+            };
+          }
+          const values = [];
+          for (const item of substitutions) {
+            if (typeof item !== 'string') {
+              return {
+                ok: false,
+                blocker: 'unsupportedSubstitutionShape',
+                diagnostics: ['Only string substitution entries are accepted by this local experimental getMessage slice.']
+              };
+            }
+            values.push(item);
+          }
+          return { ok: true, values };
+        }
+        return {
+          ok: false,
+          blocker: 'unsupportedSubstitutionShape',
+          diagnostics: ['getMessage substitutions must be omitted, a string, or an array of up to nine strings.']
+        };
+      };
+      const normalizeGetMessageOptions = (options) => {
+        if (options === undefined || options === null) {
+          return { ok: true, escapeLt: false };
+        }
+        if (typeof options === 'object' && !Array.isArray(options)) {
+          return { ok: true, escapeLt: options.escapeLt === true };
+        }
+        return {
+          ok: false,
+          blocker: 'unsupportedOptionsShape',
+          diagnostics: ['getMessage options must be an object when provided.']
+        };
+      };
+      const i18nLocaleDirection = (locale) => {
+        const language = String(locale || '').split(/[-_]/)[0].toLowerCase();
+        return ['ar', 'fa', 'he', 'iw', 'ur'].includes(language) ? 'rtl' : 'ltr';
+      };
+      const predefinedI18nMessage = (messageName) => {
+        const direction = i18nLocaleDirection(i18nCatalog.selectedLocale || uiLanguage);
+        switch (messageName) {
+        case '@@extension_id':
+          return extensionID;
+        case '@@ui_locale':
+          return String(i18nCatalog.selectedLocale || uiLanguage).replace(/-/g, '_');
+        case '@@bidi_dir':
+          return direction;
+        case '@@bidi_reversed_dir':
+          return direction === 'rtl' ? 'ltr' : 'rtl';
+        case '@@bidi_start_edge':
+          return direction === 'rtl' ? 'right' : 'left';
+        case '@@bidi_end_edge':
+          return direction === 'rtl' ? 'left' : 'right';
+        default:
+          return null;
+        }
+      };
+      const expandDirectI18nSubstitutions = (text, substitutions, escapeLt) => {
+        const source = String(text);
+        let output = '';
+        for (let index = 0; index < source.length; index += 1) {
+          const current = source[index];
+          const next = source[index + 1];
+          if (current === '$' && next === '$') {
+            output += '$';
+            index += 1;
+            continue;
+          }
+          if (current === '$' && /^[1-9]$/.test(next || '')) {
+            output += substitutions[Number(next) - 1] || '';
+            index += 1;
+            continue;
+          }
+          output += escapeLt && current === '<' ? '&lt;' : current;
+        }
+        return output;
+      };
+      const expandI18nMessage = (entry, substitutions, escapeLt) => {
+        const message = String(entry.message || '');
+        const placeholders = entry.placeholders && typeof entry.placeholders === 'object'
+          ? entry.placeholders
+          : {};
+        let output = '';
+        for (let index = 0; index < message.length; index += 1) {
+          const current = message[index];
+          const next = message[index + 1];
+          if (current === '$' && next === '$') {
+            output += '$';
+            index += 1;
+            continue;
+          }
+          if (current === '$' && /^[1-9]$/.test(next || '')) {
+            output += substitutions[Number(next) - 1] || '';
+            index += 1;
+            continue;
+          }
+          if (current === '$') {
+            const end = message.indexOf('$', index + 1);
+            if (end > index + 1) {
+              const token = message.slice(index + 1, end).toLowerCase();
+              if (Object.prototype.hasOwnProperty.call(placeholders, token)) {
+                output += expandDirectI18nSubstitutions(
+                  placeholders[token],
+                  substitutions,
+                  false
+                );
+                index = end;
+                continue;
+              }
+            }
+          }
+          output += escapeLt && current === '<' ? '&lt;' : current;
+        }
+        return output;
+      };
+      const findI18nMessageEntry = (messageName) => {
+        const normalizedName = String(messageName).toLowerCase();
+        const catalogs = i18nCatalog.catalogs && typeof i18nCatalog.catalogs === 'object'
+          ? i18nCatalog.catalogs
+          : {};
+        const lookupOrder = Array.isArray(i18nCatalog.localeLookupOrder)
+          ? i18nCatalog.localeLookupOrder
+          : [];
+        for (const locale of lookupOrder) {
+          const catalog = catalogs[locale];
+          if (catalog && Object.prototype.hasOwnProperty.call(catalog, normalizedName)) {
+            return { locale, entry: catalog[normalizedName] };
+          }
+        }
+        return null;
       };
       const i18n = proxiedNamespace({
         getUILanguage() {
@@ -6568,17 +7146,116 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           recordI18nOperation(
             'chrome.i18n.getUILanguage',
             'fulfilled',
+            null,
             uiLanguage,
             uiLanguageSource,
             null,
             [
               'Returned deterministic browser UI language string from the local experimental harness configuration.',
-              'This does not enable chrome.i18n message catalog lookup.'
+              'This does not enable network locale lookup or arbitrary filesystem catalog lookup.'
             ]
           );
           return uiLanguage;
         },
-        getMessage: unsupportedI18nMethod('getMessage'),
+        getMessage(messageName, substitutions, options) {
+          const path = 'chrome.i18n.getMessage';
+          noteChromeAPICall(path);
+          if (i18nCatalog.available !== true) {
+            noteBlocked(path);
+            recordI18nOperation(
+              path,
+              'blocked',
+              typeof messageName === 'string' ? messageName : null,
+              null,
+              null,
+              'i18nGetMessagePolicyBlocked',
+              i18nCatalog.diagnostics || []
+            );
+            return undefined;
+          }
+          if (typeof messageName !== 'string') {
+            noteBlocked(path);
+            recordI18nOperation(
+              path,
+              'blocked',
+              null,
+              null,
+              null,
+              'invalidMessageName',
+              ['Chrome documents undefined for an invalid getMessage call shape.']
+            );
+            return undefined;
+          }
+          const normalizedSubstitutions = normalizeGetMessageSubstitutions(substitutions);
+          if (normalizedSubstitutions.ok !== true) {
+            noteBlocked(path);
+            recordI18nOperation(
+              path,
+              'blocked',
+              messageName,
+              null,
+              null,
+              normalizedSubstitutions.blocker,
+              normalizedSubstitutions.diagnostics || []
+            );
+            return undefined;
+          }
+          const normalizedOptions = normalizeGetMessageOptions(options);
+          if (normalizedOptions.ok !== true) {
+            noteBlocked(path);
+            recordI18nOperation(
+              path,
+              'blocked',
+              messageName,
+              null,
+              null,
+              normalizedOptions.blocker,
+              normalizedOptions.diagnostics || []
+            );
+            return undefined;
+          }
+          const predefined = predefinedI18nMessage(messageName);
+          if (predefined !== null) {
+            recordI18nOperation(
+              path,
+              'fulfilled',
+              messageName,
+              predefined,
+              'predefined',
+              null,
+              ['Returned a documented predefined chrome.i18n message.']
+            );
+            return predefined;
+          }
+          const found = findI18nMessageEntry(messageName);
+          if (!found) {
+            recordI18nOperation(
+              path,
+              'missing',
+              messageName,
+              '',
+              null,
+              'missingMessage',
+              ['Chrome documents an empty string when the requested message is missing.']
+            );
+            return '';
+          }
+          const result = expandI18nMessage(
+            found.entry,
+            normalizedSubstitutions.values,
+            normalizedOptions.escapeLt
+          );
+          recordI18nOperation(
+            path,
+            'fulfilled',
+            messageName,
+            result,
+            found.locale,
+            null,
+            ['Message resolved from a generated-bundle-contained locale catalog.']
+          );
+          return result;
+        },
         getAcceptLanguages: unsupportedI18nMethod('getAcceptLanguages'),
         detectLanguage: unsupportedI18nMethod('detectLanguage')
       }, 'chrome.i18n');
@@ -7442,6 +8119,41 @@ private func normalizedUILanguageServiceWorkerJS(_ value: String?) -> String? {
         return normalizedLanguage
     }
     return "\(normalizedLanguage)-\(region.uppercased())"
+}
+
+private func normalizedChromeI18nLocaleIdentifierServiceWorkerJS(
+    _ value: String?
+) -> String? {
+    guard let value else { return nil }
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        .replacingOccurrences(of: "-", with: "_")
+    guard trimmed.isEmpty == false else { return nil }
+    let parts = trimmed.split(separator: "_", omittingEmptySubsequences: true)
+    guard let language = parts.first,
+          language.range(
+            of: #"^[A-Za-z]{2,3}$"#,
+            options: .regularExpression
+          ) != nil
+    else { return nil }
+    let normalizedLanguage = language.lowercased()
+    guard parts.count > 1 else { return normalizedLanguage }
+    guard parts.count == 2,
+          let region = parts.dropFirst().first,
+          region.range(
+            of: #"^(?:[A-Za-z]{2}|\d{3})$"#,
+            options: .regularExpression
+          ) != nil
+    else { return nil }
+    return "\(normalizedLanguage)_\(region.uppercased())"
+}
+
+private func isSafeChromeI18nMessageNameServiceWorkerJS(
+    _ value: String
+) -> Bool {
+    value.range(
+        of: #"^[A-Za-z0-9_@]+$"#,
+        options: .regularExpression
+    ) != nil
 }
 
 private func isSafeRelativeServiceWorkerJSPath(_ path: String) -> Bool {
@@ -9446,4 +10158,15 @@ private func uniqueSortedServiceWorkerJS<T: Comparable & Hashable>(
     _ values: [T]
 ) -> [T] {
     Array(Set(values)).sorted()
+}
+
+private func uniqueSortedByFirstOccurrenceServiceWorkerJS<T: Hashable>(
+    _ values: [T]
+) -> [T] {
+    var seen: Set<T> = []
+    var result: [T] = []
+    for value in values where seen.insert(value).inserted {
+        result.append(value)
+    }
+    return result
 }

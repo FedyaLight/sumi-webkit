@@ -63,6 +63,7 @@ struct ChromeMV3Manifest: Codable, Equatable {
     var optionalPermissions: [String]
     var hostPermissions: [String]
     var optionalHostPermissions: [String] = []
+    var defaultLocale: String?
     var contentScripts: [ChromeMV3ContentScript]
     var action: ChromeMV3Action?
     var optionsPage: String?

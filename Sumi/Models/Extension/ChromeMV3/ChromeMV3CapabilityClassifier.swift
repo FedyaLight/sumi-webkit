@@ -410,8 +410,8 @@ enum ChromeMV3CapabilityClassifier {
             statuses: [.shim, .needsVerification],
             evidence: [
                 chrome("Chrome i18n API resolves extension locale messages and exposes the browser UI language.", chromeAPIReference + "/i18n"),
-                sumi("The local experimental MV3 service-worker harness implements only chrome.i18n.getUILanguage with a deterministic locale source; message catalogs and detection remain blocked."),
-                fixture("Verify Chrome placeholder, fallback, and message formatting behavior before expanding beyond getUILanguage.")
+                sumi("The local experimental MV3 service-worker harness implements chrome.i18n.getUILanguage and a narrow generated-bundle-contained chrome.i18n.getMessage slice; accept-language and detection remain blocked."),
+                fixture("Verify Chrome placeholder, fallback, and message formatting behavior before expanding beyond the narrow getMessage slice.")
             ],
             detection: .i18n
         ),

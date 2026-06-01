@@ -77,6 +77,15 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         )
         XCTAssertFalse(moduleDisabled.policy.i18nGetUILanguageAvailableByDefault)
         XCTAssertFalse(
+            moduleDisabled.policy.i18nGetMessageAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(moduleDisabled.policy.i18nGetMessageAvailableByDefault)
+        XCTAssertTrue(moduleDisabled.policy.i18nGeneratedBundleLocalesOnly)
+        XCTAssertFalse(moduleDisabled.policy.i18nNetworkLocalesAllowed)
+        XCTAssertFalse(
+            moduleDisabled.policy.i18nFilesystemLocaleFallbackAllowed
+        )
+        XCTAssertFalse(
             moduleDisabled.policy.alarmsAvailableInLocalExperimentalGate
         )
         XCTAssertFalse(moduleDisabled.policy.alarmsAvailableByDefault)
@@ -175,6 +184,13 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             harness.policy.i18nGetUILanguageAvailableInLocalExperimentalGate
         )
         XCTAssertFalse(harness.policy.i18nGetUILanguageAvailableByDefault)
+        XCTAssertFalse(
+            harness.policy.i18nGetMessageAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(harness.policy.i18nGetMessageAvailableByDefault)
+        XCTAssertTrue(harness.policy.i18nGeneratedBundleLocalesOnly)
+        XCTAssertFalse(harness.policy.i18nNetworkLocalesAllowed)
+        XCTAssertFalse(harness.policy.i18nFilesystemLocaleFallbackAllowed)
         XCTAssertFalse(harness.policy.alarmsAvailableInLocalExperimentalGate)
         XCTAssertFalse(harness.policy.alarmsAvailableByDefault)
         XCTAssertFalse(harness.policy.wallClockAlarmSchedulingAllowed)
@@ -860,7 +876,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             chrome.runtime.onMessage.addListener(() => ({
               uiLanguage,
               getMessageType,
-              getMessageResult: getMessageResult === undefined ? null : getMessageResult,
+              getMessageResult,
               windowType: typeof window,
               documentType: typeof document
             }));
@@ -875,7 +891,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             ).responsePayload,
             .object([
                 "documentType": .string("undefined"),
-                "getMessageResult": .null,
+                "getMessageResult": .string(""),
                 "getMessageType": .string("function"),
                 "uiLanguage": .string("fr-CA"),
                 "windowType": .string("undefined"),
@@ -888,10 +904,12 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         )
         XCTAssertFalse(harness.policy.i18nGetUILanguageAvailableByDefault)
         XCTAssertTrue(
-            harness.policy.i18nUnsupportedAPIs.contains(
-                "chrome.i18n.getMessage"
-            )
+            harness.policy.i18nGetMessageAvailableInLocalExperimentalGate
         )
+        XCTAssertFalse(harness.policy.i18nGetMessageAvailableByDefault)
+        XCTAssertTrue(harness.policy.i18nGeneratedBundleLocalesOnly)
+        XCTAssertFalse(harness.policy.i18nNetworkLocalesAllowed)
+        XCTAssertFalse(harness.policy.i18nFilesystemLocaleFallbackAllowed)
         XCTAssertTrue(
             harness.snapshot.i18nOperationRecords.contains {
                 $0.operation == "chrome.i18n.getUILanguage"
@@ -902,13 +920,226 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertTrue(
             harness.snapshot.i18nOperationRecords.contains {
                 $0.operation == "chrome.i18n.getMessage"
+                    && $0.status == "missing"
+                    && $0.messageName == "appName"
+                    && $0.value == ""
+                    && $0.blocker == "missingMessage"
+            }
+        )
+        XCTAssertFalse(
+            harness.snapshot.blockedUnsupportedCalls.contains(
+                "chrome.i18n.getMessage"
+            )
+        )
+    }
+
+    func testChromeI18nGetMessageLoadsGeneratedBundleCatalogs()
+        throws
+    {
+        let fixture = try makeHarness(
+            source: """
+            const appName = chrome.i18n.getMessage('appName', ['A', 'B'], { escapeLt: true });
+            const fallbackOnly = chrome.i18n.getMessage('fallbackOnly');
+            const direct = chrome.i18n.getMessage('arrayDirect', ['one', 'two']);
+            const missing = chrome.i18n.getMessage('missingName');
+            const extensionID = chrome.i18n.getMessage('@@extension_id');
+            const uiLocale = chrome.i18n.getMessage('@@ui_locale');
+            const bidiDir = chrome.i18n.getMessage('@@bidi_dir');
+            const tooMany = chrome.i18n.getMessage(
+              'appName',
+              ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
+            );
+            chrome.runtime.onMessage.addListener(() => ({
+              appName,
+              fallbackOnly,
+              direct,
+              missing,
+              extensionID,
+              uiLocale,
+              bidiDir,
+              tooManyType: typeof tooMany
+            }));
+            """,
+            extraFiles: [
+                "_locales/en/messages.json": """
+                {
+                  "fallbackOnly": { "message": "Fallback text" },
+                  "appName": {
+                    "message": "Hello $1 and $TWO$ $$ <x>",
+                    "placeholders": {
+                      "two": { "content": "$2" }
+                    }
+                  }
+                }
+                """,
+                "_locales/fr/messages.json": """
+                {
+                  "appName": {
+                    "message": "Bonjour $1 et $TWO$ $$ <x>",
+                    "placeholders": {
+                      "two": { "content": "$2" }
+                    }
+                  },
+                  "arrayDirect": {
+                    "message": "Direct $1 $2 $3"
+                  }
+                }
+                """,
+            ],
+            manifestAdditions: ["default_locale": "en"],
+            localExperimentalGateAllowed: true
+        )
+        XCTAssertTrue(
+            fixture.generatedRecord.copiedResourcePaths.contains(
+                "_locales/en/messages.json"
+            )
+        )
+        XCTAssertTrue(
+            fixture.generatedRecord.copiedResourcePaths.contains(
+                "_locales/fr/messages.json"
+            )
+        )
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request(uiLanguageOverride: "fr_CA")
+        )
+
+        XCTAssertEqual(harness.start().status, .running)
+        XCTAssertTrue(harness.policy.i18nGetMessageAvailableInLocalExperimentalGate)
+        XCTAssertFalse(harness.policy.i18nGetMessageAvailableByDefault)
+        XCTAssertEqual(harness.policy.i18nDefaultLocale, "en")
+        XCTAssertEqual(harness.policy.i18nSelectedLocale, "fr_CA")
+        XCTAssertEqual(harness.policy.i18nFallbackLocale, "en")
+        XCTAssertEqual(harness.policy.i18nLocaleLookupOrder, ["fr_CA", "fr", "en"])
+        XCTAssertEqual(harness.policy.i18nAvailableLocales, ["en", "fr"])
+        XCTAssertEqual(harness.policy.i18nMissingCatalogLocales, ["fr_CA"])
+        XCTAssertTrue(harness.policy.i18nGeneratedBundleLocalesOnly)
+        XCTAssertFalse(harness.policy.i18nNetworkLocalesAllowed)
+        XCTAssertFalse(harness.policy.i18nFilesystemLocaleFallbackAllowed)
+        XCTAssertEqual(
+            harness.dispatch(
+                source: .popupOptionsRuntimeMessage,
+                payloadSummary: "i18n getMessage"
+            ).responsePayload,
+            .object([
+                "appName": .string("Bonjour A et B $ &lt;x>"),
+                "bidiDir": .string("ltr"),
+                "direct": .string("Direct one two "),
+                "extensionID": .string("service-worker-js-fixture-extension"),
+                "fallbackOnly": .string("Fallback text"),
+                "missing": .string(""),
+                "tooManyType": .string("undefined"),
+                "uiLocale": .string("fr_CA"),
+            ])
+        )
+        XCTAssertTrue(
+            harness.snapshot.i18nOperationRecords.contains {
+                $0.operation == "chrome.i18n.getMessage"
+                    && $0.status == "fulfilled"
+                    && $0.messageName == "appName"
+                    && $0.source == "fr"
+            }
+        )
+        XCTAssertTrue(
+            harness.snapshot.i18nOperationRecords.contains {
+                $0.operation == "chrome.i18n.getMessage"
+                    && $0.status == "missing"
+                    && $0.messageName == "missingName"
+                    && $0.value == ""
+            }
+        )
+        XCTAssertTrue(
+            harness.snapshot.i18nOperationRecords.contains {
+                $0.operation == "chrome.i18n.getMessage"
                     && $0.status == "blocked"
-                    && $0.blocker == "unsupportedI18nAPI"
+                    && $0.messageName == "appName"
+                    && $0.blocker == "tooManySubstitutions"
             }
         )
         XCTAssertTrue(
             harness.snapshot.blockedUnsupportedCalls.contains(
                 "chrome.i18n.getMessage"
+            )
+        )
+    }
+
+    func testChromeI18nGetMessageBlocksUnsafeInvalidAndSymlinkCatalogs()
+        throws
+    {
+        let fixture = try makeHarness(
+            source: """
+            const value = chrome.i18n.getMessage('safe');
+            chrome.runtime.onMessage.addListener(() => value);
+            """,
+            extraFiles: [
+                "_locales/en/messages.json": """
+                { "safe": { "message": "safe" } }
+                """,
+            ],
+            manifestAdditions: ["default_locale": "en"],
+            localExperimentalGateAllowed: true
+        )
+        var record = fixture.generatedRecord
+        let invalidJSON = fixture.generatedRootURL
+            .appendingPathComponent("_locales/fr/messages.json")
+        try FileManager.default.createDirectory(
+            at: invalidJSON.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try "{".write(to: invalidJSON, atomically: true, encoding: .utf8)
+        let outside = try temporaryDirectory()
+            .appendingPathComponent("messages.json")
+        try "{ \"outside\": { \"message\": \"outside\" } }".write(
+            to: outside,
+            atomically: true,
+            encoding: .utf8
+        )
+        let symlink = fixture.generatedRootURL
+            .appendingPathComponent("_locales/es/messages.json")
+        try FileManager.default.createDirectory(
+            at: symlink.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createSymbolicLink(
+            at: symlink,
+            withDestinationURL: outside
+        )
+        record.copiedResourcePaths.append(contentsOf: [
+            "_locales/en/../messages.json",
+            "_locales/es/messages.json",
+            "_locales/fr/messages.json",
+        ])
+        record.copiedResourcePaths.sort()
+
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request(generatedRecord: record)
+        )
+
+        XCTAssertEqual(harness.start().status, .running)
+        XCTAssertEqual(
+            harness.dispatch(
+                source: .popupOptionsRuntimeMessage,
+                payloadSummary: "i18n unsafe catalogs"
+            ).responsePayload,
+            .string("safe")
+        )
+        XCTAssertTrue(
+            harness.policy.i18nInvalidCatalogPaths.contains(
+                "_locales/en/../messages.json"
+            )
+        )
+        XCTAssertTrue(
+            harness.policy.i18nInvalidCatalogPaths.contains(
+                "_locales/es/messages.json"
+            )
+        )
+        XCTAssertTrue(
+            harness.policy.i18nInvalidCatalogPaths.contains(
+                "_locales/fr/messages.json"
+            )
+        )
+        XCTAssertTrue(
+            harness.policy.i18nGetMessageBlockers.contains(
+                "invalidLocaleCatalogBlocked"
             )
         )
     }
@@ -3114,10 +3345,13 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertFalse(policy.webCryptoAvailableByDefault)
         XCTAssertTrue(policy.i18nGetUILanguageAvailableInLocalExperimentalGate)
         XCTAssertFalse(policy.i18nGetUILanguageAvailableByDefault)
+        XCTAssertTrue(policy.i18nGetMessageAvailableInLocalExperimentalGate)
+        XCTAssertFalse(policy.i18nGetMessageAvailableByDefault)
+        XCTAssertTrue(policy.i18nGeneratedBundleLocalesOnly)
+        XCTAssertFalse(policy.i18nNetworkLocalesAllowed)
+        XCTAssertFalse(policy.i18nFilesystemLocaleFallbackAllowed)
         XCTAssertFalse(policy.i18nSelectedUILanguage.isEmpty)
-        XCTAssertTrue(
-            policy.i18nUnsupportedAPIs.contains("chrome.i18n.getMessage")
-        )
+        XCTAssertFalse(policy.i18nUnsupportedAPIs.contains("chrome.i18n.getMessage"))
         XCTAssertTrue(policy.alarmsAvailableInLocalExperimentalGate)
         XCTAssertFalse(policy.alarmsAvailableByDefault)
         XCTAssertFalse(policy.wallClockAlarmSchedulingAllowed)
@@ -3157,11 +3391,13 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
     private func startedHarness(
         source: String,
         extraFiles: [String: String] = [:],
+        manifestAdditions: [String: Any] = [:],
         uiLanguageOverride: String? = nil
     ) throws -> ChromeMV3ServiceWorkerJSExecutionHarness {
         let fixture = try makeHarness(
             source: source,
             extraFiles: extraFiles,
+            manifestAdditions: manifestAdditions,
             localExperimentalGateAllowed: true
         )
         let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
@@ -3206,6 +3442,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
     private func makeHarness(
         source: String,
         extraFiles: [String: String] = [:],
+        manifestAdditions: [String: Any] = [:],
         serviceWorkerType: String? = nil,
         localExperimentalGateAllowed: Bool = false,
         dynamicImportRewriteExperimentAllowed: Bool = false
@@ -3222,12 +3459,15 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         if let serviceWorkerType {
             background["type"] = serviceWorkerType
         }
-        let manifest: [String: Any] = [
+        var manifest: [String: Any] = [
             "manifest_version": 3,
             "name": "Service Worker JS Execution Fixture",
             "version": "1.0.0",
             "background": background,
         ]
+        for (key, value) in manifestAdditions {
+            manifest[key] = value
+        }
         try JSONSerialization.data(
             withJSONObject: manifest,
             options: [.prettyPrinted, .sortedKeys]
