@@ -1453,6 +1453,8 @@ struct ChromeMV3PasswordManagerRealPackageDetectFillSmoke:
         ChromeMV3LocalExperimentalWebKitProgrammaticInjectionResult
     var manualNormalTabSmokeResult:
         ChromeMV3LocalExperimentalNormalTabManualSmokeResult
+    var productNormalTabExecutionExperimentResult:
+        ChromeMV3LocalExperimentalProductNormalTabExecutionExperimentResult
     var programmaticInjectionTeardownStatus:
         ChromeMV3PasswordManagerCompatibilityStatus
     var programmaticInjectionActiveAfterTeardownCount: Int
@@ -1498,6 +1500,12 @@ struct ChromeMV3PasswordManagerRealPackageDetectFillSmoke:
                     reason: reason
                 ),
             manualNormalTabSmokeResult:
+                .notAttempted(
+                    url: url,
+                    documentID: "bitwarden-e2e-login-main-frame",
+                    reason: reason
+                ),
+            productNormalTabExecutionExperimentResult:
                 .notAttempted(
                     url: url,
                     documentID: "bitwarden-e2e-login-main-frame",
@@ -5232,6 +5240,13 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     documentID: documentID,
                     reason:
                         "Use the explicit async local experimental normal-tab manual smoke runner to execute the reviewed generated-bundle bootstrap on the synthetic HTTPS test page."
+                ),
+            productNormalTabExecutionExperimentResult:
+                .notAttempted(
+                    url: loginURL,
+                    documentID: documentID,
+                    reason:
+                        "Use the explicit async product-normal-tab experiment runner to execute the reviewed generated-bundle bootstrap on the synthetic HTTPS test page."
                 ),
             programmaticInjectionTeardownStatus:
                 programmaticInjectionActiveAfterTeardownCount == 0

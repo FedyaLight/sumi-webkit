@@ -196,6 +196,101 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
     }
 
     @MainActor
+    func testProductNormalTabExecutionExperimentUsesReviewedHashAndReportsCost()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Named WKContentWorld execution requires macOS 15.5.")
+        }
+        let manualRequest = try makeFixture().manualSmokeRequest()
+        let result = await
+            ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter
+            .runProductNormalTabExecutionExperiment(
+                ChromeMV3LocalExperimentalProductNormalTabExecutionExperimentRequest(
+                    normalTabExecutionRequest: manualRequest,
+                    localProductNormalTabExperimentGateAllowed: true,
+                    requiredReviewedScriptSHA256:
+                        try XCTUnwrap(
+                            manualRequest.injectionPlan.generatedResourceHash
+                        )
+                )
+            )
+
+        XCTAssertTrue(result.allowed, "\(result.blockers): \(result.diagnostics)")
+        XCTAssertTrue(
+            result.productNormalTabExperimentAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(result.productNormalTabExperimentAvailableByDefault)
+        XCTAssertFalse(result.productDefaultRuntimeAvailable)
+        XCTAssertTrue(result.reviewedFileOnly)
+        XCTAssertTrue(result.syntheticHTTPSOriginOnly)
+        XCTAssertTrue(result.isolatedWorldOnly)
+        XCTAssertTrue(result.topFrameOnly)
+        XCTAssertFalse(result.auxiliarySurfaceAllowed)
+        XCTAssertTrue(result.teardownRequired)
+        XCTAssertEqual(result.url, "https://sumi.local.test/login")
+        XCTAssertEqual(result.origin, "https://sumi.local.test")
+        XCTAssertEqual(result.surfaceClassification, .normalTab)
+        XCTAssertTrue(result.normalBrowsingSurfaceOnly)
+        XCTAssertTrue(result.auxiliarySurfacesExcluded)
+        XCTAssertTrue(result.reviewedScriptHashMatched)
+        XCTAssertTrue(result.reviewedScriptExecutedByWebKit)
+        XCTAssertTrue(result.usernameFieldExistsBefore)
+        XCTAssertTrue(result.passwordFieldExistsBefore)
+        XCTAssertTrue(result.submitButtonExistsBefore)
+        XCTAssertTrue(result.initialValuesEmpty)
+        XCTAssertEqual(result.usernameValueAfter, "sumi-test-user@example.test")
+        XCTAssertEqual(
+            result.passwordValueAfter,
+            "sumi-test-password-not-secret"
+        )
+        XCTAssertTrue(result.dummyMarkersOnly)
+        XCTAssertTrue(result.finalValuesMatchDummyFill)
+        XCTAssertEqual(result.fieldsTouched, [
+            "sumi-login-email",
+            "sumi-login-password",
+        ])
+        XCTAssertTrue(result.teardown.completed)
+        XCTAssertEqual(result.runtimeCost.retainedObjectCountAfterTeardown, 0)
+        XCTAssertFalse(result.runtimeCost.backgroundWorkScheduled)
+        XCTAssertFalse(result.runtimeCost.permanentRuntimeRetained)
+        XCTAssertFalse(result.runtimeCost.serviceWorkerWakeAttempted)
+        XCTAssertFalse(result.runtimeCost.nativeHostLaunchAttempted)
+        XCTAssertFalse(result.runtimeCost.networkAuthAttempted)
+        XCTAssertFalse(result.runtimeCost.normalTabInjectionOutsideExperiment)
+        XCTAssertFalse(result.managerReadoutExecutedExperiment)
+        XCTAssertFalse(result.productSupportClaimed)
+    }
+
+    @MainActor
+    func testProductNormalTabExecutionExperimentBlocksHashMismatchBeforeObjects()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Named WKContentWorld execution requires macOS 15.5.")
+        }
+        let manualRequest = try makeFixture().manualSmokeRequest()
+        let result = await
+            ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter
+            .runProductNormalTabExecutionExperiment(
+                ChromeMV3LocalExperimentalProductNormalTabExecutionExperimentRequest(
+                    normalTabExecutionRequest: manualRequest,
+                    localProductNormalTabExperimentGateAllowed: true,
+                    requiredReviewedScriptSHA256: String(repeating: "0", count: 64)
+                )
+            )
+
+        XCTAssertFalse(result.allowed)
+        XCTAssertTrue(result.attempted)
+        XCTAssertTrue(result.blockers.contains(.blockedByMissingReviewedResource))
+        XCTAssertFalse(result.reviewedScriptHashMatched)
+        XCTAssertFalse(result.reviewedScriptExecutedByWebKit)
+        XCTAssertTrue(result.runtimeCost.runtimeObjectsCreatedDuringExperiment.isEmpty)
+        XCTAssertTrue(result.teardown.completed)
+        XCTAssertEqual(result.runtimeCost.retainedObjectCountAfterTeardown, 0)
+    }
+
+    @MainActor
     func testManualNormalTabSmokeBlocksUnsafeGatesBeforeWebKitObjects()
         async throws
     {
@@ -374,6 +469,37 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
             detectFill.manualNormalTabSmokeResult
                 .normalTabConfigurationMarked
         )
+        let productExperiment =
+            detectFill.productNormalTabExecutionExperimentResult
+        XCTAssertEqual(
+            productExperiment.requiredReviewedScriptSHA256,
+            ChromeMV3LocalExperimentalProductNormalTabExperimentPolicy
+                .reviewedBitwardenBootstrapAutofillSHA256
+        )
+        if productExperiment.reviewedScriptHashMatched {
+            XCTAssertTrue(
+                productExperiment.allowed,
+                productExperiment.diagnostics.joined(separator: "\n")
+            )
+            XCTAssertTrue(productExperiment.finalValuesMatchDummyFill)
+            XCTAssertEqual(
+                productExperiment.runtimeCost.retainedObjectCountAfterTeardown,
+                0
+            )
+        } else {
+            XCTAssertFalse(productExperiment.allowed)
+            XCTAssertTrue(
+                productExperiment.blockers.contains(
+                    .blockedByMissingReviewedResource
+                )
+            )
+            XCTAssertFalse(productExperiment.reviewedScriptExecutedByWebKit)
+            XCTAssertTrue(
+                productExperiment.runtimeCost
+                    .runtimeObjectsCreatedDuringExperiment.isEmpty
+            )
+        }
+        XCTAssertFalse(productExperiment.managerReadoutExecutedExperiment)
         XCTAssertTrue(detectFill.modeledDummyFillChangedDOM)
         XCTAssertEqual(
             detectFill.domObservationAfter.usernameValue,
@@ -385,6 +511,8 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
         )
         XCTAssertTrue(
             detectFill.nextBlocker.contains("stable product normal-tab")
+                || detectFill.nextBlocker
+                    .contains("blockedByMissingReviewedResource")
         )
     }
 

@@ -543,6 +543,394 @@ struct ChromeMV3LocalExperimentalNormalTabManualSmokeResult:
     }
 }
 
+struct ChromeMV3LocalExperimentalProductNormalTabExperimentPolicy:
+    Codable,
+    Equatable,
+    Sendable
+{
+    static let reviewedBitwardenBootstrapAutofillSHA256 =
+        "89b0c2ce4d57431ddbfc8a28992ddf2cd36f2d2bbe64657c89bc164c76fe2b58"
+
+    var productNormalTabExperimentAvailableInLocalExperimentalGate: Bool
+    var productNormalTabExperimentAvailableByDefault: Bool
+    var productDefaultRuntimeAvailable: Bool
+    var reviewedFileOnly: Bool
+    var syntheticHTTPSOriginOnly: Bool
+    var isolatedWorldOnly: Bool
+    var topFrameOnly: Bool
+    var auxiliarySurfaceAllowed: Bool
+    var teardownRequired: Bool
+
+    static let bitwardenReviewedBootstrap =
+        ChromeMV3LocalExperimentalProductNormalTabExperimentPolicy(
+            productNormalTabExperimentAvailableInLocalExperimentalGate: true,
+            productNormalTabExperimentAvailableByDefault: false,
+            productDefaultRuntimeAvailable: false,
+            reviewedFileOnly: true,
+            syntheticHTTPSOriginOnly: true,
+            isolatedWorldOnly: true,
+            topFrameOnly: true,
+            auxiliarySurfaceAllowed: false,
+            teardownRequired: true
+        )
+}
+
+struct ChromeMV3LocalExperimentalProductNormalTabExperimentRuntimeCost:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var disabledModuleObjectsCreated: [String]
+    var managerReadoutObjectsCreated: [String]
+    var runtimeObjectsCreatedDuringExperiment: [String]
+    var backgroundWorkScheduled: Bool
+    var permanentRuntimeRetained: Bool
+    var serviceWorkerWakeAttempted: Bool
+    var nativeHostLaunchAttempted: Bool
+    var networkAuthAttempted: Bool
+    var normalTabInjectionOutsideExperiment: Bool
+    var retainedObjectCountAfterTeardown: Int
+    var diagnostics: [String]
+
+    static func make(
+        from result:
+            ChromeMV3LocalExperimentalNormalTabManualSmokeResult?
+    ) -> Self {
+        let runtimeObjects =
+            (result?.teardown.webKitObjectsCreated ?? [])
+            + (result?.teardown.handlersCreated ?? [])
+            + (result?.teardown.userScriptsCreated ?? [])
+            + (result?.teardown.endpointsCreated ?? [])
+        return Self(
+            disabledModuleObjectsCreated: [],
+            managerReadoutObjectsCreated: [
+                "Codable product-normal-tab experiment action/readout records",
+            ],
+            runtimeObjectsCreatedDuringExperiment:
+                uniqueSortedWebKitProgrammaticInjection(runtimeObjects),
+            backgroundWorkScheduled: false,
+            permanentRuntimeRetained: false,
+            serviceWorkerWakeAttempted: false,
+            nativeHostLaunchAttempted: false,
+            networkAuthAttempted: false,
+            normalTabInjectionOutsideExperiment: false,
+            retainedObjectCountAfterTeardown:
+                result?.teardown.retainedObjectCountAfterTeardown ?? 0,
+            diagnostics: [
+                "Disabled Extensions module remains zero-cost.",
+                "Manager readout creates value records only and does not execute the experiment.",
+                "The explicit experiment creates scoped synthetic WebKit objects only after all gates pass, then tears them down before returning.",
+            ]
+        )
+    }
+}
+
+struct ChromeMV3LocalExperimentalProductNormalTabExecutionExperimentRequest:
+    Sendable
+{
+    var normalTabExecutionRequest:
+        ChromeMV3LocalExperimentalNormalTabManualSmokeRequest
+    var localProductNormalTabExperimentGateAllowed: Bool
+    var requiredReviewedScriptSHA256: String
+}
+
+struct ChromeMV3LocalExperimentalProductNormalTabExecutionExperimentResult:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var attempted: Bool
+    var allowed: Bool
+    var policy:
+        ChromeMV3LocalExperimentalProductNormalTabExperimentPolicy
+    var productNormalTabExperimentAvailableInLocalExperimentalGate: Bool
+    var productNormalTabExperimentAvailableByDefault: Bool
+    var productDefaultRuntimeAvailable: Bool
+    var reviewedFileOnly: Bool
+    var syntheticHTTPSOriginOnly: Bool
+    var isolatedWorldOnly: Bool
+    var topFrameOnly: Bool
+    var auxiliarySurfaceAllowed: Bool
+    var teardownRequired: Bool
+    var eligibility: ChromeMV3ProductNormalTabReadinessPreflight
+    var injectionPlan: ChromeMV3LocalExperimentalNormalTabManualSmokePlan
+    var tabID: String
+    var documentID: String
+    var navigationSequence: Int
+    var url: String
+    var origin: String
+    var surfaceClassification: ChromeMV3WebViewSurface
+    var normalBrowsingSurfaceOnly: Bool
+    var auxiliarySurfacesExcluded: Bool
+    var requiredReviewedScriptSHA256: String
+    var reviewedScriptSHA256: String?
+    var reviewedScriptHashMatched: Bool
+    var reviewedScriptExecutedByWebKit: Bool
+    var isolatedWorldUsed: Bool
+    var topFrameUsed: Bool
+    var domObservationBefore:
+        ChromeMV3LocalExperimentalWebKitSyntheticLoginDOMSnapshot
+    var domObservationAfter:
+        ChromeMV3LocalExperimentalWebKitSyntheticLoginDOMSnapshot
+    var usernameFieldExistsBefore: Bool
+    var passwordFieldExistsBefore: Bool
+    var submitButtonExistsBefore: Bool
+    var initialValuesEmpty: Bool
+    var usernameValueAfter: String
+    var passwordValueAfter: String
+    var dummyMarkersOnly: Bool
+    var finalValuesMatchDummyFill: Bool
+    var fieldsTouched: [String]
+    var runtimeCost:
+        ChromeMV3LocalExperimentalProductNormalTabExperimentRuntimeCost
+    var teardown: ChromeMV3LocalExperimentalNormalTabManualSmokeTeardown
+    var actionExplicitOnly: Bool
+    var managerReadoutExecutedExperiment: Bool
+    var productSupportClaimed: Bool
+    var blockers: [ChromeMV3ProductNormalTabReadinessBlocker]
+    var currentBlocker: String
+    var diagnostics: [String]
+
+    static func notAttempted(
+        url: String,
+        documentID: String,
+        reason: String
+    ) -> Self {
+        let manual =
+            ChromeMV3LocalExperimentalNormalTabManualSmokeResult.notAttempted(
+                url: url,
+                documentID: documentID,
+                reason: reason
+            )
+        return .blocked(
+            request:
+                ChromeMV3LocalExperimentalProductNormalTabExecutionExperimentRequest(
+                    normalTabExecutionRequest:
+                        ChromeMV3LocalExperimentalNormalTabManualSmokeRequest(
+                            preflight: manual.eligibility,
+                            injectionPlan:
+                                ChromeMV3ProductNormalTabReviewedFileInjectionPlan
+                                .make(preflight: manual.eligibility),
+                            modeledInjectionAttempt:
+                                .notAttempted(reason: reason),
+                            dummyUsername:
+                                "sumi-test-user@example.test",
+                            dummyPassword:
+                                "sumi-test-password-not-secret",
+                            productDefaultRuntimeAvailable: false,
+                            matchAboutBlank: false,
+                            matchOriginAsFallback: false
+                        ),
+                    localProductNormalTabExperimentGateAllowed: false,
+                    requiredReviewedScriptSHA256:
+                        ChromeMV3LocalExperimentalProductNormalTabExperimentPolicy
+                        .reviewedBitwardenBootstrapAutofillSHA256
+                ),
+            blockers: [.blockedByLocalExperimentalGate],
+            diagnostics: [reason]
+        )
+    }
+
+    static func blocked(
+        request:
+            ChromeMV3LocalExperimentalProductNormalTabExecutionExperimentRequest,
+        blockers: [ChromeMV3ProductNormalTabReadinessBlocker],
+        diagnostics: [String]
+    ) -> Self {
+        let preflight = request.normalTabExecutionRequest.preflight
+        let plan =
+            ChromeMV3LocalExperimentalNormalTabManualSmokePlan.make(
+                preflight: preflight,
+                injectionPlan:
+                    request.normalTabExecutionRequest.injectionPlan
+            )
+        let sortedBlockers = Array(Set(blockers)).sorted()
+        let before =
+            ChromeMV3LocalExperimentalWebKitSyntheticLoginDOMSnapshot
+            .notAttempted(
+                phase: "before",
+                documentID: preflight.documentID,
+                navigationSequence: 0
+            )
+        let after =
+            ChromeMV3LocalExperimentalWebKitSyntheticLoginDOMSnapshot
+            .notAttempted(
+                phase: "after",
+                documentID: preflight.documentID,
+                navigationSequence: 0
+            )
+        return make(
+            attempted: true,
+            allowed: false,
+            request: request,
+            plan: plan,
+            before: before,
+            after: after,
+            fieldsTouched: [],
+            reviewedScriptExecutedByWebKit: false,
+            isolatedWorldUsed: preflight.contentWorld == .isolated,
+            topFrameUsed: preflight.isTopFrame && preflight.frameID == 0,
+            runtimeCost: .make(from: nil),
+            teardown: .notRequired,
+            blockers: sortedBlockers,
+            diagnostics:
+                uniqueSortedWebKitProgrammaticInjection(
+                    diagnostics + [
+                        "Product-normal-tab execution experiment was blocked before WebKit object creation.",
+                    ]
+                )
+        )
+    }
+
+    static func make(
+        request:
+            ChromeMV3LocalExperimentalProductNormalTabExecutionExperimentRequest,
+        execution:
+            ChromeMV3LocalExperimentalNormalTabManualSmokeResult
+    ) -> Self {
+        make(
+            attempted: execution.attempted,
+            allowed: execution.allowed,
+            request: request,
+            plan: execution.injectionPlan,
+            before: execution.domObservationBefore,
+            after: execution.domObservationAfter,
+            fieldsTouched: execution.fieldsTouched,
+            reviewedScriptExecutedByWebKit:
+                execution.reviewedScriptExecutedByWebKit,
+            isolatedWorldUsed: execution.isolatedWorldOnly,
+            topFrameUsed: execution.topFrameOnly,
+            runtimeCost: .make(from: execution),
+            teardown: execution.teardown,
+            blockers: execution.blockers,
+            diagnostics:
+                uniqueSortedWebKitProgrammaticInjection(
+                    execution.diagnostics + [
+                        "Product-normal-tab execution experiment completed through the explicit local experimental product-normal-tab candidate path.",
+                    ]
+                )
+        )
+    }
+
+    private static func make(
+        attempted: Bool,
+        allowed: Bool,
+        request:
+            ChromeMV3LocalExperimentalProductNormalTabExecutionExperimentRequest,
+        plan: ChromeMV3LocalExperimentalNormalTabManualSmokePlan,
+        before:
+            ChromeMV3LocalExperimentalWebKitSyntheticLoginDOMSnapshot,
+        after:
+            ChromeMV3LocalExperimentalWebKitSyntheticLoginDOMSnapshot,
+        fieldsTouched: [String],
+        reviewedScriptExecutedByWebKit: Bool,
+        isolatedWorldUsed: Bool,
+        topFrameUsed: Bool,
+        runtimeCost:
+            ChromeMV3LocalExperimentalProductNormalTabExperimentRuntimeCost,
+        teardown: ChromeMV3LocalExperimentalNormalTabManualSmokeTeardown,
+        blockers: [ChromeMV3ProductNormalTabReadinessBlocker],
+        diagnostics: [String]
+    ) -> Self {
+        let policy =
+            ChromeMV3LocalExperimentalProductNormalTabExperimentPolicy
+            .bitwardenReviewedBootstrap
+        let preflight = request.normalTabExecutionRequest.preflight
+        let reviewedHash =
+            request.normalTabExecutionRequest.injectionPlan
+            .generatedResourceHash
+        let reviewedHashMatched =
+            reviewedHash == request.requiredReviewedScriptSHA256
+        let dummyUsername =
+            request.normalTabExecutionRequest.dummyUsername
+        let dummyPassword =
+            request.normalTabExecutionRequest.dummyPassword
+        let finalValuesMatch =
+            after.usernameValue == dummyUsername
+                && after.passwordValue == dummyPassword
+        let markerFields =
+            Set(["sumi-login-email", "sumi-login-password"])
+        let touchedOnlySyntheticMarkers =
+            Set(fieldsTouched).isSubset(of: markerFields)
+                && fieldsTouched.isEmpty == false
+        return Self(
+            attempted: attempted,
+            allowed:
+                allowed
+                    && reviewedHashMatched
+                    && finalValuesMatch
+                    && teardown.completed,
+            policy: policy,
+            productNormalTabExperimentAvailableInLocalExperimentalGate:
+                policy
+                .productNormalTabExperimentAvailableInLocalExperimentalGate,
+            productNormalTabExperimentAvailableByDefault:
+                policy.productNormalTabExperimentAvailableByDefault,
+            productDefaultRuntimeAvailable:
+                policy.productDefaultRuntimeAvailable
+                    || request.normalTabExecutionRequest
+                    .productDefaultRuntimeAvailable
+                    || preflight.policy.productDefaultRuntimeAvailable,
+            reviewedFileOnly: policy.reviewedFileOnly,
+            syntheticHTTPSOriginOnly: policy.syntheticHTTPSOriginOnly,
+            isolatedWorldOnly: policy.isolatedWorldOnly,
+            topFrameOnly: policy.topFrameOnly,
+            auxiliarySurfaceAllowed: policy.auxiliarySurfaceAllowed,
+            teardownRequired: policy.teardownRequired,
+            eligibility: preflight,
+            injectionPlan: plan,
+            tabID: preflight.tabID,
+            documentID: preflight.documentID,
+            navigationSequence: after.navigationSequence,
+            url: preflight.urlString,
+            origin:
+                ChromeMV3RuntimeMessagingURL.origin(from: preflight.urlString)
+                    ?? "invalid",
+            surfaceClassification: preflight.tabSurface,
+            normalBrowsingSurfaceOnly: preflight.tabSurface == .normalTab,
+            auxiliarySurfacesExcluded:
+                preflight.policy.auxiliarySurfaceAllowed == false,
+            requiredReviewedScriptSHA256:
+                request.requiredReviewedScriptSHA256,
+            reviewedScriptSHA256: reviewedHash,
+            reviewedScriptHashMatched: reviewedHashMatched,
+            reviewedScriptExecutedByWebKit: reviewedScriptExecutedByWebKit,
+            isolatedWorldUsed: isolatedWorldUsed,
+            topFrameUsed: topFrameUsed,
+            domObservationBefore: before,
+            domObservationAfter: after,
+            usernameFieldExistsBefore: before.usernameFieldExists,
+            passwordFieldExistsBefore: before.passwordFieldExists,
+            submitButtonExistsBefore: before.submitButtonExists,
+            initialValuesEmpty: before.initialValuesEmpty,
+            usernameValueAfter: after.usernameValue,
+            passwordValueAfter: after.passwordValue,
+            dummyMarkersOnly:
+                touchedOnlySyntheticMarkers && finalValuesMatch,
+            finalValuesMatchDummyFill: finalValuesMatch,
+            fieldsTouched: fieldsTouched.sorted(),
+            runtimeCost: runtimeCost,
+            teardown: teardown,
+            actionExplicitOnly: true,
+            managerReadoutExecutedExperiment: false,
+            productSupportClaimed: false,
+            blockers: Array(Set(blockers)).sorted(),
+            currentBlocker:
+                Array(Set(blockers)).sorted().first?.rawValue ?? "none",
+            diagnostics:
+                uniqueSortedWebKitProgrammaticInjection(
+                    diagnostics + [
+                        reviewedHashMatched
+                            ? "Reviewed script SHA-256 matched the experiment requirement."
+                            : "Reviewed script SHA-256 did not match the experiment requirement.",
+                        "Product/default runtime remains off outside this explicit experiment.",
+                        "This is not Bitwarden product support and does not enable general normal-tab extension support.",
+                    ]
+                )
+        )
+    }
+}
+
 #if DEBUG
 @available(macOS 15.5, *)
 @MainActor
@@ -1293,6 +1681,58 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
         )
     }
 
+    static func runProductNormalTabExecutionExperiment(
+        _ request:
+            ChromeMV3LocalExperimentalProductNormalTabExecutionExperimentRequest
+    ) async
+        -> ChromeMV3LocalExperimentalProductNormalTabExecutionExperimentResult
+    {
+        let preflight = request.normalTabExecutionRequest.preflight
+        var blockers = preflight.blockers
+        if request.localProductNormalTabExperimentGateAllowed == false {
+            blockers.append(.blockedByLocalExperimentalGate)
+        }
+        if request.normalTabExecutionRequest.productDefaultRuntimeAvailable
+            || preflight.policy.productDefaultRuntimeAvailable
+        {
+            blockers.append(.blockedByRuntimeGate)
+        }
+        if request.normalTabExecutionRequest.matchAboutBlank
+            || request.normalTabExecutionRequest.matchOriginAsFallback
+        {
+            blockers.append(.blockedByNonSyntheticOrigin)
+        }
+        if request.normalTabExecutionRequest.injectionPlan
+            .performsExecutionByManagerReadout
+        {
+            blockers.append(.blockedByRuntimeGate)
+        }
+        let reviewedHash = request.normalTabExecutionRequest.injectionPlan
+            .generatedResourceHash
+        if reviewedHash == nil
+            || reviewedHash != request.requiredReviewedScriptSHA256
+        {
+            blockers.append(.blockedByMissingReviewedResource)
+        }
+        blockers = Array(Set(blockers)).sorted()
+        guard blockers.isEmpty else {
+            return .blocked(
+                request: request,
+                blockers: blockers,
+                diagnostics: [
+                    "Product-normal-tab experiment preflight blocked object creation.",
+                    "Required reviewed script SHA-256: \(request.requiredReviewedScriptSHA256).",
+                    "Actual reviewed script SHA-256: \(reviewedHash ?? "missing").",
+                ]
+            )
+        }
+
+        let execution = await runManualNormalTabSmoke(
+            request.normalTabExecutionRequest
+        )
+        return .make(request: request, execution: execution)
+    }
+
     private static func preflightBlockers(
         _ request: ChromeMV3LocalExperimentalWebKitProgrammaticInjectionRequest
     ) -> [ChromeMV3LocalExperimentalWebKitProgrammaticInjectionBlocker] {
@@ -1891,6 +2331,7 @@ extension ChromeMV3PasswordManagerRealPackageTrialRunner {
         )
         var executedAdapterCount = 0
         var executedManualNormalTabSmokeCount = 0
+        var executedProductNormalTabExperimentCount = 0
         for index in report.rows.indices
         where report.rows[index].targetClass == .bitwarden {
             var smoke = report.rows[index].bitwardenE2ESmoke
@@ -1948,9 +2389,27 @@ extension ChromeMV3PasswordManagerRealPackageTrialRunner {
                 manualResult,
                 to: smoke.detectFillSmoke
             )
+            let productExperimentResult = await
+                ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter
+                .runProductNormalTabExecutionExperiment(
+                    ChromeMV3LocalExperimentalProductNormalTabExecutionExperimentRequest(
+                        normalTabExecutionRequest: manualRequest,
+                        localProductNormalTabExperimentGateAllowed:
+                            serviceWorkerTrialGateSource
+                            .allowsScopedExecution,
+                        requiredReviewedScriptSHA256:
+                            ChromeMV3LocalExperimentalProductNormalTabExperimentPolicy
+                            .reviewedBitwardenBootstrapAutofillSHA256
+                    )
+                )
+            smoke.detectFillSmoke = applying(
+                productExperimentResult,
+                to: smoke.detectFillSmoke
+            )
             report.rows[index].bitwardenE2ESmoke = smoke
             executedAdapterCount += 1
             executedManualNormalTabSmokeCount += 1
+            executedProductNormalTabExperimentCount += 1
         }
         report.diagnostics =
             uniqueSortedWebKitProgrammaticInjection(
@@ -1961,6 +2420,9 @@ extension ChromeMV3PasswordManagerRealPackageTrialRunner {
                     executedManualNormalTabSmokeCount == 0
                         ? "Explicit async manual normal-tab smoke runner created no adapter because no gated Bitwarden detect/fill smoke was eligible."
                         : "Explicit async manual normal-tab smoke runner executed \(executedManualNormalTabSmokeCount) gated Bitwarden reviewed-bundle normal-tab smoke attempt(s).",
+                    executedProductNormalTabExperimentCount == 0
+                        ? "Explicit async product-normal-tab experiment runner created no adapter because no gated Bitwarden detect/fill smoke was eligible."
+                        : "Explicit async product-normal-tab experiment runner executed \(executedProductNormalTabExperimentCount) gated Bitwarden reviewed-bundle product-normal-tab experiment attempt(s).",
                 ]
             )
         if writeReport {
@@ -2150,6 +2612,45 @@ extension ChromeMV3PasswordManagerRealPackageTrialRunner {
                     + result.diagnostics
                     + [
                         "Manual normal-tab smoke allowed=\(result.allowed); managerReadoutExecutes=\(result.injectionPlan.managerReadoutExecutes); productDefaultRuntimeAvailable=\(result.productDefaultRuntimeAvailable).",
+                    ]
+            )
+        return updated
+    }
+
+    private static func applying(
+        _ result:
+            ChromeMV3LocalExperimentalProductNormalTabExecutionExperimentResult,
+        to smoke: ChromeMV3PasswordManagerRealPackageDetectFillSmoke
+    ) -> ChromeMV3PasswordManagerRealPackageDetectFillSmoke {
+        var updated = smoke
+        updated.productNormalTabExecutionExperimentResult = result
+        if result.allowed {
+            updated.domObservationBefore =
+                realPackageDOMObservation(result.domObservationBefore)
+            updated.domObservationAfter =
+                realPackageDOMObservation(result.domObservationAfter)
+            updated.domObservationResult =
+                "productNormalTabExperimentDOM: reviewed content/bootstrap-autofill.js changed only the synthetic username/password fields after isolated top-frame execution."
+            updated.dummyFillResult =
+                "completed: product-normal-tab experiment executed the reviewed generated-bundle Bitwarden bootstrap and wrote only synthetic dummy values."
+            updated.touchedSyntheticFieldIDs = result.fieldsTouched
+            updated.touchedNonSyntheticFieldIDs = []
+            updated.status = .pass
+            updated.nextBlockerClassification = nil
+            updated.nextBlocker =
+                "Product-normal-tab experiment passed only under the local experimental gate; stable product normal-tab runtime support remains blocked."
+        } else {
+            updated.status = updated.status == .pass ? .partial : updated.status
+            updated.nextBlockerClassification = .contentScriptWorldUnavailable
+            updated.nextBlocker =
+                "Product-normal-tab experiment remains blocked: \(result.currentBlocker)."
+        }
+        updated.diagnostics =
+            uniqueSortedWebKitProgrammaticInjection(
+                updated.diagnostics
+                    + result.diagnostics
+                    + [
+                        "Product-normal-tab experiment allowed=\(result.allowed); managerReadoutExecutedExperiment=\(result.managerReadoutExecutedExperiment); productDefaultRuntimeAvailable=\(result.productDefaultRuntimeAvailable); retainedAfterTeardown=\(result.runtimeCost.retainedObjectCountAfterTeardown).",
                     ]
             )
         return updated
