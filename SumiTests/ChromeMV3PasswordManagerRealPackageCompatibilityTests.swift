@@ -1173,14 +1173,13 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertFalse(harness.contains("workerGlobalWindowDocumentExposed: " + positive))
         XCTAssertFalse(harness.contains("fetchAvailableByDefault: " + positive))
+        XCTAssertFalse(harness.contains("networkFetchAllowed: " + positive))
         XCTAssertFalse(
             harness.contains("fetchNetworkExecutionAllowed: " + positive)
         )
-        XCTAssertFalse(
-            harness.contains(
-                "fetchExtensionLocalExecutionAllowed: " + positive
-            )
-        )
+        XCTAssertFalse(harness.contains("credentialsAllowed: " + positive))
+        XCTAssertFalse(harness.contains("cacheAllowed: " + positive))
+        XCTAssertTrue(harness.contains("generatedBundleOnly: " + positive))
         XCTAssertFalse(harness.contains("SystemRandomNumberGenerator"))
         XCTAssertTrue(harness.contains("SecRandomCopyBytes(kSecRandomDefault"))
         XCTAssertTrue(
@@ -1259,6 +1258,22 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         let bitwarden = try XCTUnwrap(byClass[.bitwarden])
         let onePassword = try XCTUnwrap(byClass[.onePassword])
         let proton = try XCTUnwrap(byClass[.protonPass])
+        XCTAssertEqual(
+            bitwarden.serviceWorkerEventReadiness.nextBlockerClassification,
+            .otherPreciseBlocker
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
+                .contains("extension-local generated-bundle fetch")
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
+                .contains("notCopiedGeneratedResource")
+        )
+        XCTAssertFalse(
+            bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
+                .contains("fetch remains classified but disabled")
+        )
         XCTAssertFalse(
             bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
                 .contains("chrome.i18n.getUILanguage")
@@ -1645,17 +1660,17 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertEqual(fetchClassifications.count, 1)
         XCTAssertEqual(
             fetchClassifications.first?.requestKind,
-            .extensionLocalResource
+            .missingResource
         )
         XCTAssertEqual(
             fetchClassifications.first?.blocker,
-            "extensionLocalFetchDisabled"
+            "missingResource"
         )
         XCTAssertEqual(fetchClassifications.first?.executionAllowed, false)
         XCTAssertTrue(
             report.rows.first?.serviceWorkerEventReadiness
                 .fetchClassificationSummary.contains {
-                    $0.contains("extensionLocalResource")
+                    $0.contains("missingResource")
                         && $0.contains("allowed=false")
                 } == true
         )

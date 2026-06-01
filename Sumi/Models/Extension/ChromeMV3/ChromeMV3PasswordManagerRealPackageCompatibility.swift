@@ -3515,16 +3515,19 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             + staticRecords.filter(\.networkAccessRequired).count
         let local = runtime.filter(\.extensionLocalResource).count
             + staticRecords.filter(\.extensionLocalResource).count
+        let fulfilled = runtime.filter(\.executionAllowed).count
         let unknown =
             runtime.filter {
                 $0.requestKind == .unknownInput
+                    || $0.requestKind == .unsupportedRequestShape
                     || $0.requestKind == .unsupportedScheme
             }.count
             + staticRecords.filter {
                 $0.requestKind == .unknownInput
+                    || $0.requestKind == .unsupportedRequestShape
                     || $0.requestKind == .unsupportedScheme
             }.count
-        return "classifiedDisabled: runtime=\(runtime.count), static=\(staticRecords.count), remote=\(remote), extensionLocal=\(local), unknown=\(unknown), default=\(policy.fetchAvailableByDefault), networkExecution=\(policy.fetchNetworkExecutionAllowed), extensionLocalExecution=\(policy.fetchExtensionLocalExecutionAllowed)."
+        return "localExperimentalGeneratedBundleFetch: runtime=\(runtime.count), static=\(staticRecords.count), fulfilled=\(fulfilled), remote=\(remote), extensionLocal=\(local), unknown=\(unknown), available=\(policy.fetchAvailableInLocalExperimentalGate), default=\(policy.fetchAvailableByDefault), networkExecution=\(policy.fetchNetworkExecutionAllowed), extensionLocalExecution=\(policy.fetchExtensionLocalExecutionAllowed), generatedBundleOnly=\(policy.generatedBundleOnly), credentials=\(policy.credentialsAllowed), cache=\(policy.cacheAllowed)."
     }
 
     private static func serviceWorkerFetchClassificationSummary(
@@ -3535,14 +3538,21 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         let runtime =
             (executionStartResult?.fetchClassificationRecords ?? []).map {
                 record in
-                [
+                var components = [
                     "runtime",
                     record.sourcePath ?? "unknown",
                     "\(record.line ?? 0)",
                     record.requestKind.rawValue,
                     record.blocker,
                     "allowed=\(record.executionAllowed)",
-                ].joined(separator: ":")
+                ]
+                if let fetchedResourcePath = record.fetchedResourcePath {
+                    components.append("path=\(fetchedResourcePath)")
+                }
+                if let status = record.status {
+                    components.append("status=\(status)")
+                }
+                return components.joined(separator: ":")
             }
         let staticRecords = dependencyInventory.fetchClassifications.map {
             record in
@@ -3669,11 +3679,22 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             )
         }
         if let fetchRecord =
-            executionStartResult?.fetchClassificationRecords.first
+            executionStartResult?.fetchClassificationRecords.first(where: {
+                $0.executionAllowed == false
+            })
         {
+            let classification:
+                ChromeMV3PasswordManagerRealPackageNextBlockerClassification =
+                    fetchRecord.networkAccessRequired
+                    ? .networkFetchUnsupported
+                    : .otherPreciseBlocker
+            let resourceScope =
+                fetchRecord.networkAccessRequired
+                ? "network"
+                : "extension-local generated-bundle"
             return (
-                .networkFetchUnsupported,
-                "Execution reached fetch classified as \(fetchRecord.requestKind.rawValue) at \(fetchRecord.sourcePath ?? "unknown"):\(fetchRecord.line ?? 0); networkRequired=\(fetchRecord.networkAccessRequired), extensionLocal=\(fetchRecord.extensionLocalResource), executionAllowed=\(fetchRecord.executionAllowed), blocker=\(fetchRecord.blocker)."
+                classification,
+                "Execution reached \(resourceScope) fetch classified as \(fetchRecord.requestKind.rawValue) at \(fetchRecord.sourcePath ?? "unknown"):\(fetchRecord.line ?? 0); networkRequired=\(fetchRecord.networkAccessRequired), extensionLocal=\(fetchRecord.extensionLocalResource), executionAllowed=\(fetchRecord.executionAllowed), blocker=\(fetchRecord.blocker)."
             )
         }
         if let fetchCall =
@@ -3832,12 +3853,21 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         ) {
             return "Classify the worker window/global dependency narrowly and prefer WorkerGlobalScope-compatible shims only; do not expose DOM Window or document."
         }
-        if executionStartResult?.fetchClassificationRecords.isEmpty == false
-            || executionStartResult?.blockedUnsupportedCalls.contains(
+        if let fetchRecord =
+            executionStartResult?.fetchClassificationRecords.first(where: {
+                $0.executionAllowed == false
+            })
+        {
+            if fetchRecord.networkAccessRequired {
+                return "Keep remote fetch blocked; only consider network access as a separate audited service-worker slice with explicit credentials and cache policy."
+            }
+            return "Treat the blocked extension-local fetch as a generated-bundle resource issue: add the copied resource if appropriate, keep traversal/symlink/file/data/blob guards, and keep stable runtime default-off."
+        }
+        if executionStartResult?.blockedUnsupportedCalls.contains(
                 where: { $0.hasPrefix("globalThis.fetch") }
             ) == true
         {
-            return "Keep fetch classified but disabled; choose any future local-resource or network policy only as a separate audited slice, without enabling arbitrary service-worker network access."
+            return "Inspect the blocked fetch call and preserve the generated-bundle-only/no-network fetch policy before adding another harness slice."
         }
         if dependencyInventory.serviceWorkerType == "module" {
             return dependencyInventory.nextRecommendedImplementationPath
@@ -5663,7 +5693,7 @@ enum ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventoryScanner 
                literal.lowercased().hasPrefix("http://")
                     || literal.lowercased().hasPrefix("https://")
             {
-                requestKind = .remoteNetwork
+                requestKind = .remoteNetworkBlocked
                 resolvedURL = literal
                 networkAccessRequired = true
                 extensionLocalResource = false
@@ -5672,12 +5702,12 @@ enum ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventoryScanner 
             } else if let literal,
                       literal.lowercased().hasPrefix("chrome-extension://")
             {
-                requestKind = .extensionLocalResource
+                requestKind = .extensionLocalGeneratedResource
                 resolvedURL = literal
                 networkAccessRequired = false
                 extensionLocalResource = true
-                blocker = "extensionLocalFetchDisabled"
-                diagnostics.append("Extension-local chrome-extension fetch remains classified but disabled.")
+                blocker = "staticInventoryOnly"
+                diagnostics.append("Extension-local chrome-extension fetch is eligible only for runtime generated-bundle containment checks.")
             } else if let literal,
                       literal.hasPrefix("/"),
                       literal.hasPrefix("//") == false
@@ -5685,13 +5715,35 @@ enum ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventoryScanner 
                 let normalized = normalizeInventoryImportPath(
                     String(literal.drop(while: { $0 == "/" }))
                 )
-                requestKind = .extensionLocalResource
                 resolvedURL = normalized.path
                 networkAccessRequired = false
                 extensionLocalResource = true
-                blocker = "extensionLocalFetchDisabled"
+                let generatedContained = normalized.path.flatMap {
+                    path -> Bool? in
+                    guard let generatedRoot else { return nil }
+                    let candidate = generatedRoot
+                        .appendingPathComponent(path)
+                        .standardizedFileURL
+                    return safeURLInsideRoot(
+                        candidate.resolvingSymlinksInPath(),
+                        root: generatedRoot
+                    )
+                        && generatedBundleRecord?.copiedResourcePaths
+                            .contains(path) == true
+                        && FileManager.default.fileExists(atPath: candidate.path)
+                }
+                requestKind =
+                    generatedContained == false
+                        ? .missingResource
+                        : .relativeGeneratedResource
+                blocker =
+                    generatedContained == false
+                        ? "missingResource"
+                        : "staticInventoryOnly"
                 diagnostics.append(
-                    "Root-relative fetch is treated as an extension-local resource request and remains disabled; no fake Response is returned."
+                    generatedContained == false
+                        ? "Root-relative fetch does not resolve to a copied generated-bundle resource."
+                        : "Root-relative fetch is eligible only for runtime generated-bundle containment checks."
                 )
                 diagnostics.append(normalized.message)
             } else if [.stringLiteralLocal, .templateLiteralStatic, .concatenation]
@@ -5705,15 +5757,23 @@ enum ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventoryScanner 
                     generatedBundleRecord: generatedBundleRecord,
                     generatedRoot: generatedRoot
                 )
-                requestKind = .extensionLocalResource
+                requestKind =
+                    resolution.generatedRootContained == false
+                        ? .missingResource
+                        : .relativeGeneratedResource
                 resolvedURL = resolution.resolvedCandidatePath
                 networkAccessRequired = false
                 extensionLocalResource = true
-                blocker = "extensionLocalFetchDisabled"
+                blocker =
+                    resolution.generatedRootContained == false
+                        ? "missingResource"
+                        : "staticInventoryOnly"
                 diagnostics.append(
                     contentsOf:
                         resolution.diagnostics + [
-                            "Relative fetch is treated as an extension-local resource request and remains disabled; no fake Response is returned.",
+                            resolution.generatedRootContained == false
+                                ? "Relative fetch does not resolve to a copied generated-bundle resource."
+                                : "Relative fetch is eligible only for runtime generated-bundle containment checks.",
                         ]
                 )
             } else {

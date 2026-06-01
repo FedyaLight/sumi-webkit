@@ -691,9 +691,16 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
     var workerGlobalEventTargetSupportedTypes: [String]
     var workerGlobalWindowDocumentExposed: Bool
     var fetchClassificationAvailableInLocalExperimentalGate: Bool
+    var fetchAvailableInLocalExperimentalGate: Bool
     var fetchAvailableByDefault: Bool
+    var networkFetchAllowed: Bool
+    var extensionLocalFetchAllowed: Bool
+    var generatedBundleOnly: Bool
+    var credentialsAllowed: Bool
+    var cacheAllowed: Bool
     var fetchNetworkExecutionAllowed: Bool
     var fetchExtensionLocalExecutionAllowed: Bool
+    var fetchBlockers: [String]
     var blockers: [ChromeMV3ServiceWorkerJSExecutionPolicyBlocker]
     var diagnostics: [String]
 
@@ -883,9 +890,16 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
             workerGlobalEventTargetSupportedTypes: workerGlobalEventTypes,
             workerGlobalWindowDocumentExposed: false,
             fetchClassificationAvailableInLocalExperimentalGate: available,
+            fetchAvailableInLocalExperimentalGate: available,
             fetchAvailableByDefault: false,
+            networkFetchAllowed: false,
+            extensionLocalFetchAllowed: available,
+            generatedBundleOnly: true,
+            credentialsAllowed: false,
+            cacheAllowed: false,
             fetchNetworkExecutionAllowed: false,
-            fetchExtensionLocalExecutionAllowed: false,
+            fetchExtensionLocalExecutionAllowed: available,
+            fetchBlockers: available ? [] : blockers.map(\.rawValue),
             blockers: blockers,
             diagnostics:
                 uniqueSortedServiceWorkerJS(
@@ -902,7 +916,7 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
                         "SubtleCrypto is local-experimental and default-off; this slice supports digest only and rejects key, signing, derivation, encryption, wrapping, and unsupported algorithm calls precisely.",
                         "chrome.i18n.getUILanguage is available only in the local experimental gate and returns a deterministic UI language string; message catalogs and language detection remain unsupported.",
                         "Worker-global addEventListener/removeEventListener/dispatchEvent are modeled as a non-DOM EventTarget surface without window or document.",
-                        "fetch calls are classified and recorded, but network and extension-local resource fetch execution remain disabled.",
+                        "fetch is local-experimental and default-off; remote/network fetch remains blocked, while generated-bundle-contained extension-local resources can return a minimal modeled Response after containment checks.",
                         "Lifetime transitions are explicit fixture calls only.",
                         "Stable product runtime remains default-off.",
                     ]
@@ -1836,10 +1850,21 @@ enum ChromeMV3ServiceWorkerJSFetchRequestKind:
     Comparable,
     Sendable
 {
+    case absoluteFilesystemBlocked
+    case blobURLBlocked
+    case dataURLBlocked
     case extensionLocalResource
+    case extensionLocalGeneratedResource
+    case fileURLBlocked
+    case missingResource
+    case relativeGeneratedResource
+    case remoteNetworkBlocked
     case remoteNetwork
     case requestLikeObject
+    case symlinkEscapeBlocked
+    case traversalBlocked
     case unknownInput
+    case unsupportedRequestShape
     case unsupportedScheme
 
     static func < (
@@ -1865,6 +1890,9 @@ struct ChromeMV3ServiceWorkerJSFetchClassificationRecord:
     var extensionLocalResource: Bool
     var executionAllowed: Bool
     var blocker: String
+    var fetchedResourcePath: String?
+    var sourceByteCount: Int?
+    var status: Int?
     var diagnostics: [String]
 }
 
@@ -2158,6 +2186,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             installCryptoHost(in: context)
             installImportScriptsHost(in: context)
             installDynamicImportRewriteHost(in: context)
+            installFetchHost(in: context)
             _ = context.evaluateScript(
                 Self.registrationShim,
                 withSourceURL:
@@ -3178,6 +3207,434 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 host,
                 forKeyedSubscript:
                     "__sumiDynamicImportRewriteHost" as NSString
+            )
+        }
+
+        private func installFetchHost(in context: JSContext) {
+            let host: @convention(block) (JSValue) -> NSDictionary = {
+                [weak self] payload in
+                guard let self else {
+                    return fetchHostFailureResponseServiceWorkerJS(
+                        requestKind: .unsupportedRequestShape,
+                        networkAccessRequired: false,
+                        extensionLocalResource: false,
+                        blocker: "fetchResolverUnavailable",
+                        message:
+                            "fetch resolver owner is unavailable for the local experimental harness.",
+                        diagnostics: [
+                            "No network, browser fetch, or arbitrary filesystem fallback was attempted.",
+                        ]
+                    )
+                }
+                guard let dictionary = payload.toDictionary() else {
+                    return fetchHostFailureResponseServiceWorkerJS(
+                        requestKind: .unsupportedRequestShape,
+                        networkAccessRequired: false,
+                        extensionLocalResource: false,
+                        blocker: "unsupportedRequestShape",
+                        message:
+                            "fetch host received an uninspectable request payload.",
+                        diagnostics: [
+                            "The local harness accepts only serialized fetch request metadata.",
+                        ]
+                    )
+                }
+                return self.evaluateFetchRequest(dictionary)
+            }
+            context.setObject(
+                host,
+                forKeyedSubscript: "__sumiFetchHost" as NSString
+            )
+        }
+
+        private func evaluateFetchRequest(
+            _ payload: [AnyHashable: Any]
+        ) -> NSDictionary {
+            func string(_ key: String) -> String? {
+                if let value = payload[key] as? String {
+                    return value
+                }
+                if let value = payload[key] as? NSString {
+                    return String(value)
+                }
+                return nil
+            }
+            func bool(_ key: String) -> Bool {
+                if let value = payload[key] as? Bool {
+                    return value
+                }
+                if let value = payload[key] as? NSNumber {
+                    return value.boolValue
+                }
+                return false
+            }
+
+            let rawURL = string("rawURL") ?? ""
+            let resolvedURL = string("resolvedURL") ?? rawURL
+            let method = (string("method") ?? "GET").uppercased()
+            let inputWasExtensionURL = bool("inputWasExtensionURL")
+            let inputWasRelative = bool("inputWasRelative")
+            let extensionLocalKind:
+                ChromeMV3ServiceWorkerJSFetchRequestKind =
+                    inputWasExtensionURL
+                        ? .extensionLocalGeneratedResource
+                        : .relativeGeneratedResource
+
+            guard method == "GET" || method == "HEAD" else {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: .unsupportedRequestShape,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: false,
+                    extensionLocalResource: false,
+                    blocker: "methodUnsupported",
+                    message:
+                        "Only GET and HEAD are modeled for generated-bundle-contained extension-local fetch.",
+                    diagnostics: [
+                        "Mutating request methods are outside this local harness fetch slice.",
+                        "No browser network stack or extension runtime fetch implementation was invoked.",
+                    ]
+                )
+            }
+            if bool("explicitCredentials") {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: .unsupportedRequestShape,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: false,
+                    extensionLocalResource: false,
+                    blocker: "credentialsUnsupported",
+                    message:
+                        "credentials options are blocked by the local harness fetch policy.",
+                    diagnostics: [
+                        "The modeled fetch surface has no credential bridge.",
+                    ]
+                )
+            }
+            if bool("explicitCache") {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: .unsupportedRequestShape,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: false,
+                    extensionLocalResource: false,
+                    blocker: "cacheUnsupported",
+                    message:
+                        "cache options are blocked by the local harness fetch policy.",
+                    diagnostics: [
+                        "The modeled fetch surface has no cache bridge.",
+                    ]
+                )
+            }
+            if rawFetchPathContainsTraversalServiceWorkerJS(rawURL) {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: .traversalBlocked,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: false,
+                    extensionLocalResource: true,
+                    blocker: "pathTraversalBlocked",
+                    message:
+                        "fetch request path contains parent-directory traversal.",
+                    diagnostics: [
+                        "Traversal was rejected from the original fetch input before any file read.",
+                    ]
+                )
+            }
+            if looksLikeAbsoluteFilesystemFetchPathServiceWorkerJS(rawURL) {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: .absoluteFilesystemBlocked,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: false,
+                    extensionLocalResource: false,
+                    blocker: "absoluteFilesystemFetchBlocked",
+                    message:
+                        "Absolute filesystem fetch paths are blocked.",
+                    diagnostics: [
+                        "Generated-bundle fetch accepts extension URLs or relative extension paths only.",
+                        "No arbitrary local file read was attempted.",
+                    ]
+                )
+            }
+            guard rawURL.isEmpty == false,
+                  let components = URLComponents(string: resolvedURL),
+                  let scheme = components.scheme?.lowercased()
+            else {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: .unsupportedRequestShape,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: false,
+                    extensionLocalResource: false,
+                    blocker: "unsupportedRequestShape",
+                    message:
+                        "fetch request URL could not be resolved to a supported extension-local URL.",
+                    diagnostics: [
+                        "Only generated-bundle-contained extension-local resources are modeled.",
+                    ]
+                )
+            }
+            if scheme == "http" || scheme == "https" {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: .remoteNetworkBlocked,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: true,
+                    extensionLocalResource: false,
+                    blocker: "networkFetchDisabled",
+                    message: "Remote http(s) fetch remains disabled.",
+                    diagnostics: [
+                        "No URLSession, WebKit network load, or fake remote response was used.",
+                    ]
+                )
+            }
+            if scheme == "file" {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: .fileURLBlocked,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: false,
+                    extensionLocalResource: false,
+                    blocker: "fileURLFetchBlocked",
+                    message: "file: fetch URLs are blocked.",
+                    diagnostics: [
+                        "The local harness fetch resolver does not read arbitrary file URLs.",
+                    ]
+                )
+            }
+            if scheme == "data" {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: .dataURLBlocked,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: false,
+                    extensionLocalResource: false,
+                    blocker: "dataURLFetchBlocked",
+                    message: "data: fetch URLs are blocked.",
+                    diagnostics: [
+                        "The local harness does not synthesize responses from data URLs.",
+                    ]
+                )
+            }
+            if scheme == "blob" {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: .blobURLBlocked,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: false,
+                    extensionLocalResource: false,
+                    blocker: "blobURLFetchBlocked",
+                    message: "blob: fetch URLs are blocked.",
+                    diagnostics: [
+                        "The local harness has no Blob URL store.",
+                    ]
+                )
+            }
+            guard scheme == "chrome-extension",
+                  components.host == request.extensionID
+            else {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: .unsupportedRequestShape,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: false,
+                    extensionLocalResource: false,
+                    blocker: "fetchSchemeOrInputUnsupported",
+                    message:
+                        "fetch request is not for this extension's generated bundle.",
+                    diagnostics: [
+                        "Cross-extension and unsupported-scheme fetch requests are blocked.",
+                    ]
+                )
+            }
+            guard policy.fetchExtensionLocalExecutionAllowed else {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: extensionLocalKind,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: false,
+                    extensionLocalResource: true,
+                    blocker: "extensionLocalFetchDisabled",
+                    message:
+                        "Extension-local fetch execution is disabled by policy.",
+                    diagnostics: policy.diagnostics
+                )
+            }
+            guard let record = request.generatedBundleRecord else {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: .missingResource,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: false,
+                    extensionLocalResource: true,
+                    blocker: "generatedBundleRecordMissing",
+                    message:
+                        "No generated bundle record is available for fetch resolution.",
+                    diagnostics: [
+                        "Generated-bundle containment could not be proven.",
+                    ]
+                )
+            }
+            let root = URL(
+                fileURLWithPath: record.generatedBundleRootPath,
+                isDirectory: true
+            ).standardizedFileURL
+            guard directoryExistsServiceWorkerJS(root) else {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: .missingResource,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: false,
+                    extensionLocalResource: true,
+                    blocker: "generatedBundleRootMissing",
+                    message: "Generated bundle root is missing.",
+                    diagnostics: [
+                        "Generated-bundle containment could not be proven.",
+                    ]
+                )
+            }
+            let normalized =
+                normalizedFetchResourcePathServiceWorkerJS(
+                    components.percentEncodedPath
+                )
+            if let blocker = normalized.blocker {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: blocker,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: false,
+                    extensionLocalResource: true,
+                    blocker: blocker.fetchBlockerName,
+                    message: normalized.message,
+                    diagnostics: [
+                        "Fetch path normalization failed before any file read.",
+                    ]
+                )
+            }
+            guard let normalizedPath = normalized.path else {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: .unsupportedRequestShape,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: false,
+                    extensionLocalResource: true,
+                    blocker: "unsupportedRequestShape",
+                    message:
+                        "fetch resource path could not be normalized.",
+                    diagnostics: [
+                        "Fetch path normalization failed before any file read.",
+                    ]
+                )
+            }
+            let candidate = root
+                .appendingPathComponent(normalizedPath)
+                .standardizedFileURL
+            guard
+                let resolvedRelative = Sumi.relativePathInGeneratedBundle(
+                    candidate,
+                    root: root
+                )
+            else {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: .traversalBlocked,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: false,
+                    extensionLocalResource: true,
+                    blocker: "pathTraversalBlocked",
+                    message:
+                        "fetch resource path resolves outside the generated bundle root.",
+                    diagnostics: [
+                        "Generated-bundle containment was required before reading.",
+                    ]
+                )
+            }
+            if pathContainsSymbolicLinkServiceWorkerJS(candidate, root: root)
+            {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: .symlinkEscapeBlocked,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: false,
+                    extensionLocalResource: true,
+                    blocker: "symlinkEscapeBlocked",
+                    message:
+                        "fetch resource path contains a symbolic link and was rejected.",
+                    fetchedResourcePath: resolvedRelative,
+                    diagnostics: [
+                        "Symlink traversal is not allowed for generated-bundle fetch.",
+                    ]
+                )
+            }
+            guard containsServiceWorkerJS(root: root, candidate: candidate)
+            else {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: .traversalBlocked,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: false,
+                    extensionLocalResource: true,
+                    blocker: "pathTraversalBlocked",
+                    message:
+                        "fetch resource path resolves outside the generated bundle root after symlink resolution.",
+                    fetchedResourcePath: resolvedRelative,
+                    diagnostics: [
+                        "Generated-bundle containment was required before reading.",
+                    ]
+                )
+            }
+            guard record.copiedResourcePaths.contains(resolvedRelative) else {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: .missingResource,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: false,
+                    extensionLocalResource: true,
+                    blocker: "notCopiedGeneratedResource",
+                    message:
+                        "fetch resource is not recorded as a copied generated-bundle resource.",
+                    fetchedResourcePath: resolvedRelative,
+                    diagnostics: [
+                        "Generated-bundle fetch never falls back to arbitrary files under the root.",
+                    ]
+                )
+            }
+            guard regularFileExistsServiceWorkerJS(candidate) else {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: .missingResource,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: false,
+                    extensionLocalResource: true,
+                    blocker: "missingResource",
+                    message:
+                        "fetch resource is missing or is not a regular file.",
+                    fetchedResourcePath: resolvedRelative,
+                    diagnostics: [
+                        "Directories and missing paths do not receive synthetic Response bodies.",
+                    ]
+                )
+            }
+            guard let data = try? Data(contentsOf: candidate) else {
+                return fetchHostFailureResponseServiceWorkerJS(
+                    requestKind: .missingResource,
+                    resolvedURL: resolvedURL,
+                    networkAccessRequired: false,
+                    extensionLocalResource: true,
+                    blocker: "resourceReadFailed",
+                    message:
+                        "fetch resource could not be read from the generated bundle.",
+                    fetchedResourcePath: resolvedRelative,
+                    diagnostics: [
+                        "No fallback path was attempted after the generated-bundle read failed.",
+                    ]
+                )
+            }
+            let responseBytes = method == "HEAD" ? Data() : data
+            let status = 200
+            return fetchHostSuccessResponseServiceWorkerJS(
+                requestKind: extensionLocalKind,
+                resolvedURL: resolvedURL,
+                fetchedResourcePath: resolvedRelative,
+                sourceByteCount: data.count,
+                status: status,
+                statusText: "OK",
+                headers: [
+                    "content-length": "\(data.count)",
+                    "content-type":
+                        mimeTypeServiceWorkerJS(for: resolvedRelative),
+                ],
+                bytes: responseBytes,
+                diagnostics: uniqueSortedServiceWorkerJS(
+                    [
+                        inputWasRelative
+                            ? "Relative extension fetch resolved against the worker location."
+                            : "Extension URL fetch targeted this extension ID.",
+                        "Fetch resource was resolved inside the generated bundle root.",
+                        "Fetch resource is recorded as a copied generated-bundle resource.",
+                        "No network, credential bridge, cache bridge, browser fetch, or arbitrary local file access was used.",
+                    ]
+                )
             )
         }
 
@@ -5431,6 +5888,199 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       globalThis.setInterval = (callback, delay, ...args) =>
         scheduleQueuedCallback('interval', callback, delay, args);
       globalThis.clearInterval = clearTimer;
+      const normalizeHeaderName = (name) => String(name).toLowerCase();
+      const normalizeHeaderValue = (value) => String(value);
+      if (typeof globalThis.Headers !== 'function') {
+        defineWorkerGlobal('Headers', class Headers {
+          constructor(init = undefined) {
+            this._pairs = [];
+            if (init == null) return;
+            if (init instanceof Headers) {
+              init.forEach((value, key) => this.append(key, value));
+            } else if (Array.isArray(init)) {
+              for (const pair of init) this.append(pair[0], pair[1]);
+            } else if (typeof init === 'object') {
+              for (const key of Object.keys(init)) this.append(key, init[key]);
+            }
+          }
+          append(name, value) {
+            this._pairs.push([
+              normalizeHeaderName(name),
+              normalizeHeaderValue(value)
+            ]);
+          }
+          delete(name) {
+            const key = normalizeHeaderName(name);
+            this._pairs = this._pairs.filter((pair) => pair[0] !== key);
+          }
+          get(name) {
+            const key = normalizeHeaderName(name);
+            const values = this._pairs
+              .filter((pair) => pair[0] === key)
+              .map((pair) => pair[1]);
+            return values.length ? values.join(', ') : null;
+          }
+          has(name) {
+            const key = normalizeHeaderName(name);
+            return this._pairs.some((pair) => pair[0] === key);
+          }
+          set(name, value) {
+            const key = normalizeHeaderName(name);
+            this.delete(key);
+            this._pairs.push([key, normalizeHeaderValue(value)]);
+          }
+          entries() { return this._pairs.slice()[Symbol.iterator](); }
+          keys() { return this._pairs.map((pair) => pair[0])[Symbol.iterator](); }
+          values() { return this._pairs.map((pair) => pair[1])[Symbol.iterator](); }
+          forEach(callback, thisArg = undefined) {
+            for (const [key, value] of this._pairs) {
+              callback.call(thisArg, value, key, this);
+            }
+          }
+          [Symbol.iterator]() { return this.entries(); }
+        });
+      }
+      const copyBytes = (bytes) => {
+        const copy = new Uint8Array(bytes.byteLength);
+        copy.set(bytes);
+        return copy;
+      };
+      const bodyBytes = (body = null) => {
+        if (body == null) return new Uint8Array();
+        if (body instanceof Uint8Array) return copyBytes(body);
+        if (body instanceof ArrayBuffer) return new Uint8Array(body.slice(0));
+        if (ArrayBuffer.isView(body)) {
+          return new Uint8Array(
+            body.buffer.slice(
+              body.byteOffset || 0,
+              (body.byteOffset || 0) + body.byteLength
+            )
+          );
+        }
+        if (Array.isArray(body)) return new Uint8Array(body.map((value) => Number(value) & 0xff));
+        return new TextEncoder().encode(String(body));
+      };
+      if (typeof globalThis.Request !== 'function') {
+        defineWorkerGlobal('Request', class Request {
+          constructor(input, init = {}) {
+            init = init || {};
+            const source = input instanceof Request ? input : null;
+            const requestLike = input && typeof input === 'object' ? input : null;
+            const url = source
+              ? source.url
+              : input instanceof URL
+                ? input.href
+                : requestLike && typeof requestLike.url === 'string'
+                  ? requestLike.url
+                  : String(input);
+            this.url = url;
+            this.method = String(
+              init.method != null
+                ? init.method
+                : source
+                  ? source.method
+                  : requestLike && requestLike.method != null
+                    ? requestLike.method
+                    : 'GET'
+            ).toUpperCase();
+            this.headers = new Headers(
+              init.headers != null
+                ? init.headers
+                : source
+                  ? source.headers
+                  : requestLike ? requestLike.headers : undefined
+            );
+            this.credentials = String(
+              init.credentials != null
+                ? init.credentials
+                : source
+                  ? source.credentials
+                  : requestLike && requestLike.credentials != null
+                    ? requestLike.credentials
+                    : 'omit'
+            );
+            this.cache = String(
+              init.cache != null
+                ? init.cache
+                : source
+                  ? source.cache
+                  : requestLike && requestLike.cache != null
+                    ? requestLike.cache
+                    : 'default'
+            );
+            this._sumiExplicitCredentials =
+              Object.prototype.hasOwnProperty.call(init, 'credentials')
+              || (source && source._sumiExplicitCredentials === true)
+              || (requestLike && requestLike._sumiExplicitCredentials === true);
+            this._sumiExplicitCache =
+              Object.prototype.hasOwnProperty.call(init, 'cache')
+              || (source && source._sumiExplicitCache === true)
+              || (requestLike && requestLike._sumiExplicitCache === true);
+          }
+          clone() { return new Request(this); }
+        });
+      }
+      if (typeof globalThis.Response !== 'function') {
+        defineWorkerGlobal('Response', class Response {
+          constructor(body = null, init = {}) {
+            init = init || {};
+            this._bytes = bodyBytes(body);
+            this.status = init.status == null ? 200 : Number(init.status);
+            this.statusText = String(init.statusText || '');
+            this.headers = new Headers(init.headers);
+            this.url = String(init.url || '');
+            this.type = 'basic';
+            this.redirected = false;
+            this.body = null;
+            this.bodyUsed = false;
+            this.ok = this.status >= 200 && this.status <= 299;
+          }
+          _consumeBytes() {
+            if (this.bodyUsed) {
+              throw new TypeError('Response body has already been used.');
+            }
+            this.bodyUsed = true;
+            return copyBytes(this._bytes);
+          }
+          arrayBuffer() {
+            return Promise.resolve().then(() => {
+              const bytes = this._consumeBytes();
+              return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+            });
+          }
+          blob() {
+            return Promise.reject(new DOMException(
+              'Response.blob is outside the minimal local harness Response model.',
+              'NotSupportedError'
+            ));
+          }
+          bytes() {
+            return Promise.resolve().then(() => this._consumeBytes());
+          }
+          clone() {
+            if (this.bodyUsed) {
+              throw new TypeError('Response body has already been used.');
+            }
+            return new Response(copyBytes(this._bytes), {
+              status: this.status,
+              statusText: this.statusText,
+              headers: new Headers(this.headers),
+              url: this.url
+            });
+          }
+          formData() {
+            return Promise.reject(new DOMException(
+              'Response.formData is outside the minimal local harness Response model.',
+              'NotSupportedError'
+            ));
+          }
+          json() { return this.text().then((text) => JSON.parse(text)); }
+          text() {
+            return Promise.resolve().then(() =>
+              new TextDecoder('utf-8').decode(this._consumeBytes()));
+          }
+        });
+      }
       const previewFetchInput = (input) => {
         try {
           if (typeof input === 'string') return input.slice(0, 240);
@@ -5440,47 +6090,6 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         } catch (_) {
           return '<uninspectable>';
         }
-      };
-      const classifyFetchInput = (input) => {
-        const preview = previewFetchInput(input);
-        let rawURL = null;
-        let kind = 'unknownInput';
-        if (typeof input === 'string') {
-          rawURL = input;
-        } else if (input instanceof URL) {
-          rawURL = input.href;
-        } else if (input && typeof input.url === 'string') {
-          rawURL = input.url;
-          kind = 'requestLikeObject';
-        }
-        let resolvedURL = null;
-        let networkAccessRequired = false;
-        let extensionLocalResource = false;
-        if (rawURL != null) {
-          try {
-            const url = new URL(rawURL, location.href);
-            resolvedURL = url.href;
-            if (url.protocol === 'http:' || url.protocol === 'https:') {
-              networkAccessRequired = true;
-              extensionLocalResource = false;
-              kind = 'remoteNetwork';
-            } else if (url.protocol === 'chrome-extension:' && url.origin === extensionOrigin) {
-              extensionLocalResource = true;
-              kind = 'extensionLocalResource';
-            } else {
-              kind = 'unsupportedScheme';
-            }
-          } catch (_) {
-            kind = kind === 'requestLikeObject' ? kind : 'unknownInput';
-          }
-        }
-        return {
-          preview,
-          resolvedURL,
-          kind,
-          networkAccessRequired,
-          extensionLocalResource
-        };
       };
       const fetchCallSite = () => {
         const stack = String(new Error().stack || '');
@@ -5492,38 +6101,110 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           line: match ? Number(match[2]) : null
         };
       };
-      globalThis.fetch = function (input) {
-        const classification = classifyFetchInput(input);
-        const callSite = fetchCallSite();
+      const fetchFallbackResult = (requestKind, resolvedURL, blocker, error, diagnostics) => ({
+        ok: false,
+        requestKind,
+        resolvedURL,
+        networkAccessRequired: requestKind === 'remoteNetworkBlocked',
+        extensionLocalResource: requestKind === 'extensionLocalGeneratedResource' || requestKind === 'relativeGeneratedResource',
+        executionAllowed: false,
+        blocker,
+        error,
+        diagnostics
+      });
+      const recordFetchClassification = (result, preview, fallbackResolvedURL, callSite) => {
         fetchCallIndex += 1;
-        const blocker = classification.networkAccessRequired
-          ? 'networkFetchDisabled'
-          : classification.extensionLocalResource
-            ? 'extensionLocalFetchDisabled'
-            : 'fetchSchemeOrInputUnsupported';
-        noteBlocked(`globalThis.fetch.${classification.kind}.${blocker}`);
+        const blocker = String(result && result.blocker ? result.blocker : 'fetchSchemeOrInputUnsupported');
+        const requestKind = String(result && result.requestKind ? result.requestKind : 'unsupportedRequestShape');
+        const executionAllowed = !!(result && result.executionAllowed);
+        if (!executionAllowed) noteBlocked(`globalThis.fetch.${requestKind}.${blocker}`);
         fetchClassifications.push({
           callIndex: fetchCallIndex,
           sourcePath: callSite.sourcePath,
           line: callSite.line,
-          requestPreview: classification.preview,
-          resolvedURL: classification.resolvedURL,
-          requestKind: classification.kind,
-          networkAccessRequired: classification.networkAccessRequired,
-          extensionLocalResource: classification.extensionLocalResource,
-          executionAllowed: false,
+          requestPreview: preview,
+          resolvedURL: result && result.resolvedURL ? String(result.resolvedURL) : fallbackResolvedURL,
+          requestKind,
+          networkAccessRequired: !!(result && result.networkAccessRequired),
+          extensionLocalResource: !!(result && result.extensionLocalResource),
+          executionAllowed,
           blocker,
-          diagnostics: [
-            'fetch request was classified without network or extension-resource execution.',
-            classification.networkAccessRequired
-              ? 'Remote http(s) network fetch remains disabled.'
-              : classification.extensionLocalResource
-                ? 'Extension-local resource fetch remains disabled; no fake Response is returned.'
-                : 'Unsupported fetch input or scheme was blocked.',
-            'No URLSession, WebKit network load, or dummy Response is used by this harness.'
-          ]
+          fetchedResourcePath: result && result.fetchedResourcePath ? String(result.fetchedResourcePath) : null,
+          sourceByteCount: result && result.sourceByteCount != null ? Number(result.sourceByteCount) : null,
+          status: result && result.status != null ? Number(result.status) : null,
+          diagnostics: Array.isArray(result && result.diagnostics)
+            ? result.diagnostics.map((item) => String(item))
+            : ['fetch request was evaluated by the local harness policy.']
         });
-        throw new Error(`fetch is classified but disabled in the local experimental service-worker harness: ${blocker}.`);
+      };
+      globalThis.fetch = function (input, init = {}) {
+        const preview = previewFetchInput(input);
+        const callSite = fetchCallSite();
+        try {
+          const request = new Request(input, init || {});
+          const rawURL = String(request.url || '');
+          let resolvedURL = null;
+          let url = null;
+          try {
+            url = new URL(rawURL, location.href);
+            resolvedURL = url.href;
+          } catch (_) {
+            const result = fetchFallbackResult(
+              'unsupportedRequestShape',
+              null,
+              'unsupportedRequestShape',
+              'fetch request URL could not be resolved.',
+              ['Only generated-bundle-contained extension-local resources are modeled.']
+            );
+            recordFetchClassification(result, preview, null, callSite);
+            return Promise.reject(new TypeError(result.error));
+          }
+          const inputWasRelative = !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(rawURL);
+          const inputWasExtensionURL = !inputWasRelative && url.protocol === 'chrome-extension:';
+          const payload = {
+            rawURL,
+            resolvedURL,
+            method: request.method,
+            inputWasRelative,
+            inputWasExtensionURL,
+            explicitCredentials: request._sumiExplicitCredentials === true,
+            credentials: request.credentials,
+            explicitCache: request._sumiExplicitCache === true,
+            cache: request.cache
+          };
+          const result = typeof globalThis.__sumiFetchHost === 'function'
+            ? globalThis.__sumiFetchHost(payload)
+            : fetchFallbackResult(
+                'unsupportedRequestShape',
+                resolvedURL,
+                'fetchResolverUnavailable',
+                'fetch resolver host is unavailable.',
+                ['No network or arbitrary filesystem fallback was attempted.']
+              );
+          recordFetchClassification(result, preview, resolvedURL, callSite);
+          if (!result || !result.ok) {
+            const error = new TypeError(String(result && result.error
+              ? result.error
+              : 'fetch request was blocked by the local harness policy.'));
+            return Promise.reject(error);
+          }
+          return Promise.resolve(new Response(result.bytes || [], {
+            status: Number(result.status || 200),
+            statusText: String(result.statusText || 'OK'),
+            headers: result.headers || {},
+            url: String(result.resolvedURL || resolvedURL)
+          }));
+        } catch (error) {
+          const result = fetchFallbackResult(
+            'unsupportedRequestShape',
+            null,
+            'unsupportedRequestShape',
+            String(error && error.message ? error.message : error),
+            ['fetch request normalization threw before any host resolver action.']
+          );
+          recordFetchClassification(result, preview, null, callSite);
+          return Promise.reject(error);
+        }
       };
       for (const name of [
         'XMLHttpRequest',
@@ -5937,6 +6618,225 @@ private func regularFileExistsServiceWorkerJS(_ url: URL) -> Bool {
 private func symbolicLinkServiceWorkerJS(_ url: URL) -> Bool {
     (try? url.resourceValues(forKeys: [.isSymbolicLinkKey])
         .isSymbolicLink) == true
+}
+
+private func fetchHostFailureResponseServiceWorkerJS(
+    requestKind: ChromeMV3ServiceWorkerJSFetchRequestKind,
+    resolvedURL: String? = nil,
+    networkAccessRequired: Bool,
+    extensionLocalResource: Bool,
+    blocker: String,
+    message: String,
+    fetchedResourcePath: String? = nil,
+    diagnostics: [String]
+) -> NSDictionary {
+    var object: [String: Any] = [
+        "ok": false,
+        "requestKind": requestKind.rawValue,
+        "networkAccessRequired": networkAccessRequired,
+        "extensionLocalResource": extensionLocalResource,
+        "executionAllowed": false,
+        "blocker": blocker,
+        "error": message,
+        "diagnostics": diagnostics,
+    ]
+    if let resolvedURL {
+        object["resolvedURL"] = resolvedURL
+    }
+    if let fetchedResourcePath {
+        object["fetchedResourcePath"] = fetchedResourcePath
+    }
+    return object as NSDictionary
+}
+
+private func fetchHostSuccessResponseServiceWorkerJS(
+    requestKind: ChromeMV3ServiceWorkerJSFetchRequestKind,
+    resolvedURL: String,
+    fetchedResourcePath: String,
+    sourceByteCount: Int,
+    status: Int,
+    statusText: String,
+    headers: [String: String],
+    bytes: Data,
+    diagnostics: [String]
+) -> NSDictionary {
+    [
+        "ok": true,
+        "requestKind": requestKind.rawValue,
+        "resolvedURL": resolvedURL,
+        "networkAccessRequired": false,
+        "extensionLocalResource": true,
+        "executionAllowed": true,
+        "blocker": "none",
+        "fetchedResourcePath": fetchedResourcePath,
+        "sourceByteCount": sourceByteCount,
+        "status": status,
+        "statusText": statusText,
+        "headers": headers,
+        "bytes": bytes.map { NSNumber(value: $0) } as NSArray,
+        "diagnostics": diagnostics,
+    ] as NSDictionary
+}
+
+private func looksLikeAbsoluteFilesystemFetchPathServiceWorkerJS(
+    _ rawURL: String
+) -> Bool {
+    let lower = rawURL.lowercased()
+    guard lower.hasPrefix("file:") == false else { return false }
+    for prefix in [
+        "/applications/",
+        "/etc/",
+        "/library/",
+        "/opt/",
+        "/private/",
+        "/system/",
+        "/tmp/",
+        "/users/",
+        "/usr/",
+        "/var/",
+        "/volumes/",
+    ] where lower.hasPrefix(prefix) {
+        return true
+    }
+    return false
+}
+
+private func rawFetchPathContainsTraversalServiceWorkerJS(
+    _ rawURL: String
+) -> Bool {
+    let decoded = rawURL.removingPercentEncoding ?? rawURL
+    return decoded == ".."
+        || decoded.hasPrefix("../")
+        || decoded.hasPrefix("..\\")
+        || decoded.contains("/../")
+        || decoded.contains("\\..\\")
+}
+
+private func normalizedFetchResourcePathServiceWorkerJS(
+    _ percentEncodedPath: String
+) -> (
+    path: String?,
+    blocker: ChromeMV3ServiceWorkerJSFetchRequestKind?,
+    message: String
+) {
+    guard percentEncodedPath.isEmpty == false else {
+        return (
+            nil,
+            .unsupportedRequestShape,
+            "fetch resource path is empty."
+        )
+    }
+    guard
+        let decoded = percentEncodedPath.removingPercentEncoding,
+        decoded.contains("\0") == false,
+        decoded.contains("\\") == false
+    else {
+        return (
+            nil,
+            .unsupportedRequestShape,
+            "fetch resource path contains unsupported encoded or path separator material."
+        )
+    }
+    let withoutLeadingSlash =
+        decoded.hasPrefix("/") ? String(decoded.dropFirst()) : decoded
+    let rawSegments =
+        withoutLeadingSlash.split(separator: "/", omittingEmptySubsequences: false)
+    guard rawSegments.isEmpty == false else {
+        return (
+            nil,
+            .missingResource,
+            "fetch resource path does not name a generated-bundle file."
+        )
+    }
+    var segments: [String] = []
+    for rawSegment in rawSegments {
+        let segment = String(rawSegment)
+        if segment.isEmpty {
+            return (
+                nil,
+                .unsupportedRequestShape,
+                "fetch resource path contains an empty segment."
+            )
+        }
+        if segment == "." {
+            continue
+        }
+        if segment == ".." {
+            return (
+                nil,
+                .traversalBlocked,
+                "fetch resource path contains parent-directory traversal."
+            )
+        }
+        segments.append(segment)
+    }
+    guard segments.isEmpty == false else {
+        return (
+            nil,
+            .missingResource,
+            "fetch resource path does not name a generated-bundle file."
+        )
+    }
+    return (segments.joined(separator: "/"), nil, "fetch path normalized.")
+}
+
+private func mimeTypeServiceWorkerJS(for relativePath: String) -> String {
+    switch URL(fileURLWithPath: relativePath).pathExtension.lowercased() {
+    case "css":
+        return "text/css; charset=utf-8"
+    case "gif":
+        return "image/gif"
+    case "htm", "html":
+        return "text/html; charset=utf-8"
+    case "jpeg", "jpg":
+        return "image/jpeg"
+    case "js", "mjs":
+        return "text/javascript; charset=utf-8"
+    case "json", "map":
+        return "application/json; charset=utf-8"
+    case "png":
+        return "image/png"
+    case "svg":
+        return "image/svg+xml"
+    case "txt":
+        return "text/plain; charset=utf-8"
+    case "wasm":
+        return "application/wasm"
+    default:
+        return "application/octet-stream"
+    }
+}
+
+private extension ChromeMV3ServiceWorkerJSFetchRequestKind {
+    var fetchBlockerName: String {
+        switch self {
+        case .absoluteFilesystemBlocked:
+            return "absoluteFilesystemFetchBlocked"
+        case .blobURLBlocked:
+            return "blobURLFetchBlocked"
+        case .dataURLBlocked:
+            return "dataURLFetchBlocked"
+        case .fileURLBlocked:
+            return "fileURLFetchBlocked"
+        case .missingResource:
+            return "missingResource"
+        case .remoteNetworkBlocked, .remoteNetwork:
+            return "networkFetchDisabled"
+        case .symlinkEscapeBlocked:
+            return "symlinkEscapeBlocked"
+        case .traversalBlocked:
+            return "pathTraversalBlocked"
+        case .extensionLocalGeneratedResource,
+             .extensionLocalResource,
+             .relativeGeneratedResource:
+            return "extensionLocalFetchDisabled"
+        case .requestLikeObject,
+             .unknownInput,
+             .unsupportedRequestShape,
+             .unsupportedScheme:
+            return "fetchSchemeOrInputUnsupported"
+        }
+    }
 }
 
 private func containsServiceWorkerJSRegex(

@@ -68,7 +68,15 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertFalse(
             moduleDisabled.policy.fetchClassificationAvailableInLocalExperimentalGate
         )
+        XCTAssertFalse(
+            moduleDisabled.policy.fetchAvailableInLocalExperimentalGate
+        )
         XCTAssertFalse(moduleDisabled.policy.fetchAvailableByDefault)
+        XCTAssertFalse(moduleDisabled.policy.networkFetchAllowed)
+        XCTAssertFalse(moduleDisabled.policy.extensionLocalFetchAllowed)
+        XCTAssertTrue(moduleDisabled.policy.generatedBundleOnly)
+        XCTAssertFalse(moduleDisabled.policy.credentialsAllowed)
+        XCTAssertFalse(moduleDisabled.policy.cacheAllowed)
         XCTAssertFalse(moduleDisabled.policy.fetchNetworkExecutionAllowed)
         XCTAssertFalse(moduleDisabled.policy.fetchExtensionLocalExecutionAllowed)
         XCTAssertFalse(moduleDisabled.policy.cryptoGetRandomValuesAvailable)
@@ -136,7 +144,13 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertFalse(
             harness.policy.fetchClassificationAvailableInLocalExperimentalGate
         )
+        XCTAssertFalse(harness.policy.fetchAvailableInLocalExperimentalGate)
         XCTAssertFalse(harness.policy.fetchAvailableByDefault)
+        XCTAssertFalse(harness.policy.networkFetchAllowed)
+        XCTAssertFalse(harness.policy.extensionLocalFetchAllowed)
+        XCTAssertTrue(harness.policy.generatedBundleOnly)
+        XCTAssertFalse(harness.policy.credentialsAllowed)
+        XCTAssertFalse(harness.policy.cacheAllowed)
         XCTAssertFalse(harness.policy.fetchNetworkExecutionAllowed)
         XCTAssertFalse(harness.policy.fetchExtensionLocalExecutionAllowed)
         XCTAssertFalse(harness.policy.cryptoGetRandomValuesAvailable)
@@ -1021,53 +1035,223 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         )
     }
 
-    func testUnsupportedWebAPIRemainsBlockedAndObservable() throws {
-        let harness = try startedHarness(
+    func testGeneratedBundleLocalFetchReturnsMinimalResponse() throws {
+        var fixture = try makeHarness(
             source: """
-            try { fetch('https://example.com/data.json'); } catch (_) {}
-            try { fetch('./local.json'); } catch (_) {}
-            try { fetch('data:text/plain,blocked'); } catch (_) {}
-            chrome.runtime.onMessage.addListener(() => 'after-fetch');
-            """
+            globalThis.fetchResult = { state: 'pending' };
+            Promise.all([
+              fetch(chrome.runtime.getURL('local.json')).then(async (response) => {
+                const clone = response.clone();
+                const parsed = await clone.json();
+                const text = await response.text();
+                return {
+                  ok: response.ok,
+                  status: response.status,
+                  statusText: response.statusText,
+                  urlPrefix: response.url.startsWith('chrome-extension://service-worker-js-fixture-extension/'),
+                  text,
+                  parsed: parsed.value,
+                  contentType: response.headers.get('content-type'),
+                  bodyUsed: response.bodyUsed
+                };
+              }),
+              fetch('./bytes.txt').then(async (response) => ({
+                byteLength: (await response.arrayBuffer()).byteLength
+              })),
+              fetch('/local.json', { method: 'HEAD' }).then(async (response) => ({
+                headTextLength: (await response.text()).length
+              }))
+            ]).then((values) => {
+              globalThis.fetchResult = {
+                first: values[0],
+                byteLength: values[1].byteLength,
+                headTextLength: values[2].headTextLength,
+                requestType: typeof Request,
+                headersType: typeof Headers,
+                responseType: typeof Response,
+                windowType: typeof window,
+                documentType: typeof document
+              };
+            }).catch((error) => {
+              globalThis.fetchResult = { error: String(error && error.message ? error.message : error) };
+            });
+            chrome.runtime.onMessage.addListener(() => globalThis.fetchResult);
+            """,
+            localExperimentalGateAllowed: true
+        )
+        fixture.generatedRecord = try generatedRecord(
+            fixture,
+            adding: [
+                "bytes.txt": "abcde",
+                "local.json": #"{"value":"local"}"#,
+            ]
+        )
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request()
         )
 
-        XCTAssertTrue(
-            harness.snapshot.blockedUnsupportedCalls.contains {
-                $0.hasPrefix("globalThis.fetch.remoteNetwork")
-            }
-        )
-        XCTAssertTrue(
-            harness.snapshot.blockedUnsupportedCalls.contains {
-                $0.hasPrefix("globalThis.fetch.extensionLocalResource")
-            }
-        )
-        XCTAssertTrue(
-            harness.snapshot.blockedUnsupportedCalls.contains {
-                $0.hasPrefix("globalThis.fetch.unsupportedScheme")
-            }
+        XCTAssertEqual(harness.start().status, .running)
+        XCTAssertEqual(
+            harness.dispatch(
+                source: .popupOptionsRuntimeMessage,
+                payloadSummary: "local fetch"
+            ).responsePayload,
+            .object([
+                "byteLength": .number(5),
+                "documentType": .string("undefined"),
+                "first": .object([
+                    "bodyUsed": .bool(true),
+                    "contentType": .string("application/json; charset=utf-8"),
+                    "ok": .bool(true),
+                    "parsed": .string("local"),
+                    "status": .number(200),
+                    "statusText": .string("OK"),
+                    "text": .string(#"{"value":"local"}"#),
+                    "urlPrefix": .bool(true),
+                ]),
+                "headersType": .string("function"),
+                "headTextLength": .number(0),
+                "requestType": .string("function"),
+                "responseType": .string("function"),
+                "windowType": .string("undefined"),
+            ])
         )
         XCTAssertEqual(harness.snapshot.fetchClassificationRecords.count, 3)
         XCTAssertTrue(
             harness.snapshot.fetchClassificationRecords.contains {
-                $0.requestKind == .remoteNetwork
+                $0.requestKind == .extensionLocalGeneratedResource
+                    && $0.executionAllowed
+                    && $0.fetchedResourcePath == "local.json"
+                    && $0.status == 200
+                    && $0.sourceByteCount == #"{"value":"local"}"#.utf8.count
+            }
+        )
+        XCTAssertTrue(
+            harness.snapshot.fetchClassificationRecords.contains {
+                $0.requestKind == .relativeGeneratedResource
+                    && $0.executionAllowed
+                    && $0.fetchedResourcePath == "bytes.txt"
+                    && $0.sourceByteCount == 5
+            }
+        )
+        XCTAssertFalse(
+            harness.snapshot.blockedUnsupportedCalls.contains {
+                $0.hasPrefix("globalThis.fetch")
+            }
+        )
+    }
+
+    func testUnsafeAndNonLocalFetchesRemainBlockedAndClassified() throws {
+        let harness = try startedHarness(
+            source: """
+            const ignored = (promise) => promise.catch(() => {});
+            ignored(fetch('https://example.com/data.json'));
+            ignored(fetch('data:text/plain,blocked'));
+            ignored(fetch('blob:https://example.com/blocked'));
+            ignored(fetch('file:///tmp/blocked.json'));
+            ignored(fetch('../outside.json'));
+            ignored(fetch('/Users/example/outside.json'));
+            ignored(fetch('./missing.json'));
+            ignored(fetch('./local.json', { credentials: 'include' }));
+            ignored(fetch('./local.json', { cache: 'reload' }));
+            ignored(fetch('./local.json', { method: 'POST' }));
+            chrome.runtime.onMessage.addListener(() => 'after-fetch');
+            """,
+            extraFiles: ["local.json": "{}"]
+        )
+
+        XCTAssertEqual(harness.snapshot.fetchClassificationRecords.count, 10)
+        let records = harness.snapshot.fetchClassificationRecords
+        XCTAssertTrue(
+            records.contains {
+                $0.requestKind == .remoteNetworkBlocked
                     && $0.networkAccessRequired
-                    && $0.executionAllowed == false
                     && $0.blocker == "networkFetchDisabled"
+                    && $0.executionAllowed == false
+            }
+        )
+        XCTAssertTrue(records.contains { $0.requestKind == .dataURLBlocked })
+        XCTAssertTrue(records.contains { $0.requestKind == .blobURLBlocked })
+        XCTAssertTrue(records.contains { $0.requestKind == .fileURLBlocked })
+        XCTAssertTrue(records.contains { $0.requestKind == .traversalBlocked })
+        XCTAssertTrue(
+            records.contains {
+                $0.requestKind == .absoluteFilesystemBlocked
+                    && $0.blocker == "absoluteFilesystemFetchBlocked"
             }
         )
         XCTAssertTrue(
-            harness.snapshot.fetchClassificationRecords.contains {
-                $0.requestKind == .extensionLocalResource
-                    && $0.extensionLocalResource
-                    && $0.executionAllowed == false
-                    && $0.blocker == "extensionLocalFetchDisabled"
+            records.contains {
+                $0.requestKind == .missingResource
+                    && $0.blocker == "notCopiedGeneratedResource"
             }
         )
         XCTAssertTrue(
+            records.contains {
+                $0.requestKind == .unsupportedRequestShape
+                    && $0.blocker == "credentialsUnsupported"
+            }
+        )
+        XCTAssertTrue(
+            records.contains {
+                $0.requestKind == .unsupportedRequestShape
+                    && $0.blocker == "cacheUnsupported"
+            }
+        )
+        XCTAssertTrue(
+            records.contains {
+                $0.requestKind == .unsupportedRequestShape
+                    && $0.blocker == "methodUnsupported"
+            }
+        )
+        XCTAssertTrue(
+            harness.snapshot.blockedUnsupportedCalls.contains {
+                $0.hasPrefix("globalThis.fetch.remoteNetworkBlocked")
+            }
+        )
+        XCTAssertEqual(
+            harness.dispatch(
+                source: .popupOptionsRuntimeMessage,
+                payloadSummary: "after blocked fetch"
+            ).responsePayload,
+            .string("after-fetch")
+        )
+    }
+
+    func testFetchRejectsSymlinkGeneratedBundleResource() throws {
+        let fixture = try makeHarness(
+            source: """
+            fetch('./linked.json').catch(() => {});
+            chrome.runtime.onMessage.addListener(() => 'after-fetch');
+            """,
+            localExperimentalGateAllowed: true
+        )
+        let outside = try temporaryDirectory()
+            .appendingPathComponent("outside.json")
+        try #"{"outside":true}"#.write(
+            to: outside,
+            atomically: true,
+            encoding: .utf8
+        )
+        let linked = fixture.generatedRootURL
+            .appendingPathComponent("linked.json")
+        try FileManager.default.createSymbolicLink(
+            at: linked,
+            withDestinationURL: outside
+        )
+        var record = fixture.generatedRecord
+        record.copiedResourcePaths.append("linked.json")
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request(generatedRecord: record)
+        )
+
+        XCTAssertEqual(harness.start().status, .running)
+        XCTAssertTrue(
             harness.snapshot.fetchClassificationRecords.contains {
-                $0.requestKind == .unsupportedScheme
+                $0.requestKind == .symlinkEscapeBlocked
+                    && $0.fetchedResourcePath == "linked.json"
                     && $0.executionAllowed == false
-                    && $0.blocker == "fetchSchemeOrInputUnsupported"
+                    && $0.blocker == "symlinkEscapeBlocked"
             }
         )
         XCTAssertEqual(
@@ -2174,9 +2358,16 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         )
         XCTAssertFalse(policy.workerGlobalWindowDocumentExposed)
         XCTAssertTrue(policy.fetchClassificationAvailableInLocalExperimentalGate)
+        XCTAssertTrue(policy.fetchAvailableInLocalExperimentalGate)
         XCTAssertFalse(policy.fetchAvailableByDefault)
+        XCTAssertFalse(policy.networkFetchAllowed)
+        XCTAssertTrue(policy.extensionLocalFetchAllowed)
+        XCTAssertTrue(policy.generatedBundleOnly)
+        XCTAssertFalse(policy.credentialsAllowed)
+        XCTAssertFalse(policy.cacheAllowed)
         XCTAssertFalse(policy.fetchNetworkExecutionAllowed)
-        XCTAssertFalse(policy.fetchExtensionLocalExecutionAllowed)
+        XCTAssertTrue(policy.fetchExtensionLocalExecutionAllowed)
+        XCTAssertTrue(policy.fetchBlockers.isEmpty)
         XCTAssertTrue(policy.cryptoGetRandomValuesAvailable)
         XCTAssertTrue(policy.cryptoRandomUUIDAvailable)
         XCTAssertTrue(policy.subtleCryptoAvailableInLocalExperimentalGate)
@@ -2191,10 +2382,12 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
 
     private func startedHarness(
         source: String,
+        extraFiles: [String: String] = [:],
         uiLanguageOverride: String? = nil
     ) throws -> ChromeMV3ServiceWorkerJSExecutionHarness {
         let fixture = try makeHarness(
             source: source,
+            extraFiles: extraFiles,
             localExperimentalGateAllowed: true
         )
         let harness = ChromeMV3ServiceWorkerJSExecutionHarness(

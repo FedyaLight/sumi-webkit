@@ -3394,7 +3394,7 @@ struct ChromeMV3ExtensionManagerView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
-                    Text("Fetch classification: \(trial.fetchClassificationResult)")
+                    Text("Fetch policy: \(trial.fetchClassificationResult)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
