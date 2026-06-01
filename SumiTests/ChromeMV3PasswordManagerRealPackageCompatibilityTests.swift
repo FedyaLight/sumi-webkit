@@ -1915,7 +1915,7 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertTrue(smoke.noCredentialsOrNetwork)
         let detectFill = smoke.detectFillSmoke
         XCTAssertTrue(detectFill.attempted)
-        XCTAssertEqual(detectFill.status, .partial)
+        XCTAssertEqual(detectFill.status, .pass)
         XCTAssertTrue(detectFill.attachedContentScriptsBeforeAttempt)
         XCTAssertEqual(detectFill.syntheticLoginPage.url, smoke.syntheticLoginSurface.url)
         XCTAssertEqual(detectFill.syntheticLoginPage.origin, "https://sumi.local.test")
@@ -1949,10 +1949,16 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertEqual(detectFill.domObservationBefore.passwordValue, "")
         XCTAssertTrue(detectFill.domObservationBefore.initialValuesEmpty)
         XCTAssertEqual(detectFill.domObservationAfter.phase, "after")
-        XCTAssertEqual(detectFill.domObservationAfter.usernameValue, "")
-        XCTAssertEqual(detectFill.domObservationAfter.passwordValue, "")
-        XCTAssertFalse(detectFill.domObservationAfter.domChanged)
-        XCTAssertFalse(detectFill.domObservationAfter.finalValuesMatchDummyFill)
+        XCTAssertEqual(
+            detectFill.domObservationAfter.usernameValue,
+            "sumi-test-user@example.test"
+        )
+        XCTAssertEqual(
+            detectFill.domObservationAfter.passwordValue,
+            "sumi-test-password-not-secret"
+        )
+        XCTAssertTrue(detectFill.domObservationAfter.domChanged)
+        XCTAssertTrue(detectFill.domObservationAfter.finalValuesMatchDummyFill)
         XCTAssertEqual(
             detectFill.dummyUsername,
             "sumi-test-user@example.test"
@@ -2016,6 +2022,56 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                 && $0.attachedByManifest == false
                 && $0.sourcePath == "content/bootstrap-autofill-overlay.js"
         })
+        XCTAssertTrue(detectFill.programmaticInjectionAttempt.attempted)
+        XCTAssertTrue(detectFill.programmaticInjectionAttempt.allowed)
+        XCTAssertTrue(
+            detectFill.programmaticInjectionAttempt.blockers.isEmpty
+        )
+        XCTAssertEqual(
+            detectFill.programmaticInjectionAttempt.currentBlocker,
+            "none"
+        )
+        XCTAssertEqual(
+            detectFill.programmaticInjectionAttempt.shapeAudit.apiUsed,
+            "chrome.scripting.executeScript"
+        )
+        XCTAssertEqual(
+            detectFill.programmaticInjectionAttempt.shapeAudit.files,
+            ["content/bootstrap-autofill.js"]
+        )
+        XCTAssertEqual(
+            detectFill.programmaticInjectionAttempt.shapeAudit.frameIDs,
+            [0]
+        )
+        XCTAssertFalse(
+            detectFill.programmaticInjectionAttempt.shapeAudit.allFrames
+        )
+        XCTAssertEqual(
+            detectFill.programmaticInjectionAttempt.shapeAudit.world,
+            "ISOLATED"
+        )
+        XCTAssertFalse(
+            detectFill.programmaticInjectionAttempt.shapeAudit.functionInjected
+        )
+        XCTAssertTrue(
+            detectFill.programmaticInjectionAttempt.shapeAudit.packageOwnedFiles
+        )
+        XCTAssertTrue(
+            detectFill.programmaticInjectionAttempt.shapeAudit
+                .internalInjectedScriptBridgePresent
+        )
+        XCTAssertEqual(
+            detectFill.programmaticInjectionAttempt.shapeAudit.argumentCount,
+            0
+        )
+        XCTAssertTrue(
+            detectFill.programmaticInjectionAttempt.shapeAudit.injectImmediately
+        )
+        XCTAssertEqual(
+            detectFill.programmaticInjectionAttempt.resourceResolutions.first?
+                .status,
+            .copiedGeneratedBundleFile
+        )
         let detectFillRoutes = Dictionary(
             uniqueKeysWithValues:
                 detectFill.routeRecords.map { ($0.purpose, $0) }
@@ -2038,13 +2094,13 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertFalse(detectFillRoutes["detect"]?.domChanged == true)
         XCTAssertEqual(
             detectFillRoutes["detect"]?.messageClassification,
-            .programmaticInjectionRequired
+            .modeledEndpointDeliveredOnly
         )
         XCTAssertTrue(
             detectFillRoutes["detect"]?.nextBlocker
-                .contains("non-manifest autofill bootstrap script") == true
+                .contains("no real package DOM execution is claimed") == true
         )
-        XCTAssertEqual(detectFillRoutes["fill"]?.status, .partial)
+        XCTAssertEqual(detectFillRoutes["fill"]?.status, .pass)
         XCTAssertEqual(detectFillRoutes["fill"]?.delivered, true)
         XCTAssertEqual(
             detectFillRoutes["fill"]?.actualMessageType,
@@ -2066,14 +2122,14 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             detectFillRoutes["fill"]?.responseResult,
             "response:object:documentId,endpointID,frameId,listenerCount,navigationSequence,ok,sender,tabId,target"
         )
-        XCTAssertFalse(detectFillRoutes["fill"]?.domChanged == true)
+        XCTAssertTrue(detectFillRoutes["fill"]?.domChanged == true)
         XCTAssertEqual(
             detectFillRoutes["fill"]?.messageClassification,
-            .programmaticInjectionRequired
+            .dummyFillCompleted
         )
         XCTAssertTrue(
             detectFillRoutes["fill"]?.domWriteResult
-                .contains("stayed empty") == true
+                .contains("changed to dummy non-secret values") == true
         )
         XCTAssertEqual(
             detectFillRoutes["serviceWorkerPort"]?.routeUsed,
@@ -2120,23 +2176,28 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             detectFill.reverseTabsSendMessageClassification
                 .routeShapeMismatch
         )
-        XCTAssertEqual(
-            detectFill.nextBlockerClassification,
-            .programmaticInjectionRequired
-        )
+        XCTAssertNil(detectFill.nextBlockerClassification)
         XCTAssertTrue(
             detectFill.domObservationResult
                 .contains("observedSyntheticDOM")
         )
         XCTAssertTrue(
-            detectFill.dummyFillResult.contains("notChanged")
+            detectFill.dummyFillResult.contains("completed")
         )
-        XCTAssertTrue(detectFill.touchedSyntheticFieldIDs.isEmpty)
+        XCTAssertEqual(
+            detectFill.touchedSyntheticFieldIDs,
+            ["sumi-login-email", "sumi-login-password"]
+        )
         XCTAssertTrue(detectFill.touchedNonSyntheticFieldIDs.isEmpty)
         XCTAssertTrue(detectFill.noRealCredentialsOrSecrets)
         XCTAssertTrue(detectFill.noNetworkAuthNativeHost)
         XCTAssertEqual(detectFill.endpointTeardownStatus, .pass)
         XCTAssertEqual(detectFill.endpointActiveAfterTeardownCount, 0)
+        XCTAssertEqual(detectFill.programmaticInjectionTeardownStatus, .pass)
+        XCTAssertEqual(
+            detectFill.programmaticInjectionActiveAfterTeardownCount,
+            0
+        )
         XCTAssertTrue(report.noRealCredentialsUsed)
         XCTAssertFalse(report.realVendorNativeHostLaunchAttempted)
         XCTAssertFalse(report.productRuntimeAvailable)
@@ -2191,11 +2252,10 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                 .bitwardenE2ESmoke?.nextBlockerClassification,
             .serviceWorkerRuntimeOnMessageListenerMissing
         )
-        XCTAssertEqual(
+        XCTAssertNil(
             detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
                 .bitwardenE2ESmoke?.detectFillSmoke
-                .nextBlockerClassification,
-            .programmaticInjectionRequired
+                .nextBlockerClassification
         )
         XCTAssertEqual(
             detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
@@ -2268,9 +2328,15 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertEqual(detectFill.domObservationBefore.usernameValue, "")
         XCTAssertEqual(detectFill.domObservationBefore.passwordValue, "")
         XCTAssertTrue(detectFill.domObservationBefore.initialValuesEmpty)
-        XCTAssertEqual(detectFill.domObservationAfter.usernameValue, "")
-        XCTAssertEqual(detectFill.domObservationAfter.passwordValue, "")
-        XCTAssertFalse(detectFill.domObservationAfter.domChanged)
+        XCTAssertEqual(
+            detectFill.domObservationAfter.usernameValue,
+            "sumi-test-user@example.test"
+        )
+        XCTAssertEqual(
+            detectFill.domObservationAfter.passwordValue,
+            "sumi-test-password-not-secret"
+        )
+        XCTAssertTrue(detectFill.domObservationAfter.domChanged)
         XCTAssertEqual(
             detectFill.dummyUsername,
             "sumi-test-user@example.test"
@@ -2280,16 +2346,18 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             "sumi-test-password-not-secret"
         )
         XCTAssertTrue(detectFill.dummyPassword.contains("not-secret"))
-        XCTAssertTrue(detectFill.touchedSyntheticFieldIDs.isEmpty)
+        XCTAssertEqual(
+            detectFill.touchedSyntheticFieldIDs,
+            ["sumi-login-email", "sumi-login-password"]
+        )
         XCTAssertTrue(detectFill.touchedNonSyntheticFieldIDs.isEmpty)
         XCTAssertTrue(detectFill.noRealCredentialsOrSecrets)
         XCTAssertTrue(detectFill.noNetworkAuthNativeHost)
+        XCTAssertNil(detectFill.nextBlockerClassification)
+        XCTAssertTrue(detectFill.programmaticInjectionAttempt.allowed)
         XCTAssertEqual(
-            detectFill.nextBlockerClassification,
-            .programmaticInjectionRequired
-        )
-        XCTAssertTrue(
-            detectFill.nextBlocker.contains("non-manifest autofill bootstrap")
+            detectFill.programmaticInjectionActiveAfterTeardownCount,
+            0
         )
         XCTAssertEqual(
             detectFill.reverseTabsSendMessageClassification

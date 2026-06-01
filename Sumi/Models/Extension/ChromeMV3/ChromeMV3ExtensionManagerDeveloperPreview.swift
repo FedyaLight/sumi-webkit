@@ -217,7 +217,7 @@ struct ChromeMV3ExtensionManagerDocumentationSource:
             title: "Chrome scripting API",
             url: "https://developer.chrome.com/docs/extensions/reference/api/scripting",
             boundary: "dynamic scripting distinction",
-            finding: "scripting.executeScript is a runtime injection API distinct from manifest static content scripts; Sumi keeps arbitrary product executeScript blocked."
+            finding: "scripting.executeScript is a runtime injection API distinct from manifest static content scripts; Sumi keeps arbitrary product executeScript blocked and models only the reviewed local Bitwarden generated-bundle bootstrap file on the scoped synthetic login surface."
         ),
         ChromeMV3ExtensionManagerDocumentationSource(
             title: "Apple WKWebExtensionController header",
@@ -3659,6 +3659,13 @@ struct ChromeMV3ExtensionManagerView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         Text(
                             "Bitwarden detect/fill smoke: \(smoke.detectFillSmoke.status.rawValue) - \(smoke.detectFillSmoke.nextBlockerClassification?.rawValue ?? "none") - \(smoke.detectFillSmoke.nextBlocker)"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            verbatim:
+                            "Bitwarden programmatic injection: allowed=\(smoke.detectFillSmoke.programmaticInjectionAttempt.allowed); api=\(smoke.detectFillSmoke.programmaticInjectionAttempt.shapeAudit.apiUsed); files=\(smoke.detectFillSmoke.programmaticInjectionAttempt.shapeAudit.files.joined(separator: ",")); packageOwned=\(smoke.detectFillSmoke.programmaticInjectionAttempt.shapeAudit.packageOwnedFiles); resources=\(smoke.detectFillSmoke.programmaticInjectionAttempt.resourceResolutions.map(\.status.rawValue).joined(separator: ",")); tab=\(smoke.detectFillSmoke.programmaticInjectionAttempt.shapeAudit.tabID); frames=\(smoke.detectFillSmoke.programmaticInjectionAttempt.shapeAudit.frameIDs.map(String.init).joined(separator: ",")); allFrames=\(smoke.detectFillSmoke.programmaticInjectionAttempt.shapeAudit.allFrames); world=\(smoke.detectFillSmoke.programmaticInjectionAttempt.shapeAudit.world); func=\(smoke.detectFillSmoke.programmaticInjectionAttempt.shapeAudit.functionInjected); args=\(smoke.detectFillSmoke.programmaticInjectionAttempt.shapeAudit.argumentCount); immediate=\(smoke.detectFillSmoke.programmaticInjectionAttempt.shapeAudit.injectImmediately); blocker=\(smoke.detectFillSmoke.programmaticInjectionAttempt.currentBlocker); activeAfterTeardown=\(smoke.detectFillSmoke.programmaticInjectionActiveAfterTeardownCount)"
                         )
                         .font(.caption)
                         .foregroundStyle(.secondary)

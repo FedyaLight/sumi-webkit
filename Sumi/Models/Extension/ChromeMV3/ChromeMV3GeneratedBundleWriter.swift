@@ -510,6 +510,17 @@ struct ChromeMV3GeneratedBundleWriter {
             }
         }
 
+        try appendExactPaths(
+            ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
+                .reviewedGeneratedBundleResourcePaths(
+                    manifest: manifest,
+                    originalRootURL: originalRootURL
+                ),
+            field:
+                "localExperimental.programmaticInjection.reviewedGeneratedBundleFiles",
+            to: &resources
+        )
+
         try appendExactPath(
             manifest["options_page"],
             field: "options_page",

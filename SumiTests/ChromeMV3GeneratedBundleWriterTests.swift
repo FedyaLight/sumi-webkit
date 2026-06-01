@@ -256,6 +256,59 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
         XCTAssertFalse(result.record.runtimeLoadable)
     }
 
+    func testCopiesReviewedBitwardenDetectFillBootstrapForLocalExperimentalInjection()
+        throws
+    {
+        let stage = try stageBundle(
+            named: "reviewed-bitwarden-bootstrap",
+            manifest: [
+                "manifest_version": 3,
+                "name": "Reviewed Bitwarden Bootstrap",
+                "version": "1.0",
+                "background": [
+                    "service_worker": "background.js",
+                ],
+                "content_scripts": [
+                    [
+                        "matches": ["https://*/*"],
+                        "js": [
+                            "content/trigger-autofill-script-injection.js",
+                        ],
+                    ],
+                ],
+            ],
+            files: [
+                "background.js":
+                    "chrome.scripting.executeScript({files:['content/bootstrap-autofill.js']}); triggerAutofillScriptInjection();",
+                "content/trigger-autofill-script-injection.js":
+                    "chrome.runtime.sendMessage({command:'triggerAutofillScriptInjection'});",
+                "content/bootstrap-autofill.js":
+                    "collectPageDetailsImmediately(); fillForm();",
+            ]
+        )
+
+        let result = try makeWriter(rootURL: stage.storeRoot)
+            .writeGeneratedBundle(
+                originalBundleRecord: stage.result.originalBundleRecord,
+                manifestSnapshot: stage.result.manifestSnapshot,
+                planningRecord: stage.result.generatedBundlePlan
+            )
+
+        XCTAssertTrue(
+            result.record.copiedResourcePaths.contains(
+                "content/bootstrap-autofill.js"
+            )
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath:
+                    result.generatedBundleRootURL
+                    .appendingPathComponent("content/bootstrap-autofill.js")
+                    .path
+            )
+        )
+    }
+
     func testGeneratedRuntimeTemplatesAreInertAndNotReferencedByManifest() throws {
         let stage = try stageBundle(
             named: "runtime-template-output",
