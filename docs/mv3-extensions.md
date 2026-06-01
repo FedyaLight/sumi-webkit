@@ -58,6 +58,39 @@ Partial:
 - Service-worker lifecycle.
 - Native messaging.
 
+## Product Normal-Tab Readiness Slice
+
+The first product-normal-tab slice is readiness-only and default-off. It does
+not enable general extension support in product tabs.
+
+The local experimental readiness policy requires:
+
+- Explicit local experimental MV3 product gate.
+- Extension module, extension, profile, tab, document, permission, and runtime
+  route preflight.
+- Normal tab surface only.
+- Host permission or `activeTab`.
+- Reviewed generated-bundle file planning only.
+- Isolated world only.
+- Top frame only.
+- No `file://`, `about:blank`, `match_about_blank`, or
+  `match_origin_as_fallback`.
+- No auxiliary, favicon, helper, mini, peek, glance, download, popup, or
+  options WebView surface.
+- Teardown on navigation, tab close, extension disable, module disable, profile
+  close, permission revoke, reset/uninstall, and smoke completion.
+
+The manager can show readiness, gate state, blockers, reviewed-file status,
+permission/activeTab status, auxiliary-surface exclusion, object lifetime, and
+manual smoke prerequisites. Viewing that readout must not attach a normal tab,
+register scripts, wake a service worker, launch native hosts, or create a
+permanent background runtime.
+
+Manual smoke readiness, when all gates pass, is limited to a synthetic HTTPS
+login fixture on a non-credential test origin. It may only execute the reviewed
+generated-bundle file in an isolated top-frame world and must verify teardown
+immediately afterward.
+
 Main remaining blockers:
 
 - Service-worker lifecycle on real extension events.

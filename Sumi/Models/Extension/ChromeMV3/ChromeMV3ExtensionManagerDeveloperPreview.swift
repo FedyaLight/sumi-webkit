@@ -220,10 +220,28 @@ struct ChromeMV3ExtensionManagerDocumentationSource:
             finding: "scripting.executeScript is a runtime injection API distinct from manifest static content scripts; Sumi keeps arbitrary product executeScript blocked and models only the reviewed local Bitwarden generated-bundle bootstrap file on the scoped synthetic login surface."
         ),
         ChromeMV3ExtensionManagerDocumentationSource(
+            title: "Chrome activeTab permission",
+            url: "https://developer.chrome.com/docs/extensions/develop/concepts/activeTab",
+            boundary: "temporary tab host access",
+            finding: "activeTab grants temporary host access for the current tab after a user gesture and is revoked on navigation or tab close; Sumi requires host permission or an activeTab grant before any normal-tab readiness path can pass."
+        ),
+        ChromeMV3ExtensionManagerDocumentationSource(
+            title: "Chrome extension service-worker lifecycle",
+            url: "https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle",
+            boundary: "event-driven runtime lifetime",
+            finding: "MV3 extension service workers are event-driven and unloadable; Sumi keeps normal-tab readiness plan-only and does not create permanent background runtime, polling, or wake state from manager viewing."
+        ),
+        ChromeMV3ExtensionManagerDocumentationSource(
             title: "Apple WKWebExtensionController header",
             url: "xcode://MacOSX.sdk/System/Library/Frameworks/WebKit.framework/Headers/WKWebExtensionController.h",
             boundary: "WebKit runtime attachment",
             finding: "The SDK header states the controller manages loaded extension contexts, load starts background content and injects content, and WKWebViewConfiguration.webExtensionController associates controllers with web views."
+        ),
+        ChromeMV3ExtensionManagerDocumentationSource(
+            title: "Apple WKWebView evaluateJavaScript header",
+            url: "xcode://MacOSX.sdk/System/Library/Frameworks/WebKit.framework/Headers/WKWebView.h",
+            boundary: "content world JavaScript evaluation",
+            finding: "The local SDK header exposes evaluation in a WKFrameInfo and WKContentWorld and notes DOM changes are visible across worlds; Sumi records this risk and keeps product readiness plan-only."
         ),
         ChromeMV3ExtensionManagerDocumentationSource(
             title: "Apple WKWebExtensionContext header",
@@ -3093,6 +3111,56 @@ struct ChromeMV3ExtensionManagerView: View {
                         .normalTabPreflight
                         .diagnostics
                         .joined(separator: " ")
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                let readiness = detail.productEnablementPreflight
+                    .normalTabReadiness
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 150), spacing: 8)],
+                    alignment: .leading,
+                    spacing: 8
+                ) {
+                    fact(
+                        "Normal-Tab Readiness",
+                        readiness.preflight.eligible ? "eligible" : "blocked"
+                    )
+                    fact(
+                        "Readiness Gate",
+                        readiness.policy
+                            .productNormalTabMV3ReadinessAvailableInLocalExperimentalGate
+                            ? "local experimental" : "unavailable"
+                    )
+                    fact(
+                        "Default Runtime",
+                        readiness.policy
+                            .productNormalTabMV3ReadinessAvailableByDefault
+                            ? "available" : "off"
+                    )
+                    fact(
+                        "Reviewed File",
+                        readiness.preflight.reviewedResource.present
+                            ? "present" : "missing"
+                    )
+                    fact(
+                        "Permission",
+                        readiness.preflight.hostAccessDecision.status.rawValue
+                    )
+                    fact(
+                        "Aux Surfaces",
+                        readiness.policy.auxiliarySurfaceAllowed
+                            ? "allowed" : "excluded"
+                    )
+                    fact(
+                        "Teardown",
+                        readiness.policy.teardownRequired
+                            ? "required" : "not required"
+                    )
+                }
+                Text(
+                    readiness.preflight.blockers.map(\.rawValue)
+                        .joined(separator: ", ")
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)

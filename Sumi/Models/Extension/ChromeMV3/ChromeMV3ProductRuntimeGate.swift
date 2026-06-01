@@ -8,6 +8,7 @@
 //  workers, launch native hosts, or enable product network enforcement.
 //
 
+import CryptoKit
 import Foundation
 
 enum ChromeMV3ProductRuntimeGateState:
@@ -1048,6 +1049,622 @@ enum ChromeMV3ProductBridgeAttachmentPlanItemKind:
     }
 }
 
+struct ChromeMV3ProductNormalTabReadinessPolicy:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var productNormalTabMV3ReadinessAvailableInLocalExperimentalGate: Bool
+    var productNormalTabMV3ReadinessAvailableByDefault: Bool
+    var defaultOffRuntime: Bool
+    var reviewedGeneratedBundleFileOnly: Bool
+    var isolatedWorldOnly: Bool
+    var topFrameOnly: Bool
+    var mainWorldAllowed: Bool
+    var multiFrameAllowed: Bool
+    var fileSchemeAllowed: Bool
+    var auxiliarySurfaceAllowed: Bool
+    var requiresHostPermissionOrActiveTab: Bool
+    var teardownRequired: Bool
+    var diagnostics: [String]
+    var sourceGaps: [String]
+
+    static let localExperimentalDefaultOff =
+        ChromeMV3ProductNormalTabReadinessPolicy(
+            productNormalTabMV3ReadinessAvailableInLocalExperimentalGate: true,
+            productNormalTabMV3ReadinessAvailableByDefault: false,
+            defaultOffRuntime: true,
+            reviewedGeneratedBundleFileOnly: true,
+            isolatedWorldOnly: true,
+            topFrameOnly: true,
+            mainWorldAllowed: false,
+            multiFrameAllowed: false,
+            fileSchemeAllowed: false,
+            auxiliarySurfaceAllowed: false,
+            requiresHostPermissionOrActiveTab: true,
+            teardownRequired: true,
+            diagnostics: [
+                "Product normal-tab MV3 readiness is local experimental and default-off.",
+                "The readiness slice is plan-only until an explicit local product gate and all normal-tab preflights pass.",
+                "Only reviewed generated-bundle file planning is modeled; arbitrary code, functions, strings, and remote scripts remain blocked.",
+                "No normal-tab attachment, WebKit controller/context creation, script registration, service-worker wake, native host launch, or network enforcement is performed by this policy.",
+            ],
+            sourceGaps: [
+                "Apple public docs and local SDK headers expose WKUserContentController.removeAllUserScripts and content-world script-message-handler removal, but no public per-WKUserScript removal API. A future execution path must own a scoped teardown handle and remain blocked if that handle cannot prove removal.",
+            ]
+        )
+}
+
+enum ChromeMV3ProductNormalTabReadinessBlocker:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case blockedByModule
+    case blockedByExtension
+    case blockedByProfile
+    case blockedBySurface
+    case blockedByScheme
+    case blockedByPermission
+    case blockedByMissingReviewedResource
+    case blockedByWorld
+    case blockedByFrame
+    case blockedByRuntimeGate
+
+    static func < (
+        lhs: ChromeMV3ProductNormalTabReadinessBlocker,
+        rhs: ChromeMV3ProductNormalTabReadinessBlocker
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3ProductNormalTabReadinessTeardownTrigger:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case navigation
+    case tabClose
+    case extensionDisable
+    case moduleDisable
+    case profileClose
+    case permissionRevoke
+    case resetOrUninstall
+    case smokeCompletion
+
+    static func < (
+        lhs: ChromeMV3ProductNormalTabReadinessTeardownTrigger,
+        rhs: ChromeMV3ProductNormalTabReadinessTeardownTrigger
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3ProductNormalTabReadinessLifetimeReport:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var disabledModuleObjectsCreated: [String]
+    var managerReadoutObjectsCreated: [String]
+    var runtimeObjectsCreatedNow: [String]
+    var objectsRetainedAfterReadiness: [String]
+    var objectsRemovedOnTeardown: [String]
+    var backgroundWorkScheduled: Bool
+    var permanentRuntimeRetained: Bool
+    var teardownTriggers: [ChromeMV3ProductNormalTabReadinessTeardownTrigger]
+    var diagnostics: [String]
+
+    static let planOnly =
+        ChromeMV3ProductNormalTabReadinessLifetimeReport(
+            disabledModuleObjectsCreated: [],
+            managerReadoutObjectsCreated: [
+                "Codable readiness policy record",
+                "Codable normal-tab preflight record",
+                "Codable reviewed-file injection plan record",
+                "Codable lifecycle and manual-smoke readiness records",
+            ],
+            runtimeObjectsCreatedNow: [],
+            objectsRetainedAfterReadiness: [],
+            objectsRemovedOnTeardown: [
+                "Future scoped content-world user scripts, if execution is explicitly enabled by a local smoke gate.",
+                "Future scoped script-message handlers, if execution is explicitly enabled by a local smoke gate.",
+                "Future content-script endpoint registrations for the tab/document/navigation sequence.",
+                "Future activeTab grant references tied to the tab origin.",
+            ],
+            backgroundWorkScheduled: false,
+            permanentRuntimeRetained: false,
+            teardownTriggers:
+                ChromeMV3ProductNormalTabReadinessTeardownTrigger
+                .allCases
+                .sorted(),
+            diagnostics: [
+                "Disabled extensions remain zero-cost: no ExtensionManager, runtime bridge, service-worker, content-script, or native-host objects are created by this readiness model.",
+                "Manager readout creates only transient value records and performs no attachment or JavaScript registration.",
+                "A future smoke attachment must be lazy, scoped to one tab/document/navigation sequence, and removed on every listed teardown trigger.",
+            ]
+        )
+}
+
+struct ChromeMV3ProductNormalTabReviewedResource:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var reviewedScriptPath: String
+    var generatedResourceHash: String?
+    var generatedResourceFileSystemPath: String?
+    var present: Bool
+    var packageOwned: Bool
+    var diagnostics: [String]
+
+    static func bootstrapAutofill(
+        generatedBundleRootPath: String?,
+        copiedResourcePaths: [String],
+        hash: String?
+    ) -> ChromeMV3ProductNormalTabReviewedResource {
+        let reviewedPath =
+            ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
+            .bitwardenDetectFillBootstrapFile
+        let copied = copiedResourcePaths.contains(reviewedPath)
+        let fileSystemPath = generatedBundleRootPath.map {
+            URL(fileURLWithPath: $0)
+                .appendingPathComponent(reviewedPath)
+                .standardizedFileURL
+                .path
+        }
+        return ChromeMV3ProductNormalTabReviewedResource(
+            reviewedScriptPath: reviewedPath,
+            generatedResourceHash: hash,
+            generatedResourceFileSystemPath: fileSystemPath,
+            present: copied && hash != nil,
+            packageOwned: copied,
+            diagnostics: [
+                copied
+                    ? "Reviewed generated-bundle file is listed in copied resources."
+                    : "Reviewed generated-bundle file is not listed in copied resources.",
+                hash == nil
+                    ? "Reviewed generated-bundle file hash is unavailable."
+                    : "Reviewed generated-bundle file hash is recorded.",
+            ]
+        )
+    }
+}
+
+struct ChromeMV3ProductNormalTabReadinessPreflightInput:
+    Sendable
+{
+    var policy: ChromeMV3ProductNormalTabReadinessPolicy =
+        .localExperimentalDefaultOff
+    var profileID: String
+    var extensionID: String
+    var tabID: String
+    var documentID: String
+    var urlString: String
+    var moduleEnabled: Bool
+    var extensionEnabled: Bool
+    var profileEnabled: Bool
+    var localExperimentalProductGateAllowed: Bool
+    var runtimeGateAllowsReadiness: Bool
+    var contentScriptRouteReady: Bool
+    var serviceWorkerRouteReady: Bool
+    var tabSurface: ChromeMV3WebViewSurface
+    var frameID: Int
+    var isTopFrame: Bool
+    var contentWorld: ChromeMV3ContentScriptWorld
+    var hostAccessDecision: ChromeMV3HostAccessDecision
+    var reviewedResource: ChromeMV3ProductNormalTabReviewedResource
+    var teardownPending: Bool
+}
+
+struct ChromeMV3ProductNormalTabReadinessPreflight:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var policy: ChromeMV3ProductNormalTabReadinessPolicy
+    var profileID: String
+    var extensionID: String
+    var tabID: String
+    var documentID: String
+    var urlString: String
+    var tabSurface: ChromeMV3WebViewSurface
+    var frameID: Int
+    var isTopFrame: Bool
+    var contentWorld: ChromeMV3ContentScriptWorld
+    var hostAccessDecision: ChromeMV3HostAccessDecision
+    var reviewedResource: ChromeMV3ProductNormalTabReviewedResource
+    var eligible: Bool
+    var blockedByModule: Bool
+    var blockedByExtension: Bool
+    var blockedByProfile: Bool
+    var blockedBySurface: Bool
+    var blockedByScheme: Bool
+    var blockedByPermission: Bool
+    var blockedByMissingReviewedResource: Bool
+    var blockedByWorld: Bool
+    var blockedByFrame: Bool
+    var blockedByRuntimeGate: Bool
+    var blockers: [ChromeMV3ProductNormalTabReadinessBlocker]
+    var diagnostics: [String]
+}
+
+enum ChromeMV3ProductNormalTabReadinessPreflightEvaluator {
+    static func evaluate(
+        input: ChromeMV3ProductNormalTabReadinessPreflightInput
+    ) -> ChromeMV3ProductNormalTabReadinessPreflight {
+        let urlClassification =
+            ChromeMV3ContentScriptURLClassification.classify(input.urlString)
+        let blockedByModule = input.moduleEnabled == false
+        let blockedByExtension = input.extensionEnabled == false
+        let blockedByProfile = input.profileEnabled == false
+        let blockedBySurface =
+            input.tabSurface != .normalTab
+                || input.policy.auxiliarySurfaceAllowed == false
+                    && input.tabSurface.isAuxiliaryOrHelperSurfaceForChromeMV3Attachment
+        let blockedByScheme =
+            urlClassification != .httpFamily
+                || (
+                    input.policy.fileSchemeAllowed == false
+                        && urlClassification == .file
+                )
+        let blockedByPermission =
+            input.policy.requiresHostPermissionOrActiveTab
+                && input.hostAccessDecision.hasHostAccess == false
+        let blockedByMissingReviewedResource =
+            input.policy.reviewedGeneratedBundleFileOnly
+                && (input.reviewedResource.present == false
+                    || input.reviewedResource.generatedResourceHash == nil
+                    || input.reviewedResource.packageOwned == false)
+        let blockedByWorld =
+            input.policy.isolatedWorldOnly
+                && input.contentWorld != .isolated
+        let blockedByFrame =
+            input.policy.topFrameOnly
+                && (input.isTopFrame == false || input.frameID != 0)
+        let blockedByRuntimeGate =
+            input.localExperimentalProductGateAllowed == false
+                || input.runtimeGateAllowsReadiness == false
+                || input.contentScriptRouteReady == false
+                || input.serviceWorkerRouteReady == false
+                || input.teardownPending
+
+        let pairs: [(ChromeMV3ProductNormalTabReadinessBlocker, Bool)] = [
+            (.blockedByModule, blockedByModule),
+            (.blockedByExtension, blockedByExtension),
+            (.blockedByProfile, blockedByProfile),
+            (.blockedBySurface, blockedBySurface),
+            (.blockedByScheme, blockedByScheme),
+            (.blockedByPermission, blockedByPermission),
+            (.blockedByMissingReviewedResource, blockedByMissingReviewedResource),
+            (.blockedByWorld, blockedByWorld),
+            (.blockedByFrame, blockedByFrame),
+            (.blockedByRuntimeGate, blockedByRuntimeGate),
+        ]
+        let blockers = pairs.compactMap { $0.1 ? $0.0 : nil }.sorted()
+        let eligible = blockers.isEmpty
+
+        return ChromeMV3ProductNormalTabReadinessPreflight(
+            policy: input.policy,
+            profileID: input.profileID,
+            extensionID: input.extensionID,
+            tabID: input.tabID,
+            documentID: input.documentID,
+            urlString: input.urlString,
+            tabSurface: input.tabSurface,
+            frameID: input.frameID,
+            isTopFrame: input.isTopFrame,
+            contentWorld: input.contentWorld,
+            hostAccessDecision: input.hostAccessDecision,
+            reviewedResource: input.reviewedResource,
+            eligible: eligible,
+            blockedByModule: blockedByModule,
+            blockedByExtension: blockedByExtension,
+            blockedByProfile: blockedByProfile,
+            blockedBySurface: blockedBySurface,
+            blockedByScheme: blockedByScheme,
+            blockedByPermission: blockedByPermission,
+            blockedByMissingReviewedResource:
+                blockedByMissingReviewedResource,
+            blockedByWorld: blockedByWorld,
+            blockedByFrame: blockedByFrame,
+            blockedByRuntimeGate: blockedByRuntimeGate,
+            blockers: blockers,
+            diagnostics:
+                uniqueSortedProduct(
+                    input.policy.diagnostics
+                        + input.policy.sourceGaps
+                        + input.hostAccessDecision.diagnostics
+                        + input.reviewedResource.diagnostics
+                        + [
+                            "Candidate URL classification is \(urlClassification.rawValue).",
+                            "Candidate surface is \(input.tabSurface.rawValue); only normalTab is accepted for this product-normal-tab readiness slice.",
+                            "Local experimental product gate allowed: \(input.localExperimentalProductGateAllowed).",
+                            "Runtime gate allows readiness: \(input.runtimeGateAllowsReadiness).",
+                            "Content-script route ready: \(input.contentScriptRouteReady).",
+                            "Service-worker route ready: \(input.serviceWorkerRouteReady).",
+                            eligible
+                                ? "Product normal-tab readiness preflight passed; execution still requires the explicit local smoke path."
+                                : "Product normal-tab readiness preflight is blocked by \(blockers.map(\.rawValue).joined(separator: ", ")).",
+                        ]
+                )
+        )
+    }
+}
+
+struct ChromeMV3ProductNormalTabReviewedFileInjectionPlan:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var extensionID: String
+    var profileID: String
+    var tabID: String
+    var documentID: String
+    var reviewedScriptPath: String
+    var generatedResourceHash: String?
+    var targetFrame: String
+    var contentWorld: String
+    var expectedTeardown: [ChromeMV3ProductNormalTabReadinessTeardownTrigger]
+    var planOnly: Bool
+    var executionAllowedNow: Bool
+    var performsExecutionByManagerReadout: Bool
+    var blockers: [ChromeMV3ProductNormalTabReadinessBlocker]
+    var diagnostics: [String]
+
+    static func make(
+        preflight: ChromeMV3ProductNormalTabReadinessPreflight
+    ) -> ChromeMV3ProductNormalTabReviewedFileInjectionPlan {
+        let teardown =
+            ChromeMV3ProductNormalTabReadinessTeardownTrigger
+            .allCases
+            .sorted()
+        return ChromeMV3ProductNormalTabReviewedFileInjectionPlan(
+            extensionID: preflight.extensionID,
+            profileID: preflight.profileID,
+            tabID: preflight.tabID,
+            documentID: preflight.documentID,
+            reviewedScriptPath: preflight.reviewedResource.reviewedScriptPath,
+            generatedResourceHash:
+                preflight.reviewedResource.generatedResourceHash,
+            targetFrame:
+                preflight.isTopFrame && preflight.frameID == 0
+                    ? "topFrame"
+                    : "blockedFrame-\(preflight.frameID)",
+            contentWorld: preflight.contentWorld.rawValue,
+            expectedTeardown: teardown,
+            planOnly: true,
+            executionAllowedNow: preflight.eligible,
+            performsExecutionByManagerReadout: false,
+            blockers: preflight.blockers,
+            diagnostics:
+                uniqueSortedProduct(
+                    preflight.diagnostics
+                        + [
+                            "Reviewed-file injection planning names a generated-bundle file only; no arbitrary chrome.scripting.executeScript function or string body is accepted.",
+                            "Manager detail readout never executes this plan.",
+                            preflight.eligible
+                                ? "A future manual smoke may execute only through the explicit local smoke path and must verify teardown immediately after completion."
+                                : "Execution remains blocked until every readiness blocker is cleared in a local experimental test path.",
+                        ]
+                )
+        )
+    }
+}
+
+struct ChromeMV3ProductNormalTabManualSmokeReadiness:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var canAttemptFutureManualSmoke: Bool
+    var prerequisiteGates: [String]
+    var safeTestURLRequirement: String
+    var whatWillExecute: [String]
+    var whatRemainsBlocked: [String]
+    var teardownVerification: [String]
+    var diagnostics: [String]
+
+    static func make(
+        preflight: ChromeMV3ProductNormalTabReadinessPreflight,
+        plan: ChromeMV3ProductNormalTabReviewedFileInjectionPlan
+    ) -> ChromeMV3ProductNormalTabManualSmokeReadiness {
+        ChromeMV3ProductNormalTabManualSmokeReadiness(
+            canAttemptFutureManualSmoke: preflight.eligible,
+            prerequisiteGates: [
+                "extensions module enabled",
+                "extension enabled in the local experimental extension manager",
+                "profile enabled",
+                "normalTab WebView surface only",
+                "HTTPS fixture URL whose origin is covered by host permission or activeTab",
+                "top-frame target",
+                "isolated WKContentWorld",
+                "reviewed generated-bundle file present with recorded hash",
+                "content-script and service-worker route readiness",
+                "explicit local experimental product gate",
+            ],
+            safeTestURLRequirement:
+                "Use a synthetic HTTPS login fixture on a non-credential test origin; do not use real accounts, real vault data, network auth, native hosts, file URLs, about:blank, or auxiliary surfaces.",
+            whatWillExecute:
+                preflight.eligible
+                    ? [
+                        "Only \(plan.reviewedScriptPath) from the generated bundle hash \(plan.generatedResourceHash ?? "missing-hash") in an isolated world against the top frame.",
+                    ]
+                    : [],
+            whatRemainsBlocked: [
+                "Default product runtime",
+                "general extension support in normal tabs",
+                "arbitrary chrome.scripting.executeScript",
+                "MAIN world",
+                "multi-frame attachment",
+                "file://, about:blank, match_about_blank, and match_origin_as_fallback",
+                "auxiliary WebViews and extension-owned UI hosts",
+                "network/auth/native host/Web Store/DNR runtime paths",
+            ],
+            teardownVerification:
+                ChromeMV3ProductNormalTabReadinessTeardownTrigger
+                .allCases
+                .sorted()
+                .map { "Verify teardown on \($0.rawValue)." },
+            diagnostics:
+                preflight.eligible
+                    ? [
+                        "Manual smoke readiness is available only for the explicit local experimental path.",
+                    ]
+                    : [
+                        "Manual smoke readiness is blocked by \(preflight.blockers.map(\.rawValue).joined(separator: ", ")).",
+                    ]
+        )
+    }
+}
+
+struct ChromeMV3ProductNormalTabReadinessReport:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var policy: ChromeMV3ProductNormalTabReadinessPolicy
+    var preflight: ChromeMV3ProductNormalTabReadinessPreflight
+    var injectionPlan: ChromeMV3ProductNormalTabReviewedFileInjectionPlan
+    var lifecycle: ChromeMV3ProductNormalTabReadinessLifetimeReport
+    var manualSmokeReadiness: ChromeMV3ProductNormalTabManualSmokeReadiness
+    var diagnostics: [String]
+
+    static func make(
+        report: ChromeMV3EndToEndInstallDiagnosticsReport?,
+        lifecycleRecord: ChromeMV3ExtensionLifecycleRecord?,
+        normalTabPreflight: ChromeMV3ProductNormalTabRuntimePreflight,
+        candidateURLString: String =
+            "https://example.com/sumi-mv3-readiness-login"
+    ) -> ChromeMV3ProductNormalTabReadinessReport {
+        let manifestSummary = report?.chromeMV3ProductActiveManifestSummary
+        let profileID = lifecycleRecord?.profileID
+            ?? normalTabPreflight.profileID
+        let extensionID = lifecycleRecord?.extensionID
+            ?? normalTabPreflight.extensionID
+        let activeVersion = report?.chromeMV3ProductActiveGeneratedVersion
+        let reviewedPath =
+            ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
+            .bitwardenDetectFillBootstrapFile
+        let reviewedHash = activeVersion.flatMap {
+            generatedResourceSHA256(
+                rootPath: $0.generatedBundleRootPath,
+                relativePath: reviewedPath
+            )
+        }
+        let reviewedResource =
+            ChromeMV3ProductNormalTabReviewedResource.bootstrapAutofill(
+                generatedBundleRootPath: activeVersion?.generatedBundleRootPath,
+                copiedResourcePaths:
+                    activeVersion?.generatedBundleRecord.copiedResourcePaths
+                    ?? [],
+                hash: reviewedHash
+            )
+        let broker = ChromeMV3PermissionBroker(
+            state: ChromeMV3PermissionBrokerState(
+                extensionID: extensionID,
+                profileID: profileID,
+                requiredPermissions: manifestSummary?.permissions ?? [],
+                optionalPermissions:
+                    manifestSummary?.optionalPermissions ?? [],
+                hostPermissions: manifestSummary?.hostPermissions ?? [],
+                optionalHostPermissions:
+                    manifestSummary?.optionalHostPermissions ?? []
+            )
+        )
+        let serviceWorkerRouteReady =
+            manifestSummary?.backgroundServiceWorker == nil
+                || normalTabPreflight.canWakeServiceWorkerNow
+        let contentScriptRouteReady =
+            (manifestSummary?.contentScriptCount ?? 0) == 0
+                || normalTabPreflight.canInjectContentScriptsNow
+        let preflight =
+            ChromeMV3ProductNormalTabReadinessPreflightEvaluator.evaluate(
+                input: ChromeMV3ProductNormalTabReadinessPreflightInput(
+                    profileID: profileID,
+                    extensionID: extensionID,
+                    tabID: normalTabPreflight.tabID,
+                    documentID: "manual-smoke-candidate-document",
+                    urlString: candidateURLString,
+                    moduleEnabled: lifecycleRecord != nil,
+                    extensionEnabled:
+                        lifecycleRecord?.runtimeState
+                        .internalRuntimeEnabled == true,
+                    profileEnabled:
+                        lifecycleRecord.map { record in
+                            switch record.lifecycleState {
+                            case .uninstalled, .corrupt:
+                                return false
+                            default:
+                                return true
+                            }
+                        } ?? false,
+                    localExperimentalProductGateAllowed:
+                        normalTabPreflight.gateSet.debugOverrideGate.state
+                        == .allowed,
+                    runtimeGateAllowsReadiness:
+                        normalTabPreflight.canAttachToNormalTabNow,
+                    contentScriptRouteReady: contentScriptRouteReady,
+                    serviceWorkerRouteReady: serviceWorkerRouteReady,
+                    tabSurface: normalTabPreflight.tabSurface,
+                    frameID: 0,
+                    isTopFrame: true,
+                    contentWorld: .isolated,
+                    hostAccessDecision:
+                        broker.hostAccessDecision(
+                            url: candidateURLString,
+                            tabID: nil
+                        ),
+                    reviewedResource: reviewedResource,
+                    teardownPending: false
+                )
+            )
+        let plan =
+            ChromeMV3ProductNormalTabReviewedFileInjectionPlan.make(
+                preflight: preflight
+            )
+        let smoke =
+            ChromeMV3ProductNormalTabManualSmokeReadiness.make(
+                preflight: preflight,
+                plan: plan
+            )
+        return ChromeMV3ProductNormalTabReadinessReport(
+            policy: preflight.policy,
+            preflight: preflight,
+            injectionPlan: plan,
+            lifecycle: .planOnly,
+            manualSmokeReadiness: smoke,
+            diagnostics:
+                uniqueSortedProduct(
+                    preflight.diagnostics
+                        + plan.diagnostics
+                        + smoke.diagnostics
+                        + ChromeMV3ProductNormalTabReadinessLifetimeReport
+                        .planOnly
+                        .diagnostics
+                )
+        )
+    }
+
+    private static func generatedResourceSHA256(
+        rootPath: String,
+        relativePath: String
+    ) -> String? {
+        let fileURL = URL(fileURLWithPath: rootPath)
+            .appendingPathComponent(relativePath)
+            .standardizedFileURL
+        guard let data = try? Data(contentsOf: fileURL) else { return nil }
+        return SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+}
+
 struct ChromeMV3ProductBridgeAttachmentPlanItem:
     Codable,
     Equatable,
@@ -1276,6 +1893,8 @@ struct ChromeMV3ProductEnablementPreflightSection:
         ChromeMV3ExtensionProductEnablement
     var normalTabPreflight: ChromeMV3ProductNormalTabRuntimePreflight
     var bridgeAttachmentPlan: ChromeMV3ProductBridgeAttachmentPlan
+    var normalTabReadiness:
+        ChromeMV3ProductNormalTabReadinessReport
     var productBlockerIDs: [String]
     var nextPhaseBlockers: [String]
 
@@ -1301,6 +1920,11 @@ struct ChromeMV3ProductEnablementPreflightSection:
             preflight: preflight,
             report: report
         )
+        let readiness = ChromeMV3ProductNormalTabReadinessReport.make(
+            report: report,
+            lifecycleRecord: lifecycleRecord,
+            normalTabPreflight: preflight
+        )
         let productBlockerIDs = report?.blockerTaxonomy.filter {
             $0.severity == .productBlocked
         }.map(\.id).sorted() ?? []
@@ -1310,6 +1934,7 @@ struct ChromeMV3ProductEnablementPreflightSection:
                 preflight.extensionEnablement,
             normalTabPreflight: preflight,
             bridgeAttachmentPlan: plan,
+            normalTabReadiness: readiness,
             productBlockerIDs: productBlockerIDs,
             nextPhaseBlockers: nextPhaseBlockers(
                 report: report,

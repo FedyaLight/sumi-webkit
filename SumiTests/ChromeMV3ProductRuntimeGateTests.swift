@@ -39,6 +39,120 @@ final class ChromeMV3ProductRuntimeGateTests: XCTestCase {
         })
     }
 
+    func testProductNormalTabReadinessPolicyIsDefaultOff() {
+        let policy =
+            ChromeMV3ProductNormalTabReadinessPolicy
+            .localExperimentalDefaultOff
+
+        XCTAssertTrue(
+            policy.productNormalTabMV3ReadinessAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(policy.productNormalTabMV3ReadinessAvailableByDefault)
+        XCTAssertTrue(policy.defaultOffRuntime)
+        XCTAssertTrue(policy.reviewedGeneratedBundleFileOnly)
+        XCTAssertTrue(policy.isolatedWorldOnly)
+        XCTAssertTrue(policy.topFrameOnly)
+        XCTAssertFalse(policy.mainWorldAllowed)
+        XCTAssertFalse(policy.multiFrameAllowed)
+        XCTAssertFalse(policy.fileSchemeAllowed)
+        XCTAssertFalse(policy.auxiliarySurfaceAllowed)
+        XCTAssertTrue(policy.requiresHostPermissionOrActiveTab)
+        XCTAssertTrue(policy.teardownRequired)
+        XCTAssertTrue(policy.sourceGaps.contains {
+            $0.contains("no public per-WKUserScript removal API")
+        })
+    }
+
+    func testProductNormalTabReadinessPreflightCanPassOnlyWithLocalGateAndReviewedFile()
+        throws
+    {
+        let preflight = makeReadinessPreflight()
+        let plan =
+            ChromeMV3ProductNormalTabReviewedFileInjectionPlan.make(
+                preflight: preflight
+            )
+        let smoke = ChromeMV3ProductNormalTabManualSmokeReadiness.make(
+            preflight: preflight,
+            plan: plan
+        )
+
+        XCTAssertTrue(preflight.eligible)
+        XCTAssertTrue(preflight.blockers.isEmpty)
+        XCTAssertFalse(preflight.blockedByModule)
+        XCTAssertFalse(preflight.blockedByExtension)
+        XCTAssertFalse(preflight.blockedByProfile)
+        XCTAssertFalse(preflight.blockedBySurface)
+        XCTAssertFalse(preflight.blockedByScheme)
+        XCTAssertFalse(preflight.blockedByPermission)
+        XCTAssertFalse(preflight.blockedByMissingReviewedResource)
+        XCTAssertFalse(preflight.blockedByWorld)
+        XCTAssertFalse(preflight.blockedByFrame)
+        XCTAssertFalse(preflight.blockedByRuntimeGate)
+        XCTAssertEqual(
+            plan.reviewedScriptPath,
+            "content/bootstrap-autofill.js"
+        )
+        XCTAssertEqual(plan.generatedResourceHash, String(repeating: "a", count: 64))
+        XCTAssertEqual(plan.targetFrame, "topFrame")
+        XCTAssertEqual(plan.contentWorld, ChromeMV3ContentScriptWorld.isolated.rawValue)
+        XCTAssertTrue(plan.planOnly)
+        XCTAssertTrue(plan.executionAllowedNow)
+        XCTAssertFalse(plan.performsExecutionByManagerReadout)
+        XCTAssertTrue(smoke.canAttemptFutureManualSmoke)
+        XCTAssertTrue(smoke.safeTestURLRequirement.contains("synthetic HTTPS"))
+        XCTAssertTrue(
+            smoke.whatRemainsBlocked.contains("Default product runtime")
+        )
+        XCTAssertEqual(
+            ChromeMV3ProductNormalTabReadinessLifetimeReport.planOnly
+                .runtimeObjectsCreatedNow,
+            []
+        )
+    }
+
+    func testProductNormalTabReadinessReportsExactBlockers() throws {
+        let preflight = makeReadinessPreflight(
+            moduleEnabled: false,
+            extensionEnabled: false,
+            profileEnabled: false,
+            localExperimentalProductGateAllowed: false,
+            runtimeGateAllowsReadiness: false,
+            contentScriptRouteReady: false,
+            serviceWorkerRouteReady: false,
+            tabSurface: .faviconDownload,
+            urlString: "file:///tmp/login.html",
+            frameID: 9,
+            isTopFrame: false,
+            contentWorld: .main,
+            hostPermissions: [],
+            reviewedResourcePresent: false
+        )
+        let blockers = Set(preflight.blockers)
+        let plan =
+            ChromeMV3ProductNormalTabReviewedFileInjectionPlan.make(
+                preflight: preflight
+            )
+
+        XCTAssertFalse(preflight.eligible)
+        XCTAssertEqual(
+            blockers,
+            Set(ChromeMV3ProductNormalTabReadinessBlocker.allCases)
+        )
+        XCTAssertTrue(preflight.blockedByModule)
+        XCTAssertTrue(preflight.blockedByExtension)
+        XCTAssertTrue(preflight.blockedByProfile)
+        XCTAssertTrue(preflight.blockedBySurface)
+        XCTAssertTrue(preflight.blockedByScheme)
+        XCTAssertTrue(preflight.blockedByPermission)
+        XCTAssertTrue(preflight.blockedByMissingReviewedResource)
+        XCTAssertTrue(preflight.blockedByWorld)
+        XCTAssertTrue(preflight.blockedByFrame)
+        XCTAssertTrue(preflight.blockedByRuntimeGate)
+        XCTAssertTrue(plan.planOnly)
+        XCTAssertFalse(plan.executionAllowedNow)
+        XCTAssertFalse(plan.performsExecutionByManagerReadout)
+    }
+
     func testExtensionProductEnablementDefaultsToInternalOnlyWithBlockers()
         throws
     {
@@ -396,6 +510,24 @@ final class ChromeMV3ProductRuntimeGateTests: XCTestCase {
         )
         XCTAssertFalse(section.normalTabPreflight.canAttachToNormalTabNow)
         XCTAssertFalse(section.bridgeAttachmentPlan.performsAttachmentNow)
+        XCTAssertTrue(
+            section.normalTabReadiness.policy
+                .productNormalTabMV3ReadinessAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(
+            section.normalTabReadiness.policy
+                .productNormalTabMV3ReadinessAvailableByDefault
+        )
+        XCTAssertFalse(section.normalTabReadiness.preflight.eligible)
+        XCTAssertFalse(
+            section.normalTabReadiness.injectionPlan
+                .performsExecutionByManagerReadout
+        )
+        XCTAssertTrue(
+            section.normalTabReadiness.preflight.blockers.contains(
+                .blockedByMissingReviewedResource
+            )
+        )
         XCTAssertFalse(section.productBlockerIDs.isEmpty)
         XCTAssertTrue(section.nextPhaseBlockers.contains {
             $0.contains("Product DNR/network enforcement policy")
@@ -422,6 +554,14 @@ final class ChromeMV3ProductRuntimeGateTests: XCTestCase {
         XCTAssertFalse(foundation.finalPhaseStatus.runtimeLoadable)
         XCTAssertEqual(section.gateSummary.globalProductRuntimeGate.state, .blocked)
         XCTAssertFalse(section.normalTabPreflight.canExposeRuntimeBridgeNow)
+        XCTAssertFalse(section.normalTabReadiness.preflight.eligible)
+        XCTAssertFalse(
+            section.normalTabReadiness.lifecycle.backgroundWorkScheduled
+        )
+        XCTAssertTrue(
+            section.normalTabReadiness.lifecycle.runtimeObjectsCreatedNow
+                .isEmpty
+        )
     }
 
     private func evaluatePreflight(
@@ -554,6 +694,70 @@ final class ChromeMV3ProductRuntimeGateTests: XCTestCase {
                 "default_popup": "panel.html",
             ],
         ]
+    }
+
+    private func makeReadinessPreflight(
+        moduleEnabled: Bool = true,
+        extensionEnabled: Bool = true,
+        profileEnabled: Bool = true,
+        localExperimentalProductGateAllowed: Bool = true,
+        runtimeGateAllowsReadiness: Bool = true,
+        contentScriptRouteReady: Bool = true,
+        serviceWorkerRouteReady: Bool = true,
+        tabSurface: ChromeMV3WebViewSurface = .normalTab,
+        urlString: String = "https://example.com/sumi-mv3-readiness-login",
+        frameID: Int = 0,
+        isTopFrame: Bool = true,
+        contentWorld: ChromeMV3ContentScriptWorld = .isolated,
+        hostPermissions: [String] = ["https://example.com/*"],
+        reviewedResourcePresent: Bool = true
+    ) -> ChromeMV3ProductNormalTabReadinessPreflight {
+        let broker = ChromeMV3PermissionBroker(
+            state: ChromeMV3PermissionBrokerState(
+                extensionID: "readiness-extension",
+                profileID: "readiness-profile",
+                hostPermissions: hostPermissions
+            )
+        )
+        let hash = reviewedResourcePresent
+            ? String(repeating: "a", count: 64)
+            : nil
+        let resource = ChromeMV3ProductNormalTabReviewedResource(
+            reviewedScriptPath: "content/bootstrap-autofill.js",
+            generatedResourceHash: hash,
+            generatedResourceFileSystemPath:
+                reviewedResourcePresent
+                    ? "/tmp/generated/content/bootstrap-autofill.js"
+                    : nil,
+            present: reviewedResourcePresent,
+            packageOwned: reviewedResourcePresent,
+            diagnostics: []
+        )
+        return ChromeMV3ProductNormalTabReadinessPreflightEvaluator.evaluate(
+            input: ChromeMV3ProductNormalTabReadinessPreflightInput(
+                profileID: "readiness-profile",
+                extensionID: "readiness-extension",
+                tabID: "readiness-tab",
+                documentID: "readiness-document",
+                urlString: urlString,
+                moduleEnabled: moduleEnabled,
+                extensionEnabled: extensionEnabled,
+                profileEnabled: profileEnabled,
+                localExperimentalProductGateAllowed:
+                    localExperimentalProductGateAllowed,
+                runtimeGateAllowsReadiness: runtimeGateAllowsReadiness,
+                contentScriptRouteReady: contentScriptRouteReady,
+                serviceWorkerRouteReady: serviceWorkerRouteReady,
+                tabSurface: tabSurface,
+                frameID: frameID,
+                isTopFrame: isTopFrame,
+                contentWorld: contentWorld,
+                hostAccessDecision:
+                    broker.hostAccessDecision(url: urlString, tabID: 1),
+                reviewedResource: resource,
+                teardownPending: false
+            )
+        )
     }
 
     private func makeFixture(
