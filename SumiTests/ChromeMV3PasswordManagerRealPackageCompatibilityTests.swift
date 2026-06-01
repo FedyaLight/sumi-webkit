@@ -1705,6 +1705,177 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         })
     }
 
+    @MainActor
+    func testBitwardenE2ESmokeRecordRoutesThroughRealSurfaces()
+        throws
+    {
+        let root = try temporaryDirectory(named: "bitwarden-e2e-smoke")
+        let target = try realBitwardenTarget()
+        let report = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
+            rootURL: root,
+            targets: [target],
+            serviceWorkerTrialGateSource: .explicitTestTrial,
+            writeReport: true,
+            now: { Date(timeIntervalSince1970: 18) }
+        )
+        let row = try XCTUnwrap(report.rows.first)
+        let smoke = row.bitwardenE2ESmoke
+
+        XCTAssertTrue(smoke.attempted)
+        XCTAssertEqual(smoke.status, .partial)
+        XCTAssertEqual(smoke.packageIntakeResult, .pass)
+        XCTAssertEqual(smoke.generatedBundleResult, .pass)
+        XCTAssertTrue(smoke.extensionEnabled)
+        XCTAssertEqual(smoke.popupDocumentLoadStatus, .pass)
+        XCTAssertEqual(smoke.serviceWorkerStartupResult, .partial)
+        XCTAssertEqual(smoke.contentScriptAttachResult, .blocked)
+        XCTAssertEqual(
+            smoke.syntheticLoginSurface.url,
+            ChromeMV3PasswordManagerRealPackageTrialRunner
+                .bitwardenE2ESyntheticLoginURL
+        )
+        XCTAssertEqual(smoke.syntheticLoginSurface.hostPermissionState, "allowed")
+        XCTAssertEqual(smoke.syntheticLoginSurface.declaredContentScriptCount, 2)
+        XCTAssertEqual(smoke.syntheticLoginSurface.matchedContentScriptCount, 0)
+        XCTAssertEqual(smoke.syntheticLoginSurface.attachedContentScriptCount, 0)
+        XCTAssertEqual(smoke.endpointRegistryState.activeEndpointCount, 0)
+        XCTAssertEqual(
+            smoke.endpointRegistryState.messageListenerEndpointCount,
+            0
+        )
+        XCTAssertEqual(
+            smoke.endpointRegistryState.connectListenerEndpointCount,
+            0
+        )
+
+        let routes = Dictionary(
+            uniqueKeysWithValues:
+                smoke.messageRoutesTested.map { ($0.route, $0) }
+        )
+        XCTAssertEqual(routes[.popupRuntimeGetURL]?.status, .partial)
+        XCTAssertEqual(routes[.popupStorageLocalSet]?.status, .partial)
+        XCTAssertEqual(routes[.popupStorageLocalGet]?.status, .partial)
+        XCTAssertEqual(routes[.popupRuntimeSendMessage]?.status, .blocked)
+        XCTAssertEqual(
+            routes[.popupRuntimeSendMessage]?.noReceiverClassification,
+            .serviceWorkerListenerMissing
+        )
+        XCTAssertEqual(routes[.popupRuntimeConnect]?.status, .partial)
+        XCTAssertEqual(routes[.popupTabsQuery]?.status, .partial)
+        XCTAssertEqual(routes[.popupTabsSendMessage]?.status, .blocked)
+        XCTAssertEqual(
+            routes[.popupTabsSendMessage]?.noReceiverClassification,
+            .missingContentScriptEndpoint
+        )
+        XCTAssertEqual(
+            routes[.contentScriptRuntimeSendMessage]?.status,
+            .blocked
+        )
+        XCTAssertEqual(
+            routes[.contentScriptRuntimeSendMessage]?
+                .noReceiverClassification,
+            .serviceWorkerListenerMissing
+        )
+        XCTAssertEqual(routes[.contentScriptRuntimeConnect]?.status, .partial)
+        XCTAssertEqual(routes[.popupTabsConnect]?.status, .blocked)
+        XCTAssertEqual(
+            routes[.popupTabsConnect]?.noReceiverClassification,
+            .missingContentScriptEndpoint
+        )
+        XCTAssertEqual(
+            smoke.nextBlockerClassification,
+            .serviceWorkerListenerMissing
+        )
+        XCTAssertFalse(smoke.messageRoutesTested.contains {
+            $0.noReceiverClassification == .actualUnsupportedAPI
+        })
+        XCTAssertTrue(smoke.serviceWorkerWakeAttempted)
+        XCTAssertFalse(smoke.nativeHostLaunchAttempted)
+        XCTAssertTrue(smoke.noCredentialsOrNetwork)
+        XCTAssertTrue(report.noRealCredentialsUsed)
+        XCTAssertFalse(report.realVendorNativeHostLaunchAttempted)
+        XCTAssertFalse(report.productRuntimeAvailable)
+        XCTAssertFalse(report.productRuntimeExposed)
+
+        let record = try XCTUnwrap(
+            ChromeMV3ExtensionLifecycleRegistry(rootURL: root)
+                .listLifecycleRecords()
+                .first { $0.extensionID == row.serviceWorkerEventReadiness
+                    .declarationReadiness?.extensionID
+                }
+        )
+        let detail = try XCTUnwrap(
+            ChromeMV3ExtensionManagerViewModelBuilder.makeDetailViewModel(
+                rootURL: root,
+                profileID: record.profileID,
+                extensionID: record.extensionID,
+                gate: ChromeMV3ExtensionManagerGate.evaluate(
+                    moduleEnabled: true
+                )
+            )
+        )
+        XCTAssertEqual(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .bitwardenE2ESmoke?.endpointRegistryState
+                .messageListenerEndpointCount,
+            0
+        )
+        XCTAssertEqual(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .bitwardenE2ESmoke?.nextBlockerClassification,
+            .serviceWorkerListenerMissing
+        )
+    }
+
+    func testBitwardenE2ESmokeDefaultGateBlocksRuntimeWork()
+        throws
+    {
+        let root = try temporaryDirectory(named: "bitwarden-e2e-default-gate")
+        let target = try realBitwardenTarget()
+        let report = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
+            rootURL: root,
+            targets: [target],
+            writeReport: false,
+            now: { Date(timeIntervalSince1970: 19) }
+        )
+        let smoke = try XCTUnwrap(report.rows.first?.bitwardenE2ESmoke)
+
+        XCTAssertFalse(smoke.attempted)
+        XCTAssertEqual(smoke.status, .blocked)
+        XCTAssertEqual(smoke.nextBlockerClassification, .routeUnsupported)
+        XCTAssertTrue(smoke.messageRoutesTested.isEmpty)
+        XCTAssertEqual(smoke.endpointRegistryState.activeEndpointCount, 0)
+        XCTAssertFalse(smoke.serviceWorkerWakeAttempted)
+        XCTAssertFalse(smoke.nativeHostLaunchAttempted)
+        XCTAssertTrue(smoke.noCredentialsOrNetwork)
+    }
+
+    func testBitwardenE2ESmokeDisabledModuleBlocksRuntimeWork()
+        throws
+    {
+        let root = try temporaryDirectory(named: "bitwarden-e2e-disabled")
+        let target = try realBitwardenTarget()
+        let report = ChromeMV3PasswordManagerRealPackageTrialRunner.run(
+            rootURL: root,
+            targets: [target],
+            moduleState: .disabled,
+            serviceWorkerTrialGateSource: .explicitTestTrial,
+            writeReport: false,
+            now: { Date(timeIntervalSince1970: 20) }
+        )
+        let row = try XCTUnwrap(report.rows.first)
+        let smoke = row.bitwardenE2ESmoke
+
+        XCTAssertFalse(smoke.attempted)
+        XCTAssertEqual(smoke.status, .blocked)
+        XCTAssertTrue(smoke.messageRoutesTested.isEmpty)
+        XCTAssertEqual(smoke.endpointRegistryState.activeEndpointCount, 0)
+        XCTAssertNil(row.serviceWorkerEventReadiness.executionStartResult)
+        XCTAssertFalse(smoke.serviceWorkerWakeAttempted)
+        XCTAssertFalse(smoke.nativeHostLaunchAttempted)
+        XCTAssertTrue(smoke.noCredentialsOrNetwork)
+    }
+
     func testServiceWorkerInventoryClassifiesDynamicImportShapes()
         throws
     {
@@ -2237,6 +2408,23 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             ChromeMV3PasswordManagerRealPackageCompatibilityReport.self,
             from: Data(contentsOf: url)
         )
+    }
+
+    private func realBitwardenTarget()
+        throws -> ChromeMV3PasswordManagerRealPackageTargetDefinition
+    {
+        let target = try XCTUnwrap(
+            ChromeMV3PasswordManagerRealPackageTargetCatalog
+                .explicitLocalTargets()
+                .first { $0.targetClass == .bitwarden }
+        )
+        try XCTSkipUnless(
+            FileManager.default.fileExists(
+                atPath: target.explicitAllowedLocalRoot
+            ),
+            "Bitwarden real package fixture is not available."
+        )
+        return target
     }
 
     private func temporaryDirectory(named name: String) throws -> URL {

@@ -1405,6 +1405,8 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
         ChromeMV3PasswordManagerRealPackageNextBlockerClassification
     var nextBlockerDetail: String
     var nextRecommendedFix: String
+    var bitwardenE2ESmoke:
+        ChromeMV3PasswordManagerRealPackageE2ESmoke?
     var idleTeardownResult: String
     var hardTimeoutTeardownResult: String
     var blockers: [String]
@@ -1544,6 +1546,8 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
                 readiness.nextBlockerClassification,
             nextBlockerDetail: readiness.nextBlockerDetail,
             nextRecommendedFix: readiness.nextRecommendedFix,
+            bitwardenE2ESmoke:
+                row.targetClass == .bitwarden ? row.bitwardenE2ESmoke : nil,
             idleTeardownResult: readiness.idleTeardownResult,
             hardTimeoutTeardownResult: readiness.hardTimeoutTeardownResult,
             blockers: readiness.blockers,
@@ -3580,6 +3584,29 @@ struct ChromeMV3ExtensionManagerView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    if let smoke = trial.bitwardenE2ESmoke {
+                        Text(
+                            "Bitwarden E2E: \(smoke.status.rawValue) - \(smoke.nextBlockerClassification?.rawValue ?? "none") - \(smoke.nextBlocker)"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            "Bitwarden E2E routes: "
+                                + smoke.messageRoutesTested.map {
+                                    "\($0.route.rawValue):\($0.status.rawValue)"
+                                }.joined(separator: ", ")
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            "Bitwarden E2E endpoints: active=\(smoke.endpointRegistryState.activeEndpointCount), message=\(smoke.endpointRegistryState.messageListenerEndpointCount), connect=\(smoke.endpointRegistryState.connectListenerEndpointCount)"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
                     Text(
                         "Worker navigator: "
                             + trial.workerNavigatorUserAgentResult

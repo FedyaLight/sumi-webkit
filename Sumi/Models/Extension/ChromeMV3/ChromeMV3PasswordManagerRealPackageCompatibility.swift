@@ -966,6 +966,295 @@ struct ChromeMV3PasswordManagerRealPackageContentScriptSmoke:
     var diagnostics: [String]
 }
 
+enum ChromeMV3PasswordManagerRealPackageE2ERoute:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case popupRuntimeGetURL
+    case popupStorageLocalSet
+    case popupStorageLocalGet
+    case popupRuntimeSendMessage
+    case popupRuntimeConnect
+    case popupTabsQuery
+    case popupTabsSendMessage
+    case popupTabsConnect
+    case contentScriptRuntimeSendMessage
+    case contentScriptRuntimeConnect
+
+    static func < (
+        lhs: ChromeMV3PasswordManagerRealPackageE2ERoute,
+        rhs: ChromeMV3PasswordManagerRealPackageE2ERoute
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3PasswordManagerRealPackageNoReceiverClassification:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case expectedNoListener
+    case missingPopupListener
+    case missingContentScriptEndpoint
+    case serviceWorkerListenerMissing
+    case routeUnsupported
+    case permissionBlocked
+    case endpointStale
+    case listenerThrew
+    case actualUnsupportedAPI
+
+    static func < (
+        lhs:
+            ChromeMV3PasswordManagerRealPackageNoReceiverClassification,
+        rhs:
+            ChromeMV3PasswordManagerRealPackageNoReceiverClassification
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3PasswordManagerRealPackageE2ERouteResult:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var route: ChromeMV3PasswordManagerRealPackageE2ERoute
+    var sourceSurface: String
+    var targetSurface: String
+    var status: ChromeMV3PasswordManagerCompatibilityStatus
+    var noReceiverClassification:
+        ChromeMV3PasswordManagerRealPackageNoReceiverClassification?
+    var lastErrorCode: String?
+    var lastErrorMessage: String?
+    var serviceWorkerWakeAttempted: Bool
+    var nativeHostLaunchAttempted: Bool
+    var payloadSummary: String
+    var diagnostics: [String]
+}
+
+struct ChromeMV3PasswordManagerRealPackageE2EEndpointRegistryState:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var endpointCount: Int
+    var activeEndpointCount: Int
+    var messageListenerEndpointCount: Int
+    var connectListenerEndpointCount: Int
+    var portCount: Int
+    var activePortCount: Int
+    var endpointIDs: [String]
+    var portIDs: [String]
+    var tabsWithEndpoints: [Int]
+    var senderMetadataRedacted: Bool
+    var staleEndpointDetected: Bool
+    var diagnostics: [String]
+
+    static func make(
+        summary: ChromeMV3ContentScriptEndpointRegistrySummary,
+        senderMetadataRedacted: Bool
+    ) -> ChromeMV3PasswordManagerRealPackageE2EEndpointRegistryState {
+        ChromeMV3PasswordManagerRealPackageE2EEndpointRegistryState(
+            endpointCount: summary.endpointCount,
+            activeEndpointCount: summary.activeEndpointCount,
+            messageListenerEndpointCount:
+                summary.messageListenerEndpointCount,
+            connectListenerEndpointCount:
+                summary.connectListenerEndpointCount,
+            portCount: summary.portCount,
+            activePortCount: summary.activePortCount,
+            endpointIDs: summary.endpointIDs,
+            portIDs: summary.portIDs,
+            tabsWithEndpoints: summary.tabsWithEndpoints,
+            senderMetadataRedacted: senderMetadataRedacted,
+            staleEndpointDetected:
+                summary.lifecycleStates.contains(.navigationInvalidated),
+            diagnostics: summary.diagnostics
+        )
+    }
+
+    static let empty =
+        ChromeMV3PasswordManagerRealPackageE2EEndpointRegistryState(
+            endpointCount: 0,
+            activeEndpointCount: 0,
+            messageListenerEndpointCount: 0,
+            connectListenerEndpointCount: 0,
+            portCount: 0,
+            activePortCount: 0,
+            endpointIDs: [],
+            portIDs: [],
+            tabsWithEndpoints: [],
+            senderMetadataRedacted: true,
+            staleEndpointDetected: false,
+            diagnostics: [
+                "No content-script endpoint registry activity was attempted.",
+            ]
+        )
+}
+
+struct ChromeMV3PasswordManagerRealPackageE2ESyntheticLoginSurface:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var url: String
+    var origin: String?
+    var hostPermissionState: String
+    var activeTabState: String
+    var declaredContentScriptCount: Int
+    var matchedContentScriptCount: Int
+    var attachedContentScriptCount: Int
+    var cssAttachmentStatus: ChromeMV3PasswordManagerCompatibilityStatus
+    var jsEndpointStatus: ChromeMV3PasswordManagerCompatibilityStatus
+    var endpointID: String?
+    var senderURLRedacted: Bool
+    var senderOriginRedacted: Bool
+    var diagnostics: [String]
+
+    static func notAttempted(url: String) -> Self {
+        ChromeMV3PasswordManagerRealPackageE2ESyntheticLoginSurface(
+            url: url,
+            origin: ChromeMV3RuntimeMessagingURL.origin(from: url),
+            hostPermissionState: "notAttempted",
+            activeTabState: "notAttempted",
+            declaredContentScriptCount: 0,
+            matchedContentScriptCount: 0,
+            attachedContentScriptCount: 0,
+            cssAttachmentStatus: .notRequired,
+            jsEndpointStatus: .notRequired,
+            endpointID: nil,
+            senderURLRedacted: true,
+            senderOriginRedacted: true,
+            diagnostics: [
+                "Synthetic login page attachment was not attempted.",
+            ]
+        )
+    }
+}
+
+struct ChromeMV3PasswordManagerRealPackageE2ESmoke:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var attempted: Bool
+    var status: ChromeMV3PasswordManagerCompatibilityStatus
+    var targetID: String
+    var packageIntakeResult: ChromeMV3PasswordManagerCompatibilityStatus
+    var generatedBundleResult: ChromeMV3PasswordManagerCompatibilityStatus
+    var extensionEnabled: Bool
+    var popupOptionsAvailability: ChromeMV3PasswordManagerCompatibilityStatus
+    var popupDocumentLoadStatus: ChromeMV3PasswordManagerCompatibilityStatus
+    var serviceWorkerStartupResult: ChromeMV3PasswordManagerCompatibilityStatus
+    var serviceWorkerListenerCaptureStatus: String
+    var contentScriptAttachResult: ChromeMV3PasswordManagerCompatibilityStatus
+    var syntheticLoginSurface:
+        ChromeMV3PasswordManagerRealPackageE2ESyntheticLoginSurface
+    var endpointRegistryState:
+        ChromeMV3PasswordManagerRealPackageE2EEndpointRegistryState
+    var messageRoutesTested:
+        [ChromeMV3PasswordManagerRealPackageE2ERouteResult]
+    var unsupportedAPIsEncountered: [String]
+    var noListenerNoReceiverResults:
+        [ChromeMV3PasswordManagerRealPackageE2ERouteResult]
+    var nextBlockerClassification:
+        ChromeMV3PasswordManagerRealPackageNoReceiverClassification?
+    var nextBlocker: String
+    var serviceWorkerWakeAttempted: Bool
+    var nativeHostLaunchAttempted: Bool
+    var noCredentialsOrNetwork: Bool
+    var diagnostics: [String]
+
+    static func notRequired(
+        targetID: String,
+        packageIntakeResult: ChromeMV3PasswordManagerCompatibilityStatus,
+        generatedBundleResult: ChromeMV3PasswordManagerCompatibilityStatus,
+        extensionEnabled: Bool,
+        unsupportedAPIs: [String],
+        diagnostics: [String]
+    ) -> ChromeMV3PasswordManagerRealPackageE2ESmoke {
+        let loginURL = ChromeMV3PasswordManagerRealPackageTrialRunner
+            .bitwardenE2ESyntheticLoginURL
+        return ChromeMV3PasswordManagerRealPackageE2ESmoke(
+            attempted: false,
+            status: .notRequired,
+            targetID: targetID,
+            packageIntakeResult: packageIntakeResult,
+            generatedBundleResult: generatedBundleResult,
+            extensionEnabled: extensionEnabled,
+            popupOptionsAvailability: .notRequired,
+            popupDocumentLoadStatus: .notRequired,
+            serviceWorkerStartupResult: .notRequired,
+            serviceWorkerListenerCaptureStatus: "notRequired",
+            contentScriptAttachResult: .notRequired,
+            syntheticLoginSurface: .notAttempted(url: loginURL),
+            endpointRegistryState: .empty,
+            messageRoutesTested: [],
+            unsupportedAPIsEncountered:
+                uniqueSortedRealPackages(unsupportedAPIs),
+            noListenerNoReceiverResults: [],
+            nextBlockerClassification: nil,
+            nextBlocker: "Not a Bitwarden target.",
+            serviceWorkerWakeAttempted: false,
+            nativeHostLaunchAttempted: false,
+            noCredentialsOrNetwork: true,
+            diagnostics: uniqueSortedRealPackages(diagnostics)
+        )
+    }
+
+    static func blocked(
+        targetID: String,
+        packageIntakeResult: ChromeMV3PasswordManagerCompatibilityStatus,
+        generatedBundleResult: ChromeMV3PasswordManagerCompatibilityStatus,
+        extensionEnabled: Bool,
+        popupOptionsAvailability: ChromeMV3PasswordManagerCompatibilityStatus,
+        popupDocumentLoadStatus: ChromeMV3PasswordManagerCompatibilityStatus,
+        serviceWorkerStartupResult: ChromeMV3PasswordManagerCompatibilityStatus,
+        serviceWorkerListenerCaptureStatus: String,
+        contentScriptAttachResult: ChromeMV3PasswordManagerCompatibilityStatus,
+        unsupportedAPIs: [String],
+        blockerClassification:
+            ChromeMV3PasswordManagerRealPackageNoReceiverClassification?,
+        blocker: String,
+        diagnostics: [String]
+    ) -> ChromeMV3PasswordManagerRealPackageE2ESmoke {
+        let loginURL = ChromeMV3PasswordManagerRealPackageTrialRunner
+            .bitwardenE2ESyntheticLoginURL
+        return ChromeMV3PasswordManagerRealPackageE2ESmoke(
+            attempted: false,
+            status: .blocked,
+            targetID: targetID,
+            packageIntakeResult: packageIntakeResult,
+            generatedBundleResult: generatedBundleResult,
+            extensionEnabled: extensionEnabled,
+            popupOptionsAvailability: popupOptionsAvailability,
+            popupDocumentLoadStatus: popupDocumentLoadStatus,
+            serviceWorkerStartupResult: serviceWorkerStartupResult,
+            serviceWorkerListenerCaptureStatus:
+                serviceWorkerListenerCaptureStatus,
+            contentScriptAttachResult: contentScriptAttachResult,
+            syntheticLoginSurface: .notAttempted(url: loginURL),
+            endpointRegistryState: .empty,
+            messageRoutesTested: [],
+            unsupportedAPIsEncountered:
+                uniqueSortedRealPackages(unsupportedAPIs),
+            noListenerNoReceiverResults: [],
+            nextBlockerClassification: blockerClassification,
+            nextBlocker: blocker,
+            serviceWorkerWakeAttempted: false,
+            nativeHostLaunchAttempted: false,
+            noCredentialsOrNetwork: true,
+            diagnostics: uniqueSortedRealPackages(diagnostics)
+        )
+    }
+}
+
 struct ChromeMV3PasswordManagerRealPackagePermissionSmoke:
     Codable,
     Equatable,
@@ -1605,6 +1894,8 @@ struct ChromeMV3PasswordManagerRealPackageCompatibilityRow:
         ChromeMV3PasswordManagerRealPackagePopupOptionsSmoke
     var contentScriptSmoke:
         ChromeMV3PasswordManagerRealPackageContentScriptSmoke
+    var bitwardenE2ESmoke:
+        ChromeMV3PasswordManagerRealPackageE2ESmoke
     var permissionActiveTabSmoke:
         ChromeMV3PasswordManagerRealPackagePermissionSmoke
     var nativeMessagingSmoke:
@@ -1630,7 +1921,7 @@ struct ChromeMV3PasswordManagerRealPackageCompatibilityReport:
     Equatable,
     Sendable
 {
-    static let schemaVersion = 9
+    static let schemaVersion = 10
     static let reportFileName =
         "runtime-mv3-real-package-compatibility-report.json"
 
@@ -1692,6 +1983,9 @@ enum ChromeMV3PasswordManagerRealPackageCompatibilityReportWriter {
 }
 
 enum ChromeMV3PasswordManagerRealPackageTrialRunner {
+    static let bitwardenE2ESyntheticLoginURL =
+        "https://sumi.local.test/login"
+
     static func run(
         rootURL: URL,
         targets:
@@ -1699,6 +1993,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 ChromeMV3PasswordManagerRealPackageTargetCatalog
                 .explicitLocalTargets(),
         profileID: String = "password-manager-real-package-profile",
+        moduleState: ChromeMV3ProfileHostModuleState = .enabled,
         serviceWorkerTrialGateSource:
             ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateSource =
                 .blockedDefault,
@@ -1799,6 +2094,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 resourceScan: resourceScan,
                 fixtureRow: fixtureRow,
                 profileID: targetProfileID,
+                moduleState: moduleState,
                 serviceWorkerTrialGateSource: serviceWorkerTrialGateSource,
                 trustedHostApprovalRecords: trustedHostApprovalRecords,
                 fileManager: fileManager
@@ -2126,6 +2422,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         resourceScan: ChromeMV3PasswordManagerRealPackageResourceScan,
         fixtureRow: ChromeMV3PasswordManagerCompatibilityMatrixRow?,
         profileID: String,
+        moduleState: ChromeMV3ProfileHostModuleState,
         serviceWorkerTrialGateSource:
             ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateSource,
         trustedHostApprovalRecords:
@@ -2185,9 +2482,27 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             extraction: extraction,
             selected: selected,
             target: target,
+            moduleState: moduleState,
             trialGateSource: serviceWorkerTrialGateSource,
             trustedNativeFixturePolicyAllowed:
                 nativeSmoke.fixtureExchangeSucceeded
+        )
+        let bitwardenE2ESmoke = bitwardenE2ESmoke(
+            target: target,
+            selected: selected,
+            trial: trial,
+            manifest: manifest,
+            extraction: extraction,
+            resourceScan: resourceScan,
+            popupSmoke: popupSmoke,
+            contentSmoke: contentSmoke,
+            serviceWorkerReadiness: serviceWorkerReadiness,
+            lifecycleSucceeded: lifecycleSucceeded,
+            generatedAvailable: generatedAvailable,
+            hasPopupOptions: hasPopupOptions,
+            moduleState: moduleState,
+            serviceWorkerTrialGateSource: serviceWorkerTrialGateSource,
+            profileID: profileID
         )
         let apiBlockers =
             uniqueSortedRealPackages(extraction.unsupportedOrDeferredAPIs)
@@ -2326,6 +2641,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             manifestRequirements: extraction,
             popupOptionsSmoke: popupSmoke,
             contentScriptSmoke: contentSmoke,
+            bitwardenE2ESmoke: bitwardenE2ESmoke,
             permissionActiveTabSmoke: permissionSmoke,
             nativeMessagingSmoke: nativeSmoke,
             fixtureDelta: fixtureDelta,
@@ -2509,6 +2825,997 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         )
     }
 
+    private static func bitwardenE2ESmoke(
+        target: ChromeMV3PasswordManagerRealPackageTargetDefinition,
+        selected: SelectedPackage,
+        trial: PackageTrialResult,
+        manifest: ChromeMV3Manifest?,
+        extraction:
+            ChromeMV3PasswordManagerRealPackageManifestRequirementExtraction,
+        resourceScan: ChromeMV3PasswordManagerRealPackageResourceScan,
+        popupSmoke: ChromeMV3PasswordManagerRealPackagePopupOptionsSmoke,
+        contentSmoke: ChromeMV3PasswordManagerRealPackageContentScriptSmoke,
+        serviceWorkerReadiness:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness,
+        lifecycleSucceeded: Bool,
+        generatedAvailable: Bool,
+        hasPopupOptions: Bool,
+        moduleState: ChromeMV3ProfileHostModuleState,
+        serviceWorkerTrialGateSource:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateSource,
+        profileID fallbackProfileID: String
+    ) -> ChromeMV3PasswordManagerRealPackageE2ESmoke {
+        let packageIntakeResult:
+            ChromeMV3PasswordManagerCompatibilityStatus =
+                selected.source == .fixtureFallback
+                    ? .fixtureOnly : (lifecycleSucceeded ? .pass : .blocked)
+        let generatedBundleResult:
+            ChromeMV3PasswordManagerCompatibilityStatus =
+                generatedAvailable ? .pass : .blocked
+        let extensionEnabled =
+            trial.lifecycleResult?.record?.runtimeState.internalRuntimeEnabled
+                ?? false
+        let unsupportedAPIs = bitwardenE2EUnsupportedAPIs(
+            popupSmoke: popupSmoke,
+            resourceScan: resourceScan
+        )
+        let popupAvailability: ChromeMV3PasswordManagerCompatibilityStatus =
+            hasPopupOptions ? .partial : .notRequired
+        let generatedRootPath = activeGeneratedRootPath(
+            selected: selected,
+            trial: trial
+        )
+        let popupDocumentLoadStatus =
+            bitwardenE2EPopupDocumentStatus(
+                extraction: extraction,
+                generatedRootPath: generatedRootPath
+            )
+        let serviceWorkerStartupResult =
+            bitwardenE2EServiceWorkerStartupResult(
+                readiness: serviceWorkerReadiness,
+                gateSource: serviceWorkerTrialGateSource
+            )
+
+        guard target.targetClass == .bitwarden else {
+            return .notRequired(
+                targetID: target.targetID,
+                packageIntakeResult: packageIntakeResult,
+                generatedBundleResult: generatedBundleResult,
+                extensionEnabled: extensionEnabled,
+                unsupportedAPIs: unsupportedAPIs,
+                diagnostics: [
+                    "Bitwarden E2E smoke is scoped to the Bitwarden target only.",
+                ]
+            )
+        }
+        guard moduleState == .enabled else {
+            return .blocked(
+                targetID: target.targetID,
+                packageIntakeResult: packageIntakeResult,
+                generatedBundleResult: generatedBundleResult,
+                extensionEnabled: extensionEnabled,
+                popupOptionsAvailability: popupAvailability,
+                popupDocumentLoadStatus: popupDocumentLoadStatus,
+                serviceWorkerStartupResult: serviceWorkerStartupResult,
+                serviceWorkerListenerCaptureStatus:
+                    serviceWorkerReadiness
+                    .actualListenerRegistrationCaptureStatus,
+                contentScriptAttachResult: .blocked,
+                unsupportedAPIs: unsupportedAPIs,
+                blockerClassification: .routeUnsupported,
+                blocker:
+                    "Chrome MV3 module is disabled; Bitwarden E2E smoke did not attach content scripts, create popup/options bridge calls, or wake the service-worker fixture.",
+                diagnostics: [
+                    "Disabled module state blocks all local experimental Bitwarden E2E runtime work.",
+                ]
+            )
+        }
+        guard serviceWorkerTrialGateSource.allowsScopedExecution else {
+            return .blocked(
+                targetID: target.targetID,
+                packageIntakeResult: packageIntakeResult,
+                generatedBundleResult: generatedBundleResult,
+                extensionEnabled: extensionEnabled,
+                popupOptionsAvailability: popupAvailability,
+                popupDocumentLoadStatus: popupDocumentLoadStatus,
+                serviceWorkerStartupResult: serviceWorkerStartupResult,
+                serviceWorkerListenerCaptureStatus:
+                    serviceWorkerReadiness
+                    .actualListenerRegistrationCaptureStatus,
+                contentScriptAttachResult: .blocked,
+                unsupportedAPIs: unsupportedAPIs,
+                blockerClassification: .routeUnsupported,
+                blocker:
+                    "Default local experimental gate is closed; Bitwarden E2E smoke recorded package/popup/static readiness without routing real-surface messages.",
+                diagnostics: [
+                    "Default-off gate blocks service-worker, popup/options, and content-script route execution.",
+                    "No permanent background page or wall-clock wake was created.",
+                ]
+            )
+        }
+        guard lifecycleSucceeded, generatedAvailable, let manifest,
+              let generatedRootPath
+        else {
+            return .blocked(
+                targetID: target.targetID,
+                packageIntakeResult: packageIntakeResult,
+                generatedBundleResult: generatedBundleResult,
+                extensionEnabled: extensionEnabled,
+                popupOptionsAvailability: popupAvailability,
+                popupDocumentLoadStatus: popupDocumentLoadStatus,
+                serviceWorkerStartupResult: serviceWorkerStartupResult,
+                serviceWorkerListenerCaptureStatus:
+                    serviceWorkerReadiness
+                    .actualListenerRegistrationCaptureStatus,
+                contentScriptAttachResult: .blocked,
+                unsupportedAPIs: unsupportedAPIs,
+                blockerClassification: .routeUnsupported,
+                blocker:
+                    "Package intake or generated bundle is unavailable for the local Bitwarden E2E smoke.",
+                diagnostics:
+                    trial.diagnostics
+                        + ["Bitwarden E2E smoke requires accepted local package intake and an active generated bundle."]
+            )
+        }
+
+        let extensionID = trial.lifecycleResult?.record?.extensionID
+            ?? "bitwarden-e2e-extension"
+        let profileID = trial.lifecycleResult?.record?.profileID
+            ?? fallbackProfileID
+        let loginURL = bitwardenE2ESyntheticLoginURL
+        let documentID = "bitwarden-e2e-login-main-frame"
+        let tabID = 1
+        let frameID = 0
+        let permissionBroker = ChromeMV3PermissionBroker(
+            state: ChromeMV3PermissionBrokerState(
+                extensionID: extensionID,
+                profileID: profileID,
+                requiredPermissions: manifest.permissions,
+                optionalPermissions: manifest.optionalPermissions,
+                hostPermissions: manifest.hostPermissions,
+                optionalHostPermissions: manifest.optionalHostPermissions,
+                diagnostics: [
+                    "Bitwarden E2E smoke uses declared host permissions and activeTab state only; no silent optional grants are inserted.",
+                ]
+            )
+        )
+        let plan = ChromeMV3ContentScriptAttachmentPlan.make(
+            manifest: manifest,
+            generatedBundleRootURL:
+                URL(fileURLWithPath: generatedRootPath, isDirectory: true),
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        let preflight = ChromeMV3NormalTabContentScriptPreflightEvaluator
+            .evaluate(
+                input: ChromeMV3NormalTabContentScriptPreflightInput(
+                    moduleEnabled: true,
+                    extensionEnabled: extensionEnabled,
+                    productRuntimePreflightAllowsNormalTabAttachment: true,
+                    contentScriptGate:
+                        ChromeMV3ContentScriptProductGateRecord
+                        .developerPreviewAllowed(),
+                    attachmentPlan: plan,
+                    permissionBroker: permissionBroker,
+                    tabID: tabID,
+                    frameID: frameID,
+                    documentID: documentID,
+                    navigationSequence: 1,
+                    urlString: loginURL,
+                    tabSurface: .normalTab,
+                    generatedBundleActive: true,
+                    webKitUserContentControllerAvailable: true,
+                    teardownPending: false
+                )
+            )
+        let listenerProbe = bitwardenE2EContentScriptListenerProbe(
+            matchedScripts: preflight.matchedScripts
+        )
+        let endpointRegistry = ChromeMV3ContentScriptEndpointRegistry()
+        let endpoint = endpointRegistry.registerEndpoint(
+            preflight: preflight,
+            messageListenerRegistered:
+                listenerProbe.messageListenerRegistered,
+            connectListenerRegistered:
+                listenerProbe.connectListenerRegistered
+        )
+        let contentAttachResult:
+            ChromeMV3PasswordManagerCompatibilityStatus =
+                preflight.canAttachDeclaredContentScriptsNow
+                    ? .partial : .blocked
+        let loginSurface =
+            ChromeMV3PasswordManagerRealPackageE2ESyntheticLoginSurface(
+                url: loginURL,
+                origin: ChromeMV3RuntimeMessagingURL.origin(from: loginURL),
+                hostPermissionState:
+                    preflight.hostAccessDecision.status.rawValue,
+                activeTabState:
+                    preflight.hostAccessDecision.allowedByActiveTab
+                        ? "activeTabGrant" : "notRequiredOrNotGranted",
+                declaredContentScriptCount: plan.declaredScripts.count,
+                matchedContentScriptCount: preflight.matchedScripts.count,
+                attachedContentScriptCount:
+                    preflight.canAttachDeclaredContentScriptsNow
+                        ? preflight.matchedScripts.count : 0,
+                cssAttachmentStatus:
+                    preflight.matchedScripts.contains {
+                        $0.validatedCSSFilePaths.isEmpty == false
+                    } ? .partial : .notRequired,
+                jsEndpointStatus:
+                    endpoint == nil ? .blocked : .partial,
+                endpointID: endpoint?.endpointID,
+                senderURLRedacted:
+                    endpoint?.senderMetadata.urlRedacted ?? true,
+                senderOriginRedacted:
+                    endpoint?.senderMetadata.originRedacted ?? true,
+                diagnostics:
+                    uniqueSortedRealPackages(
+                        preflight.diagnostics
+                            + listenerProbe.diagnostics
+                            + [
+                                "Synthetic login page is local-only diagnostic input; no page credentials were created or submitted.",
+                            ]
+                    )
+            )
+        let sharedLifecycleRegistry =
+            ChromeMV3ServiceWorkerSharedLifecycleSessionRegistry()
+        let sharedSession = sharedLifecycleRegistry.session(
+            profileID: profileID,
+            extensionID: extensionID,
+            lifecycleSessionID: "bitwarden-e2e-smoke",
+            moduleState: moduleState,
+            explicitInternalLifecycleAllowed: true,
+            nativePortKeepaliveAvailableInFixture: false
+        )
+        registerBitwardenE2EServiceWorkerListeners(
+            readiness: serviceWorkerReadiness,
+            sharedSession: sharedSession
+        )
+        let popupHandler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration:
+                bitwardenE2EPopupConfiguration(
+                    extensionID: extensionID,
+                    profileID: profileID,
+                    manifest: manifest,
+                    moduleState: moduleState
+                ),
+            contentScriptEndpointRegistry: endpointRegistry,
+            sharedLifecycleSession: sharedSession
+        )
+        let contentBridge = ChromeMV3ContentScriptBridgeHost(
+            extensionID: extensionID,
+            profileID: profileID,
+            tabID: tabID,
+            frameID: frameID,
+            documentID: documentID,
+            urlString: loginURL,
+            permissionBroker: permissionBroker,
+            endpointRegistry: endpointRegistry,
+            sharedLifecycleSession: sharedSession
+        )
+
+        var routes: [ChromeMV3PasswordManagerRealPackageE2ERouteResult] = []
+        routes.append(
+            bitwardenE2ERouteResult(
+                route: .popupRuntimeGetURL,
+                sourceSurface: "actionPopup",
+                targetSurface: "extensionResource",
+                response:
+                    popupHandler.handle(
+                        bitwardenE2EBridgeRequest(
+                            route: .popupRuntimeGetURL,
+                            namespace: "runtime",
+                            methodName: "getURL",
+                            arguments: [.string("popup/index.html")]
+                        )
+                    ),
+                endpointRegistered: endpoint != nil,
+                endpointMessageListenerRegistered:
+                    listenerProbe.messageListenerRegistered,
+                endpointConnectListenerRegistered:
+                    listenerProbe.connectListenerRegistered,
+                serviceWorkerCapturedFamilies:
+                    serviceWorkerReadiness.capturedListenerFamilies,
+                payloadSummary: "popup runtime.getURL popup/index.html"
+            )
+        )
+        routes.append(
+            bitwardenE2ERouteResult(
+                route: .popupStorageLocalSet,
+                sourceSurface: "actionPopup",
+                targetSurface: "storage.local",
+                response:
+                    popupHandler.handle(
+                        bitwardenE2EBridgeRequest(
+                            route: .popupStorageLocalSet,
+                            namespace: "storage",
+                            methodName: "local.set",
+                            arguments: [
+                                .object([
+                                    "sumiBitwardenE2ESmoke":
+                                        .string("local-only"),
+                                ]),
+                            ]
+                        )
+                    ),
+                endpointRegistered: endpoint != nil,
+                endpointMessageListenerRegistered:
+                    listenerProbe.messageListenerRegistered,
+                endpointConnectListenerRegistered:
+                    listenerProbe.connectListenerRegistered,
+                serviceWorkerCapturedFamilies:
+                    serviceWorkerReadiness.capturedListenerFamilies,
+                payloadSummary: "popup storage.local.set deterministic key"
+            )
+        )
+        routes.append(
+            bitwardenE2ERouteResult(
+                route: .popupStorageLocalGet,
+                sourceSurface: "actionPopup",
+                targetSurface: "storage.local",
+                response:
+                    popupHandler.handle(
+                        bitwardenE2EBridgeRequest(
+                            route: .popupStorageLocalGet,
+                            namespace: "storage",
+                            methodName: "local.get",
+                            arguments: [
+                                .array([.string("sumiBitwardenE2ESmoke")]),
+                            ]
+                        )
+                    ),
+                endpointRegistered: endpoint != nil,
+                endpointMessageListenerRegistered:
+                    listenerProbe.messageListenerRegistered,
+                endpointConnectListenerRegistered:
+                    listenerProbe.connectListenerRegistered,
+                serviceWorkerCapturedFamilies:
+                    serviceWorkerReadiness.capturedListenerFamilies,
+                payloadSummary: "popup storage.local.get deterministic key"
+            )
+        )
+        routes.append(
+            bitwardenE2ERouteResult(
+                route: .popupRuntimeSendMessage,
+                sourceSurface: "actionPopup",
+                targetSurface: "serviceWorker",
+                response:
+                    popupHandler.handle(
+                        bitwardenE2EBridgeRequest(
+                            route: .popupRuntimeSendMessage,
+                            namespace: "runtime",
+                            methodName: "sendMessage",
+                            arguments: [bitwardenE2EMessagePayload()]
+                        )
+                    ),
+                endpointRegistered: endpoint != nil,
+                endpointMessageListenerRegistered:
+                    listenerProbe.messageListenerRegistered,
+                endpointConnectListenerRegistered:
+                    listenerProbe.connectListenerRegistered,
+                serviceWorkerCapturedFamilies:
+                    serviceWorkerReadiness.capturedListenerFamilies,
+                payloadSummary: "popup runtime.sendMessage service-worker route"
+            )
+        )
+        routes.append(
+            bitwardenE2ERouteResult(
+                route: .popupRuntimeConnect,
+                sourceSurface: "actionPopup",
+                targetSurface: "serviceWorker",
+                response:
+                    popupHandler.handle(
+                        bitwardenE2EBridgeRequest(
+                            route: .popupRuntimeConnect,
+                            namespace: "runtime",
+                            methodName: "connect",
+                            arguments: [
+                                .object([
+                                    "name": .string("sumi-bitwarden-e2e"),
+                                ]),
+                            ]
+                        )
+                    ),
+                endpointRegistered: endpoint != nil,
+                endpointMessageListenerRegistered:
+                    listenerProbe.messageListenerRegistered,
+                endpointConnectListenerRegistered:
+                    listenerProbe.connectListenerRegistered,
+                serviceWorkerCapturedFamilies:
+                    serviceWorkerReadiness.capturedListenerFamilies,
+                payloadSummary: "popup runtime.connect service-worker route"
+            )
+        )
+        routes.append(
+            bitwardenE2ERouteResult(
+                route: .popupTabsQuery,
+                sourceSurface: "actionPopup",
+                targetSurface: "tabs",
+                response:
+                    popupHandler.handle(
+                        bitwardenE2EBridgeRequest(
+                            route: .popupTabsQuery,
+                            namespace: "tabs",
+                            methodName: "query",
+                            arguments: [
+                                .object([
+                                    "active": .bool(true),
+                                    "currentWindow": .bool(true),
+                                ]),
+                            ]
+                        )
+                    ),
+                endpointRegistered: endpoint != nil,
+                endpointMessageListenerRegistered:
+                    listenerProbe.messageListenerRegistered,
+                endpointConnectListenerRegistered:
+                    listenerProbe.connectListenerRegistered,
+                serviceWorkerCapturedFamilies:
+                    serviceWorkerReadiness.capturedListenerFamilies,
+                payloadSummary: "popup tabs.query active currentWindow"
+            )
+        )
+        routes.append(
+            bitwardenE2ERouteResult(
+                route: .popupTabsSendMessage,
+                sourceSurface: "actionPopup",
+                targetSurface: "contentScriptEndpoint",
+                response:
+                    popupHandler.handle(
+                        bitwardenE2EBridgeRequest(
+                            route: .popupTabsSendMessage,
+                            namespace: "tabs",
+                            methodName: "sendMessage",
+                            arguments: [
+                                .number(Double(tabID)),
+                                bitwardenE2EMessagePayload(),
+                                .object([
+                                    "frameId": .number(Double(frameID)),
+                                    "documentId": .string(documentID),
+                                ]),
+                            ]
+                        )
+                    ),
+                endpointRegistered: endpoint != nil,
+                endpointMessageListenerRegistered:
+                    listenerProbe.messageListenerRegistered,
+                endpointConnectListenerRegistered:
+                    listenerProbe.connectListenerRegistered,
+                serviceWorkerCapturedFamilies:
+                    serviceWorkerReadiness.capturedListenerFamilies,
+                payloadSummary: "popup tabs.sendMessage content-script route"
+            )
+        )
+        routes.append(
+            bitwardenE2ERouteResult(
+                route: .popupTabsConnect,
+                sourceSurface: "actionPopup",
+                targetSurface: "contentScriptEndpoint",
+                response:
+                    popupHandler.handle(
+                        bitwardenE2EBridgeRequest(
+                            route: .popupTabsConnect,
+                            namespace: "tabs",
+                            methodName: "connect",
+                            arguments: [
+                                .number(Double(tabID)),
+                                .object([
+                                    "frameId": .number(Double(frameID)),
+                                    "documentId": .string(documentID),
+                                    "name": .string("sumi-bitwarden-e2e"),
+                                ]),
+                            ]
+                        )
+                    ),
+                endpointRegistered: endpoint != nil,
+                endpointMessageListenerRegistered:
+                    listenerProbe.messageListenerRegistered,
+                endpointConnectListenerRegistered:
+                    listenerProbe.connectListenerRegistered,
+                serviceWorkerCapturedFamilies:
+                    serviceWorkerReadiness.capturedListenerFamilies,
+                payloadSummary: "popup tabs.connect content-script route"
+            )
+        )
+        routes.append(
+            bitwardenE2EContentScriptRouteResult(
+                route: .contentScriptRuntimeSendMessage,
+                response:
+                    contentBridge.handle([
+                        "namespace": "runtime",
+                        "methodName": "sendMessage",
+                        "bridgeCallID":
+                            "bitwarden-e2e-contentScriptRuntimeSendMessage",
+                        "arguments": [
+                            [
+                                "kind": "sumiBitwardenE2ESmoke",
+                                "value": "deterministic",
+                            ],
+                        ],
+                    ]),
+                serviceWorkerCapturedFamilies:
+                    serviceWorkerReadiness.capturedListenerFamilies,
+                payloadSummary:
+                    "content-script runtime.sendMessage service-worker route"
+            )
+        )
+        routes.append(
+            bitwardenE2EContentScriptRouteResult(
+                route: .contentScriptRuntimeConnect,
+                response:
+                    contentBridge.handle([
+                        "namespace": "runtime",
+                        "methodName": "connect",
+                        "bridgeCallID":
+                            "bitwarden-e2e-contentScriptRuntimeConnect",
+                        "arguments": [
+                            [
+                                "name": "sumi-bitwarden-e2e",
+                            ],
+                        ],
+                    ]),
+                serviceWorkerCapturedFamilies:
+                    serviceWorkerReadiness.capturedListenerFamilies,
+                payloadSummary:
+                    "content-script runtime.connect service-worker route"
+            )
+        )
+
+        let endpointState =
+            ChromeMV3PasswordManagerRealPackageE2EEndpointRegistryState.make(
+                summary: endpointRegistry.summary,
+                senderMetadataRedacted:
+                    endpoint?.senderMetadata.urlRedacted ?? true
+            )
+        popupHandler.tearDown()
+        sharedSession?.triggerIdleRelease(reason: "bitwardenE2ESmokeComplete")
+        sharedLifecycleRegistry.reset()
+
+        let noReceiverResults = routes.filter {
+            $0.noReceiverClassification != nil
+        }
+        let nextBlocker = bitwardenE2ENextBlocker(routes: routes)
+        return ChromeMV3PasswordManagerRealPackageE2ESmoke(
+            attempted: true,
+            status: routes.contains { $0.status == .partial }
+                ? .partial : .blocked,
+            targetID: target.targetID,
+            packageIntakeResult: packageIntakeResult,
+            generatedBundleResult: generatedBundleResult,
+            extensionEnabled: extensionEnabled,
+            popupOptionsAvailability: popupAvailability,
+            popupDocumentLoadStatus: popupDocumentLoadStatus,
+            serviceWorkerStartupResult: serviceWorkerStartupResult,
+            serviceWorkerListenerCaptureStatus:
+                serviceWorkerReadiness.actualListenerRegistrationCaptureStatus,
+            contentScriptAttachResult: contentAttachResult,
+            syntheticLoginSurface: loginSurface,
+            endpointRegistryState: endpointState,
+            messageRoutesTested: routes,
+            unsupportedAPIsEncountered: unsupportedAPIs,
+            noListenerNoReceiverResults: noReceiverResults,
+            nextBlockerClassification: nextBlocker.classification,
+            nextBlocker: nextBlocker.detail,
+            serviceWorkerWakeAttempted:
+                routes.contains { $0.serviceWorkerWakeAttempted },
+            nativeHostLaunchAttempted:
+                routes.contains { $0.nativeHostLaunchAttempted },
+            noCredentialsOrNetwork: true,
+            diagnostics:
+                uniqueSortedRealPackages(
+                    contentSmoke.diagnostics
+                        + preflight.diagnostics
+                        + listenerProbe.diagnostics
+                        + [
+                            "Bitwarden E2E smoke used only \(selected.resourceScanRootPath ?? selected.packageURL?.path ?? "unknown local package root").",
+                            "Action popup/options, service-worker shared lifecycle, and manifest content-script endpoint routes were exercised through existing Sumi developer-preview surfaces.",
+                            "No public support flag, Web Store install, remote CRX, account, vault, credential, vendor native-host, arbitrary tab scan, or network-auth call was used.",
+                        ]
+                )
+        )
+    }
+
+    private struct BitwardenE2EContentScriptListenerProbe {
+        var messageListenerRegistered: Bool
+        var connectListenerRegistered: Bool
+        var diagnostics: [String]
+    }
+
+    private static func activeGeneratedRootPath(
+        selected: SelectedPackage,
+        trial: PackageTrialResult
+    ) -> String? {
+        trial.lifecycleResult?.generatedVersion?.generatedBundleRootPath
+            ?? trial.lifecycleResult?.record?.generatedBundleVersions.first {
+                $0.id == trial.lifecycleResult?.record?.activeGeneratedVersionID
+            }?.generatedBundleRootPath
+            ?? selected.resourceScanRootPath
+            ?? trial.lifecycleResult?.record?.originalBundleRootPath
+    }
+
+    private static func bitwardenE2EPopupDocumentStatus(
+        extraction:
+            ChromeMV3PasswordManagerRealPackageManifestRequirementExtraction,
+        generatedRootPath: String?
+    ) -> ChromeMV3PasswordManagerCompatibilityStatus {
+        let path =
+            extraction.actionDefaultPopup
+                ?? extraction.optionsUIPage
+                ?? extraction.optionsPage
+        guard let path else { return .notRequired }
+        guard let generatedRootPath else { return .blocked }
+        let url = URL(fileURLWithPath: generatedRootPath, isDirectory: true)
+            .appendingPathComponent(path)
+        return FileManager.default.fileExists(atPath: url.path)
+            ? .pass : .blocked
+    }
+
+    private static func bitwardenE2EServiceWorkerStartupResult(
+        readiness:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness,
+        gateSource:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateSource
+    ) -> ChromeMV3PasswordManagerCompatibilityStatus {
+        guard readiness.declared else { return .notRequired }
+        guard gateSource.allowsScopedExecution else { return .blocked }
+        if readiness.executionStartResult?.status == .running
+            || readiness.capturedListenerFamilies.isEmpty == false
+        {
+            return .partial
+        }
+        return .blocked
+    }
+
+    private static func bitwardenE2EUnsupportedAPIs(
+        popupSmoke: ChromeMV3PasswordManagerRealPackagePopupOptionsSmoke,
+        resourceScan: ChromeMV3PasswordManagerRealPackageResourceScan
+    ) -> [String] {
+        uniqueSortedRealPackages(
+            popupSmoke.blockedAPIs.map {
+                "\($0.namespace).\($0.methodName)"
+            }
+                + resourceScan.detectedChromeAPIs.filter {
+                    ChromeMV3PopupOptionsAPIMethodPolicy.defaultPolicy
+                        .allowedMethods.contains($0) == false
+                }
+        )
+    }
+
+    private static func bitwardenE2EContentScriptListenerProbe(
+        matchedScripts: [ChromeMV3DeclaredContentScriptAttachmentRecord]
+    ) -> BitwardenE2EContentScriptListenerProbe {
+        var message = false
+        var connect = false
+        var scanned: [String] = []
+        var diagnostics: [String] = []
+        for script in matchedScripts {
+            let root = URL(
+                fileURLWithPath: script.generatedBundleRootPath,
+                isDirectory: true
+            )
+            for path in script.validatedJSFilePaths.sorted() {
+                let url = root.appendingPathComponent(path)
+                guard let source = try? String(contentsOf: url, encoding: .utf8)
+                else {
+                    diagnostics.append(
+                        "Could not read matched content-script JS \(path) for listener probe."
+                    )
+                    continue
+                }
+                scanned.append(path)
+                if source.contains("runtime.onMessage.addListener")
+                    || source.contains("browser.runtime.onMessage.addListener")
+                    || source.contains("chrome.runtime.onMessage.addListener")
+                {
+                    message = true
+                }
+                if source.contains("runtime.onConnect.addListener")
+                    || source.contains("browser.runtime.onConnect.addListener")
+                    || source.contains("chrome.runtime.onConnect.addListener")
+                {
+                    connect = true
+                }
+            }
+        }
+        diagnostics.append(
+            "Content-script listener probe scanned \(scanned.count) matched JS file(s): \(scanned.prefix(4).joined(separator: ", "))."
+        )
+        diagnostics.append(
+            "Content-script listener probe result: onMessage=\(message), onConnect=\(connect)."
+        )
+        return BitwardenE2EContentScriptListenerProbe(
+            messageListenerRegistered: message,
+            connectListenerRegistered: connect,
+            diagnostics: uniqueSortedRealPackages(diagnostics)
+        )
+    }
+
+    private static func registerBitwardenE2EServiceWorkerListeners(
+        readiness:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness,
+        sharedSession: ChromeMV3ServiceWorkerSharedLifecycleSession?
+    ) {
+        guard let sharedSession else { return }
+        if readiness.capturedListenerFamilies.contains(.runtimeOnMessage) {
+            sharedSession.registerListener(
+                event: .runtimeOnMessage,
+                listenerID: "bitwarden-e2e-runtime-on-message",
+                outcome:
+                    .modelDispatched(
+                        .object([
+                            "ok": .bool(true),
+                            "target": .string("serviceWorker"),
+                            "surface": .string("runtime.onMessage"),
+                        ]),
+                        diagnostics: [
+                            "Bitwarden E2E smoke mirrored the captured service-worker runtime.onMessage listener into the shared lifecycle fixture.",
+                        ]
+                    )
+            )
+        }
+        if readiness.capturedListenerFamilies.contains(.runtimeOnConnect) {
+            sharedSession.registerListener(
+                event: .runtimeOnConnect,
+                listenerID: "bitwarden-e2e-runtime-on-connect",
+                outcome:
+                    .modelDispatched(
+                        .object([
+                            "ok": .bool(true),
+                            "target": .string("serviceWorker"),
+                            "surface": .string("runtime.onConnect"),
+                        ]),
+                        diagnostics: [
+                            "Bitwarden E2E smoke mirrored the captured service-worker runtime.onConnect listener into the shared lifecycle fixture.",
+                        ]
+                    )
+            )
+        }
+    }
+
+    private static func bitwardenE2EPopupConfiguration(
+        extensionID: String,
+        profileID: String,
+        manifest: ChromeMV3Manifest,
+        moduleState: ChromeMV3ProfileHostModuleState
+    ) -> ChromeMV3PopupOptionsJSBridgeConfiguration {
+        ChromeMV3PopupOptionsJSBridgeConfiguration(
+            extensionID: extensionID,
+            profileID: profileID,
+            surfaceID: "\(profileID):\(extensionID):bitwarden-e2e-popup",
+            surface: .actionPopup,
+            extensionBaseURLString: "chrome-extension://\(extensionID)/",
+            permissionStateRootPath: nil,
+            moduleState: moduleState,
+            bridgeAvailable: moduleState == .enabled,
+            popupOptionsJSBridgeAvailableInDeveloperPreview:
+                moduleState == .enabled,
+            popupOptionsJSBridgeAvailableInPublicProduct: false,
+            normalTabRuntimeBridgeAvailable: false,
+            contentScriptAttachmentAvailableInProduct: false,
+            runtimeLoadable: false,
+            manifestPermissions: manifest.permissions,
+            manifestOptionalPermissions: manifest.optionalPermissions,
+            manifestHostPermissions: manifest.hostPermissions,
+            manifestOptionalHostPermissions: manifest.optionalHostPermissions,
+            activeTabGrants: [],
+            allowlist: .defaultPolicy,
+            diagnostics: [
+                "Bitwarden E2E popup/options bridge is local experimental and extension-owned only.",
+                "Normal-tab runtime bridge, product content-script attachment, and public runtimeLoadable stay false.",
+            ]
+        )
+    }
+
+    private static func bitwardenE2EMessagePayload() -> ChromeMV3StorageValue {
+        .object([
+            "kind": .string("sumiBitwardenE2ESmoke"),
+            "value": .string("deterministic"),
+        ])
+    }
+
+    private static func bitwardenE2EBridgeRequest(
+        route: ChromeMV3PasswordManagerRealPackageE2ERoute,
+        namespace: String,
+        methodName: String,
+        arguments: [ChromeMV3StorageValue] = []
+    ) -> ChromeMV3RuntimeJSBridgeHostRequest {
+        ChromeMV3RuntimeJSBridgeHostRequest(
+            bridgeCallID: "bitwarden-e2e-\(route.rawValue)",
+            namespace: namespace,
+            methodName: methodName,
+            invocationMode: .promise,
+            arguments: arguments,
+            listenerID: nil,
+            eventName: nil,
+            portID: nil,
+            diagnostics: [
+                "Bitwarden E2E route request generated by local compatibility smoke.",
+            ]
+        )
+    }
+
+    private static func bitwardenE2ERouteResult(
+        route: ChromeMV3PasswordManagerRealPackageE2ERoute,
+        sourceSurface: String,
+        targetSurface: String,
+        response: ChromeMV3PopupOptionsJSBridgeHostResponse,
+        endpointRegistered: Bool,
+        endpointMessageListenerRegistered: Bool,
+        endpointConnectListenerRegistered: Bool,
+        serviceWorkerCapturedFamilies:
+            [ChromeMV3ServiceWorkerSyntheticListenerEvent],
+        payloadSummary: String
+    ) -> ChromeMV3PasswordManagerRealPackageE2ERouteResult {
+        let classification =
+            bitwardenE2ENoReceiverClassification(
+                route: route,
+                succeeded: response.succeeded,
+                lastErrorCode: response.lastErrorCode,
+                lastErrorMessage: response.lastErrorMessage,
+                endpointRegistered: endpointRegistered,
+                endpointMessageListenerRegistered:
+                    endpointMessageListenerRegistered,
+                endpointConnectListenerRegistered:
+                    endpointConnectListenerRegistered,
+                serviceWorkerCapturedFamilies: serviceWorkerCapturedFamilies,
+                blockedDiagnostic: response.blockedAPIDiagnostic
+            )
+        return ChromeMV3PasswordManagerRealPackageE2ERouteResult(
+            route: route,
+            sourceSurface: sourceSurface,
+            targetSurface: targetSurface,
+            status: response.succeeded ? .partial : .blocked,
+            noReceiverClassification: classification,
+            lastErrorCode: response.lastErrorCode,
+            lastErrorMessage: response.lastErrorMessage,
+            serviceWorkerWakeAttempted: response.serviceWorkerWakeAttempted,
+            nativeHostLaunchAttempted: response.nativeHostLaunchAttempted,
+            payloadSummary: payloadSummary,
+            diagnostics:
+                uniqueSortedRealPackages(
+                    response.diagnostics
+                        + [
+                            "Bitwarden E2E popup/options route \(route.rawValue) finished with succeeded=\(response.succeeded).",
+                        ]
+                )
+        )
+    }
+
+    private static func bitwardenE2EContentScriptRouteResult(
+        route: ChromeMV3PasswordManagerRealPackageE2ERoute,
+        response: ChromeMV3ContentScriptBridgeResponse,
+        serviceWorkerCapturedFamilies:
+            [ChromeMV3ServiceWorkerSyntheticListenerEvent],
+        payloadSummary: String
+    ) -> ChromeMV3PasswordManagerRealPackageE2ERouteResult {
+        let classification =
+            bitwardenE2ENoReceiverClassification(
+                route: route,
+                succeeded: response.succeeded,
+                lastErrorCode: response.lastErrorCode,
+                lastErrorMessage: response.lastErrorMessage,
+                endpointRegistered: true,
+                endpointMessageListenerRegistered: true,
+                endpointConnectListenerRegistered: true,
+                serviceWorkerCapturedFamilies: serviceWorkerCapturedFamilies,
+                blockedDiagnostic: nil
+            )
+        return ChromeMV3PasswordManagerRealPackageE2ERouteResult(
+            route: route,
+            sourceSurface: "contentScriptEndpoint",
+            targetSurface: "serviceWorker",
+            status: response.succeeded ? .partial : .blocked,
+            noReceiverClassification: classification,
+            lastErrorCode: response.lastErrorCode,
+            lastErrorMessage: response.lastErrorMessage,
+            serviceWorkerWakeAttempted: response.serviceWorkerWakeAttempted,
+            nativeHostLaunchAttempted: response.nativeHostLaunchAttempted,
+            payloadSummary: payloadSummary,
+            diagnostics:
+                uniqueSortedRealPackages(
+                    response.diagnostics
+                        + [
+                            "Bitwarden E2E content-script route \(route.rawValue) finished with succeeded=\(response.succeeded).",
+                        ]
+                )
+        )
+    }
+
+    private static func bitwardenE2ENoReceiverClassification(
+        route: ChromeMV3PasswordManagerRealPackageE2ERoute,
+        succeeded: Bool,
+        lastErrorCode: String?,
+        lastErrorMessage: String?,
+        endpointRegistered: Bool,
+        endpointMessageListenerRegistered: Bool,
+        endpointConnectListenerRegistered: Bool,
+        serviceWorkerCapturedFamilies:
+            [ChromeMV3ServiceWorkerSyntheticListenerEvent],
+        blockedDiagnostic: ChromeMV3PopupOptionsBlockedAPIDiagnostic?
+    ) -> ChromeMV3PasswordManagerRealPackageNoReceiverClassification? {
+        guard succeeded == false else { return nil }
+        if blockedDiagnostic != nil
+            || lastErrorCode == ChromeMV3JSBridgeErrorCode.unsupportedAPI.rawValue
+        {
+            return .actualUnsupportedAPI
+        }
+        if lastErrorCode == ChromeMV3JSBridgeErrorCode.permissionDenied.rawValue
+            || lastErrorCode == ChromeMV3RuntimeLastErrorCase.permissionDenied.rawValue
+            || lastErrorCode == ChromeMV3RuntimeLastErrorCase.hostPermissionMissing.rawValue
+            || lastErrorCode == ChromeMV3RuntimeLastErrorCase.activeTabMissing.rawValue
+        {
+            return .permissionBlocked
+        }
+        if lastErrorCode == ChromeMV3RuntimeLastErrorCase.noReceivingEnd.rawValue
+            || lastErrorMessage?.contains("Receiving end does not exist") == true
+        {
+            switch route {
+            case .popupTabsSendMessage:
+                if endpointRegistered == false {
+                    return .missingContentScriptEndpoint
+                }
+                return endpointMessageListenerRegistered
+                    ? .endpointStale
+                    : .expectedNoListener
+            case .popupTabsConnect:
+                if endpointRegistered == false {
+                    return .missingContentScriptEndpoint
+                }
+                return endpointConnectListenerRegistered
+                    ? .endpointStale
+                    : .expectedNoListener
+            case .popupRuntimeSendMessage,
+                 .contentScriptRuntimeSendMessage:
+                return serviceWorkerCapturedFamilies.contains(.runtimeOnMessage)
+                    ? .missingPopupListener
+                    : .serviceWorkerListenerMissing
+            case .popupRuntimeConnect,
+                 .contentScriptRuntimeConnect:
+                return serviceWorkerCapturedFamilies.contains(.runtimeOnConnect)
+                    ? .missingPopupListener
+                    : .serviceWorkerListenerMissing
+            default:
+                return .expectedNoListener
+            }
+        }
+        if lastErrorMessage?.localizedCaseInsensitiveContains("throw") == true
+            || lastErrorMessage?.localizedCaseInsensitiveContains("error") == true
+        {
+            return .listenerThrew
+        }
+        return .routeUnsupported
+    }
+
+    private static func bitwardenE2ENextBlocker(
+        routes: [ChromeMV3PasswordManagerRealPackageE2ERouteResult]
+    ) -> (
+        classification:
+            ChromeMV3PasswordManagerRealPackageNoReceiverClassification?,
+        detail: String
+    ) {
+        if let unexpected = routes.first(where: {
+            $0.status == .blocked
+                && $0.noReceiverClassification != .expectedNoListener
+        }) {
+            return (
+                unexpected.noReceiverClassification ?? .routeUnsupported,
+                "\(unexpected.route.rawValue) blocked: \(unexpected.lastErrorMessage ?? "no lastError")."
+            )
+        }
+        if let expected = routes.first(where: {
+            $0.noReceiverClassification == .expectedNoListener
+        }) {
+            return (
+                .expectedNoListener,
+                "\(expected.route.rawValue) reported noReceiver because the matched Bitwarden endpoint/listener set does not include that listener in the static content-script surface; this is expected listener taxonomy, not unsupported API."
+            )
+        }
+        return (
+            nil,
+            "No next Bitwarden E2E blocker observed in deterministic popup/options, service-worker, and content-script route smoke."
+        )
+    }
+
     private static func serviceWorkerEventReadiness(
         manifest: ChromeMV3Manifest?,
         lifecycleResult: ChromeMV3LifecycleOperationResult?,
@@ -2516,6 +3823,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             ChromeMV3PasswordManagerRealPackageManifestRequirementExtraction,
         selected: SelectedPackage,
         target: ChromeMV3PasswordManagerRealPackageTargetDefinition,
+        moduleState: ChromeMV3ProfileHostModuleState,
         trialGateSource:
             ChromeMV3PasswordManagerRealPackageServiceWorkerTrialGateSource,
         trustedNativeFixturePolicyAllowed: Bool
@@ -2555,13 +3863,13 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 },
                 extensionID: extensionID,
                 profileID: profileID,
-                moduleState: .enabled,
+                moduleState: moduleState,
                 extensionEnabled: extensionEnabled,
                 localExperimentalGateAllowed: false
             )
         }
         let closedPolicy = ChromeMV3ServiceWorkerJSExecutionPolicy.evaluate(
-            moduleState: .enabled,
+            moduleState: moduleState,
             extensionEnabled: extensionEnabled,
             localExperimentalGateAllowed: false,
             generatedBundleRecordAvailable: generatedRecord != nil
@@ -2605,6 +3913,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         var gateClosedAfterTrial = true
 
         if declared, let manifest,
+           moduleState == .enabled,
            trialGateSource.allowsScopedExecution
         {
             gateRecords.append(
@@ -2626,7 +3935,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 generatedBundleRecord: generatedRecord,
                 extensionID: extensionID,
                 profileID: profileID,
-                moduleState: .enabled,
+                moduleState: moduleState,
                 extensionEnabled: extensionEnabled,
                 localExperimentalGateAllowed: true,
                 dynamicImportRewriteExperimentAllowed: true
