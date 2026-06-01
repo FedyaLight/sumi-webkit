@@ -696,6 +696,11 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
     var i18nSelectedUILanguage: String
     var i18nSelectedUILanguageSource: String
     var i18nUnsupportedAPIs: [String]
+    var alarmsAvailableInLocalExperimentalGate: Bool
+    var alarmsAvailableByDefault: Bool
+    var wallClockAlarmSchedulingAllowed: Bool
+    var backgroundWakeAllowed: Bool
+    var explicitAlarmTriggerOnly: Bool
     var workerGlobalEventTargetAvailableInLocalExperimentalGate: Bool
     var workerGlobalEventTargetAvailableByDefault: Bool
     var workerGlobalEventTargetSupportedTypes: [String]
@@ -902,6 +907,11 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
             i18nSelectedUILanguage: uiLanguage.language,
             i18nSelectedUILanguageSource: uiLanguage.source,
             i18nUnsupportedAPIs: i18nUnsupportedAPIs,
+            alarmsAvailableInLocalExperimentalGate: available,
+            alarmsAvailableByDefault: false,
+            wallClockAlarmSchedulingAllowed: false,
+            backgroundWakeAllowed: false,
+            explicitAlarmTriggerOnly: true,
             workerGlobalEventTargetAvailableInLocalExperimentalGate:
                 available,
             workerGlobalEventTargetAvailableByDefault: false,
@@ -933,6 +943,8 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
                         "WebCrypto is exposed only inside the local experimental MV3 gate; getRandomValues and randomUUID require Security.framework secure random bytes.",
                         "SubtleCrypto is local-experimental and default-off; this slice supports digest only and rejects key, signing, derivation, encryption, wrapping, and unsupported algorithm calls precisely.",
                         "chrome.i18n.getUILanguage is available only in the local experimental gate and returns a deterministic UI language string; message catalogs and language detection remain unsupported.",
+                        "chrome.alarms create/get/clear state is available only in the local experimental gate, default-off, scoped to the harness session, and never starts wall-clock scheduling.",
+                        "chrome.alarms.onAlarm dispatch is explicit synthetic-trigger only; no polling or automatic background wake is created.",
                         "Worker-global addEventListener/removeEventListener/dispatchEvent are modeled as a non-DOM EventTarget surface without window or document.",
                         "fetch is local-experimental and default-off; remote/network fetch remains blocked, while generated-bundle-contained extension-local resources can return a minimal modeled Response after containment checks.",
                         "chrome.runtime.lastError is local-experimental and default-off; failing callback paths expose a callback-scoped object with a string message and clear it after callback return.",
@@ -1006,7 +1018,7 @@ struct ChromeMV3ServiceWorkerJSExecutionDocumentationSource:
         source(
             "Chrome alarms API",
             "https://developer.chrome.com/docs/extensions/reference/api/alarms",
-            "alarms.onAlarm dispatch shape was checked."
+            "create replaces same-name alarms, the default name is the empty string, get returns an Alarm or undefined, and onAlarm is the event payload shape checked by this harness."
         ),
         source(
             "Chrome contextMenus API",
@@ -1854,6 +1866,9 @@ struct ChromeMV3ServiceWorkerJSExecutionStartRecord:
         [ChromeMV3ServiceWorkerJSCryptoOperationRecord]
     var i18nOperationRecords:
         [ChromeMV3ServiceWorkerJSI18nOperationRecord]
+    var alarmRecords: [ChromeMV3ServiceWorkerJSAlarmRecord]
+    var alarmOperationRecords:
+        [ChromeMV3ServiceWorkerJSAlarmOperationRecord]
     var workerGlobalEventRecords:
         [ChromeMV3ServiceWorkerJSWorkerGlobalEventRecord]
     var fetchClassificationRecords:
@@ -1901,6 +1916,50 @@ struct ChromeMV3ServiceWorkerJSI18nOperationRecord:
     var value: String?
     var source: String?
     var blocker: String?
+    var diagnostics: [String]
+}
+
+struct ChromeMV3ServiceWorkerJSAlarmRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var name: String
+    var scheduledTime: Double
+    var delayInMinutes: Double?
+    var periodInMinutes: Double?
+    var createdSequence: Int
+    var replacedExistingAlarm: Bool
+    var diagnostics: [String]
+
+    var storageValue: ChromeMV3StorageValue {
+        var object: [String: ChromeMV3StorageValue] = [
+            "name": .string(name),
+            "scheduledTime": .number(scheduledTime),
+            "createdSequence": .number(Double(createdSequence)),
+            "replacedExistingAlarm": .bool(replacedExistingAlarm),
+        ]
+        if let delayInMinutes {
+            object["delayInMinutes"] = .number(delayInMinutes)
+        }
+        if let periodInMinutes {
+            object["periodInMinutes"] = .number(periodInMinutes)
+        }
+        return .object(object)
+    }
+}
+
+struct ChromeMV3ServiceWorkerJSAlarmOperationRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var sequence: Int
+    var methodName: String
+    var succeeded: Bool
+    var alarmName: String?
+    var resultPayload: ChromeMV3StorageValue?
+    var lastErrorMessage: String?
     var diagnostics: [String]
 }
 
@@ -2070,6 +2129,9 @@ struct ChromeMV3ServiceWorkerJSExecutionSnapshot:
         [ChromeMV3ServiceWorkerJSCryptoOperationRecord]
     var i18nOperationRecords:
         [ChromeMV3ServiceWorkerJSI18nOperationRecord]
+    var alarmRecords: [ChromeMV3ServiceWorkerJSAlarmRecord]
+    var alarmOperationRecords:
+        [ChromeMV3ServiceWorkerJSAlarmOperationRecord]
     var workerGlobalEventRecords:
         [ChromeMV3ServiceWorkerJSWorkerGlobalEventRecord]
     var fetchClassificationRecords:
@@ -2110,6 +2172,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         [ChromeMV3ServiceWorkerJSCryptoOperationRecord] = []
     private var i18nOperationRecords:
         [ChromeMV3ServiceWorkerJSI18nOperationRecord] = []
+    private var alarmRecords: [ChromeMV3ServiceWorkerJSAlarmRecord] = []
+    private var alarmOperationRecords:
+        [ChromeMV3ServiceWorkerJSAlarmOperationRecord] = []
     private var workerGlobalEventRecords:
         [ChromeMV3ServiceWorkerJSWorkerGlobalEventRecord] = []
     private var fetchClassificationRecords:
@@ -2144,6 +2209,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             storageOperationRecords: [],
             cryptoOperationRecords: [],
             i18nOperationRecords: [],
+            alarmRecords: [],
+            alarmOperationRecords: [],
             workerGlobalEventRecords: [],
             fetchClassificationRecords: [],
             webAssemblyCapability: nil,
@@ -2187,6 +2254,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             storageOperationRecords: storageOperationRecords,
             cryptoOperationRecords: cryptoOperationRecords,
             i18nOperationRecords: i18nOperationRecords,
+            alarmRecords: alarmRecords,
+            alarmOperationRecords: alarmOperationRecords,
             workerGlobalEventRecords: workerGlobalEventRecords,
             fetchClassificationRecords: fetchClassificationRecords,
             webAssemblyCapability: webAssemblyCapability,
@@ -2682,6 +2751,34 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         return true
     }
 
+    func triggerAlarm(
+        name: String? = nil
+    ) -> ChromeMV3ServiceWorkerJSDispatchRecord {
+        let selectedName = name ?? alarmRecords.sorted {
+            if $0.createdSequence != $1.createdSequence {
+                return $0.createdSequence < $1.createdSequence
+            }
+            return $0.name < $1.name
+        }.first?.name ?? "sumi-local-trial"
+        let payload =
+            alarmRecords.first { $0.name == selectedName }?.storageValue
+            ?? ChromeMV3StorageValue.object([
+                "name": .string(selectedName),
+                "scheduledTime": .number(0),
+            ])
+        return dispatch(
+            source: .alarmTriggered,
+            listenerEvent: .alarmsOnAlarm,
+            arguments: [payload],
+            sender: .none,
+            payloadSummary: "explicit local experimental alarms.onAlarm trigger",
+            sourceComponentID: "service-worker-js-alarms-trigger",
+            sourceComponentKind: .alarmsHarness,
+            portOptions: nil,
+            keepaliveKind: nil
+        )
+    }
+
     @discardableResult
     func drainQueuedTimeouts(
         maxCallbacks: Int = 100
@@ -2777,6 +2874,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         storageOperationRecords.removeAll()
         cryptoOperationRecords.removeAll()
         i18nOperationRecords.removeAll()
+        alarmRecords.removeAll()
+        alarmOperationRecords.removeAll()
         workerGlobalEventRecords.removeAll()
         fetchClassificationRecords.removeAll()
         dispatchRecords.removeAll()
@@ -3053,6 +3152,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             storageOperationRecords: storageOperationRecords,
             cryptoOperationRecords: cryptoOperationRecords,
             i18nOperationRecords: i18nOperationRecords,
+            alarmRecords: alarmRecords,
+            alarmOperationRecords: alarmOperationRecords,
             workerGlobalEventRecords: workerGlobalEventRecords,
             fetchClassificationRecords: fetchClassificationRecords,
             webAssemblyCapability: webAssemblyCapability,
@@ -4883,6 +4984,15 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 )
             }
             i18nOperationRecords = wire.i18nOperations
+            alarmRecords = wire.alarmRecords.sorted {
+                if $0.createdSequence != $1.createdSequence {
+                    return $0.createdSequence < $1.createdSequence
+                }
+                return $0.name < $1.name
+            }
+            alarmOperationRecords = wire.alarmOperations.sorted {
+                $0.sequence < $1.sequence
+            }
             workerGlobalEventRecords = wire.workerGlobalEvents
             fetchClassificationRecords = wire.fetchClassifications
             webAssemblyCapability = wire.webAssemblyCapability
@@ -4974,6 +5084,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       const storageOperations = [];
       const cryptoOperations = [];
       const i18nOperations = [];
+      const alarmRecords = new Map();
+      const alarmOperations = [];
       const workerGlobalEvents = [];
       const fetchClassifications = [];
       const ports = new Map();
@@ -4982,6 +5094,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       const pendingTimeoutIDs = [];
       let registrationOrder = 0;
       let nextTimerID = 1;
+      let nextAlarmSequence = 1;
       let fetchCallIndex = 0;
       const workerConfig = globalThis.__sumiWorkerGlobalConfig || {};
       const extensionID = String(workerConfig.extensionID || '');
@@ -5999,6 +6112,10 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         if (Number.isFinite(periodInMinutes)) {
           alarm.periodInMinutes = periodInMinutes;
         }
+        const delayInMinutes = Number(source.delayInMinutes);
+        if (Number.isFinite(delayInMinutes)) {
+          alarm.delayInMinutes = delayInMinutes;
+        }
         alarm.__sumiEventSource = 'localExperimentalSyntheticAlarm';
         return alarm;
       };
@@ -6156,7 +6273,237 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         onAdded: event('permissionsOnAdded'),
         onRemoved: event('permissionsOnRemoved')
       }, 'chrome.permissions');
+      const alarmHasOwn = (object, key) =>
+        Object.prototype.hasOwnProperty.call(object, key);
+      const alarmNumber = (info, key) => {
+        if (!alarmHasOwn(info, key)) return { present: false, value: null };
+        const value = Number(info[key]);
+        if (!Number.isFinite(value)) {
+          return {
+            present: true,
+            error: `alarms.create ${key} must be a finite number.`
+          };
+        }
+        if (value < 0) {
+          return {
+            present: true,
+            error: `alarms.create ${key} must be non-negative.`
+          };
+        }
+        return { present: true, value };
+      };
+      const alarmPublicRecord = (record) => {
+        if (!record) return undefined;
+        const value = {
+          name: record.name,
+          scheduledTime: record.scheduledTime
+        };
+        if (record.delayInMinutes != null) {
+          value.delayInMinutes = record.delayInMinutes;
+        }
+        if (record.periodInMinutes != null) {
+          value.periodInMinutes = record.periodInMinutes;
+        }
+        return value;
+      };
+      const alarmOperation = (methodName, succeeded, alarmName, resultPayload, lastErrorMessage, diagnostics) => {
+        alarmOperations.push({
+          sequence: nextAlarmSequence++,
+          methodName: String(methodName),
+          succeeded: succeeded === true,
+          alarmName: alarmName == null ? null : String(alarmName),
+          resultPayload: resultPayload === undefined ? null : clone(resultPayload),
+          lastErrorMessage: lastErrorMessage == null ? null : String(lastErrorMessage),
+          diagnostics: diagnostics.map((item) => String(item))
+        });
+      };
+      const alarmFailure = (methodName, callback, errorMessage, diagnostics) => {
+        const error = new TypeError(String(errorMessage));
+        noteBlocked(`chrome.alarms.${methodName}`);
+        alarmOperation(methodName, false, null, null, error.message, diagnostics);
+        callbackErrorLater(callback, error.message);
+        return Promise.reject(error);
+      };
+      const parseAlarmCreate = (first, second, third) => {
+        let name = '';
+        let info = first;
+        let callback = second;
+        if (typeof first === 'string') {
+          name = first;
+          info = second;
+          callback = third;
+        }
+        if (callback != null && typeof callback !== 'function') {
+          return { error: 'alarms.create callback must be a function when provided.' };
+        }
+        if (!info || typeof info !== 'object' || Array.isArray(info)) {
+          return {
+            error: 'alarms.create alarmInfo must be an object.',
+            callback
+          };
+        }
+        const when = alarmNumber(info, 'when');
+        const delay = alarmNumber(info, 'delayInMinutes');
+        const period = alarmNumber(info, 'periodInMinutes');
+        for (const value of [when, delay, period]) {
+          if (value.error) return { error: value.error, callback };
+        }
+        if (when.present && delay.present) {
+          return {
+            error: 'alarms.create accepts either when or delayInMinutes, not both.',
+            callback
+          };
+        }
+        if (!when.present && !delay.present && !period.present) {
+          return {
+            error: 'alarms.create requires when, delayInMinutes, or periodInMinutes.',
+            callback
+          };
+        }
+        if (alarmHasOwn(info, 'persistAcrossSessions')
+            && typeof info.persistAcrossSessions !== 'boolean') {
+          return {
+            error: 'alarms.create persistAcrossSessions must be a boolean when provided.',
+            callback
+          };
+        }
+        const delayForSchedule = delay.present
+          ? delay.value
+          : (!when.present && period.present ? period.value : null);
+        const scheduledTime = when.present
+          ? when.value
+          : Number(delayForSchedule || 0) * 60000;
+        return {
+          name,
+          callback,
+          scheduledTime,
+          delayInMinutes: delay.present ? delay.value : delayForSchedule,
+          periodInMinutes: period.present ? period.value : null,
+          persistAcrossSessions: info.persistAcrossSessions === true
+        };
+      };
+      const alarmsCreate = (first, second, third) => {
+        noteChromeAPICall('chrome.alarms.create');
+        const parsed = parseAlarmCreate(first, second, third);
+        if (parsed.error) {
+          return alarmFailure('create', parsed.callback, parsed.error, [
+            parsed.error,
+            'No alarm record was stored.'
+          ]);
+        }
+        const replaced = alarmRecords.has(parsed.name);
+        const record = {
+          name: parsed.name,
+          scheduledTime: parsed.scheduledTime,
+          delayInMinutes: parsed.delayInMinutes,
+          periodInMinutes: parsed.periodInMinutes,
+          createdSequence: nextAlarmSequence,
+          replacedExistingAlarm: replaced,
+          diagnostics: [
+            'Alarm timing is stored as deterministic local experimental harness state only.',
+            'No wall-clock scheduler, polling loop, or automatic service-worker wake was created.',
+            parsed.persistAcrossSessions
+              ? 'persistAcrossSessions was accepted as metadata only; the harness store is still in-memory and session-scoped.'
+              : 'No alarm persistence is modeled by this harness.',
+            replaced
+              ? 'Existing alarm with the same name was replaced.'
+              : 'New alarm record was stored.'
+          ]
+        };
+        alarmRecords.set(parsed.name, record);
+        alarmOperation('create', true, parsed.name, null, null, record.diagnostics);
+        callbackLater(parsed.callback);
+        return Promise.resolve();
+      };
+      const parseOptionalAlarmName = (first, second, methodName) => {
+        let name = '';
+        let callback = second;
+        if (typeof first === 'function') {
+          callback = first;
+        } else if (first != null) {
+          if (typeof first !== 'string') {
+            return { error: `alarms.${methodName} name must be a string when provided.` };
+          }
+          name = first;
+        }
+        if (callback != null && typeof callback !== 'function') {
+          return { error: `alarms.${methodName} callback must be a function when provided.` };
+        }
+        return { name, callback };
+      };
+      const alarmsGet = (first, second) => {
+        noteChromeAPICall('chrome.alarms.get');
+        const parsed = parseOptionalAlarmName(first, second, 'get');
+        if (parsed.error) {
+          return alarmFailure('get', parsed.callback, parsed.error, [
+            parsed.error,
+            'No alarm state was returned.'
+          ]);
+        }
+        const value = alarmPublicRecord(alarmRecords.get(parsed.name));
+        alarmOperation('get', true, parsed.name, value, null, [
+          value
+            ? 'alarms.get returned a modeled alarm record.'
+            : 'alarms.get found no modeled alarm and returned undefined.'
+        ]);
+        callbackLater(parsed.callback, value);
+        return Promise.resolve(value);
+      };
+      const alarmsGetAll = (callback) => {
+        noteChromeAPICall('chrome.alarms.getAll');
+        if (callback != null && typeof callback !== 'function') {
+          return alarmFailure('getAll', callback, 'alarms.getAll callback must be a function when provided.', [
+            'No alarm state was returned.'
+          ]);
+        }
+        const values = [...alarmRecords.values()]
+          .sort((lhs, rhs) => lhs.name.localeCompare(rhs.name))
+          .map(alarmPublicRecord);
+        alarmOperation('getAll', true, null, values, null, [
+          'alarms.getAll returned modeled alarm records from the in-memory harness store.'
+        ]);
+        callbackLater(callback, values);
+        return Promise.resolve(values);
+      };
+      const alarmsClear = (first, second) => {
+        noteChromeAPICall('chrome.alarms.clear');
+        const parsed = parseOptionalAlarmName(first, second, 'clear');
+        if (parsed.error) {
+          return alarmFailure('clear', parsed.callback, parsed.error, [
+            parsed.error,
+            'No alarm record was cleared.'
+          ]);
+        }
+        const removed = alarmRecords.delete(parsed.name);
+        alarmOperation('clear', true, parsed.name, removed, null, [
+          removed
+            ? 'Modeled alarm record was cleared.'
+            : 'No matching modeled alarm existed.'
+        ]);
+        callbackLater(parsed.callback, removed);
+        return Promise.resolve(removed);
+      };
+      const alarmsClearAll = (callback) => {
+        noteChromeAPICall('chrome.alarms.clearAll');
+        if (callback != null && typeof callback !== 'function') {
+          return alarmFailure('clearAll', callback, 'alarms.clearAll callback must be a function when provided.', [
+            'No alarm records were cleared.'
+          ]);
+        }
+        const removed = alarmRecords.size > 0;
+        alarmRecords.clear();
+        alarmOperation('clearAll', true, null, removed, null, [
+          'All modeled alarm records were cleared from the in-memory harness store.'
+        ]);
+        callbackLater(callback, removed);
+        return Promise.resolve(removed);
+      };
       const alarms = proxiedNamespace({
+        create: alarmsCreate,
+        get: alarmsGet,
+        getAll: alarmsGetAll,
+        clear: alarmsClear,
+        clearAll: alarmsClearAll,
         onAlarm: event('alarmsOnAlarm')
       }, 'chrome.alarms');
       const contextMenus = proxiedNamespace({
@@ -6819,6 +7166,15 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         storageOperations: storageOperations.map((item) => clone(item)),
         cryptoOperations: cryptoOperations.map((item) => clone(item)),
         i18nOperations: i18nOperations.map((item) => clone(item)),
+        alarmRecords: [...alarmRecords.values()]
+          .sort((lhs, rhs) => {
+            if (lhs.createdSequence !== rhs.createdSequence) {
+              return lhs.createdSequence - rhs.createdSequence;
+            }
+            return lhs.name.localeCompare(rhs.name);
+          })
+          .map((item) => clone(item)),
+        alarmOperations: alarmOperations.map((item) => clone(item)),
         workerGlobalEvents: workerGlobalEvents.map((item) => clone(item)),
         fetchClassifications: fetchClassifications.map((item) => clone(item)),
         webAssemblyCapability: clone(webAssemblyCapability),
@@ -6876,6 +7232,8 @@ private struct ChromeMV3ServiceWorkerJSWireSnapshot: Decodable {
     var storageOperations: [ChromeMV3ServiceWorkerJSStorageOperationRecord]
     var cryptoOperations: [ChromeMV3ServiceWorkerJSWireCryptoOperation]
     var i18nOperations: [ChromeMV3ServiceWorkerJSI18nOperationRecord]
+    var alarmRecords: [ChromeMV3ServiceWorkerJSAlarmRecord]
+    var alarmOperations: [ChromeMV3ServiceWorkerJSAlarmOperationRecord]
     var workerGlobalEvents: [ChromeMV3ServiceWorkerJSWorkerGlobalEventRecord]
     var fetchClassifications:
         [ChromeMV3ServiceWorkerJSFetchClassificationRecord]

@@ -246,6 +246,11 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                 chrome.storage.onChanged.addListener(() => {});
                 chrome.permissions.onAdded.addListener(() => {});
                 chrome.permissions.onRemoved.addListener(() => {});
+                chrome.alarms.create('sync', {
+                  delayInMinutes: 1,
+                  periodInMinutes: 5
+                });
+                chrome.alarms.get('sync');
                 chrome.alarms.onAlarm.addListener(() => {});
                 chrome.contextMenus.onClicked.addListener(() => {});
                 chrome.webNavigation.onCommitted.addListener(() => {});
@@ -298,8 +303,30 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertTrue(readiness.idleTeardownResult.contains("verified"))
         XCTAssertTrue(readiness.hardTimeoutTeardownResult.contains("verified"))
         XCTAssertTrue(readiness.gateClosedAfterTrial)
+        XCTAssertTrue(
+            readiness.alarmPolicyResult.contains("explicitTriggerOnly=true")
+        )
+        XCTAssertEqual(readiness.alarmRecords.map(\.name), ["sync"])
+        XCTAssertTrue(
+            readiness.alarmOperationSummary.contains {
+                $0.hasPrefix("create:succeeded:sync:")
+            }
+        )
+        XCTAssertTrue(
+            readiness.alarmOperationSummary.contains {
+                $0.hasPrefix("get:succeeded:sync:")
+            }
+        )
+        XCTAssertTrue(
+            readiness.alarmDispatchResult.contains("result=delivered")
+        )
         XCTAssertFalse(readiness.jsExecutionPolicy.permanentBackgroundAvailable)
         XCTAssertFalse(readiness.jsExecutionPolicy.serviceWorkerJSExecutionAvailableByDefault)
+        XCTAssertTrue(readiness.jsExecutionPolicy.alarmsAvailableInLocalExperimentalGate)
+        XCTAssertFalse(readiness.jsExecutionPolicy.alarmsAvailableByDefault)
+        XCTAssertFalse(readiness.jsExecutionPolicy.wallClockAlarmSchedulingAllowed)
+        XCTAssertFalse(readiness.jsExecutionPolicy.backgroundWakeAllowed)
+        XCTAssertTrue(readiness.jsExecutionPolicy.explicitAlarmTriggerOnly)
         XCTAssertTrue(readiness.jsExecutionPolicy.timersAvailableInLocalExperimentalGate)
         XCTAssertFalse(readiness.jsExecutionPolicy.timersAvailableByDefault)
         XCTAssertFalse(readiness.jsExecutionPolicy.wallClockTimersAllowed)
@@ -822,6 +849,15 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertTrue(
             detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .alarmPolicyResult.contains("explicitTriggerOnly=true") == true
+        )
+        XCTAssertEqual(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .alarmDispatchResult,
+            "notAttempted: no captured alarms.onAlarm listener was dispatched."
+        )
+        XCTAssertTrue(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
                 .runtimeLastErrorObjectShapeResult.contains(
                     "active message is a primitive string"
                 ) == true
@@ -1276,7 +1312,15 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertTrue(
             bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
+                .contains("chrome.i18n.getMessage")
+        )
+        XCTAssertFalse(
+            bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
                 .contains("chrome.alarms.create")
+        )
+        XCTAssertFalse(
+            bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
+                .contains("chrome.alarms.get")
         )
         XCTAssertEqual(
             bitwarden.serviceWorkerEventReadiness.deviceFailureClassification,
@@ -1340,6 +1384,39 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertTrue(
             bitwarden.serviceWorkerEventReadiness.i18nCapabilityResult
                 .contains("getUILanguage=true")
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.alarmPolicyResult
+                .contains("explicitTriggerOnly=true")
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.alarmPolicyResult
+                .contains("wallClockScheduling=false")
+        )
+        XCTAssertEqual(
+            bitwarden.serviceWorkerEventReadiness.alarmRecords.map(\.name),
+            ["phishingDomainUpdate"]
+        )
+        XCTAssertEqual(
+            bitwarden.serviceWorkerEventReadiness.alarmRecords.first?
+                .delayInMinutes,
+            1440
+        )
+        XCTAssertEqual(
+            bitwarden.serviceWorkerEventReadiness.alarmRecords.first?
+                .periodInMinutes,
+            1440
+        )
+        XCTAssertEqual(
+            bitwarden.serviceWorkerEventReadiness.alarmOperationSummary,
+            [
+                "create:succeeded:phishingDomainUpdate:none",
+                "get:succeeded:phishingDomainUpdate:none",
+            ]
+        )
+        XCTAssertEqual(
+            bitwarden.serviceWorkerEventReadiness.alarmDispatchResult,
+            "attempted: result=delivered, alarm=phishingDomainUpdate, event=alarmsOnAlarm."
         )
         XCTAssertTrue(
             bitwarden.serviceWorkerEventReadiness.i18nOperationSummary
@@ -1475,6 +1552,20 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             proton.serviceWorkerEventReadiness.nextBlockerDetail
                 .contains("setTimeout")
         )
+        XCTAssertEqual(
+            proton.serviceWorkerEventReadiness.nextBlockerClassification,
+            .dispatchDelivered
+        )
+        XCTAssertEqual(
+            proton.serviceWorkerEventReadiness.dispatchSmokeResult,
+            "attempted: 6 synthetic dispatch(es), 6 delivered. Runtime Port smoke passed."
+        )
+        XCTAssertTrue(proton.serviceWorkerEventReadiness.alarmRecords.isEmpty)
+        XCTAssertTrue(proton.serviceWorkerEventReadiness.alarmOperationSummary.isEmpty)
+        XCTAssertEqual(
+            proton.serviceWorkerEventReadiness.alarmDispatchResult,
+            "attempted: result=delivered, alarm=sumi-local-trial, event=alarmsOnAlarm."
+        )
         XCTAssertFalse(
             proton.serviceWorkerEventReadiness.nextBlockerDetail
                 .contains("rp.runtime")
@@ -1519,6 +1610,10 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                     .moduleWorkerReadinessResult.isEmpty == false
                 && $0.serviceWorkerEventReadiness
                     .i18nCapabilityResult.isEmpty == false
+                && $0.serviceWorkerEventReadiness
+                    .alarmPolicyResult.isEmpty == false
+                && $0.serviceWorkerEventReadiness
+                    .alarmDispatchResult.isEmpty == false
                 && $0.serviceWorkerEventReadiness
                     .workerGlobalEventTargetResult.isEmpty == false
                 && $0.serviceWorkerEventReadiness

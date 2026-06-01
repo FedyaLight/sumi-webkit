@@ -1370,6 +1370,10 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
     var cryptoSubtleBlockedAlgorithms: [String]
     var i18nCapabilityResult: String
     var i18nOperationSummary: [String]
+    var alarmPolicyResult: String
+    var alarmRecordSummary: [String]
+    var alarmOperationSummary: [String]
+    var alarmDispatchResult: String
     var workerNavigatorUserAgentResult: String
     var deviceFailureClassification:
         ChromeMV3PasswordManagerRealPackageDeviceFailureClassification
@@ -1446,6 +1450,13 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
                 readiness.cryptoSubtleBlockedAlgorithms,
             i18nCapabilityResult: readiness.i18nCapabilityResult,
             i18nOperationSummary: readiness.i18nOperationSummary,
+            alarmPolicyResult: readiness.alarmPolicyResult,
+            alarmRecordSummary:
+                readiness.alarmRecords.map {
+                    "\($0.name):scheduled=\($0.scheduledTime):delay=\($0.delayInMinutes.map { String($0) } ?? "none"):period=\($0.periodInMinutes.map { String($0) } ?? "none"):replaced=\($0.replacedExistingAlarm)"
+                }.sorted(),
+            alarmOperationSummary: readiness.alarmOperationSummary,
+            alarmDispatchResult: readiness.alarmDispatchResult,
             workerNavigatorUserAgentResult:
                 readiness.workerNavigatorUserAgentResult,
             deviceFailureClassification:
@@ -3473,6 +3484,36 @@ struct ChromeMV3ExtensionManagerView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
+                    Text("Alarms slice: \(trial.alarmPolicyResult)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if trial.alarmRecordSummary.isEmpty == false {
+                        Text(
+                            "Alarm records: "
+                                + trial.alarmRecordSummary
+                                .prefix(4)
+                                .joined(separator: ", ")
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if trial.alarmOperationSummary.isEmpty == false {
+                        Text(
+                            "Alarm operations: "
+                                + trial.alarmOperationSummary
+                                .prefix(4)
+                                .joined(separator: ", ")
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text("Alarm dispatch: \(trial.alarmDispatchResult)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(
                         "Module graph: "
                             + trial.moduleWorkerGraphSummary

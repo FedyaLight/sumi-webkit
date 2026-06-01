@@ -77,6 +77,13 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         )
         XCTAssertFalse(moduleDisabled.policy.i18nGetUILanguageAvailableByDefault)
         XCTAssertFalse(
+            moduleDisabled.policy.alarmsAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(moduleDisabled.policy.alarmsAvailableByDefault)
+        XCTAssertFalse(moduleDisabled.policy.wallClockAlarmSchedulingAllowed)
+        XCTAssertFalse(moduleDisabled.policy.backgroundWakeAllowed)
+        XCTAssertTrue(moduleDisabled.policy.explicitAlarmTriggerOnly)
+        XCTAssertFalse(
             moduleDisabled.policy
                 .workerGlobalEventTargetAvailableInLocalExperimentalGate
         )
@@ -168,6 +175,11 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             harness.policy.i18nGetUILanguageAvailableInLocalExperimentalGate
         )
         XCTAssertFalse(harness.policy.i18nGetUILanguageAvailableByDefault)
+        XCTAssertFalse(harness.policy.alarmsAvailableInLocalExperimentalGate)
+        XCTAssertFalse(harness.policy.alarmsAvailableByDefault)
+        XCTAssertFalse(harness.policy.wallClockAlarmSchedulingAllowed)
+        XCTAssertFalse(harness.policy.backgroundWakeAllowed)
+        XCTAssertTrue(harness.policy.explicitAlarmTriggerOnly)
         XCTAssertFalse(
             harness.policy
                 .workerGlobalEventTargetAvailableInLocalExperimentalGate
@@ -898,6 +910,196 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             harness.snapshot.blockedUnsupportedCalls.contains(
                 "chrome.i18n.getMessage"
             )
+        )
+    }
+
+    func testChromeAlarmsCreateGetReplaceAndExplicitOnAlarmDispatch() throws {
+        let harness = try startedHarness(
+            source: """
+            globalThis.alarmState = { onAlarmName: null, callbackName: null, missingType: null };
+            chrome.alarms.create('sync', {
+              delayInMinutes: 1,
+              periodInMinutes: 5
+            }, () => {
+              globalThis.alarmState.createLastError =
+                chrome.runtime.lastError ? chrome.runtime.lastError.message : null;
+            });
+            chrome.alarms.create('sync', {
+              when: 42000,
+              periodInMinutes: 10
+            });
+            chrome.alarms.get('sync', (alarm) => {
+              globalThis.alarmState.callbackName = alarm && alarm.name;
+              globalThis.alarmState.callbackScheduledTime = alarm && alarm.scheduledTime;
+              globalThis.alarmState.callbackPeriod = alarm && alarm.periodInMinutes;
+              globalThis.alarmState.callbackLastError =
+                chrome.runtime.lastError ? chrome.runtime.lastError.message : null;
+            });
+            chrome.alarms.get('missing').then((alarm) => {
+              globalThis.alarmState.missingType = typeof alarm;
+            });
+            chrome.alarms.onAlarm.addListener((alarm) => {
+              globalThis.alarmState.onAlarmName = alarm.name;
+              globalThis.alarmState.onAlarmScheduledTime = alarm.scheduledTime;
+              globalThis.alarmState.onAlarmPeriod = alarm.periodInMinutes;
+            });
+            chrome.runtime.onMessage.addListener(() => globalThis.alarmState);
+            """
+        )
+
+        XCTAssertTrue(harness.policy.alarmsAvailableInLocalExperimentalGate)
+        XCTAssertFalse(harness.policy.alarmsAvailableByDefault)
+        XCTAssertFalse(harness.policy.wallClockAlarmSchedulingAllowed)
+        XCTAssertFalse(harness.policy.backgroundWakeAllowed)
+        XCTAssertTrue(harness.policy.explicitAlarmTriggerOnly)
+        XCTAssertFalse(harness.policy.pollingAllowed)
+        XCTAssertEqual(harness.snapshot.alarmRecords.count, 1)
+        let record = try XCTUnwrap(harness.snapshot.alarmRecords.first)
+        XCTAssertEqual(record.name, "sync")
+        XCTAssertEqual(record.scheduledTime, 42000)
+        XCTAssertNil(record.delayInMinutes)
+        XCTAssertEqual(record.periodInMinutes, 10)
+        XCTAssertTrue(record.replacedExistingAlarm)
+        XCTAssertTrue(
+            record.diagnostics.contains {
+                $0.contains("No wall-clock scheduler")
+            }
+        )
+        XCTAssertTrue(
+            harness.snapshot.alarmOperationRecords.contains {
+                $0.methodName == "create"
+                    && $0.succeeded
+                    && $0.alarmName == "sync"
+            }
+        )
+        XCTAssertTrue(
+            harness.snapshot.alarmOperationRecords.contains {
+                $0.methodName == "get"
+                    && $0.succeeded
+                    && $0.alarmName == "missing"
+            }
+        )
+        XCTAssertFalse(
+            harness.snapshot.blockedUnsupportedCalls.contains {
+                $0 == "chrome.alarms.create" || $0 == "chrome.alarms.get"
+            }
+        )
+        XCTAssertTrue(harness.snapshot.timers.isEmpty)
+        XCTAssertTrue(harness.snapshot.timerDrainRecords.isEmpty)
+
+        let alarmDispatch = harness.triggerAlarm(name: "sync")
+        XCTAssertEqual(alarmDispatch.source, .alarmTriggered)
+        XCTAssertEqual(alarmDispatch.event, .alarmsOnAlarm)
+        XCTAssertEqual(alarmDispatch.resultKind, .delivered)
+
+        let state = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            payloadSummary: "read alarm state"
+        )
+        XCTAssertEqual(
+            state.responsePayload,
+            .object([
+                "callbackLastError": .null,
+                "callbackName": .string("sync"),
+                "callbackPeriod": .number(10),
+                "callbackScheduledTime": .number(42000),
+                "createLastError": .null,
+                "missingType": .string("undefined"),
+                "onAlarmName": .string("sync"),
+                "onAlarmPeriod": .number(10),
+                "onAlarmScheduledTime": .number(42000),
+            ])
+        )
+    }
+
+    func testChromeAlarmsDefaultNameMissingGetClearAndInvalidOptions()
+        throws
+    {
+        let harness = try startedHarness(
+            source: """
+            globalThis.alarmState = {};
+            chrome.alarms.create({ delayInMinutes: 2 });
+            chrome.alarms.get((alarm) => {
+              globalThis.alarmState.defaultName = alarm && alarm.name;
+              globalThis.alarmState.defaultDelay = alarm && alarm.delayInMinutes;
+            });
+            chrome.alarms.get('missing', (alarm) => {
+              globalThis.alarmState.missingCallbackType = typeof alarm;
+            });
+            chrome.alarms.clear('', (cleared) => {
+              globalThis.alarmState.defaultCleared = cleared;
+            });
+            chrome.alarms.clear('missing').then((cleared) => {
+              globalThis.alarmState.missingCleared = cleared;
+            });
+            chrome.alarms.create('bad-both', {
+              when: 1,
+              delayInMinutes: 1
+            }).catch((error) => {
+              globalThis.alarmState.invalidBoth = error.message;
+            });
+            chrome.alarms.create('bad-negative', {
+              delayInMinutes: -1
+            }, () => {
+              globalThis.alarmState.invalidLastError =
+                chrome.runtime.lastError && chrome.runtime.lastError.message;
+            }).catch((error) => {
+              globalThis.alarmState.invalidNegative = error.message;
+            });
+            chrome.runtime.onMessage.addListener(() => globalThis.alarmState);
+            """
+        )
+
+        XCTAssertTrue(harness.snapshot.alarmRecords.isEmpty)
+        XCTAssertTrue(
+            harness.snapshot.alarmOperationRecords.contains {
+                $0.methodName == "clear"
+                    && $0.succeeded
+                    && $0.alarmName == ""
+                    && $0.resultPayload == .bool(true)
+            }
+        )
+        XCTAssertTrue(
+            harness.snapshot.alarmOperationRecords.contains {
+                $0.methodName == "clear"
+                    && $0.succeeded
+                    && $0.alarmName == "missing"
+                    && $0.resultPayload == .bool(false)
+            }
+        )
+        XCTAssertEqual(
+            harness.snapshot.alarmOperationRecords.filter {
+                $0.succeeded == false
+            }.count,
+            2
+        )
+
+        let state = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            payloadSummary: "read invalid alarm state"
+        )
+        guard case .object(let object) = state.responsePayload else {
+            XCTFail("Expected alarm state object.")
+            return
+        }
+        XCTAssertEqual(object["defaultName"], .string(""))
+        XCTAssertEqual(object["defaultDelay"], .number(2))
+        XCTAssertEqual(object["missingCallbackType"], .string("undefined"))
+        XCTAssertEqual(object["defaultCleared"], .bool(true))
+        XCTAssertEqual(object["missingCleared"], .bool(false))
+        XCTAssertEqual(
+            object["invalidBoth"],
+            .string(
+                "alarms.create accepts either when or delayInMinutes, not both."
+            )
+        )
+        XCTAssertEqual(
+            object["invalidNegative"],
+            .string("alarms.create delayInMinutes must be non-negative.")
+        )
+        XCTAssertEqual(
+            object["invalidLastError"],
+            .string("alarms.create delayInMinutes must be non-negative.")
         )
     }
 
@@ -2916,6 +3118,11 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertTrue(
             policy.i18nUnsupportedAPIs.contains("chrome.i18n.getMessage")
         )
+        XCTAssertTrue(policy.alarmsAvailableInLocalExperimentalGate)
+        XCTAssertFalse(policy.alarmsAvailableByDefault)
+        XCTAssertFalse(policy.wallClockAlarmSchedulingAllowed)
+        XCTAssertFalse(policy.backgroundWakeAllowed)
+        XCTAssertTrue(policy.explicitAlarmTriggerOnly)
         XCTAssertTrue(
             policy.workerGlobalEventTargetAvailableInLocalExperimentalGate
         )

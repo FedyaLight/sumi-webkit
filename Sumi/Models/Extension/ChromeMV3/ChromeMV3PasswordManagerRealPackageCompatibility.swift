@@ -1226,6 +1226,10 @@ struct ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness:
     var cryptoSubtleBlockedAlgorithms: [String]
     var i18nCapabilityResult: String
     var i18nOperationSummary: [String]
+    var alarmPolicyResult: String
+    var alarmRecords: [ChromeMV3ServiceWorkerJSAlarmRecord]
+    var alarmOperationSummary: [String]
+    var alarmDispatchResult: String
     var workerNavigatorUserAgentResult: String
     var deviceFailureClassification:
         ChromeMV3PasswordManagerRealPackageDeviceFailureClassification
@@ -1624,7 +1628,7 @@ struct ChromeMV3PasswordManagerRealPackageCompatibilityReport:
     Equatable,
     Sendable
 {
-    static let schemaVersion = 8
+    static let schemaVersion = 9
     static let reportFileName =
         "runtime-mv3-real-package-compatibility-report.json"
 
@@ -2746,6 +2750,15 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         let i18nOperationSummary = serviceWorkerI18nOperationSummary(
             executionStartResult: executionStartResult
         )
+        let alarmPolicyResult = serviceWorkerAlarmPolicyResult(policy: policy)
+        let alarmRecords = executionStartResult?.alarmRecords ?? []
+        let alarmOperationSummary = serviceWorkerAlarmOperationSummary(
+            executionStartResult: executionStartResult
+        )
+        let alarmDispatchResult = serviceWorkerAlarmDispatchResult(
+            alarmRecords: alarmRecords,
+            dispatchResults: dispatchResults
+        )
         let workerNavigatorUserAgentResult =
             serviceWorkerWorkerNavigatorUserAgentResult(policy: policy)
         let deviceFailure = serviceWorkerDeviceFailureClassification(
@@ -2885,6 +2898,10 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 policy.subtleCryptoBlockedAlgorithms,
             i18nCapabilityResult: i18nCapabilityResult,
             i18nOperationSummary: i18nOperationSummary,
+            alarmPolicyResult: alarmPolicyResult,
+            alarmRecords: alarmRecords,
+            alarmOperationSummary: alarmOperationSummary,
+            alarmDispatchResult: alarmDispatchResult,
             workerNavigatorUserAgentResult: workerNavigatorUserAgentResult,
             deviceFailureClassification: deviceFailure.classification,
             deviceFailureDetail: deviceFailure.detail,
@@ -3288,16 +3305,9 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             arguments: [permissionPayload],
             payloadSummary: "deterministic permissions.onRemoved smoke"
         )
-        dispatchIfCaptured(
-            .alarmTriggered,
-            arguments: [
-                .object([
-                    "name": .string("sumi-local-trial"),
-                    "scheduledTime": .number(0),
-                ]),
-            ],
-            payloadSummary: "deterministic alarms.onAlarm smoke"
-        )
+        if harness.capturedListener(for: .alarmsOnAlarm) {
+            results.append(harness.triggerAlarm())
+        }
         dispatchIfCaptured(
             .contextMenuClicked,
             arguments: [
@@ -3561,6 +3571,48 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             ].joined(separator: ":")
         }
         .sorted()
+    }
+
+    private static func serviceWorkerAlarmPolicyResult(
+        policy: ChromeMV3ServiceWorkerJSExecutionPolicy
+    ) -> String {
+        guard policy.alarmsAvailableInLocalExperimentalGate else {
+            return "blockedByPolicy: chrome.alarms requires the explicit local experimental MV3 gate."
+        }
+        return "available: localExperimental=true, default=\(policy.alarmsAvailableByDefault), wallClockScheduling=\(policy.wallClockAlarmSchedulingAllowed), polling=\(policy.pollingAllowed), backgroundWake=\(policy.backgroundWakeAllowed), explicitTriggerOnly=\(policy.explicitAlarmTriggerOnly)."
+    }
+
+    private static func serviceWorkerAlarmOperationSummary(
+        executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?
+    ) -> [String] {
+        (executionStartResult?.alarmOperationRecords ?? []).map { record in
+            [
+                record.methodName,
+                record.succeeded ? "succeeded" : "blocked",
+                record.alarmName ?? "none",
+                record.lastErrorMessage ?? "none",
+            ].joined(separator: ":")
+        }
+        .sorted()
+    }
+
+    private static func serviceWorkerAlarmDispatchResult(
+        alarmRecords: [ChromeMV3ServiceWorkerJSAlarmRecord],
+        dispatchResults: [ChromeMV3ServiceWorkerJSDispatchRecord]
+    ) -> String {
+        guard let result = dispatchResults.first(where: {
+            $0.source == .alarmTriggered
+        }) else {
+            return "notAttempted: no captured alarms.onAlarm listener was dispatched."
+        }
+        let alarmName =
+            alarmRecords.sorted {
+                if $0.createdSequence != $1.createdSequence {
+                    return $0.createdSequence < $1.createdSequence
+                }
+                return $0.name < $1.name
+            }.first?.name ?? "sumi-local-trial"
+        return "attempted: result=\(result.resultKind.rawValue), alarm=\(alarmName), event=\(result.event.rawValue)."
     }
 
     private static func serviceWorkerWorkerNavigatorUserAgentResult(
