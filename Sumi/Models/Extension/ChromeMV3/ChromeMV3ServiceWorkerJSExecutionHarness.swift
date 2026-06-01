@@ -1778,9 +1778,23 @@ struct ChromeMV3ServiceWorkerJSExecutionStartRecord:
         [ChromeMV3ServiceWorkerJSWorkerGlobalEventRecord]
     var fetchClassificationRecords:
         [ChromeMV3ServiceWorkerJSFetchClassificationRecord]
+    var webAssemblyCapability:
+        ChromeMV3ServiceWorkerJSWebAssemblyCapabilityRecord?
     var blockers: [ChromeMV3ServiceWorkerJSExecutionStartBlocker]
     var lastErrorMessage: String?
     var exceptionDetails: ChromeMV3ServiceWorkerJSExceptionDetails?
+    var diagnostics: [String]
+}
+
+struct ChromeMV3ServiceWorkerJSWebAssemblyCapabilityRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var globalPresent: Bool
+    var instantiatePresent: Bool
+    var instantiateStreamingPresent: Bool
+    var compilePresent: Bool
     var diagnostics: [String]
 }
 
@@ -1978,6 +1992,8 @@ struct ChromeMV3ServiceWorkerJSExecutionSnapshot:
         [ChromeMV3ServiceWorkerJSWorkerGlobalEventRecord]
     var fetchClassificationRecords:
         [ChromeMV3ServiceWorkerJSFetchClassificationRecord]
+    var webAssemblyCapability:
+        ChromeMV3ServiceWorkerJSWebAssemblyCapabilityRecord?
     var dispatchRecords: [ChromeMV3ServiceWorkerJSDispatchRecord]
     var ports: [ChromeMV3ServiceWorkerJSPortRecord]
     var timers: [ChromeMV3ServiceWorkerJSTimerRecord]
@@ -2013,6 +2029,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         [ChromeMV3ServiceWorkerJSWorkerGlobalEventRecord] = []
     private var fetchClassificationRecords:
         [ChromeMV3ServiceWorkerJSFetchClassificationRecord] = []
+    private var webAssemblyCapability:
+        ChromeMV3ServiceWorkerJSWebAssemblyCapabilityRecord?
     private var dispatchRecords: [ChromeMV3ServiceWorkerJSDispatchRecord] = []
     private var ports: [String: ChromeMV3ServiceWorkerJSPortRecord] = [:]
     private var timers: [ChromeMV3ServiceWorkerJSTimerRecord] = []
@@ -2041,6 +2059,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             i18nOperationRecords: [],
             workerGlobalEventRecords: [],
             fetchClassificationRecords: [],
+            webAssemblyCapability: nil,
             blockers: [],
             lastErrorMessage: nil,
             exceptionDetails: nil,
@@ -2081,6 +2100,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             i18nOperationRecords: i18nOperationRecords,
             workerGlobalEventRecords: workerGlobalEventRecords,
             fetchClassificationRecords: fetchClassificationRecords,
+            webAssemblyCapability: webAssemblyCapability,
             dispatchRecords: dispatchRecords,
             ports: ports.values.sorted { $0.portID < $1.portID },
             timers: timers.sorted { $0.timerID < $1.timerID },
@@ -2896,6 +2916,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             i18nOperationRecords: i18nOperationRecords,
             workerGlobalEventRecords: workerGlobalEventRecords,
             fetchClassificationRecords: fetchClassificationRecords,
+            webAssemblyCapability: webAssemblyCapability,
             blockers: uniqueSortedServiceWorkerJS(blockers),
             lastErrorMessage: lastErrorMessage,
             exceptionDetails: exceptionDetails,
@@ -4705,6 +4726,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             i18nOperationRecords = wire.i18nOperations
             workerGlobalEventRecords = wire.workerGlobalEvents
             fetchClassificationRecords = wire.fetchClassifications
+            webAssemblyCapability = wire.webAssemblyCapability
             ports = Dictionary(
                 uniqueKeysWithValues:
                     wire.ports.map {
@@ -4805,6 +4827,24 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       const uiLanguage = String(workerConfig.uiLanguage || 'en-US');
       const uiLanguageSource = String(workerConfig.uiLanguageSource || 'deterministicFallback');
       const manifestSnapshot = workerConfig.manifest || { manifest_version: 3 };
+      const webAssemblyCapability = (() => {
+        const wasm = globalThis.WebAssembly;
+        const globalPresent = typeof wasm === 'object' && wasm !== null;
+        return {
+          globalPresent,
+          instantiatePresent: globalPresent && typeof wasm.instantiate === 'function',
+          instantiateStreamingPresent: globalPresent && typeof wasm.instantiateStreaming === 'function',
+          compilePresent: globalPresent && typeof wasm.compile === 'function',
+          diagnostics: [
+            globalPresent
+              ? 'WebAssembly global is present on the JavaScriptCore surface.'
+              : 'WebAssembly global is absent on the JavaScriptCore surface.',
+            globalPresent && typeof wasm.instantiateStreaming === 'function'
+              ? 'WebAssembly.instantiateStreaming is available when a modeled Response has application/wasm.'
+              : 'WebAssembly.instantiateStreaming is not available; package code must use its arrayBuffer fallback if present.'
+          ]
+        };
+      })();
       const defineWorkerGlobal = (name, value) => {
         if (typeof globalThis[name] !== 'undefined') return;
         Object.defineProperty(globalThis, name, {
@@ -6306,6 +6346,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         i18nOperations: i18nOperations.map((item) => clone(item)),
         workerGlobalEvents: workerGlobalEvents.map((item) => clone(item)),
         fetchClassifications: fetchClassifications.map((item) => clone(item)),
+        webAssemblyCapability: clone(webAssemblyCapability),
         ports: [...ports.values()].map(portSnapshot),
         timers: [...timers.values()].map((state) => ({
           timerID: state.timerID,
@@ -6360,6 +6401,8 @@ private struct ChromeMV3ServiceWorkerJSWireSnapshot: Decodable {
     var workerGlobalEvents: [ChromeMV3ServiceWorkerJSWorkerGlobalEventRecord]
     var fetchClassifications:
         [ChromeMV3ServiceWorkerJSFetchClassificationRecord]
+    var webAssemblyCapability:
+        ChromeMV3ServiceWorkerJSWebAssemblyCapabilityRecord?
     var ports: [ChromeMV3ServiceWorkerJSWirePort]
     var timers: [ChromeMV3ServiceWorkerJSTimerRecord]
 }

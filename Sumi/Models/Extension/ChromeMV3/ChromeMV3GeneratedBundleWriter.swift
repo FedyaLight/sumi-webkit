@@ -65,6 +65,39 @@ struct ChromeMV3GeneratedBundleResourceWarning: Codable, Equatable {
     var message: String
 }
 
+enum ChromeMV3GeneratedBundleServiceWorkerFetchResourceStatus:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case blocked
+    case copied
+    case missing
+
+    static func < (
+        lhs: ChromeMV3GeneratedBundleServiceWorkerFetchResourceStatus,
+        rhs: ChromeMV3GeneratedBundleServiceWorkerFetchResourceStatus
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var sourceScriptPath: String
+    var requestedPath: String
+    var resolvedResourcePath: String?
+    var resourceExtension: String?
+    var status: ChromeMV3GeneratedBundleServiceWorkerFetchResourceStatus
+    var blocker: String
+    var diagnostics: [String]
+}
+
 struct ChromeMV3WrittenRuntimeTemplateResource: Codable, Equatable {
     var moduleName: ChromeMV3RuntimeTemplateModuleName
     var outputRelativePath: String
@@ -103,6 +136,8 @@ struct ChromeMV3GeneratedBundleRecord: Codable, Equatable {
     var unsupportedAPIs: [ChromeMV3API]
     var needsVerificationAPIs: [ChromeMV3API]
     var copiedResourcePaths: [String]
+    var serviceWorkerFetchResourceRecords:
+        [ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord]?
     var resourceWarnings: [ChromeMV3GeneratedBundleResourceWarning]
     var writtenInertRuntimeTemplateResources: [ChromeMV3WrittenRuntimeTemplateResource]
     var inertRuntimeTemplatesWritten: Bool
@@ -188,7 +223,7 @@ struct ChromeMV3GeneratedBundleWriter {
         )
         let generatedManifestData = try canonicalJSONData(manifestObject)
         let generatedManifestSHA256 = sha256Hex(generatedManifestData)
-        let resources = try manifestReferencedResources(
+        let resourceDiscovery = try manifestReferencedResources(
             in: manifestObject,
             originalRootURL: originalRootURL
         )
@@ -206,7 +241,9 @@ struct ChromeMV3GeneratedBundleWriter {
         try generatedManifestData.write(to: temporaryManifestURL, options: [.atomic])
 
         let copyResult = try copyResources(
-            resources,
+            resourceDiscovery.resources,
+            preflightServiceWorkerFetchResourceRecords:
+                resourceDiscovery.serviceWorkerFetchResourceRecords,
             from: originalRootURL,
             to: temporaryBundleRootURL
         )
@@ -282,6 +319,9 @@ struct ChromeMV3GeneratedBundleWriter {
             unsupportedAPIs: planningRecord.unsupportedAPIs.sorted(),
             needsVerificationAPIs: planningRecord.needsVerificationAPIs.sorted(),
             copiedResourcePaths: copyResult.copiedRelativePaths.sorted(),
+            serviceWorkerFetchResourceRecords:
+                copyResult.serviceWorkerFetchResourceRecords
+                    .sorted(by: serviceWorkerFetchResourceRecordSort),
             resourceWarnings: copyResult.warnings.sorted(by: resourceWarningSort),
             writtenInertRuntimeTemplateResources: writtenRuntimeTemplateResources,
             inertRuntimeTemplatesWritten: writtenRuntimeTemplateResources
@@ -422,7 +462,7 @@ struct ChromeMV3GeneratedBundleWriter {
     private func manifestReferencedResources(
         in manifest: [String: Any],
         originalRootURL: URL
-    ) throws -> [ManifestResourceReference] {
+    ) throws -> ResourceDiscoveryResult {
         var resources: [ManifestResourceReference] = [
             ManifestResourceReference(
                 field: "manifest",
@@ -430,6 +470,8 @@ struct ChromeMV3GeneratedBundleWriter {
                 policy: .exactRequired
             )
         ]
+        var serviceWorkerFetchResourceRecords:
+            [ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord] = []
 
         if let background = manifest["background"] as? [String: Any] {
             try appendExactPath(
@@ -441,12 +483,14 @@ struct ChromeMV3GeneratedBundleWriter {
                let normalized = try? normalizedResourcePath(
                     serviceWorker,
                     field: "background.service_worker"
-               )
+                )
             {
-                appendImportScriptsDependencies(
+                appendServiceWorkerGeneratedBundleDependencies(
                     startingAt: normalized,
                     originalRootURL: originalRootURL,
-                    to: &resources
+                    to: &resources,
+                    serviceWorkerFetchResourceRecords:
+                        &serviceWorkerFetchResourceRecords
                 )
             }
         }
@@ -531,28 +575,39 @@ struct ChromeMV3GeneratedBundleWriter {
             to: &resources
         )
 
-        return resources.sorted()
-    }
-
-    private func appendImportScriptsDependencies(
-        startingAt serviceWorkerPath: String,
-        originalRootURL: URL,
-        to resources: inout [ManifestResourceReference]
-    ) {
-        var scanned: Set<String> = []
-        appendImportScriptsDependencies(
-            parentPath: serviceWorkerPath,
-            originalRootURL: originalRootURL,
-            scanned: &scanned,
-            to: &resources
+        return ResourceDiscoveryResult(
+            resources: resources.sorted(),
+            serviceWorkerFetchResourceRecords:
+                serviceWorkerFetchResourceRecords
+                    .sorted(by: serviceWorkerFetchResourceRecordSort)
         )
     }
 
-    private func appendImportScriptsDependencies(
+    private func appendServiceWorkerGeneratedBundleDependencies(
+        startingAt serviceWorkerPath: String,
+        originalRootURL: URL,
+        to resources: inout [ManifestResourceReference],
+        serviceWorkerFetchResourceRecords:
+            inout [ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord]
+    ) {
+        var scanned: Set<String> = []
+        appendServiceWorkerGeneratedBundleDependencies(
+            parentPath: serviceWorkerPath,
+            originalRootURL: originalRootURL,
+            scanned: &scanned,
+            to: &resources,
+            serviceWorkerFetchResourceRecords:
+                &serviceWorkerFetchResourceRecords
+        )
+    }
+
+    private func appendServiceWorkerGeneratedBundleDependencies(
         parentPath: String,
         originalRootURL: URL,
         scanned: inout Set<String>,
-        to resources: inout [ManifestResourceReference]
+        to resources: inout [ManifestResourceReference],
+        serviceWorkerFetchResourceRecords:
+            inout [ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord]
     ) {
         guard scanned.insert(parentPath).inserted else { return }
         guard
@@ -563,6 +618,15 @@ struct ChromeMV3GeneratedBundleWriter {
             ),
             let source = try? String(contentsOf: sourceURL, encoding: .utf8)
         else { return }
+
+        appendServiceWorkerFetchDependencies(
+            in: source,
+            parentPath: parentPath,
+            originalRootURL: originalRootURL,
+            to: &resources,
+            serviceWorkerFetchResourceRecords:
+                &serviceWorkerFetchResourceRecords
+        )
 
         for literal in importScriptsStringLiteralArguments(in: source) {
             guard let resolved = resolveImportScriptsDependencyPath(
@@ -584,13 +648,354 @@ struct ChromeMV3GeneratedBundleWriter {
                     policy: .exactRequired
                 )
             )
-            appendImportScriptsDependencies(
+            appendServiceWorkerGeneratedBundleDependencies(
                 parentPath: resolved,
                 originalRootURL: originalRootURL,
                 scanned: &scanned,
-                to: &resources
+                to: &resources,
+                serviceWorkerFetchResourceRecords:
+                    &serviceWorkerFetchResourceRecords
             )
         }
+    }
+
+    private func appendServiceWorkerFetchDependencies(
+        in source: String,
+        parentPath: String,
+        originalRootURL: URL,
+        to resources: inout [ManifestResourceReference],
+        serviceWorkerFetchResourceRecords:
+            inout [ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord]
+    ) {
+        for argument in serviceWorkerFetchFirstArgumentSourcesGeneratedBundleWriter(
+            in: source
+        ) {
+            let candidates = serviceWorkerFetchCandidates(
+                from: argument,
+                parentPath: parentPath,
+                originalRootURL: originalRootURL
+            )
+            for candidate in candidates {
+                if let resolvedPath = candidate.resolvedResourcePath {
+                    resources.append(
+                        ManifestResourceReference(
+                            field: "background.service_worker.fetch",
+                            path: resolvedPath,
+                            policy: .serviceWorkerFetchCandidate,
+                            sourceScriptPath: parentPath,
+                            requestedPath: candidate.requestedPath
+                        )
+                    )
+                } else {
+                    serviceWorkerFetchResourceRecords.append(
+                        ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord(
+                            sourceScriptPath: parentPath,
+                            requestedPath: candidate.requestedPath,
+                            resolvedResourcePath: nil,
+                            resourceExtension: nil,
+                            status: .blocked,
+                            blocker: candidate.blocker
+                                ?? "unsupportedRequestShape",
+                            diagnostics: candidate.diagnostics
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    private func serviceWorkerFetchCandidates(
+        from argument: String,
+        parentPath: String,
+        originalRootURL: URL
+    ) -> [ServiceWorkerFetchCandidate] {
+        let trimmed = argument.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return [] }
+        let unwrapped = unwrapFetchURLExpressionGeneratedBundleWriter(trimmed)
+        if let staticPath = staticServiceWorkerFetchStringGeneratedBundleWriter(
+            unwrapped
+        ) {
+            return [
+                serviceWorkerFetchCandidate(
+                    requestedPath: staticPath,
+                    parentPath: parentPath
+                ),
+            ]
+        }
+        if let boundedWasm =
+            boundedWebpackPublicPathWasmFetchGeneratedBundleWriter(
+                unwrapped,
+                parentPath: parentPath,
+                originalRootURL: originalRootURL
+            )
+        {
+            return boundedWasm
+        }
+        return []
+    }
+
+    private func serviceWorkerFetchCandidate(
+        requestedPath: String,
+        parentPath: String
+    ) -> ServiceWorkerFetchCandidate {
+        let normalized = resolveServiceWorkerFetchResourcePath(
+            requestedPath,
+            parentPath: parentPath
+        )
+        if let resolvedPath = normalized.path {
+            return ServiceWorkerFetchCandidate(
+                requestedPath: requestedPath,
+                resolvedResourcePath: resolvedPath,
+                blocker: nil,
+                diagnostics: [
+                    "Service-worker fetch target was statically resolved to a package-local generated-bundle resource.",
+                ]
+            )
+        }
+        return ServiceWorkerFetchCandidate(
+            requestedPath: requestedPath,
+            resolvedResourcePath: nil,
+            blocker: normalized.blocker,
+            diagnostics: [
+                normalized.message,
+                "No network, data/blob/file URL, absolute filesystem path, path traversal, or wildcard fetch target is copied into the generated bundle.",
+            ]
+        )
+    }
+
+    private func boundedWebpackPublicPathWasmFetchGeneratedBundleWriter(
+        _ expression: String,
+        parentPath: String,
+        originalRootURL: URL
+    ) -> [ServiceWorkerFetchCandidate]? {
+        let parts = splitTopLevelGeneratedBundleWriter(
+            expression,
+            separator: "+"
+        )
+        guard parts.count > 2,
+              parts[0].range(
+                of: #"^[A-Za-z_$][\w$]*\.p$"#,
+                options: .regularExpression
+              ) != nil
+        else { return nil }
+
+        var staticPrefix = ""
+        var staticSuffix = ""
+        var dynamicPartCount = 0
+        var suffixStarted = false
+        for part in parts.dropFirst() {
+            if let literal = staticServiceWorkerFetchStringGeneratedBundleWriter(
+                part
+            ) {
+                if suffixStarted {
+                    staticSuffix += literal
+                } else {
+                    staticPrefix += literal
+                }
+            } else {
+                dynamicPartCount += 1
+                suffixStarted = true
+            }
+        }
+        guard dynamicPartCount > 0,
+              staticSuffix.lowercased().hasSuffix(".wasm"),
+              staticPrefix.contains("*") == false,
+              staticSuffix.contains("*") == false
+        else { return nil }
+
+        let directoryRequest =
+            (staticPrefix as NSString).deletingLastPathComponent
+        let filePrefix =
+            (staticPrefix as NSString).lastPathComponent == staticPrefix
+                ? staticPrefix
+                : (staticPrefix as NSString).lastPathComponent
+        let directoryRelative = directoryRequest == "."
+            ? ""
+            : directoryRequest
+        let resolvedDirectory = resolveServiceWorkerFetchResourcePath(
+            directoryRelative.isEmpty ? "." : directoryRelative,
+            parentPath: parentPath,
+            allowDirectory: true
+        )
+        guard let directoryPath = resolvedDirectory.path else {
+            return [
+                ServiceWorkerFetchCandidate(
+                    requestedPath: expression,
+                    resolvedResourcePath: nil,
+                    blocker: resolvedDirectory.blocker,
+                    diagnostics: [
+                        resolvedDirectory.message,
+                        "Bounded Webpack WASM fetch expansion was rejected before enumerating files.",
+                    ]
+                ),
+            ]
+        }
+
+        let sourceDirectory = originalRootURL
+            .appendingPathComponent(directoryPath)
+            .standardizedFileURL
+        guard containsGeneratedBundleWriter(
+            root: originalRootURL,
+            candidate: sourceDirectory
+        ),
+              directoryExistsGeneratedBundleWriter(sourceDirectory)
+        else {
+            return [
+                ServiceWorkerFetchCandidate(
+                    requestedPath: expression,
+                    resolvedResourcePath: nil,
+                    blocker: "missingResource",
+                    diagnostics: [
+                        "Bounded Webpack WASM fetch directory is missing from the original package.",
+                    ]
+                ),
+            ]
+        }
+
+        let children = (try? FileManager.default.contentsOfDirectory(
+            at: sourceDirectory,
+            includingPropertiesForKeys: [
+                .isRegularFileKey,
+                .isSymbolicLinkKey,
+            ],
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        let candidates = children.compactMap { child -> String? in
+            guard child.lastPathComponent.hasPrefix(filePrefix),
+                  child.lastPathComponent.hasSuffix(staticSuffix),
+                  regularFile(at: child),
+                  isSymbolicLink(at: child) == false
+            else { return nil }
+            if directoryPath.isEmpty {
+                return child.lastPathComponent
+            }
+            return "\(directoryPath)/\(child.lastPathComponent)"
+        }.sorted()
+
+        guard candidates.isEmpty == false else {
+            return [
+                ServiceWorkerFetchCandidate(
+                    requestedPath: expression,
+                    resolvedResourcePath: nil,
+                    blocker: "missingResource",
+                    diagnostics: [
+                        "No regular files matched the bounded Webpack WASM fetch pattern in the original package.",
+                    ]
+                ),
+            ]
+        }
+        return candidates.map { path in
+            ServiceWorkerFetchCandidate(
+                requestedPath: "\(filePrefix)*\(staticSuffix)",
+                resolvedResourcePath: path,
+                blocker: nil,
+                diagnostics: [
+                    "Service-worker fetch target was copied from a bounded Webpack publicPath WASM filename pattern.",
+                    "Only direct regular files matching the static prefix and .wasm suffix were considered.",
+                ]
+            )
+        }
+    }
+
+    private func resolveServiceWorkerFetchResourcePath(
+        _ requestedPath: String,
+        parentPath: String,
+        allowDirectory: Bool = false
+    ) -> (path: String?, blocker: String, message: String) {
+        let trimmed = requestedPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else {
+            return (nil, "unsupportedRequestShape", "fetch target is empty.")
+        }
+        let withoutFragment = trimmed.split(
+            separator: "#",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        ).first.map(String.init) ?? trimmed
+        let withoutQuery = withoutFragment.split(
+            separator: "?",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        ).first.map(String.init) ?? withoutFragment
+        let decoded = withoutQuery.removingPercentEncoding ?? withoutQuery
+        let lower = decoded.lowercased()
+        if lower.hasPrefix("http://") || lower.hasPrefix("https://") {
+            return (nil, "networkFetchDisabled", "remote fetch target is not copied.")
+        }
+        if lower.hasPrefix("file:") {
+            return (nil, "fileURLFetchBlocked", "file: fetch target is not copied.")
+        }
+        if lower.hasPrefix("data:") {
+            return (nil, "dataURLFetchBlocked", "data: fetch target is not copied.")
+        }
+        if lower.hasPrefix("blob:") {
+            return (nil, "blobURLFetchBlocked", "blob: fetch target is not copied.")
+        }
+        if decoded.hasPrefix("//") || decoded.contains("://") {
+            return (
+                nil,
+                "fetchSchemeOrInputUnsupported",
+                "unsupported absolute fetch target is not copied."
+            )
+        }
+        if looksLikeAbsoluteFilesystemFetchPathGeneratedBundleWriter(decoded) {
+            return (
+                nil,
+                "absoluteFilesystemFetchBlocked",
+                "absolute filesystem fetch target is not copied."
+            )
+        }
+        guard decoded.hasPrefix("~") == false,
+              decoded.contains("\\") == false,
+              decoded.contains("\0") == false,
+              decoded.contains("*") == false
+        else {
+            return (
+                nil,
+                "unsupportedRequestShape",
+                "fetch target contains unsupported path material."
+            )
+        }
+
+        var segments: [String] =
+            decoded.hasPrefix("/")
+                ? []
+                : parentDirectoryComponentsGeneratedBundleWriter(parentPath)
+        let rawPath =
+            decoded.hasPrefix("/") ? String(decoded.dropFirst()) : decoded
+        let rawSegments =
+            rawPath.split(separator: "/", omittingEmptySubsequences: false)
+        if rawSegments.isEmpty && allowDirectory {
+            return (segments.joined(separator: "/"), "none", "fetch path normalized.")
+        }
+        for raw in rawSegments {
+            let segment = String(raw)
+            if segment == "." {
+                continue
+            }
+            if segment == ".." {
+                return (
+                    nil,
+                    "pathTraversalBlocked",
+                    "fetch target contains parent-directory traversal."
+                )
+            }
+            if segment.isEmpty {
+                return (
+                    nil,
+                    "unsupportedRequestShape",
+                    "fetch target contains an empty path segment."
+                )
+            }
+            segments.append(segment)
+        }
+        guard segments.isEmpty == false || allowDirectory else {
+            return (
+                nil,
+                "missingResource",
+                "fetch target does not name a generated-bundle file."
+            )
+        }
+        return (segments.joined(separator: "/"), "none", "fetch path normalized.")
     }
 
     private func resolveImportScriptsDependencyPath(
@@ -811,11 +1216,15 @@ struct ChromeMV3GeneratedBundleWriter {
 
     private func copyResources(
         _ resources: [ManifestResourceReference],
+        preflightServiceWorkerFetchResourceRecords:
+            [ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord],
         from originalRootURL: URL,
         to generatedBundleRootURL: URL
     ) throws -> ResourceCopyResult {
         var copiedPaths = Set<String>()
         var warnings: [ChromeMV3GeneratedBundleResourceWarning] = []
+        var serviceWorkerFetchResourceRecords =
+            preflightServiceWorkerFetchResourceRecords
 
         for resource in resources {
             switch resource.policy {
@@ -843,12 +1252,25 @@ struct ChromeMV3GeneratedBundleWriter {
                         message: "Skipped unsupported web_accessible_resources wildcard pattern in generated-bundle draft."
                     )
                 )
+            case .serviceWorkerFetchCandidate:
+                serviceWorkerFetchResourceRecords.append(
+                    copyServiceWorkerFetchResource(
+                        resource,
+                        from: originalRootURL,
+                        to: generatedBundleRootURL,
+                        copiedPaths: &copiedPaths
+                    )
+                )
             }
         }
 
         return ResourceCopyResult(
             copiedRelativePaths: copiedPaths.sorted(),
-            warnings: warnings
+            warnings: warnings,
+            serviceWorkerFetchResourceRecords:
+                uniqueServiceWorkerFetchResourceRecords(
+                    serviceWorkerFetchResourceRecords
+                )
         )
     }
 
@@ -1028,6 +1450,173 @@ struct ChromeMV3GeneratedBundleWriter {
         }
     }
 
+    private func copyServiceWorkerFetchResource(
+        _ resource: ManifestResourceReference,
+        from originalRootURL: URL,
+        to generatedBundleRootURL: URL,
+        copiedPaths: inout Set<String>
+    ) -> ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord {
+        let requestedPath = resource.requestedPath ?? resource.path
+        let sourceScriptPath = resource.sourceScriptPath ?? "unknown-service-worker"
+        guard resource.path != "manifest.json" else {
+            return serviceWorkerFetchResourceRecord(
+                sourceScriptPath: sourceScriptPath,
+                requestedPath: requestedPath,
+                resolvedResourcePath: resource.path,
+                status: .blocked,
+                blocker: "manifestResourceReserved",
+                diagnostics: [
+                    "manifest.json is written from the generated manifest snapshot and is not copied as a service-worker fetch closure resource.",
+                ]
+            )
+        }
+
+        let sourceURL: URL
+        do {
+            sourceURL = try safeSourceURL(
+                relativePath: resource.path,
+                rootURL: originalRootURL,
+                field: resource.field
+            )
+        } catch {
+            return serviceWorkerFetchResourceRecord(
+                sourceScriptPath: sourceScriptPath,
+                requestedPath: requestedPath,
+                resolvedResourcePath: resource.path,
+                status:
+                    serviceWorkerFetchResourceStatus(forCopyError: error),
+                blocker: serviceWorkerFetchResourceBlocker(forCopyError: error),
+                diagnostics: [
+                    serviceWorkerFetchResourceMessage(
+                        forCopyError: error
+                    ),
+                    "No fallback outside the staged original extension root was attempted.",
+                ]
+            )
+        }
+
+        do {
+            let values = try sourceURL.resourceValues(forKeys: [
+                .isRegularFileKey,
+                .isSymbolicLinkKey,
+            ])
+            if values.isSymbolicLink == true {
+                return serviceWorkerFetchResourceRecord(
+                    sourceScriptPath: sourceScriptPath,
+                    requestedPath: requestedPath,
+                    resolvedResourcePath: resource.path,
+                    status: .blocked,
+                    blocker: "symlinkEscapeBlocked",
+                    diagnostics: [
+                        "Service-worker fetch resource contains a symbolic link and was not copied.",
+                    ]
+                )
+            }
+            guard values.isRegularFile == true else {
+                return serviceWorkerFetchResourceRecord(
+                    sourceScriptPath: sourceScriptPath,
+                    requestedPath: requestedPath,
+                    resolvedResourcePath: resource.path,
+                    status: .blocked,
+                    blocker: "nonRegularResource",
+                    diagnostics: [
+                        "Service-worker fetch resource is not a regular file and was not copied.",
+                    ]
+                )
+            }
+            let data = try Data(contentsOf: sourceURL)
+            let destinationURL = generatedBundleRootURL
+                .appendingPathComponent(resource.path)
+            try FileManager.default.createDirectory(
+                at: destinationURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: destinationURL, options: [.atomic])
+            copiedPaths.insert(resource.path)
+            return serviceWorkerFetchResourceRecord(
+                sourceScriptPath: sourceScriptPath,
+                requestedPath: requestedPath,
+                resolvedResourcePath: resource.path,
+                status: .copied,
+                blocker: "none",
+                diagnostics: [
+                    "Service-worker fetch resource was copied into the generated bundle after original-root containment checks.",
+                ]
+            )
+        } catch {
+            return serviceWorkerFetchResourceRecord(
+                sourceScriptPath: sourceScriptPath,
+                requestedPath: requestedPath,
+                resolvedResourcePath: resource.path,
+                status: .blocked,
+                blocker: "resourceReadFailed",
+                diagnostics: [
+                    "Service-worker fetch resource could not be read or written: \(error.localizedDescription)",
+                ]
+            )
+        }
+    }
+
+    private func serviceWorkerFetchResourceRecord(
+        sourceScriptPath: String,
+        requestedPath: String,
+        resolvedResourcePath: String?,
+        status: ChromeMV3GeneratedBundleServiceWorkerFetchResourceStatus,
+        blocker: String,
+        diagnostics: [String]
+    ) -> ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord {
+        ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord(
+            sourceScriptPath: sourceScriptPath,
+            requestedPath: requestedPath,
+            resolvedResourcePath: resolvedResourcePath,
+            resourceExtension:
+                resolvedResourcePath.map {
+                    URL(fileURLWithPath: $0).pathExtension.lowercased()
+                },
+            status: status,
+            blocker: blocker,
+            diagnostics: uniqueSortedGeneratedBundleWriter(diagnostics)
+        )
+    }
+
+    private func serviceWorkerFetchResourceStatus(
+        forCopyError error: Error
+    ) -> ChromeMV3GeneratedBundleServiceWorkerFetchResourceStatus {
+        if case ChromeMV3GeneratedBundleWriterError
+            .missingReferencedResource(_) = error
+        {
+            return .missing
+        }
+        return .blocked
+    }
+
+    private func serviceWorkerFetchResourceBlocker(forCopyError error: Error)
+        -> String
+    {
+        switch error {
+        case ChromeMV3GeneratedBundleWriterError.missingReferencedResource(_):
+            return "missingResource"
+        case ChromeMV3GeneratedBundleWriterError.symbolicLinkReferencedResource(_):
+            return "symlinkEscapeBlocked"
+        case ChromeMV3GeneratedBundleWriterError.sourceEscapedOriginalRoot(_),
+             ChromeMV3GeneratedBundleWriterError.unsafeResourcePath(_, _):
+            return "pathTraversalBlocked"
+        case ChromeMV3GeneratedBundleWriterError.nonRegularReferencedResource(_):
+            return "nonRegularResource"
+        default:
+            return "resourceCopyBlocked"
+        }
+    }
+
+    private func serviceWorkerFetchResourceMessage(forCopyError error: Error)
+        -> String
+    {
+        if let writerError = error as? ChromeMV3GeneratedBundleWriterError {
+            return writerError.description
+        }
+        return error.localizedDescription
+    }
+
     private func safeSourceURL(
         relativePath: String,
         rootURL: URL,
@@ -1107,11 +1696,32 @@ struct ChromeMV3GeneratedBundleWriter {
         }
         return lhs.path < rhs.path
     }
+
+    private func serviceWorkerFetchResourceRecordSort(
+        _ lhs: ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord,
+        _ rhs: ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord
+    ) -> Bool {
+        if lhs.sourceScriptPath != rhs.sourceScriptPath {
+            return lhs.sourceScriptPath < rhs.sourceScriptPath
+        }
+        if lhs.requestedPath != rhs.requestedPath {
+            return lhs.requestedPath < rhs.requestedPath
+        }
+        if lhs.resolvedResourcePath != rhs.resolvedResourcePath {
+            return (lhs.resolvedResourcePath ?? "")
+                < (rhs.resolvedResourcePath ?? "")
+        }
+        if lhs.status != rhs.status {
+            return lhs.status < rhs.status
+        }
+        return lhs.blocker < rhs.blocker
+    }
 }
 
 private enum ResourceCopyPolicy: Comparable {
     case exactRequired
     case recursiveDirectory
+    case serviceWorkerFetchCandidate
     case unsupportedWildcard
 }
 
@@ -1119,6 +1729,22 @@ private struct ManifestResourceReference: Comparable {
     var field: String
     var path: String
     var policy: ResourceCopyPolicy
+    var sourceScriptPath: String?
+    var requestedPath: String?
+
+    init(
+        field: String,
+        path: String,
+        policy: ResourceCopyPolicy,
+        sourceScriptPath: String? = nil,
+        requestedPath: String? = nil
+    ) {
+        self.field = field
+        self.path = path
+        self.policy = policy
+        self.sourceScriptPath = sourceScriptPath
+        self.requestedPath = requestedPath
+    }
 
     static func < (
         lhs: ManifestResourceReference,
@@ -1126,6 +1752,14 @@ private struct ManifestResourceReference: Comparable {
     ) -> Bool {
         if lhs.path == rhs.path {
             if lhs.field == rhs.field {
+                if lhs.policy == rhs.policy {
+                    if lhs.sourceScriptPath == rhs.sourceScriptPath {
+                        return (lhs.requestedPath ?? "")
+                            < (rhs.requestedPath ?? "")
+                    }
+                    return (lhs.sourceScriptPath ?? "")
+                        < (rhs.sourceScriptPath ?? "")
+                }
                 return lhs.policy < rhs.policy
             }
             return lhs.field < rhs.field
@@ -1134,7 +1768,420 @@ private struct ManifestResourceReference: Comparable {
     }
 }
 
+private struct ResourceDiscoveryResult {
+    var resources: [ManifestResourceReference]
+    var serviceWorkerFetchResourceRecords:
+        [ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord]
+}
+
 private struct ResourceCopyResult {
     var copiedRelativePaths: [String]
     var warnings: [ChromeMV3GeneratedBundleResourceWarning]
+    var serviceWorkerFetchResourceRecords:
+        [ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord]
+}
+
+private struct ServiceWorkerFetchCandidate {
+    var requestedPath: String
+    var resolvedResourcePath: String?
+    var blocker: String?
+    var diagnostics: [String]
+}
+
+private func serviceWorkerFetchFirstArgumentSourcesGeneratedBundleWriter(
+    in source: String
+) -> [String] {
+    let bytes = Array(source.utf8)
+    var results: [String] = []
+    var index = 0
+    while index < bytes.count {
+        if bytes[index] == 34 || bytes[index] == 39 || bytes[index] == 96 {
+            index = skipQuotedGeneratedBundleWriter(bytes, start: index)
+            continue
+        }
+        if bytes[index] == 47,
+           let regexClose = skipRegexLiteralGeneratedBundleWriter(
+                bytes,
+                start: index
+           )
+        {
+            index = regexClose
+            continue
+        }
+        if bytes[index] == 47, index + 1 < bytes.count,
+           bytes[index + 1] == 47
+        {
+            index += 2
+            while index < bytes.count, bytes[index] != 10 { index += 1 }
+            continue
+        }
+        if bytes[index] == 47, index + 1 < bytes.count,
+           bytes[index + 1] == 42
+        {
+            index += 2
+            while index + 1 < bytes.count,
+                  !(bytes[index] == 42 && bytes[index + 1] == 47)
+            {
+                index += 1
+            }
+            index = min(bytes.count, index + 2)
+            continue
+        }
+        guard isIdentifierStartGeneratedBundleWriter(bytes[index]) else {
+            index += 1
+            continue
+        }
+        let start = index
+        index += 1
+        while index < bytes.count,
+              isIdentifierPartGeneratedBundleWriter(bytes[index])
+        {
+            index += 1
+        }
+        guard String(decoding: bytes[start..<index], as: UTF8.self) == "fetch",
+              previousSignificantByteGeneratedBundleWriter(
+                bytes,
+                before: start
+              ) != 46
+        else { continue }
+        var open = index
+        while open < bytes.count, isWhitespaceGeneratedBundleWriter(bytes[open]) {
+            open += 1
+        }
+        guard open < bytes.count, bytes[open] == 40,
+              let close = matchingParenCloseGeneratedBundleWriter(
+                bytes,
+                open: open
+              )
+        else { continue }
+        let arguments = splitTopLevelGeneratedBundleWriter(
+            String(decoding: bytes[(open + 1)..<close], as: UTF8.self),
+            separator: ","
+        )
+        if let first = arguments.first,
+           first.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        {
+            results.append(first)
+        }
+        index = close + 1
+    }
+    return results
+}
+
+private func unwrapFetchURLExpressionGeneratedBundleWriter(
+    _ expression: String
+) -> String {
+    let trimmed = expression.trimmingCharacters(in: .whitespacesAndNewlines)
+    for prefix in [
+        "chrome.runtime.getURL",
+        "browser.runtime.getURL",
+        "new Request",
+        "Request",
+    ] {
+        guard trimmed.hasPrefix(prefix) else { continue }
+        var open = trimmed.index(trimmed.startIndex, offsetBy: prefix.count)
+        while open < trimmed.endIndex,
+              trimmed[open].isWhitespace
+        {
+            open = trimmed.index(after: open)
+        }
+        guard open < trimmed.endIndex, trimmed[open] == "(" else { continue }
+        let bytes = Array(trimmed.utf8)
+        let byteOffset = trimmed[..<open].utf8.count
+        guard let close = matchingParenCloseGeneratedBundleWriter(
+                bytes,
+                open: byteOffset
+        )
+        else { continue }
+        let inner = String(
+            decoding: bytes[(byteOffset + 1)..<close],
+            as: UTF8.self
+        )
+        return splitTopLevelGeneratedBundleWriter(
+            inner,
+            separator: ","
+        ).first ?? inner
+    }
+    return trimmed
+}
+
+private func staticServiceWorkerFetchStringGeneratedBundleWriter(
+    _ expression: String
+) -> String? {
+    let trimmed = expression.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed.isEmpty == false else { return nil }
+    if let first = trimmed.first, let last = trimmed.last,
+       (first == "'" || first == "\""), last == first
+    {
+        let value = String(trimmed.dropFirst().dropLast())
+        if value.contains("\\") == false,
+           value.contains(first) == false
+        {
+            return value
+        }
+    }
+    if trimmed.first == "`", trimmed.last == "`" {
+        let value = String(trimmed.dropFirst().dropLast())
+        guard value.contains("${") == false,
+              value.contains("\\") == false
+        else { return nil }
+        return value
+    }
+    let parts = splitTopLevelGeneratedBundleWriter(trimmed, separator: "+")
+    guard parts.count > 1 else { return nil }
+    var result = ""
+    for part in parts {
+        guard let value =
+            staticServiceWorkerFetchStringGeneratedBundleWriter(part)
+        else { return nil }
+        result += value
+    }
+    return result
+}
+
+private func splitTopLevelGeneratedBundleWriter(
+    _ source: String,
+    separator: Character
+) -> [String] {
+    let bytes = Array(source.utf8)
+    guard let needle = String(separator).utf8.first else { return [source] }
+    var results: [String] = []
+    var start = 0
+    var index = 0
+    var parenDepth = 0
+    var braceDepth = 0
+    var bracketDepth = 0
+    while index < bytes.count {
+        if bytes[index] == 34 || bytes[index] == 39 || bytes[index] == 96 {
+            index = skipQuotedGeneratedBundleWriter(bytes, start: index)
+            continue
+        }
+        switch bytes[index] {
+        case 40: parenDepth += 1
+        case 41: parenDepth = max(0, parenDepth - 1)
+        case 123: braceDepth += 1
+        case 125: braceDepth = max(0, braceDepth - 1)
+        case 91: bracketDepth += 1
+        case 93: bracketDepth = max(0, bracketDepth - 1)
+        default:
+            if bytes[index] == needle,
+               parenDepth == 0, braceDepth == 0, bracketDepth == 0
+            {
+                results.append(
+                    String(decoding: bytes[start..<index], as: UTF8.self)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+                start = index + 1
+            }
+        }
+        index += 1
+    }
+    results.append(
+        String(decoding: bytes[start...], as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    )
+    return results
+}
+
+private func matchingParenCloseGeneratedBundleWriter(
+    _ bytes: [UInt8],
+    open: Int
+) -> Int? {
+    var depth = 1
+    var index = open + 1
+    while index < bytes.count {
+        if bytes[index] == 34 || bytes[index] == 39 || bytes[index] == 96 {
+            index = skipQuotedGeneratedBundleWriter(bytes, start: index)
+            continue
+        }
+        if bytes[index] == 40 {
+            depth += 1
+        } else if bytes[index] == 41 {
+            depth -= 1
+            if depth == 0 { return index }
+        }
+        index += 1
+    }
+    return nil
+}
+
+private func skipQuotedGeneratedBundleWriter(
+    _ bytes: [UInt8],
+    start: Int
+) -> Int {
+    let quote = bytes[start]
+    var index = start + 1
+    var escaped = false
+    while index < bytes.count {
+        if escaped {
+            escaped = false
+        } else if bytes[index] == 92 {
+            escaped = true
+        } else if bytes[index] == quote {
+            return index + 1
+        }
+        index += 1
+    }
+    return index
+}
+
+private func skipRegexLiteralGeneratedBundleWriter(
+    _ bytes: [UInt8],
+    start: Int
+) -> Int? {
+    guard bytes[start] == 47,
+          start + 1 < bytes.count,
+          bytes[start + 1] != 47,
+          bytes[start + 1] != 42
+    else { return nil }
+    if let previous = previousSignificantByteGeneratedBundleWriter(
+        bytes,
+        before: start
+    ),
+       regexLiteralCanFollowGeneratedBundleWriter(previous) == false
+    {
+        return nil
+    }
+
+    var index = start + 1
+    var escaped = false
+    var inCharacterClass = false
+    while index < bytes.count {
+        let byte = bytes[index]
+        if escaped {
+            escaped = false
+        } else if byte == 92 {
+            escaped = true
+        } else if byte == 91 {
+            inCharacterClass = true
+        } else if byte == 93 {
+            inCharacterClass = false
+        } else if byte == 47, inCharacterClass == false {
+            index += 1
+            while index < bytes.count,
+                  isIdentifierPartGeneratedBundleWriter(bytes[index])
+            {
+                index += 1
+            }
+            return index
+        } else if byte == 10 || byte == 13 {
+            return nil
+        }
+        index += 1
+    }
+    return nil
+}
+
+private func regexLiteralCanFollowGeneratedBundleWriter(_ byte: UInt8) -> Bool {
+    switch byte {
+    case 33, 37, 38, 40, 42, 43, 44, 45, 58, 59, 60, 61, 62,
+         63, 91, 94, 123, 124, 126:
+        return true
+    default:
+        return false
+    }
+}
+
+private func previousSignificantByteGeneratedBundleWriter(
+    _ bytes: [UInt8],
+    before index: Int
+) -> UInt8? {
+    guard index > 0 else { return nil }
+    var cursor = index - 1
+    while cursor >= 0 {
+        if isWhitespaceGeneratedBundleWriter(bytes[cursor]) == false {
+            return bytes[cursor]
+        }
+        if cursor == 0 { break }
+        cursor -= 1
+    }
+    return nil
+}
+
+private func parentDirectoryComponentsGeneratedBundleWriter(
+    _ path: String
+) -> [String] {
+    let parent = (path as NSString).deletingLastPathComponent
+    guard parent.isEmpty == false, parent != "." else { return [] }
+    return parent.split(separator: "/").map(String.init)
+}
+
+private func looksLikeAbsoluteFilesystemFetchPathGeneratedBundleWriter(
+    _ path: String
+) -> Bool {
+    let lower = path.lowercased()
+    guard lower.hasPrefix("file:") == false else { return false }
+    for prefix in [
+        "/applications/",
+        "/etc/",
+        "/library/",
+        "/opt/",
+        "/private/",
+        "/system/",
+        "/tmp/",
+        "/users/",
+        "/usr/",
+        "/var/",
+        "/volumes/",
+    ] where lower.hasPrefix(prefix) {
+        return true
+    }
+    return false
+}
+
+private func containsGeneratedBundleWriter(root: URL, candidate: URL) -> Bool {
+    let resolvedRoot =
+        root.resolvingSymlinksInPath().standardizedFileURL.path
+    let resolvedCandidate =
+        candidate.resolvingSymlinksInPath().standardizedFileURL.path
+    return resolvedCandidate == resolvedRoot
+        || resolvedCandidate.hasPrefix(resolvedRoot + "/")
+}
+
+private func directoryExistsGeneratedBundleWriter(_ url: URL) -> Bool {
+    var isDirectory: ObjCBool = false
+    return FileManager.default.fileExists(
+        atPath: url.path,
+        isDirectory: &isDirectory
+    ) && isDirectory.boolValue
+}
+
+private func uniqueServiceWorkerFetchResourceRecords(
+    _ records: [ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord]
+) -> [ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord] {
+    var seen: Set<String> = []
+    var result: [ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord] = []
+    for record in records {
+        let key = [
+            record.sourceScriptPath,
+            record.requestedPath,
+            record.resolvedResourcePath ?? "",
+            record.status.rawValue,
+            record.blocker,
+        ].joined(separator: "\u{1f}")
+        guard seen.insert(key).inserted else { continue }
+        result.append(record)
+    }
+    return result
+}
+
+private func uniqueSortedGeneratedBundleWriter(_ values: [String]) -> [String] {
+    Array(Set(values)).sorted()
+}
+
+private func isIdentifierStartGeneratedBundleWriter(_ byte: UInt8) -> Bool {
+    (byte >= 65 && byte <= 90)
+        || (byte >= 97 && byte <= 122)
+        || byte == 95
+        || byte == 36
+}
+
+private func isIdentifierPartGeneratedBundleWriter(_ byte: UInt8) -> Bool {
+    isIdentifierStartGeneratedBundleWriter(byte)
+        || (byte >= 48 && byte <= 57)
+}
+
+private func isWhitespaceGeneratedBundleWriter(_ byte: UInt8) -> Bool {
+    byte == 9 || byte == 10 || byte == 11 || byte == 12
+        || byte == 13 || byte == 32
 }

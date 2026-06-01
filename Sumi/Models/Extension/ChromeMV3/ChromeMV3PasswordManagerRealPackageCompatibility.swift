@@ -1192,6 +1192,8 @@ struct ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness:
     var workerGlobalEventSummary: [String]
     var fetchClassificationResult: String
     var fetchClassificationSummary: [String]
+    var generatedBundleFetchResourceSummary: [String]
+    var webAssemblyCapabilityResult: String
     var workerWindowFailureClassification: String
     var timerShimResult: String
     var moduleWorkerReadinessResult: String
@@ -2710,6 +2712,14 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 dependencyInventory: dependencyInventory,
                 executionStartResult: executionStartResult
             )
+        let generatedBundleFetchResourceSummary =
+            serviceWorkerGeneratedBundleFetchResourceSummary(
+                generatedRecord: generatedRecord
+            )
+        let webAssemblyCapabilityResult =
+            serviceWorkerWebAssemblyCapabilityResult(
+                executionStartResult: executionStartResult
+            )
         let workerWindowFailureClassification =
             serviceWorkerWorkerWindowFailureClassification(
                 executionStartResult: executionStartResult
@@ -2804,6 +2814,9 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             workerGlobalEventSummary: workerGlobalEventSummary,
             fetchClassificationResult: fetchClassificationResult,
             fetchClassificationSummary: fetchClassificationSummary,
+            generatedBundleFetchResourceSummary:
+                generatedBundleFetchResourceSummary,
+            webAssemblyCapabilityResult: webAssemblyCapabilityResult,
             workerWindowFailureClassification:
                 workerWindowFailureClassification,
             timerShimResult: timerShimResult,
@@ -3568,6 +3581,36 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         return uniqueSortedRealPackages(runtime + staticRecords)
     }
 
+    private static func serviceWorkerGeneratedBundleFetchResourceSummary(
+        generatedRecord: ChromeMV3GeneratedBundleRecord?
+    ) -> [String] {
+        let records =
+            generatedRecord?.serviceWorkerFetchResourceRecords ?? []
+        guard records.isEmpty == false else {
+            return [
+                "notObserved: no statically discoverable service-worker fetch resources were recorded in the generated bundle.",
+            ]
+        }
+        return uniqueSortedRealPackages(records.map { record in
+            [
+                record.sourceScriptPath,
+                record.requestedPath,
+                record.resolvedResourcePath ?? "unresolved",
+                record.status.rawValue,
+                record.blocker,
+            ].joined(separator: ":")
+        })
+    }
+
+    private static func serviceWorkerWebAssemblyCapabilityResult(
+        executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?
+    ) -> String {
+        guard let capability = executionStartResult?.webAssemblyCapability else {
+            return "notObserved: service-worker execution did not report WebAssembly capability."
+        }
+        return "webAssembly: global=\(capability.globalPresent), instantiate=\(capability.instantiatePresent), instantiateStreaming=\(capability.instantiateStreamingPresent), compile=\(capability.compilePresent)."
+    }
+
     private static func serviceWorkerWorkerWindowFailureClassification(
         executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?
     ) -> String {
@@ -3630,6 +3673,35 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 && runtimePortSmoke.keepaliveReleased
                 ? " Runtime Port smoke passed."
                 : " Runtime Port smoke did not fully pass."
+        }
+        let gaps = dispatchResults
+            .filter { $0.resultKind != .delivered }
+            .map { result -> String in
+                let classification: String
+                switch result.resultKind {
+                case .unsupportedListenerMode:
+                    classification = "asyncCompletionUnsupported"
+                case .sendResponseTimeoutDiagnostic:
+                    classification = "sendResponseWaitUnsupported"
+                case .listenerError:
+                    classification = "listenerError"
+                case .promiseRejected:
+                    classification = "promiseRejected"
+                case .noListener:
+                    classification = "noListener"
+                case .noReceiver:
+                    classification = "noReceiver"
+                case .blockedByGate:
+                    classification = "blockedByGate"
+                case .blockedByPermission:
+                    classification = "blockedByPermission"
+                case .delivered:
+                    classification = "delivered"
+                }
+                return "\(result.source.rawValue)=\(classification)"
+            }
+        if gaps.isEmpty == false {
+            summary += " Gaps: \(uniqueSortedRealPackages(gaps).joined(separator: ", "))."
         }
         return summary
     }

@@ -1218,6 +1218,57 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         )
     }
 
+    func testGeneratedBundleWasmFetchReturnsBinaryArrayBuffer() throws {
+        var fixture = try makeHarness(
+            source: """
+            globalThis.fetchResult = { state: 'pending' };
+            fetch(chrome.runtime.getURL('module.wasm')).then(async (response) => {
+              const bytes = new Uint8Array(await response.arrayBuffer());
+              globalThis.fetchResult = {
+                contentType: response.headers.get('content-type'),
+                byteLength: bytes.byteLength,
+                magic: Array.from(bytes.slice(0, 4)).join(',')
+              };
+            }).catch((error) => {
+              globalThis.fetchResult = { error: String(error && error.message ? error.message : error) };
+            });
+            chrome.runtime.onMessage.addListener(() => globalThis.fetchResult);
+            """,
+            localExperimentalGateAllowed: true
+        )
+        fixture.generatedRecord = try generatedRecord(
+            fixture,
+            addingBinary: [
+                "module.wasm": Data(
+                    [0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]
+                ),
+            ]
+        )
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request()
+        )
+
+        XCTAssertEqual(harness.start().status, .running)
+        XCTAssertEqual(
+            harness.dispatch(
+                source: .popupOptionsRuntimeMessage,
+                payloadSummary: "wasm fetch"
+            ).responsePayload,
+            .object([
+                "byteLength": .number(8),
+                "contentType": .string("application/wasm"),
+                "magic": .string("0,97,115,109"),
+            ])
+        )
+        XCTAssertTrue(
+            harness.snapshot.fetchClassificationRecords.contains {
+                $0.executionAllowed
+                    && $0.fetchedResourcePath == "module.wasm"
+                    && $0.sourceByteCount == 8
+            }
+        )
+    }
+
     func testFetchRejectsSymlinkGeneratedBundleResource() throws {
         let fixture = try makeHarness(
             source: """
@@ -2498,7 +2549,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
 
     private func generatedRecord(
         _ fixture: HarnessFixture,
-        adding files: [String: String]
+        adding files: [String: String] = [:],
+        addingBinary binaryFiles: [String: Data] = [:]
     ) throws -> ChromeMV3GeneratedBundleRecord {
         var record = fixture.generatedRecord
         for (path, source) in files {
@@ -2508,6 +2560,17 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
                 withIntermediateDirectories: true
             )
             try source.write(to: url, atomically: true, encoding: .utf8)
+            if record.copiedResourcePaths.contains(path) == false {
+                record.copiedResourcePaths.append(path)
+            }
+        }
+        for (path, data) in binaryFiles {
+            let url = fixture.generatedRootURL.appendingPathComponent(path)
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: url, options: [.atomic])
             if record.copiedResourcePaths.contains(path) == false {
                 record.copiedResourcePaths.append(path)
             }

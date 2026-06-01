@@ -614,6 +614,177 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
         )
     }
 
+    func testCopiesExtensionLocalServiceWorkerFetchResources() throws {
+        let manifest: [String: Any] = [
+            "manifest_version": 3,
+            "name": "Service Worker Fetch Resources",
+            "version": "1.0",
+            "background": [
+                "service_worker": "background.js",
+            ],
+        ]
+        let stage = try stageBundle(
+            named: "service-worker-fetch-resources",
+            manifest: manifest,
+            files: [
+                "background.js": """
+                fetch(chrome.runtime.getURL('data/config.json')).catch(() => {});
+                fetch('./local.txt').catch(() => {});
+                """,
+                "data/config.json": #"{"enabled":true}"#,
+                "local.txt": "local",
+            ]
+        )
+
+        let result = try makeWriter(rootURL: stage.storeRoot)
+            .writeGeneratedBundle(
+                originalBundleRecord: stage.result.originalBundleRecord,
+                manifestSnapshot: stage.result.manifestSnapshot,
+                planningRecord: stage.result.generatedBundlePlan
+            )
+
+        XCTAssertEqual(
+            result.record.copiedResourcePaths,
+            [
+                "background.js",
+                "data/config.json",
+                "local.txt",
+            ]
+        )
+        XCTAssertEqual(
+            result.record.serviceWorkerFetchResourceRecords?.map(\.status),
+            [.copied, .copied]
+        )
+        XCTAssertTrue(
+            result.record.serviceWorkerFetchResourceRecords?.contains {
+                $0.resolvedResourcePath == "data/config.json"
+                    && $0.blocker == "none"
+            } == true
+        )
+    }
+
+    func testCopiesBoundedWebpackServiceWorkerWasmFetchResource() throws {
+        let manifest: [String: Any] = [
+            "manifest_version": 3,
+            "name": "Service Worker WASM Fetch Resources",
+            "version": "1.0",
+            "background": [
+                "service_worker": "background.js",
+            ],
+        ]
+        let wasmBytes = Data([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00])
+        let stage = try stageBundle(
+            named: "service-worker-wasm-fetch-resources",
+            manifest: manifest,
+            files: [
+                "background.js": """
+                (() => {
+                  var o = { p: "" };
+                  var i = "b9f569e387bfc3d589be";
+                  fetch(o.p + "" + i + ".module.wasm").catch(() => {});
+                })();
+                """,
+                "other.wasm": "not copied",
+            ],
+            binaryFiles: [
+                "b9f569e387bfc3d589be.module.wasm": wasmBytes,
+            ]
+        )
+
+        let result = try makeWriter(rootURL: stage.storeRoot)
+            .writeGeneratedBundle(
+                originalBundleRecord: stage.result.originalBundleRecord,
+                manifestSnapshot: stage.result.manifestSnapshot,
+                planningRecord: stage.result.generatedBundlePlan
+            )
+
+        XCTAssertTrue(
+            result.record.copiedResourcePaths
+                .contains("b9f569e387bfc3d589be.module.wasm")
+        )
+        XCTAssertFalse(result.record.copiedResourcePaths.contains("other.wasm"))
+        XCTAssertEqual(
+            try Data(
+                contentsOf: result.generatedBundleRootURL
+                    .appendingPathComponent(
+                        "b9f569e387bfc3d589be.module.wasm"
+                    )
+            ),
+            wasmBytes
+        )
+        XCTAssertTrue(
+            result.record.serviceWorkerFetchResourceRecords?.contains {
+                $0.resolvedResourcePath
+                    == "b9f569e387bfc3d589be.module.wasm"
+                    && $0.resourceExtension == "wasm"
+                    && $0.status == .copied
+                    && $0.blocker == "none"
+            } == true
+        )
+    }
+
+    func testServiceWorkerFetchResourceClosureBlocksUnsafeTargets()
+        throws
+    {
+        let manifest: [String: Any] = [
+            "manifest_version": 3,
+            "name": "Unsafe Service Worker Fetch Resources",
+            "version": "1.0",
+            "background": [
+                "service_worker": "background.js",
+            ],
+        ]
+        let stage = try stageBundle(
+            named: "unsafe-service-worker-fetch-resources",
+            manifest: manifest,
+            files: [
+                "background.js": """
+                fetch('https://example.com/remote.wasm').catch(() => {});
+                fetch('file:///tmp/local.wasm').catch(() => {});
+                fetch('data:application/wasm;base64,AA==').catch(() => {});
+                fetch('blob:https://example.com/blob').catch(() => {});
+                fetch('../outside.wasm').catch(() => {});
+                fetch('/Users/example/outside.wasm').catch(() => {});
+                fetch('./missing.wasm').catch(() => {});
+                """,
+            ]
+        )
+
+        let result = try makeWriter(rootURL: stage.storeRoot)
+            .writeGeneratedBundle(
+                originalBundleRecord: stage.result.originalBundleRecord,
+                manifestSnapshot: stage.result.manifestSnapshot,
+                planningRecord: stage.result.generatedBundlePlan
+            )
+
+        XCTAssertEqual(result.record.copiedResourcePaths, ["background.js"])
+        let records = try XCTUnwrap(
+            result.record.serviceWorkerFetchResourceRecords
+        )
+        XCTAssertTrue(
+            records.contains {
+                $0.status == .blocked
+                    && $0.blocker == "networkFetchDisabled"
+            }
+        )
+        XCTAssertTrue(records.contains { $0.blocker == "fileURLFetchBlocked" })
+        XCTAssertTrue(records.contains { $0.blocker == "dataURLFetchBlocked" })
+        XCTAssertTrue(records.contains { $0.blocker == "blobURLFetchBlocked" })
+        XCTAssertTrue(records.contains { $0.blocker == "pathTraversalBlocked" })
+        XCTAssertTrue(
+            records.contains {
+                $0.blocker == "absoluteFilesystemFetchBlocked"
+            }
+        )
+        XCTAssertTrue(
+            records.contains {
+                $0.status == .missing
+                    && $0.blocker == "missingResource"
+                    && $0.resolvedResourcePath == "missing.wasm"
+            }
+        )
+    }
+
     func testRejectsSymlinkReferencedResource() throws {
         let stage = try stageBundle(
             named: "symlink-resource",
@@ -755,12 +926,14 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
     private func stageBundle(
         named name: String,
         manifest: [String: Any],
-        files: [String: String]
+        files: [String: String],
+        binaryFiles: [String: Data] = [:]
     ) throws -> StageBundle {
         let fixture = try makeFixture(
             named: name,
             manifest: manifest,
-            files: files
+            files: files,
+            binaryFiles: binaryFiles
         )
         let storeRoot = try makeTemporaryDirectory()
         let result = try ChromeMV3OriginalBundleStore(
@@ -777,7 +950,8 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
     private func makeFixture(
         named name: String,
         manifest: [String: Any],
-        files: [String: String]
+        files: [String: String],
+        binaryFiles: [String: Data] = [:]
     ) throws -> URL {
         let directory = try makeTemporaryDirectory()
             .appendingPathComponent(name, isDirectory: true)
@@ -801,6 +975,14 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
                 withIntermediateDirectories: true
             )
             try contents.write(to: fileURL, atomically: true, encoding: .utf8)
+        }
+        for (relativePath, contents) in binaryFiles {
+            let fileURL = directory.appendingPathComponent(relativePath)
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try contents.write(to: fileURL, options: [.atomic])
         }
 
         return directory

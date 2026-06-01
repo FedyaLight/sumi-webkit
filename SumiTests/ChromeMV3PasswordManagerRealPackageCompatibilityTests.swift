@@ -1260,19 +1260,42 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         let proton = try XCTUnwrap(byClass[.protonPass])
         XCTAssertEqual(
             bitwarden.serviceWorkerEventReadiness.nextBlockerClassification,
-            .otherPreciseBlocker
+            .listenerCaptureSucceeded
         )
         XCTAssertTrue(
             bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
-                .contains("extension-local generated-bundle fetch")
+                .contains("Captured executed listener families")
         )
         XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
-                .contains("notCopiedGeneratedResource")
+            bitwarden.serviceWorkerEventReadiness.fetchClassificationSummary
+                .contains {
+                    $0.contains("b9f569e387bfc3d589be.module.wasm")
+                        && $0.contains("allowed=true")
+                        && $0.contains("status=200")
+                }
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness
+                .generatedBundleFetchResourceSummary.contains {
+                    $0.contains("b9f569e387bfc3d589be.module.wasm")
+                        && $0.contains(":copied:none")
+                }
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.webAssemblyCapabilityResult
+                .contains("instantiate=true")
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.webAssemblyCapabilityResult
+                .contains("instantiateStreaming=false")
         )
         XCTAssertFalse(
             bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
                 .contains("fetch remains classified but disabled")
+        )
+        XCTAssertFalse(
+            bitwarden.serviceWorkerEventReadiness.fetchClassificationSummary
+                .contains { $0.contains("notCopiedGeneratedResource") }
         )
         XCTAssertFalse(
             bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
@@ -1407,6 +1430,10 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertTrue(
             proton.serviceWorkerEventReadiness.workerGlobalEventSummary
                 .contains { $0.hasPrefix("addEventListener:") }
+        )
+        XCTAssertTrue(
+            proton.serviceWorkerEventReadiness.dispatchSmokeResult
+                .contains("asyncCompletionUnsupported")
         )
         XCTAssertFalse(
             proton.serviceWorkerEventReadiness.nextBlockerDetail
