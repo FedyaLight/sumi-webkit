@@ -1913,6 +1913,125 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertTrue(smoke.serviceWorkerWakeAttempted)
         XCTAssertFalse(smoke.nativeHostLaunchAttempted)
         XCTAssertTrue(smoke.noCredentialsOrNetwork)
+        let detectFill = smoke.detectFillSmoke
+        XCTAssertTrue(detectFill.attempted)
+        XCTAssertEqual(detectFill.status, .partial)
+        XCTAssertTrue(detectFill.attachedContentScriptsBeforeAttempt)
+        XCTAssertEqual(detectFill.syntheticLoginPage.url, smoke.syntheticLoginSurface.url)
+        XCTAssertEqual(detectFill.syntheticLoginPage.origin, "https://sumi.local.test")
+        XCTAssertEqual(detectFill.syntheticLoginPage.formID, "sumi-login-form")
+        XCTAssertEqual(detectFill.syntheticLoginPage.usernameEmailFieldCount, 1)
+        XCTAssertEqual(detectFill.syntheticLoginPage.passwordFieldCount, 1)
+        XCTAssertEqual(detectFill.syntheticLoginPage.submitButtonCount, 1)
+        XCTAssertTrue(detectFill.syntheticLoginPage.networkSubmissionBlocked)
+        XCTAssertFalse(detectFill.syntheticLoginPage.containsRealCredentials)
+        XCTAssertTrue(detectFill.syntheticLoginPage.deterministic)
+        XCTAssertEqual(
+            detectFill.syntheticLoginPage.fields.map(\.id),
+            [
+                "sumi-login-email",
+                "sumi-login-password",
+                "sumi-login-submit",
+            ]
+        )
+        XCTAssertTrue(detectFill.discoveredMessageEvidence.contains {
+            $0.commandName == "triggerAutofillScriptInjection"
+                && $0.attachedByManifest
+                && $0.sourcePath == "content/trigger-autofill-script-injection.js"
+        })
+        XCTAssertTrue(detectFill.discoveredMessageEvidence.contains {
+            $0.commandName == "collectPageDetailsImmediately"
+                && $0.attachedByManifest == false
+                && $0.sourcePath == "content/bootstrap-autofill-overlay.js"
+        })
+        XCTAssertTrue(detectFill.discoveredMessageEvidence.contains {
+            $0.commandName == "fillForm"
+                && $0.attachedByManifest == false
+                && $0.sourcePath == "content/bootstrap-autofill-overlay.js"
+        })
+        let detectFillRoutes = Dictionary(
+            uniqueKeysWithValues:
+                detectFill.routeRecords.map { ($0.purpose, $0) }
+        )
+        XCTAssertEqual(
+            detectFillRoutes["detect"]?.routeUsed,
+            "popup/options -> tabs.sendMessage -> content script"
+        )
+        XCTAssertEqual(detectFillRoutes["detect"]?.status, .partial)
+        XCTAssertEqual(detectFillRoutes["detect"]?.delivered, true)
+        XCTAssertEqual(detectFillRoutes["detect"]?.listenerCount, 1)
+        XCTAssertEqual(
+            detectFillRoutes["detect"]?.actualMessageType,
+            "command:collectPageDetailsImmediately"
+        )
+        XCTAssertEqual(
+            detectFillRoutes["detect"]?.messageClassification,
+            .programmaticInjectionRequired
+        )
+        XCTAssertTrue(
+            detectFillRoutes["detect"]?.nextBlocker
+                .contains("non-manifest autofill bootstrap script") == true
+        )
+        XCTAssertEqual(detectFillRoutes["fill"]?.status, .partial)
+        XCTAssertEqual(detectFillRoutes["fill"]?.delivered, true)
+        XCTAssertEqual(
+            detectFillRoutes["fill"]?.actualMessageType,
+            "command:fillForm"
+        )
+        XCTAssertEqual(
+            detectFillRoutes["fill"]?.requestShapeSummary,
+            "object:command,fillScript,pageDetailsUrl,showAnimations"
+        )
+        XCTAssertEqual(
+            detectFillRoutes["fill"]?.messageClassification,
+            .programmaticInjectionRequired
+        )
+        XCTAssertTrue(
+            detectFillRoutes["fill"]?.domWriteResult
+                .contains("no fields were touched") == true
+        )
+        XCTAssertEqual(
+            detectFillRoutes["serviceWorkerPort"]?.routeUsed,
+            "content script -> service worker runtime.connect"
+        )
+        XCTAssertEqual(
+            detectFillRoutes["serviceWorkerPort"]?.messageClassification,
+            .serviceWorkerPortAvailable
+        )
+        XCTAssertEqual(
+            detectFillRoutes["serviceWorkerPort"]?.postMessageResult,
+            "delivered"
+        )
+        XCTAssertEqual(
+            detectFillRoutes["serviceWorkerPort"]?.disconnectResult,
+            "disconnected"
+        )
+        XCTAssertEqual(
+            detectFillRoutes["serviceWorkerTabsSendMessage"]?.status,
+            .blocked
+        )
+        XCTAssertEqual(
+            detectFillRoutes["serviceWorkerTabsSendMessage"]?
+                .messageClassification,
+            .unsupportedAPIRequired
+        )
+        XCTAssertEqual(
+            detectFill.nextBlockerClassification,
+            .programmaticInjectionRequired
+        )
+        XCTAssertTrue(
+            detectFill.domObservationResult
+                .contains("syntheticModelObserved")
+        )
+        XCTAssertTrue(
+            detectFill.dummyFillResult.contains("skipped")
+        )
+        XCTAssertTrue(detectFill.touchedSyntheticFieldIDs.isEmpty)
+        XCTAssertTrue(detectFill.touchedNonSyntheticFieldIDs.isEmpty)
+        XCTAssertTrue(detectFill.noRealCredentialsOrSecrets)
+        XCTAssertTrue(detectFill.noNetworkAuthNativeHost)
+        XCTAssertEqual(detectFill.endpointTeardownStatus, .pass)
+        XCTAssertEqual(detectFill.endpointActiveAfterTeardownCount, 0)
         XCTAssertTrue(report.noRealCredentialsUsed)
         XCTAssertFalse(report.realVendorNativeHostLaunchAttempted)
         XCTAssertFalse(report.productRuntimeAvailable)
@@ -1967,6 +2086,18 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                 .bitwardenE2ESmoke?.nextBlockerClassification,
             .serviceWorkerRuntimeOnMessageListenerMissing
         )
+        XCTAssertEqual(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .bitwardenE2ESmoke?.detectFillSmoke
+                .nextBlockerClassification,
+            .programmaticInjectionRequired
+        )
+        XCTAssertEqual(
+            detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
+                .bitwardenE2ESmoke?.detectFillSmoke
+                .endpointTeardownStatus,
+            .pass
+        )
     }
 
     func testBitwardenE2ESmokeDefaultGateBlocksRuntimeWork()
@@ -1986,6 +2117,8 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertEqual(smoke.status, .blocked)
         XCTAssertEqual(smoke.nextBlockerClassification, .routeUnsupported)
         XCTAssertTrue(smoke.messageRoutesTested.isEmpty)
+        XCTAssertFalse(smoke.detectFillSmoke.attempted)
+        XCTAssertEqual(smoke.detectFillSmoke.endpointTeardownStatus, .notRequired)
         XCTAssertEqual(smoke.endpointRegistryState.activeEndpointCount, 0)
         XCTAssertFalse(smoke.serviceWorkerWakeAttempted)
         XCTAssertFalse(smoke.nativeHostLaunchAttempted)
@@ -2011,6 +2144,7 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertFalse(smoke.attempted)
         XCTAssertEqual(smoke.status, .blocked)
         XCTAssertTrue(smoke.messageRoutesTested.isEmpty)
+        XCTAssertFalse(smoke.detectFillSmoke.attempted)
         XCTAssertEqual(smoke.endpointRegistryState.activeEndpointCount, 0)
         XCTAssertNil(row.serviceWorkerEventReadiness.executionStartResult)
         XCTAssertFalse(smoke.serviceWorkerWakeAttempted)

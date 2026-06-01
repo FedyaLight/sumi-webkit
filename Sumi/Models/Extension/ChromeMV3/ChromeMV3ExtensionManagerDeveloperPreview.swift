@@ -3657,6 +3657,30 @@ struct ChromeMV3ExtensionManagerView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            "Bitwarden detect/fill smoke: \(smoke.detectFillSmoke.status.rawValue) - \(smoke.detectFillSmoke.nextBlockerClassification?.rawValue ?? "none") - \(smoke.detectFillSmoke.nextBlocker)"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            "Bitwarden detect/fill routes: "
+                                + smoke.detectFillSmoke.routeRecords.map {
+                                    "\($0.purpose):\($0.status.rawValue):\($0.messageClassification.rawValue)"
+                                }.joined(separator: ", ")
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            "Bitwarden synthetic login DOM: "
+                                + smoke.detectFillSmoke.domObservationResult
+                                + "; dummy fill: "
+                                + smoke.detectFillSmoke.dummyFillResult
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                     Text(
                         "Worker navigator: "

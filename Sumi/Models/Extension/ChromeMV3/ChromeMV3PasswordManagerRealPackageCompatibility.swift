@@ -1188,6 +1188,204 @@ struct ChromeMV3PasswordManagerRealPackageE2ESyntheticLoginSurface:
     }
 }
 
+enum ChromeMV3PasswordManagerRealPackageSyntheticLoginFieldRole:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case usernameOrEmail
+    case password
+    case submit
+
+    static func < (
+        lhs:
+            ChromeMV3PasswordManagerRealPackageSyntheticLoginFieldRole,
+        rhs:
+            ChromeMV3PasswordManagerRealPackageSyntheticLoginFieldRole
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3PasswordManagerRealPackageSyntheticLoginField:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var role:
+        ChromeMV3PasswordManagerRealPackageSyntheticLoginFieldRole
+    var tagName: String
+    var type: String?
+    var id: String
+    var name: String
+    var autocomplete: String?
+    var formID: String?
+    var selector: String
+    var initialValueSummary: String
+}
+
+struct ChromeMV3PasswordManagerRealPackageSyntheticLoginPage:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var url: String
+    var origin: String?
+    var formID: String
+    var formName: String
+    var method: String
+    var action: String
+    var fields: [ChromeMV3PasswordManagerRealPackageSyntheticLoginField]
+    var usernameEmailFieldCount: Int
+    var passwordFieldCount: Int
+    var submitButtonCount: Int
+    var networkSubmissionBlocked: Bool
+    var containsRealCredentials: Bool
+    var deterministic: Bool
+    var diagnostics: [String]
+
+    static func notAttempted(url: String) -> Self {
+        ChromeMV3PasswordManagerRealPackageSyntheticLoginPage(
+            url: url,
+            origin: ChromeMV3RuntimeMessagingURL.origin(from: url),
+            formID: "not-attempted",
+            formName: "not-attempted",
+            method: "notAttempted",
+            action: "notAttempted",
+            fields: [],
+            usernameEmailFieldCount: 0,
+            passwordFieldCount: 0,
+            submitButtonCount: 0,
+            networkSubmissionBlocked: true,
+            containsRealCredentials: false,
+            deterministic: true,
+            diagnostics: [
+                "Synthetic login page model was not attempted.",
+            ]
+        )
+    }
+}
+
+enum ChromeMV3PasswordManagerRealPackageDetectFillMessageClassification:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case attachedHandlerMissing
+    case discoveredPackageCommand
+    case endpointMissing
+    case endpointPresentNoListener
+    case handlerDeliveredNoDOMAction
+    case messageShapeUnknownNotFaked
+    case modeledEndpointDeliveredOnly
+    case programmaticInjectionRequired
+    case serviceWorkerPortAvailable
+    case serviceWorkerPortUnavailable
+    case unsupportedAPIRequired
+
+    static func < (
+        lhs:
+            ChromeMV3PasswordManagerRealPackageDetectFillMessageClassification,
+        rhs:
+            ChromeMV3PasswordManagerRealPackageDetectFillMessageClassification
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3PasswordManagerRealPackageDetectFillMessageEvidence:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var sourcePath: String
+    var attachedByManifest: Bool
+    var listenerKind: String
+    var commandName: String
+    var requestShapeSummary: String
+    var evidenceSummary: String
+}
+
+struct ChromeMV3PasswordManagerRealPackageDetectFillRouteSmoke:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var purpose: String
+    var routeUsed: String
+    var status: ChromeMV3PasswordManagerCompatibilityStatus
+    var requestShapeSummary: String
+    var expectedMessageType: String
+    var actualMessageType: String
+    var responseShapeSummary: String
+    var listenerCount: Int
+    var delivered: Bool
+    var messageClassification:
+        ChromeMV3PasswordManagerRealPackageDetectFillMessageClassification
+    var domReadResult: String
+    var domWriteResult: String
+    var nextBlocker: String
+    var portName: String?
+    var postMessageResult: String?
+    var onMessageResult: String?
+    var disconnectResult: String?
+    var diagnostics: [String]
+}
+
+struct ChromeMV3PasswordManagerRealPackageDetectFillSmoke:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var attempted: Bool
+    var status: ChromeMV3PasswordManagerCompatibilityStatus
+    var syntheticLoginPage:
+        ChromeMV3PasswordManagerRealPackageSyntheticLoginPage
+    var discoveredMessageEvidence:
+        [ChromeMV3PasswordManagerRealPackageDetectFillMessageEvidence]
+    var routeRecords:
+        [ChromeMV3PasswordManagerRealPackageDetectFillRouteSmoke]
+    var attachedContentScriptsBeforeAttempt: Bool
+    var domObservationResult: String
+    var dummyFillResult: String
+    var touchedSyntheticFieldIDs: [String]
+    var touchedNonSyntheticFieldIDs: [String]
+    var nextBlockerClassification:
+        ChromeMV3PasswordManagerRealPackageDetectFillMessageClassification?
+    var nextBlocker: String
+    var noRealCredentialsOrSecrets: Bool
+    var noNetworkAuthNativeHost: Bool
+    var endpointTeardownStatus: ChromeMV3PasswordManagerCompatibilityStatus
+    var endpointActiveAfterTeardownCount: Int
+    var diagnostics: [String]
+
+    static func notAttempted(url: String, reason: String) -> Self {
+        ChromeMV3PasswordManagerRealPackageDetectFillSmoke(
+            attempted: false,
+            status: .notRequired,
+            syntheticLoginPage: .notAttempted(url: url),
+            discoveredMessageEvidence: [],
+            routeRecords: [],
+            attachedContentScriptsBeforeAttempt: false,
+            domObservationResult: "notAttempted",
+            dummyFillResult: "notAttempted",
+            touchedSyntheticFieldIDs: [],
+            touchedNonSyntheticFieldIDs: [],
+            nextBlockerClassification: nil,
+            nextBlocker: reason,
+            noRealCredentialsOrSecrets: true,
+            noNetworkAuthNativeHost: true,
+            endpointTeardownStatus: .notRequired,
+            endpointActiveAfterTeardownCount: 0,
+            diagnostics: [reason]
+        )
+    }
+}
+
 struct ChromeMV3PasswordManagerRealPackageE2ESmoke:
     Codable,
     Equatable,
@@ -1215,6 +1413,8 @@ struct ChromeMV3PasswordManagerRealPackageE2ESmoke:
     var unsupportedAPIsEncountered: [String]
     var noListenerNoReceiverResults:
         [ChromeMV3PasswordManagerRealPackageE2ERouteResult]
+    var detectFillSmoke:
+        ChromeMV3PasswordManagerRealPackageDetectFillSmoke
     var nextBlockerClassification:
         ChromeMV3PasswordManagerRealPackageNoReceiverClassification?
     var nextBlocker: String
@@ -1251,6 +1451,11 @@ struct ChromeMV3PasswordManagerRealPackageE2ESmoke:
             unsupportedAPIsEncountered:
                 uniqueSortedRealPackages(unsupportedAPIs),
             noListenerNoReceiverResults: [],
+            detectFillSmoke:
+                .notAttempted(
+                    url: loginURL,
+                    reason: "Not a Bitwarden target."
+                ),
             nextBlockerClassification: nil,
             nextBlocker: "Not a Bitwarden target.",
             serviceWorkerWakeAttempted: false,
@@ -1297,6 +1502,8 @@ struct ChromeMV3PasswordManagerRealPackageE2ESmoke:
             unsupportedAPIsEncountered:
                 uniqueSortedRealPackages(unsupportedAPIs),
             noListenerNoReceiverResults: [],
+            detectFillSmoke:
+                .notAttempted(url: loginURL, reason: blocker),
             nextBlockerClassification: blockerClassification,
             nextBlocker: blocker,
             serviceWorkerWakeAttempted: false,
@@ -1973,7 +2180,7 @@ struct ChromeMV3PasswordManagerRealPackageCompatibilityReport:
     Equatable,
     Sendable
 {
-    static let schemaVersion = 10
+    static let schemaVersion = 11
     static let reportFileName =
         "runtime-mv3-real-package-compatibility-report.json"
 
@@ -3533,6 +3740,23 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             )
         )
 
+        var detectFillSmoke = bitwardenE2EDetectFillSmoke(
+            loginURL: loginURL,
+            matchedScripts: preflight.matchedScripts,
+            contentAttachResult: contentAttachResult,
+            listenerProbe: listenerProbe,
+            endpoint: endpoint,
+            popupHandler: popupHandler,
+            contentBridge: contentBridge,
+            tabID: tabID,
+            frameID: frameID,
+            documentID: documentID,
+            serviceWorkerCapturedFamilies:
+                serviceWorkerReadiness.capturedListenerFamilies,
+            packageRootPath:
+                selected.resourceScanRootPath ?? selected.packageURL?.path
+        )
+
         let endpointState =
             ChromeMV3PasswordManagerRealPackageE2EEndpointRegistryState.make(
                 summary: endpointRegistry.summary,
@@ -3540,6 +3764,15 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     endpoint?.senderMetadata.urlRedacted ?? true
             )
         popupHandler.tearDown()
+        endpointRegistry.tearDownAll(
+            reason:
+                "Bitwarden detect/fill-style smoke completed; synthetic endpoint teardown is explicit."
+        )
+        let teardownSummary = endpointRegistry.summary
+        detectFillSmoke.endpointActiveAfterTeardownCount =
+            teardownSummary.activeEndpointCount
+        detectFillSmoke.endpointTeardownStatus =
+            teardownSummary.activeEndpointCount == 0 ? .pass : .blocked
         sharedSession?.triggerIdleRelease(reason: "bitwardenE2ESmokeComplete")
         sharedLifecycleRegistry.reset()
 
@@ -3568,6 +3801,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             messageRoutesTested: routes,
             unsupportedAPIsEncountered: unsupportedAPIs,
             noListenerNoReceiverResults: noReceiverResults,
+            detectFillSmoke: detectFillSmoke,
             nextBlockerClassification: nextBlocker.classification,
             nextBlocker: nextBlocker.detail,
             serviceWorkerWakeAttempted:
@@ -3701,6 +3935,678 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             messageListenerRegistered: message,
             connectListenerRegistered: connect,
             diagnostics: uniqueSortedRealPackages(diagnostics)
+        )
+    }
+
+    private static func bitwardenE2ESyntheticLoginPage(
+        url loginURL: String
+    ) -> ChromeMV3PasswordManagerRealPackageSyntheticLoginPage {
+        let fields = [
+            ChromeMV3PasswordManagerRealPackageSyntheticLoginField(
+                role: .usernameOrEmail,
+                tagName: "input",
+                type: "email",
+                id: "sumi-login-email",
+                name: "email",
+                autocomplete: "username",
+                formID: "sumi-login-form",
+                selector: "#sumi-login-email",
+                initialValueSummary: "empty"
+            ),
+            ChromeMV3PasswordManagerRealPackageSyntheticLoginField(
+                role: .password,
+                tagName: "input",
+                type: "password",
+                id: "sumi-login-password",
+                name: "password",
+                autocomplete: "current-password",
+                formID: "sumi-login-form",
+                selector: "#sumi-login-password",
+                initialValueSummary: "empty"
+            ),
+            ChromeMV3PasswordManagerRealPackageSyntheticLoginField(
+                role: .submit,
+                tagName: "button",
+                type: "submit",
+                id: "sumi-login-submit",
+                name: "submit",
+                autocomplete: nil,
+                formID: "sumi-login-form",
+                selector: "#sumi-login-submit",
+                initialValueSummary: "button:no-value"
+            ),
+        ]
+        return ChromeMV3PasswordManagerRealPackageSyntheticLoginPage(
+            url: loginURL,
+            origin: ChromeMV3RuntimeMessagingURL.origin(from: loginURL),
+            formID: "sumi-login-form",
+            formName: "sumiSyntheticLogin",
+            method: "post",
+            action: "\(loginURL)#sumi-blocked-submit",
+            fields: fields,
+            usernameEmailFieldCount:
+                fields.filter { $0.role == .usernameOrEmail }.count,
+            passwordFieldCount:
+                fields.filter { $0.role == .password }.count,
+            submitButtonCount: fields.filter { $0.role == .submit }.count,
+            networkSubmissionBlocked: true,
+            containsRealCredentials: false,
+            deterministic: true,
+            diagnostics: [
+                "Synthetic login page contains one username/email input, one password input, and one submit button.",
+                "The form action is diagnostic metadata only; no navigation, submit, account, vault, auth, or network call is performed.",
+            ]
+        )
+    }
+
+    private static func bitwardenE2EDetectFillMessageEvidence(
+        matchedScripts: [ChromeMV3DeclaredContentScriptAttachmentRecord],
+        packageRootPath: String?
+    ) -> [ChromeMV3PasswordManagerRealPackageDetectFillMessageEvidence] {
+        var evidence:
+            [ChromeMV3PasswordManagerRealPackageDetectFillMessageEvidence] = []
+        let matchedPaths =
+            Set(matchedScripts.flatMap(\.validatedJSFilePaths))
+        let sourceRoots =
+            uniqueSortedRealPackages(
+                matchedScripts.map(\.generatedBundleRootPath)
+                    + [packageRootPath].compactMap { $0 }
+            )
+
+        func recordIfPresent(
+            source: String,
+            sourcePath: String,
+            attachedByManifest: Bool,
+            command: String,
+            listenerKind: String,
+            requestShapeSummary: String,
+            evidenceSummary: String
+        ) {
+            guard source.contains("\"\(command)\"")
+                || source.contains("'\(command)'")
+                || source.contains("\(command):")
+            else { return }
+            evidence.append(
+                ChromeMV3PasswordManagerRealPackageDetectFillMessageEvidence(
+                    sourcePath: sourcePath,
+                    attachedByManifest: attachedByManifest,
+                    listenerKind: listenerKind,
+                    commandName: command,
+                    requestShapeSummary: requestShapeSummary,
+                    evidenceSummary: evidenceSummary
+                )
+            )
+        }
+
+        let candidates: [(
+            command: String,
+            listenerKind: String,
+            requestShapeSummary: String,
+            evidenceSummary: String
+        )] = [
+            (
+                "triggerAutofillScriptInjection",
+                "contentScript.runtime.sendMessage",
+                "object:command",
+                "Manifest content script asks the service worker to inject the autofill script."
+            ),
+            (
+                "collectPageDetails",
+                "contentScript.runtime.onMessage",
+                "object:command,tab,sender",
+                "Autofill content handler can collect page details when the bootstrap autofill script is present."
+            ),
+            (
+                "collectPageDetailsImmediately",
+                "contentScript.runtime.onMessage",
+                "object:command,tab,sender",
+                "Autofill content handler can synchronously return page details when the bootstrap autofill script is present."
+            ),
+            (
+                "fillForm",
+                "contentScript.runtime.onMessage",
+                "object:command,fillScript,pageDetailsUrl,showAnimations",
+                "Autofill content handler can fill a form when the bootstrap autofill script is present."
+            ),
+            (
+                "bgCollectPageDetails",
+                "contentScript.runtime.sendMessage",
+                "object:command,sender",
+                "Autofill bootstrap reports page-detail collection back to the service worker."
+            ),
+            (
+                "collectPageDetailsResponse",
+                "contentScript.runtime.sendMessage",
+                "object:command,details,sender,tab",
+                "Autofill bootstrap sends collected page details to the service worker."
+            ),
+        ]
+
+        for rootPath in sourceRoots {
+            let root = URL(fileURLWithPath: rootPath, isDirectory: true)
+            let paths = uniqueSortedRealPackages(
+                Array(matchedPaths)
+                    + [
+                        "content/autofiller.js",
+                        "content/bootstrap-autofill.js",
+                        "content/bootstrap-autofill-overlay.js",
+                        "content/bootstrap-autofill-overlay-menu.js",
+                        "content/bootstrap-autofill-overlay-notifications.js",
+                        "content/content-message-handler.js",
+                        "content/trigger-autofill-script-injection.js",
+                    ]
+            )
+            for path in paths {
+                let url = root.appendingPathComponent(path)
+                guard let source = try? String(
+                    contentsOf: url,
+                    encoding: .utf8
+                ) else { continue }
+                let attached = matchedPaths.contains(path)
+                for candidate in candidates {
+                    recordIfPresent(
+                        source: source,
+                        sourcePath: path,
+                        attachedByManifest: attached,
+                        command: candidate.command,
+                        listenerKind: candidate.listenerKind,
+                        requestShapeSummary:
+                            candidate.requestShapeSummary,
+                        evidenceSummary: candidate.evidenceSummary
+                    )
+                }
+            }
+        }
+
+        var seenEvidenceKeys: Set<String> = []
+        return evidence
+            .sorted {
+                if $0.sourcePath != $1.sourcePath {
+                    return $0.sourcePath < $1.sourcePath
+                }
+                if $0.commandName != $1.commandName {
+                    return $0.commandName < $1.commandName
+                }
+                if $0.attachedByManifest != $1.attachedByManifest {
+                    return $0.attachedByManifest && !$1.attachedByManifest
+                }
+                return $0.listenerKind < $1.listenerKind
+            }
+            .filter { item in
+                let key = [
+                    item.sourcePath,
+                    item.commandName,
+                    String(item.attachedByManifest),
+                    item.listenerKind,
+                ].joined(separator: ":")
+                if seenEvidenceKeys.contains(key) { return false }
+                seenEvidenceKeys.insert(key)
+                return true
+            }
+    }
+
+    private static func bitwardenE2ECommandEvidence(
+        _ command: String,
+        evidence:
+            [ChromeMV3PasswordManagerRealPackageDetectFillMessageEvidence],
+        attachedOnly: Bool
+    ) -> ChromeMV3PasswordManagerRealPackageDetectFillMessageEvidence? {
+        evidence.first {
+            $0.commandName == command
+                && (attachedOnly == false || $0.attachedByManifest)
+        }
+    }
+
+    private static func bitwardenE2EDetectFillSmoke(
+        loginURL: String,
+        matchedScripts: [ChromeMV3DeclaredContentScriptAttachmentRecord],
+        contentAttachResult: ChromeMV3PasswordManagerCompatibilityStatus,
+        listenerProbe: BitwardenE2EContentScriptListenerProbe,
+        endpoint: ChromeMV3ContentScriptEndpointRecord?,
+        popupHandler: ChromeMV3PopupOptionsJSBridgeHandler,
+        contentBridge: ChromeMV3ContentScriptBridgeHost,
+        tabID: Int,
+        frameID: Int,
+        documentID: String,
+        serviceWorkerCapturedFamilies:
+            [ChromeMV3ServiceWorkerSyntheticListenerEvent],
+        packageRootPath: String?
+    ) -> ChromeMV3PasswordManagerRealPackageDetectFillSmoke {
+        let syntheticPage = bitwardenE2ESyntheticLoginPage(url: loginURL)
+        let evidence = bitwardenE2EDetectFillMessageEvidence(
+            matchedScripts: matchedScripts,
+            packageRootPath: packageRootPath
+        )
+        let attachedBeforeAttempt =
+            contentAttachResult == .partial && endpoint != nil
+        let endpointHasMessageListener =
+            listenerProbe.messageListenerRegistered
+        var routeRecords:
+            [ChromeMV3PasswordManagerRealPackageDetectFillRouteSmoke] = []
+
+        let detectCommand = "collectPageDetailsImmediately"
+        if bitwardenE2ECommandEvidence(
+            detectCommand,
+            evidence: evidence,
+            attachedOnly: false
+        ) != nil {
+            let response = popupHandler.handle(
+                bitwardenE2EBridgeRequest(
+                    route: .popupTabsSendMessage,
+                    namespace: "tabs",
+                    methodName: "sendMessage",
+                    arguments: [
+                        .number(Double(tabID)),
+                        .object([
+                            "command": .string(detectCommand),
+                            "sender":
+                                .string("sumiDetectFillSmoke"),
+                            "tab": .object([
+                                "id": .number(Double(tabID)),
+                                "url": .string(loginURL),
+                            ]),
+                        ]),
+                        .object([
+                            "frameId": .number(Double(frameID)),
+                            "documentId": .string(documentID),
+                        ]),
+                    ]
+                )
+            )
+            routeRecords.append(
+                bitwardenE2EDetectFillPopupTabsRoute(
+                    purpose: "detect",
+                    command: detectCommand,
+                    response: response,
+                    endpoint: endpoint,
+                    endpointHasMessageListener:
+                        endpointHasMessageListener,
+                    evidence: evidence,
+                    requestShapeSummary: "object:command,sender,tab",
+                    domReadResult:
+                        "modeledEndpointOnly: synthetic form fields are known, but real Bitwarden pageDetails were not returned.",
+                    domWriteResult: "notRequested",
+                    fallbackBlocker:
+                        "Bitwarden page-detail collection command was found in a non-manifest autofill bootstrap script; the attached manifest listener did not expose that handler."
+                )
+            )
+        } else {
+            routeRecords.append(
+                bitwardenE2EDetectFillBlockedRoute(
+                    purpose: "detect",
+                    routeUsed: "popup/options -> tabs.sendMessage -> content script",
+                    classification: .messageShapeUnknownNotFaked,
+                    requestShapeSummary: "unknown",
+                    expectedMessageType: "unknown",
+                    actualMessageType: "notSent",
+                    listenerCount:
+                        endpointHasMessageListener ? 1 : 0,
+                    nextBlocker:
+                        "No real-package collect/detect message command was discovered; no invented Bitwarden-private message was sent."
+                )
+            )
+        }
+
+        let fillCommand = "fillForm"
+        if bitwardenE2ECommandEvidence(
+            fillCommand,
+            evidence: evidence,
+            attachedOnly: false
+        ) != nil {
+            let response = popupHandler.handle(
+                bitwardenE2EBridgeRequest(
+                    route: .popupTabsSendMessage,
+                    namespace: "tabs",
+                    methodName: "sendMessage",
+                    arguments: [
+                        .number(Double(tabID)),
+                        .object([
+                            "command": .string(fillCommand),
+                            "pageDetailsUrl": .string(loginURL),
+                            "showAnimations": .bool(false),
+                            "fillScript": .object([
+                                "source": .string("sumi-empty-dummy"),
+                                "targetFieldIDs": .array(
+                                    syntheticPage.fields
+                                        .filter { $0.role != .submit }
+                                        .map { .string($0.id) }
+                                ),
+                                "values": .object([:]),
+                            ]),
+                        ]),
+                        .object([
+                            "frameId": .number(Double(frameID)),
+                            "documentId": .string(documentID),
+                        ]),
+                    ]
+                )
+            )
+            routeRecords.append(
+                bitwardenE2EDetectFillPopupTabsRoute(
+                    purpose: "fill",
+                    command: fillCommand,
+                    response: response,
+                    endpoint: endpoint,
+                    endpointHasMessageListener:
+                        endpointHasMessageListener,
+                    evidence: evidence,
+                    requestShapeSummary:
+                        "object:command,fillScript,pageDetailsUrl,showAnimations",
+                    domReadResult: "notRequired",
+                    domWriteResult:
+                        "skipped:no attached fillForm handler executed; no fields were touched.",
+                    fallbackBlocker:
+                        "Bitwarden fillForm command was found in a non-manifest autofill bootstrap script; dummy fill data stayed empty and no DOM write was attempted."
+                )
+            )
+        } else {
+            routeRecords.append(
+                bitwardenE2EDetectFillBlockedRoute(
+                    purpose: "fill",
+                    routeUsed: "popup/options -> tabs.sendMessage -> content script",
+                    classification: .messageShapeUnknownNotFaked,
+                    requestShapeSummary: "unknown",
+                    expectedMessageType: "unknown",
+                    actualMessageType: "notSent",
+                    listenerCount:
+                        endpointHasMessageListener ? 1 : 0,
+                    nextBlocker:
+                        "No real-package fill message command was discovered; no invented Bitwarden-private fill message was sent."
+                )
+            )
+        }
+
+        let portName = "sumi-bitwarden-detect-fill"
+        let portConnectResponse = contentBridge.handle([
+            "namespace": "runtime",
+            "methodName": "connect",
+            "bridgeCallID":
+                "bitwarden-detect-fill-contentScriptRuntimeConnect",
+            "arguments": [
+                [
+                    "name": portName,
+                ],
+            ],
+        ])
+        let serviceWorkerPortID =
+            bitwardenE2EPortID(portConnectResponse.resultPayload)
+        var postMessageResult: String? = nil
+        var onMessageResult: String? = nil
+        var disconnectResult: String? = nil
+        if let serviceWorkerPortID {
+            let postResponse = contentBridge.handle([
+                "namespace": "runtime",
+                "methodName": "port.postMessage",
+                "bridgeCallID":
+                    "bitwarden-detect-fill-serviceWorkerPortPostMessage",
+                "arguments": [
+                    serviceWorkerPortID,
+                    [
+                        "command": "sumiDetectFillPortProbe",
+                        "syntheticLoginURL": loginURL,
+                    ],
+                ],
+            ])
+            postMessageResult =
+                postResponse.succeeded ? "delivered" : (
+                    postResponse.lastErrorCode ?? "blocked"
+                )
+            onMessageResult =
+                postResponse.succeeded
+                    ? "runtime.onConnect dispatched modeled Port message"
+                    : (postResponse.lastErrorMessage ?? "blocked")
+            let disconnectResponse = contentBridge.handle([
+                "namespace": "runtime",
+                "methodName": "port.disconnect",
+                "bridgeCallID":
+                    "bitwarden-detect-fill-serviceWorkerPortDisconnect",
+                "arguments": [serviceWorkerPortID],
+            ])
+            disconnectResult =
+                disconnectResponse.succeeded ? "disconnected" : (
+                    disconnectResponse.lastErrorCode ?? "blocked"
+                )
+        }
+        routeRecords.append(
+            ChromeMV3PasswordManagerRealPackageDetectFillRouteSmoke(
+                purpose: "serviceWorkerPort",
+                routeUsed: "content script -> service worker runtime.connect",
+                status: portConnectResponse.succeeded ? .partial : .blocked,
+                requestShapeSummary: "connectInfo:name",
+                expectedMessageType: "Port name \(portName)",
+                actualMessageType: "Port name \(portName)",
+                responseShapeSummary:
+                    bitwardenE2EStorageShape(
+                        portConnectResponse.resultPayload
+                    ),
+                listenerCount:
+                    serviceWorkerCapturedFamilies
+                    .contains(.runtimeOnConnect) ? 1 : 0,
+                delivered: portConnectResponse.succeeded,
+                messageClassification:
+                    portConnectResponse.succeeded
+                        ? .serviceWorkerPortAvailable
+                        : .serviceWorkerPortUnavailable,
+                domReadResult: "notRequired",
+                domWriteResult: "notRequired",
+                nextBlocker:
+                    portConnectResponse.succeeded
+                        ? "Port route is available for the captured runtime.onConnect path; detect/fill still needs the real content-script command handler."
+                        : "runtime.connect Port route did not reach a captured service-worker onConnect listener.",
+                portName: portName,
+                postMessageResult: postMessageResult,
+                onMessageResult: onMessageResult,
+                disconnectResult:
+                    disconnectResult ?? (serviceWorkerPortID == nil
+                        ? "notOpened" : nil),
+                diagnostics:
+                    uniqueSortedRealPackages(
+                        portConnectResponse.diagnostics
+                            + [
+                                "Port probe used an explicit teardown and did not create a permanent keepalive.",
+                            ]
+                    )
+            )
+        )
+        routeRecords.append(
+            bitwardenE2EDetectFillBlockedRoute(
+                purpose: "serviceWorkerTabsSendMessage",
+                routeUsed: "service worker -> tabs.sendMessage -> content script",
+                classification: .unsupportedAPIRequired,
+                requestShapeSummary: "notSent",
+                expectedMessageType: "chrome.tabs.sendMessage(tabId, message)",
+                actualMessageType: "notSent",
+                listenerCount:
+                    endpointHasMessageListener ? 1 : 0,
+                nextBlocker:
+                    "The current service-worker fixture captures runtime listeners but does not expose a service-worker tabs.sendMessage dispatcher; no fake reverse tab dispatch was made."
+            )
+        )
+
+        let nextBlocker =
+            bitwardenE2EDetectFillNextBlocker(records: routeRecords)
+        let touchedSyntheticFieldIDs: [String] = []
+        let touchedNonSyntheticFieldIDs: [String] = []
+        return ChromeMV3PasswordManagerRealPackageDetectFillSmoke(
+            attempted: true,
+            status: routeRecords.contains { $0.delivered }
+                ? .partial : .blocked,
+            syntheticLoginPage: syntheticPage,
+            discoveredMessageEvidence: evidence,
+            routeRecords: routeRecords,
+            attachedContentScriptsBeforeAttempt: attachedBeforeAttempt,
+            domObservationResult:
+                attachedBeforeAttempt
+                    ? "syntheticModelObserved: usernameOrEmail=1,password=1,submit=1; real Bitwarden DOM read unavailable in model-only endpoint dispatch."
+                    : "domObservationUnavailable: content-script endpoint was not attached before detect/fill smoke.",
+            dummyFillResult:
+                "skipped: no attached Bitwarden fillForm handler executed; no dummy values were written.",
+            touchedSyntheticFieldIDs: touchedSyntheticFieldIDs,
+            touchedNonSyntheticFieldIDs: touchedNonSyntheticFieldIDs,
+            nextBlockerClassification: nextBlocker.classification,
+            nextBlocker: nextBlocker.detail,
+            noRealCredentialsOrSecrets: true,
+            noNetworkAuthNativeHost: true,
+            endpointTeardownStatus: .blocked,
+            endpointActiveAfterTeardownCount: -1,
+            diagnostics:
+                uniqueSortedRealPackages(
+                    listenerProbe.diagnostics
+                        + [
+                            "Detect/fill smoke used a synthetic login page and empty dummy fillScript values only.",
+                            "No Bitwarden account, vault, credential, auth session, vendor host, or network service was used.",
+                            "Message names were used only when present in the local Bitwarden package evidence.",
+                        ]
+                )
+        )
+    }
+
+    private static func bitwardenE2EDetectFillPopupTabsRoute(
+        purpose: String,
+        command: String,
+        response: ChromeMV3PopupOptionsJSBridgeHostResponse,
+        endpoint: ChromeMV3ContentScriptEndpointRecord?,
+        endpointHasMessageListener: Bool,
+        evidence:
+            [ChromeMV3PasswordManagerRealPackageDetectFillMessageEvidence],
+        requestShapeSummary: String,
+        domReadResult: String,
+        domWriteResult: String,
+        fallbackBlocker: String
+    ) -> ChromeMV3PasswordManagerRealPackageDetectFillRouteSmoke {
+        let attachedEvidence =
+            bitwardenE2ECommandEvidence(
+                command,
+                evidence: evidence,
+                attachedOnly: true
+            )
+        let anyEvidence =
+            bitwardenE2ECommandEvidence(
+                command,
+                evidence: evidence,
+                attachedOnly: false
+            )
+        let classification:
+            ChromeMV3PasswordManagerRealPackageDetectFillMessageClassification
+        let nextBlocker: String
+        if endpoint == nil {
+            classification = .endpointMissing
+            nextBlocker =
+                "No content-script endpoint was registered before \(purpose) smoke."
+        } else if endpointHasMessageListener == false {
+            classification = .endpointPresentNoListener
+            nextBlocker =
+                "Content-script endpoint is present but has no runtime.onMessage listener."
+        } else if attachedEvidence == nil, anyEvidence != nil {
+            classification = .programmaticInjectionRequired
+            nextBlocker = fallbackBlocker
+        } else if anyEvidence == nil {
+            classification = .messageShapeUnknownNotFaked
+            nextBlocker =
+                "No real-package message evidence exists for \(command); message shape is not faked."
+        } else if response.succeeded {
+            classification = .modeledEndpointDeliveredOnly
+            nextBlocker =
+                "Modeled endpoint delivered the message, but actual Bitwarden DOM handler execution is not available in this smoke."
+        } else {
+            classification = .attachedHandlerMissing
+            nextBlocker =
+                response.lastErrorMessage
+                    ?? "Content-script handler did not accept the \(command) message."
+        }
+        return ChromeMV3PasswordManagerRealPackageDetectFillRouteSmoke(
+            purpose: purpose,
+            routeUsed: "popup/options -> tabs.sendMessage -> content script",
+            status: response.succeeded ? .partial : .blocked,
+            requestShapeSummary: requestShapeSummary,
+            expectedMessageType: "command:\(command)",
+            actualMessageType: "command:\(command)",
+            responseShapeSummary:
+                bitwardenE2EStorageShape(response.resultPayload),
+            listenerCount: endpointHasMessageListener ? 1 : 0,
+            delivered: response.succeeded,
+            messageClassification: classification,
+            domReadResult: domReadResult,
+            domWriteResult: domWriteResult,
+            nextBlocker: nextBlocker,
+            portName: nil,
+            postMessageResult: nil,
+            onMessageResult: nil,
+            disconnectResult: nil,
+            diagnostics:
+                uniqueSortedRealPackages(
+                    response.diagnostics
+                        + [
+                            "\(purpose) detect/fill route used command \(command) from local package evidence.",
+                            "Response delivery is model-level endpoint delivery, not a claim that Bitwarden performed DOM work.",
+                        ]
+                )
+        )
+    }
+
+    private static func bitwardenE2EDetectFillBlockedRoute(
+        purpose: String,
+        routeUsed: String,
+        classification:
+            ChromeMV3PasswordManagerRealPackageDetectFillMessageClassification,
+        requestShapeSummary: String,
+        expectedMessageType: String,
+        actualMessageType: String,
+        listenerCount: Int,
+        nextBlocker: String
+    ) -> ChromeMV3PasswordManagerRealPackageDetectFillRouteSmoke {
+        ChromeMV3PasswordManagerRealPackageDetectFillRouteSmoke(
+            purpose: purpose,
+            routeUsed: routeUsed,
+            status: .blocked,
+            requestShapeSummary: requestShapeSummary,
+            expectedMessageType: expectedMessageType,
+            actualMessageType: actualMessageType,
+            responseShapeSummary: "none",
+            listenerCount: listenerCount,
+            delivered: false,
+            messageClassification: classification,
+            domReadResult: "notAttempted",
+            domWriteResult: "notAttempted",
+            nextBlocker: nextBlocker,
+            portName: nil,
+            postMessageResult: nil,
+            onMessageResult: nil,
+            disconnectResult: nil,
+            diagnostics: [nextBlocker]
+        )
+    }
+
+    private static func bitwardenE2EDetectFillNextBlocker(
+        records: [ChromeMV3PasswordManagerRealPackageDetectFillRouteSmoke]
+    ) -> (
+        classification:
+            ChromeMV3PasswordManagerRealPackageDetectFillMessageClassification?,
+        detail: String
+    ) {
+        let preferred: [
+            ChromeMV3PasswordManagerRealPackageDetectFillMessageClassification
+        ] = [
+            .programmaticInjectionRequired,
+            .attachedHandlerMissing,
+            .messageShapeUnknownNotFaked,
+            .endpointPresentNoListener,
+            .endpointMissing,
+            .unsupportedAPIRequired,
+        ]
+        for classification in preferred {
+            if let record = records.first(where: {
+                $0.messageClassification == classification
+            }) {
+                return (classification, record.nextBlocker)
+            }
+        }
+        if let blocked = records.first(where: { $0.status == .blocked }) {
+            return (blocked.messageClassification, blocked.nextBlocker)
+        }
+        return (
+            nil,
+            "No detect/fill-style blocker observed in the model-level smoke."
         )
     }
 
@@ -7263,7 +8169,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             source(
                 "Chrome message passing",
                 "https://developer.chrome.com/docs/extensions/develop/concepts/messaging",
-                "Checked runtime.sendMessage/connect and tabs.sendMessage/connect expectations."
+                "Checked runtime.sendMessage/connect and tabs.sendMessage/connect expectations, including long-lived Port channels used by form-filling extensions."
             ),
             source(
                 "Chrome tabs API",
