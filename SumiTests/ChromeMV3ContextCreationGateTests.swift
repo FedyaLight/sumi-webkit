@@ -540,8 +540,11 @@ final class ChromeMV3ContextCreationGateTests: XCTestCase {
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3ContentScriptProductAttachment.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerRealPackageCompatibility.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ServiceWorkerJSExecutionHarness.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionManagerDeveloperPreview.swift",
             "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift",
             "SumiTests/ChromeMV3PasswordManagerRealPackageCompatibilityTests.swift",
+            "SumiTests/ChromeMV3ServiceWorkerJSExecutionHarnessTests.swift",
         ]
         let chromeMV3Source = sourceFiles
             .filter { source in

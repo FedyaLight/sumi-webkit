@@ -2122,6 +2122,22 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         )
     }
 
+    var canDispatchCapturedListeners: Bool {
+        #if canImport(JavaScriptCore)
+            return context != nil
+                && lifecycleSession != nil
+                && capturedListeners.isEmpty == false
+                && (
+                    startRecord.status == .running
+                        || startRecord.blockers.contains(
+                            .scriptEvaluationFailed
+                        )
+                )
+        #else
+            return false
+        #endif
+    }
+
     @discardableResult
     func start() -> ChromeMV3ServiceWorkerJSExecutionStartRecord {
         if startRecord.status == .running {
@@ -2234,7 +2250,13 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             syncImportRecordsIntoResourceLoad()
             if let exceptionDetails {
                 refreshJSSnapshot()
-                self.context = nil
+                if capturedListeners.isEmpty {
+                    self.context = nil
+                } else {
+                    virtualMachine = vm
+                    context.exception = nil
+                    syncCapturedListenersIntoLifecycle()
+                }
                 return finishStart(
                     status: .failed,
                     blockers: [.scriptEvaluationFailed],
@@ -2244,6 +2266,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                         loaded.record.diagnostics
                             + [
                                 "Extension-owned classic worker evaluation failed inside the isolated JavaScriptCore surface.",
+                                capturedListeners.isEmpty
+                                    ? "No listener registration was available for synthetic dispatch after the failure."
+                                    : "Captured listener registrations remain available only for explicit local diagnostic synthetic dispatch before teardown.",
                             ]
                 )
             }
@@ -2251,7 +2276,13 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                let blocker = resourceLoadRecord?.dynamicImportBlockers.first
             {
                 refreshJSSnapshot()
-                self.context = nil
+                if capturedListeners.isEmpty {
+                    self.context = nil
+                } else {
+                    virtualMachine = vm
+                    context.exception = nil
+                    syncCapturedListenersIntoLifecycle()
+                }
                 return finishStart(
                     status: .failed,
                     blockers: [.scriptEvaluationFailed],
@@ -2262,6 +2293,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                             ?? loaded.record.diagnostics)
                             + [
                                 "Harness-only dynamic import rewrite dependency evaluation did not complete safely.",
+                                capturedListeners.isEmpty
+                                    ? "No listener registration was available for synthetic dispatch after the failure."
+                                    : "Captured listener registrations remain available only for explicit local diagnostic synthetic dispatch before teardown.",
                             ]
                 )
             }
@@ -2457,7 +2491,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         portID: String,
         message: ChromeMV3StorageValue
     ) -> ChromeMV3ServiceWorkerJSPortRecord? {
-        guard startRecord.status == .running else { return nil }
+        guard startRecord.status == .running || canDispatchCapturedListeners
+        else { return nil }
         #if canImport(JavaScriptCore)
             let _: ChromeMV3ServiceWorkerJSWirePort? = callJSON(
                 "__sumiHarness.deliverPortMessage(\(jsonStringServiceWorkerJS(portID)), \(message.serviceWorkerJSJSON))"
@@ -2672,7 +2707,11 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         portOptions: ChromeMV3ServiceWorkerJSPortOptions?,
         keepaliveKind: ChromeMV3ServiceWorkerInternalKeepaliveKind?
     ) -> ChromeMV3ServiceWorkerJSDispatchRecord {
-        guard start().status == .running, let session = lifecycleSession else {
+        let currentStart =
+            startRecord.status == .notStarted ? start() : startRecord
+        guard currentStart.status == .running || canDispatchCapturedListeners,
+              let session = lifecycleSession
+        else {
             return blockedDispatch(
                 source: source,
                 event: listenerEvent,
@@ -2857,7 +2896,10 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         readiness.eventRoutingAvailable =
             readiness.eventRoutingAvailable
             && resourceLoadRecord?.canExecuteClassicWorkerNow == true
-            && startRecord.status == .running
+            && (
+                startRecord.status == .running
+                    || canDispatchCapturedListeners
+            )
         return readiness
     }
 
@@ -4700,7 +4742,11 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                     diagnostics: [
                         "Registration was captured from executed service-worker JavaScript.",
                         item.asyncFunction
-                            ? "Async function registration detected; pending Promise completion remains deterministically deferred."
+                            ? (
+                                event == .runtimeOnMessage
+                                    ? "Async runtime.onMessage registration detected; Promise response completion remains diagnostic-only."
+                                    : "Async fire-and-forget event registration detected; returned Promise completion is not used as the event response."
+                            )
                             : "Listener function registration captured.",
                     ]
                 )
@@ -4816,6 +4862,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       const workerGlobalEvents = [];
       const fetchClassifications = [];
       const ports = new Map();
+      const asyncCompletions = [];
       const timers = new Map();
       const pendingTimeoutIDs = [];
       let registrationOrder = 0;
@@ -5589,6 +5636,116 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           listeners
         };
       };
+      const storageStores = {
+        local: Object.create(null),
+        sync: Object.create(null),
+        session: Object.create(null),
+        managed: Object.create(null)
+      };
+      const callbackLater = (callback, ...values) => {
+        if (typeof callback === 'function') {
+          Promise.resolve().then(() => callback(...values));
+        }
+      };
+      const storageKeys = (keys, store) => {
+        if (keys == null) return Object.keys(store);
+        if (typeof keys === 'string') return [keys];
+        if (Array.isArray(keys)) return keys.map((key) => String(key));
+        if (typeof keys === 'object') return Object.keys(keys);
+        return [];
+      };
+      const storageGet = (keys, store) => {
+        const result = {};
+        if (keys == null) {
+          for (const key of Object.keys(store)) result[key] = clone(store[key]);
+          return result;
+        }
+        if (typeof keys === 'string') {
+          if (Object.prototype.hasOwnProperty.call(store, keys)) {
+            result[keys] = clone(store[keys]);
+          }
+          return result;
+        }
+        if (Array.isArray(keys)) {
+          for (const key of keys.map((item) => String(item))) {
+            if (Object.prototype.hasOwnProperty.call(store, key)) {
+              result[key] = clone(store[key]);
+            }
+          }
+          return result;
+        }
+        if (typeof keys === 'object') {
+          for (const key of Object.keys(keys)) {
+            result[key] = Object.prototype.hasOwnProperty.call(store, key)
+              ? clone(store[key])
+              : clone(keys[key]);
+          }
+        }
+        return result;
+      };
+      const storageBytes = (keys, store) => {
+        const selected = storageGet(keys, store);
+        try { return new TextEncoder().encode(JSON.stringify(selected)).length; }
+        catch (_) { return 0; }
+      };
+      const storageArea = (areaName, readOnly = false) => {
+        const store = storageStores[areaName];
+        return {
+          get(keys, callback) {
+            const result = storageGet(keys, store);
+            callbackLater(callback, clone(result));
+            return Promise.resolve(clone(result));
+          },
+          getBytesInUse(keys, callback) {
+            const result = storageBytes(keys, store);
+            callbackLater(callback, result);
+            return Promise.resolve(result);
+          },
+          getKeys(callback) {
+            const result = Object.keys(store);
+            callbackLater(callback, result.slice());
+            return Promise.resolve(result.slice());
+          },
+          set(items, callback) {
+            if (readOnly) {
+              const error = new Error('chrome.storage.managed is read-only.');
+              callbackLater(callback);
+              return Promise.reject(error);
+            }
+            if (items && typeof items === 'object') {
+              for (const key of Object.keys(items)) {
+                store[key] = clone(items[key]);
+              }
+            }
+            callbackLater(callback);
+            return Promise.resolve();
+          },
+          remove(keys, callback) {
+            if (readOnly) {
+              const error = new Error('chrome.storage.managed is read-only.');
+              callbackLater(callback);
+              return Promise.reject(error);
+            }
+            for (const key of storageKeys(keys, store)) delete store[key];
+            callbackLater(callback);
+            return Promise.resolve();
+          },
+          clear(callback) {
+            if (readOnly) {
+              const error = new Error('chrome.storage.managed is read-only.');
+              callbackLater(callback);
+              return Promise.reject(error);
+            }
+            for (const key of Object.keys(store)) delete store[key];
+            callbackLater(callback);
+            return Promise.resolve();
+          },
+          setAccessLevel(_details, callback) {
+            callbackLater(callback);
+            return Promise.resolve();
+          }
+        };
+      };
       const proxiedNamespace = (known, path) => new Proxy(known, {
         has(target, property) {
           return Object.prototype.hasOwnProperty.call(target, property);
@@ -5614,6 +5771,115 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           return unsupported(`${path}.${String(property)}`);
         }
       });
+      const chromeMessageSender = (metadata = {}) => {
+        const sender = { id: extensionID };
+        const frameId = Number(metadata.frameID ?? metadata.frameId);
+        if (Number.isFinite(frameId)) sender.frameId = frameId;
+        const documentId = metadata.documentID ?? metadata.documentId;
+        if (documentId != null && String(documentId)) {
+          sender.documentId = String(documentId);
+        }
+        const sourceURL = metadata.sourceURL ?? metadata.url;
+        const urlRedacted = metadata.urlRedacted !== false;
+        if (sourceURL != null && String(sourceURL) && !urlRedacted) {
+          sender.url = String(sourceURL);
+          try { sender.origin = new URL(sender.url).origin; } catch (_) {}
+        }
+        const tabID = Number(metadata.tabID ?? (metadata.tab && metadata.tab.id));
+        if (Number.isFinite(tabID)) {
+          sender.tab = {
+            id: tabID,
+            index: -1,
+            windowId: -1,
+            active: false,
+            highlighted: false,
+            pinned: false,
+            incognito: false,
+            selected: false,
+            discarded: false,
+            autoDiscardable: true
+          };
+        }
+        sender.__sumiUrlRedacted = urlRedacted;
+        sender.__sumiRedactionState = String(
+          metadata.redactionState
+            || metadata.__sumiRedactionState
+            || (urlRedacted ? 'synthetic sender URL redacted' : 'synthetic sender URL available')
+        );
+        return sender;
+      };
+      const normalizeAlarm = (input) => {
+        const source = input && typeof input === 'object' ? input : {};
+        const scheduledTime = Number(source.scheduledTime);
+        const alarm = {
+          name: String(source.name || ''),
+          scheduledTime: Number.isFinite(scheduledTime) ? scheduledTime : 0
+        };
+        const periodInMinutes = Number(source.periodInMinutes);
+        if (Number.isFinite(periodInMinutes)) {
+          alarm.periodInMinutes = periodInMinutes;
+        }
+        alarm.__sumiEventSource = 'localExperimentalSyntheticAlarm';
+        return alarm;
+      };
+      const listenerArguments = (eventName, args, sender, sendResponse, port) => {
+        const chromeSender = chromeMessageSender(sender || {});
+        switch (eventName) {
+          case 'runtimeOnConnect':
+            return [port];
+          case 'runtimeOnMessage':
+          case 'runtimeOnMessageExternal':
+            return [clone(args[0]), chromeSender, sendResponse];
+          case 'storageOnChanged':
+            return [clone(args[0] || {}), args[1] == null ? 'local' : String(args[1])];
+          case 'permissionsOnAdded':
+          case 'permissionsOnRemoved':
+            return [clone(args[0] || { permissions: [], origins: [] })];
+          case 'alarmsOnAlarm':
+            return [normalizeAlarm(args[0])];
+          case 'contextMenusOnClicked':
+            return [clone(args[0] || {}), clone(args[1])];
+          case 'webNavigationOnBeforeNavigate':
+          case 'webNavigationOnCommitted':
+          case 'webNavigationOnCompleted':
+          case 'webNavigationOnDOMContentLoaded':
+          case 'webNavigationOnErrorOccurred':
+          case 'webNavigationOnHistoryStateUpdated':
+          case 'webNavigationOnReferenceFragmentUpdated':
+            return [clone(args[0] || {})];
+          case 'tabsOnRemoved':
+            return [args[0] == null ? -1 : Number(args[0]), clone(args[1] || {})];
+          case 'tabsOnUpdated':
+            return [
+              args[0] == null ? -1 : Number(args[0]),
+              clone(args[1] || {}),
+              clone(args[2] || {})
+            ];
+          default:
+            return (Array.isArray(args) ? args : []).map((value) => clone(value));
+        }
+      };
+      const trackPromiseCompletion = (eventName, listenerID, promise) => {
+        const completion = {
+          event: eventName,
+          listenerID,
+          state: 'pending',
+          value: null,
+          error: null
+        };
+        asyncCompletions.push(completion);
+        promise.then(
+          (value) => {
+            completion.state = 'fulfilled';
+            completion.value = clone(value);
+          },
+          (error) => {
+            completion.state = 'rejected';
+            completion.error = String(error && error.message ? error.message : error);
+            noteBlocked(`${eventName}.promiseRejected`);
+          }
+        );
+      };
       const createPort = (options, sender) => {
         const existing = ports.get(options.portID);
         if (existing) return existing.port;
@@ -5622,7 +5888,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         const state = {
           portID: options.portID,
           name: options.name || '',
-          sender: sender || {},
+          sender: chromeMessageSender(sender || {}),
           nativeFixturePort: options.nativeFixturePort === true,
           connected: true,
           outbox: [],
@@ -5633,7 +5899,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         };
         state.port = {
           name: state.name,
-          sender: state.sender,
+            sender: clone(state.sender),
           onMessage,
           onDisconnect,
           postMessage(message) {
@@ -5695,7 +5961,11 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         onUpdateAvailable: event('runtimeOnUpdateAvailable')
       }, 'chrome.runtime');
       const storage = proxiedNamespace({
-        onChanged: event('storageOnChanged')
+        onChanged: event('storageOnChanged'),
+        local: storageArea('local'),
+        sync: storageArea('sync'),
+        session: storageArea('session'),
+        managed: storageArea('managed', true)
       }, 'chrome.storage');
       const permissions = proxiedNamespace({
         onAdded: event('permissionsOnAdded'),
@@ -6277,9 +6547,13 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             response = clone(value);
           };
           try {
-            const listenerArgs = eventName === 'runtimeOnConnect'
-              ? [port]
-              : [...args, sender || {}, sendResponse];
+            const listenerArgs = listenerArguments(
+              eventName,
+              Array.isArray(args) ? args : [],
+              sender || {},
+              sendResponse,
+              port
+            );
             const result = item.listener(...listenerArgs);
             if (responseCalled) {
               return {
@@ -6291,7 +6565,19 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
               };
             }
             if (result && typeof result.then === 'function') {
-              result.then(() => {}, () => {});
+              trackPromiseCompletion(eventName, item.listenerID, result);
+              if (eventName !== 'runtimeOnMessage'
+                  && eventName !== 'runtimeOnMessageExternal') {
+                return {
+                  kind: 'delivered',
+                  listenerID: item.listenerID,
+                  portID: portOptions ? portOptions.portID : null,
+                  diagnostics: [
+                    'Promise-returning fire-and-forget listener was invoked.',
+                    'Completion is tracked as diagnostics only; no response channel is modeled for this event family.'
+                  ]
+                };
+              }
               return {
                 kind: 'unsupportedListenerMode',
                 listenerID: item.listenerID,
@@ -6348,6 +6634,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         fetchClassifications: fetchClassifications.map((item) => clone(item)),
         webAssemblyCapability: clone(webAssemblyCapability),
         ports: [...ports.values()].map(portSnapshot),
+        asyncCompletions: asyncCompletions.map((item) => clone(item)),
         timers: [...timers.values()].map((state) => ({
           timerID: state.timerID,
           kind: state.kind,
@@ -6511,15 +6798,30 @@ private extension ChromeMV3StorageValue {
         ChromeMV3ServiceWorkerEventSenderMetadata
     {
         guard case .object(let object) = self else { return .none }
+        let chromeTabID: Int?
+        if case .object(let tab)? = object["tab"] {
+            chromeTabID = tab["id"]?.serviceWorkerJSInt
+        } else {
+            chromeTabID = nil
+        }
         return ChromeMV3ServiceWorkerEventSenderMetadata(
-            tabID: object["tabID"]?.serviceWorkerJSInt,
-            frameID: object["frameID"]?.serviceWorkerJSInt,
-            documentID: object["documentID"]?.serviceWorkerJSString,
-            sourceURL: object["sourceURL"]?.serviceWorkerJSString,
+            tabID: object["tabID"]?.serviceWorkerJSInt ?? chromeTabID,
+            frameID:
+                object["frameID"]?.serviceWorkerJSInt
+                    ?? object["frameId"]?.serviceWorkerJSInt,
+            documentID:
+                object["documentID"]?.serviceWorkerJSString
+                    ?? object["documentId"]?.serviceWorkerJSString,
+            sourceURL:
+                object["sourceURL"]?.serviceWorkerJSString
+                    ?? object["url"]?.serviceWorkerJSString,
             urlRedacted:
-                object["urlRedacted"]?.serviceWorkerJSBool ?? true,
+                object["urlRedacted"]?.serviceWorkerJSBool
+                    ?? object["__sumiUrlRedacted"]?.serviceWorkerJSBool
+                    ?? true,
             redactionState:
                 object["redactionState"]?.serviceWorkerJSString
+                    ?? object["__sumiRedactionState"]?.serviceWorkerJSString
                     ?? "sender metadata unavailable"
         )
     }

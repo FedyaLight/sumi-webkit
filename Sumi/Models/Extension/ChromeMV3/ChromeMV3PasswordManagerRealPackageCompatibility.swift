@@ -1119,6 +1119,17 @@ enum ChromeMV3PasswordManagerRealPackageNextBlockerClassification:
     case webCryptoUnsupported
     case workerWindowDOMUnsupported
     case promiseCompletionUnsupported = "PromiseCompletionUnsupported"
+    case dispatchDelivered
+    case dispatchEnvelopeMismatch
+    case unsupportedEventFamily
+    case noMatchingListener
+    case listenerInvocationFailed
+    case portShapeUnsupported
+    case asyncCompletionUnsupported
+    case listenerThrew
+    case noResponse
+    case blockedByGate
+    case unknownDispatchFailure
     case listenerCaptureSucceeded
     case otherPreciseBlocker
 
@@ -2605,7 +2616,10 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 .map(\.event)
                 .uniqueSortedRealPackageValues()
 
-            if started.status == .running {
+            let dispatchAvailable =
+                started.status == .running
+                    || harness.canDispatchCapturedListeners
+            if dispatchAvailable {
                 dispatchResults.append(
                     contentsOf: dispatchSafeServiceWorkerSmoke(
                         harness: harness,
@@ -2616,6 +2630,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                         runtimePortSmoke: &runtimePortSmoke
                     )
                 )
+            }
+            if started.status == .running {
                 _ = harness.triggerIdleRelease()
                 idleTeardownResult =
                     harness.snapshot.startRecord.status == .stoppedAfterIdle
@@ -2626,7 +2642,9 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             } else {
                 _ = harness.triggerIdleRelease()
                 idleTeardownResult =
-                    "notRequired: execution did not reach a running worker; scoped harness teardown still completed."
+                    dispatchAvailable
+                    ? "verified: captured-listener diagnostic dispatch surface was explicitly released after the scoped trial."
+                    : "notRequired: execution did not reach a running worker; scoped harness teardown still completed."
                 hardTimeoutTeardownResult =
                     "notRequired: execution did not reach a running worker."
             }
@@ -2740,7 +2758,9 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             dependencyInventory: dependencyInventory,
             resourceLoadResult: resourceLoadResult,
             executionStartResult: executionStartResult,
-            capturedFamilies: capturedFamilies
+            capturedFamilies: capturedFamilies,
+            dispatchResults: dispatchResults,
+            runtimePortSmoke: runtimePortSmoke
         )
         let blockers: [String]
         if declared == false {
@@ -3206,7 +3226,12 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         )
         dispatchIfCaptured(
             .alarmTriggered,
-            arguments: [.object(["name": .string("sumi-local-trial")])],
+            arguments: [
+                .object([
+                    "name": .string("sumi-local-trial"),
+                    "scheduledTime": .number(0),
+                ]),
+            ],
             payloadSummary: "deterministic alarms.onAlarm smoke"
         )
         dispatchIfCaptured(
@@ -3714,7 +3739,10 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             ChromeMV3PasswordManagerRealPackageServiceWorkerDependencyInventory,
         resourceLoadResult: ChromeMV3ServiceWorkerJSResourceLoadRecord?,
         executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?,
-        capturedFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent]
+        capturedFamilies: [ChromeMV3ServiceWorkerSyntheticListenerEvent],
+        dispatchResults: [ChromeMV3ServiceWorkerJSDispatchRecord],
+        runtimePortSmoke:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerPortSmoke
     ) -> (
         classification:
             ChromeMV3PasswordManagerRealPackageNextBlockerClassification,
@@ -3870,9 +3898,15 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             )
         }
         if capturedFamilies.isEmpty == false {
+            if let dispatchBlocker = serviceWorkerDispatchBlocker(
+                dispatchResults: dispatchResults,
+                runtimePortSmoke: runtimePortSmoke
+            ) {
+                return dispatchBlocker
+            }
             return (
-                .listenerCaptureSucceeded,
-                "Captured executed listener families: \(capturedFamilies.map(\.rawValue).joined(separator: ", "))."
+                .dispatchDelivered,
+                "Captured listener families dispatched successfully where a safe synthetic smoke exists: \(capturedFamilies.map(\.rawValue).joined(separator: ", "))."
             )
         }
         if let message = executionStartResult?.lastErrorMessage,
@@ -3890,6 +3924,61 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             .otherPreciseBlocker,
             "No listener was captured and no more precise blocker was available."
         )
+    }
+
+    private static func serviceWorkerDispatchBlocker(
+        dispatchResults: [ChromeMV3ServiceWorkerJSDispatchRecord],
+        runtimePortSmoke:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerPortSmoke
+    ) -> (
+        classification:
+            ChromeMV3PasswordManagerRealPackageNextBlockerClassification,
+        detail: String
+    )? {
+        guard dispatchResults.isEmpty == false else {
+            return (
+                .unknownDispatchFailure,
+                "Listener capture succeeded, but no safe synthetic dispatch result was recorded."
+            )
+        }
+        if runtimePortSmoke.attempted,
+           runtimePortSmoke.portMessageDelivered == false
+                || runtimePortSmoke.portDisconnected == false
+                || runtimePortSmoke.keepaliveReleased == false
+        {
+            return (
+                .portShapeUnsupported,
+                "runtime.onConnect delivered a Port, but the Port smoke did not fully pass: messageDelivered=\(runtimePortSmoke.portMessageDelivered), disconnected=\(runtimePortSmoke.portDisconnected), keepaliveReleased=\(runtimePortSmoke.keepaliveReleased)."
+            )
+        }
+        guard let failed = dispatchResults.first(where: {
+            $0.resultKind != .delivered
+        }) else { return nil }
+        let detail = [
+            "Dispatch source \(failed.source.rawValue) for \(failed.event.rawValue) failed with \(failed.resultKind.rawValue).",
+            failed.lastErrorMessage,
+            failed.diagnostics.first,
+        ]
+        .compactMap { $0 }
+        .joined(separator: " ")
+        switch failed.resultKind {
+        case .blockedByGate:
+            return (.blockedByGate, detail)
+        case .blockedByPermission:
+            return (.unsupportedEventFamily, detail)
+        case .listenerError:
+            return (.listenerThrew, detail)
+        case .noListener, .noReceiver:
+            return (.noMatchingListener, detail)
+        case .promiseRejected:
+            return (.listenerInvocationFailed, detail)
+        case .sendResponseTimeoutDiagnostic:
+            return (.noResponse, detail)
+        case .unsupportedListenerMode:
+            return (.asyncCompletionUnsupported, detail)
+        case .delivered:
+            return nil
+        }
     }
 
     private static func serviceWorkerNextRecommendedFix(

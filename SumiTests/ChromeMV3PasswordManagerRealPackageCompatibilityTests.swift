@@ -399,7 +399,7 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertTrue(imported.dispatchSmokeResult.hasPrefix("attempted:"))
         XCTAssertEqual(
             imported.nextBlockerClassification,
-            .listenerCaptureSucceeded
+            .dispatchDelivered
         )
         XCTAssertTrue(
             imported.staticVsExecutionDelta.unsupportedListenerForms.contains(
@@ -516,7 +516,7 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertTrue(readiness.dispatchSmokeResult.hasPrefix("attempted:"))
         XCTAssertEqual(
             readiness.nextBlockerClassification,
-            .listenerCaptureSucceeded
+            .dispatchDelivered
         )
         XCTAssertFalse(
             readiness.resourceLoadResult?
@@ -1260,11 +1260,11 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         let proton = try XCTUnwrap(byClass[.protonPass])
         XCTAssertEqual(
             bitwarden.serviceWorkerEventReadiness.nextBlockerClassification,
-            .listenerCaptureSucceeded
+            .dispatchDelivered
         )
         XCTAssertTrue(
             bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
-                .contains("Captured executed listener families")
+                .contains("dispatched successfully")
         )
         XCTAssertTrue(
             bitwarden.serviceWorkerEventReadiness.fetchClassificationSummary
@@ -1433,7 +1433,7 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertTrue(
             proton.serviceWorkerEventReadiness.dispatchSmokeResult
-                .contains("asyncCompletionUnsupported")
+                .contains("asyncCompletionUnsupported") == false
         )
         XCTAssertFalse(
             proton.serviceWorkerEventReadiness.nextBlockerDetail

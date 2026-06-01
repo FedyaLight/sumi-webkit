@@ -3485,7 +3485,7 @@ struct ChromeMV3ExtensionManagerView: View {
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     Text(
-                        "Next blocker: \(trial.nextBlockerClassification.rawValue) - \(trial.nextBlockerDetail)"
+                        "\(trial.nextBlockerClassification == .dispatchDelivered ? "Dispatch state" : "Next blocker"): \(trial.nextBlockerClassification.rawValue) - \(trial.nextBlockerDetail)"
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)

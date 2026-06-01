@@ -2132,7 +2132,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         let fixture = try makeHarness(
             source: """
             chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-              sendResponse({ echo: message.value, urlRedacted: sender.urlRedacted });
+              sendResponse({ echo: message.value, urlRedacted: sender.__sumiUrlRedacted });
             });
             chrome.storage.onChanged.addListener(() => {});
             """,
@@ -2220,14 +2220,34 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             source: """
             chrome.runtime.onConnect.addListener((port) => {
               port.onMessage.addListener((message) => {
-                port.postMessage({ echo: message.value, name: port.name });
+                port.postMessage({
+                  echo: message.value,
+                  name: port.name,
+                  senderId: port.sender.id,
+                  tabId: port.sender.tab && port.sender.tab.id,
+                  frameId: port.sender.frameId,
+                  documentId: port.sender.documentId,
+                  hasURL: Object.prototype.hasOwnProperty.call(port.sender, 'url'),
+                  redaction: port.sender.__sumiRedactionState
+                });
               });
               port.onDisconnect.addListener(() => {});
             });
             """
         )
 
-        let connected = harness.connectRuntime(name: "fixture-channel")
+        let connected = harness.connectRuntime(
+            name: "fixture-channel",
+            sender: ChromeMV3ServiceWorkerEventSenderMetadata(
+                tabID: 7,
+                frameID: 2,
+                documentID: "document-7",
+                sourceURL: "https://example.com/private",
+                urlRedacted: true,
+                redactionState: "unit test redacted sender URL"
+            ),
+            source: .contentScriptRuntimeConnect
+        )
         let portID = try XCTUnwrap(connected.portID)
         let delivered = harness.deliverPortMessage(
             portID: portID,
@@ -2242,8 +2262,14 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             delivered?.postedMessages,
             [
                 .object([
+                    "documentId": .string("document-7"),
                     "echo": .string("port-value"),
+                    "frameId": .number(2),
+                    "hasURL": .bool(false),
                     "name": .string("fixture-channel"),
+                    "redaction": .string("unit test redacted sender URL"),
+                    "senderId": .string("service-worker-js-fixture-extension"),
+                    "tabId": .number(7),
                 ]),
             ]
         )
@@ -2259,17 +2285,120 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         )
     }
 
+    func testCapturedListenersDispatchAfterTopLevelFailureBeforeTeardown()
+        throws
+    {
+        let fixture = try makeHarness(
+            source: """
+            chrome.runtime.onConnect.addListener((port) => {
+              port.onMessage.addListener((message) => {
+                port.postMessage({ echo: message.value, name: port.name });
+              });
+              port.onDisconnect.addListener(() => {});
+            });
+            chrome.alarms.onAlarm.addListener((alarm) => {
+              globalThis.observedAlarm = {
+                name: alarm.name,
+                scheduledTime: alarm.scheduledTime,
+                eventSource: alarm.__sumiEventSource
+              };
+            });
+            chrome.runtime.onMessage.addListener(() => ({
+              observedAlarm: globalThis.observedAlarm || null
+            }));
+            throw new TypeError('late top-level failure');
+            """,
+            localExperimentalGateAllowed: true
+        )
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: fixture.request()
+        )
+
+        let started = harness.start()
+        XCTAssertEqual(started.status, .failed)
+        XCTAssertTrue(started.blockers.contains(.scriptEvaluationFailed))
+        XCTAssertTrue(harness.capturedListener(for: .runtimeOnConnect))
+        XCTAssertTrue(harness.capturedListener(for: .alarmsOnAlarm))
+        XCTAssertTrue(harness.canDispatchCapturedListeners)
+
+        let connected = harness.connectRuntime(name: "fixture-channel")
+        let portID = try XCTUnwrap(connected.portID)
+        let delivered = harness.deliverPortMessage(
+            portID: portID,
+            message: .object(["value": .string("port-value")])
+        )
+        XCTAssertEqual(connected.resultKind, .delivered)
+        XCTAssertEqual(
+            delivered?.postedMessages,
+            [
+                .object([
+                    "echo": .string("port-value"),
+                    "name": .string("fixture-channel"),
+                ]),
+            ]
+        )
+        XCTAssertTrue(harness.disconnectPort(portID: portID))
+
+        let alarm = harness.dispatch(
+            source: .alarmTriggered,
+            arguments: [
+                .object([
+                    "name": .string("fixture-alarm"),
+                    "scheduledTime": .number(42),
+                ]),
+            ],
+            payloadSummary: "captured failure alarm"
+        )
+        XCTAssertEqual(alarm.resultKind, .delivered)
+
+        let observed = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            payloadSummary: "observe captured failure alarm"
+        )
+        XCTAssertEqual(
+            observed.responsePayload,
+            .object([
+                "observedAlarm": .object([
+                    "eventSource": .string("localExperimentalSyntheticAlarm"),
+                    "name": .string("fixture-alarm"),
+                    "scheduledTime": .number(42),
+                ]),
+            ])
+        )
+
+        _ = harness.triggerIdleRelease()
+        XCTAssertFalse(harness.canDispatchCapturedListeners)
+    }
+
     func testStoragePermissionsAlarmContextMenuAndWebNavigationDispatch()
         throws
     {
         let harness = try startedHarness(
             source: """
             chrome.storage.onChanged.addListener(() => {});
-            chrome.permissions.onAdded.addListener(() => {});
-            chrome.permissions.onRemoved.addListener(() => {});
-            chrome.alarms.onAlarm.addListener(() => {});
+            chrome.permissions.onAdded.addListener(async (permissions) => {
+              await Promise.resolve();
+              globalThis.addedPermissions = permissions.permissions.join(',');
+            });
+            chrome.permissions.onRemoved.addListener(async (permissions) => {
+              await Promise.resolve();
+              globalThis.removedPermissions = permissions.permissions.join(',');
+            });
+            chrome.alarms.onAlarm.addListener((alarm) => {
+              globalThis.alarmPayload = {
+                name: alarm.name,
+                scheduledTime: alarm.scheduledTime,
+                hasPeriod: Object.prototype.hasOwnProperty.call(alarm, 'periodInMinutes'),
+                eventSource: alarm.__sumiEventSource
+              };
+            });
             chrome.contextMenus.onClicked.addListener(() => {});
             chrome.webNavigation.onCommitted.addListener(() => {});
+            chrome.runtime.onMessage.addListener(() => ({
+              addedPermissions: globalThis.addedPermissions || null,
+              removedPermissions: globalThis.removedPermissions || null,
+              alarmPayload: globalThis.alarmPayload || null
+            }));
             """
         )
         let sources: [ChromeMV3ServiceWorkerEventSource] = [
@@ -2282,9 +2411,28 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         ]
 
         for source in sources {
+            let arguments: [ChromeMV3StorageValue]
+            switch source {
+            case .permissionsAdded, .permissionsRemoved:
+                arguments = [
+                    .object([
+                        "permissions": .array([.string("storage")]),
+                        "origins": .array([]),
+                    ]),
+                ]
+            case .alarmTriggered:
+                arguments = [
+                    .object([
+                        "name": .string("fixture-alarm"),
+                        "scheduledTime": .number(123),
+                    ]),
+                ]
+            default:
+                arguments = [.object(["fixture": .bool(true)])]
+            }
             let result = harness.dispatch(
                 source: source,
-                arguments: [.object(["fixture": .bool(true)])],
+                arguments: arguments,
                 payloadSummary: source.rawValue
             )
             XCTAssertEqual(result.resultKind, .delivered, source.rawValue)
@@ -2294,6 +2442,73 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
                 source.rawValue
             )
         }
+        let observed = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            payloadSummary: "observe event payloads"
+        )
+        XCTAssertEqual(
+            observed.responsePayload,
+            .object([
+                "addedPermissions": .string("storage"),
+                "alarmPayload": .object([
+                    "eventSource": .string("localExperimentalSyntheticAlarm"),
+                    "hasPeriod": .bool(false),
+                    "name": .string("fixture-alarm"),
+                    "scheduledTime": .number(123),
+                ]),
+                "removedPermissions": .string("storage"),
+            ])
+        )
+    }
+
+    func testChromeStorageAreasUseScopedInMemoryStorage() throws {
+        let harness = try startedHarness(
+            source: """
+            chrome.runtime.onMessage.addListener((message) => {
+              if (message && message.kind === 'write') {
+                chrome.storage.local.set({ localKey: 'local-value' }, () => {
+                  chrome.storage.local.get('localKey', (items) => {
+                    globalThis.localValue = items.localKey;
+                  });
+                });
+                chrome.storage.session.get({ missing: 'default-value' }, (items) => {
+                  globalThis.sessionDefault = items.missing;
+                });
+                return { accepted: true };
+              }
+              return {
+                keys: typeof chrome.storage.local.getKeys === 'function',
+                localValue: globalThis.localValue || null,
+                sessionDefault: globalThis.sessionDefault || null
+              };
+            });
+            """
+        )
+
+        let write = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            arguments: [
+                .object(["kind": .string("write")]),
+            ],
+            payloadSummary: "write scoped storage"
+        )
+        XCTAssertEqual(
+            write.responsePayload,
+            .object(["accepted": .bool(true)])
+        )
+
+        let observed = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            payloadSummary: "observe scoped storage"
+        )
+        XCTAssertEqual(
+            observed.responsePayload,
+            .object([
+                "keys": .bool(true),
+                "localValue": .string("local-value"),
+                "sessionDefault": .string("default-value"),
+            ])
+        )
     }
 
     func testTrustedNativeFixturePortRequiresPolicyRoutesAndRevokes() throws {
