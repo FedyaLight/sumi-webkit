@@ -163,6 +163,23 @@ enum ChromeMV3ContentScriptURLClassification:
     }
 }
 
+enum ChromeMV3ContentScriptFrameSupport:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case topFrameOnly
+
+    static func < (
+        lhs: ChromeMV3ContentScriptFrameSupport,
+        rhs: ChromeMV3ContentScriptFrameSupport
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
 enum ChromeMV3ContentScriptOriginRelationship:
     String,
     Codable,
@@ -588,6 +605,9 @@ struct ChromeMV3DeclaredContentScriptAttachmentRecord:
     var excludeGlobs: [String]
     var runAt: ChromeMV3ContentScriptRunAt?
     var allFrames: Bool
+    var allFramesDeclared: Bool
+    var frameSupport: ChromeMV3ContentScriptFrameSupport
+    var multiFrameDeferred: Bool
     var matchAboutBlank: Bool
     var matchOriginAsFallback: Bool
     var world: ChromeMV3ContentScriptWorld?
@@ -604,26 +624,169 @@ struct ChromeMV3DeclaredContentScriptAttachmentRecord:
     }
 
     func matchesURL(_ urlString: String) -> Bool {
-        guard matches.isEmpty == false else { return false }
-        let includedByMatch = matches.contains {
-            ChromeMV3ContentScriptMatchPattern($0).matches(urlString)
-        }
-        guard includedByMatch else { return false }
-        let excludedByMatch = excludeMatches.contains {
-            ChromeMV3ContentScriptMatchPattern($0).matches(urlString)
-        }
-        guard excludedByMatch == false else { return false }
-        guard includeGlobs.isEmpty
-                || includeGlobs.contains(where: {
-                    ChromeMV3ContentScriptGlob($0).matches(urlString)
-                })
-        else { return false }
-        guard excludeGlobs.contains(where: {
-            ChromeMV3ContentScriptGlob($0).matches(urlString)
-        }) == false
-        else { return false }
-        return true
+        targetDecision(urlString: urlString).matched
     }
+
+    func targetDecision(
+        urlString: String
+    ) -> ChromeMV3DeclaredContentScriptTargetDecision {
+        var diagnostics: [String] = []
+        var unsupportedButNonBlocking: [String] = []
+        var excludeIgnoredForTarget: [String] = []
+        var targetBlockers = blockers
+        let targetClassification =
+            ChromeMV3ContentScriptURLClassification.classify(urlString)
+
+        let matchPatterns = matches.map(ChromeMV3ContentScriptMatchPattern.init)
+        let excludePatterns =
+            excludeMatches.map(ChromeMV3ContentScriptMatchPattern.init)
+
+        for pattern in matchPatterns
+            where pattern.nonBlockingForNonFileTarget
+                && targetClassification != .file
+        {
+            unsupportedButNonBlocking.append(pattern.rawValue)
+            diagnostics.append(
+                "content_scripts[\(contentScriptIndex)] match pattern \(pattern.rawValue) is Chrome-valid file-scheme syntax and is ignored for non-file target \(urlString)."
+            )
+        }
+
+        for pattern in excludePatterns
+            where pattern.nonBlockingForNonFileTarget
+                && targetClassification != .file
+        {
+            excludeIgnoredForTarget.append(pattern.rawValue)
+            unsupportedButNonBlocking.append(pattern.rawValue)
+            diagnostics.append(
+                "content_scripts[\(contentScriptIndex)] exclude_match \(pattern.rawValue) cannot match non-file target \(urlString) and was ignored for this target."
+            )
+        }
+
+        for pattern in matchPatterns where pattern.status == .invalid {
+            targetBlockers.append(.unsupportedMatchPattern)
+            diagnostics.append(contentsOf: pattern.diagnostics)
+        }
+        for pattern in matchPatterns
+            where pattern.status == .unsupportedNeedsVerification
+        {
+            targetBlockers.append(.unsupportedMatchPattern)
+            diagnostics.append(contentsOf: pattern.diagnostics)
+        }
+        for pattern in excludePatterns where pattern.status == .invalid {
+            targetBlockers.append(.unsupportedMatchPattern)
+            diagnostics.append(contentsOf: pattern.diagnostics)
+        }
+        for pattern in excludePatterns
+            where pattern.status == .unsupportedNeedsVerification
+        {
+            targetBlockers.append(.unsupportedMatchPattern)
+            diagnostics.append(contentsOf: pattern.diagnostics)
+        }
+
+        let includedByMatch =
+            matches.isEmpty == false
+                && matchPatterns.contains { $0.matches(urlString) }
+        let includedByGlob =
+            includeGlobs.isEmpty
+                || includeGlobs.contains {
+                    ChromeMV3ContentScriptGlob($0).matches(urlString)
+                }
+        let excludedByMatch =
+            excludePatterns.contains { $0.matches(urlString) }
+        let excludedByGlob =
+            excludeGlobs.contains {
+                ChromeMV3ContentScriptGlob($0).matches(urlString)
+            }
+        let excluded = excludedByMatch || excludedByGlob
+        let normalizedBlockers = Array(Set(targetBlockers)).sorted()
+        let matched =
+            includedByMatch
+                && includedByGlob
+                && excluded == false
+                && normalizedBlockers.isEmpty
+                && canAttachIfURLAndPermissionMatch
+
+        if allFramesDeclared {
+            diagnostics.append(
+                "content_scripts[\(contentScriptIndex)] declares all_frames=true; Sumi records this as topFrameOnly and defers subframe attachment."
+            )
+        }
+        if matchAboutBlank {
+            diagnostics.append(
+                "content_scripts[\(contentScriptIndex)] match_about_blank remains blocked."
+            )
+        }
+        if matchOriginAsFallback {
+            diagnostics.append(
+                "content_scripts[\(contentScriptIndex)] match_origin_as_fallback remains blocked."
+            )
+        }
+        diagnostics.append(
+            "content_scripts[\(contentScriptIndex)] target decision: matched=\(matched), matchPatternMatched=\(includedByMatch), includeGlobsMatched=\(includedByGlob), excluded=\(excluded), blockers=\(normalizedBlockers.map(\.rawValue).joined(separator: ",")), frameSupport=\(frameSupport.rawValue), multiFrameDeferred=\(multiFrameDeferred)."
+        )
+
+        return ChromeMV3DeclaredContentScriptTargetDecision(
+            contentScriptIndex: contentScriptIndex,
+            contentScriptID: contentScriptID,
+            matches: matches,
+            excludeMatches: excludeMatches,
+            includeGlobs: includeGlobs,
+            excludeGlobs: excludeGlobs,
+            runAt: runAt,
+            allFramesDeclared: allFramesDeclared,
+            frameSupport: frameSupport,
+            multiFrameDeferred: multiFrameDeferred,
+            matchAboutBlank: matchAboutBlank,
+            matchOriginAsFallback: matchOriginAsFallback,
+            world: world,
+            jsFiles: jsFiles,
+            cssFiles: cssFiles,
+            targetURL: urlString,
+            matchPatternMatched: includedByMatch,
+            includeGlobsMatched: includedByGlob,
+            excluded: excluded,
+            matched: matched,
+            excludeIgnoredForTarget:
+                uniqueSortedContentScripts(excludeIgnoredForTarget),
+            unsupportedButNonBlocking:
+                uniqueSortedContentScripts(unsupportedButNonBlocking),
+            blockers: normalizedBlockers,
+            blocker: normalizedBlockers.first?.rawValue,
+            diagnostics: uniqueSortedContentScripts(diagnostics)
+        )
+    }
+}
+
+struct ChromeMV3DeclaredContentScriptTargetDecision:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var contentScriptIndex: Int
+    var contentScriptID: String
+    var matches: [String]
+    var excludeMatches: [String]
+    var includeGlobs: [String]
+    var excludeGlobs: [String]
+    var runAt: ChromeMV3ContentScriptRunAt?
+    var allFramesDeclared: Bool
+    var frameSupport: ChromeMV3ContentScriptFrameSupport
+    var multiFrameDeferred: Bool
+    var matchAboutBlank: Bool
+    var matchOriginAsFallback: Bool
+    var world: ChromeMV3ContentScriptWorld?
+    var jsFiles: [String]
+    var cssFiles: [String]
+    var targetURL: String
+    var matchPatternMatched: Bool
+    var includeGlobsMatched: Bool
+    var excluded: Bool
+    var matched: Bool
+    var excludeIgnoredForTarget: [String]
+    var unsupportedButNonBlocking: [String]
+    var blockers: [ChromeMV3ContentScriptBlockedReason]
+    var blocker: String?
+    var diagnostics: [String]
 }
 
 struct ChromeMV3ContentScriptAttachmentPlan:
@@ -746,11 +909,30 @@ struct ChromeMV3ContentScriptAttachmentPlan:
                 validatedCSSPaths.append(resource.cssFilePath)
             }
         }
-        for pattern in script.matches + script.excludeMatches {
+        for pattern in script.matches {
             let parsed = ChromeMV3ContentScriptMatchPattern(pattern)
-            if parsed.status != .valid {
+            if parsed.status == .invalid
+                || parsed.status == .unsupportedNeedsVerification
+            {
                 blockers.append(.unsupportedMatchPattern)
                 diagnostics.append(contentsOf: parsed.diagnostics)
+            } else if parsed.nonBlockingForNonFileTarget {
+                diagnostics.append(
+                    "content_scripts[\(index)] file match pattern \(pattern) is Chrome-valid syntax, but actual file:// content-script attachment remains blocked by frame preflight."
+                )
+            }
+        }
+        for pattern in script.excludeMatches {
+            let parsed = ChromeMV3ContentScriptMatchPattern(pattern)
+            if parsed.status == .invalid
+                || parsed.status == .unsupportedNeedsVerification
+            {
+                blockers.append(.unsupportedMatchPattern)
+                diagnostics.append(contentsOf: parsed.diagnostics)
+            } else if parsed.nonBlockingForNonFileTarget {
+                diagnostics.append(
+                    "content_scripts[\(index)] file exclude_match \(pattern) is recorded and ignored only for non-file targets where it cannot match."
+                )
             }
         }
         guard let runAt = ChromeMV3ContentScriptRunAt.normalized(script.runAt)
@@ -805,9 +987,8 @@ struct ChromeMV3ContentScriptAttachmentPlan:
             )
         }
         if script.allFrames {
-            blockers.append(.frameBehaviorUnsupported)
             diagnostics.append(
-                "content_scripts[\(index)] all_frames=true is blocked until WebKit per-frame targeting, sender frame metadata, and multi-frame Port disconnect semantics are proven."
+                "content_scripts[\(index)] all_frames=true is accepted only as top-frame-only in the developer-preview attachment model; subframes remain deferred."
             )
         }
         if script.matchAboutBlank {
@@ -970,6 +1151,9 @@ struct ChromeMV3ContentScriptAttachmentPlan:
             excludeGlobs: script.excludeGlobs.sorted(),
             runAt: runAt,
             allFrames: script.allFrames,
+            allFramesDeclared: script.allFrames,
+            frameSupport: .topFrameOnly,
+            multiFrameDeferred: script.allFrames,
             matchAboutBlank: script.matchAboutBlank,
             matchOriginAsFallback: script.matchOriginAsFallback,
             world: world,
@@ -1043,6 +1227,7 @@ struct ChromeMV3NormalTabContentScriptPreflight:
     var canRegisterEndpointNow: Bool
     var matchedScripts: [ChromeMV3DeclaredContentScriptAttachmentRecord]
     var skippedScripts: [ChromeMV3DeclaredContentScriptAttachmentRecord]
+    var targetDecisions: [ChromeMV3DeclaredContentScriptTargetDecision]
     var contentScriptGate: ChromeMV3ContentScriptProductGateRecord
     var hostAccessDecision: ChromeMV3HostAccessDecision
     var blockers: [ChromeMV3ContentScriptBlockedReason]
@@ -1137,18 +1322,25 @@ enum ChromeMV3NormalTabContentScriptPreflightEvaluator {
             diagnostics.append(contentsOf: hostDecision.diagnostics)
         }
 
-        let matched = input.attachmentPlan.declaredScripts.filter {
-            $0.canAttachIfURLAndPermissionMatch && $0.matchesURL(input.urlString)
+        let targetDecisions =
+            input.attachmentPlan.declaredScripts.map {
+                $0.targetDecision(urlString: input.urlString)
+            }
+            .sorted { $0.contentScriptIndex < $1.contentScriptIndex }
+        let targetDecisionByID = Dictionary(
+            uniqueKeysWithValues:
+                targetDecisions.map { ($0.contentScriptID, $0) }
+        )
+        let matched = input.attachmentPlan.declaredScripts.filter { script in
+            script.canAttachIfURLAndPermissionMatch
+                && targetDecisionByID[script.contentScriptID]?.matched == true
         }
         let skipped = input.attachmentPlan.declaredScripts.filter {
             matched.contains($0) == false
         }
         if matched.isEmpty {
             blockers.append(.noEligibleDeclaredContentScript)
-            if input.attachmentPlan.declaredScripts.contains(where: {
-                $0.matchesURL(input.urlString)
-            }) == false
-            {
+            if targetDecisions.contains(where: { $0.matched }) == false {
                 blockers.append(.urlNotMatched)
             }
             diagnostics.append(
@@ -1157,6 +1349,9 @@ enum ChromeMV3NormalTabContentScriptPreflightEvaluator {
         }
         for script in skipped {
             diagnostics.append(contentsOf: script.diagnostics)
+        }
+        for decision in targetDecisions {
+            diagnostics.append(contentsOf: decision.diagnostics)
         }
 
         let normalizedBlockers = Array(Set(blockers)).sorted()
@@ -1183,6 +1378,7 @@ enum ChromeMV3NormalTabContentScriptPreflightEvaluator {
             skippedScripts: skipped.sorted {
                 $0.contentScriptIndex < $1.contentScriptIndex
             },
+            targetDecisions: targetDecisions,
             contentScriptGate: input.contentScriptGate,
             hostAccessDecision: hostDecision,
             blockers: normalizedBlockers,
@@ -3763,17 +3959,41 @@ private struct ChromeMV3ContentScriptMatchPattern {
     var rawValue: String
     var status: ChromeMV3HostMatchPatternStatus
     var pathPattern: String?
+    var fileSchemePattern: Bool
     var diagnostics: [String]
 
     init(_ rawValue: String) {
         self.rawValue = rawValue
-        let hostPattern = ChromeMV3HostMatchPattern(rawValue)
-        self.status = hostPattern.status
-        self.pathPattern = hostPattern.pathPattern
-        self.diagnostics = hostPattern.diagnostics
+        if let file = Self.parseFileSchemePattern(rawValue) {
+            self.status = file.status
+            self.pathPattern = file.pathPattern
+            self.fileSchemePattern = file.status == .valid
+            self.diagnostics = file.diagnostics
+        } else {
+            let hostPattern = ChromeMV3HostMatchPattern(rawValue)
+            self.status = hostPattern.status
+            self.pathPattern = hostPattern.pathPattern
+            self.fileSchemePattern = false
+            self.diagnostics = hostPattern.diagnostics
+        }
+    }
+
+    var nonBlockingForNonFileTarget: Bool {
+        fileSchemePattern && status == .valid
     }
 
     func matches(_ urlString: String) -> Bool {
+        if fileSchemePattern {
+            guard let components = URLComponents(string: urlString),
+                  components.scheme?.lowercased() == "file",
+                  let pathPattern
+            else { return false }
+            let path = components.percentEncodedPath.isEmpty
+                ? "/"
+                : components.percentEncodedPath
+            return ChromeMV3ContentScriptGlob(pathPattern).matches(path)
+        }
+
         let hostPattern = ChromeMV3HostMatchPattern(rawValue)
         guard hostPattern.matches(url: urlString) else { return false }
         guard rawValue != "<all_urls>" else { return true }
@@ -3785,6 +4005,34 @@ private struct ChromeMV3ContentScriptMatchPattern {
             ? "/"
             : components.percentEncodedPath
         return ChromeMV3ContentScriptGlob(pathPattern).matches(path)
+    }
+
+    private static func parseFileSchemePattern(
+        _ rawValue: String
+    ) -> (
+        status: ChromeMV3HostMatchPatternStatus,
+        pathPattern: String?,
+        diagnostics: [String]
+    )? {
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard value.lowercased().hasPrefix("file://") else { return nil }
+        let remainder = String(value.dropFirst("file://".count))
+        guard remainder.hasPrefix("/") else {
+            return (
+                .invalid,
+                nil,
+                [
+                    "file match pattern must use Chrome's file:/// path form.",
+                ]
+            )
+        }
+        return (
+            .valid,
+            remainder,
+            [
+                "file match pattern is Chrome-valid syntax, but Sumi keeps actual file:// content-script attachment blocked by frame preflight and file-access policy.",
+            ]
+        )
     }
 }
 

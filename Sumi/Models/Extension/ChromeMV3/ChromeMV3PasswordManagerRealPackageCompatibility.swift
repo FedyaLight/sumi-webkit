@@ -962,6 +962,7 @@ struct ChromeMV3PasswordManagerRealPackageContentScriptSmoke:
     var attachmentStatus: ChromeMV3PasswordManagerCompatibilityStatus
     var tabsSendMessageStatus: ChromeMV3PasswordManagerCompatibilityStatus
     var tabsConnectStatus: ChromeMV3PasswordManagerCompatibilityStatus
+    var targetDecisions: [ChromeMV3DeclaredContentScriptTargetDecision]?
     var blockers: [String]
     var diagnostics: [String]
 }
@@ -1115,6 +1116,11 @@ struct ChromeMV3PasswordManagerRealPackageE2ESyntheticLoginSurface:
     var endpointID: String?
     var senderURLRedacted: Bool
     var senderOriginRedacted: Bool
+    var contentScriptDecisions:
+        [ChromeMV3DeclaredContentScriptTargetDecision]?
+    var allFramesDeclared: Bool?
+    var frameSupport: ChromeMV3ContentScriptFrameSupport?
+    var multiFrameDeferred: Bool?
     var diagnostics: [String]
 
     static func notAttempted(url: String) -> Self {
@@ -1131,6 +1137,10 @@ struct ChromeMV3PasswordManagerRealPackageE2ESyntheticLoginSurface:
             endpointID: nil,
             senderURLRedacted: true,
             senderOriginRedacted: true,
+            contentScriptDecisions: nil,
+            allFramesDeclared: nil,
+            frameSupport: nil,
+            multiFrameDeferred: nil,
             diagnostics: [
                 "Synthetic login page attachment was not attempted.",
             ]
@@ -2733,6 +2743,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 attachmentStatus: .blocked,
                 tabsSendMessageStatus: .blocked,
                 tabsConnectStatus: .blocked,
+                targetDecisions: nil,
                 blockers: ["Manifest or package root unavailable for content-script preflight."],
                 diagnostics: ["Content-script preflight was skipped."]
             )
@@ -2813,6 +2824,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 hasMessageListener ? .partial : .blocked,
             tabsConnectStatus:
                 preflight.canRegisterEndpointNow ? .partial : .blocked,
+            targetDecisions: preflight.targetDecisions,
             blockers: blockers,
             diagnostics:
                 uniqueSortedRealPackages(
@@ -3048,6 +3060,20 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     endpoint?.senderMetadata.urlRedacted ?? true,
                 senderOriginRedacted:
                     endpoint?.senderMetadata.originRedacted ?? true,
+                contentScriptDecisions: preflight.targetDecisions,
+                allFramesDeclared:
+                    preflight.targetDecisions.contains {
+                        $0.allFramesDeclared
+                    },
+                frameSupport:
+                    preflight.targetDecisions.contains {
+                        $0.allFramesDeclared
+                    }
+                        ? .topFrameOnly : nil,
+                multiFrameDeferred:
+                    preflight.targetDecisions.contains {
+                        $0.multiFrameDeferred
+                    },
                 diagnostics:
                     uniqueSortedRealPackages(
                         preflight.diagnostics
@@ -6750,6 +6776,11 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 "Chrome content scripts",
                 "https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts",
                 "Checked static content scripts, CSS ordering, MAIN/ISOLATED worlds, all_frames, match_about_blank, and match_origin_as_fallback."
+            ),
+            source(
+                "Chrome match patterns",
+                "https://developer.chrome.com/docs/extensions/develop/concepts/match-patterns",
+                "Checked content-script match-pattern syntax, <all_urls>, and the special file:/// pattern form; Sumi still blocks actual file-page attachment."
             ),
             source(
                 "Chrome scripting API",

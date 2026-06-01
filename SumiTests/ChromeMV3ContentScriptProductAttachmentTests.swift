@@ -174,7 +174,7 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
             contentScript(js: ["missing.js"]),
             contentScript(js: ["../evil.js"]),
             contentScript(js: ["content.js"], world: "MAIN"),
-            contentScript(js: ["content.js"], allFrames: true),
+            contentScript(js: ["content.js"], matchAboutBlank: true),
             contentScript(js: ["content.js"], css: ["style.css"]),
         ]
         let plan = ChromeMV3ContentScriptAttachmentPlan.make(
@@ -191,6 +191,112 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         XCTAssertTrue(blockers.contains(.frameBehaviorUnsupported))
         XCTAssertTrue(blockers.contains(.missingCSSFile))
         XCTAssertTrue(plan.supportedScripts.isEmpty)
+    }
+
+    func testFileExcludePatternDoesNotBlockNonFileEligibleTarget()
+        throws
+    {
+        let fixture = try makePreflightFixture(
+            contentScriptMatches: ["*://*/*", "file:///*"],
+            contentScriptExcludeMatches: ["file:///*.xml*"]
+        )
+        let decision = try XCTUnwrap(
+            fixture.preflight.targetDecisions.first
+        )
+
+        XCTAssertTrue(fixture.preflight.canAttachDeclaredContentScriptsNow)
+        XCTAssertTrue(decision.matched)
+        XCTAssertFalse(decision.excluded)
+        XCTAssertEqual(decision.excludeIgnoredForTarget, ["file:///*.xml*"])
+        XCTAssertTrue(
+            decision.unsupportedButNonBlocking.contains("file:///*")
+        )
+        XCTAssertTrue(
+            decision.unsupportedButNonBlocking.contains("file:///*.xml*")
+        )
+        XCTAssertFalse(
+            fixture.plan.declaredScripts.first?.blockers
+                .contains(.unsupportedMatchPattern) == true
+        )
+    }
+
+    func testActualFileTargetRemainsBlockedEvenWithFileMatchPattern()
+        throws
+    {
+        let fixture = try makePreflightFixture(
+            urlString: "file:///Users/test/login.html",
+            hostPermissions: ["<all_urls>"],
+            contentScriptMatches: ["file:///*"]
+        )
+        let decision = try XCTUnwrap(
+            fixture.preflight.targetDecisions.first
+        )
+
+        XCTAssertFalse(fixture.preflight.canAttachDeclaredContentScriptsNow)
+        XCTAssertTrue(decision.matchPatternMatched)
+        XCTAssertTrue(
+            fixture.preflight.blockers.contains(.frameBehaviorUnsupported)
+        )
+        XCTAssertTrue(
+            fixture.preflight.blockers.contains(.hostPermissionMissing)
+                || fixture.preflight.blockers.contains(.activeTabMissing)
+        )
+        XCTAssertTrue(fixture.preflight.diagnostics.joined(separator: "\n")
+            .contains("file"))
+    }
+
+    func testInvalidMatchPatternRemainsBlocker() throws {
+        let fixture = try makePreflightFixture(
+            contentScriptMatches: ["https://*example.com/*"]
+        )
+        let record = try XCTUnwrap(fixture.plan.declaredScripts.first)
+        let decision = try XCTUnwrap(fixture.preflight.targetDecisions.first)
+
+        XCTAssertFalse(fixture.preflight.canAttachDeclaredContentScriptsNow)
+        XCTAssertTrue(record.blockers.contains(.unsupportedMatchPattern))
+        XCTAssertTrue(decision.blockers.contains(.unsupportedMatchPattern))
+        XCTAssertTrue(
+            fixture.preflight.blockers.contains(.noEligibleDeclaredContentScript)
+        )
+    }
+
+    func testAllFramesTrueIsTopFrameOnlyAndDeferred() throws {
+        let topFrame = try makePreflightFixture(allFrames: true)
+        let record = try XCTUnwrap(topFrame.plan.declaredScripts.first)
+        let decision = try XCTUnwrap(topFrame.preflight.targetDecisions.first)
+
+        XCTAssertTrue(topFrame.preflight.canAttachDeclaredContentScriptsNow)
+        XCTAssertTrue(record.allFramesDeclared)
+        XCTAssertEqual(record.frameSupport, .topFrameOnly)
+        XCTAssertTrue(record.multiFrameDeferred)
+        XCTAssertTrue(decision.allFramesDeclared)
+        XCTAssertEqual(decision.frameSupport, .topFrameOnly)
+        XCTAssertTrue(decision.multiFrameDeferred)
+        XCTAssertFalse(record.blockers.contains(.frameBehaviorUnsupported))
+
+        let subframeTarget = ChromeMV3ContentScriptFrameTarget.make(
+            tabID: 7,
+            frameID: 4,
+            parentFrameID: 0,
+            documentID: "subframe-document",
+            navigationSequence: 2,
+            urlString: "https://example.com/frame",
+            parentURLString: "https://example.com/login",
+            isMainFrame: false
+        )
+        let subframe = try makePreflightFixture(
+            urlString: "https://example.com/frame",
+            frameID: 4,
+            documentID: "subframe-document",
+            navigationSequence: 2,
+            frameTarget: subframeTarget,
+            allFrames: true
+        )
+
+        XCTAssertFalse(subframe.preflight.canAttachDeclaredContentScriptsNow)
+        XCTAssertTrue(
+            subframe.preflight.blockers.contains(.frameBehaviorUnsupported)
+        )
     }
 
     func testMatchAboutBlankAndOriginFallbackDiagnosticsArePrecise()
@@ -1074,6 +1180,8 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         navigationSequence: Int = 1,
         frameTarget: ChromeMV3ContentScriptFrameTarget = .unknownMainFrame,
         contentScriptMatches: [String] = ["https://example.com/*"],
+        contentScriptExcludeMatches: [String] = [],
+        allFrames: Bool = false,
         includeCSS: Bool = false
     ) throws -> PreflightFixture {
         var files = [
@@ -1086,8 +1194,10 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         let root = try makeBundle(files: files)
         var contentScript: [String: Any] = [
             "matches": contentScriptMatches,
+            "exclude_matches": contentScriptExcludeMatches,
             "js": ["content.js"],
             "run_at": "document_start",
+            "all_frames": allFrames,
         ]
         if includeCSS {
             contentScript["css"] = ["style.css"]

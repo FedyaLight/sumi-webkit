@@ -1728,7 +1728,7 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertTrue(smoke.extensionEnabled)
         XCTAssertEqual(smoke.popupDocumentLoadStatus, .pass)
         XCTAssertEqual(smoke.serviceWorkerStartupResult, .partial)
-        XCTAssertEqual(smoke.contentScriptAttachResult, .blocked)
+        XCTAssertEqual(smoke.contentScriptAttachResult, .partial)
         XCTAssertEqual(
             smoke.syntheticLoginSurface.url,
             ChromeMV3PasswordManagerRealPackageTrialRunner
@@ -1736,12 +1736,26 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertEqual(smoke.syntheticLoginSurface.hostPermissionState, "allowed")
         XCTAssertEqual(smoke.syntheticLoginSurface.declaredContentScriptCount, 2)
-        XCTAssertEqual(smoke.syntheticLoginSurface.matchedContentScriptCount, 0)
-        XCTAssertEqual(smoke.syntheticLoginSurface.attachedContentScriptCount, 0)
-        XCTAssertEqual(smoke.endpointRegistryState.activeEndpointCount, 0)
+        XCTAssertEqual(smoke.syntheticLoginSurface.matchedContentScriptCount, 2)
+        XCTAssertEqual(smoke.syntheticLoginSurface.attachedContentScriptCount, 2)
+        XCTAssertEqual(smoke.syntheticLoginSurface.allFramesDeclared, true)
+        XCTAssertEqual(smoke.syntheticLoginSurface.frameSupport, .topFrameOnly)
+        XCTAssertEqual(smoke.syntheticLoginSurface.multiFrameDeferred, true)
+        XCTAssertEqual(
+            smoke.syntheticLoginSurface.contentScriptDecisions?.count,
+            2
+        )
+        XCTAssertTrue(
+            smoke.syntheticLoginSurface.contentScriptDecisions?.allSatisfy {
+                $0.matched
+                    && $0.unsupportedButNonBlocking.contains("file:///*")
+                    && $0.excludeIgnoredForTarget.contains("file:///*.xml*")
+            } == true
+        )
+        XCTAssertEqual(smoke.endpointRegistryState.activeEndpointCount, 1)
         XCTAssertEqual(
             smoke.endpointRegistryState.messageListenerEndpointCount,
-            0
+            1
         )
         XCTAssertEqual(
             smoke.endpointRegistryState.connectListenerEndpointCount,
@@ -1762,11 +1776,8 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertEqual(routes[.popupRuntimeConnect]?.status, .partial)
         XCTAssertEqual(routes[.popupTabsQuery]?.status, .partial)
-        XCTAssertEqual(routes[.popupTabsSendMessage]?.status, .blocked)
-        XCTAssertEqual(
-            routes[.popupTabsSendMessage]?.noReceiverClassification,
-            .missingContentScriptEndpoint
-        )
+        XCTAssertEqual(routes[.popupTabsSendMessage]?.status, .partial)
+        XCTAssertNil(routes[.popupTabsSendMessage]?.noReceiverClassification)
         XCTAssertEqual(
             routes[.contentScriptRuntimeSendMessage]?.status,
             .blocked
@@ -1780,7 +1791,7 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertEqual(routes[.popupTabsConnect]?.status, .blocked)
         XCTAssertEqual(
             routes[.popupTabsConnect]?.noReceiverClassification,
-            .missingContentScriptEndpoint
+            .expectedNoListener
         )
         XCTAssertEqual(
             smoke.nextBlockerClassification,
@@ -1818,7 +1829,7 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
                 .bitwardenE2ESmoke?.endpointRegistryState
                 .messageListenerEndpointCount,
-            0
+            1
         )
         XCTAssertEqual(
             detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
