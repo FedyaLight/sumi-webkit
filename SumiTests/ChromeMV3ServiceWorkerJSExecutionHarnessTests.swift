@@ -2871,6 +2871,283 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         )
     }
 
+    func testRuntimeSendMessagePolicyIsLocalExperimentalAndDefaultOff()
+        throws
+    {
+        let defaultGate = ChromeMV3ServiceWorkerJSExecutionPolicy.evaluate(
+            moduleState: .enabled,
+            extensionEnabled: true,
+            localExperimentalGateAllowed: false,
+            generatedBundleRecordAvailable: true
+        )
+        let disabledModule = ChromeMV3ServiceWorkerJSExecutionPolicy.evaluate(
+            moduleState: .disabled,
+            extensionEnabled: true,
+            localExperimentalGateAllowed: true,
+            generatedBundleRecordAvailable: true
+        )
+        let available = ChromeMV3ServiceWorkerJSExecutionPolicy.evaluate(
+            moduleState: .enabled,
+            extensionEnabled: true,
+            localExperimentalGateAllowed: true,
+            generatedBundleRecordAvailable: true
+        )
+
+        XCTAssertFalse(
+            defaultGate.runtimeSendMessageAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(defaultGate.runtimeSendMessageAvailableByDefault)
+        XCTAssertTrue(
+            defaultGate.runtimeSendMessageBlockers.contains(
+                "localExperimentalGateRequired"
+            )
+        )
+        XCTAssertFalse(
+            disabledModule.runtimeSendMessageAvailableInLocalExperimentalGate
+        )
+        XCTAssertTrue(
+            disabledModule.runtimeSendMessageBlockers.contains(
+                "moduleDisabled"
+            )
+        )
+        XCTAssertTrue(available.runtimeSendMessageAvailableInLocalExperimentalGate)
+        XCTAssertFalse(available.runtimeSendMessageAvailableByDefault)
+        XCTAssertTrue(available.runtimeSendMessageSameExtensionOnly)
+        XCTAssertFalse(available.crossExtensionMessagingAllowed)
+        XCTAssertFalse(available.hiddenPageCreationAllowed)
+        XCTAssertFalse(available.arbitraryWorkerWakeAllowed)
+        XCTAssertTrue(available.runtimeSendMessageBlockers.isEmpty)
+    }
+
+    func testRuntimeSendMessageRoutesSameExtensionCallbackAndPromise()
+        throws
+    {
+        let harness = try startedHarness(
+            source: """
+            globalThis.callbackPayload = null;
+            globalThis.callbackLastErrorInside = null;
+            globalThis.promisePayload = null;
+
+            chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+              if (message && message.kind === 'callback') {
+                sendResponse({
+                  echo: message.value,
+                  senderId: sender.id,
+                  redacted: sender.__sumiUrlRedacted
+                });
+                return;
+              }
+              if (message && message.kind === 'promise') {
+                return { echo: message.value };
+              }
+              if (message && message.kind === 'observe') {
+                return {
+                  callbackPayload: globalThis.callbackPayload,
+                  callbackLastErrorInside: globalThis.callbackLastErrorInside,
+                  promisePayload: globalThis.promisePayload,
+                  lastErrorOutside: typeof chrome.runtime.lastError
+                };
+              }
+              return undefined;
+            });
+
+            chrome.runtime.sendMessage({ kind: 'callback', value: 'cb' }, (response) => {
+              globalThis.callbackPayload = response;
+              globalThis.callbackLastErrorInside = chrome.runtime.lastError
+                ? chrome.runtime.lastError.message
+                : null;
+            });
+            chrome.runtime.sendMessage({ kind: 'promise', value: 'pr' }).then((response) => {
+              globalThis.promisePayload = response;
+            });
+            """
+        )
+
+        let observed = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            arguments: [.object(["kind": .string("observe")])],
+            payloadSummary: "observe runtime.sendMessage"
+        )
+
+        XCTAssertEqual(
+            observed.responsePayload,
+            .object([
+                "callbackLastErrorInside": .null,
+                "callbackPayload": .object([
+                    "echo": .string("cb"),
+                    "redacted": .bool(true),
+                    "senderId":
+                        .string("service-worker-js-fixture-extension"),
+                ]),
+                "lastErrorOutside": .string("undefined"),
+                "promisePayload": .object(["echo": .string("pr")]),
+            ])
+        )
+        XCTAssertEqual(harness.snapshot.runtimeSendMessageRecords.count, 2)
+        XCTAssertTrue(
+            harness.snapshot.runtimeSendMessageRecords.allSatisfy {
+                $0.sameExtensionOnly
+                    && !$0.crossExtension
+                    && $0.routedListenerCount == 1
+                    && $0.resultKind == "delivered"
+                    && $0.messageShape == "object:keyCount=2"
+            }
+        )
+        XCTAssertEqual(
+            harness.snapshot.runtimeSendMessageRecords
+                .compactMap(\.responseShape)
+                .sorted(),
+            ["object:keyCount=1", "object:keyCount=3"]
+        )
+        XCTAssertTrue(
+            harness.snapshot.precedingChromeAPICalls.contains(
+                "chrome.runtime.sendMessage"
+            )
+        )
+        XCTAssertFalse(
+            harness.snapshot.blockedUnsupportedCalls.contains(
+                "chrome.runtime.sendMessage"
+            )
+        )
+    }
+
+    func testRuntimeSendMessageNoListenerCallbackLastErrorIsDeterministic()
+        throws
+    {
+        let harness = try startedHarness(
+            source: """
+            globalThis.noReceiverInside = null;
+            chrome.runtime.sendMessage({ kind: 'missing' }, () => {
+              globalThis.noReceiverInside = chrome.runtime.lastError
+                && chrome.runtime.lastError.message;
+            });
+            globalThis.noReceiverOutside = typeof chrome.runtime.lastError;
+            chrome.runtime.onMessage.addListener((message) => {
+              if (message && message.kind === 'observe') {
+                return {
+                  noReceiverInside: globalThis.noReceiverInside,
+                  noReceiverOutside: globalThis.noReceiverOutside,
+                  outsideNow: typeof chrome.runtime.lastError
+                };
+              }
+              return undefined;
+            });
+            """
+        )
+
+        let observed = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            arguments: [.object(["kind": .string("observe")])],
+            payloadSummary: "observe runtime.sendMessage no receiver"
+        )
+
+        XCTAssertEqual(
+            observed.responsePayload,
+            .object([
+                "noReceiverInside":
+                    .string(
+                        "Could not establish connection. Receiving end does not exist."
+                    ),
+                "noReceiverOutside": .string("undefined"),
+                "outsideNow": .string("undefined"),
+            ])
+        )
+        XCTAssertEqual(
+            harness.snapshot.runtimeSendMessageRecords.first?.resultKind,
+            "noListener"
+        )
+        XCTAssertEqual(
+            harness.snapshot.runtimeSendMessageRecords.first?.lastErrorMessage,
+            "Could not establish connection. Receiving end does not exist."
+        )
+    }
+
+    func testRuntimeSendMessagePromiseListenerThrowCrossExtensionAndRecursion()
+        throws
+    {
+        let harness = try startedHarness(
+            source: """
+            globalThis.promiseError = null;
+            globalThis.throwError = null;
+            globalThis.crossError = null;
+            globalThis.recursionError = null;
+
+            chrome.runtime.onMessage.addListener((message) => {
+              if (message && message.kind === 'promise-listener') {
+                return Promise.resolve('later');
+              }
+              if (message && message.kind === 'throw') {
+                throw new Error('listener failed');
+              }
+              if (message && message.kind === 'recurse') {
+                chrome.runtime.sendMessage({ kind: 'inner' }, () => {
+                  globalThis.recursionError = chrome.runtime.lastError
+                    && chrome.runtime.lastError.message;
+                });
+                return { outer: true };
+              }
+              if (message && message.kind === 'observe') {
+                return {
+                  promiseError: globalThis.promiseError,
+                  throwError: globalThis.throwError,
+                  crossError: globalThis.crossError,
+                  recursionError: globalThis.recursionError
+                };
+              }
+              return undefined;
+            });
+
+            chrome.runtime.sendMessage({ kind: 'promise-listener' }).catch((error) => {
+              globalThis.promiseError = error.message;
+            });
+            chrome.runtime.sendMessage({ kind: 'throw' }).catch((error) => {
+              globalThis.throwError = error.message;
+            });
+            chrome.runtime.sendMessage(
+              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+              { kind: 'external' }
+            ).catch((error) => {
+              globalThis.crossError = error.message;
+            });
+            chrome.runtime.sendMessage({ kind: 'recurse' });
+            """
+        )
+
+        let observed = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            arguments: [.object(["kind": .string("observe")])],
+            payloadSummary: "observe runtime.sendMessage failures"
+        )
+
+        XCTAssertEqual(
+            observed.responsePayload,
+            .object([
+                "crossError":
+                    .string(
+                        "runtime.sendMessage external-extension overload is blocked in the local experimental service-worker harness."
+                    ),
+                "promiseError":
+                    .string(
+                        "Promise completion is observable but deferred by the deterministic no-wait harness policy."
+                    ),
+                "recursionError":
+                    .string(
+                        "runtime.sendMessage immediate self-recursion is blocked in the local experimental service-worker harness."
+                    ),
+                "throwError": .string("listener failed"),
+            ])
+        )
+        let records = harness.snapshot.runtimeSendMessageRecords
+        XCTAssertTrue(records.contains { $0.resultKind == "unsupportedListenerMode" })
+        XCTAssertTrue(records.contains { $0.resultKind == "listenerError" })
+        XCTAssertTrue(records.contains {
+            $0.resultKind == "crossExtensionUnsupported" && $0.crossExtension
+        })
+        XCTAssertTrue(records.contains {
+            $0.resultKind == "recursionBlocked" && $0.recursionBlocked
+        })
+    }
+
     func testRuntimeConnectPortMessageDeliveryDisconnectAndKeepaliveRelease()
         throws
     {

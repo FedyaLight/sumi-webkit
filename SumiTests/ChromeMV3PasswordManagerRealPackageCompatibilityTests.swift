@@ -1320,13 +1320,45 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         let bitwarden = try XCTUnwrap(byClass[.bitwarden])
         let onePassword = try XCTUnwrap(byClass[.onePassword])
         let proton = try XCTUnwrap(byClass[.protonPass])
+        let expectedSendMessagePolicy =
+            "localExperimental=true:default=false:sameExtensionOnly=true:crossExtension=false:hiddenPage=false:arbitraryWake=false:blockers=none"
+        XCTAssertTrue(
+            decoded.rows.allSatisfy {
+                $0.serviceWorkerEventReadiness
+                    .runtimeSendMessagePolicyResult
+                    == expectedSendMessagePolicy
+            }
+        )
         XCTAssertEqual(
             bitwarden.serviceWorkerEventReadiness.nextBlockerClassification,
-            .unsupportedChromeAPI
+            .dispatchDelivered
         )
         XCTAssertTrue(
             bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
+                .contains("Captured listener families dispatched successfully")
+        )
+        XCTAssertFalse(
+            bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
                 .contains("chrome.runtime.sendMessage")
+        )
+        XCTAssertEqual(
+            bitwarden.serviceWorkerEventReadiness.runtimeSendMessageSummary,
+            [
+                "seq=1:overload=messageCallback:shape=object:keyCount=1:result=noListener:responseShape=none:listeners=0:callback=true:promise=false:crossExtension=false:recursionBlocked=false:lastError=Could not establish connection. Receiving end does not exist.",
+            ]
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.precedingChromeAPICalls
+                .contains("chrome.runtime.sendMessage")
+        )
+        XCTAssertTrue(
+            bitwarden.serviceWorkerEventReadiness.runtimeSendMessageSummary
+                .allSatisfy {
+                    !$0.contains("token")
+                        && !$0.contains("secret")
+                        && !$0.contains("vault")
+                        && !$0.contains("password")
+                }
         )
         XCTAssertFalse(
             bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
@@ -1533,6 +1565,12 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             onePassword.serviceWorkerEventReadiness.moduleWorkerReadinessResult
                 .hasPrefix("blocked:")
         )
+        XCTAssertEqual(
+            onePassword.serviceWorkerEventReadiness.runtimeSendMessageSummary,
+            [
+                "notObserved: no chrome.runtime.sendMessage call reached the executed service-worker harness.",
+            ]
+        )
         XCTAssertNil(
             onePassword.serviceWorkerEventReadiness.executionStartResult?
                 .exceptionDetails
@@ -1593,6 +1631,12 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertEqual(
             proton.serviceWorkerEventReadiness.dispatchSmokeResult,
             "attempted: 6 synthetic dispatch(es), 6 delivered. Runtime Port smoke passed."
+        )
+        XCTAssertEqual(
+            proton.serviceWorkerEventReadiness.runtimeSendMessageSummary,
+            [
+                "notObserved: no chrome.runtime.sendMessage call reached the executed service-worker harness.",
+            ]
         )
         XCTAssertTrue(proton.serviceWorkerEventReadiness.alarmRecords.isEmpty)
         XCTAssertTrue(proton.serviceWorkerEventReadiness.alarmOperationSummary.isEmpty)

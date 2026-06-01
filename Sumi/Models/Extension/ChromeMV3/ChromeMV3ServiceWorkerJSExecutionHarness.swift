@@ -975,6 +975,13 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
         ChromeMV3ServiceWorkerJSModuleWorkerReadinessProbe
     var moduleWorkerImportAvailable: Bool
     var permanentBackgroundAvailable: Bool
+    var runtimeSendMessageAvailableInLocalExperimentalGate: Bool
+    var runtimeSendMessageAvailableByDefault: Bool
+    var runtimeSendMessageSameExtensionOnly: Bool
+    var crossExtensionMessagingAllowed: Bool
+    var hiddenPageCreationAllowed: Bool
+    var arbitraryWorkerWakeAllowed: Bool
+    var runtimeSendMessageBlockers: [String]
     var runtimeLastErrorAvailableInLocalExperimentalGate: Bool
     var runtimeLastErrorAvailableByDefault: Bool
     var runtimeLastErrorCallbackScoped: Bool
@@ -1234,6 +1241,14 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
             moduleWorkerReadinessProbe: moduleWorkerReadiness,
             moduleWorkerImportAvailable: false,
             permanentBackgroundAvailable: false,
+            runtimeSendMessageAvailableInLocalExperimentalGate: available,
+            runtimeSendMessageAvailableByDefault: false,
+            runtimeSendMessageSameExtensionOnly: true,
+            crossExtensionMessagingAllowed: false,
+            hiddenPageCreationAllowed: false,
+            arbitraryWorkerWakeAllowed: false,
+            runtimeSendMessageBlockers:
+                available ? [] : blockers.map(\.rawValue),
             runtimeLastErrorAvailableInLocalExperimentalGate: available,
             runtimeLastErrorAvailableByDefault: false,
             runtimeLastErrorCallbackScoped: available,
@@ -1325,6 +1340,8 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
                         "SubtleCrypto is local-experimental and default-off; this slice supports digest only and rejects key, signing, derivation, encryption, wrapping, and unsupported algorithm calls precisely.",
                         "chrome.i18n.getUILanguage is available only in the local experimental gate and returns a deterministic UI language string.",
                         "chrome.i18n.getMessage is available only in the local experimental gate, default-off, synchronous, and backed only by generated-bundle-contained _locales messages.json catalogs.",
+                        "chrome.runtime.sendMessage is available only in the local experimental gate, default-off, same-extension-only, and routes only to listener registrations captured in the current service-worker harness.",
+                        "runtime.sendMessage external-extension overloads, hidden extension page creation, and arbitrary service-worker wakeups remain blocked.",
                         "chrome.alarms create/get/clear state is available only in the local experimental gate, default-off, scoped to the harness session, and never starts wall-clock scheduling.",
                         "chrome.alarms.onAlarm dispatch is explicit synthetic-trigger only; no polling or automatic background wake is created.",
                         "Worker-global addEventListener/removeEventListener/dispatchEvent are modeled as a non-DOM EventTarget surface without window or document.",
@@ -2265,6 +2282,8 @@ struct ChromeMV3ServiceWorkerJSExecutionStartRecord:
     var alarmRecords: [ChromeMV3ServiceWorkerJSAlarmRecord]
     var alarmOperationRecords:
         [ChromeMV3ServiceWorkerJSAlarmOperationRecord]
+    var runtimeSendMessageRecords:
+        [ChromeMV3ServiceWorkerJSRuntimeSendMessageRecord]
     var workerGlobalEventRecords:
         [ChromeMV3ServiceWorkerJSWorkerGlobalEventRecord]
     var fetchClassificationRecords:
@@ -2357,6 +2376,26 @@ struct ChromeMV3ServiceWorkerJSAlarmOperationRecord:
     var alarmName: String?
     var resultPayload: ChromeMV3StorageValue?
     var lastErrorMessage: String?
+    var diagnostics: [String]
+}
+
+struct ChromeMV3ServiceWorkerJSRuntimeSendMessageRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var sequence: Int
+    var overload: String
+    var messageShape: String
+    var sameExtensionOnly: Bool
+    var crossExtension: Bool
+    var callbackProvided: Bool
+    var promiseReturned: Bool
+    var routedListenerCount: Int
+    var resultKind: String
+    var responseShape: String?
+    var lastErrorMessage: String?
+    var recursionBlocked: Bool
     var diagnostics: [String]
 }
 
@@ -2529,6 +2568,8 @@ struct ChromeMV3ServiceWorkerJSExecutionSnapshot:
     var alarmRecords: [ChromeMV3ServiceWorkerJSAlarmRecord]
     var alarmOperationRecords:
         [ChromeMV3ServiceWorkerJSAlarmOperationRecord]
+    var runtimeSendMessageRecords:
+        [ChromeMV3ServiceWorkerJSRuntimeSendMessageRecord]
     var workerGlobalEventRecords:
         [ChromeMV3ServiceWorkerJSWorkerGlobalEventRecord]
     var fetchClassificationRecords:
@@ -2574,6 +2615,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
     private var alarmRecords: [ChromeMV3ServiceWorkerJSAlarmRecord] = []
     private var alarmOperationRecords:
         [ChromeMV3ServiceWorkerJSAlarmOperationRecord] = []
+    private var runtimeSendMessageRecords:
+        [ChromeMV3ServiceWorkerJSRuntimeSendMessageRecord] = []
     private var workerGlobalEventRecords:
         [ChromeMV3ServiceWorkerJSWorkerGlobalEventRecord] = []
     private var fetchClassificationRecords:
@@ -2610,6 +2653,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             i18nOperationRecords: [],
             alarmRecords: [],
             alarmOperationRecords: [],
+            runtimeSendMessageRecords: [],
             workerGlobalEventRecords: [],
             fetchClassificationRecords: [],
             webAssemblyCapability: nil,
@@ -2681,6 +2725,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             i18nOperationRecords: i18nOperationRecords,
             alarmRecords: alarmRecords,
             alarmOperationRecords: alarmOperationRecords,
+            runtimeSendMessageRecords: runtimeSendMessageRecords,
             workerGlobalEventRecords: workerGlobalEventRecords,
             fetchClassificationRecords: fetchClassificationRecords,
             webAssemblyCapability: webAssemblyCapability,
@@ -3301,6 +3346,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         i18nOperationRecords.removeAll()
         alarmRecords.removeAll()
         alarmOperationRecords.removeAll()
+        runtimeSendMessageRecords.removeAll()
         workerGlobalEventRecords.removeAll()
         fetchClassificationRecords.removeAll()
         dispatchRecords.removeAll()
@@ -3579,6 +3625,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             i18nOperationRecords: i18nOperationRecords,
             alarmRecords: alarmRecords,
             alarmOperationRecords: alarmOperationRecords,
+            runtimeSendMessageRecords: runtimeSendMessageRecords,
             workerGlobalEventRecords: workerGlobalEventRecords,
             fetchClassificationRecords: fetchClassificationRecords,
             webAssemblyCapability: webAssemblyCapability,
@@ -5422,6 +5469,10 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             alarmOperationRecords = wire.alarmOperations.sorted {
                 $0.sequence < $1.sequence
             }
+            runtimeSendMessageRecords =
+                wire.runtimeSendMessageRecords.sorted {
+                    $0.sequence < $1.sequence
+                }
             workerGlobalEventRecords = wire.workerGlobalEvents
             fetchClassificationRecords = wire.fetchClassifications
             webAssemblyCapability = wire.webAssemblyCapability
@@ -5515,6 +5566,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       const i18nOperations = [];
       const alarmRecords = new Map();
       const alarmOperations = [];
+      const runtimeSendMessageRecords = [];
       const workerGlobalEvents = [];
       const fetchClassifications = [];
       const ports = new Map();
@@ -5524,7 +5576,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       let registrationOrder = 0;
       let nextTimerID = 1;
       let nextAlarmSequence = 1;
+      let nextRuntimeSendMessageSequence = 1;
       let fetchCallIndex = 0;
+      let runtimeOnMessageDispatchDepth = 0;
       const workerConfig = globalThis.__sumiWorkerGlobalConfig || {};
       const extensionID = String(workerConfig.extensionID || '');
       const extensionOrigin = String(workerConfig.extensionOrigin || `chrome-extension://${extensionID || 'extension'}`);
@@ -6673,6 +6727,221 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         }
         return portSnapshot(state);
       };
+      const runtimeSendMessageNoReceiver =
+        'Could not establish connection. Receiving end does not exist.';
+      const runtimeSendMessageValueShape = (value) => {
+        if (value === null) return 'null';
+        if (value === undefined) return 'undefined';
+        if (Array.isArray(value)) return `array:length=${value.length}`;
+        const type = typeof value;
+        if (type === 'string') return `string:length=${value.length}`;
+        if (type === 'number' || type === 'boolean' || type === 'bigint') return type;
+        if (type === 'function') return 'function';
+        if (type === 'object') {
+          try { return `object:keyCount=${Object.keys(value).length}`; }
+          catch (_) { return 'object:keyCount=unknown'; }
+        }
+        return type;
+      };
+      const runtimeSendMessageOptionsObject = (value) =>
+        value && typeof value === 'object' && !Array.isArray(value);
+      const runtimeSendMessageLooksLikeExtensionID = (value) =>
+        typeof value === 'string' && /^[a-p]{32}$/.test(value);
+      const runtimeSendMessageParse = (rawArgs) => {
+        const args = Array.from(rawArgs);
+        let callback = null;
+        if (args.length && typeof args[args.length - 1] === 'function') {
+          callback = args.pop();
+        }
+        if (!args.length) {
+          return {
+            ok: false,
+            callback,
+            message: undefined,
+            options: null,
+            overload: 'invalidMissingMessage',
+            error: 'runtime.sendMessage requires a message argument.',
+            crossExtension: false
+          };
+        }
+        if (runtimeSendMessageLooksLikeExtensionID(args[0])
+            && args.length >= 2) {
+          return {
+            ok: false,
+            callback,
+            message: args[1],
+            options: args[2] || null,
+            overload: 'extensionIdUnsupported',
+            error: 'runtime.sendMessage external-extension overload is blocked in the local experimental service-worker harness.',
+            crossExtension: true
+          };
+        }
+        if (args.length > 2) {
+          return {
+            ok: false,
+            callback,
+            message: args[0],
+            options: args[1] || null,
+            overload: 'invalidTooManyArguments',
+            error: 'runtime.sendMessage accepts message, optional options, and optional callback in this harness.',
+            crossExtension: false
+          };
+        }
+        const options = args.length === 2 ? args[1] : null;
+        if (options != null && !runtimeSendMessageOptionsObject(options)) {
+          return {
+            ok: false,
+            callback,
+            message: args[0],
+            options,
+            overload: 'invalidOptions',
+            error: 'runtime.sendMessage options must be an object when supplied.',
+            crossExtension: false
+          };
+        }
+        return {
+          ok: true,
+          callback,
+          message: args[0],
+          options,
+          overload:
+            args.length === 1
+              ? (callback ? 'messageCallback' : 'messagePromise')
+              : (callback ? 'messageOptionsCallback' : 'messageOptionsPromise'),
+          error: null,
+          crossExtension: false
+        };
+      };
+      const recordRuntimeSendMessage = (record) => {
+        const value = Object.assign({
+          sequence: nextRuntimeSendMessageSequence++,
+          overload: 'unknown',
+          messageShape: 'unknown',
+          sameExtensionOnly: true,
+          crossExtension: false,
+          callbackProvided: false,
+          promiseReturned: false,
+          routedListenerCount: 0,
+          resultKind: 'blocked',
+          responseShape: null,
+          lastErrorMessage: null,
+          recursionBlocked: false,
+          diagnostics: []
+        }, record || {});
+        runtimeSendMessageRecords.push(value);
+        return value;
+      };
+      const runtimeSendMessageFailure = (parsed, errorMessage, resultKind, diagnostics, recursionBlocked) => {
+        const callback = parsed && parsed.callback;
+        const message = String(errorMessage);
+        noteBlocked(`chrome.runtime.sendMessage.${resultKind}`);
+        recordRuntimeSendMessage({
+          overload: parsed ? parsed.overload : 'invalid',
+          messageShape: runtimeSendMessageValueShape(parsed ? parsed.message : undefined),
+          crossExtension: !!(parsed && parsed.crossExtension),
+          callbackProvided: typeof callback === 'function',
+          promiseReturned: typeof callback !== 'function',
+          resultKind: String(resultKind),
+          lastErrorMessage: message,
+          recursionBlocked: recursionBlocked === true,
+          diagnostics: diagnostics || []
+        });
+        if (typeof callback === 'function') {
+          callbackErrorLater(callback, message);
+          return undefined;
+        }
+        return Promise.reject(new Error(message));
+      };
+      const runtimeSendMessage = function () {
+        noteChromeAPICall('chrome.runtime.sendMessage');
+        const parsed = runtimeSendMessageParse(arguments);
+        if (!parsed.ok) {
+          return runtimeSendMessageFailure(
+            parsed,
+            parsed.error,
+            parsed.crossExtension ? 'crossExtensionUnsupported' : 'invalidArguments',
+            [
+              parsed.crossExtension
+                ? 'Cross-extension runtime.sendMessage is blocked; no onMessageExternal route, hidden page, or worker wake was attempted.'
+                : 'Unsupported runtime.sendMessage argument shape was rejected before dispatch.'
+            ],
+            false
+          );
+        }
+        if (runtimeOnMessageDispatchDepth > 0) {
+          return runtimeSendMessageFailure(
+            parsed,
+            'runtime.sendMessage immediate self-recursion is blocked in the local experimental service-worker harness.',
+            'recursionBlocked',
+            [
+              'A runtime.onMessage listener attempted to re-enter chrome.runtime.sendMessage against the same captured listener set.',
+            ],
+            true
+          );
+        }
+        const listeners = registrations.filter((item) =>
+          item.event === 'runtimeOnMessage');
+        runtimeOnMessageDispatchDepth += 1;
+        let wire;
+        try {
+          wire = dispatch(
+            'runtimeOnMessage',
+            [clone(parsed.message)],
+            {
+              redactionState:
+                'same-extension service-worker runtime.sendMessage sender metadata',
+              urlRedacted: true
+            },
+            null
+          );
+        } finally {
+          runtimeOnMessageDispatchDepth -= 1;
+        }
+        const callback = parsed.callback;
+        const resultKind = wire && wire.kind ? String(wire.kind) : 'blocked';
+        let errorMessage = null;
+        if (!wire) {
+          errorMessage = 'runtime.sendMessage dispatch result was unavailable.';
+        } else if (resultKind === 'noListener') {
+          errorMessage = runtimeSendMessageNoReceiver;
+        } else if (resultKind === 'listenerError'
+                   || resultKind === 'promiseRejected'
+                   || resultKind === 'sendResponseTimeoutDiagnostic'
+                   || resultKind === 'unsupportedListenerMode') {
+          errorMessage = String(wire.error || 'runtime.sendMessage listener did not produce a supported response.');
+        }
+        recordRuntimeSendMessage({
+          overload: parsed.overload,
+          messageShape: runtimeSendMessageValueShape(parsed.message),
+          callbackProvided: typeof callback === 'function',
+          promiseReturned: typeof callback !== 'function',
+          routedListenerCount: listeners.length,
+          resultKind,
+          responseShape: wire && wire.response !== undefined
+            ? runtimeSendMessageValueShape(wire.response)
+            : null,
+          lastErrorMessage: errorMessage,
+          diagnostics:
+            (wire && Array.isArray(wire.diagnostics) ? wire.diagnostics : [])
+              .concat([
+                'runtime.sendMessage used same-extension captured runtime.onMessage listeners only.',
+                'No hidden page, arbitrary worker wake, external-extension route, or product runtime exposure was attempted.'
+              ])
+        });
+        if (errorMessage) {
+          if (typeof callback === 'function') {
+            callbackErrorLater(callback, errorMessage);
+            return undefined;
+          }
+          return Promise.reject(new Error(errorMessage));
+        }
+        const response = wire && wire.response !== undefined ? clone(wire.response) : undefined;
+        if (typeof callback === 'function') {
+          callbackLater(callback, response);
+          return undefined;
+        }
+        return Promise.resolve(response);
+      };
       const runtime = proxiedNamespace({
         id: extensionID,
         get lastError() {
@@ -6688,6 +6957,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           return clone(manifestSnapshot);
         },
         onMessage: event('runtimeOnMessage'),
+        sendMessage: runtimeSendMessage,
         onConnect: event('runtimeOnConnect'),
         onInstalled: event('runtimeOnInstalled'),
         onMessageExternal: event('runtimeOnMessageExternal'),
@@ -7746,6 +8016,12 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             diagnostics: [`No executed listener registration exists for ${eventName}.`]
           };
         }
+        const tracksRuntimeMessageDepth = eventName === 'runtimeOnMessage';
+        if (tracksRuntimeMessageDepth) runtimeOnMessageDispatchDepth += 1;
+        const finishDispatch = (result) => {
+          if (tracksRuntimeMessageDepth) runtimeOnMessageDispatchDepth -= 1;
+          return result;
+        };
         let port = null;
         if (eventName === 'runtimeOnConnect') {
           port = createPort(portOptions, sender);
@@ -7767,19 +8043,19 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             );
             const result = item.listener(...listenerArgs);
             if (responseCalled) {
-              return {
+              return finishDispatch({
                 kind: 'delivered',
                 listenerID: item.listenerID,
                 response,
                 portID: portOptions ? portOptions.portID : null,
                 diagnostics: ['Synchronous sendResponse result captured.']
-              };
+              });
             }
             if (result && typeof result.then === 'function') {
               trackPromiseCompletion(eventName, item.listenerID, result);
               if (eventName !== 'runtimeOnMessage'
                   && eventName !== 'runtimeOnMessageExternal') {
-                return {
+                return finishDispatch({
                   kind: 'delivered',
                   listenerID: item.listenerID,
                   portID: portOptions ? portOptions.portID : null,
@@ -7787,47 +8063,47 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                     'Promise-returning fire-and-forget listener was invoked.',
                     'Completion is tracked as diagnostics only; no response channel is modeled for this event family.'
                   ]
-                };
+                });
               }
-              return {
+              return finishDispatch({
                 kind: 'unsupportedListenerMode',
                 listenerID: item.listenerID,
                 portID: portOptions ? portOptions.portID : null,
                 error: 'Promise completion is observable but deferred by the deterministic no-wait harness policy.',
                 diagnostics: ['Promise-returning listener was detected without scheduling a wait.']
-              };
+              });
             }
             if (eventName === 'runtimeOnMessage' && result === true) {
-              return {
+              return finishDispatch({
                 kind: 'sendResponseTimeoutDiagnostic',
                 listenerID: item.listenerID,
                 error: 'Listener returned true without synchronous sendResponse; deterministic harness does not wait.',
                 diagnostics: ['sendResponse channel was left open without scheduling a wait.']
-              };
+              });
             }
             if (eventName === 'runtimeOnMessage' && result !== undefined) {
-              return {
+              return finishDispatch({
                 kind: 'delivered',
                 listenerID: item.listenerID,
                 response: clone(result),
                 diagnostics: ['Synchronous return value captured as an approximated local experimental response.']
-              };
+              });
             }
           } catch (error) {
-            return {
+            return finishDispatch({
               kind: 'listenerError',
               listenerID: item.listenerID,
               error: String(error && error.message ? error.message : error),
               diagnostics: ['Listener threw during deterministic dispatch.']
-            };
+            });
           }
         }
-        return {
+        return finishDispatch({
           kind: 'delivered',
           listenerID: listeners[0].listenerID,
           portID: portOptions ? portOptions.portID : null,
           diagnostics: ['Listener dispatch completed without a response payload.']
-        };
+        });
       };
       const snapshot = () => ({
         registrations: registrations.map((item) => ({
@@ -7852,6 +8128,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           })
           .map((item) => clone(item)),
         alarmOperations: alarmOperations.map((item) => clone(item)),
+        runtimeSendMessageRecords: runtimeSendMessageRecords.map((item) => clone(item)),
         workerGlobalEvents: workerGlobalEvents.map((item) => clone(item)),
         fetchClassifications: fetchClassifications.map((item) => clone(item)),
         webAssemblyCapability: clone(webAssemblyCapability),
@@ -7911,6 +8188,8 @@ private struct ChromeMV3ServiceWorkerJSWireSnapshot: Decodable {
     var i18nOperations: [ChromeMV3ServiceWorkerJSI18nOperationRecord]
     var alarmRecords: [ChromeMV3ServiceWorkerJSAlarmRecord]
     var alarmOperations: [ChromeMV3ServiceWorkerJSAlarmOperationRecord]
+    var runtimeSendMessageRecords:
+        [ChromeMV3ServiceWorkerJSRuntimeSendMessageRecord]
     var workerGlobalEvents: [ChromeMV3ServiceWorkerJSWorkerGlobalEventRecord]
     var fetchClassifications:
         [ChromeMV3ServiceWorkerJSFetchClassificationRecord]

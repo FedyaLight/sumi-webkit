@@ -1236,6 +1236,8 @@ struct ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness:
     var deviceFailureDetail: String
     var precedingChromeAPICalls: [String]
     var storageOperationSummary: [String]
+    var runtimeSendMessagePolicyResult: String
+    var runtimeSendMessageSummary: [String]
     var runtimeLastErrorObjectShapeResult: String
     var runtimeLastErrorCallbackLifecycleResult: String
     var workerGlobalEventTargetResult: String
@@ -2771,6 +2773,12 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         let storageOperationSummary = serviceWorkerStorageOperationSummary(
             executionStartResult: executionStartResult
         )
+        let runtimeSendMessagePolicyResult =
+            serviceWorkerRuntimeSendMessagePolicyResult(policy: policy)
+        let runtimeSendMessageSummary =
+            serviceWorkerRuntimeSendMessageSummary(
+                executionStartResult: executionStartResult
+            )
         let runtimeLastErrorObjectShapeResult =
             serviceWorkerRuntimeLastErrorObjectShapeResult(
                 policy: policy
@@ -2907,6 +2915,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             deviceFailureDetail: deviceFailure.detail,
             precedingChromeAPICalls: precedingChromeAPICalls,
             storageOperationSummary: storageOperationSummary,
+            runtimeSendMessagePolicyResult: runtimeSendMessagePolicyResult,
+            runtimeSendMessageSummary: runtimeSendMessageSummary,
             runtimeLastErrorObjectShapeResult:
                 runtimeLastErrorObjectShapeResult,
             runtimeLastErrorCallbackLifecycleResult:
@@ -3685,6 +3695,49 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 "callback=\(record.callbackProvided)",
                 "promise=\(record.promiseReturned)",
                 "valuesRecorded=\(record.valuesRecorded)",
+            ].joined(separator: ":")
+        }
+    }
+
+    private static func serviceWorkerRuntimeSendMessagePolicyResult(
+        policy: ChromeMV3ServiceWorkerJSExecutionPolicy
+    ) -> String {
+        let blockers = policy.runtimeSendMessageBlockers.isEmpty
+            ? "none"
+            : policy.runtimeSendMessageBlockers.joined(separator: ",")
+        return [
+            "localExperimental=\(policy.runtimeSendMessageAvailableInLocalExperimentalGate)",
+            "default=\(policy.runtimeSendMessageAvailableByDefault)",
+            "sameExtensionOnly=\(policy.runtimeSendMessageSameExtensionOnly)",
+            "crossExtension=\(policy.crossExtensionMessagingAllowed)",
+            "hiddenPage=\(policy.hiddenPageCreationAllowed)",
+            "arbitraryWake=\(policy.arbitraryWorkerWakeAllowed)",
+            "blockers=\(blockers)",
+        ].joined(separator: ":")
+    }
+
+    private static func serviceWorkerRuntimeSendMessageSummary(
+        executionStartResult: ChromeMV3ServiceWorkerJSExecutionStartRecord?
+    ) -> [String] {
+        let records = executionStartResult?.runtimeSendMessageRecords ?? []
+        guard records.isEmpty == false else {
+            return [
+                "notObserved: no chrome.runtime.sendMessage call reached the executed service-worker harness.",
+            ]
+        }
+        return records.map { record in
+            [
+                "seq=\(record.sequence)",
+                "overload=\(record.overload)",
+                "shape=\(record.messageShape)",
+                "result=\(record.resultKind)",
+                "responseShape=\(record.responseShape ?? "none")",
+                "listeners=\(record.routedListenerCount)",
+                "callback=\(record.callbackProvided)",
+                "promise=\(record.promiseReturned)",
+                "crossExtension=\(record.crossExtension)",
+                "recursionBlocked=\(record.recursionBlocked)",
+                "lastError=\(record.lastErrorMessage ?? "none")",
             ].joined(separator: ":")
         }
     }

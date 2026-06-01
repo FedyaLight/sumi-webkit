@@ -1380,6 +1380,8 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
     var deviceFailureDetail: String
     var precedingChromeAPICalls: [String]
     var storageOperationSummary: [String]
+    var runtimeSendMessagePolicyResult: String
+    var runtimeSendMessageSummary: [String]
     var runtimeLastErrorObjectShapeResult: String
     var runtimeLastErrorCallbackLifecycleResult: String
     var workerGlobalEventTargetResult: String
@@ -1464,6 +1466,10 @@ struct ChromeMV3ExtensionManagerServiceWorkerTrialReportSummary:
             deviceFailureDetail: readiness.deviceFailureDetail,
             precedingChromeAPICalls: readiness.precedingChromeAPICalls,
             storageOperationSummary: readiness.storageOperationSummary,
+            runtimeSendMessagePolicyResult:
+                readiness.runtimeSendMessagePolicyResult,
+            runtimeSendMessageSummary:
+                readiness.runtimeSendMessageSummary,
             runtimeLastErrorObjectShapeResult:
                 readiness.runtimeLastErrorObjectShapeResult,
             runtimeLastErrorCallbackLifecycleResult:
@@ -3288,6 +3294,12 @@ struct ChromeMV3ExtensionManagerView: View {
                             ? "callback-scoped" : "blocked"
                     )
                     fact(
+                        "runtime.sendMessage",
+                        panel.jsExecutionPolicy
+                            .runtimeSendMessageAvailableInLocalExperimentalGate
+                            ? "same-extension" : "blocked"
+                    )
+                    fact(
                         "Queued Callback Shim",
                         panel.jsExecutionPolicy
                             .timersAvailableInLocalExperimentalGate
@@ -3552,6 +3564,22 @@ struct ChromeMV3ExtensionManagerView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        "runtime.sendMessage: "
+                            + trial.runtimeSendMessagePolicyResult
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        "runtime.sendMessage calls: "
+                            + trial.runtimeSendMessageSummary.joined(
+                                separator: ", "
+                            )
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                     Text(
                         "Worker navigator: "
                             + trial.workerNavigatorUserAgentResult
