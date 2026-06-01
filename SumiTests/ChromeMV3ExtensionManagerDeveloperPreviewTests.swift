@@ -49,6 +49,7 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
 
     @MainActor
     func testDisabledModuleBlocksManagerViewModelsAndActionsWithoutArtifacts()
+        async
         throws
     {
         let root = try makeTemporaryDirectory()
@@ -82,13 +83,21 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         )
         let webStore = module
             .chromeMV3ChromeWebStoreInstallDiagnosticThroughManager()
+        let manualSmoke = await module
+            .chromeMV3RunBitwardenManualSmokeThroughManager(
+                rootURL: root,
+                profileID: "profile-disabled",
+                extensionID: "extension-disabled"
+            )
 
         XCTAssertEqual(install.status, .blocked)
         XCTAssertEqual(archive.status, .blocked)
         XCTAssertEqual(webStore.status, .blocked)
+        XCTAssertEqual(manualSmoke.status, .blocked)
         XCTAssertTrue(install.blockedDiagnostics.contains {
             $0.code == .moduleDisabled
         })
+        XCTAssertNil(manualSmoke.manualSmokeArtifact)
         XCTAssertFalse(
             FileManager.default.fileExists(
                 atPath: root.appendingPathComponent("lifecycle").path
@@ -186,6 +195,18 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
             detail.productEnablementPreflight.normalTabReadiness.policy
                 .productNormalTabMV3ReadinessAvailableByDefault
         )
+        XCTAssertTrue(
+            detail.productEnablementPreflight.normalTabReadiness.policy
+                .manualNormalTabSmokeAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(
+            detail.productEnablementPreflight.normalTabReadiness.policy
+                .manualNormalTabSmokeAvailableByDefault
+        )
+        XCTAssertFalse(
+            detail.productEnablementPreflight.normalTabReadiness.policy
+                .productDefaultRuntimeAvailable
+        )
         XCTAssertFalse(
             detail.productEnablementPreflight.normalTabReadiness.preflight
                 .eligible
@@ -243,6 +264,209 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         XCTAssertTrue(detail.actions.contains {
             $0.action == .importZipArchive && $0.available
         })
+        XCTAssertFalse(detail.manualSmokeAction.available)
+        XCTAssertTrue(detail.manualSmokeAction.manualOnly)
+        XCTAssertNil(detail.manualSmokeAction.lastArtifactPath)
+        XCTAssertTrue(detail.actions.contains {
+            $0.action == .runBitwardenManualSmoke && !$0.available
+                && $0.unavailableDiagnostics.contains {
+                    $0.code == .manualSmokeReviewedFileMissing
+                }
+        })
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath:
+                    ChromeMV3ExtensionManagerManualSmokeArtifactWriter
+                    .reportURL(
+                        rootURL: root,
+                        profileID: record.profileID,
+                        extensionID: record.extensionID
+                    )
+                    .path
+            )
+        )
+        XCTAssertFalse(module.hasLoadedRuntime)
+    }
+
+    @MainActor
+    func testManualSmokeActionUnavailableWhenLocalGateClosed() throws {
+        let fixture = try installBitwardenManualSmokeFixture(
+            named: "manual-smoke-gate-closed",
+            profileID: "profile-manual-gate-closed",
+            enableInternal: true
+        )
+        let detail = try XCTUnwrap(
+            ChromeMV3ExtensionManagerViewModelBuilder.makeDetailViewModel(
+                rootURL: fixture.root,
+                profileID: fixture.record.profileID,
+                extensionID: fixture.record.extensionID,
+                gate: ChromeMV3ExtensionManagerGate.evaluate(
+                    moduleEnabled: false
+                )
+            )
+        )
+
+        XCTAssertFalse(detail.manualSmokeAction.available)
+        XCTAssertTrue(detail.manualSmokeAction.gateState[
+            "localExperimentalManagerGateOpen"
+        ] == false)
+        XCTAssertTrue(detail.manualSmokeAction.unavailableDiagnostics.contains {
+            $0.code == .manualSmokeLocalExperimentalGateClosed
+        })
+        XCTAssertTrue(detail.actions.contains {
+            $0.action == .runBitwardenManualSmoke && !$0.available
+        })
+        XCTAssertFalse(fixture.module.hasLoadedRuntime)
+    }
+
+    @MainActor
+    func testManualSmokeActionReadoutDoesNotExecuteOrWriteArtifact()
+        throws
+    {
+        let fixture = try installBitwardenManualSmokeFixture(
+            named: "manual-smoke-readout",
+            profileID: "profile-manual-readout",
+            enableInternal: true
+        )
+
+        let detail = try XCTUnwrap(
+            fixture.module.chromeMV3ExtensionManagerDetailViewModelIfEnabled(
+                rootURL: fixture.root,
+                profileID: fixture.record.profileID,
+                extensionID: fixture.record.extensionID
+            )
+        )
+        let artifactURL =
+            ChromeMV3ExtensionManagerManualSmokeArtifactWriter.reportURL(
+                rootURL: fixture.root,
+                profileID: fixture.record.profileID,
+                extensionID: fixture.record.extensionID
+            )
+
+        XCTAssertTrue(detail.manualSmokeAction.available)
+        XCTAssertEqual(detail.manualSmokeAction.actionID, .runBitwardenManualSmoke)
+        XCTAssertTrue(detail.manualSmokeAction.manualOnly)
+        XCTAssertNil(detail.manualSmokeAction.lastRunStatus)
+        XCTAssertNil(detail.manualSmokeAction.lastArtifactPath)
+        XCTAssertTrue(detail.manualSmokeAction.gateState[
+            "managerReadoutExecutesSmoke"
+        ] == false)
+        XCTAssertTrue(detail.actions.contains {
+            $0.action == .runBitwardenManualSmoke && $0.available
+        })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: artifactURL.path))
+        XCTAssertFalse(fixture.module.hasLoadedRuntime)
+    }
+
+    @MainActor
+    func testExplicitManualSmokeRunsAndWritesSanitizedArtifact()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Named WKContentWorld execution requires macOS 15.5.")
+        }
+        let fixture = try installBitwardenManualSmokeFixture(
+            named: "manual-smoke-run",
+            profileID: "profile-manual-run",
+            enableInternal: true
+        )
+
+        let result = await fixture.module
+            .chromeMV3RunBitwardenManualSmokeThroughManager(
+                rootURL: fixture.root,
+                profileID: fixture.record.profileID,
+                extensionID: fixture.record.extensionID,
+                now: { self.fixedDate }
+            )
+        let artifact = try XCTUnwrap(result.manualSmokeArtifact)
+        let artifactURL =
+            ChromeMV3ExtensionManagerManualSmokeArtifactWriter.reportURL(
+                rootURL: fixture.root,
+                profileID: fixture.record.profileID,
+                extensionID: fixture.record.extensionID
+            )
+        let artifactData = try Data(contentsOf: artifactURL)
+        let artifactString = String(data: artifactData, encoding: .utf8) ?? ""
+        let detailAfter = try XCTUnwrap(
+            fixture.module.chromeMV3ExtensionManagerDetailViewModelIfEnabled(
+                rootURL: fixture.root,
+                profileID: fixture.record.profileID,
+                extensionID: fixture.record.extensionID
+            )
+        )
+
+        XCTAssertEqual(result.status, .succeeded, result.diagnostics.joined(separator: "\n"))
+        XCTAssertTrue(result.manualSmokeResult?.allowed == true)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: artifactURL.path))
+        XCTAssertEqual(artifact.schemaVersion, 1)
+        XCTAssertEqual(artifact.profileID, fixture.record.profileID)
+        XCTAssertEqual(artifact.extensionID, fixture.record.extensionID)
+        XCTAssertEqual(artifact.smokeKind, "bitwardenManualNormalTabSmoke")
+        XCTAssertEqual(artifact.reviewedScriptPath, "content/bootstrap-autofill.js")
+        XCTAssertEqual(artifact.syntheticURL, "https://sumi.local.test/login")
+        XCTAssertEqual(artifact.syntheticOrigin, "https://sumi.local.test")
+        XCTAssertTrue(artifact.actionManualOnly)
+        XCTAssertFalse(artifact.managerReadoutExecutedSmoke)
+        XCTAssertEqual(artifact.fieldsTouched, [
+            "sumi-login-email",
+            "sumi-login-password",
+        ])
+        XCTAssertTrue(artifact.dummyValueMarkers.contains(
+            "usernameSyntheticDummyMatched"
+        ))
+        XCTAssertTrue(artifact.dummyValueMarkers.contains(
+            "passwordSyntheticDummyMatched"
+        ))
+        XCTAssertTrue(artifact.teardownCompleted)
+        XCTAssertEqual(artifact.retainedObjectCount, 0)
+        XCTAssertTrue(artifact.noRealSecrets)
+        XCTAssertTrue(artifact.noRawCredentials)
+        XCTAssertTrue(artifact.noRealWebsiteData)
+        XCTAssertFalse(
+            artifact.runtimeBehaviorIntentionallyUnchanged
+                .productDefaultRuntimeAvailable
+        )
+        XCTAssertFalse(
+            artifact.runtimeBehaviorIntentionallyUnchanged
+                .productRuntimeExposed
+        )
+        XCTAssertFalse(
+            artifact.runtimeBehaviorIntentionallyUnchanged
+                .arbitraryScriptingEnabled
+        )
+        XCTAssertFalse(
+            artifact.runtimeBehaviorIntentionallyUnchanged.mainWorldEnabled
+        )
+        XCTAssertFalse(
+            artifact.runtimeBehaviorIntentionallyUnchanged.multiFrameEnabled
+        )
+        XCTAssertFalse(
+            artifact.runtimeBehaviorIntentionallyUnchanged.fileSchemeEnabled
+        )
+        XCTAssertFalse(
+            artifact.runtimeBehaviorIntentionallyUnchanged
+                .networkAuthNativeHostEnabled
+        )
+        XCTAssertFalse(
+            artifact.runtimeBehaviorIntentionallyUnchanged
+                .webStoreOrRemoteCRXEnabled
+        )
+        XCTAssertFalse(
+            artifact.runtimeBehaviorIntentionallyUnchanged
+                .timersOrPollingEnabled
+        )
+        XCTAssertFalse(artifactString.contains("sumi-test-user@example.test"))
+        XCTAssertFalse(artifactString.contains("sumi-test-password-not-secret"))
+        XCTAssertFalse(artifactString.contains("masterPassword"))
+        XCTAssertFalse(artifactString.contains("accessToken"))
+        XCTAssertEqual(detailAfter.manualSmokeAction.lastRunStatus, .succeeded)
+        XCTAssertEqual(detailAfter.manualSmokeAction.lastArtifactPath, artifactURL.path)
+        XCTAssertEqual(detailAfter.manualSmokeAction.lastTeardownStatus, "completed")
+        XCTAssertEqual(detailAfter.manualSmokeAction.lastRetainedObjectCount, 0)
+        XCTAssertTrue(detailAfter.manualSmokeAction.notProductSupportWarning.contains(
+            "stable product path"
+        ))
+        XCTAssertFalse(fixture.module.hasLoadedRuntime)
     }
 
     @MainActor
@@ -1163,6 +1387,104 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
                 "service_worker": "background.js",
             ],
         ]
+    }
+
+    @MainActor
+    private func installBitwardenManualSmokeFixture(
+        named name: String,
+        profileID: String,
+        enableInternal: Bool
+    ) throws -> InstalledManagerFixture {
+        let root = try makeTemporaryDirectory()
+        let source = try makeFixture(
+            named: name,
+            manifest: bitwardenManualSmokeManifest(name: name),
+            files: bitwardenManualSmokeFiles()
+        )
+        let module = try makeModule(enabled: true)
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: source,
+            profileID: profileID,
+            enableInternal: enableInternal
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+        return InstalledManagerFixture(
+            root: root,
+            module: module,
+            record: record
+        )
+    }
+
+    private func bitwardenManualSmokeManifest(name: String) -> [String: Any] {
+        [
+            "manifest_version": 3,
+            "name": "Manager \(name)",
+            "version": "1.0.0",
+            "permissions": ["scripting", "activeTab"],
+            "background": [
+                "service_worker": "background.js",
+            ],
+            "content_scripts": [
+                [
+                    "matches": ["https://sumi.local.test/*"],
+                    "js": [
+                        "content/trigger-autofill-script-injection.js",
+                    ],
+                ],
+            ],
+        ]
+    }
+
+    private func bitwardenManualSmokeFiles() -> [String: String] {
+        [
+            "background.js": """
+            function triggerAutofillScriptInjection(tabId) {
+              return chrome.scripting.executeScript({
+                target: { tabId, frameIds: [0] },
+                files: ["content/bootstrap-autofill.js"],
+                world: "ISOLATED",
+                injectImmediately: true
+              });
+            }
+            """,
+            "content/trigger-autofill-script-injection.js": """
+            chrome.runtime.sendMessage({ command: "triggerAutofillScriptInjection" });
+            """,
+            "content/bootstrap-autofill.js": bitwardenReviewedBootstrapScript(),
+        ]
+    }
+
+    private func bitwardenReviewedBootstrapScript() -> String {
+        """
+        (() => {
+          let listener;
+          listener = (message, sender, sendResponse) => {
+            if (message.command === "collectPageDetailsImmediately") {
+              document.getElementById("sumi-login-email").opid = "__0";
+              document.getElementById("sumi-login-password").opid = "__1";
+              sendResponse({ fields: ["__0", "__1"] });
+              return true;
+            }
+            if (message.command === "fillForm") {
+              for (const [action, opid, value] of message.fillScript.script) {
+                if (action !== "fill_by_opid") continue;
+                const field = Array.from(document.querySelectorAll("input"))
+                  .find((item) => item.opid === opid);
+                if (field) field.value = value;
+              }
+              sendResponse(null);
+              return true;
+            }
+            return null;
+          };
+          chrome.runtime.onMessage.addListener(listener);
+          chrome.runtime.connect({ name: "autofill-injected-script-port" });
+          window.bitwardenAutofillInit = {
+            destroy() { chrome.runtime.onMessage.removeListener(listener); }
+          };
+        })();
+        """
     }
 
     private func makeFixture(

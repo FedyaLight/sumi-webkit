@@ -1451,6 +1451,8 @@ struct ChromeMV3PasswordManagerRealPackageDetectFillSmoke:
         ChromeMV3LocalExperimentalProgrammaticInjectionAttempt
     var webKitProgrammaticInjectionResult:
         ChromeMV3LocalExperimentalWebKitProgrammaticInjectionResult
+    var manualNormalTabSmokeResult:
+        ChromeMV3LocalExperimentalNormalTabManualSmokeResult
     var programmaticInjectionTeardownStatus:
         ChromeMV3PasswordManagerCompatibilityStatus
     var programmaticInjectionActiveAfterTeardownCount: Int
@@ -1493,6 +1495,12 @@ struct ChromeMV3PasswordManagerRealPackageDetectFillSmoke:
                     url: url,
                     documentID: "bitwarden-e2e-login-main-frame",
                     navigationSequence: 0,
+                    reason: reason
+                ),
+            manualNormalTabSmokeResult:
+                .notAttempted(
+                    url: url,
+                    documentID: "bitwarden-e2e-login-main-frame",
                     reason: reason
                 ),
             programmaticInjectionTeardownStatus: .notRequired,
@@ -2314,7 +2322,7 @@ struct ChromeMV3PasswordManagerRealPackageCompatibilityReport:
     Equatable,
     Sendable
 {
-    static let schemaVersion = 12
+    static let schemaVersion = 13
     static let reportFileName =
         "runtime-mv3-real-package-compatibility-report.json"
 
@@ -5217,6 +5225,13 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     navigationSequence: 1,
                     reason:
                         "Use the explicit async local experimental WebKit adapter runner to execute the reviewed generated-bundle bootstrap in a hidden synthetic WKWebView."
+                ),
+            manualNormalTabSmokeResult:
+                .notAttempted(
+                    url: loginURL,
+                    documentID: documentID,
+                    reason:
+                        "Use the explicit async local experimental normal-tab manual smoke runner to execute the reviewed generated-bundle bootstrap on the synthetic HTTPS test page."
                 ),
             programmaticInjectionTeardownStatus:
                 programmaticInjectionActiveAfterTeardownCount == 0

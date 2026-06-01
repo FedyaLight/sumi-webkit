@@ -129,6 +129,163 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
     }
 
     @MainActor
+    func testManualNormalTabSmokeExecutesReviewedFileOnSyntheticHTTPSOriginAndTearsDown()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Named WKContentWorld execution requires macOS 15.5.")
+        }
+        let result = await
+            ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter
+            .runManualNormalTabSmoke(try makeFixture().manualSmokeRequest())
+
+        XCTAssertTrue(result.allowed, "\(result.blockers): \(result.diagnostics)")
+        XCTAssertTrue(result.manualNormalTabSmokeAvailableInLocalExperimentalGate)
+        XCTAssertFalse(result.manualNormalTabSmokeAvailableByDefault)
+        XCTAssertFalse(result.productDefaultRuntimeAvailable)
+        XCTAssertTrue(result.reviewedFileOnly)
+        XCTAssertTrue(result.syntheticHTTPSOriginOnly)
+        XCTAssertTrue(result.isolatedWorldOnly)
+        XCTAssertTrue(result.topFrameOnly)
+        XCTAssertFalse(result.auxiliarySurfaceAllowed)
+        XCTAssertTrue(result.teardownRequired)
+        XCTAssertTrue(result.normalTabConfigurationMarked)
+        XCTAssertTrue(result.normalBrowsingSurfaceOnly)
+        XCTAssertFalse(result.injectionPlan.managerReadoutExecutes)
+        XCTAssertFalse(result.injectionPlan.productSupportClaimed)
+        XCTAssertEqual(
+            result.injectionPlan.reviewedScriptPath,
+            "content/bootstrap-autofill.js"
+        )
+        XCTAssertEqual(result.injectionPlan.syntheticOrigin, "https://sumi.local.test")
+        XCTAssertEqual(result.injectionPlan.targetFrame, "topFrame")
+        XCTAssertEqual(result.injectionPlan.contentWorld, "ISOLATED")
+        XCTAssertTrue(result.reviewedScriptExecutedByWebKit)
+        XCTAssertTrue(result.fixedHarnessShimInstalled)
+        XCTAssertTrue(result.fixedDetectFillDispatchCompleted)
+        XCTAssertEqual(result.fieldsTouched, [
+            "sumi-login-email",
+            "sumi-login-password",
+        ])
+        XCTAssertEqual(
+            result.domObservationBefore.url,
+            "https://sumi.local.test/login"
+        )
+        XCTAssertTrue(result.domObservationBefore.initialValuesEmpty)
+        XCTAssertEqual(
+            result.domObservationAfter.usernameValue,
+            "sumi-test-user@example.test"
+        )
+        XCTAssertEqual(
+            result.domObservationAfter.passwordValue,
+            "sumi-test-password-not-secret"
+        )
+        XCTAssertTrue(result.domObservationAfter.finalValuesMatchDummyFill)
+        XCTAssertTrue(result.teardown.completed)
+        XCTAssertEqual(result.teardown.retainedObjectCountAfterTeardown, 0)
+        XCTAssertEqual(
+            Set(result.teardown.verifiedTriggers),
+            Set(ChromeMV3ProductNormalTabReadinessTeardownTrigger.allCases)
+        )
+        XCTAssertTrue(result.teardown.userScriptsCreated.isEmpty)
+        XCTAssertTrue(result.teardown.handlersCreated.contains(
+            "sumiBitwardenSyntheticCompletion"
+        ))
+        XCTAssertTrue(result.thrownErrors.isEmpty)
+        XCTAssertEqual(result.webKitExecutionResult, "pass")
+    }
+
+    @MainActor
+    func testManualNormalTabSmokeBlocksUnsafeGatesBeforeWebKitObjects()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Named WKContentWorld execution requires macOS 15.5.")
+        }
+        let fixture = try makeFixture()
+        let cases: [
+            (
+                ChromeMV3LocalExperimentalNormalTabManualSmokeRequest,
+                ChromeMV3ProductNormalTabReadinessBlocker
+            )
+        ] = [
+            (
+                fixture.manualSmokeRequest(
+                    localExperimentalProductGateAllowed: false
+                ),
+                .blockedByLocalExperimentalGate
+            ),
+            (
+                fixture.manualSmokeRequest(
+                    urlString: "https://example.test/login",
+                    hostPermissions: ["https://example.test/*"]
+                ),
+                .blockedByNonSyntheticOrigin
+            ),
+            (
+                fixture.manualSmokeRequest(
+                    urlString: "file:///tmp/login.html",
+                    hostPermissions: []
+                ),
+                .blockedByScheme
+            ),
+            (
+                fixture.manualSmokeRequest(
+                    tabSurface: .faviconDownload
+                ),
+                .blockedByAuxiliarySurface
+            ),
+            (
+                fixture.manualSmokeRequest(hostPermissions: []),
+                .blockedByPermission
+            ),
+            (
+                fixture.manualSmokeRequest(contentWorld: .main),
+                .blockedByWorld
+            ),
+            (
+                fixture.manualSmokeRequest(frameID: 1, isTopFrame: false),
+                .blockedByFrame
+            ),
+            (
+                fixture.manualSmokeRequest(reviewedResourcePresent: false),
+                .blockedByMissingReviewedResource
+            ),
+            (
+                fixture.manualSmokeRequest(productDefaultRuntimeAvailable: true),
+                .blockedByRuntimeGate
+            ),
+            (
+                fixture.manualSmokeRequest(matchAboutBlank: true),
+                .blockedByNonSyntheticOrigin
+            ),
+            (
+                fixture.manualSmokeRequest(matchOriginAsFallback: true),
+                .blockedByNonSyntheticOrigin
+            ),
+        ]
+
+        for (request, blocker) in cases {
+            let result = await
+                ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter
+                .runManualNormalTabSmoke(request)
+            XCTAssertFalse(result.allowed, "\(blocker)")
+            XCTAssertTrue(
+                result.blockers.contains(blocker),
+                "\(blocker): \(result.blockers)"
+            )
+            XCTAssertFalse(result.normalTabConfigurationMarked)
+            XCTAssertFalse(result.reviewedScriptExecutedByWebKit)
+            XCTAssertEqual(
+                result.webKitExecutionResult,
+                "blockedBeforeObjectCreation"
+            )
+            XCTAssertTrue(result.teardown.completed)
+            XCTAssertEqual(result.teardown.retainedObjectCountAfterTeardown, 0)
+        }
+    }
+
+    @MainActor
     func testMainWorldMultiFrameAndNonReviewedGeneratedScriptRemainBlocked()
         async throws
     {
@@ -205,6 +362,18 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
         XCTAssertTrue(adapter.reviewedScriptExecutedByWebKit)
         XCTAssertTrue(adapter.dummyValuesWrittenByActualWebKitExecutedScript)
         XCTAssertTrue(adapter.teardown.completed)
+        XCTAssertTrue(detectFill.manualNormalTabSmokeResult.allowed)
+        XCTAssertTrue(
+            detectFill.manualNormalTabSmokeResult
+                .reviewedScriptExecutedByWebKit
+        )
+        XCTAssertTrue(
+            detectFill.manualNormalTabSmokeResult.teardown.completed
+        )
+        XCTAssertTrue(
+            detectFill.manualNormalTabSmokeResult
+                .normalTabConfigurationMarked
+        )
         XCTAssertTrue(detectFill.modeledDummyFillChangedDOM)
         XCTAssertEqual(
             detectFill.domObservationAfter.usernameValue,
@@ -281,6 +450,7 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
             "allFrames: " + "true",
             "fileSchemeAllowed: " + "true",
             "productNormalTabAllowed: " + "true",
+            "productDefaultRuntimeAvailable: " + "true",
             "URL" + "Session",
             "WKWebExtension" + "Context(",
             "webExtension" + "Controller",
@@ -301,6 +471,7 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
         XCTAssertTrue(source.contains("WKWebsiteDataStore.nonPersistent()"))
         XCTAssertTrue(source.contains("WKContentWorld.world(name: contentWorldName)"))
         XCTAssertTrue(source.contains("frameIDs != [0]"))
+        XCTAssertTrue(source.contains("sumiIsNormalTabWebViewConfiguration = true"))
         XCTAssertTrue(
             source.contains(
                 "removeScriptMessageHandler(\n            forName: completionMessageHandlerName,\n            contentWorld: contentWorld"
@@ -447,6 +618,119 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
                 dummyUsername: "sumi-test-user@example.test",
                 dummyPassword: "sumi-test-password-not-secret",
                 modeledInjectionAttempt: attempt
+            )
+        }
+
+        func manualSmokeRequest(
+            moduleEnabled: Bool = true,
+            extensionEnabled: Bool = true,
+            profileEnabled: Bool = true,
+            localExperimentalProductGateAllowed: Bool = true,
+            runtimeGateAllowsReadiness: Bool = true,
+            contentScriptRouteReady: Bool = true,
+            serviceWorkerRouteReady: Bool = true,
+            tabSurface: ChromeMV3WebViewSurface = .normalTab,
+            urlString: String = "https://sumi.local.test/login",
+            hostPermissions: [String] = ["https://sumi.local.test/*"],
+            frameID: Int = 0,
+            isTopFrame: Bool = true,
+            contentWorld: ChromeMV3ContentScriptWorld = .isolated,
+            reviewedResourcePresent: Bool = true,
+            productDefaultRuntimeAvailable: Bool = false,
+            matchAboutBlank: Bool = false,
+            matchOriginAsFallback: Bool = false
+        ) -> ChromeMV3LocalExperimentalNormalTabManualSmokeRequest {
+            var modeled = modeledRequest()
+            modeled.targetURL = urlString
+            modeled.syntheticLoginURL = urlString
+            modeled.hostPermissionOrActiveTabAllowed =
+                hostPermissions.isEmpty == false
+            modeled.frameIDs = [frameID]
+            modeled.world = contentWorld.rawValue
+            let attempt =
+                reviewedResourcePresent
+                    ? ChromeMV3LocalExperimentalProgrammaticInjectionSession()
+                        .attempt(modeled)
+                    : ChromeMV3LocalExperimentalProgrammaticInjectionSession()
+                        .attempt({
+                            var missing = modeled
+                            missing.files = ["content/not-reviewed.js"]
+                            return missing
+                        }())
+            let broker = ChromeMV3PermissionBroker(
+                state: ChromeMV3PermissionBrokerState(
+                    extensionID: "manual-smoke-extension",
+                    profileID: "manual-smoke-profile",
+                    hostPermissions: hostPermissions
+                )
+            )
+            let resource = ChromeMV3ProductNormalTabReviewedResource(
+                reviewedScriptPath: "content/bootstrap-autofill.js",
+                generatedResourceHash:
+                    reviewedResourcePresent
+                        ? attempt.shapeAudit.reviewedBootstrapSHA256
+                        : nil,
+                generatedResourceFileSystemPath:
+                    reviewedResourcePresent
+                        ? attempt.resourceResolutions.first?
+                            .resolvedFileSystemPath
+                        : nil,
+                present:
+                    reviewedResourcePresent
+                        && attempt.resourceResolutions.first?.status
+                            == .copiedGeneratedBundleFile,
+                packageOwned:
+                    reviewedResourcePresent
+                        && attempt.resourceResolutions.first?.status
+                            == .copiedGeneratedBundleFile,
+                diagnostics: attempt.resourceResolutions
+                    .flatMap(\.diagnostics)
+            )
+            let preflight =
+                ChromeMV3ProductNormalTabReadinessPreflightEvaluator.evaluate(
+                    input: ChromeMV3ProductNormalTabReadinessPreflightInput(
+                        profileID: "manual-smoke-profile",
+                        extensionID: "manual-smoke-extension",
+                        tabID: "1",
+                        documentID: "manual-smoke-document",
+                        urlString: urlString,
+                        moduleEnabled: moduleEnabled,
+                        extensionEnabled: extensionEnabled,
+                        profileEnabled: profileEnabled,
+                        localExperimentalProductGateAllowed:
+                            localExperimentalProductGateAllowed,
+                        runtimeGateAllowsReadiness:
+                            runtimeGateAllowsReadiness,
+                        contentScriptRouteReady: contentScriptRouteReady,
+                        serviceWorkerRouteReady: serviceWorkerRouteReady,
+                        tabSurface: tabSurface,
+                        syntheticHTTPSOrigin: "https://sumi.local.test",
+                        frameID: frameID,
+                        isTopFrame: isTopFrame,
+                        contentWorld: contentWorld,
+                        hostAccessDecision:
+                            broker.hostAccessDecision(
+                                url: urlString,
+                                tabID: 1
+                            ),
+                        reviewedResource: resource,
+                        teardownPending: false
+                    )
+                )
+            let plan =
+                ChromeMV3ProductNormalTabReviewedFileInjectionPlan.make(
+                    preflight: preflight
+                )
+            return ChromeMV3LocalExperimentalNormalTabManualSmokeRequest(
+                preflight: preflight,
+                injectionPlan: plan,
+                modeledInjectionAttempt: attempt,
+                dummyUsername: "sumi-test-user@example.test",
+                dummyPassword: "sumi-test-password-not-secret",
+                productDefaultRuntimeAvailable:
+                    productDefaultRuntimeAvailable,
+                matchAboutBlank: matchAboutBlank,
+                matchOriginAsFallback: matchOriginAsFallback
             )
         }
     }

@@ -48,7 +48,14 @@ final class ChromeMV3ProductRuntimeGateTests: XCTestCase {
             policy.productNormalTabMV3ReadinessAvailableInLocalExperimentalGate
         )
         XCTAssertFalse(policy.productNormalTabMV3ReadinessAvailableByDefault)
+        XCTAssertTrue(
+            policy.manualNormalTabSmokeAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(policy.manualNormalTabSmokeAvailableByDefault)
+        XCTAssertFalse(policy.productDefaultRuntimeAvailable)
         XCTAssertTrue(policy.defaultOffRuntime)
+        XCTAssertTrue(policy.reviewedFileOnly)
+        XCTAssertTrue(policy.syntheticHTTPSOriginOnly)
         XCTAssertTrue(policy.reviewedGeneratedBundleFileOnly)
         XCTAssertTrue(policy.isolatedWorldOnly)
         XCTAssertTrue(policy.topFrameOnly)
@@ -81,13 +88,16 @@ final class ChromeMV3ProductRuntimeGateTests: XCTestCase {
         XCTAssertFalse(preflight.blockedByModule)
         XCTAssertFalse(preflight.blockedByExtension)
         XCTAssertFalse(preflight.blockedByProfile)
+        XCTAssertFalse(preflight.blockedByLocalExperimentalGate)
         XCTAssertFalse(preflight.blockedBySurface)
+        XCTAssertFalse(preflight.blockedByAuxiliarySurface)
         XCTAssertFalse(preflight.blockedByScheme)
         XCTAssertFalse(preflight.blockedByPermission)
         XCTAssertFalse(preflight.blockedByMissingReviewedResource)
         XCTAssertFalse(preflight.blockedByWorld)
         XCTAssertFalse(preflight.blockedByFrame)
         XCTAssertFalse(preflight.blockedByRuntimeGate)
+        XCTAssertFalse(preflight.blockedByNonSyntheticOrigin)
         XCTAssertEqual(
             plan.reviewedScriptPath,
             "content/bootstrap-autofill.js"
@@ -141,13 +151,16 @@ final class ChromeMV3ProductRuntimeGateTests: XCTestCase {
         XCTAssertTrue(preflight.blockedByModule)
         XCTAssertTrue(preflight.blockedByExtension)
         XCTAssertTrue(preflight.blockedByProfile)
+        XCTAssertTrue(preflight.blockedByLocalExperimentalGate)
         XCTAssertTrue(preflight.blockedBySurface)
+        XCTAssertTrue(preflight.blockedByAuxiliarySurface)
         XCTAssertTrue(preflight.blockedByScheme)
         XCTAssertTrue(preflight.blockedByPermission)
         XCTAssertTrue(preflight.blockedByMissingReviewedResource)
         XCTAssertTrue(preflight.blockedByWorld)
         XCTAssertTrue(preflight.blockedByFrame)
         XCTAssertTrue(preflight.blockedByRuntimeGate)
+        XCTAssertTrue(preflight.blockedByNonSyntheticOrigin)
         XCTAssertTrue(plan.planOnly)
         XCTAssertFalse(plan.executionAllowedNow)
         XCTAssertFalse(plan.performsExecutionByManagerReadout)
@@ -705,11 +718,11 @@ final class ChromeMV3ProductRuntimeGateTests: XCTestCase {
         contentScriptRouteReady: Bool = true,
         serviceWorkerRouteReady: Bool = true,
         tabSurface: ChromeMV3WebViewSurface = .normalTab,
-        urlString: String = "https://example.com/sumi-mv3-readiness-login",
+        urlString: String = "https://sumi.local.test/login",
         frameID: Int = 0,
         isTopFrame: Bool = true,
         contentWorld: ChromeMV3ContentScriptWorld = .isolated,
-        hostPermissions: [String] = ["https://example.com/*"],
+        hostPermissions: [String] = ["https://sumi.local.test/*"],
         reviewedResourcePresent: Bool = true
     ) -> ChromeMV3ProductNormalTabReadinessPreflight {
         let broker = ChromeMV3PermissionBroker(
@@ -749,6 +762,7 @@ final class ChromeMV3ProductRuntimeGateTests: XCTestCase {
                 contentScriptRouteReady: contentScriptRouteReady,
                 serviceWorkerRouteReady: serviceWorkerRouteReady,
                 tabSurface: tabSurface,
+                syntheticHTTPSOrigin: "https://sumi.local.test",
                 frameID: frameID,
                 isTopFrame: isTopFrame,
                 contentWorld: contentWorld,

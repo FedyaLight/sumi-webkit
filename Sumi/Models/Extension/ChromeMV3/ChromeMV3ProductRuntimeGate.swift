@@ -1056,7 +1056,12 @@ struct ChromeMV3ProductNormalTabReadinessPolicy:
 {
     var productNormalTabMV3ReadinessAvailableInLocalExperimentalGate: Bool
     var productNormalTabMV3ReadinessAvailableByDefault: Bool
+    var manualNormalTabSmokeAvailableInLocalExperimentalGate: Bool
+    var manualNormalTabSmokeAvailableByDefault: Bool
+    var productDefaultRuntimeAvailable: Bool
     var defaultOffRuntime: Bool
+    var reviewedFileOnly: Bool
+    var syntheticHTTPSOriginOnly: Bool
     var reviewedGeneratedBundleFileOnly: Bool
     var isolatedWorldOnly: Bool
     var topFrameOnly: Bool
@@ -1073,7 +1078,12 @@ struct ChromeMV3ProductNormalTabReadinessPolicy:
         ChromeMV3ProductNormalTabReadinessPolicy(
             productNormalTabMV3ReadinessAvailableInLocalExperimentalGate: true,
             productNormalTabMV3ReadinessAvailableByDefault: false,
+            manualNormalTabSmokeAvailableInLocalExperimentalGate: true,
+            manualNormalTabSmokeAvailableByDefault: false,
+            productDefaultRuntimeAvailable: false,
             defaultOffRuntime: true,
+            reviewedFileOnly: true,
+            syntheticHTTPSOriginOnly: true,
             reviewedGeneratedBundleFileOnly: true,
             isolatedWorldOnly: true,
             topFrameOnly: true,
@@ -1085,7 +1095,8 @@ struct ChromeMV3ProductNormalTabReadinessPolicy:
             teardownRequired: true,
             diagnostics: [
                 "Product normal-tab MV3 readiness is local experimental and default-off.",
-                "The readiness slice is plan-only until an explicit local product gate and all normal-tab preflights pass.",
+                "Manual normal-tab smoke is local experimental, explicit, and unavailable by default.",
+                "The readiness slice is plan-only until an explicit local gate and all normal-tab smoke preflights pass.",
                 "Only reviewed generated-bundle file planning is modeled; arbitrary code, functions, strings, and remote scripts remain blocked.",
                 "No normal-tab attachment, WebKit controller/context creation, script registration, service-worker wake, native host launch, or network enforcement is performed by this policy.",
             ],
@@ -1105,13 +1116,16 @@ enum ChromeMV3ProductNormalTabReadinessBlocker:
     case blockedByModule
     case blockedByExtension
     case blockedByProfile
+    case blockedByLocalExperimentalGate
     case blockedBySurface
+    case blockedByAuxiliarySurface
     case blockedByScheme
     case blockedByPermission
     case blockedByMissingReviewedResource
     case blockedByWorld
     case blockedByFrame
     case blockedByRuntimeGate
+    case blockedByNonSyntheticOrigin
 
     static func < (
         lhs: ChromeMV3ProductNormalTabReadinessBlocker,
@@ -1254,6 +1268,7 @@ struct ChromeMV3ProductNormalTabReadinessPreflightInput:
     var contentScriptRouteReady: Bool
     var serviceWorkerRouteReady: Bool
     var tabSurface: ChromeMV3WebViewSurface
+    var syntheticHTTPSOrigin: String
     var frameID: Int
     var isTopFrame: Bool
     var contentWorld: ChromeMV3ContentScriptWorld
@@ -1283,13 +1298,16 @@ struct ChromeMV3ProductNormalTabReadinessPreflight:
     var blockedByModule: Bool
     var blockedByExtension: Bool
     var blockedByProfile: Bool
+    var blockedByLocalExperimentalGate: Bool
     var blockedBySurface: Bool
+    var blockedByAuxiliarySurface: Bool
     var blockedByScheme: Bool
     var blockedByPermission: Bool
     var blockedByMissingReviewedResource: Bool
     var blockedByWorld: Bool
     var blockedByFrame: Bool
     var blockedByRuntimeGate: Bool
+    var blockedByNonSyntheticOrigin: Bool
     var blockers: [ChromeMV3ProductNormalTabReadinessBlocker]
     var diagnostics: [String]
 }
@@ -1303,16 +1321,25 @@ enum ChromeMV3ProductNormalTabReadinessPreflightEvaluator {
         let blockedByModule = input.moduleEnabled == false
         let blockedByExtension = input.extensionEnabled == false
         let blockedByProfile = input.profileEnabled == false
+        let blockedByLocalExperimentalGate =
+            input.localExperimentalProductGateAllowed == false
+        let blockedByAuxiliarySurface =
+            input.policy.auxiliarySurfaceAllowed == false
+                && input.tabSurface
+                    .isAuxiliaryOrHelperSurfaceForChromeMV3Attachment
         let blockedBySurface =
             input.tabSurface != .normalTab
-                || input.policy.auxiliarySurfaceAllowed == false
-                    && input.tabSurface.isAuxiliaryOrHelperSurfaceForChromeMV3Attachment
+                || blockedByAuxiliarySurface
         let blockedByScheme =
             urlClassification != .httpFamily
                 || (
                     input.policy.fileSchemeAllowed == false
                         && urlClassification == .file
                 )
+        let blockedByNonSyntheticOrigin =
+            input.policy.syntheticHTTPSOriginOnly
+                && ChromeMV3RuntimeMessagingURL.origin(from: input.urlString)
+                    != input.syntheticHTTPSOrigin
         let blockedByPermission =
             input.policy.requiresHostPermissionOrActiveTab
                 && input.hostAccessDecision.hasHostAccess == false
@@ -1328,8 +1355,7 @@ enum ChromeMV3ProductNormalTabReadinessPreflightEvaluator {
             input.policy.topFrameOnly
                 && (input.isTopFrame == false || input.frameID != 0)
         let blockedByRuntimeGate =
-            input.localExperimentalProductGateAllowed == false
-                || input.runtimeGateAllowsReadiness == false
+            input.runtimeGateAllowsReadiness == false
                 || input.contentScriptRouteReady == false
                 || input.serviceWorkerRouteReady == false
                 || input.teardownPending
@@ -1338,13 +1364,16 @@ enum ChromeMV3ProductNormalTabReadinessPreflightEvaluator {
             (.blockedByModule, blockedByModule),
             (.blockedByExtension, blockedByExtension),
             (.blockedByProfile, blockedByProfile),
+            (.blockedByLocalExperimentalGate, blockedByLocalExperimentalGate),
             (.blockedBySurface, blockedBySurface),
+            (.blockedByAuxiliarySurface, blockedByAuxiliarySurface),
             (.blockedByScheme, blockedByScheme),
             (.blockedByPermission, blockedByPermission),
             (.blockedByMissingReviewedResource, blockedByMissingReviewedResource),
             (.blockedByWorld, blockedByWorld),
             (.blockedByFrame, blockedByFrame),
             (.blockedByRuntimeGate, blockedByRuntimeGate),
+            (.blockedByNonSyntheticOrigin, blockedByNonSyntheticOrigin),
         ]
         let blockers = pairs.compactMap { $0.1 ? $0.0 : nil }.sorted()
         let eligible = blockers.isEmpty
@@ -1366,7 +1395,9 @@ enum ChromeMV3ProductNormalTabReadinessPreflightEvaluator {
             blockedByModule: blockedByModule,
             blockedByExtension: blockedByExtension,
             blockedByProfile: blockedByProfile,
+            blockedByLocalExperimentalGate: blockedByLocalExperimentalGate,
             blockedBySurface: blockedBySurface,
+            blockedByAuxiliarySurface: blockedByAuxiliarySurface,
             blockedByScheme: blockedByScheme,
             blockedByPermission: blockedByPermission,
             blockedByMissingReviewedResource:
@@ -1374,6 +1405,7 @@ enum ChromeMV3ProductNormalTabReadinessPreflightEvaluator {
             blockedByWorld: blockedByWorld,
             blockedByFrame: blockedByFrame,
             blockedByRuntimeGate: blockedByRuntimeGate,
+            blockedByNonSyntheticOrigin: blockedByNonSyntheticOrigin,
             blockers: blockers,
             diagnostics:
                 uniqueSortedProduct(
@@ -1384,10 +1416,12 @@ enum ChromeMV3ProductNormalTabReadinessPreflightEvaluator {
                         + [
                             "Candidate URL classification is \(urlClassification.rawValue).",
                             "Candidate surface is \(input.tabSurface.rawValue); only normalTab is accepted for this product-normal-tab readiness slice.",
+                            "Synthetic HTTPS origin requirement is \(input.syntheticHTTPSOrigin).",
                             "Local experimental product gate allowed: \(input.localExperimentalProductGateAllowed).",
                             "Runtime gate allows readiness: \(input.runtimeGateAllowsReadiness).",
                             "Content-script route ready: \(input.contentScriptRouteReady).",
                             "Service-worker route ready: \(input.serviceWorkerRouteReady).",
+                            "Product default runtime available: \(input.policy.productDefaultRuntimeAvailable).",
                             eligible
                                 ? "Product normal-tab readiness preflight passed; execution still requires the explicit local smoke path."
                                 : "Product normal-tab readiness preflight is blocked by \(blockers.map(\.rawValue).joined(separator: ", ")).",
@@ -1514,7 +1548,7 @@ struct ChromeMV3ProductNormalTabManualSmokeReadiness:
             diagnostics:
                 preflight.eligible
                     ? [
-                        "Manual smoke readiness is available only for the explicit local experimental path.",
+                        "Manual smoke readiness is allowed only for the explicit local experimental path after every smoke gate passes.",
                     ]
                     : [
                         "Manual smoke readiness is blocked by \(preflight.blockers.map(\.rawValue).joined(separator: ", ")).",
@@ -1540,7 +1574,7 @@ struct ChromeMV3ProductNormalTabReadinessReport:
         lifecycleRecord: ChromeMV3ExtensionLifecycleRecord?,
         normalTabPreflight: ChromeMV3ProductNormalTabRuntimePreflight,
         candidateURLString: String =
-            "https://example.com/sumi-mv3-readiness-login"
+            "https://sumi.local.test/login"
     ) -> ChromeMV3ProductNormalTabReadinessReport {
         let manifestSummary = report?.chromeMV3ProductActiveManifestSummary
         let profileID = lifecycleRecord?.profileID
@@ -1612,6 +1646,7 @@ struct ChromeMV3ProductNormalTabReadinessReport:
                     contentScriptRouteReady: contentScriptRouteReady,
                     serviceWorkerRouteReady: serviceWorkerRouteReady,
                     tabSurface: normalTabPreflight.tabSurface,
+                    syntheticHTTPSOrigin: "https://sumi.local.test",
                     frameID: 0,
                     isTopFrame: true,
                     contentWorld: .isolated,
