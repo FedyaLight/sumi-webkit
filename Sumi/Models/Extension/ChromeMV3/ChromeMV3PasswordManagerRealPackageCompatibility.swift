@@ -1444,10 +1444,13 @@ struct ChromeMV3PasswordManagerRealPackageDetectFillSmoke:
     var dummyPassword: String
     var dummyFillPayloadSummary: String
     var dummyFillResult: String
+    var modeledDummyFillChangedDOM: Bool
     var touchedSyntheticFieldIDs: [String]
     var touchedNonSyntheticFieldIDs: [String]
     var programmaticInjectionAttempt:
         ChromeMV3LocalExperimentalProgrammaticInjectionAttempt
+    var webKitProgrammaticInjectionResult:
+        ChromeMV3LocalExperimentalWebKitProgrammaticInjectionResult
     var programmaticInjectionTeardownStatus:
         ChromeMV3PasswordManagerCompatibilityStatus
     var programmaticInjectionActiveAfterTeardownCount: Int
@@ -1480,10 +1483,18 @@ struct ChromeMV3PasswordManagerRealPackageDetectFillSmoke:
             dummyPassword: "notAttempted",
             dummyFillPayloadSummary: "notAttempted",
             dummyFillResult: "notAttempted",
+            modeledDummyFillChangedDOM: false,
             touchedSyntheticFieldIDs: [],
             touchedNonSyntheticFieldIDs: [],
             programmaticInjectionAttempt:
                 .notAttempted(reason: reason),
+            webKitProgrammaticInjectionResult:
+                .notAttempted(
+                    url: url,
+                    documentID: "bitwarden-e2e-login-main-frame",
+                    navigationSequence: 0,
+                    reason: reason
+                ),
             programmaticInjectionTeardownStatus: .notRequired,
             programmaticInjectionActiveAfterTeardownCount: 0,
             reverseTabsSendMessageClassification:
@@ -2303,7 +2314,7 @@ struct ChromeMV3PasswordManagerRealPackageCompatibilityReport:
     Equatable,
     Sendable
 {
-    static let schemaVersion = 11
+    static let schemaVersion = 12
     static let reportFileName =
         "runtime-mv3-real-package-compatibility-report.json"
 
@@ -5195,9 +5206,18 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             dummyPassword: bitwardenE2EDummyPassword,
             dummyFillPayloadSummary: dummyFillPayloadSummary,
             dummyFillResult: dummyFillResult,
+            modeledDummyFillChangedDOM: dummyFillChangedDOM,
             touchedSyntheticFieldIDs: touchedSyntheticFieldIDs,
             touchedNonSyntheticFieldIDs: touchedNonSyntheticFieldIDs,
             programmaticInjectionAttempt: injectionAttempt,
+            webKitProgrammaticInjectionResult:
+                .notAttempted(
+                    url: loginURL,
+                    documentID: documentID,
+                    navigationSequence: 1,
+                    reason:
+                        "Use the explicit async local experimental WebKit adapter runner to execute the reviewed generated-bundle bootstrap in a hidden synthetic WKWebView."
+                ),
             programmaticInjectionTeardownStatus:
                 programmaticInjectionActiveAfterTeardownCount == 0
                     ? .pass : .blocked,
@@ -8956,12 +8976,22 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             source(
                 "Chrome scripting API",
                 "https://developer.chrome.com/docs/extensions/reference/api/scripting",
-                "Checked that scripting.insertCSS is a distinct runtime API and remains blocked outside manifest-declared CSS planning."
+                "Checked executeScript file paths, default main-frame targeting, allFrames/frameIds targeting, ISOLATED versus MAIN execution worlds, scripting permission, and host-permission requirements. Arbitrary executeScript and scripting.insertCSS remain blocked."
             ),
             source(
                 "Apple WebKit user content headers",
                 "xcode://MacOSX.sdk/System/Library/Frameworks/WebKit.framework/Headers/",
-                "Checked WKUserScript, WKContentWorld, WKUserContentController, and the local _WKUserStyleSheet bridge used for scoped stylesheet attachment/removal."
+                "Checked WKUserScript, named WKContentWorld isolation, nil-frame top-frame evaluateJavaScript targeting, WKUserContentController teardown, WKWebsiteDataStore.nonPersistent(), and the local _WKUserStyleSheet bridge used for scoped stylesheet attachment/removal."
+            ),
+            source(
+                "Apple WKWebView isolated-world evaluation",
+                "https://developer.apple.com/documentation/webkit/wkwebview/evaluatejavascript%28_%3Ain%3Acontentworld%3A%29",
+                "Checked that evaluateJavaScript can target a specific WKContentWorld and nil frame means the main frame; DOM changes remain visible across content worlds."
+            ),
+            source(
+                "Apple WKWebsiteDataStore nonpersistent configuration",
+                "https://developer.apple.com/documentation/webkit/wkwebviewconfiguration/websitedatastore",
+                "Checked that assigning WKWebsiteDataStore.nonPersistent() creates a private browsing data-store boundary for the synthetic hidden WKWebView."
             ),
             source(
                 "Chrome message passing",

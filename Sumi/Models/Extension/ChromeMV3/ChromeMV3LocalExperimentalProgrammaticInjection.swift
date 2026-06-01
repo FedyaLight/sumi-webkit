@@ -6,6 +6,7 @@
 //  detect/fill bootstrap shape. This does not expose arbitrary script execution.
 //
 
+import CryptoKit
 import Foundation
 
 enum ChromeMV3LocalExperimentalProgrammaticInjectionBlocker:
@@ -34,6 +35,7 @@ enum ChromeMV3LocalExperimentalProgrammaticInjectionBlocker:
     case multiFrameRequired
     case profileScopedExtensionMissing
     case remoteScriptBlocked
+    case reviewedGeneratedBundleFileRequired
     case targetOutsideSyntheticLogin
     case unsupportedTargetShape
     case unsupportedTargetURLScheme
@@ -64,6 +66,12 @@ struct ChromeMV3LocalExperimentalProgrammaticInjectionPolicy:
 {
     var programmaticInjectionAvailableInLocalExperimentalGate: Bool
     var programmaticInjectionAvailableByDefault: Bool
+    var webKitProgrammaticInjectionAvailableInLocalExperimentalGate: Bool
+    var webKitProgrammaticInjectionAvailableByDefault: Bool
+    var syntheticHarnessOnly: Bool
+    var reviewedGeneratedBundleFileOnly: Bool
+    var isolatedWorldOnly: Bool
+    var topFrameOnly: Bool
     var generatedBundleFilesOnly: Bool
     var allowedGeneratedBundleFiles: [String]
     var arbitraryFunctionInjectionAllowed: Bool
@@ -74,11 +82,18 @@ struct ChromeMV3LocalExperimentalProgrammaticInjectionPolicy:
     var remoteScriptAllowed: Bool
     var productNormalTabsAllowed: Bool
     var requiresHostPermissionOrActiveTab: Bool
+    var teardownRequired: Bool
     var teardownPolicy: String
 
     static let bitwardenDetectFill = Self(
         programmaticInjectionAvailableInLocalExperimentalGate: true,
         programmaticInjectionAvailableByDefault: false,
+        webKitProgrammaticInjectionAvailableInLocalExperimentalGate: true,
+        webKitProgrammaticInjectionAvailableByDefault: false,
+        syntheticHarnessOnly: true,
+        reviewedGeneratedBundleFileOnly: true,
+        isolatedWorldOnly: true,
+        topFrameOnly: true,
         generatedBundleFilesOnly: true,
         allowedGeneratedBundleFiles: [
             ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
@@ -92,8 +107,9 @@ struct ChromeMV3LocalExperimentalProgrammaticInjectionPolicy:
         remoteScriptAllowed: false,
         productNormalTabsAllowed: false,
         requiresHostPermissionOrActiveTab: true,
+        teardownRequired: true,
         teardownPolicy:
-            "Remove the modeled attachment on navigation, extension disable, profile teardown, or smoke completion."
+            "Remove the modeled attachment and any scoped synthetic WebKit adapter objects on navigation, extension disable, profile teardown, or smoke completion."
     )
 }
 
@@ -122,6 +138,7 @@ struct ChromeMV3LocalExperimentalProgrammaticInjectionResourceResolution:
 {
     var requestedPath: String
     var resolvedPath: String?
+    var resolvedFileSystemPath: String?
     var status: ChromeMV3LocalExperimentalProgrammaticInjectionResourceStatus
     var blockers: [ChromeMV3LocalExperimentalProgrammaticInjectionBlocker]
     var diagnostics: [String]
@@ -143,6 +160,7 @@ struct ChromeMV3LocalExperimentalProgrammaticInjectionShapeAudit:
     var packageOwnedFiles: Bool
     var packageOwnedFunction: Bool
     var packageShapeMatched: Bool
+    var reviewedBootstrapSHA256: String?
     var tabID: Int
     var frameIDs: [Int]
     var allFrames: Bool
@@ -169,6 +187,7 @@ struct ChromeMV3LocalExperimentalProgrammaticInjectionShapeAudit:
             packageOwnedFiles: false,
             packageOwnedFunction: false,
             packageShapeMatched: false,
+            reviewedBootstrapSHA256: nil,
             tabID: -1,
             frameIDs: [],
             allFrames: false,
@@ -368,6 +387,12 @@ final class ChromeMV3LocalExperimentalProgrammaticInjectionSession {
         var blockers:
             [ChromeMV3LocalExperimentalProgrammaticInjectionBlocker] = []
         let lowercased = requestedPath.lowercased()
+        if requestedPath
+            != ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
+                .bitwardenDetectFillBootstrapFile
+        {
+            blockers.append(.reviewedGeneratedBundleFileRequired)
+        }
         if lowercased.hasPrefix("http://")
             || lowercased.hasPrefix("https://")
         {
@@ -464,6 +489,7 @@ final class ChromeMV3LocalExperimentalProgrammaticInjectionSession {
         return ChromeMV3LocalExperimentalProgrammaticInjectionResourceResolution(
             requestedPath: requestedPath,
             resolvedPath: normalized,
+            resolvedFileSystemPath: candidate.path,
             status: .copiedGeneratedBundleFile,
             blockers: [],
             diagnostics: [
@@ -481,6 +507,7 @@ final class ChromeMV3LocalExperimentalProgrammaticInjectionSession {
         ChromeMV3LocalExperimentalProgrammaticInjectionResourceResolution(
             requestedPath: requestedPath,
             resolvedPath: resolvedPath,
+            resolvedFileSystemPath: nil,
             status: .blocked,
             blockers: Array(Set(blockers)).sorted(),
             diagnostics: [diagnostic]
@@ -580,6 +607,8 @@ enum ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog {
             packageOwnedFiles: packageOwnedFiles,
             packageOwnedFunction: false,
             packageShapeMatched: packageShapeMatched,
+            reviewedBootstrapSHA256:
+                bootstrap.isEmpty ? nil : sha256(bootstrap),
             tabID: request.tabID,
             frameIDs: request.frameIDs,
             allFrames: request.allFrames,
@@ -629,6 +658,12 @@ enum ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog {
 
     private static func read(_ url: URL) -> String? {
         try? String(contentsOf: url, encoding: .utf8)
+    }
+
+    private static func sha256(_ source: String) -> String {
+        SHA256.hash(data: Data(source.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 }
 

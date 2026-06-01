@@ -198,6 +198,16 @@ final class ChromeMV3LocalExperimentalProgrammaticInjectionTests:
             policy.programmaticInjectionAvailableInLocalExperimentalGate
         )
         XCTAssertFalse(policy.programmaticInjectionAvailableByDefault)
+        XCTAssertTrue(
+            policy.webKitProgrammaticInjectionAvailableInLocalExperimentalGate
+        )
+        XCTAssertFalse(
+            policy.webKitProgrammaticInjectionAvailableByDefault
+        )
+        XCTAssertTrue(policy.syntheticHarnessOnly)
+        XCTAssertTrue(policy.reviewedGeneratedBundleFileOnly)
+        XCTAssertTrue(policy.isolatedWorldOnly)
+        XCTAssertTrue(policy.topFrameOnly)
         XCTAssertTrue(policy.generatedBundleFilesOnly)
         XCTAssertEqual(
             policy.allowedGeneratedBundleFiles,
@@ -211,6 +221,7 @@ final class ChromeMV3LocalExperimentalProgrammaticInjectionTests:
         XCTAssertFalse(policy.remoteScriptAllowed)
         XCTAssertFalse(policy.productNormalTabsAllowed)
         XCTAssertTrue(policy.requiresHostPermissionOrActiveTab)
+        XCTAssertTrue(policy.teardownRequired)
     }
 
     private func assertBlocked(

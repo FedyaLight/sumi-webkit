@@ -3671,6 +3671,13 @@ struct ChromeMV3ExtensionManagerView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         Text(
+                            verbatim:
+                            "Bitwarden WebKit reviewed-bundle adapter: attempted=\(smoke.detectFillSmoke.webKitProgrammaticInjectionResult.attempted); allowed=\(smoke.detectFillSmoke.webKitProgrammaticInjectionResult.allowed); file=\(smoke.detectFillSmoke.webKitProgrammaticInjectionResult.injectedReviewedFile ?? "none"); world=\(smoke.detectFillSmoke.webKitProgrammaticInjectionResult.contentWorldName ?? "none"); isolated=\(smoke.detectFillSmoke.webKitProgrammaticInjectionResult.isolatedWorldUsed); topFrameOnly=\(smoke.detectFillSmoke.webKitProgrammaticInjectionResult.topFrameOnly); actualDOMChanged=\(smoke.detectFillSmoke.webKitProgrammaticInjectionResult.dummyValuesWrittenByActualWebKitExecutedScript); webView=\(smoke.detectFillSmoke.webKitProgrammaticInjectionResult.hiddenSyntheticWebViewCreated); nonPersistent=\(smoke.detectFillSmoke.webKitProgrammaticInjectionResult.nonPersistentWebsiteDataStoreUsed); userScripts=\(smoke.detectFillSmoke.webKitProgrammaticInjectionResult.userScriptAttachmentCount); handlers=\(smoke.detectFillSmoke.webKitProgrammaticInjectionResult.scriptMessageHandlerAttachmentCount); teardown=\(smoke.detectFillSmoke.webKitProgrammaticInjectionResult.teardown.completed); blocker=\(smoke.detectFillSmoke.webKitProgrammaticInjectionResult.currentBlocker)"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        Text(
                             "Bitwarden detect/fill routes: "
                                 + smoke.detectFillSmoke.routeRecords.map {
                                     "\($0.purpose):\($0.status.rawValue):\($0.messageClassification.rawValue):domChanged=\($0.domChanged)"

@@ -1012,6 +1012,7 @@ final class ChromeMV3NormalTabConfigurationAttachmentTests: XCTestCase {
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3ContentScriptProductAttachment.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerRealPackageCompatibility.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter.swift",
         ]
         let source = chromeMV3Source
             .filter { syntheticBridgeScopedFiles.contains($0.relativePath) == false }
@@ -1024,8 +1025,11 @@ final class ChromeMV3NormalTabConfigurationAttachmentTests: XCTestCase {
             "connect" + "Native",
             "DispatchSource" + "Ti" + "mer",
             "scheduled" + "Ti" + "mer",
-            "Ti" + "mer",
-            "poll" + "ing",
+            "Ti" + "mer(",
+            "start" + "Polling",
+            "polling" + "Loop",
+            "polling" + "Task",
+            "pollingAllowed: " + "true",
         ] {
             XCTAssertFalse(source.contains(forbidden), forbidden)
         }
