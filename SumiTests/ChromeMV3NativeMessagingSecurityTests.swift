@@ -713,6 +713,18 @@ final class ChromeMV3NativeMessagingSecurityTests: XCTestCase {
                         != "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift"
                     && $0.relativePath
                         != "Sumi/Models/Extension/ChromeMV3/ChromeMV3ContentScriptProductAttachment.swift"
+                    && $0.relativePath
+                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerRealPackageCompatibility.swift"
+                    && $0.relativePath
+                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3ServiceWorkerJSExecutionHarness.swift"
+                    && $0.relativePath
+                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionManagerDeveloperPreview.swift"
+                    && $0.relativePath
+                        != "SumiTests/ChromeMV3PasswordManagerRealPackageCompatibilityTests.swift"
+                    && $0.relativePath
+                        != "SumiTests/ChromeMV3ServiceWorkerJSExecutionHarnessTests.swift"
+                    && $0.relativePath
+                        != "SumiTests/ChromeMV3URLHubDeveloperPreviewTests.swift"
             }
             .map(\.contents)
             .joined(separator: "\n")

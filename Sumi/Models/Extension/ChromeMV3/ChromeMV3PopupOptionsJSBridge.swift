@@ -1078,6 +1078,58 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         )
     }
 
+    private func popupServiceWorkerSenderMetadata()
+        -> ChromeMV3ServiceWorkerEventSenderMetadata
+    {
+        ChromeMV3ServiceWorkerEventSenderMetadata(
+            tabID: nil,
+            frameID: nil,
+            documentID: nil,
+            sourceURL: configuration.extensionBaseURLString,
+            urlRedacted: false,
+            redactionState: "extension-owned popup/options sender URL"
+        )
+    }
+
+    private func dispatchServiceWorkerJSListener(
+        source: ChromeMV3ServiceWorkerEventSource,
+        arguments: [ChromeMV3StorageValue],
+        payloadSummary: String,
+        keepaliveKind: ChromeMV3ServiceWorkerInternalKeepaliveKind? = nil,
+        portID: String? = nil
+    ) -> ChromeMV3ServiceWorkerJSListenerDispatchResult? {
+        sharedLifecycleSession?.dispatchRegisteredJSListener(
+            source: source,
+            arguments: arguments,
+            sender: popupServiceWorkerSenderMetadata(),
+            payloadSummary: payloadSummary,
+            sourceComponentID: lifecycleComponentID,
+            sourceComponentKind: .extensionPageHostHarness,
+            keepaliveKind: keepaliveKind,
+            portID: portID
+        )
+    }
+
+    private func runtimeLastErrorContract(
+        for resultKind: ChromeMV3ServiceWorkerJSDispatchResultKind
+    ) -> ChromeMV3RuntimeLastErrorContract {
+        switch resultKind {
+        case .noListener, .noReceiver:
+            return ChromeMV3RuntimeLastErrorContract
+                .contract(for: .noReceivingEnd)
+        case .blockedByPermission:
+            return ChromeMV3RuntimeLastErrorContract
+                .contract(for: .permissionDenied)
+        case .blockedByGate:
+            return ChromeMV3RuntimeLastErrorContract
+                .contract(for: .serviceWorkerUnavailable)
+        case .delivered, .listenerError, .promiseRejected,
+             .sendResponseTimeoutDiagnostic, .unsupportedListenerMode:
+            return ChromeMV3RuntimeLastErrorContract
+                .contract(for: .timeout)
+        }
+    }
+
     private func runtimeSendMessage(
         _ request: ChromeMV3RuntimeJSBridgeHostRequest
     ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
@@ -1091,6 +1143,42 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             return invalidArguments(
                 request,
                 "runtime.sendMessage external-extension overload is not available in popup/options developer preview."
+            )
+        }
+        if let jsResult = dispatchServiceWorkerJSListener(
+            source: .popupOptionsRuntimeMessage,
+            arguments: [request.arguments[0]],
+            payloadSummary: "popup/options runtime.sendMessage"
+        ) {
+            if jsResult.dispatched {
+                return response(
+                    request: request,
+                    succeeded: true,
+                    payload: jsResult.responsePayload ?? .null,
+                    serviceWorkerLifecycleWakeResult:
+                        jsResult.lifecycleWakeResult,
+                    diagnostics:
+                        jsResult.diagnostics
+                        + [
+                            "runtime.sendMessage dispatched to a captured service-worker runtime.onMessage JavaScript listener.",
+                        ]
+                )
+            }
+            let contract = runtimeLastErrorContract(for: jsResult.resultKind)
+            return response(
+                request: request,
+                succeeded: false,
+                lastErrorMessage:
+                    jsResult.lastErrorMessage
+                    ?? contract.futureLastErrorMessage,
+                lastErrorCode: contract.error.rawValue,
+                serviceWorkerLifecycleWakeResult: jsResult.lifecycleWakeResult,
+                diagnostics:
+                    jsResult.diagnostics
+                    + contract.diagnostics
+                    + [
+                        "runtime.sendMessage reached a captured service-worker JavaScript listener dispatcher but did not receive a response.",
+                    ]
             )
         }
         if let lifecycleResult = routeServiceWorkerLifecycleEvent(
@@ -3332,6 +3420,16 @@ enum ChromeMV3PopupOptionsJSShimSource {
             }
           }
 
+          function dispatchDisconnect(state, port, message) {
+            const previousLastError = lastErrorValue;
+            lastErrorValue = message ? { message } : undefined;
+            try {
+              state.onDisconnect.dispatch(port);
+            } finally {
+              lastErrorValue = previousLastError;
+            }
+          }
+
           function rejectFromResponse(response) {
             return Promise.reject(
               new Error(response.lastErrorMessage || "Popup/options JS bridge call failed.")
@@ -3352,6 +3450,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
               return [response.resultPayload];
             }
             if (namespace === "runtime" && methodName === "sendMessage") {
+              return [response.resultPayload];
+            }
+            if (namespace === "runtime" && methodName === "sendNativeMessage") {
               return [response.resultPayload];
             }
             return [];
@@ -3581,13 +3682,13 @@ enum ChromeMV3PopupOptionsJSShimSource {
               onMessage: makePortEvent(),
               onDisconnect: makePortEvent()
             };
-            function markDisconnected() {
+            function markDisconnected(message) {
               if (state.disconnected) {
                 return;
               }
               state.disconnected = true;
               state.pendingMessages = [];
-              state.onDisconnect.dispatch(port);
+              dispatchDisconnect(state, port, message || null);
             }
             function sendNativePortMessage(message) {
               if (!state.delivery || !state.delivery.namespace || !state.delivery.postMessage) {
@@ -3605,9 +3706,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 [state.id, message]
               ).then((response) => {
                 if (!response.succeeded) {
-                  markDisconnected();
+                  markDisconnected(response.lastErrorMessage);
                 }
-              }).catch(markDisconnected);
+              }).catch(() => markDisconnected("Native messaging port is closed."));
             }
             function flushPendingMessages() {
               if (!state.id || state.disconnected || state.pendingMessages.length === 0) {
@@ -3718,13 +3819,13 @@ enum ChromeMV3PopupOptionsJSShimSource {
               bridgePost("runtime", "connect", "fireAndForget", args.map(toJSONCompatible))
                 .then((response) => {
                   if (!response.succeeded) {
-                    state.markDisconnected();
+                    state.markDisconnected(response.lastErrorMessage);
                     return;
                   }
                   const payload = response.resultPayload || {};
                   state.id = payload.portID || state.id;
                 })
-                .catch(state.markDisconnected);
+                .catch(() => state.markDisconnected(null));
               return port;
             },
             enumerable: true
@@ -3755,14 +3856,14 @@ enum ChromeMV3PopupOptionsJSShimSource {
               bridgePost("runtime", nativeConnectMethod, "fireAndForget", [application])
                 .then((response) => {
                   if (!response.succeeded) {
-                    state.markDisconnected();
+                    state.markDisconnected(response.lastErrorMessage);
                     return;
                   }
                   const payload = response.resultPayload || {};
                   state.id = payload.portID || state.id;
                   state.flushPendingMessages();
                 })
-                .catch(state.markDisconnected);
+                .catch(() => state.markDisconnected("Native messaging port is closed."));
               return port;
             },
             enumerable: true

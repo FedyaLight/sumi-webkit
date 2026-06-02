@@ -121,12 +121,55 @@ struct ChromeMV3ServiceWorkerSharedLifecycleSessionSummary:
     var diagnostics: [String]
 }
 
+struct ChromeMV3ServiceWorkerJSListenerDispatchInput {
+    var event: ChromeMV3ServiceWorkerSyntheticListenerEvent
+    var source: ChromeMV3ServiceWorkerEventSource
+    var arguments: [ChromeMV3StorageValue]
+    var sender: ChromeMV3ServiceWorkerEventSenderMetadata
+    var payloadSummary: String
+    var sourceComponentID: String
+    var sourceComponentKind:
+        ChromeMV3ServiceWorkerSharedLifecycleComponentKind
+    var keepaliveKind: ChromeMV3ServiceWorkerInternalKeepaliveKind?
+    var portID: String?
+}
+
+struct ChromeMV3ServiceWorkerJSListenerDispatchResult {
+    var event: ChromeMV3ServiceWorkerSyntheticListenerEvent
+    var listenerID: String?
+    var resultKind: ChromeMV3ServiceWorkerJSDispatchResultKind
+    var responsePayload: ChromeMV3StorageValue?
+    var lastErrorMessage: String?
+    var lifecycleWakeResult: ChromeMV3ServiceWorkerInternalWakeResult?
+    var diagnostics: [String]
+
+    var dispatched: Bool {
+        resultKind == .delivered
+    }
+}
+
+typealias ChromeMV3ServiceWorkerJSListenerDispatchHandler =
+    (ChromeMV3ServiceWorkerJSListenerDispatchInput)
+        -> ChromeMV3ServiceWorkerJSListenerDispatchResult
+
+private struct ChromeMV3ServiceWorkerJSListenerDispatchRegistration {
+    var listenerID: String
+    var event: ChromeMV3ServiceWorkerSyntheticListenerEvent
+    var sequence: Int
+    var dispatch: ChromeMV3ServiceWorkerJSListenerDispatchHandler
+}
+
 final class ChromeMV3ServiceWorkerSharedLifecycleSession {
     let key: ChromeMV3ServiceWorkerSharedLifecycleSessionKey
     let runtimeOwner: ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner
     private var componentRecords:
         [String: ChromeMV3ServiceWorkerSharedLifecycleComponentRecord] = [:]
+    private var jsListenerDispatchers:
+        [ChromeMV3ServiceWorkerSyntheticListenerEvent:
+            [String: ChromeMV3ServiceWorkerJSListenerDispatchRegistration]] =
+                [:]
     private var nextAttachSequence = 1
+    private var nextJSListenerDispatchSequence = 1
 
     init(
         key: ChromeMV3ServiceWorkerSharedLifecycleSessionKey,
@@ -227,6 +270,90 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
     }
 
     @discardableResult
+    func registerJSListenerDispatcher(
+        event: ChromeMV3ServiceWorkerSyntheticListenerEvent,
+        listenerID: String,
+        dispatch:
+            @escaping ChromeMV3ServiceWorkerJSListenerDispatchHandler
+    ) -> String {
+        let normalizedListenerID = normalizedSharedLifecycle(
+            listenerID,
+            fallback:
+                stableIDSharedLifecycle(
+                    prefix: "js-listener-dispatcher",
+                    parts: [
+                        key.profileID,
+                        key.extensionID,
+                        event.rawValue,
+                        String(nextJSListenerDispatchSequence),
+                    ]
+                )
+        )
+        jsListenerDispatchers[event, default: [:]][normalizedListenerID] =
+            ChromeMV3ServiceWorkerJSListenerDispatchRegistration(
+                listenerID: normalizedListenerID,
+                event: event,
+                sequence: nextJSListenerDispatchSequence,
+                dispatch: dispatch
+            )
+        nextJSListenerDispatchSequence += 1
+        return normalizedListenerID
+    }
+
+    func jsListenerDispatcherCount(
+        for event: ChromeMV3ServiceWorkerSyntheticListenerEvent
+    ) -> Int {
+        jsListenerDispatchers[event]?.count ?? 0
+    }
+
+    func clearJSListenerDispatchers(
+        for event: ChromeMV3ServiceWorkerSyntheticListenerEvent? = nil
+    ) {
+        if let event {
+            jsListenerDispatchers.removeValue(forKey: event)
+        } else {
+            jsListenerDispatchers.removeAll()
+        }
+    }
+
+    func dispatchRegisteredJSListener(
+        source: ChromeMV3ServiceWorkerEventSource,
+        arguments: [ChromeMV3StorageValue],
+        sender: ChromeMV3ServiceWorkerEventSenderMetadata,
+        payloadSummary: String,
+        sourceComponentID: String,
+        sourceComponentKind:
+            ChromeMV3ServiceWorkerSharedLifecycleComponentKind,
+        keepaliveKind: ChromeMV3ServiceWorkerInternalKeepaliveKind? = nil,
+        portID: String? = nil
+    ) -> ChromeMV3ServiceWorkerJSListenerDispatchResult? {
+        let event = source.listenerEvent
+        guard let registration = jsListenerDispatchers[event]?
+            .values
+            .sorted(by: { lhs, rhs in
+                if lhs.sequence != rhs.sequence {
+                    return lhs.sequence < rhs.sequence
+                }
+                return lhs.listenerID < rhs.listenerID
+            })
+            .first
+        else { return nil }
+        return registration.dispatch(
+            ChromeMV3ServiceWorkerJSListenerDispatchInput(
+                event: event,
+                source: source,
+                arguments: arguments,
+                sender: sender,
+                payloadSummary: payloadSummary,
+                sourceComponentID: sourceComponentID,
+                sourceComponentKind: sourceComponentKind,
+                keepaliveKind: keepaliveKind,
+                portID: portID
+            )
+        )
+    }
+
+    @discardableResult
     func routeEvent(
         reason: ChromeMV3ServiceWorkerWakeReason,
         listenerEvent: ChromeMV3ServiceWorkerSyntheticListenerEvent? = nil,
@@ -276,6 +403,7 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
     func triggerHardTimeout(
         reason: String = "explicitSharedHardTimeout"
     ) -> ChromeMV3ServiceWorkerInternalWakeResult {
+        clearJSListenerDispatchers()
         let result = runtimeOwner.triggerHardTimeout(reason: reason)
         detachAll(reason: .hardTimeout)
         runtimeOwner.listenerRegistry.tearDown()
@@ -283,25 +411,30 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
     }
 
     func tearDownForExtensionDisable() {
+        clearJSListenerDispatchers()
         detachAll(reason: .extensionDisabled)
         runtimeOwner.tearDownForExtensionDisable()
     }
 
     func tearDownForExtensionUninstall() {
+        clearJSListenerDispatchers()
         detachAll(reason: .extensionUninstalled)
         runtimeOwner.tearDownForExtensionUninstall()
     }
 
     func tearDownForProfileClose() {
+        clearJSListenerDispatchers()
         detachAll(reason: .profileClosed)
         runtimeOwner.tearDownForProfileClose()
     }
 
     func reset() {
+        clearJSListenerDispatchers()
         detachAll(reason: .reset)
         runtimeOwner.reset()
         componentRecords.removeAll()
         nextAttachSequence = 1
+        nextJSListenerDispatchSequence = 1
     }
 
     var summary: ChromeMV3ServiceWorkerSharedLifecycleSessionSummary {

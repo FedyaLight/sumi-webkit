@@ -106,6 +106,76 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(response.runtimeLoadable)
     }
 
+    func testRuntimeSendMessageRoutesThroughSharedJSListenerDispatcher()
+        throws
+    {
+        let session = try makeSharedLifecycleSession()
+        session.registerJSListenerDispatcher(
+            event: .runtimeOnMessage,
+            listenerID: "popup-js-runtime-on-message"
+        ) { input in
+            let responsePayload: ChromeMV3StorageValue = .object([
+                "echo": input.arguments.first ?? .null,
+                "source": .string(input.source.rawValue),
+                "senderURLRedacted": .bool(input.sender.urlRedacted),
+            ])
+            session.registerListener(
+                event: input.event,
+                listenerID: "popup-js-runtime-on-message-executed",
+                outcome: .modelDispatched(responsePayload)
+            )
+            let wake = session.routeEvent(
+                reason: input.source.wakeReason,
+                listenerEvent: input.event,
+                sourceComponentID: input.sourceComponentID,
+                sourceComponentKind: input.sourceComponentKind,
+                payload: input.arguments.first,
+                payloadSummary: input.payloadSummary,
+                sourceContext: input.source.sourceContext
+            )
+            return ChromeMV3ServiceWorkerJSListenerDispatchResult(
+                event: input.event,
+                listenerID: "popup-js-runtime-on-message",
+                resultKind: wake.dispatched ? .delivered : .noReceiver,
+                responsePayload: wake.responsePayload,
+                lastErrorMessage: wake.lastErrorMessage,
+                lifecycleWakeResult: wake,
+                diagnostics: [
+                    "Popup test JS dispatcher routed through shared lifecycle.",
+                ]
+            )
+        }
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(),
+            sharedLifecycleSession: session
+        )
+
+        let response = handler.handle(request(
+            namespace: "runtime",
+            methodName: "sendMessage",
+            arguments: [.object(["ping": .bool(true)])]
+        ))
+
+        XCTAssertTrue(response.succeeded)
+        XCTAssertEqual(
+            response.resultPayload,
+            .object([
+                "echo": .object(["ping": .bool(true)]),
+                "senderURLRedacted": .bool(false),
+                "source": .string("popupOptionsRuntimeMessage"),
+            ])
+        )
+        XCTAssertTrue(response.serviceWorkerWakeAttempted)
+        XCTAssertEqual(
+            response.serviceWorkerLifecycleWakeResult?.sessionID,
+            session.key.lifecycleSessionID
+        )
+        XCTAssertEqual(
+            response.serviceWorkerLifecycleWakeResult?.sourceComponentKind,
+            .extensionPageHostHarness
+        )
+    }
+
     func testRuntimeSendMessageNoListenerStaysPreciseWithSharedLifecycle()
         throws
     {
@@ -649,6 +719,43 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(disconnect.serviceWorkerWakeAttempted)
     }
 
+    func testNativeMessagingUnavailableReturnsChromeHostErrorWithoutLaunch() {
+        let expected = ChromeMV3NativeMessagingRuntimeErrorCode
+            .hostManifestMissing.lastErrorMessage
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                manifestPermissions: ["nativeMessaging"]
+            )
+        )
+
+        let send = handler.handle(request(
+            namespace: "runtime",
+            methodName: "send" + "NativeMessage",
+            arguments: [
+                .string("com.bitwarden.desktop"),
+                .object(["kind": .string("probe")]),
+            ]
+        ))
+        let connect = handler.handle(request(
+            namespace: "runtime",
+            methodName: "connect" + "Native",
+            arguments: [.string("com.bitwarden.desktop")],
+            invocationMode: .fireAndForget
+        ))
+
+        XCTAssertFalse(send.succeeded)
+        XCTAssertEqual(send.lastErrorMessage, expected)
+        XCTAssertEqual(send.lastErrorCode, "hostManifestMissing")
+        XCTAssertFalse(send.nativeHostLaunchAttempted)
+        XCTAssertFalse(connect.succeeded)
+        XCTAssertEqual(connect.lastErrorMessage, expected)
+        XCTAssertEqual(connect.lastErrorCode, "hostManifestMissing")
+        XCTAssertFalse(connect.nativeHostLaunchAttempted)
+        XCTAssertTrue(send.diagnostics.contains {
+            $0.contains("Product native messaging remains unavailable")
+        })
+    }
+
     func testTeardownClearsPopupOptionsBridgeState() throws {
         let handler = ChromeMV3PopupOptionsJSBridgeHandler(
             configuration: configuration()
@@ -766,6 +873,116 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         )
         XCTAssertTrue(snapshot.observedMethods.contains("storage.local.set"))
         XCTAssertTrue(snapshot.observedMethods.contains("tabs.sendMessage"))
+    }
+
+    @MainActor
+    func testRealPopupOptionsWKWebViewReportsNativeMessagingUnavailableLikeChrome()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        let htmlURL = root.appendingPathComponent("popup.html")
+        try """
+        <!doctype html>
+        <meta charset="utf-8">
+        <title>Popup Native Messaging</title>
+        <main data-sumi-extension-page-fixture-marker="safe">Popup</main>
+        """.write(to: htmlURL, atomically: true, encoding: .utf8)
+        let config = configuration(
+            manifestPermissions: ["nativeMessaging"]
+        )
+        let installation = ChromeMV3PopupOptionsJSBridgeInstallation(
+            configuration: config,
+            allowlist: config.allowlist,
+            bridgeAvailable: true,
+            scriptSource: ChromeMV3PopupOptionsJSShimSource.source(
+                configuration: config
+            ),
+            messageHandlerName:
+                ChromeMV3PopupOptionsJSShimSource.bridgeMessageHandlerName,
+            diagnostics: config.diagnostics
+        )
+        let handle = ChromeMV3ProductPopupOptionsWKWebViewHandle(
+            loadFileURL: htmlURL,
+            readAccessURL: root,
+            bridgeInstallation: installation,
+            permissionPromptPresenter: nil,
+            permissionEventDispatcher: nil
+        )
+        defer { handle.tearDown() }
+
+        try await handle.waitForLoadForTesting()
+        let raw = try await handle.callAsyncJavaScriptForTesting(
+            """
+            const host = "com.bitwarden.desktop";
+            let callbackArgCount = -1;
+            let callbackLastErrorInside = null;
+            await new Promise((resolve) => {
+              chrome.runtime.sendNativeMessage(host, {kind: "callback"}, function() {
+                callbackArgCount = arguments.length;
+                callbackLastErrorInside = chrome.runtime.lastError
+                  ? chrome.runtime.lastError.message
+                  : null;
+                resolve();
+              });
+            });
+            const callbackLastErrorOutside = chrome.runtime.lastError || null;
+            let promiseError = null;
+            try {
+              await chrome.runtime.sendNativeMessage(host, {kind: "promise"});
+            } catch (error) {
+              promiseError = error.message;
+            }
+            const port = chrome.runtime.connectNative(host);
+            let disconnectCount = 0;
+            let disconnectLastErrorInside = null;
+            port.onDisconnect.addListener(() => {
+              disconnectCount += 1;
+              disconnectLastErrorInside = chrome.runtime.lastError
+                ? chrome.runtime.lastError.message
+                : null;
+            });
+            await chrome.runtime.sendMessage({kind: "flushNativeUnavailable"}).catch(() => undefined);
+            const disconnectLastErrorOutside = chrome.runtime.lastError || null;
+            return {
+              callbackArgCount,
+              callbackLastErrorInside,
+              callbackLastErrorOutside,
+              promiseError,
+              disconnectCount,
+              disconnectLastErrorInside,
+              disconnectLastErrorOutside,
+              nativeMessagingMissing: chrome.nativeMessaging === undefined
+            };
+            """
+        )
+        let object = try XCTUnwrap(raw as? [String: Any])
+        let expected = ChromeMV3NativeMessagingRuntimeErrorCode
+            .hostManifestMissing.lastErrorMessage
+
+        XCTAssertEqual(object["callbackArgCount"] as? Int, 0)
+        XCTAssertEqual(object["callbackLastErrorInside"] as? String, expected)
+        XCTAssertTrue(object["callbackLastErrorOutside"] is NSNull)
+        XCTAssertEqual(object["promiseError"] as? String, expected)
+        XCTAssertEqual(object["disconnectCount"] as? Int, 1)
+        XCTAssertEqual(object["disconnectLastErrorInside"] as? String, expected)
+        XCTAssertTrue(
+            object["disconnectLastErrorOutside"] == nil
+                || object["disconnectLastErrorOutside"] is NSNull,
+            String(describing: object["disconnectLastErrorOutside"])
+        )
+        XCTAssertNotNil(object["nativeMessagingMissing"] as? Bool)
+        let snapshot = try XCTUnwrap(
+            handle.popupOptionsBridgeDiagnosticsSnapshot
+        )
+        XCTAssertTrue(snapshot.callRecords.allSatisfy {
+            $0.nativeHostLaunchAttempted == false
+        })
+        XCTAssertTrue(snapshot.observedMethods.contains(
+            "runtime.send" + "NativeMessage"
+        ))
+        XCTAssertTrue(snapshot.observedMethods.contains(
+            "runtime.connect" + "Native"
+        ))
     }
     #endif
 

@@ -299,6 +299,103 @@ final class ChromeMV3RuntimeJSMessagingMVPTests: XCTestCase {
         XCTAssertEqual(handler.listenerRegistry.summary.modelEndpointCount, 0)
     }
 
+    func testNativeMessagingUnavailableUsesChromeHostErrorWithoutFixtureLaunch() {
+        let handler = ChromeMV3RuntimeJSBridgeHandler(
+            configuration: .syntheticHarness(
+                nativeMessagingPermissionState: .grantedByManifest
+            )
+        )
+
+        let send = handler.handle(request(
+            "sendNativeMessage",
+            invocationMode: .promise,
+            arguments: [
+                .string("com.bitwarden.desktop"),
+                .object(["kind": .string("probe")]),
+            ]
+        ))
+        let connect = handler.handle(request(
+            "connectNative",
+            invocationMode: .fireAndForget,
+            arguments: [.string("com.bitwarden.desktop")]
+        ))
+
+        XCTAssertFalse(send.succeeded)
+        XCTAssertEqual(
+            send.lastErrorMessage,
+            ChromeMV3NativeMessagingRuntimeErrorCode
+                .hostManifestMissing.lastErrorMessage
+        )
+        XCTAssertEqual(
+            send.lastErrorCode,
+            ChromeMV3NativeMessagingRuntimeErrorCode
+                .hostManifestMissing.rawValue
+        )
+        XCTAssertFalse(connect.succeeded)
+        XCTAssertEqual(
+            connect.lastErrorMessage,
+            ChromeMV3NativeMessagingRuntimeErrorCode
+                .hostManifestMissing.lastErrorMessage
+        )
+        XCTAssertEqual(handler.nativeSendMessageCount, 1)
+        XCTAssertEqual(handler.nativePortCreateCount, 1)
+        XCTAssertEqual(handler.nativePortPostMessageCount, 0)
+        XCTAssertEqual(handler.nativePortDisconnectCount, 0)
+        XCTAssertTrue(send.diagnostics.contains("No native host process was launched."))
+        XCTAssertTrue(connect.diagnostics.contains("No native host process was launched."))
+    }
+
+    func testNativeMessagingPermissionAndHostValidationPrecedeFixtureGate()
+        throws
+    {
+        let root = try temporaryDirectory(named: "native-validation-order")
+        let validHost = ChromeMV3NativeMessagingFixtureHostBuilder
+            .passwordManagerFixtureHostName
+        _ = try ChromeMV3NativeMessagingFixtureHostBuilder.writeFixtureHost(
+            kind: .echo,
+            rootURL: root,
+            hostName: validHost,
+            extensionID: "abcdefghijklmnopabcdefghijklmnop"
+        )
+        let missingPermission = ChromeMV3NativeMessagingRuntimeOwner(
+            configuration: .internalFixture(
+                extensionID: "abcdefghijklmnopabcdefghijklmnop",
+                profileID: "runtime-validation-profile",
+                fixtureHostRootPaths: [root.path],
+                explicitInternalNativeMessagingBridgeAllowed: false,
+                permissionState: .missing
+            )
+        )
+        let invalidHost = ChromeMV3NativeMessagingRuntimeOwner(
+            configuration: .internalFixture(
+                extensionID: "abcdefghijklmnopabcdefghijklmnop",
+                profileID: "runtime-validation-profile",
+                fixtureHostRootPaths: [],
+                explicitInternalNativeMessagingBridgeAllowed: false,
+                permissionState: .grantedByManifest
+            )
+        )
+
+        let permissionResult = missingPermission.sendNativeMessage(
+            hostName: validHost,
+            message: .object(["kind": .string("permission")])
+        )
+        let invalidHostResult = invalidHost.sendNativeMessage(
+            hostName: ".invalid..host",
+            message: .object(["kind": .string("invalidHost")])
+        )
+
+        XCTAssertFalse(permissionResult.succeeded)
+        XCTAssertEqual(
+            permissionResult.lastErrorCode,
+            .missingNativeMessagingPermission
+        )
+        XCTAssertFalse(permissionResult.lifecycle.processLaunchAttempted)
+        XCTAssertFalse(invalidHostResult.succeeded)
+        XCTAssertEqual(invalidHostResult.lastErrorCode, .invalidHostName)
+        XCTAssertFalse(invalidHostResult.lifecycle.processLaunchAttempted)
+    }
+
     @MainActor
     func testWebKitSyntheticHarnessExercisesNativeMessagingFixtureBridge()
         async throws
@@ -430,6 +527,78 @@ final class ChromeMV3RuntimeJSMessagingMVPTests: XCTestCase {
         XCTAssertEqual(jsonBool(object["disconnectSeen"]), true)
         XCTAssertEqual(jsonBool(object["nativeMessagingMissing"]), true)
         XCTAssertFalse(result.normalTabRuntimeBridgeAvailable)
+        XCTAssertFalse(result.runtimeJSBridgeAvailableInProduct)
+        XCTAssertFalse(result.runtimeLoadable)
+    }
+
+    @MainActor
+    func testWebKitSyntheticHarnessReportsNativeMessagingUnavailableLikeChrome()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else { return }
+        let expected = ChromeMV3NativeMessagingRuntimeErrorCode
+            .hostManifestMissing.lastErrorMessage
+        let result = await ChromeMV3RuntimeJSSyntheticHarness.run(
+            scriptBody: """
+            const host = "com.bitwarden.desktop";
+            let callbackArgCount = -1;
+            let callbackLastErrorInside = null;
+            await new Promise((resolve) => {
+              chrome.runtime.sendNativeMessage(host, {kind: "callback"}, function() {
+                callbackArgCount = arguments.length;
+                callbackLastErrorInside = chrome.runtime.lastError
+                  ? chrome.runtime.lastError.message
+                  : null;
+                resolve();
+              });
+            });
+            const callbackLastErrorOutside = chrome.runtime.lastError || null;
+            let promiseError = null;
+            try {
+              await chrome.runtime.sendNativeMessage(host, {kind: "promise"});
+            } catch (error) {
+              promiseError = error.message;
+            }
+            const port = chrome.runtime.connectNative(host);
+            let disconnectCount = 0;
+            let disconnectLastErrorInside = null;
+            port.onDisconnect.addListener(() => {
+              disconnectCount += 1;
+              disconnectLastErrorInside = chrome.runtime.lastError
+                ? chrome.runtime.lastError.message
+                : null;
+            });
+            await chrome.runtime.sendMessage({kind: "flushNativeUnavailable"}).catch(() => undefined);
+            const disconnectLastErrorOutside = chrome.runtime.lastError || null;
+            return {
+              callbackArgCount,
+              callbackLastErrorInside,
+              callbackLastErrorOutside,
+              promiseError,
+              disconnectCount,
+              disconnectLastErrorInside,
+              disconnectLastErrorOutside,
+              nativeMessagingMissing: chrome.nativeMessaging === undefined
+            };
+            """,
+            configuration: .syntheticHarness(
+                nativeMessagingPermissionState: .grantedByManifest
+            )
+        )
+
+        XCTAssertTrue(
+            result.scriptEvaluationSucceeded,
+            result.diagnostics.joined(separator: "\n")
+        )
+        let object = try XCTUnwrap(try decodedObject(result.scriptResultJSON))
+        XCTAssertEqual(object["callbackArgCount"] as? Double, 0)
+        XCTAssertEqual(object["callbackLastErrorInside"] as? String, expected)
+        XCTAssertTrue(object["callbackLastErrorOutside"] is NSNull)
+        XCTAssertEqual(object["promiseError"] as? String, expected)
+        XCTAssertEqual(object["disconnectCount"] as? Double, 1)
+        XCTAssertEqual(object["disconnectLastErrorInside"] as? String, expected)
+        XCTAssertTrue(object["disconnectLastErrorOutside"] is NSNull)
+        XCTAssertEqual(object["nativeMessagingMissing"] as? Bool, true)
         XCTAssertFalse(result.runtimeJSBridgeAvailableInProduct)
         XCTAssertFalse(result.runtimeLoadable)
     }
@@ -609,17 +778,23 @@ final class ChromeMV3RuntimeJSMessagingMVPTests: XCTestCase {
         let syntheticBridgeFiles =
             runtimeBridgeFiles.union([
                 "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift",
-            "Sumi/Models/Extension/ChromeMV3/ChromeMV3PopupOptionsJSBridge.swift",
-            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift",
-            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ContentScriptProductAttachment.swift",
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3PopupOptionsJSBridge.swift",
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift",
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3ContentScriptProductAttachment.swift",
                 "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift",
                 "SumiTests/ChromeMV3TabsScriptingJSMVPTests.swift",
                 "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift",
                 "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift",
                 "SumiTests/ChromeMV3StorageLocalRuntimeTests.swift",
                 "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift",
-            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionEventAPIsRuntime.swift",
-            "Sumi/Models/Extension/ChromeMV3/ChromeMV3SidePanelOffscreenIdentitySyntheticWebKitHarness.swift",
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionEventAPIsRuntime.swift",
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3SidePanelOffscreenIdentitySyntheticWebKitHarness.swift",
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerRealPackageCompatibility.swift",
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3ServiceWorkerJSExecutionHarness.swift",
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionManagerDeveloperPreview.swift",
+                "SumiTests/ChromeMV3PasswordManagerRealPackageCompatibilityTests.swift",
+                "SumiTests/ChromeMV3ServiceWorkerJSExecutionHarnessTests.swift",
+                "SumiTests/ChromeMV3URLHubDeveloperPreviewTests.swift",
             ])
         let runtimeBridgeJoined = sources
             .filter { runtimeBridgeFiles.contains($0.relativePath) }

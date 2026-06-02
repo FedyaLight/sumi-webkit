@@ -991,6 +991,93 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         )
     }
 
+    func testContentScriptRuntimeSendMessageRoutesThroughSharedJSListenerDispatcher()
+        throws
+    {
+        let fixture = try makePreflightFixture()
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+        _ = registry.registerEndpoint(
+            preflight: fixture.preflight,
+            messageListenerRegistered: true
+        )
+        let session = try makeSharedLifecycleSession()
+        session.registerJSListenerDispatcher(
+            event: .runtimeOnMessage,
+            listenerID: "content-js-runtime-on-message"
+        ) { input in
+            let responsePayload: ChromeMV3StorageValue = .object([
+                "echo": input.arguments.first ?? .null,
+                "frameId": .number(Double(input.sender.frameID ?? -1)),
+                "senderURLRedacted": .bool(input.sender.urlRedacted),
+                "tabId": .number(Double(input.sender.tabID ?? -1)),
+            ])
+            session.registerListener(
+                event: input.event,
+                listenerID: "content-js-runtime-on-message-executed",
+                outcome: .modelDispatched(responsePayload)
+            )
+            let wake = session.routeEvent(
+                reason: input.source.wakeReason,
+                listenerEvent: input.event,
+                sourceComponentID: input.sourceComponentID,
+                sourceComponentKind: input.sourceComponentKind,
+                payload: input.arguments.first,
+                payloadSummary: input.payloadSummary,
+                sourceContext: input.source.sourceContext
+            )
+            return ChromeMV3ServiceWorkerJSListenerDispatchResult(
+                event: input.event,
+                listenerID: "content-js-runtime-on-message",
+                resultKind: wake.dispatched ? .delivered : .noReceiver,
+                responsePayload: wake.responsePayload,
+                lastErrorMessage: wake.lastErrorMessage,
+                lifecycleWakeResult: wake,
+                diagnostics: [
+                    "Content-script test JS dispatcher routed through shared lifecycle.",
+                ]
+            )
+        }
+        let host = ChromeMV3ContentScriptBridgeHost(
+            extensionID: extensionID,
+            profileID: profileID,
+            tabID: 7,
+            frameID: 0,
+            documentID: "document-1",
+            urlString: "https://example.com/login",
+            permissionBroker:
+                permissionBroker(hostPermissions: ["https://example.com/*"]),
+            endpointRegistry: registry,
+            sharedLifecycleSession: session
+        )
+
+        let response = host.handle([
+            "namespace": "runtime",
+            "methodName": "sendMessage",
+            "bridgeCallID": "content-script-send-message-js-dispatcher",
+            "arguments": [["ping": true]],
+        ])
+
+        XCTAssertTrue(response.succeeded)
+        XCTAssertEqual(
+            response.resultPayload,
+            .object([
+                "echo": .object(["ping": .bool(true)]),
+                "frameId": .number(0),
+                "senderURLRedacted": .bool(true),
+                "tabId": .number(7),
+            ])
+        )
+        XCTAssertTrue(response.serviceWorkerWakeAttempted)
+        XCTAssertEqual(
+            response.serviceWorkerLifecycleWakeResult?.sessionID,
+            session.key.lifecycleSessionID
+        )
+        XCTAssertEqual(
+            response.serviceWorkerLifecycleWakeResult?.sourceComponentKind,
+            .contentScriptSyntheticEndpoint
+        )
+    }
+
     func testContentScriptRuntimeSendMessageNoListenerStaysPrecise()
         throws
     {

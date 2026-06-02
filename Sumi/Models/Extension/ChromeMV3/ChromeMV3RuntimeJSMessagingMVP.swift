@@ -1240,13 +1240,14 @@ final class ChromeMV3RuntimeJSBridgeHandler {
             succeeded: false,
             lastErrorMessage:
                 ChromeMV3NativeMessagingRuntimeErrorCode
-                .fixtureGateDisabled.lastErrorMessage,
+                .hostManifestMissing.lastErrorMessage,
             lastErrorCode:
                 ChromeMV3NativeMessagingRuntimeErrorCode
-                .fixtureGateDisabled.rawValue,
+                .hostManifestMissing.rawValue,
             diagnostics: [
                 "Native messaging is available only in explicit DEBUG/internal fixture scope.",
                 "Product native messaging remains unavailable.",
+                "No native host process was launched.",
             ]
         )
     }
@@ -1600,6 +1601,16 @@ enum ChromeMV3RuntimeJSShimSource {
             }
           }
 
+          function dispatchDisconnect(state, port, message) {
+            const previousLastError = lastErrorValue;
+            lastErrorValue = message ? { message } : undefined;
+            try {
+              state.onDisconnect.dispatch(port);
+            } finally {
+              lastErrorValue = previousLastError;
+            }
+          }
+
           function rejectFromResponse(response) {
             return Promise.reject(
               new Error(response.lastErrorMessage || "Runtime JS bridge call failed.")
@@ -1801,12 +1812,12 @@ enum ChromeMV3RuntimeJSShimSource {
                     }
                   } else if (nativePort && response && !response.succeeded) {
                     state.disconnected = true;
-                    state.onDisconnect.dispatch(port);
+                    dispatchDisconnect(state, port, response.lastErrorMessage);
                   }
                 }).catch(() => {
                   if (nativePort) {
                     state.disconnected = true;
-                    state.onDisconnect.dispatch(port);
+                    dispatchDisconnect(state, port, "Native messaging port is closed.");
                   }
                 });
                 if (state.peer && !state.peer.disconnected) {
@@ -1829,10 +1840,10 @@ enum ChromeMV3RuntimeJSShimSource {
                   portID: state.id
                   }
                 ).catch(() => undefined);
-                state.onDisconnect.dispatch(port);
+                dispatchDisconnect(state, port, null);
                 if (state.peer && !state.peer.disconnected) {
                   state.peer.disconnected = true;
-                  state.peer.onDisconnect.dispatch(state.peer.port);
+                  dispatchDisconnect(state.peer, state.peer.port, null);
                 }
               },
               enumerable: true
@@ -1964,7 +1975,7 @@ enum ChromeMV3RuntimeJSShimSource {
                 .then((response) => {
                   if (!response.succeeded) {
                     senderState.disconnected = true;
-                    senderState.onDisconnect.dispatch(port);
+                    dispatchDisconnect(senderState, port, response.lastErrorMessage);
                     return;
                   }
                   const payload = response.resultPayload || {};
@@ -1983,7 +1994,7 @@ enum ChromeMV3RuntimeJSShimSource {
                 })
                 .catch(() => {
                   senderState.disconnected = true;
-                  senderState.onDisconnect.dispatch(port);
+                  dispatchDisconnect(senderState, port, null);
                 });
               pendingRegistrations.push(connectPromise.catch(() => undefined));
               return port;
@@ -2009,7 +2020,7 @@ enum ChromeMV3RuntimeJSShimSource {
                 .then((response) => {
                   if (!response.succeeded) {
                     state.disconnected = true;
-                    state.onDisconnect.dispatch(port);
+                    dispatchDisconnect(state, port, response.lastErrorMessage);
                     return response;
                   }
                   const payload = response.resultPayload || {};
@@ -2018,7 +2029,7 @@ enum ChromeMV3RuntimeJSShimSource {
                 })
                 .catch(() => {
                   state.disconnected = true;
-                  state.onDisconnect.dispatch(port);
+                  dispatchDisconnect(state, port, "Native messaging port is closed.");
                   return {
                     succeeded: false,
                     lastErrorMessage: "Native messaging port is closed."

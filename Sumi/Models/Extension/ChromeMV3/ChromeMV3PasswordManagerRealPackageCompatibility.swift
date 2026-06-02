@@ -3959,10 +3959,45 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             explicitInternalLifecycleAllowed: true,
             nativePortKeepaliveAvailableInFixture: false
         )
-        registerBitwardenE2EServiceWorkerListeners(
-            readiness: serviceWorkerReadiness,
-            sharedSession: sharedSession
-        )
+        let serviceWorkerRouteHarness:
+            ChromeMV3ServiceWorkerJSExecutionHarness?
+        if let generatedBundleRecord, let sharedSession {
+            let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+                request:
+                    ChromeMV3ServiceWorkerJSExecutionRequest(
+                        manifest: manifest,
+                        generatedBundleRecord: generatedBundleRecord,
+                        extensionID: extensionID,
+                        profileID: profileID,
+                        moduleState: moduleState,
+                        extensionEnabled: extensionEnabled,
+                        localExperimentalGateAllowed: true,
+                        dynamicImportRewriteExperimentAllowed: true
+                    )
+            )
+            let started = harness.start()
+            let capturedAny = harness.snapshot.capturedListeners.isEmpty == false
+            if capturedAny
+                && (started.status == .running || harness.canDispatchCapturedListeners)
+            {
+                harness.attachCapturedListenerDispatchers(
+                    to: sharedSession,
+                    clearingExisting: true
+                )
+            } else {
+                registerBitwardenE2EServiceWorkerListeners(
+                    readiness: serviceWorkerReadiness,
+                    sharedSession: sharedSession
+                )
+            }
+            serviceWorkerRouteHarness = harness
+        } else {
+            registerBitwardenE2EServiceWorkerListeners(
+                readiness: serviceWorkerReadiness,
+                sharedSession: sharedSession
+            )
+            serviceWorkerRouteHarness = nil
+        }
         let popupHandler = ChromeMV3PopupOptionsJSBridgeHandler(
             configuration:
                 bitwardenE2EPopupConfiguration(
@@ -4391,6 +4426,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         detectFillSmoke.endpointTeardownStatus =
             teardownSummary.activeEndpointCount == 0 ? .pass : .blocked
         sharedSession?.triggerIdleRelease(reason: "bitwardenE2ESmokeComplete")
+        serviceWorkerRouteHarness?.triggerIdleRelease()
         sharedLifecycleRegistry.reset()
 
         let noReceiverResults = routes.filter {
@@ -5919,14 +5955,10 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 event: .runtimeOnMessage,
                 listenerID: "bitwarden-e2e-runtime-on-message",
                 outcome:
-                    .modelDispatched(
-                        .object([
-                            "ok": .bool(true),
-                            "target": .string("serviceWorker"),
-                            "surface": .string("runtime.onMessage"),
-                        ]),
+                    .noResponse(
                         diagnostics: [
-                            "Bitwarden E2E smoke mirrored the captured service-worker runtime.onMessage listener into the shared lifecycle fixture.",
+                            "Bitwarden E2E smoke mirrored captured service-worker runtime.onMessage listener presence only.",
+                            "No Bitwarden-specific fake runtime.onMessage response payload was registered.",
                         ]
                     )
             )
@@ -5936,14 +5968,10 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 event: .runtimeOnConnect,
                 listenerID: "bitwarden-e2e-runtime-on-connect",
                 outcome:
-                    .modelDispatched(
-                        .object([
-                            "ok": .bool(true),
-                            "target": .string("serviceWorker"),
-                            "surface": .string("runtime.onConnect"),
-                        ]),
+                    .noResponse(
                         diagnostics: [
-                            "Bitwarden E2E smoke mirrored the captured service-worker runtime.onConnect listener into the shared lifecycle fixture.",
+                            "Bitwarden E2E smoke mirrored captured service-worker runtime.onConnect listener presence only.",
+                            "No Bitwarden-specific fake runtime.onConnect response payload was registered.",
                         ]
                     )
             )

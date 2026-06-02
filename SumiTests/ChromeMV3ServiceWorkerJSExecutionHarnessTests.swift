@@ -2713,6 +2713,29 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
                 == true
         )
 
+        let asyncSendResponse = try startedHarness(
+            source:
+                """
+                chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+                  setTimeout(() => sendResponse({ delayed: message.value }), 0);
+                  return true;
+                });
+                """
+        )
+        let asyncResult = asyncSendResponse.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            arguments: [.object(["value": .string("queued")])],
+            payloadSummary: "queued sendResponse"
+        )
+        XCTAssertEqual(asyncResult.resultKind, .delivered)
+        XCTAssertEqual(
+            asyncResult.responsePayload,
+            .object(["delayed": .string("queued")])
+        )
+        XCTAssertTrue(asyncResult.diagnostics.contains {
+            $0.contains("draining queued timeout")
+        })
+
         let timedOut = try startedHarness(
             source:
                 "chrome.runtime.onMessage.addListener((_m, _s, _r) => true);\n"

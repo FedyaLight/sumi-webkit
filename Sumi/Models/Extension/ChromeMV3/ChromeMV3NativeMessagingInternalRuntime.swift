@@ -52,7 +52,7 @@ enum ChromeMV3NativeMessagingRuntimeErrorCode:
         case .extensionDisabled:
             return "Extensions are disabled; native messaging is unavailable."
         case .fixtureGateDisabled:
-            return "Native messaging is unavailable outside the internal fixture gate."
+            return "Specified native messaging host not found."
         case .hostCrashedOrExited:
             return "Native host has exited."
         case .hostManifestMissing:
@@ -1254,18 +1254,18 @@ final class ChromeMV3NativeMessagingRuntimeOwner {
         let error: ChromeMV3NativeMessagingRuntimeError?
         if configuration.moduleState != .enabled {
             error = .make(.extensionDisabled, diagnostics)
+        } else if preflight.hostLookupResult.status == .invalidHostName {
+            error = .make(.invalidHostName, diagnostics)
+        } else if configuration.permissionState.hasPermission == false {
+            error = .make(.missingNativeMessagingPermission, diagnostics)
         } else if configuration.explicitInternalNativeMessagingBridgeAllowed == false
             || configuration.explicitFixtureHostRootPaths.isEmpty
             || ChromeMV3NativeMessagingRuntimeOwnerConfiguration
                 .debugFixtureBuildAllowsProcessLaunch == false
         {
-            error = .make(.fixtureGateDisabled, diagnostics)
-        } else if preflight.hostLookupResult.status == .invalidHostName {
-            error = .make(.invalidHostName, diagnostics)
+            error = .make(.hostManifestMissing, diagnostics)
         } else if preflight.hostLookupResult.status != .found {
             error = .make(.hostManifestMissing, diagnostics)
-        } else if configuration.permissionState.hasPermission == false {
-            error = .make(.missingNativeMessagingPermission, diagnostics)
         } else if preflight.authorizationResult.authorizedByManifest == false {
             error = .make(.authorizationFailed, diagnostics)
         } else if preflight.authorizationResult.blockedByPolicy {

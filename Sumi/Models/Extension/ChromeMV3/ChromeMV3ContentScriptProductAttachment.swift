@@ -3073,10 +3073,103 @@ final class ChromeMV3ContentScriptBridgeHost {
         ])
     }
 
+    private func contentScriptServiceWorkerSenderMetadata()
+        -> ChromeMV3ServiceWorkerEventSenderMetadata
+    {
+        ChromeMV3ServiceWorkerEventSenderMetadata(
+            tabID: tabID,
+            frameID: frameID,
+            documentID: documentID,
+            sourceURL: nil,
+            urlRedacted: true,
+            redactionState: "content-script URL redacted"
+        )
+    }
+
+    private func dispatchServiceWorkerJSListener(
+        source: ChromeMV3ServiceWorkerEventSource,
+        arguments: [ChromeMV3StorageValue],
+        payloadSummary: String,
+        keepaliveKind: ChromeMV3ServiceWorkerInternalKeepaliveKind? = nil,
+        portID: String? = nil
+    ) -> ChromeMV3ServiceWorkerJSListenerDispatchResult? {
+        sharedLifecycleSession?.dispatchRegisteredJSListener(
+            source: source,
+            arguments: arguments,
+            sender: contentScriptServiceWorkerSenderMetadata(),
+            payloadSummary: payloadSummary,
+            sourceComponentID: lifecycleComponentID,
+            sourceComponentKind: .contentScriptSyntheticEndpoint,
+            keepaliveKind: keepaliveKind,
+            portID: portID
+        )
+    }
+
+    private func runtimeLastErrorContract(
+        for resultKind: ChromeMV3ServiceWorkerJSDispatchResultKind
+    ) -> ChromeMV3RuntimeLastErrorContract {
+        switch resultKind {
+        case .noListener, .noReceiver:
+            return ChromeMV3RuntimeLastErrorContract
+                .contract(for: .noReceivingEnd)
+        case .blockedByPermission:
+            return ChromeMV3RuntimeLastErrorContract
+                .contract(for: .permissionDenied)
+        case .blockedByGate:
+            return ChromeMV3RuntimeLastErrorContract
+                .contract(for: .serviceWorkerUnavailable)
+        case .delivered, .listenerError, .promiseRejected,
+             .sendResponseTimeoutDiagnostic, .unsupportedListenerMode:
+            return ChromeMV3RuntimeLastErrorContract
+                .contract(for: .timeout)
+        }
+    }
+
     private func runtimeSendMessage(
         bridgeCallID: String,
         arguments: [ChromeMV3StorageValue]
     ) -> ChromeMV3ContentScriptBridgeResponse {
+        if let jsResult = dispatchServiceWorkerJSListener(
+            source: .contentScriptRuntimeMessage,
+            arguments: [arguments.first ?? .null],
+            payloadSummary: "content-script runtime.sendMessage"
+        ) {
+            if jsResult.dispatched {
+                return success(
+                    bridgeCallID: bridgeCallID,
+                    payload: jsResult.responsePayload ?? .null,
+                    serviceWorkerLifecycleWakeResult:
+                        jsResult.lifecycleWakeResult,
+                    diagnostics:
+                        jsResult.diagnostics
+                        + [
+                            "Content-script runtime.sendMessage dispatched to a captured service-worker runtime.onMessage JavaScript listener.",
+                        ]
+                )
+            }
+            let contract = runtimeLastErrorContract(for: jsResult.resultKind)
+            return ChromeMV3ContentScriptBridgeResponse(
+                bridgeCallID: bridgeCallID,
+                succeeded: false,
+                resultPayload: nil,
+                lastErrorCode: contract.error.rawValue,
+                lastErrorMessage:
+                    jsResult.lastErrorMessage
+                    ?? contract.futureLastErrorMessage,
+                serviceWorkerWakeAttempted:
+                    jsResult.lifecycleWakeResult != nil,
+                serviceWorkerLifecycleWakeResult: jsResult.lifecycleWakeResult,
+                nativeHostLaunchAttempted: false,
+                diagnostics:
+                    uniqueSortedContentScripts(
+                        jsResult.diagnostics
+                            + contract.diagnostics
+                            + [
+                                "Content-script runtime.sendMessage reached a captured service-worker JavaScript listener dispatcher but did not receive a response.",
+                            ]
+                    )
+            )
+        }
         if let lifecycleResult = routeServiceWorkerLifecycleEvent(
             source: .contentScriptRuntimeMessage,
             payload: arguments.first ?? .null,

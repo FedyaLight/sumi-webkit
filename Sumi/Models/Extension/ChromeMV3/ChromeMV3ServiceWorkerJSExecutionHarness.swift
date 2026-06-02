@@ -2975,7 +2975,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             sourceComponentID: sourceComponentID,
             sourceComponentKind: sourceComponentKind,
             portOptions: nil,
-            keepaliveKind: nil
+            keepaliveKind: nil,
+            sharedLifecycleSession: nil
         )
     }
 
@@ -3000,7 +3001,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                     name: name,
                     nativeFixturePort: false
                 ),
-            keepaliveKind: .runtimePort
+            keepaliveKind: .runtimePort,
+            sharedLifecycleSession: nil
         )
     }
 
@@ -3245,7 +3247,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             sourceComponentID: "service-worker-js-alarms-trigger",
             sourceComponentKind: .alarmsHarness,
             portOptions: nil,
-            keepaliveKind: nil
+            keepaliveKind: nil,
+            sharedLifecycleSession: nil
         )
     }
 
@@ -3370,12 +3373,16 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         sourceComponentKind:
             ChromeMV3ServiceWorkerSharedLifecycleComponentKind,
         portOptions: ChromeMV3ServiceWorkerJSPortOptions?,
-        keepaliveKind: ChromeMV3ServiceWorkerInternalKeepaliveKind?
+        keepaliveKind: ChromeMV3ServiceWorkerInternalKeepaliveKind?,
+        sharedLifecycleSession:
+            ChromeMV3ServiceWorkerSharedLifecycleSession?
     ) -> ChromeMV3ServiceWorkerJSDispatchRecord {
         let currentStart =
             startRecord.status == .notStarted ? start() : startRecord
+        let targetLifecycleSession =
+            sharedLifecycleSession ?? lifecycleSession
         guard currentStart.status == .running || canDispatchCapturedListeners,
-              let session = lifecycleSession
+              let session = targetLifecycleSession
         else {
             return blockedDispatch(
                 source: source,
@@ -3397,7 +3404,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             }
             refreshJSSnapshot()
             let outcome = syntheticOutcome(for: wire)
-            clearLifecycleListeners(for: listenerEvent)
+            clearLifecycleListeners(for: listenerEvent, in: session)
             if wire.kind != .noListener {
                 session.registerListener(
                     event: listenerEvent,
@@ -3568,10 +3575,15 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         return readiness
     }
 
-    private func syncCapturedListenersIntoLifecycle() {
-        guard let session = lifecycleSession else { return }
+    func attachCapturedListenerDispatchers(
+        to session: ChromeMV3ServiceWorkerSharedLifecycleSession,
+        clearingExisting: Bool = false
+    ) {
         for event in Set(capturedListeners.map(\.event)).sorted() {
-            clearLifecycleListeners(for: event)
+            if clearingExisting {
+                clearLifecycleListeners(for: event, in: session)
+                session.clearJSListenerDispatchers(for: event)
+            }
             session.registerListener(
                 event: event,
                 listenerID: "js-captured-\(event.rawValue)",
@@ -3582,13 +3594,70 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                         ]
                     )
             )
+            session.registerJSListenerDispatcher(
+                event: event,
+                listenerID: "js-captured-\(event.rawValue)"
+            ) { [weak self, weak session] input in
+                guard let self, let session else {
+                    return ChromeMV3ServiceWorkerJSListenerDispatchResult(
+                        event: input.event,
+                        listenerID: nil,
+                        resultKind: .blockedByGate,
+                        responsePayload: nil,
+                        lastErrorMessage:
+                            "Service-worker JavaScript harness is unavailable.",
+                        lifecycleWakeResult: nil,
+                        diagnostics: [
+                            "Captured listener dispatcher could not run because the harness or target lifecycle session was released.",
+                        ]
+                    )
+                }
+                let record = self.dispatch(
+                    source: input.source,
+                    listenerEvent: input.event,
+                    arguments: input.arguments,
+                    sender: input.sender,
+                    payloadSummary: input.payloadSummary,
+                    sourceComponentID: input.sourceComponentID,
+                    sourceComponentKind: input.sourceComponentKind,
+                    portOptions: nil,
+                    keepaliveKind: input.keepaliveKind,
+                    sharedLifecycleSession: session
+                )
+                let lifecycleDiagnostics =
+                    record.lifecycleRoutingRecord?.diagnostics ?? []
+                return ChromeMV3ServiceWorkerJSListenerDispatchResult(
+                    event: record.event,
+                    listenerID: record.respondingListenerID,
+                    resultKind: record.resultKind,
+                    responsePayload: record.responsePayload,
+                    lastErrorMessage: record.lastErrorMessage,
+                    lifecycleWakeResult:
+                        record.lifecycleRoutingRecord?.wakeResult,
+                    diagnostics:
+                        uniqueSortedServiceWorkerJS(
+                            record.diagnostics
+                                + lifecycleDiagnostics
+                                + [
+                                    "Captured service-worker JavaScript listener dispatched through shared lifecycle session.",
+                                ]
+                        )
+                )
+            }
         }
     }
 
+    private func syncCapturedListenersIntoLifecycle() {
+        guard let session = lifecycleSession else { return }
+        attachCapturedListenerDispatchers(to: session, clearingExisting: true)
+    }
+
     private func clearLifecycleListeners(
-        for event: ChromeMV3ServiceWorkerSyntheticListenerEvent
+        for event: ChromeMV3ServiceWorkerSyntheticListenerEvent,
+        in session: ChromeMV3ServiceWorkerSharedLifecycleSession? = nil
     ) {
-        guard let registry = lifecycleSession?.runtimeOwner.listenerRegistry
+        let targetSession = session ?? lifecycleSession
+        guard let registry = targetSession?.runtimeOwner.listenerRegistry
         else { return }
         for registration in registry.listeners(for: event) {
             _ = registry.remove(
@@ -8074,11 +8143,32 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
               });
             }
             if (eventName === 'runtimeOnMessage' && result === true) {
+              const drainRecord = drainTimeouts(100);
+              const drainDiagnostics = Array.isArray(drainRecord.diagnostics)
+                ? drainRecord.diagnostics
+                : [];
+              if (responseCalled) {
+                return finishDispatch({
+                  kind: 'delivered',
+                  listenerID: item.listenerID,
+                  response,
+                  portID: portOptions ? portOptions.portID : null,
+                  diagnostics: [
+                    'Asynchronous sendResponse result captured after draining queued timeout callbacks.',
+                    `Drained ${drainRecord.callbackCount} queued timeout callback(s).`,
+                    ...drainDiagnostics
+                  ]
+                });
+              }
               return finishDispatch({
                 kind: 'sendResponseTimeoutDiagnostic',
                 listenerID: item.listenerID,
-                error: 'Listener returned true without synchronous sendResponse; deterministic harness does not wait.',
-                diagnostics: ['sendResponse channel was left open without scheduling a wait.']
+                error: 'Listener returned true without a captured sendResponse after deterministic timeout drain.',
+                diagnostics: [
+                  'sendResponse channel was left open after draining queued timeout callbacks.',
+                  `Drained ${drainRecord.callbackCount} queued timeout callback(s).`,
+                  ...drainDiagnostics
+                ]
               });
             }
             if (eventName === 'runtimeOnMessage' && result !== undefined) {

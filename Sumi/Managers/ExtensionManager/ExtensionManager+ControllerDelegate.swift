@@ -410,14 +410,18 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         _ = controller
         _ = message
         _ = extensionContext
+        let lastErrorMessage =
+            ChromeMV3NativeMessagingRuntimeErrorCode
+            .hostManifestMissing.lastErrorMessage
         replyHandler(
             nil,
             NSError(
                 domain: "ExtensionManager.NativeMessaging",
                 code: 50,
                 userInfo: [
-                    NSLocalizedDescriptionKey:
-                        "Product native messaging is unavailable; \(applicationId) can only be exercised by DEBUG/internal fixture diagnostics.",
+                    NSLocalizedDescriptionKey: lastErrorMessage,
+                    "SumiNativeMessagingDiagnostic":
+                        "Product native messaging is unavailable; \(applicationId) can only be exercised by DEBUG/internal fixture diagnostics. No native host process was launched.",
                 ]
             )
         )
@@ -432,14 +436,18 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         _ = controller
         _ = extensionContext
         let applicationId = port.applicationIdentifier ?? "unknown"
+        let lastErrorMessage =
+            ChromeMV3NativeMessagingRuntimeErrorCode
+            .hostManifestMissing.lastErrorMessage
         port.disconnect()
         completionHandler(
             NSError(
                 domain: "ExtensionManager.NativeMessaging",
                 code: 50,
                 userInfo: [
-                    NSLocalizedDescriptionKey:
-                        "Product native messaging Port is unavailable; \(applicationId) can only be exercised by DEBUG/internal fixture diagnostics.",
+                    NSLocalizedDescriptionKey: lastErrorMessage,
+                    "SumiNativeMessagingDiagnostic":
+                        "Product native messaging Port is unavailable; \(applicationId) can only be exercised by DEBUG/internal fixture diagnostics. No native host process was launched.",
                 ]
             )
         )
