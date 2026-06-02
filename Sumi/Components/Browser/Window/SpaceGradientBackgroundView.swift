@@ -131,7 +131,7 @@ struct SpaceGradientBackgroundView: View {
             case .browser:
                 chromeTokens.windowBackground
             case .toolbarChrome:
-                if accessibilityReduceTransparency {
+                if accessibilityReduceTransparency || sumiSettings.shouldSimplifyWorkspaceGradients {
                     chromeTokens.windowBackground
                 } else if shouldRenderNativeMaterialBase {
                     if usesResolvedTransitionLayers && themeContext.sourceChromeColorScheme != themeContext.targetChromeColorScheme {
@@ -165,7 +165,7 @@ struct SpaceGradientBackgroundView: View {
     }
 
     private var shouldRenderCustomTheme: Bool {
-        themeContext.rendersCustomChromeTheme
+        themeContext.rendersCustomChromeTheme && !sumiSettings.shouldSimplifyWorkspaceGradients
     }
 
     private var shouldRenderNativeMaterialBase: Bool {

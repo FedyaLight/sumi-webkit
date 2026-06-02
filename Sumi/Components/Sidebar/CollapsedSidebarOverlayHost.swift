@@ -37,7 +37,10 @@ struct CollapsedSidebarOverlayHost: View {
     }
 
     var body: some View {
-        let mode = SidebarMotionPolicy.currentMode(reduceMotion: reduceMotion)
+        let mode = SidebarMotionPolicy.currentMode(
+            reduceMotion: reduceMotion,
+            energySaverReducesMotion: sumiSettings.shouldReduceChromeMotion
+        )
         if isHostRequested {
             ZStack {
                 SidebarColumnRepresentable(

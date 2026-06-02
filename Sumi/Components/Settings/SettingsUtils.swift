@@ -73,12 +73,13 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
             return SettingsPaneDescriptor(
                 tab: tab,
                 title: "Performance",
-                subtitle: "Memory Saver and inactive tab deactivation behavior.",
+                subtitle: "Memory Saver, Energy Saver, and inactive tab deactivation behavior.",
                 icon: tab.icon,
                 group: .browsing,
                 keywords: [
                     "memory", "saver", "inactive", "deactivate", "tabs",
-                    "reload", "custom delay", "essentials"
+                    "reload", "custom delay", "essentials", "energy", "battery",
+                    "low power", "thermal", "animations", "transparency", "gradient"
                 ]
             )
         case .privacy:

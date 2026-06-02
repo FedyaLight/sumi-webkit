@@ -33,10 +33,40 @@ enum NativeChromeMaterialRole {
     }
 }
 
-struct NativeChromeMaterialBackground: NSViewRepresentable {
+struct NativeChromeMaterialBackground: View {
     let role: NativeChromeMaterialRole
     var colorScheme: ColorScheme? = nil
+    @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+
+    @ViewBuilder
+    var body: some View {
+        if sumiSettings.shouldUseOpaqueChromeSurfaces {
+            opaqueFallbackColor
+        } else {
+            NativeChromeVisualEffectBackground(
+                role: role,
+                colorScheme: colorScheme,
+                themeContext: themeContext
+            )
+        }
+    }
+
+    private var opaqueFallbackColor: Color {
+        let tokens = themeContext.tokens(settings: sumiSettings)
+        switch role {
+        case .popover:
+            return tokens.floatingBarBackground
+        case .sidebar, .collapsedSidebar, .windowChrome, .nativeGlassChrome:
+            return tokens.windowBackground
+        }
+    }
+}
+
+private struct NativeChromeVisualEffectBackground: NSViewRepresentable {
+    let role: NativeChromeMaterialRole
+    let colorScheme: ColorScheme?
+    let themeContext: ResolvedThemeContext
 
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
@@ -91,4 +121,3 @@ extension NSMenu {
         }
     }
 }
-

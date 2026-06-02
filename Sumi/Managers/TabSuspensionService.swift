@@ -17,43 +17,32 @@ struct TabSuspensionPolicy: Equatable {
 
     init(
         memoryMode: SumiMemoryMode,
-        customDeactivationDelay: TimeInterval = SumiMemorySaverCustomDelay.defaultDelay
+        customDeactivationDelay: TimeInterval = SumiMemorySaverCustomDelay.defaultDelay,
+        energySaverActive: Bool = false
     ) {
+        let proactiveDeactivationDelay: TimeInterval
+        let revisitProtectionLimit: Int
         switch memoryMode {
         case .moderate:
-            self.init(
-                memoryMode: memoryMode,
-                proactiveDeactivationDelay: Self.moderateProactiveDeactivationDelay,
-                revisitProtectionLimit: Self.moderateRevisitProtectionLimit
-            )
+            proactiveDeactivationDelay = Self.moderateProactiveDeactivationDelay
+            revisitProtectionLimit = Self.moderateRevisitProtectionLimit
         case .balanced:
-            self.init(
-                memoryMode: memoryMode,
-                proactiveDeactivationDelay: Self.balancedProactiveDeactivationDelay,
-                revisitProtectionLimit: Self.balancedRevisitProtectionLimit
-            )
+            proactiveDeactivationDelay = Self.balancedProactiveDeactivationDelay
+            revisitProtectionLimit = Self.balancedRevisitProtectionLimit
         case .maximum:
-            self.init(
-                memoryMode: memoryMode,
-                proactiveDeactivationDelay: Self.maximumProactiveDeactivationDelay,
-                revisitProtectionLimit: Self.maximumRevisitProtectionLimit
-            )
+            proactiveDeactivationDelay = Self.maximumProactiveDeactivationDelay
+            revisitProtectionLimit = Self.maximumRevisitProtectionLimit
         case .custom:
-            self.init(
-                memoryMode: memoryMode,
-                proactiveDeactivationDelay: SumiMemorySaverCustomDelay.clamped(customDeactivationDelay),
-                revisitProtectionLimit: Self.customRevisitProtectionLimit
-            )
+            proactiveDeactivationDelay = SumiMemorySaverCustomDelay.clamped(customDeactivationDelay)
+            revisitProtectionLimit = Self.customRevisitProtectionLimit
         }
-    }
-
-    private init(
-        memoryMode: SumiMemoryMode,
-        proactiveDeactivationDelay: TimeInterval,
-        revisitProtectionLimit: Int
-    ) {
         self.memoryMode = memoryMode
-        self.proactiveDeactivationDelay = proactiveDeactivationDelay
+        self.proactiveDeactivationDelay = energySaverActive
+            ? min(
+                proactiveDeactivationDelay,
+                SumiEnergySaverPolicy.maximumInactiveTabDeactivationDelay
+            )
+            : proactiveDeactivationDelay
         self.revisitProtectionLimit = revisitProtectionLimit
     }
 }
@@ -171,6 +160,7 @@ final class TabSuspensionService {
     private let suspensionClock: SumiSuspensionClock
     private let timerSleep: (TimeInterval) async throws -> Void
     private var memorySaverPolicyObserver: NSObjectProtocol?
+    private var energySaverPolicyObserver: NSObjectProtocol?
     private var hiddenTabStates: [UUID: HiddenTabState] = [:]
     private var proactiveTimers: [UUID: ProactiveTimerState] = [:]
     private var revisitCounts: [UUID: Int] = [:]
@@ -207,6 +197,15 @@ final class TabSuspensionService {
                 self?.rebuildProactiveTimers(reason: "memory-saver-policy-changed")
             }
         }
+        self.energySaverPolicyObserver = NotificationCenter.default.addObserver(
+            forName: .sumiEnergySaverPolicyChanged,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.rebuildProactiveTimers(reason: "energy-saver-policy-changed")
+            }
+        }
     }
 
     deinit {
@@ -215,6 +214,9 @@ final class TabSuspensionService {
             cancelAllProactiveTimers()
             if let memorySaverPolicyObserver {
                 NotificationCenter.default.removeObserver(memorySaverPolicyObserver)
+            }
+            if let energySaverPolicyObserver {
+                NotificationCenter.default.removeObserver(energySaverPolicyObserver)
             }
             memoryMonitor?.eventHandler = nil
             memoryMonitor?.stop()
@@ -337,7 +339,9 @@ final class TabSuspensionService {
         TabSuspensionPolicy(
             memoryMode: currentMemoryMode,
             customDeactivationDelay: browserManager?.sumiSettings?.memorySaverCustomDeactivationDelay
-                ?? SumiMemorySaverCustomDelay.defaultDelay
+                ?? SumiMemorySaverCustomDelay.defaultDelay,
+            energySaverActive: browserManager?.sumiSettings?
+                .energySaverApplies(.deactivateInactiveTabsSooner) ?? false
         )
     }
 

@@ -243,7 +243,9 @@ struct TabFolderView: View {
     }
 
     private var folderLayoutAnimation: Animation? {
-        isInteractive && !reduceMotion && !dragState.isCompletingDrop ? Self.zenFolderContentAnimation : nil
+        isInteractive && !reduceMotion && !sumiSettings.shouldReduceChromeMotion && !dragState.isCompletingDrop
+            ? Self.zenFolderContentAnimation
+            : nil
     }
 
     private var folderHasActiveSelection: Bool {

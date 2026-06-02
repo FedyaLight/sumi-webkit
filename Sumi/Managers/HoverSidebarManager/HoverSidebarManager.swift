@@ -439,7 +439,9 @@ final class HoverSidebarManager: ObservableObject {
     }
 
     private func sidebarOverlayAnimation(fallbackDuration: TimeInterval) -> Animation? {
-        SidebarMotionPolicy.overlayAnimation(for: SidebarMotionPolicy.appKitCurrentMode)
+        SidebarMotionPolicy.overlayAnimation(
+            for: SidebarMotionPolicy.appKitCurrentMode(settings: browserManager?.sumiSettings)
+        )
             ?? .easeOut(duration: fallbackDuration)
     }
 

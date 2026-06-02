@@ -9,7 +9,7 @@ extension SpaceView {
 
 
     var sidebarContentMutationAnimation: Animation? {
-        isInteractive && !reduceMotion && !dragState.isCompletingDrop
+        isInteractive && !reduceMotion && !sumiSettings.shouldReduceChromeMotion && !dragState.isCompletingDrop
             ? SidebarDropMotion.contentLayout
             : nil
     }

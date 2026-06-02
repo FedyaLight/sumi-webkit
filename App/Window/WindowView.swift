@@ -335,7 +335,7 @@ struct WindowView: View {
         dockedSidebarLayoutGeneration &+= 1
         let generation = dockedSidebarLayoutGeneration
         let animation = SidebarMotionPolicy.dockedLayoutAnimation(
-            for: SidebarMotionPolicy.currentMode(reduceMotion: reduceMotion),
+            for: SidebarMotionPolicy.currentMode(reduceMotion: effectiveReduceMotion),
             isShowing: isVisible
         )
 
@@ -477,7 +477,7 @@ struct WindowView: View {
                             windowState.dismissToast(id: toast.id)
                         }
                 }
-                .transition(reduceMotion ? .opacity : .toast)
+                .transition(effectiveReduceMotion ? .opacity : .toast)
             }
         }
         .padding(10)
@@ -485,7 +485,7 @@ struct WindowView: View {
     }
 
     private var toastAnimation: Animation {
-        reduceMotion ? .easeOut(duration: 0.08) : .smooth(duration: 0.18)
+        effectiveReduceMotion ? .easeOut(duration: 0.08) : .smooth(duration: 0.18)
     }
 
     private var glanceWebContentIsDimmed: Bool {
@@ -494,21 +494,25 @@ struct WindowView: View {
     }
 
     private var glanceWebContentScale: CGFloat {
-        glanceWebContentIsDimmed && !reduceMotion ? 0.97 : 1
+        glanceWebContentIsDimmed && !effectiveReduceMotion ? 0.97 : 1
     }
 
     private var glanceWebContentOpacity: Double {
         guard glanceWebContentIsDimmed else { return 1 }
-        return reduceMotion ? 0.75 : 0.3
+        return effectiveReduceMotion ? 0.75 : 0.3
     }
 
     private var glanceWebContentAnimation: Animation? {
         guard !suppressesGlanceWebContentAnimation else { return nil }
-        return reduceMotion ? Animation.easeOut(duration: 0.08) : Animation.smooth(duration: 0.35)
+        return effectiveReduceMotion ? Animation.easeOut(duration: 0.08) : Animation.smooth(duration: 0.35)
     }
 
     private var suppressesGlanceWebContentAnimation: Bool {
         glanceManager.phase == .promoting
+    }
+
+    private var effectiveReduceMotion: Bool {
+        reduceMotion || sumiSettings.shouldReduceChromeMotion
     }
 
     private var presentedGlanceSession: GlanceSession? {

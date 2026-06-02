@@ -32,6 +32,7 @@ enum SidebarZenPressKind {
 private struct SidebarZenPressEffectModifier: ViewModifier {
     @Environment(SidebarInteractionState.self) private var sidebarInteractionState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sumiSettings) private var sumiSettings
     @State private var visualPressed = false
 
     let sourceID: String
@@ -40,7 +41,7 @@ private struct SidebarZenPressEffectModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         let appKitPressed = sidebarInteractionState.activePressedSourceID == sourceID
-        let isPressed = isEnabled && !reduceMotion && appKitPressed
+        let isPressed = isEnabled && !shouldReduceMotion && appKitPressed
 
         content
             .scaleEffect(visualPressed ? SidebarRowMotionMetrics.pressedScale : 1)
@@ -53,10 +54,13 @@ private struct SidebarZenPressEffectModifier: ViewModifier {
             .onChange(of: reduceMotion) { _, _ in
                 updateVisualPressed(isPressed)
             }
+            .onChange(of: sumiSettings.shouldReduceChromeMotion) { _, _ in
+                updateVisualPressed(isPressed)
+            }
     }
 
     private func updateVisualPressed(_ isPressed: Bool) {
-        if isPressed || reduceMotion || !isEnabled {
+        if isPressed || shouldReduceMotion || !isEnabled {
             var transaction = Transaction()
             transaction.disablesAnimations = true
             transaction.animation = nil
@@ -67,11 +71,15 @@ private struct SidebarZenPressEffectModifier: ViewModifier {
         }
 
         withAnimation(SidebarMotionPolicy.rowReleaseAnimation(
-            for: SidebarMotionPolicy.currentMode(reduceMotion: reduceMotion),
+            for: SidebarMotionPolicy.currentMode(reduceMotion: shouldReduceMotion),
             split: kind.isSplit
         )) {
             visualPressed = false
         }
+    }
+
+    private var shouldReduceMotion: Bool {
+        reduceMotion || sumiSettings.shouldReduceChromeMotion
     }
 }
 
@@ -88,45 +96,61 @@ private struct SidebarZenRowLifecycleModifier: ViewModifier {
 
 private struct SidebarZenRowLifecycleTransitionModifier: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sumiSettings) private var sumiSettings
     let isEnabled: Bool
 
     func body(content: Content) -> some View {
-        content.transition(isEnabled && !reduceMotion ? .zenSidebarRowLifecycle : .identity)
+        content.transition(isEnabled && !shouldReduceMotion ? .zenSidebarRowLifecycle : .identity)
+    }
+
+    private var shouldReduceMotion: Bool {
+        reduceMotion || sumiSettings.shouldReduceChromeMotion
     }
 }
 
 private struct SidebarZenCompositeLifecycleTransitionModifier: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sumiSettings) private var sumiSettings
     let isEnabled: Bool
 
     func body(content: Content) -> some View {
-        content.transition(isEnabled && !reduceMotion ? .zenSidebarCompositeLifecycle : .identity)
+        content.transition(isEnabled && !shouldReduceMotion ? .zenSidebarCompositeLifecycle : .identity)
+    }
+
+    private var shouldReduceMotion: Bool {
+        reduceMotion || sumiSettings.shouldReduceChromeMotion
     }
 }
 
 private struct SidebarZenActionOpacityModifier: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sumiSettings) private var sumiSettings
     let isVisible: Bool
 
     func body(content: Content) -> some View {
         content.animation(
             SidebarMotionPolicy.actionFadeAnimation(
-                for: SidebarMotionPolicy.currentMode(reduceMotion: reduceMotion)
+                for: SidebarMotionPolicy.currentMode(reduceMotion: shouldReduceMotion)
             ),
             value: isVisible
         )
+    }
+
+    private var shouldReduceMotion: Bool {
+        reduceMotion || sumiSettings.shouldReduceChromeMotion
     }
 }
 
 struct SidebarZenActionButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sumiSettings) private var sumiSettings
     var isEnabled: Bool = true
 
     func makeBody(configuration: Configuration) -> some View {
         SidebarZenActionButtonBody(
             configuration: configuration,
             isEnabled: isEnabled,
-            reduceMotion: reduceMotion
+            reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
         )
     }
 }

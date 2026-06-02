@@ -350,6 +350,7 @@ struct PinnedGrid: View {
 
     var body: some View {
         let _ = browserManager.tabStructuralRevision
+        let shouldReduceMotion = reduceMotion || sumiSettings.shouldReduceChromeMotion
 
         let pinnedTabsConfiguration: PinnedTabsConfiguration = .large
         // Use profile-filtered essentials
@@ -372,12 +373,12 @@ struct PinnedGrid: View {
         let shouldAnimateDropLayout = animateLayout
             && (windowRegistry.activeWindow?.id == windowState.id)
             && !browserManager.isTransitioningProfile
-            && !reduceMotion
+            && !shouldReduceMotion
             && dragState.shouldAnimateDropLayout
         let shouldAnimateContentLayout = animateLayout
             && (windowRegistry.activeWindow?.id == windowState.id)
             && !browserManager.isTransitioningProfile
-            && !reduceMotion
+            && !shouldReduceMotion
 
         let isHoveringThisEssentials: Bool = {
             guard dragState.isDropProjectionActive,

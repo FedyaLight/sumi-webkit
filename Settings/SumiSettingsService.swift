@@ -33,9 +33,15 @@ class SumiSettingsService {
     private let customSearchEnginesKey = "settings.customSearchEngines"
     private let memoryModeKey = "settings.memoryMode"
     private let memorySaverCustomDeactivationDelayKey = "settings.memorySaver.customDeactivationDelay"
+    private let energySaverModeKey = "settings.energySaver.mode"
+    private let energySaverBatteryThresholdKey = "settings.energySaver.batteryThreshold"
+    private let energySaverFeaturesKey = "settings.energySaver.features"
     private let startupModeKey = "settings.startup.mode"
     private let startupPageURLStringKey = "settings.startup.pageURL"
     private let browsingDataRetentionDaysKey = "settings.browsingData.retentionDays"
+    private let energySaverSystemMonitor: any SumiEnergySaverSystemMonitoring
+    @ObservationIgnored
+    nonisolated(unsafe) private var energySaverSystemObservationToken: UUID?
 
     var currentSettingsTab: SettingsTabs = .general
 
@@ -199,6 +205,70 @@ class SumiSettingsService {
         }
     }
 
+    var energySaverMode: SumiEnergySaverMode {
+        didSet {
+            userDefaults.set(energySaverMode.rawValue, forKey: energySaverModeKey)
+            notifyEnergySaverPolicyChanged()
+        }
+    }
+
+    var energySaverBatteryThreshold: Int {
+        didSet {
+            let clamped = SumiEnergySaverPolicy.clampedBatteryThreshold(energySaverBatteryThreshold)
+            if clamped != energySaverBatteryThreshold {
+                energySaverBatteryThreshold = clamped
+                return
+            }
+            userDefaults.set(energySaverBatteryThreshold, forKey: energySaverBatteryThresholdKey)
+            notifyEnergySaverPolicyChanged()
+        }
+    }
+
+    var energySaverFeatures: Set<SumiEnergySaverFeature> {
+        didSet {
+            userDefaults.set(
+                energySaverFeatures.map(\.rawValue).sorted(),
+                forKey: energySaverFeaturesKey
+            )
+            notifyEnergySaverPolicyChanged()
+        }
+    }
+
+    private(set) var energySaverSystemSnapshot: SumiEnergySaverSystemSnapshot {
+        didSet {
+            guard energySaverSystemSnapshot != oldValue else { return }
+            notifyEnergySaverPolicyChanged()
+        }
+    }
+
+    var energySaverActivation: SumiEnergySaverActivation {
+        SumiEnergySaverPolicy.activation(
+            mode: energySaverMode,
+            batteryThreshold: energySaverBatteryThreshold,
+            snapshot: energySaverSystemSnapshot
+        )
+    }
+
+    func energySaverApplies(_ feature: SumiEnergySaverFeature) -> Bool {
+        energySaverActivation.isActive && energySaverFeatures.contains(feature)
+    }
+
+    var shouldReduceChromeMotion: Bool {
+        energySaverApplies(.reduceInterfaceAnimations)
+    }
+
+    var shouldUseOpaqueChromeSurfaces: Bool {
+        energySaverApplies(.useOpaqueChromeSurfaces)
+    }
+
+    var shouldSimplifyWorkspaceGradients: Bool {
+        energySaverApplies(.simplifyWorkspaceGradients)
+    }
+
+    var shouldDisableDecorativeLoadingEffects: Bool {
+        energySaverApplies(.disableDecorativeLoadingEffects)
+    }
+
     var startupMode: SumiStartupMode {
         didSet {
             userDefaults.set(startupMode.rawValue, forKey: startupModeKey)
@@ -227,9 +297,12 @@ class SumiSettingsService {
     }
 
     init(
-        userDefaults: UserDefaults = .standard
+        userDefaults: UserDefaults = .standard,
+        energySaverSystemMonitor: any SumiEnergySaverSystemMonitoring =
+            SumiEnergySaverSystemMonitor.shared
     ) {
         self.userDefaults = userDefaults
+        self.energySaverSystemMonitor = energySaverSystemMonitor
 
         // Register default values
         userDefaults.register(defaults: [
@@ -253,6 +326,9 @@ class SumiSettingsService {
             didFinishOnboardingKey: true,
             memoryModeKey: SumiMemoryMode.balanced.rawValue,
             memorySaverCustomDeactivationDelayKey: SumiMemorySaverCustomDelay.defaultDelay,
+            energySaverModeKey: SumiEnergySaverMode.automatic.rawValue,
+            energySaverBatteryThresholdKey: SumiEnergySaverPolicy.defaultBatteryThreshold,
+            energySaverFeaturesKey: SumiEnergySaverFeature.defaultSelection.map(\.rawValue).sorted(),
             startupModeKey: SumiStartupMode.restorePreviousSession.rawValue,
             startupPageURLStringKey: SumiStartupPageURL.defaultURLString,
             browsingDataRetentionDaysKey: SumiBrowsingDataRetentionPeriod.defaultPeriod.rawValue,
@@ -322,6 +398,28 @@ class SumiSettingsService {
         if storedCustomDelay != resolvedCustomDelay {
             userDefaults.set(resolvedCustomDelay, forKey: memorySaverCustomDeactivationDelayKey)
         }
+        self.energySaverMode = SumiEnergySaverMode(
+            rawValue: userDefaults.string(forKey: energySaverModeKey)
+                ?? SumiEnergySaverMode.automatic.rawValue
+        ) ?? .automatic
+        let storedEnergySaverBatteryThreshold = userDefaults.integer(
+            forKey: energySaverBatteryThresholdKey
+        )
+        let resolvedEnergySaverBatteryThreshold = SumiEnergySaverPolicy.clampedBatteryThreshold(
+            storedEnergySaverBatteryThreshold
+        )
+        self.energySaverBatteryThreshold = resolvedEnergySaverBatteryThreshold
+        if storedEnergySaverBatteryThreshold != resolvedEnergySaverBatteryThreshold {
+            userDefaults.set(
+                resolvedEnergySaverBatteryThreshold,
+                forKey: energySaverBatteryThresholdKey
+            )
+        }
+        self.energySaverFeatures = Set(
+            (userDefaults.stringArray(forKey: energySaverFeaturesKey) ?? [])
+                .compactMap(SumiEnergySaverFeature.init(rawValue:))
+        )
+        self.energySaverSystemSnapshot = energySaverSystemMonitor.snapshot
         let storedStartupMode = userDefaults.string(forKey: startupModeKey)
         let resolvedStartupMode = SumiStartupMode.persistedValue(storedStartupMode)
         self.startupMode = resolvedStartupMode
@@ -356,6 +454,19 @@ class SumiSettingsService {
         ) ?? .compact
 
         enforceSumiChromeDefaults()
+        energySaverSystemObservationToken = energySaverSystemMonitor.addObserver {
+            [weak self] snapshot in
+            self?.energySaverSystemSnapshot = snapshot
+        }
+    }
+
+    deinit {
+        let monitor = energySaverSystemMonitor
+        if let token = energySaverSystemObservationToken {
+            Task { @MainActor in
+                monitor.removeObserver(token)
+            }
+        }
     }
 
     /// Syncs sidebar tab + Extensions sub-pane from `sumi://settings?pane=…`.
@@ -440,6 +551,10 @@ class SumiSettingsService {
         if !didFinishOnboarding {
             didFinishOnboarding = true
         }
+    }
+
+    private func notifyEnergySaverPolicyChanged() {
+        NotificationCenter.default.post(name: .sumiEnergySaverPolicyChanged, object: self)
     }
 }
 
@@ -664,6 +779,7 @@ extension Notification.Name {
     static let tabUnloadTimeoutChanged = Notification.Name("tabUnloadTimeoutChanged")
     static let sumiMemorySaverPolicyChanged = Notification.Name("SumiMemorySaverPolicyChanged")
     static let sumiMemoryPressureReceived = Notification.Name("SumiMemoryPressureReceived")
+    static let sumiEnergySaverPolicyChanged = Notification.Name("SumiEnergySaverPolicyChanged")
     static let sumiBrowsingDataRetentionChanged =
         Notification.Name("SumiBrowsingDataRetentionChanged")
 }

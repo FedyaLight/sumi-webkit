@@ -11,12 +11,19 @@ enum SidebarMotionPolicy {
 
     static let rowPressedScale: CGFloat = 0.98
 
-    static func currentMode(reduceMotion: Bool) -> Mode {
-        reduceMotion ? .reducedMotion : .standard
+    static func currentMode(
+        reduceMotion: Bool,
+        energySaverReducesMotion: Bool = false
+    ) -> Mode {
+        reduceMotion || energySaverReducesMotion ? .reducedMotion : .standard
     }
 
-    static var appKitCurrentMode: Mode {
-        currentMode(reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+    @MainActor
+    static func appKitCurrentMode(settings: SumiSettingsService?) -> Mode {
+        currentMode(
+            reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+            energySaverReducesMotion: settings?.shouldReduceChromeMotion ?? false
+        )
     }
 
     static func dockedLayoutAnimation(for mode: Mode, isShowing: Bool) -> Animation? {

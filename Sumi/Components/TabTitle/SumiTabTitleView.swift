@@ -14,6 +14,9 @@ struct SumiTabTitleLabel: View {
     var isLoading: Bool = false
     var height: CGFloat = 16
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sumiSettings) private var sumiSettings
+
     var body: some View {
         SumiTabTitleRepresentable(
             title: title,
@@ -21,13 +24,19 @@ struct SumiTabTitleLabel: View {
             textColor: textColor,
             fadeWidth: fadeWidth,
             trailingFadePadding: trailingFadePadding,
-            animated: animated,
+            animated: animated && !effectiveReduceMotion,
             isLoading: isLoading,
+            allowsDecorativeLoadingEffect:
+                !effectiveReduceMotion && !sumiSettings.shouldDisableDecorativeLoadingEffects,
             height: height
         )
         .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .leading)
         .clipped()
         .accessibilityLabel(title)
+    }
+
+    private var effectiveReduceMotion: Bool {
+        reduceMotion || sumiSettings.shouldReduceChromeMotion
     }
 }
 
@@ -39,6 +48,7 @@ private struct SumiTabTitleRepresentable: NSViewRepresentable {
     let trailingFadePadding: CGFloat
     let animated: Bool
     let isLoading: Bool
+    let allowsDecorativeLoadingEffect: Bool
     let height: CGFloat
 
     func makeNSView(context _: Context) -> SumiTabTitleView {
@@ -67,7 +77,8 @@ private struct SumiTabTitleRepresentable: NSViewRepresentable {
             fadeWidth: fadeWidth,
             trailingFadePadding: trailingFadePadding,
             animated: animated,
-            isLoading: isLoading
+            isLoading: isLoading,
+            allowsDecorativeLoadingEffect: allowsDecorativeLoadingEffect
         )
     }
 }
@@ -170,7 +181,8 @@ final class SumiTabTitleView: NSView {
         fadeWidth: CGFloat,
         trailingFadePadding: CGFloat,
         animated: Bool,
-        isLoading: Bool = false
+        isLoading: Bool = false,
+        allowsDecorativeLoadingEffect: Bool = true
     ) {
         self.fadeWidth = fadeWidth
         self.trailingFadePadding = trailingFadePadding
@@ -180,7 +192,9 @@ final class SumiTabTitleView: NSView {
         previousTextField.textColor = textColor
         applyTrailingFadeMask(width: fadeWidth, trailingPadding: trailingFadePadding)
         displayTitleIfNeeded(title: title, animated: animated)
-        updateLoadingAlphaWave(isLoading && title.isEmpty == false)
+        updateLoadingAlphaWave(
+            isLoading && title.isEmpty == false && allowsDecorativeLoadingEffect
+        )
     }
 }
 

@@ -64,6 +64,7 @@ struct SettingsPerformanceTab: View {
                     }
                 }
                 .pickerStyle(.radioGroup)
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
                 if let selectedDescriptor {
                     Text(selectedDescriptor.detail)
@@ -78,6 +79,68 @@ struct SettingsPerformanceTab: View {
                 }
 
                 Text(SumiMemoryModeSettingsDescriptor.launcherPreservationCopy)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            SettingsSection(
+                title: "Energy Saver",
+                subtitle: "Reduce native browser chrome work without modifying website content."
+            ) {
+                SettingsRow(
+                    title: "Mode",
+                    subtitle: energySaverStatusText
+                ) {
+                    Picker("Mode", selection: $settings.energySaverMode) {
+                        ForEach(SumiEnergySaverMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .settingsTrailingControl(width: 230)
+                }
+
+                if settings.energySaverMode == .automatic {
+                    SettingsDivider()
+                    SettingsRow(
+                        title: "Use on battery at or below",
+                        subtitle: "Automatic mode also follows macOS Low Power Mode and serious thermal pressure."
+                    ) {
+                        Stepper(
+                            value: $settings.energySaverBatteryThreshold,
+                            in: SumiEnergySaverPolicy.minimumBatteryThreshold
+                                ... SumiEnergySaverPolicy.maximumBatteryThreshold,
+                            step: 10
+                        ) {
+                            Text("\(settings.energySaverBatteryThreshold)%")
+                                .monospacedDigit()
+                        }
+                        .frame(maxWidth: 150)
+                    }
+                }
+
+                SettingsDivider()
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("While Energy Saver is active")
+                        .font(.callout.weight(.semibold))
+
+                    ForEach(SumiEnergySaverFeature.allCases) { feature in
+                        Toggle(isOn: energySaverFeatureBinding(feature, settings: settings)) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(feature.title)
+                                Text(feature.subtitle)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .toggleStyle(.switch)
+                    }
+                }
+
+                Text("macOS Reduce Motion is always honored independently, including when Energy Saver is Off.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -100,7 +163,7 @@ struct SettingsPerformanceTab: View {
         )
 
         return SettingsRow(
-            title: "Deactivate inactive tabs after",
+            title: "Deactivate inactive tabs after:",
             subtitle: nil
         ) {
             Stepper(value: delayHours, in: 0.25...24, step: 0.25) {
@@ -122,5 +185,36 @@ struct SettingsPerformanceTab: View {
             return "\(Int(hours)) hours"
         }
         return "\(hours.formatted(.number.precision(.fractionLength(2)))) hours"
+    }
+
+    private var energySaverStatusText: String {
+        let snapshot = sumiSettings.energySaverSystemSnapshot
+        let batteryText: String
+        if let percentage = snapshot.batteryPercentage {
+            batteryText = snapshot.isUsingBatteryPower
+                ? "Battery \(percentage)%"
+                : "Battery \(percentage)%, connected to power"
+        } else {
+            batteryText = "No internal battery"
+        }
+        return "\(sumiSettings.energySaverActivation.statusText). \(batteryText)."
+    }
+
+    private func energySaverFeatureBinding(
+        _ feature: SumiEnergySaverFeature,
+        settings: SumiSettingsService
+    ) -> Binding<Bool> {
+        Binding(
+            get: {
+                settings.energySaverFeatures.contains(feature)
+            },
+            set: { isEnabled in
+                if isEnabled {
+                    settings.energySaverFeatures.insert(feature)
+                } else {
+                    settings.energySaverFeatures.remove(feature)
+                }
+            }
+        )
     }
 }

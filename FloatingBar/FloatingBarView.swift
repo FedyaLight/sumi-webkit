@@ -86,7 +86,9 @@ struct FloatingBarView: View {
     }
 
     private var motionMode: FloatingBarMotionPolicy.Mode {
-        FloatingBarMotionPolicy.mode(reduceMotion: accessibilityReduceMotion)
+        FloatingBarMotionPolicy.mode(
+            reduceMotion: accessibilityReduceMotion || sumiSettings.shouldReduceChromeMotion
+        )
     }
 
     var body: some View {

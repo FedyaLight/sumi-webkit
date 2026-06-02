@@ -18,6 +18,16 @@ final class SidebarZenMotionTests: XCTestCase {
         XCTAssertNotNil(SidebarMotionPolicy.rowLifecycleAnimation(for: .standard))
     }
 
+    func testSidebarMotionPolicyUsesReducedMotionWhenEnergySaverRequestsIt() {
+        XCTAssertEqual(
+            SidebarMotionPolicy.currentMode(
+                reduceMotion: false,
+                energySaverReducesMotion: true
+            ),
+            .reducedMotion
+        )
+    }
+
     func testSidebarInteractiveItemPublishesPressedSourceDuringPrimaryMouseDown() {
         let state = SidebarInteractionState()
         let view = makeInteractiveItemView(

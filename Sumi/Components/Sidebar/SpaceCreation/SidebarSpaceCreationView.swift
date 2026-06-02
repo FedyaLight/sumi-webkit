@@ -297,7 +297,7 @@ struct SidebarSpaceCreationView: View {
     }
 
     private var profileExpansionAnimation: Animation? {
-        reduceMotion ? nil : .easeInOut(duration: 0.18)
+        reduceMotion || sumiSettings.shouldReduceChromeMotion ? nil : .easeInOut(duration: 0.18)
     }
 
     private var rowCornerRadius: CGFloat {
@@ -314,7 +314,7 @@ struct SidebarSpaceCreationView: View {
 
     private func focusNameField() {
         emojiManager.selectedEmoji = session.resolvedIcon
-        guard !reduceMotion else {
+        guard !reduceMotion, !sumiSettings.shouldReduceChromeMotion else {
             focusedField = .name
             return
         }

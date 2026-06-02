@@ -270,7 +270,10 @@ struct PinnedTileVisual: View {
                     scale: faviconScale,
                     blur: faviconBlur
                 )
-                .conditionally(if: isLoading && !reduceMotion) { view in
+                .conditionally(
+                    if: isLoading && !reduceMotion
+                        && !sumiSettings.shouldDisableDecorativeLoadingEffects
+                ) { view in
                     view.mask {
                         PinnedTileLoadingAlphaWaveLayerMask()
                     }
@@ -283,7 +286,10 @@ struct PinnedTileVisual: View {
                     scale: faviconScale,
                     blur: faviconBlur
                 )
-                .conditionally(if: isLoading && !reduceMotion) { view in
+                .conditionally(
+                    if: isLoading && !reduceMotion
+                        && !sumiSettings.shouldDisableDecorativeLoadingEffects
+                ) { view in
                     view.mask {
                         PinnedTileLoadingAlphaWaveLayerMask()
                     }
