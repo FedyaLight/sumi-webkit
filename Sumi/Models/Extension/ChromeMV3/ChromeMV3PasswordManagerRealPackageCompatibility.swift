@@ -2391,6 +2391,457 @@ enum ChromeMV3PasswordManagerRealPackageCompatibilityReportWriter {
     }
 }
 
+struct ChromeMV3PasswordManagerRealPackageAsyncExperimentDOMSummary:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var phase: String
+    var url: String
+    var origin: String
+    var usernameFieldExists: Bool
+    var passwordFieldExists: Bool
+    var submitButtonExists: Bool
+    var initialValuesEmpty: Bool
+    var usernameValueMarker: String
+    var passwordValueMarker: String
+    var finalValuesMatchDummyFill: Bool
+
+    static func make(
+        _ snapshot: ChromeMV3LocalExperimentalWebKitSyntheticLoginDOMSnapshot,
+        dummyUsername: String,
+        dummyPassword: String
+    ) -> Self {
+        ChromeMV3PasswordManagerRealPackageAsyncExperimentDOMSummary(
+            phase: snapshot.phase,
+            url: snapshot.url,
+            origin: snapshot.origin,
+            usernameFieldExists: snapshot.usernameFieldExists,
+            passwordFieldExists: snapshot.passwordFieldExists,
+            submitButtonExists: snapshot.submitButtonExists,
+            initialValuesEmpty: snapshot.initialValuesEmpty,
+            usernameValueMarker:
+                marker(for: snapshot.usernameValue, dummyValue: dummyUsername),
+            passwordValueMarker:
+                marker(for: snapshot.passwordValue, dummyValue: dummyPassword),
+            finalValuesMatchDummyFill: snapshot.finalValuesMatchDummyFill
+        )
+    }
+
+    private static func marker(for value: String, dummyValue: String) -> String {
+        if value.isEmpty { return "empty" }
+        if value == dummyValue { return "syntheticDummyMatched" }
+        return "nonEmptyRedacted"
+    }
+}
+
+struct ChromeMV3PasswordManagerRealPackageAsyncExperimentFixtureResult:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var resultScope: String
+    var fixtureFallbackID: String
+    var fixtureTargetKind: ChromeMV3PasswordManagerCompatibilityTargetKind
+    var fixtureProductReadiness:
+        ChromeMV3PasswordManagerCompatibilityStatus
+    var fixtureStatus: ChromeMV3PasswordManagerCompatibilityStatus
+    var realPackageResultIsIndependent: Bool
+}
+
+struct ChromeMV3PasswordManagerRealPackageAsyncExperimentRuntimeFlags:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var productNormalTabExperimentAvailableInLocalExperimentalGate: Bool
+    var productNormalTabExperimentAvailableByDefault: Bool
+    var productDefaultRuntimeAvailable: Bool
+    var productRuntimeAvailable: Bool
+    var productRuntimeExposed: Bool
+    var actionExplicitOnly: Bool
+    var managerReadoutExecutedExperiment: Bool
+    var arbitraryScriptingEnabled: Bool
+    var mainWorldEnabled: Bool
+    var multiFrameEnabled: Bool
+    var fileSchemeEnabled: Bool
+    var aboutBlankOrOriginFallbackEnabled: Bool
+    var networkAuthNativeHostEnabled: Bool
+    var timersOrPollingEnabled: Bool
+    var backgroundWorkScheduled: Bool
+    var permanentRuntimeRetained: Bool
+    var serviceWorkerWakeAttempted: Bool
+    var nativeHostLaunchAttempted: Bool
+    var networkAuthAttempted: Bool
+    var normalTabInjectionOutsideExperiment: Bool
+}
+
+struct ChromeMV3PasswordManagerRealPackageAsyncExperimentRealResult:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var resultScope: String
+    var targetID: String
+    var targetClass: ChromeMV3PasswordManagerRealPackageClass
+    var attempted: Bool
+    var allowed: Bool
+    var blockers: [String]
+    var webKitObjectCreationOccurred: Bool
+    var webKitObjectCreationStatus: String
+    var reviewedScriptExecuted: Bool
+    var reviewedScriptExecutionStatus: String
+    var syntheticURL: String
+    var syntheticOrigin: String
+    var domBefore: ChromeMV3PasswordManagerRealPackageAsyncExperimentDOMSummary
+    var domAfter: ChromeMV3PasswordManagerRealPackageAsyncExperimentDOMSummary
+    var dummyMarkersOnly: Bool
+    var touchedSyntheticFields: [String]
+    var teardownCompleted: Bool
+    var retainedObjectCountAfterTeardown: Int
+    var noRealCredentialsOrSecrets: Bool
+    var noNetworkAuthNativeHost: Bool
+}
+
+struct ChromeMV3PasswordManagerRealPackageAsyncExperimentRegressionSummary:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var targetID: String
+    var targetClass: ChromeMV3PasswordManagerRealPackageClass
+    var packageSource: ChromeMV3PasswordManagerRealPackageSource
+    var status: ChromeMV3PasswordManagerCompatibilityStatus
+    var nextBlockerClassification: String
+    var summary: String
+    var passed: Bool
+}
+
+struct ChromeMV3PasswordManagerRealPackageAsyncExperimentArtifact:
+    Codable,
+    Equatable,
+    Sendable
+{
+    static let schemaVersion = 1
+    static let reportFileName =
+        "bitwarden-real-package-product-normal-tab-experiment.json"
+
+    var schemaVersion: Int
+    var generatedAt: Date
+    var reportFileName: String
+    var diagnosticKind: String
+    var packageSource: ChromeMV3PasswordManagerRealPackageSource
+    var packagePath: String?
+    var manifestVersion: String?
+    var manifestHash: String?
+    var sourceHash: String?
+    var generatedHash: String?
+    var reviewedHashSelected: String?
+    var previousReviewedHashRetained: String?
+    var sourceGeneratedByteEqual: Bool
+    var hashGatePassed: Bool
+    var fixtureResult:
+        ChromeMV3PasswordManagerRealPackageAsyncExperimentFixtureResult
+    var realPackageResult:
+        ChromeMV3PasswordManagerRealPackageAsyncExperimentRealResult
+    var fixtureAndRealPackageResultsSeparated: Bool
+    var runtimeFlags:
+        ChromeMV3PasswordManagerRealPackageAsyncExperimentRuntimeFlags
+    var disabledRuntimeInvariantPassed: Bool
+    var protonRegressionSummary:
+        ChromeMV3PasswordManagerRealPackageAsyncExperimentRegressionSummary?
+    var onePasswordBlockedSummary:
+        ChromeMV3PasswordManagerRealPackageAsyncExperimentRegressionSummary?
+    var noRealSecrets: Bool
+    var noRawCredentials: Bool
+    var notProductSupportLabel: String
+    var diagnostics: [String]
+
+    static func make(
+        report: ChromeMV3PasswordManagerRealPackageCompatibilityReport,
+        fileManager: FileManager = .default
+    ) -> Self? {
+        guard
+            let bitwarden = report.rows.first(where: {
+                $0.targetClass == .bitwarden
+            }),
+            let fixtureRow = report.fixtureBaselineReport.rows.first(where: {
+                $0.targetKind
+                    == ChromeMV3PasswordManagerCompatibilityTargetKind
+                    .bitwardenClass
+            })
+        else {
+            return nil
+        }
+
+        let detectFill = bitwarden.bitwardenE2ESmoke.detectFillSmoke
+        let experiment = detectFill.productNormalTabExecutionExperimentResult
+        let audit = experiment.reviewedResourceAudit
+        let webKitObjectCreationOccurred =
+            experiment.reviewedScriptExecutedByWebKit
+                || experiment.runtimeCost
+                    .runtimeObjectsCreatedDuringExperiment.isEmpty == false
+        let proton = report.rows.first { $0.targetClass == .protonPass }
+        let onePassword = report.rows.first { $0.targetClass == .onePassword }
+
+        let fixtureResult =
+            ChromeMV3PasswordManagerRealPackageAsyncExperimentFixtureResult(
+                resultScope: "fixtureBaseline",
+                fixtureFallbackID: bitwarden.fixtureDelta.fixtureFallbackID,
+                fixtureTargetKind: fixtureRow.targetKind,
+                fixtureProductReadiness:
+                    bitwarden.fixtureDelta.fixtureProductReadiness,
+                fixtureStatus: fixtureRow.productReadiness,
+                realPackageResultIsIndependent: true
+            )
+        let realResult =
+            ChromeMV3PasswordManagerRealPackageAsyncExperimentRealResult(
+                resultScope: "realLocalPackageProductNormalTabExperiment",
+                targetID: bitwarden.targetID,
+                targetClass: bitwarden.targetClass,
+                attempted: experiment.attempted,
+                allowed: experiment.allowed,
+                blockers: experiment.blockers.map(\.rawValue).sorted(),
+                webKitObjectCreationOccurred: webKitObjectCreationOccurred,
+                webKitObjectCreationStatus:
+                    webKitObjectCreationOccurred
+                        ? "createdAfterHashGate"
+                        : "blockedBeforeObjectCreation",
+                reviewedScriptExecuted:
+                    experiment.reviewedScriptExecutedByWebKit,
+                reviewedScriptExecutionStatus:
+                    experiment.reviewedScriptExecutedByWebKit
+                        ? "executed"
+                        : "notExecuted",
+                syntheticURL: experiment.url,
+                syntheticOrigin: experiment.origin,
+                domBefore:
+                    .make(
+                        experiment.domObservationBefore,
+                        dummyUsername: detectFill.dummyUsername,
+                        dummyPassword: detectFill.dummyPassword
+                    ),
+                domAfter:
+                    .make(
+                        experiment.domObservationAfter,
+                        dummyUsername: detectFill.dummyUsername,
+                        dummyPassword: detectFill.dummyPassword
+                    ),
+                dummyMarkersOnly: experiment.dummyMarkersOnly,
+                touchedSyntheticFields: experiment.fieldsTouched.sorted(),
+                teardownCompleted: experiment.teardown.completed,
+                retainedObjectCountAfterTeardown:
+                    experiment.runtimeCost.retainedObjectCountAfterTeardown,
+                noRealCredentialsOrSecrets:
+                    detectFill.noRealCredentialsOrSecrets
+                        && bitwarden.bitwardenE2ESmoke.noCredentialsOrNetwork,
+                noNetworkAuthNativeHost:
+                    detectFill.noNetworkAuthNativeHost
+                        && experiment.runtimeCost.networkAuthAttempted == false
+                        && experiment.runtimeCost.nativeHostLaunchAttempted
+                            == false
+            )
+        let runtimeFlags =
+            ChromeMV3PasswordManagerRealPackageAsyncExperimentRuntimeFlags(
+                productNormalTabExperimentAvailableInLocalExperimentalGate:
+                    experiment
+                    .productNormalTabExperimentAvailableInLocalExperimentalGate,
+                productNormalTabExperimentAvailableByDefault:
+                    experiment.productNormalTabExperimentAvailableByDefault,
+                productDefaultRuntimeAvailable:
+                    experiment.productDefaultRuntimeAvailable,
+                productRuntimeAvailable: report.productRuntimeAvailable,
+                productRuntimeExposed: report.productRuntimeExposed,
+                actionExplicitOnly: experiment.actionExplicitOnly,
+                managerReadoutExecutedExperiment:
+                    experiment.managerReadoutExecutedExperiment,
+                arbitraryScriptingEnabled: false,
+                mainWorldEnabled: false,
+                multiFrameEnabled: false,
+                fileSchemeEnabled: false,
+                aboutBlankOrOriginFallbackEnabled: false,
+                networkAuthNativeHostEnabled: false,
+                timersOrPollingEnabled: false,
+                backgroundWorkScheduled:
+                    experiment.runtimeCost.backgroundWorkScheduled,
+                permanentRuntimeRetained:
+                    experiment.runtimeCost.permanentRuntimeRetained,
+                serviceWorkerWakeAttempted:
+                    experiment.runtimeCost.serviceWorkerWakeAttempted,
+                nativeHostLaunchAttempted:
+                    experiment.runtimeCost.nativeHostLaunchAttempted,
+                networkAuthAttempted:
+                    experiment.runtimeCost.networkAuthAttempted,
+                normalTabInjectionOutsideExperiment:
+                    experiment.runtimeCost
+                    .normalTabInjectionOutsideExperiment
+            )
+        let disabledRuntimeInvariantPassed =
+            report.productRuntimeAvailable == false
+                && report.productRuntimeExposed == false
+                && experiment.productDefaultRuntimeAvailable == false
+                && runtimeFlags.backgroundWorkScheduled == false
+                && runtimeFlags.permanentRuntimeRetained == false
+                && experiment.runtimeCost.retainedObjectCountAfterTeardown == 0
+
+        return ChromeMV3PasswordManagerRealPackageAsyncExperimentArtifact(
+            schemaVersion: schemaVersion,
+            generatedAt: report.generatedAt,
+            reportFileName: reportFileName,
+            diagnosticKind:
+                "bitwardenRealPackageProductNormalTabAsyncExperiment",
+            packageSource: bitwarden.packageSource,
+            packagePath: bitwarden.packagePath,
+            manifestVersion: bitwarden.manifestRequirements.version,
+            manifestHash:
+                manifestSHA256(
+                    packagePath: bitwarden.packagePath,
+                    fileManager: fileManager
+                ),
+            sourceHash: audit?.sourcePackageSHA256,
+            generatedHash: audit?.generatedResourceSHA256,
+            reviewedHashSelected:
+                audit?.expectedReviewedSHA256
+                    ?? experiment.requiredReviewedScriptSHA256,
+            previousReviewedHashRetained: audit?.previousReviewedSHA256,
+            sourceGeneratedByteEqual:
+                audit?.sourceAndGeneratedByteEqual ?? false,
+            hashGatePassed: experiment.reviewedScriptHashMatched,
+            fixtureResult: fixtureResult,
+            realPackageResult: realResult,
+            fixtureAndRealPackageResultsSeparated:
+                fixtureResult.resultScope != realResult.resultScope
+                    && bitwarden.packageSource != .fixtureFallback,
+            runtimeFlags: runtimeFlags,
+            disabledRuntimeInvariantPassed: disabledRuntimeInvariantPassed,
+            protonRegressionSummary:
+                proton.map { regressionSummary(for: $0) },
+            onePasswordBlockedSummary:
+                onePassword.map { onePasswordBlockedSummary(for: $0) },
+            noRealSecrets:
+                report.noRealCredentialsUsed
+                    && realResult.noRealCredentialsOrSecrets,
+            noRawCredentials:
+                report.noRealCredentialsUsed
+                    && detectFill.dummyUsername != "notAttempted"
+                    && detectFill.dummyPassword != "notAttempted",
+            notProductSupportLabel:
+                "Local experimental diagnostic only; this is not product support and does not enable product/default runtime.",
+            diagnostics:
+                uniqueSortedRealPackages(
+                    report.diagnostics
+                        + experiment.diagnostics
+                        + [
+                            "Async real-package product-normal-tab artifact is written only by explicit local experiment execution.",
+                            "Fixture baseline and real local package product-normal-tab results are recorded in separate fields.",
+                            "DOM summaries contain only empty/synthetic-dummy/redacted markers, not raw dummy values.",
+                        ]
+                )
+        )
+    }
+
+    private static func regressionSummary(
+        for row: ChromeMV3PasswordManagerRealPackageCompatibilityRow
+    ) -> ChromeMV3PasswordManagerRealPackageAsyncExperimentRegressionSummary {
+        let readiness = row.serviceWorkerEventReadiness
+        let classification = readiness.nextBlockerClassification.rawValue
+        let passed =
+            readiness.nextBlockerClassification == .dispatchDelivered
+                && readiness.dispatchSmokeResult
+                    .contains("asyncCompletionUnsupported") == false
+        return ChromeMV3PasswordManagerRealPackageAsyncExperimentRegressionSummary(
+            targetID: row.targetID,
+            targetClass: row.targetClass,
+            packageSource: row.packageSource,
+            status: row.productReadiness,
+            nextBlockerClassification: classification,
+            summary:
+                "passed=\(passed); dispatch=\(readiness.dispatchSmokeResult)",
+            passed: passed
+        )
+    }
+
+    private static func onePasswordBlockedSummary(
+        for row: ChromeMV3PasswordManagerRealPackageCompatibilityRow
+    ) -> ChromeMV3PasswordManagerRealPackageAsyncExperimentRegressionSummary {
+        let readiness = row.serviceWorkerEventReadiness
+        let classification = readiness.nextBlockerClassification.rawValue
+        let blocked = readiness.nextBlockerClassification == .moduleWorkerUnsupported
+        return ChromeMV3PasswordManagerRealPackageAsyncExperimentRegressionSummary(
+            targetID: row.targetID,
+            targetClass: row.targetClass,
+            packageSource: row.packageSource,
+            status: row.productReadiness,
+            nextBlockerClassification: classification,
+            summary:
+                "moduleWorkerBlocked=\(blocked); detail=\(readiness.moduleWorkerReadinessResult)",
+            passed: blocked
+        )
+    }
+
+    private static func manifestSHA256(
+        packagePath: String?,
+        fileManager: FileManager
+    ) -> String? {
+        guard let packagePath else { return nil }
+        let url = URL(fileURLWithPath: packagePath, isDirectory: true)
+            .appendingPathComponent("manifest.json")
+        guard fileManager.fileExists(atPath: url.path),
+              let data = try? Data(contentsOf: url)
+        else {
+            return nil
+        }
+        return SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+}
+
+enum ChromeMV3PasswordManagerRealPackageAsyncExperimentArtifactWriter {
+    static let diagnosticsDirectoryName =
+        ".diagnostics/chrome-mv3-real-package-trials-async"
+    static let reportFileName =
+        ChromeMV3PasswordManagerRealPackageAsyncExperimentArtifact.reportFileName
+
+    static func diagnosticsRootURL(projectRootURL: URL) -> URL {
+        projectRootURL.standardizedFileURL
+            .appendingPathComponent(diagnosticsDirectoryName, isDirectory: true)
+    }
+
+    static func reportURL(rootURL: URL) -> URL {
+        rootURL.standardizedFileURL.appendingPathComponent(reportFileName)
+    }
+
+    static func latestArtifact(
+        rootURL: URL,
+        fileManager: FileManager = .default
+    ) -> ChromeMV3PasswordManagerRealPackageAsyncExperimentArtifact? {
+        let url = reportURL(rootURL: rootURL)
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(
+            ChromeMV3PasswordManagerRealPackageAsyncExperimentArtifact.self,
+            from: Data(contentsOf: url)
+        )
+    }
+
+    @discardableResult
+    static func write(
+        _ artifact:
+            ChromeMV3PasswordManagerRealPackageAsyncExperimentArtifact,
+        to rootURL: URL
+    ) throws -> ChromeMV3PasswordManagerRealPackageAsyncExperimentArtifact {
+        let url = reportURL(rootURL: rootURL)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try ChromeMV3DeterministicJSON.write(artifact, to: url)
+        return artifact
+    }
+}
+
 enum ChromeMV3PasswordManagerRealPackageTrialRunner {
     static let bitwardenE2ESyntheticLoginURL =
         "https://sumi.local.test/login"

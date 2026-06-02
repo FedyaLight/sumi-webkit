@@ -2441,6 +2441,13 @@ extension ChromeMV3PasswordManagerRealPackageTrialRunner {
                 ]
             )
         if writeReport {
+            if let artifact =
+                ChromeMV3PasswordManagerRealPackageAsyncExperimentArtifact
+                .make(report: report, fileManager: fileManager)
+            {
+                _ = try? ChromeMV3PasswordManagerRealPackageAsyncExperimentArtifactWriter
+                    .write(artifact, to: rootURL.standardizedFileURL)
+            }
             return (
                 try?
                     ChromeMV3PasswordManagerRealPackageCompatibilityReportWriter

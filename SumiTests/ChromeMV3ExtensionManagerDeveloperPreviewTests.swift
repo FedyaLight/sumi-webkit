@@ -1414,6 +1414,8 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         let positiveBoolean = "tr" + "ue"
         let manualSmokeRunnerCall =
             ".run" + "Manual" + "Normal" + "Tab" + "Smoke(request)"
+        let asyncRealPackageRunnerCall =
+            ".runWithSyntheticWebKitProgrammaticInjectionAdapter("
         let artifactWriterCall =
             ".write(artifact, rootURL: rootURL)"
 
@@ -1433,6 +1435,8 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         XCTAssertFalse(managerAndSettings.contains("WKContent" + "RuleList"))
         XCTAssertFalse(managerAndSettings.contains("chrome" + ".google"))
         XCTAssertFalse(settingsSource.contains(manualSmokeRunnerCall))
+        XCTAssertFalse(settingsSource.contains(asyncRealPackageRunnerCall))
+        XCTAssertFalse(managerSource.contains(asyncRealPackageRunnerCall))
         XCTAssertFalse(settingsSource.contains(artifactWriterCall))
         XCTAssertEqual(
             managerSource.components(separatedBy: manualSmokeRunnerCall).count - 1,

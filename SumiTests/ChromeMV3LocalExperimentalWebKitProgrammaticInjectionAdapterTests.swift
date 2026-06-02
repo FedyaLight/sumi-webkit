@@ -524,7 +524,7 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
     }
 
     @MainActor
-    func testExplicitAsyncRealPackageRunnerExecutesReviewedLocalBitwardenBundle()
+    func testStableIgnoredAsyncRealPackageRunnerWritesReviewedLocalBitwardenArtifact()
         async throws
     {
         guard #available(macOS 15.5, *) else {
@@ -540,19 +540,40 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
         ) else {
             throw XCTSkip("Local reviewed Bitwarden package is unavailable.")
         }
+        let reportRoot =
+            ChromeMV3PasswordManagerRealPackageAsyncExperimentArtifactWriter
+            .diagnosticsRootURL(projectRootURL: try temporaryDirectory())
+
+        XCTAssertNil(
+            ChromeMV3PasswordManagerRealPackageAsyncExperimentArtifactWriter
+                .latestArtifact(rootURL: reportRoot)
+        )
+
         let report = await
             ChromeMV3PasswordManagerRealPackageTrialRunner
             .runWithSyntheticWebKitProgrammaticInjectionAdapter(
-                rootURL: try temporaryDirectory(),
-                targets: [target],
+                rootURL: reportRoot,
                 serviceWorkerTrialGateSource: .explicitTestTrial,
-                writeReport: false,
+                writeReport: true,
                 now: { Date(timeIntervalSince1970: 22) }
             )
-        let row = try XCTUnwrap(report.rows.first)
+        let artifactURL =
+            ChromeMV3PasswordManagerRealPackageAsyncExperimentArtifactWriter
+            .reportURL(rootURL: reportRoot)
+        let artifact = try XCTUnwrap(
+            ChromeMV3PasswordManagerRealPackageAsyncExperimentArtifactWriter
+                .latestArtifact(rootURL: reportRoot)
+        )
+        let artifactString =
+            String(data: try Data(contentsOf: artifactURL), encoding: .utf8)
+                ?? ""
+        let row = try XCTUnwrap(
+            report.rows.first { $0.targetClass == .bitwarden }
+        )
         let detectFill = row.bitwardenE2ESmoke.detectFillSmoke
         let adapter = detectFill.webKitProgrammaticInjectionResult
 
+        XCTAssertTrue(FileManager.default.fileExists(atPath: artifactURL.path))
         XCTAssertEqual(row.packageSource, .realLocalUnpacked)
         XCTAssertTrue(adapter.allowed, "\(adapter.blockers): \(adapter.diagnostics)")
         XCTAssertTrue(adapter.reviewedScriptExecutedByWebKit)
@@ -611,6 +632,119 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
         XCTAssertTrue(audit.shapeEquivalentToReviewedRecord)
         XCTAssertTrue(audit.shapeBlockers.isEmpty)
         XCTAssertFalse(productExperiment.managerReadoutExecutedExperiment)
+        XCTAssertEqual(artifact.schemaVersion, 1)
+        XCTAssertEqual(
+            artifact.diagnosticKind,
+            "bitwardenRealPackageProductNormalTabAsyncExperiment"
+        )
+        XCTAssertEqual(artifact.packageSource, .realLocalUnpacked)
+        XCTAssertEqual(artifact.packagePath, target.explicitAllowedLocalRoot)
+        XCTAssertEqual(artifact.manifestVersion, "2026.4.1")
+        XCTAssertEqual(
+            artifact.manifestHash,
+            "e3af5e1631fea87fb5ec1bf80a0d52a08411152bf12f121dd54c5feb5804a3dc"
+        )
+        XCTAssertEqual(
+            artifact.sourceHash,
+            "7d3a88b4b1b8ae882a20ba4decd2df6fc9859c72fe1e7d3a5a60eabb6e7d5d8e"
+        )
+        XCTAssertEqual(artifact.sourceHash, artifact.generatedHash)
+        XCTAssertEqual(
+            artifact.reviewedHashSelected,
+            ChromeMV3LocalExperimentalProductNormalTabExperimentPolicy
+                .reviewedBitwardenBootstrapAutofillSHA256
+        )
+        XCTAssertEqual(
+            artifact.previousReviewedHashRetained,
+            "89b0c2ce4d57431ddbfc8a28992ddf2cd36f2d2bbe64657c89bc164c76fe2b58"
+        )
+        XCTAssertTrue(artifact.sourceGeneratedByteEqual)
+        XCTAssertTrue(artifact.hashGatePassed)
+        XCTAssertEqual(artifact.fixtureResult.resultScope, "fixtureBaseline")
+        XCTAssertEqual(
+            artifact.realPackageResult.resultScope,
+            "realLocalPackageProductNormalTabExperiment"
+        )
+        XCTAssertTrue(artifact.fixtureAndRealPackageResultsSeparated)
+        XCTAssertTrue(artifact.realPackageResult.attempted)
+        XCTAssertTrue(artifact.realPackageResult.allowed)
+        XCTAssertTrue(artifact.realPackageResult.blockers.isEmpty)
+        XCTAssertTrue(artifact.realPackageResult.webKitObjectCreationOccurred)
+        XCTAssertEqual(
+            artifact.realPackageResult.webKitObjectCreationStatus,
+            "createdAfterHashGate"
+        )
+        XCTAssertTrue(artifact.realPackageResult.reviewedScriptExecuted)
+        XCTAssertEqual(
+            artifact.realPackageResult.reviewedScriptExecutionStatus,
+            "executed"
+        )
+        XCTAssertEqual(
+            artifact.realPackageResult.syntheticURL,
+            "https://sumi.local.test/login"
+        )
+        XCTAssertEqual(
+            artifact.realPackageResult.domBefore.usernameValueMarker,
+            "empty"
+        )
+        XCTAssertEqual(
+            artifact.realPackageResult.domAfter.usernameValueMarker,
+            "syntheticDummyMatched"
+        )
+        XCTAssertEqual(
+            artifact.realPackageResult.domAfter.passwordValueMarker,
+            "syntheticDummyMatched"
+        )
+        XCTAssertTrue(artifact.realPackageResult.dummyMarkersOnly)
+        XCTAssertEqual(
+            artifact.realPackageResult.touchedSyntheticFields,
+            [
+                "sumi-login-email",
+                "sumi-login-password",
+            ]
+        )
+        XCTAssertTrue(artifact.realPackageResult.teardownCompleted)
+        XCTAssertEqual(
+            artifact.realPackageResult.retainedObjectCountAfterTeardown,
+            0
+        )
+        XCTAssertFalse(
+            artifact.runtimeFlags
+                .productNormalTabExperimentAvailableByDefault
+        )
+        XCTAssertFalse(artifact.runtimeFlags.productDefaultRuntimeAvailable)
+        XCTAssertFalse(artifact.runtimeFlags.productRuntimeAvailable)
+        XCTAssertFalse(artifact.runtimeFlags.productRuntimeExposed)
+        XCTAssertTrue(artifact.runtimeFlags.actionExplicitOnly)
+        XCTAssertFalse(artifact.runtimeFlags.managerReadoutExecutedExperiment)
+        XCTAssertFalse(artifact.runtimeFlags.arbitraryScriptingEnabled)
+        XCTAssertFalse(artifact.runtimeFlags.mainWorldEnabled)
+        XCTAssertFalse(artifact.runtimeFlags.multiFrameEnabled)
+        XCTAssertFalse(artifact.runtimeFlags.fileSchemeEnabled)
+        XCTAssertFalse(
+            artifact.runtimeFlags.aboutBlankOrOriginFallbackEnabled
+        )
+        XCTAssertFalse(artifact.runtimeFlags.networkAuthNativeHostEnabled)
+        XCTAssertFalse(artifact.runtimeFlags.timersOrPollingEnabled)
+        XCTAssertFalse(artifact.runtimeFlags.backgroundWorkScheduled)
+        XCTAssertFalse(artifact.runtimeFlags.permanentRuntimeRetained)
+        XCTAssertTrue(artifact.disabledRuntimeInvariantPassed)
+        XCTAssertTrue(artifact.protonRegressionSummary?.passed == true)
+        XCTAssertTrue(
+            artifact.onePasswordBlockedSummary?
+                .nextBlockerClassification == "moduleWorkerUnsupported"
+        )
+        XCTAssertTrue(artifact.onePasswordBlockedSummary?.passed == true)
+        XCTAssertTrue(artifact.noRealSecrets)
+        XCTAssertTrue(artifact.noRawCredentials)
+        XCTAssertTrue(artifact.notProductSupportLabel.contains(
+            "not product support"
+        ))
+        XCTAssertFalse(artifactString.contains("sumi-test-user@example.test"))
+        XCTAssertFalse(artifactString.contains("sumi-test-password-not-secret"))
+        XCTAssertFalse(artifactString.contains("masterPassword"))
+        XCTAssertFalse(artifactString.contains("accessToken"))
+        XCTAssertFalse(artifactString.contains("refreshToken"))
         XCTAssertTrue(detectFill.modeledDummyFillChangedDOM)
         XCTAssertEqual(
             detectFill.domObservationAfter.usernameValue,
