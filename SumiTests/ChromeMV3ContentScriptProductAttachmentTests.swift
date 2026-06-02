@@ -72,6 +72,21 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
             "ChromeMV3ContentScriptWKAttachmentExecutor.attachIfAllowed"
         ))
         XCTAssertTrue(managerSource.contains(
+            "ChromeMV3LivePreparedServiceWorkerLifecycleStore"
+        ))
+        XCTAssertTrue(managerSource.contains(
+            "sharedLifecycleSessionProvider"
+        ))
+        XCTAssertTrue(managerSource.contains(
+            "ChromeMV3ServiceWorkerJSExecutionHarness"
+        ))
+        XCTAssertTrue(managerSource.contains(
+            "nativePortKeepaliveAvailableInFixture: false"
+        ))
+        XCTAssertTrue(managerSource.contains(
+            "serviceWorkerLifecycle=lazy-content-script-runtime-port"
+        ))
+        XCTAssertTrue(managerSource.contains(
             "bindWebViewForMessageDispatch"
         ))
         XCTAssertTrue(managerSource.contains(
@@ -1324,7 +1339,7 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
             .object([
                 "echo": .object(["ping": .bool(true)]),
                 "frameId": .number(0),
-                "senderURLRedacted": .bool(true),
+                "senderURLRedacted": .bool(false),
                 "tabId": .number(7),
             ])
         )
@@ -1417,7 +1432,7 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         XCTAssertFalse(response.serviceWorkerWakeAttempted)
     }
 
-    func testContentScriptRuntimeConnectPortUsesSharedLifecycleKeepalive()
+    func testContentScriptRuntimeConnectCreatesSharedLifecycleSessionLazilyAndReleasesAfterDisconnect()
         throws
     {
         let fixture = try makePreflightFixture()
@@ -1428,6 +1443,84 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         )
         let session = try makeSharedLifecycleSession()
         registerRuntimePortEchoDispatchers(on: session)
+        var providerCallCount = 0
+        var releaseCallCount = 0
+        var releaseReason: String?
+        let host = ChromeMV3ContentScriptBridgeHost(
+            extensionID: extensionID,
+            profileID: profileID,
+            tabID: 7,
+            frameID: 0,
+            documentID: "document-1",
+            urlString: "https://example.com/login",
+            permissionBroker:
+                permissionBroker(hostPermissions: ["https://example.com/*"]),
+            endpointRegistry: registry,
+            sharedLifecycleSessionProvider: {
+                providerCallCount += 1
+                return session
+            },
+            sharedLifecycleSessionReleaseHandler: { releasedSession, reason in
+                XCTAssertTrue(releasedSession === session)
+                releaseCallCount += 1
+                releaseReason = reason
+            }
+        )
+
+        XCTAssertEqual(providerCallCount, 0)
+        XCTAssertTrue(session.runtimeOwner.snapshot.activeKeepaliveRecords.isEmpty)
+
+        let connect = host.handle([
+            "namespace": "runtime",
+            "methodName": "connect",
+            "bridgeCallID": "runtime-connect-lazy-lifecycle",
+            "arguments": [["name": "content-runtime"]],
+        ])
+        let portID = try XCTUnwrap(
+            stringValue(objectValue(connect.resultPayload)?["portID"])
+        )
+
+        XCTAssertTrue(connect.succeeded)
+        XCTAssertEqual(providerCallCount, 1)
+        XCTAssertEqual(
+            stringValue(objectValue(connect.resultPayload)?["name"]),
+            "content-runtime"
+        )
+        XCTAssertEqual(
+            session.runtimeOwner.snapshot.activeKeepaliveRecords.count,
+            1
+        )
+        let disconnect = host.handle([
+            "namespace": "runtime",
+            "methodName": "port.disconnect",
+            "bridgeCallID": "runtime-port-disconnect-lazy-lifecycle",
+            "arguments": [portID],
+        ])
+        XCTAssertTrue(disconnect.succeeded)
+        XCTAssertEqual(releaseCallCount, 1)
+        XCTAssertEqual(releaseReason, "Port.disconnect called by content script.")
+        XCTAssertTrue(session.runtimeOwner.snapshot.activeKeepaliveRecords.isEmpty)
+    }
+
+    func testContentScriptRuntimeConnectPortUsesSharedLifecycleKeepalive()
+        throws
+    {
+        let fixture = try makePreflightFixture()
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+        _ = registry.registerEndpoint(
+            preflight: fixture.preflight,
+            connectListenerRegistered: true
+        )
+        let session = try makeSharedLifecycleSession()
+        var capturedConnectInput:
+            ChromeMV3ServiceWorkerJSListenerDispatchInput?
+        var capturedPortMessageInput:
+            ChromeMV3ServiceWorkerRuntimePortDeliveryInput?
+        registerRuntimePortEchoDispatchers(
+            on: session,
+            onConnectInput: { capturedConnectInput = $0 },
+            onPortMessageInput: { capturedPortMessageInput = $0 }
+        )
         let host = ChromeMV3ContentScriptBridgeHost(
             extensionID: extensionID,
             profileID: profileID,
@@ -1450,12 +1543,36 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         let portID = try XCTUnwrap(
             stringValue(objectValue(connect.resultPayload)?["portID"])
         )
+        let connectInput = try XCTUnwrap(capturedConnectInput)
+        let connectArgument = try XCTUnwrap(
+            objectValue(connectInput.arguments.first)
+        )
+        let senderPayload = try XCTUnwrap(
+            objectValue(connectArgument["sender"])
+        )
         XCTAssertTrue(connect.succeeded)
         XCTAssertTrue(connect.serviceWorkerWakeAttempted)
         XCTAssertEqual(
             session.runtimeOwner.snapshot.activeKeepaliveRecords.count,
             1
         )
+        XCTAssertEqual(connectInput.sender.tabID, 7)
+        XCTAssertEqual(connectInput.sender.frameID, 0)
+        XCTAssertEqual(connectInput.sender.documentID, "document-1")
+        XCTAssertEqual(connectInput.sender.sourceURL, "https://example.com/login")
+        XCTAssertEqual(connectInput.sender.urlRedacted, false)
+        XCTAssertEqual(stringValue(senderPayload["id"]), extensionID)
+        XCTAssertEqual(stringValue(senderPayload["extensionID"]), extensionID)
+        XCTAssertEqual(stringValue(senderPayload["profileID"]), profileID)
+        XCTAssertEqual(senderPayload["tabId"], .number(7))
+        XCTAssertEqual(senderPayload["frameId"], .number(0))
+        XCTAssertEqual(stringValue(senderPayload["documentId"]), "document-1")
+        XCTAssertEqual(
+            stringValue(senderPayload["url"]),
+            "https://example.com/login"
+        )
+        XCTAssertEqual(stringValue(senderPayload["origin"]), "https://example.com")
+        XCTAssertEqual(boolValue(senderPayload["urlRedacted"]), false)
 
         let post = host.handle([
             "namespace": "runtime",
@@ -1480,6 +1597,12 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
 
         XCTAssertTrue(post.succeeded)
         XCTAssertTrue(post.serviceWorkerWakeAttempted)
+        XCTAssertEqual(capturedPortMessageInput?.sender.tabID, 7)
+        XCTAssertEqual(capturedPortMessageInput?.sender.frameID, 0)
+        XCTAssertEqual(
+            capturedPortMessageInput?.sender.sourceURL,
+            "https://example.com/login"
+        )
         XCTAssertEqual(boolValue(postPayload["delivered"]), true)
         XCTAssertEqual(stringValue(firstMessage["portID"]), portID)
         XCTAssertEqual(
@@ -2032,7 +2155,7 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
     }
 
     @MainActor
-    func testWKPreparedBitwardenDeclaredContentScriptRegistersThenRemovesListenerAfterRuntimePortDisconnect()
+    func testWKPreparedBitwardenDeclaredContentScriptKeepsListenerAfterRuntimePortConnect()
         async throws
     {
         let packageRoot = URL(
@@ -2110,6 +2233,35 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         )
 
         let registry = ChromeMV3ContentScriptEndpointRegistry()
+        let session = try makeSharedLifecycleSession()
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request:
+                ChromeMV3ServiceWorkerJSExecutionRequest(
+                    manifest: manifest,
+                    generatedBundleRecord: generated.record,
+                    extensionID: extensionID,
+                    profileID: profileID,
+                    moduleState: .enabled,
+                    extensionEnabled: true,
+                    localExperimentalGateAllowed: true,
+                    dynamicImportRewriteExperimentAllowed: true
+                )
+        )
+        let start = harness.start()
+        XCTAssertTrue(
+            start.status == .running || harness.canDispatchCapturedListeners,
+            start.diagnostics.joined(separator: "\n")
+        )
+        XCTAssertTrue(
+            harness.capturedListener(for: .runtimeOnConnect),
+            harness.snapshot.capturedListeners
+                .map { $0.event.rawValue }
+                .joined(separator: ",")
+        )
+        harness.attachCapturedListenerDispatchers(
+            to: session,
+            clearingExisting: true
+        )
         let configuration = WKWebViewConfiguration()
         configuration.sumiIsNormalTabWebViewConfiguration = true
         let attachment =
@@ -2117,7 +2269,8 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
                 configuration: configuration,
                 preflight: preflight,
                 permissionBroker: broker,
-                endpointRegistry: registry
+                endpointRegistry: registry,
+                sharedLifecycleSession: session
             )
         XCTAssertTrue(attachment.result.attached)
         let webView = WKWebView(
@@ -2127,7 +2280,7 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         attachment.handle?.bindWebViewForMessageDispatch(webView)
         try await loadURL(pageURL, html: contentScriptLoginHTML, into: webView)
 
-        for _ in 0..<50 {
+        for _ in 0..<70 {
             let endpoint = registry.targetEndpoint(
                 extensionID: extensionID,
                 profileID: profileID,
@@ -2135,9 +2288,16 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
                 frameID: 0,
                 documentID: "bitwarden-real-document"
             )
-            if endpoint?.diagnostics.contains(where: {
-                $0.contains("runtime.onMessage listener removal observed")
-            }) == true {
+            let listenerRegistered =
+                endpoint?.messageListenerRegistered == true
+            let activeKeepalive =
+                session.runtimeOwner.snapshot.activeKeepaliveRecords
+                    .isEmpty == false
+            let serviceWorkerPortOpen =
+                harness.snapshot.ports.contains {
+                    $0.connected && $0.nativeFixturePort == false
+                }
+            if listenerRegistered && activeKeepalive && serviceWorkerPortOpen {
                 break
             }
             try await Task.sleep(nanoseconds: 100_000_000)
@@ -2152,10 +2312,32 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         XCTAssertTrue(capturedEndpoint.diagnostics.contains {
             $0.contains("runtime.onMessage listener registration observed")
         })
-        XCTAssertTrue(capturedEndpoint.diagnostics.contains {
+        XCTAssertFalse(capturedEndpoint.diagnostics.contains {
             $0.contains("runtime.onMessage listener removal observed")
         })
-        XCTAssertFalse(capturedEndpoint.messageListenerRegistered)
+        XCTAssertTrue(capturedEndpoint.messageListenerRegistered)
+        XCTAssertEqual(
+            session.runtimeOwner.snapshot.activeKeepaliveRecords.count,
+            1
+        )
+        let connectedPort = try XCTUnwrap(
+            harness.snapshot.ports.first { $0.connected }
+        )
+        XCTAssertEqual(
+            connectedPort.name,
+            "autofill-injected-script-port"
+        )
+        XCTAssertEqual(connectedPort.sender.tabID, 7)
+        XCTAssertEqual(connectedPort.sender.frameID, 0)
+        XCTAssertEqual(
+            connectedPort.sender.documentID,
+            "bitwarden-real-document"
+        )
+        XCTAssertEqual(
+            connectedPort.sender.sourceURL,
+            pageURL.absoluteString
+        )
+        XCTAssertEqual(connectedPort.sender.urlRedacted, false)
 
         let handler = ChromeMV3PopupOptionsJSBridgeHandler(
             configuration:
@@ -2177,14 +2359,25 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
 
         XCTAssertFalse(response.succeeded)
         XCTAssertEqual(response.lastErrorCode, "noReceivingEnd")
+        XCTAssertFalse(response.nativeHostLaunchAttempted)
         let diagnostics = response.diagnostics.joined(separator: "\n")
         XCTAssertTrue(
-            diagnostics.contains("dispatchResult=noListener"),
+            diagnostics.contains("listenerCount=1"),
             diagnostics
         )
         XCTAssertTrue(
             diagnostics.contains(
                 "evaluating real content-script runtime.onMessage listeners"
+            ),
+            diagnostics
+        )
+        XCTAssertTrue(
+            diagnostics.contains("dispatchResult=noResponse"),
+            diagnostics
+        )
+        XCTAssertTrue(
+            diagnostics.contains(
+                "runtime.onMessage listener(s) returned without sendResponse"
             ),
             diagnostics
         )
@@ -2194,6 +2387,8 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         )
 
         attachment.handle?.tearDown(reason: "Bitwarden declared listener teardown")
+        harness.reset()
+        session.reset()
         XCTAssertEqual(registry.summary.activeEndpointCount, 0)
         XCTAssertEqual(registry.summary.activeJSDispatcherCount, 0)
     }
@@ -2366,12 +2561,17 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
     }
 
     private func registerRuntimePortEchoDispatchers(
-        on session: ChromeMV3ServiceWorkerSharedLifecycleSession
+        on session: ChromeMV3ServiceWorkerSharedLifecycleSession,
+        onConnectInput:
+            ((ChromeMV3ServiceWorkerJSListenerDispatchInput) -> Void)? = nil,
+        onPortMessageInput:
+            ((ChromeMV3ServiceWorkerRuntimePortDeliveryInput) -> Void)? = nil
     ) {
         session.registerJSListenerDispatcher(
             event: .runtimeOnConnect,
             listenerID: "content-js-runtime-on-connect"
         ) { input in
+            onConnectInput?(input)
             let name: String
             if case .object(let object)? = input.arguments.first,
                case .string(let portName)? = object["name"]
@@ -2403,6 +2603,7 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
             session.registerRuntimePortMessageDispatcher(
                 dispatcherID: "content-test-runtime-port-message"
             ) { portInput in
+                onPortMessageInput?(portInput)
                 let wake = session.routeEvent(
                     reason: portInput.source.wakeReason,
                     listenerEvent: .runtimeOnConnect,

@@ -1,7 +1,253 @@
+import CryptoKit
 import Foundation
 import WebKit
 
 #if DEBUG
+    private final class ChromeMV3LivePreparedServiceWorkerLifecycleStore {
+        private struct Record {
+            var session: ChromeMV3ServiceWorkerSharedLifecycleSession
+            var harness: ChromeMV3ServiceWorkerJSExecutionHarness?
+            var profileID: String
+            var extensionID: String
+            var tabID: Int
+            var frameID: Int
+            var documentID: String
+            var sessionID: String
+        }
+
+        private var records: [String: Record] = [:]
+
+        func sessionForContentScriptRuntimePort(
+            profileID: String,
+            extensionID: String,
+            tabID: Int,
+            frameID: Int,
+            documentID: String,
+            urlString: String,
+            manifest: ChromeMV3Manifest,
+            generatedBundleRecord: ChromeMV3GeneratedBundleRecord?,
+            extensionEnabled: Bool,
+            localExperimentalGateAllowed: Bool,
+            trace: (String) -> Void
+        ) -> ChromeMV3ServiceWorkerSharedLifecycleSession? {
+            let recordKey = makeRecordKey(
+                profileID: profileID,
+                extensionID: extensionID,
+                tabID: tabID,
+                frameID: frameID,
+                documentID: documentID
+            )
+            if let existing = records[recordKey] {
+                trace(
+                    "[service-worker-lifecycle] extension=\(extensionID) profile=\(profileID) tab=\(tabID) frame=\(frameID) document=\(documentID) contentWorld=sumi.mv3.content.\(profileID).\(extensionID) session=\(existing.sessionID) action=reuse wakeResult=existing onConnectDispatcherCount=\(existing.session.jsListenerDispatcherCount(for: .runtimeOnConnect)) keepaliveCount=\(existing.session.runtimeOwner.snapshot.activeKeepaliveRecords.count)"
+                )
+                return existing.session
+            }
+            guard localExperimentalGateAllowed, extensionEnabled else {
+                trace(
+                    "[service-worker-lifecycle] extension=\(extensionID) profile=\(profileID) tab=\(tabID) frame=\(frameID) document=\(documentID) action=blocked reason=gateOrExtensionDisabled"
+                )
+                return nil
+            }
+            guard let generatedBundleRecord else {
+                trace(
+                    "[service-worker-lifecycle] extension=\(extensionID) profile=\(profileID) tab=\(tabID) frame=\(frameID) document=\(documentID) action=blocked reason=generatedBundleRecordMissing"
+                )
+                return nil
+            }
+
+            let sessionID =
+                "live-normal-tab-content-script-sw-\(recordKey)"
+            let key = ChromeMV3ServiceWorkerSharedLifecycleSessionKey.make(
+                profileID: profileID,
+                extensionID: extensionID,
+                lifecycleSessionID: sessionID
+            )
+            let configuration =
+                ChromeMV3ServiceWorkerInternalLifecycleConfiguration
+                .internalFixture(
+                    extensionID: key.extensionID,
+                    profileID: key.profileID,
+                    moduleState: .enabled,
+                    explicitInternalLifecycleAllowed:
+                        localExperimentalGateAllowed && extensionEnabled,
+                    nativePortKeepaliveAvailableInFixture: false,
+                    fixedLifecycleSessionID: key.lifecycleSessionID
+                )
+            let session = ChromeMV3ServiceWorkerSharedLifecycleSession(
+                key: key,
+                configuration: configuration
+            )
+            let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+                request:
+                    ChromeMV3ServiceWorkerJSExecutionRequest(
+                        manifest: manifest,
+                        generatedBundleRecord: generatedBundleRecord,
+                        extensionID: extensionID,
+                        profileID: profileID,
+                        moduleState: .enabled,
+                        extensionEnabled: extensionEnabled,
+                        localExperimentalGateAllowed:
+                            localExperimentalGateAllowed,
+                        dynamicImportRewriteExperimentAllowed: true
+                    )
+            )
+            let start = harness.start()
+            let canDispatch =
+                start.status == .running || harness.canDispatchCapturedListeners
+            if canDispatch {
+                harness.attachCapturedListenerDispatchers(
+                    to: session,
+                    clearingExisting: true
+                )
+            }
+            let onConnectCaptured = harness.capturedListener(
+                for: .runtimeOnConnect
+            )
+            records[recordKey] = Record(
+                session: session,
+                harness: harness,
+                profileID: profileID,
+                extensionID: extensionID,
+                tabID: tabID,
+                frameID: frameID,
+                documentID: documentID,
+                sessionID: key.lifecycleSessionID
+            )
+            trace(
+                "[service-worker-lifecycle] extension=\(extensionID) profile=\(profileID) tab=\(tabID) frame=\(frameID) document=\(documentID) url=\(urlString) contentWorld=sumi.mv3.content.\(profileID).\(extensionID) session=\(key.lifecycleSessionID) action=create wakeResult=\(start.status.rawValue) capturedListenerCount=\(harness.snapshot.capturedListeners.count) onConnectCaptured=\(onConnectCaptured) onConnectDispatcherCount=\(session.jsListenerDispatcherCount(for: .runtimeOnConnect)) nativePortKeepalive=false permanentBackground=false runtimeLoadable=false"
+            )
+            return session
+        }
+
+        func releaseContentScriptRuntimePortSession(
+            profileID: String,
+            extensionID: String,
+            tabID: Int,
+            frameID: Int,
+            documentID: String,
+            reason: String,
+            trace: (String) -> Void
+        ) {
+            let recordKey = makeRecordKey(
+                profileID: profileID,
+                extensionID: extensionID,
+                tabID: tabID,
+                frameID: frameID,
+                documentID: documentID
+            )
+            releaseRecord(
+                key: recordKey,
+                reason: reason,
+                teardownReason: "port-close",
+                trace: trace
+            )
+        }
+
+        func tearDownTab(
+            profileID: String,
+            tabID: Int,
+            documentID: String,
+            reason: String,
+            trace: (String) -> Void
+        ) {
+            for key in records.keys.sorted() {
+                guard let record = records[key],
+                      record.profileID == profileID,
+                      record.tabID == tabID,
+                      record.documentID == documentID
+                else { continue }
+                releaseRecord(
+                    key: key,
+                    reason: reason,
+                    teardownReason: "tab-document-teardown",
+                    trace: trace
+                )
+            }
+        }
+
+        func tearDownExtension(
+            extensionID: String,
+            reason: String,
+            trace: (String) -> Void
+        ) {
+            for key in records.keys.sorted() {
+                guard records[key]?.extensionID == extensionID else {
+                    continue
+                }
+                releaseRecord(
+                    key: key,
+                    reason: reason,
+                    teardownReason: "extension-teardown",
+                    trace: trace
+                )
+            }
+        }
+
+        func reset(reason: String, trace: (String) -> Void) {
+            for key in records.keys.sorted() {
+                releaseRecord(
+                    key: key,
+                    reason: reason,
+                    teardownReason: "runtime-reset",
+                    trace: trace
+                )
+            }
+        }
+
+        private func releaseRecord(
+            key: String,
+            reason: String,
+            teardownReason: String,
+            trace: (String) -> Void
+        ) {
+            guard let record = records.removeValue(forKey: key) else {
+                return
+            }
+            let activeBefore =
+                record.session.runtimeOwner.snapshot.activeKeepaliveRecords
+                    .count
+            _ = record.session.triggerIdleRelease(reason: reason)
+            let activeAfter =
+                record.session.runtimeOwner.snapshot.activeKeepaliveRecords
+                    .count
+            record.harness?.reset()
+            record.session.reset()
+            trace(
+                "[service-worker-lifecycle] extension=\(record.extensionID) profile=\(record.profileID) tab=\(record.tabID) frame=\(record.frameID) document=\(record.documentID) session=\(record.sessionID) action=release teardown=\(teardownReason) keepaliveBefore=\(activeBefore) keepaliveAfter=\(activeAfter) result=complete reason=\(reason)"
+            )
+        }
+
+        private func makeRecordKey(
+            profileID: String,
+            extensionID: String,
+            tabID: Int,
+            frameID: Int,
+            documentID: String
+        ) -> String {
+            stableIDLivePreparedContentScriptLifecycle(
+                prefix: "content-script-sw-session",
+                parts: [
+                    profileID,
+                    extensionID,
+                    String(tabID),
+                    String(frameID),
+                    documentID,
+                ]
+            )
+        }
+    }
+
+    private func stableIDLivePreparedContentScriptLifecycle(
+        prefix: String,
+        parts: [String]
+    ) -> String {
+        let joined = parts.joined(separator: "\u{1F}")
+        let digest = SHA256.hash(data: Data(joined.utf8))
+        let hex = digest.map { String(format: "%02x", $0) }.joined()
+        return "\(prefix)-\(String(hex.prefix(16)))"
+    }
+
     @available(macOS 15.5, *)
     @MainActor
     final class ChromeMV3LivePreparedContentScriptRuntime {
@@ -17,6 +263,8 @@ import WebKit
         }
 
         let endpointRegistry = ChromeMV3ContentScriptEndpointRegistry()
+        private let serviceWorkerLifecycleStore =
+            ChromeMV3LivePreparedServiceWorkerLifecycleStore()
 
         private var tabStates: [UUID: TabState] = [:]
         private var localTabIDs: [UUID: Int] = [:]
@@ -38,7 +286,7 @@ import WebKit
             browserManager: BrowserManager?,
             managerStoreRootURL: URL,
             localExperimentalGateAllowed: Bool,
-            trace: (String) -> Void
+            trace: @escaping (String) -> Void
         ) {
             tearDownTab(
                 tab.id,
@@ -109,6 +357,8 @@ import WebKit
                     ChromeMV3PreparedContentScriptBundleInspection.inspect(
                         rootURL: rootURL
                     )
+                let generatedBundleRecord =
+                    preparedInspection.generatedBundleRecord
                 guard preparedInspection.preparedGeneratedBundle else {
                     trace(
                         "[content-script-bind] extension=\(installedExtension.id) tab=\(localTabID) prepared=false diagnostics=\(preparedInspection.diagnostics.joined(separator: " | "))"
@@ -166,7 +416,40 @@ import WebKit
                         configuration: webView.configuration,
                         preflight: preflight,
                         permissionBroker: permissionBroker,
-                        endpointRegistry: endpointRegistry
+                        endpointRegistry: endpointRegistry,
+                        sharedLifecycleSessionProvider: {
+                            [serviceWorkerLifecycleStore] in
+                            serviceWorkerLifecycleStore
+                                .sessionForContentScriptRuntimePort(
+                                    profileID: profileID,
+                                    extensionID: installedExtension.id,
+                                    tabID: localTabID,
+                                    frameID: 0,
+                                    documentID: documentID,
+                                    urlString: url.absoluteString,
+                                    manifest: manifest,
+                                    generatedBundleRecord:
+                                        generatedBundleRecord,
+                                    extensionEnabled:
+                                        installedExtension.isEnabled,
+                                    localExperimentalGateAllowed:
+                                        localExperimentalGateAllowed,
+                                    trace: trace
+                                )
+                        },
+                        sharedLifecycleSessionReleaseHandler: {
+                            [serviceWorkerLifecycleStore] _, reason in
+                            serviceWorkerLifecycleStore
+                                .releaseContentScriptRuntimePortSession(
+                                    profileID: profileID,
+                                    extensionID: installedExtension.id,
+                                    tabID: localTabID,
+                                    frameID: 0,
+                                    documentID: documentID,
+                                    reason: reason,
+                                    trace: trace
+                                )
+                        }
                     )
                 attachment.handle?.bindWebViewForMessageDispatch(webView)
                 if let handle = attachment.handle, attachment.result.attached {
@@ -176,7 +459,7 @@ import WebKit
                     .flatMap(\.validatedJSFilePaths)
                     .joined(separator: ",")
                 trace(
-                    "[content-script-bind] extension=\(installedExtension.id) tab=\(localTabID) url=\(url.absoluteString) matched=\(preflight.matchedScripts.count) preparedScripts=\(preparedScriptPaths) contentWorld=sumi.mv3.content.\(profileID).\(installedExtension.id) injectionTiming=shim:document_start,declared:manifest_run_at endpoint=\(attachment.result.endpointID ?? "none") attached=\(attachment.result.attached) listenerCount=\(endpointRegistry.summary.messageListenerEndpointCount) blockers=\(attachment.result.blockers.map(\.rawValue).joined(separator: ","))"
+                    "[content-script-bind] extension=\(installedExtension.id) tab=\(localTabID) frame=0 document=\(documentID) url=\(url.absoluteString) matched=\(preflight.matchedScripts.count) preparedScripts=\(preparedScriptPaths) contentWorld=sumi.mv3.content.\(profileID).\(installedExtension.id) injectionTiming=shim:document_start,declared:manifest_run_at serviceWorkerLifecycle=lazy-content-script-runtime-port endpoint=\(attachment.result.endpointID ?? "none") attached=\(attachment.result.attached) listenerCount=\(endpointRegistry.summary.messageListenerEndpointCount) blockers=\(attachment.result.blockers.map(\.rawValue).joined(separator: ","))"
                 )
             }
 
@@ -301,6 +584,11 @@ import WebKit
                     tabStates[tabID] = state
                 }
             }
+            serviceWorkerLifecycleStore.tearDownExtension(
+                extensionID: extensionID,
+                reason: reason,
+                trace: trace
+            )
             traceSummary(reason: reason, trace: trace)
         }
 
@@ -314,6 +602,7 @@ import WebKit
                     handle.tearDown(reason: reason)
                 }
             }
+            serviceWorkerLifecycleStore.reset(reason: reason, trace: trace)
             tabStates.removeAll()
             traceSummary(reason: reason, trace: trace)
         }
@@ -333,6 +622,13 @@ import WebKit
             for handle in state.handlesByExtensionID.values {
                 handle.tearDown(reason: reason)
             }
+            serviceWorkerLifecycleStore.tearDownTab(
+                profileID: state.profileID,
+                tabID: state.localTabID,
+                documentID: state.documentID,
+                reason: reason,
+                trace: trace
+            )
             trace(
                 "[content-script-teardown] tab=\(state.localTabID) document=\(state.documentID) navigation=\(state.navigationSequence) result=complete reason=\(reason)"
             )
@@ -423,6 +719,7 @@ import WebKit
     private enum ChromeMV3PreparedContentScriptBundleInspection {
         struct Result {
             var preparedGeneratedBundle: Bool
+            var generatedBundleRecord: ChromeMV3GeneratedBundleRecord?
             var diagnostics: [String]
         }
 
@@ -439,6 +736,7 @@ import WebKit
             else {
                 return Result(
                     preparedGeneratedBundle: false,
+                    generatedBundleRecord: nil,
                     diagnostics: [
                         "Prepared generated bundle metadata or manifest is missing, non-regular, or symbolic-link backed.",
                     ]
@@ -452,6 +750,7 @@ import WebKit
             ) else {
                 return Result(
                     preparedGeneratedBundle: false,
+                    generatedBundleRecord: nil,
                     diagnostics: [
                         "Prepared generated bundle metadata could not be decoded.",
                     ]
@@ -468,6 +767,7 @@ import WebKit
             else {
                 return Result(
                     preparedGeneratedBundle: false,
+                    generatedBundleRecord: nil,
                     diagnostics: [
                         "Prepared generated bundle metadata paths do not match the active generated root.",
                     ]
@@ -475,6 +775,7 @@ import WebKit
             }
             return Result(
                 preparedGeneratedBundle: true,
+                generatedBundleRecord: record,
                 diagnostics: [
                     "Prepared generated bundle metadata and manifest validated.",
                 ]

@@ -3952,9 +3952,15 @@ final class ChromeMV3ContentScriptBridgeHost {
     private let urlString: String
     private let permissionBroker: ChromeMV3PermissionBroker
     private let endpointRegistry: ChromeMV3ContentScriptEndpointRegistry
-    private let sharedLifecycleSession:
+    private var sharedLifecycleSession:
         ChromeMV3ServiceWorkerSharedLifecycleSession?
+    private let sharedLifecycleSessionProvider:
+        (() -> ChromeMV3ServiceWorkerSharedLifecycleSession?)?
+    private let sharedLifecycleSessionReleaseHandler:
+        ((ChromeMV3ServiceWorkerSharedLifecycleSession, String) -> Void)?
     private let lifecycleComponentID: String
+    private var sharedLifecycleSessionCreatedByProvider = false
+    private var sharedLifecycleComponentAttached = false
     private var serviceWorkerRuntimePortIDs: Set<String> = []
 
     init(
@@ -3967,7 +3973,12 @@ final class ChromeMV3ContentScriptBridgeHost {
         permissionBroker: ChromeMV3PermissionBroker,
         endpointRegistry: ChromeMV3ContentScriptEndpointRegistry,
         sharedLifecycleSession:
-            ChromeMV3ServiceWorkerSharedLifecycleSession? = nil
+            ChromeMV3ServiceWorkerSharedLifecycleSession? = nil,
+        sharedLifecycleSessionProvider:
+            (() -> ChromeMV3ServiceWorkerSharedLifecycleSession?)? = nil,
+        sharedLifecycleSessionReleaseHandler:
+            ((ChromeMV3ServiceWorkerSharedLifecycleSession, String) -> Void)?
+                = nil
     ) {
         self.extensionID = extensionID
         self.profileID = profileID
@@ -3978,6 +3989,9 @@ final class ChromeMV3ContentScriptBridgeHost {
         self.permissionBroker = permissionBroker
         self.endpointRegistry = endpointRegistry
         self.sharedLifecycleSession = sharedLifecycleSession
+        self.sharedLifecycleSessionProvider = sharedLifecycleSessionProvider
+        self.sharedLifecycleSessionReleaseHandler =
+            sharedLifecycleSessionReleaseHandler
         self.lifecycleComponentID =
             stableIDContentScripts(
                 prefix: "content-script-service-worker-endpoint",
@@ -3989,19 +4003,9 @@ final class ChromeMV3ContentScriptBridgeHost {
                     documentID,
                 ]
             )
-        sharedLifecycleSession?.attachComponent(
-            kind: .contentScriptSyntheticEndpoint,
-            componentID: lifecycleComponentID,
-            eventSurfaces: [
-                .runtimeOnMessage,
-                .runtimeOnConnect,
-            ],
-            keepaliveSources: [.runtimePort],
-            diagnostics: [
-                "Content-script bridge attached to the local experimental shared lifecycle session.",
-                "Normal-tab runtime remains limited to the declared content-script attachment path.",
-            ]
-        )
+        if let sharedLifecycleSession {
+            attachSharedLifecycleComponentIfNeeded(to: sharedLifecycleSession)
+        }
     }
 
     deinit {
@@ -4011,9 +4015,13 @@ final class ChromeMV3ContentScriptBridgeHost {
                 reason: .reset
             )
         }
+        serviceWorkerRuntimePortIDs.removeAll()
         sharedLifecycleSession?.detachComponent(
             componentID: lifecycleComponentID,
             reason: .reset
+        )
+        releaseProviderSessionIfIdle(
+            reason: "Content-script bridge deinitialized."
         )
     }
 
@@ -4184,17 +4192,75 @@ final class ChromeMV3ContentScriptBridgeHost {
         )
     }
 
+    private func ensureSharedLifecycleSessionForRuntimePort()
+        -> ChromeMV3ServiceWorkerSharedLifecycleSession?
+    {
+        if let sharedLifecycleSession {
+            attachSharedLifecycleComponentIfNeeded(to: sharedLifecycleSession)
+            return sharedLifecycleSession
+        }
+        guard let sharedLifecycleSessionProvider,
+              let session = sharedLifecycleSessionProvider()
+        else {
+            return nil
+        }
+        sharedLifecycleSession = session
+        sharedLifecycleSessionCreatedByProvider = true
+        attachSharedLifecycleComponentIfNeeded(to: session)
+        return session
+    }
+
+    private func attachSharedLifecycleComponentIfNeeded(
+        to session: ChromeMV3ServiceWorkerSharedLifecycleSession
+    ) {
+        guard sharedLifecycleComponentAttached == false else { return }
+        session.attachComponent(
+            kind: .contentScriptSyntheticEndpoint,
+            componentID: lifecycleComponentID,
+            eventSurfaces: [
+                .runtimeOnMessage,
+                .runtimeOnConnect,
+            ],
+            keepaliveSources: [.runtimePort],
+            diagnostics: [
+                "Content-script bridge attached to the local experimental shared lifecycle session.",
+                "Normal-tab runtime remains limited to the declared content-script attachment path.",
+            ]
+        )
+        sharedLifecycleComponentAttached = true
+    }
+
+    private func releaseProviderSessionIfIdle(reason: String) {
+        guard sharedLifecycleSessionCreatedByProvider,
+              serviceWorkerRuntimePortIDs.isEmpty,
+              let session = sharedLifecycleSession
+        else { return }
+        session.detachComponent(
+            componentID: lifecycleComponentID,
+            reason: .reset
+        )
+        sharedLifecycleSessionReleaseHandler?(session, reason)
+        sharedLifecycleSession = nil
+        sharedLifecycleSessionCreatedByProvider = false
+        sharedLifecycleComponentAttached = false
+    }
+
     private func contentScriptSenderLifecyclePayload() -> ChromeMV3StorageValue {
-        .object([
+        var payload: [String: ChromeMV3StorageValue] = [
             "id": .string(extensionID),
             "extensionID": .string(extensionID),
             "profileID": .string(profileID),
             "tabId": .number(Double(tabID)),
             "frameId": .number(Double(frameID)),
             "documentId": .string(documentID),
-            "urlRedacted": .bool(true),
-            "redactionState": .string("content-script URL redacted"),
-        ])
+            "url": .string(urlString),
+            "urlRedacted": .bool(false),
+            "redactionState": .string("content-script URL available"),
+        ]
+        if let origin = ChromeMV3RuntimeMessagingURL.origin(from: urlString) {
+            payload["origin"] = .string(origin)
+        }
+        return .object(payload)
     }
 
     private func contentScriptServiceWorkerSenderMetadata()
@@ -4204,9 +4270,9 @@ final class ChromeMV3ContentScriptBridgeHost {
             tabID: tabID,
             frameID: frameID,
             documentID: documentID,
-            sourceURL: nil,
-            urlRedacted: true,
-            redactionState: "content-script URL redacted"
+            sourceURL: urlString,
+            urlRedacted: false,
+            redactionState: "content-script URL available"
         )
     }
 
@@ -4393,7 +4459,7 @@ final class ChromeMV3ContentScriptBridgeHost {
         bridgeCallID: String,
         arguments: [ChromeMV3StorageValue]
     ) -> ChromeMV3ContentScriptBridgeResponse {
-        guard sharedLifecycleSession != nil else {
+        guard ensureSharedLifecycleSessionForRuntimePort() != nil else {
             return blocked(
                 bridgeCallID: bridgeCallID,
                 code: .routeNotImplemented,
@@ -4431,6 +4497,10 @@ final class ChromeMV3ContentScriptBridgeHost {
             guard jsResult.dispatched else {
                 let contract = runtimeLastErrorContract(
                     for: jsResult.resultKind
+                )
+                releaseProviderSessionIfIdle(
+                    reason:
+                        "Content-script runtime.connect reached service-worker JavaScript dispatch without opening a Port."
                 )
                 return ChromeMV3ContentScriptBridgeResponse(
                     bridgeCallID: bridgeCallID,
@@ -4484,6 +4554,10 @@ final class ChromeMV3ContentScriptBridgeHost {
         guard let lifecycleResult, lifecycleResult.dispatched else {
             let contract = ChromeMV3RuntimeLastErrorContract
                 .contract(for: .noReceivingEnd)
+            releaseProviderSessionIfIdle(
+                reason:
+                    "Content-script runtime.connect reached service-worker lifecycle without opening a Port."
+            )
             return ChromeMV3ContentScriptBridgeResponse(
                 bridgeCallID: bridgeCallID,
                 succeeded: false,
@@ -4511,6 +4585,7 @@ final class ChromeMV3ContentScriptBridgeHost {
             payload: .object([
                 "portID": .string(portID),
                 "portKind": .string("serviceWorkerRuntimePort"),
+                "name": .string(name),
                 "canWakeServiceWorkerNow": .bool(true),
                 "runtimeLoadable": .bool(false),
             ]),
@@ -4560,6 +4635,11 @@ final class ChromeMV3ContentScriptBridgeHost {
             )
             if delivery.connected == false {
                 serviceWorkerRuntimePortIDs.remove(portID)
+                releaseProviderSessionIfIdle(
+                    reason:
+                        delivery.disconnectReason
+                            ?? "Service-worker runtime Port closed during postMessage."
+                )
             }
             guard delivery.delivered else {
                 let contract = ChromeMV3RuntimeLastErrorContract
@@ -4657,6 +4737,9 @@ final class ChromeMV3ContentScriptBridgeHost {
                     reason: .reset
                 )
             }
+            releaseProviderSessionIfIdle(
+                reason: "Port.disconnect called by content script."
+            )
             return success(
                 bridgeCallID: bridgeCallID,
                 payload: runtimePortDeliveryPayload(
@@ -5011,7 +5094,12 @@ enum ChromeMV3ContentScriptWKAttachmentExecutor {
         permissionBroker: ChromeMV3PermissionBroker,
         endpointRegistry: ChromeMV3ContentScriptEndpointRegistry,
         sharedLifecycleSession:
-            ChromeMV3ServiceWorkerSharedLifecycleSession? = nil
+            ChromeMV3ServiceWorkerSharedLifecycleSession? = nil,
+        sharedLifecycleSessionProvider:
+            (() -> ChromeMV3ServiceWorkerSharedLifecycleSession?)? = nil,
+        sharedLifecycleSessionReleaseHandler:
+            ((ChromeMV3ServiceWorkerSharedLifecycleSession, String) -> Void)?
+                = nil
     ) -> (
         result: ChromeMV3ContentScriptWKAttachmentResult,
         handle: ChromeMV3ContentScriptWKAttachmentHandle?
@@ -5077,7 +5165,11 @@ enum ChromeMV3ContentScriptWKAttachmentExecutor {
                 urlString: preflight.urlString,
                 permissionBroker: permissionBroker,
                 endpointRegistry: endpointRegistry,
-                sharedLifecycleSession: sharedLifecycleSession
+                sharedLifecycleSession: sharedLifecycleSession,
+                sharedLifecycleSessionProvider:
+                    sharedLifecycleSessionProvider,
+                sharedLifecycleSessionReleaseHandler:
+                    sharedLifecycleSessionReleaseHandler
             )
             let bridgeHandler =
                 ChromeMV3ContentScriptWKScriptMessageHandler(host: host)
