@@ -291,6 +291,76 @@ struct ChromeMV3LifecycleRuntimeState: Codable, Equatable, Sendable {
     )
 }
 
+enum ChromeMV3InstalledExtensionSourceType:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case localArchive
+    case localUnpacked
+
+    static func < (
+        lhs: ChromeMV3InstalledExtensionSourceType,
+        rhs: ChromeMV3InstalledExtensionSourceType
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ChromeMV3InstalledExtensionGeneratedBundleState:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var activeVersionID: String?
+    var generatedBundleRecordID: String?
+    var generatedBundleRootPath: String?
+    var generatedBundleHash: String?
+    var generatedManifestHash: String?
+    var manifestHash: String?
+    var state: ChromeMV3GeneratedBundleVersionState?
+    var generatedBundleAvailable: Bool
+    var runtimeLoadable: Bool
+}
+
+struct ChromeMV3InstalledExtensionState:
+    Identifiable,
+    Codable,
+    Equatable,
+    Sendable
+{
+    var id: String { "\(profileID):\(extensionID)" }
+    var stableLocalExtensionID: String
+    var extensionID: String
+    var profileID: String
+    var associatedProfileID: String
+    var displayName: String
+    var displayVersion: String
+    var sourceType: ChromeMV3InstalledExtensionSourceType
+    var sourceKind: ChromeMV3PackageSourceKind
+    var sourcePath: String
+    var sourceDescriptor: String
+    var manifestSummary: ChromeMV3ManifestSummary?
+    var manifestHash: String?
+    var originalBundleContentHash: String?
+    var originalBundleRecordID: String
+    var originalBundleRecordPath: String
+    var generatedBundleRecordID: String?
+    var generatedBundleHash: String?
+    var generatedBundleRootPath: String?
+    var installed: Bool
+    var installIntakeStatus: ChromeMV3LifecycleState
+    var enabled: Bool
+    var lifecycleRecordPath: String
+    var generatedBundleState:
+        ChromeMV3InstalledExtensionGeneratedBundleState
+    var localExperimentalLabel: String
+    var productSupportClaim: Bool
+    var diagnostics: [String]
+}
+
 struct ChromeMV3GeneratedBundleVersionRecord:
     Codable,
     Equatable,
@@ -563,6 +633,9 @@ struct ChromeMV3ExtensionLifecycleRegistry {
         at sourceURL: URL,
         profileID: String,
         enableInternal: Bool = false,
+        installedSourceKind: ChromeMV3PackageSourceKind = .unpackedDirectory,
+        installedSourcePath: String? = nil,
+        installedSourceLastPathComponent: String? = nil,
         runtimeDiagnostics:
             ChromeMV3LifecycleRuntimeDiagnosticsSnapshot = .none
     ) -> ChromeMV3LifecycleOperationResult {
@@ -608,9 +681,11 @@ struct ChromeMV3ExtensionLifecycleRegistry {
                 sequence: sequence,
                 displayName: stage.originalBundleRecord.manifestName,
                 displayVersion: stage.originalBundleRecord.manifestVersion,
-                sourceKind: .unpackedDirectory,
-                sourcePath: sourceURL.standardizedFileURL.path,
-                sourceLastPathComponent: sourceURL.lastPathComponent,
+                sourceKind: installedSourceKind,
+                sourcePath: installedSourcePath
+                    ?? sourceURL.standardizedFileURL.path,
+                sourceLastPathComponent: installedSourceLastPathComponent
+                    ?? sourceURL.lastPathComponent,
                 originalBundleRecordID: stage.originalBundleRecord.id,
                 originalBundleRecordPath:
                     URL(
@@ -657,6 +732,7 @@ struct ChromeMV3ExtensionLifecycleRegistry {
                 diagnostics: uniqueSortedLifecycle([
                     "Extension imported into the internal MV3 lifecycle registry.",
                     "Original unpacked bundle was staged read-only by convention.",
+                    "Installed local source type is \(installedSourceKind.rawValue).",
                     "Generated bundle artifacts are internal diagnostics only.",
                     "Product runtime remains unavailable.",
                 ])

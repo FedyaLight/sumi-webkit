@@ -594,6 +594,9 @@ struct ChromeMV3PackageIntakeService {
                 at: acceptedExtensionRoot,
                 profileID: profileID,
                 enableInternal: enableInternal,
+                installedSourceKind: .zipArchive,
+                installedSourcePath: sourceURL.standardizedFileURL.path,
+                installedSourceLastPathComponent: sourceURL.lastPathComponent,
                 runtimeDiagnostics: runtimeDiagnostics
             )
             report.lifecycleImportResult = lifecycleIntakeResult(

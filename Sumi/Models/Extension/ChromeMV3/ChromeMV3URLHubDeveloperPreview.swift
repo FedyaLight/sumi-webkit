@@ -195,7 +195,23 @@ struct ChromeMV3URLHubDiagnosticAction:
     Equatable,
     Sendable
 {
+    enum Capability:
+        String,
+        Codable,
+        CaseIterable,
+        Comparable,
+        Sendable
+    {
+        case reviewedGeneratedResourceNormalTabSmoke
+
+        static func < (lhs: Capability, rhs: Capability) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
+    }
+
     var actionID: ChromeMV3ExtensionManagerActionKind
+    var capabilityID: Capability
+    var capabilityAvailable: Bool
     var title: String
     var available: Bool
     var disabledReason: String?
@@ -221,7 +237,17 @@ struct ChromeMV3URLHubExtensionRow:
     var displayName: String
     var displayVersion: String
     var iconFileSystemPath: String?
+    var sourceType: ChromeMV3InstalledExtensionSourceType
+    var sourceDescriptor: String
+    var installed: Bool
+    var installIntakeStatus: ChromeMV3LifecycleState
     var enabled: Bool
+    var generatedBundleAvailable: Bool
+    var generatedBundleRecordID: String?
+    var generatedBundleHash: String?
+    var manifestHash: String?
+    var originalBundleContentHash: String?
+    var productSupportClaim: Bool
     var developerPreviewLabel: String
     var notProductSupportLabel: String
     var readiness: ChromeMV3URLHubCurrentPageReadiness
@@ -275,21 +301,27 @@ enum ChromeMV3URLHubDeveloperPreviewModelBuilder {
 
         let registry = ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
         let profileFilter = currentPage.profileID
-        let rows = registry.listLifecycleRecords()
-            .filter { record in
-                guard record.lifecycleState != .uninstalled else {
-                    return false
-                }
+        let rows = registry.listInstalledExtensionStates()
+            .filter { state in
                 guard let profileFilter else { return true }
-                return record.profileID == profileFilter
+                return state.profileID == profileFilter
             }
-            .compactMap { record -> ChromeMV3URLHubExtensionRow? in
+            .compactMap { state -> ChromeMV3URLHubExtensionRow? in
+                guard
+                    let record = registry.loadLifecycleRecord(
+                        profileID: state.profileID,
+                        extensionID: state.extensionID
+                    )
+                else {
+                    return nil
+                }
                 let report = registry.latestEndToEndDiagnosticsReport(
-                    profileID: record.profileID,
-                    extensionID: record.extensionID
+                    profileID: state.profileID,
+                    extensionID: state.extensionID
                 )
                 return makeRow(
                     rootURL: rootURL,
+                    state: state,
                     record: record,
                     report: report,
                     gate: gate,
@@ -314,8 +346,8 @@ enum ChromeMV3URLHubDeveloperPreviewModelBuilder {
                 uniqueSortedURLHubMV3(
                     [
                         rows.isEmpty
-                            ? "No installed internal MV3 records matched the current profile."
-                            : "URL-hub MV3 section loaded \(rows.count) internal MV3 record(s) from the manager lifecycle registry.",
+                            ? "No installed local MV3 extension states matched the current profile."
+                            : "URL-hub MV3 section loaded \(rows.count) installed local MV3 extension state record(s) from shared lifecycle state.",
                         "URL-hub is the current-page/action surface; Settings remains the management surface.",
                         "Passive URL-hub render did not execute diagnostic smoke or write artifacts.",
                     ]
@@ -325,6 +357,7 @@ enum ChromeMV3URLHubDeveloperPreviewModelBuilder {
 
     private static func makeRow(
         rootURL: URL,
+        state: ChromeMV3InstalledExtensionState,
         record: ChromeMV3ExtensionLifecycleRecord,
         report: ChromeMV3EndToEndInstallDiagnosticsReport?,
         gate: ChromeMV3ExtensionManagerGate,
@@ -424,13 +457,24 @@ enum ChromeMV3URLHubDeveloperPreviewModelBuilder {
             managerAction: manualSmokeAction
         )
         return ChromeMV3URLHubExtensionRow(
-            profileID: record.profileID,
-            extensionID: record.extensionID,
-            displayName: record.displayName,
-            displayVersion: record.displayVersion,
+            profileID: state.profileID,
+            extensionID: state.extensionID,
+            displayName: state.displayName,
+            displayVersion: state.displayVersion,
             iconFileSystemPath: nil,
-            enabled: record.runtimeState.internalRuntimeEnabled,
-            developerPreviewLabel: developerPreviewLabel,
+            sourceType: state.sourceType,
+            sourceDescriptor: state.sourceDescriptor,
+            installed: state.installed,
+            installIntakeStatus: state.installIntakeStatus,
+            enabled: state.enabled,
+            generatedBundleAvailable: state.generatedBundleState
+                .generatedBundleAvailable,
+            generatedBundleRecordID: state.generatedBundleRecordID,
+            generatedBundleHash: state.generatedBundleHash,
+            manifestHash: state.manifestHash,
+            originalBundleContentHash: state.originalBundleContentHash,
+            productSupportClaim: state.productSupportClaim,
+            developerPreviewLabel: state.localExperimentalLabel,
             notProductSupportLabel: notProductSupportLabel,
             readiness: readiness,
             diagnosticAction: action
@@ -664,8 +708,12 @@ enum ChromeMV3URLHubDeveloperPreviewModelBuilder {
         let blockingDiagnostics = diagnostics.filter {
             $0.severity != .info
         }
+        let capabilityAvailable =
+            readiness.reviewedResource.present
+                && readiness.reviewedResource.generatedResourceHash != nil
         let available = managerAction.available
             && readiness.explicitDiagnosticActionCanRun
+            && capabilityAvailable
             && blockingDiagnostics.isEmpty
         let lastDOMFillSucceeded =
             managerAction.lastRunStatus == nil
@@ -673,6 +721,8 @@ enum ChromeMV3URLHubDeveloperPreviewModelBuilder {
                 : managerAction.lastBlockers.isEmpty
         return ChromeMV3URLHubDiagnosticAction(
             actionID: .runBitwardenManualSmoke,
+            capabilityID: .reviewedGeneratedResourceNormalTabSmoke,
+            capabilityAvailable: capabilityAvailable,
             title: "Run diagnostic smoke",
             available: available,
             disabledReason:

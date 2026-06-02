@@ -83,6 +83,15 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertEqual(row.extensionID, fixture.record.extensionID)
         XCTAssertEqual(row.profileID, fixture.record.profileID)
         XCTAssertEqual(row.displayName, fixture.record.displayName)
+        XCTAssertEqual(row.sourceType, .localUnpacked)
+        XCTAssertEqual(row.installIntakeStatus, .enabledInternal)
+        XCTAssertTrue(row.installed)
+        XCTAssertTrue(row.generatedBundleAvailable)
+        XCTAssertNotNil(row.generatedBundleRecordID)
+        XCTAssertNotNil(row.generatedBundleHash)
+        XCTAssertNotNil(row.manifestHash)
+        XCTAssertNotNil(row.originalBundleContentHash)
+        XCTAssertFalse(row.productSupportClaim)
         XCTAssertEqual(row.developerPreviewLabel, "Local experimental developer preview")
         XCTAssertTrue(row.notProductSupportLabel.contains("not product support"))
         XCTAssertTrue(row.enabled)
@@ -102,6 +111,120 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertFalse(section.lifetime.timersOrPollingStarted)
         XCTAssertFalse(FileManager.default.fileExists(atPath: artifactURL.path))
         XCTAssertFalse(fixture.module.hasLoadedRuntime)
+    }
+
+    @MainActor
+    func testURLHubShowsGenericInstalledExtensionStateWithoutFixtureCapability()
+        throws
+    {
+        let root = try makeTemporaryDirectory()
+        let source = try makeFixture(
+            named: "urlhub-generic-installed",
+            manifest: genericMV3Manifest(name: "Generic Local MV3"),
+            files: [:]
+        )
+        let module = try makeModule(enabled: true)
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: source,
+            profileID: "profile-urlhub-generic",
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+
+        let installedState = try XCTUnwrap(
+            ChromeMV3ExtensionLifecycleRegistry(rootURL: root)
+                .installedExtensionState(
+                    profileID: record.profileID,
+                    extensionID: record.extensionID
+                )
+        )
+        XCTAssertEqual(installedState.sourceType, .localUnpacked)
+        XCTAssertEqual(installedState.stableLocalExtensionID, record.extensionID)
+        XCTAssertEqual(installedState.displayName, "Generic Local MV3")
+        XCTAssertTrue(installedState.installed)
+        XCTAssertTrue(installedState.enabled)
+        XCTAssertTrue(installedState.generatedBundleState.generatedBundleAvailable)
+        XCTAssertNotNil(installedState.generatedBundleHash)
+        XCTAssertNotNil(installedState.manifestHash)
+        XCTAssertNotNil(installedState.originalBundleContentHash)
+        XCTAssertFalse(installedState.productSupportClaim)
+
+        let section = try XCTUnwrap(
+            module.chromeMV3URLHubSectionViewModelIfEnabled(
+                rootURL: root,
+                currentPage: syntheticPageContext(profileID: record.profileID),
+                now: fixedDate
+            )
+        )
+        let row = try XCTUnwrap(section.rows.first)
+
+        XCTAssertEqual(section.rows.count, 1)
+        XCTAssertEqual(row.extensionID, record.extensionID)
+        XCTAssertEqual(row.displayName, "Generic Local MV3")
+        XCTAssertEqual(row.sourceType, .localUnpacked)
+        XCTAssertEqual(row.installIntakeStatus, .enabledInternal)
+        XCTAssertTrue(row.installed)
+        XCTAssertTrue(row.enabled)
+        XCTAssertTrue(row.generatedBundleAvailable)
+        XCTAssertFalse(row.productSupportClaim)
+        XCTAssertEqual(
+            row.diagnosticAction.capabilityID,
+            .reviewedGeneratedResourceNormalTabSmoke
+        )
+        XCTAssertFalse(row.diagnosticAction.capabilityAvailable)
+        XCTAssertFalse(row.diagnosticAction.available)
+        XCTAssertTrue(
+            row.diagnosticAction.unavailableDiagnostics.contains {
+                $0.code == .manualSmokeReviewedFileMissing
+            }
+        )
+        XCTAssertFalse(module.hasLoadedRuntime)
+    }
+
+    @MainActor
+    func testURLHubReflectsGenericEnableDisableState() throws {
+        let root = try makeTemporaryDirectory()
+        let source = try makeFixture(
+            named: "urlhub-generic-disabled",
+            manifest: genericMV3Manifest(name: "Generic Disabled MV3"),
+            files: [:]
+        )
+        let module = try makeModule(enabled: true)
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: source,
+            profileID: "profile-urlhub-generic-disabled",
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+
+        let disabled = module
+            .chromeMV3SetInternalExtensionEnabledThroughManager(
+                false,
+                rootURL: root,
+                profileID: record.profileID,
+                extensionID: record.extensionID
+            )
+        XCTAssertTrue(disabled.succeeded)
+
+        let section = try XCTUnwrap(
+            module.chromeMV3URLHubSectionViewModelIfEnabled(
+                rootURL: root,
+                currentPage: syntheticPageContext(profileID: record.profileID),
+                now: fixedDate
+            )
+        )
+        let row = try XCTUnwrap(section.rows.first)
+
+        XCTAssertEqual(row.installIntakeStatus, .disabledInternal)
+        XCTAssertFalse(row.enabled)
+        XCTAssertTrue(row.installed)
+        XCTAssertTrue(row.generatedBundleAvailable)
+        XCTAssertTrue(row.readiness.blockedByExtension)
+        XCTAssertFalse(row.readiness.explicitDiagnosticActionCanRun)
+        XCTAssertFalse(row.diagnosticAction.available)
+        XCTAssertFalse(module.hasLoadedRuntime)
     }
 
     @MainActor
@@ -300,6 +423,8 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertTrue(modelSource.contains("URL-hub developer-preview"))
         XCTAssertTrue(hubSource.contains("Local MV3 Preview"))
         XCTAssertTrue(hubSource.contains("urlhub-mv3-row-"))
+        XCTAssertTrue(modelSource.contains("listInstalledExtensionStates"))
+        XCTAssertTrue(modelSource.contains("productSupportClaim"))
         XCTAssertTrue(modelSource.contains("not product support"))
         XCTAssertTrue(modelSource.contains("chromeMV3URLHubSectionViewModelIfEnabled"))
         XCTAssertFalse(modelSource.contains("managerIfEnabled()"))
@@ -405,6 +530,17 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                         "content/trigger-autofill-script-injection.js",
                     ],
                 ],
+            ],
+        ]
+    }
+
+    private func genericMV3Manifest(name: String) -> [String: Any] {
+        [
+            "manifest_version": 3,
+            "name": name,
+            "version": "1.0.0",
+            "action": [
+                "default_title": name,
             ],
         ]
     }

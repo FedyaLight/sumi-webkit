@@ -164,8 +164,22 @@ final class ChromeMV3PackageIntakeTests: XCTestCase {
         XCTAssertEqual(result.action, .importZipArchive)
         XCTAssertEqual(record.profileID, "profile-zip")
         XCTAssertEqual(record.lifecycleState, .diagnosticsReady)
-        XCTAssertTrue(record.sourcePath.contains("/package-intake/accepted/"))
-        XCTAssertTrue(record.sourcePath.hasPrefix(root.path))
+        XCTAssertEqual(record.sourceKind, .zipArchive)
+        XCTAssertEqual(record.sourcePath, zip.standardizedFileURL.path)
+        XCTAssertEqual(record.sourceLastPathComponent, "safe.zip")
+        XCTAssertTrue(record.originalBundleRootPath.hasPrefix(root.path))
+        let installedState = try XCTUnwrap(
+            ChromeMV3ExtensionLifecycleRegistry(rootURL: root)
+                .installedExtensionState(
+                    profileID: record.profileID,
+                    extensionID: record.extensionID
+                )
+        )
+        XCTAssertEqual(installedState.sourceType, .localArchive)
+        XCTAssertEqual(installedState.sourceKind, .zipArchive)
+        XCTAssertEqual(installedState.sourcePath, zip.standardizedFileURL.path)
+        XCTAssertTrue(installedState.generatedBundleState.generatedBundleAvailable)
+        XCTAssertFalse(installedState.productSupportClaim)
         XCTAssertEqual(report.extractionResult?.stage.status, .passed)
         XCTAssertEqual(report.lifecycleImportResult.stage.status, .passed)
         XCTAssertFalse(result.runtimeAttachmentAttempted)

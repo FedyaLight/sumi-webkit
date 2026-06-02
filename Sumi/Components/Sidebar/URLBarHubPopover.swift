@@ -1478,6 +1478,13 @@ private struct URLHubMV3DeveloperPreviewRow: View {
                         .foregroundStyle(URLBarHubNativeStyle.tertiaryText)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        "\(row.sourceType.rawValue) - \(row.installIntakeStatus.rawValue) - generated \(row.generatedBundleAvailable ? "ready" : "missing")"
+                    )
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(URLBarHubNativeStyle.tertiaryText)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 

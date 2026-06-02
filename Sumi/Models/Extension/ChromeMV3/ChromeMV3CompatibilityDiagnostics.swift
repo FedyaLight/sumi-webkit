@@ -7,6 +7,7 @@
 //  load extension runtime, attach to product tabs, or expose product install UI.
 //
 
+import CryptoKit
 import Foundation
 
 enum ChromeMV3CompatibilityMatrixStatus:
@@ -1553,6 +1554,145 @@ extension ChromeMV3ExtensionLifecycleRegistry {
             }
     }
 
+    func listInstalledExtensionStates()
+        -> [ChromeMV3InstalledExtensionState]
+    {
+        listLifecycleRecords().compactMap { installedExtensionState(from: $0) }
+    }
+
+    func installedExtensionState(
+        profileID: String,
+        extensionID: String
+    ) -> ChromeMV3InstalledExtensionState? {
+        loadLifecycleRecord(
+            profileID: profileID,
+            extensionID: extensionID
+        ).flatMap { installedExtensionState(from: $0) }
+    }
+
+    private func installedExtensionState(
+        from record: ChromeMV3ExtensionLifecycleRecord
+    ) -> ChromeMV3InstalledExtensionState? {
+        guard record.lifecycleState != .uninstalled else {
+            return nil
+        }
+        let active = activeGeneratedVersion(forInstalledState: record)
+        let generatedRecord = active?.generatedBundleRecord
+        let manifestSummary = generatedRecord?.installReportSummary
+            .manifestSummary
+        let generatedBundleHash = generatedRecord.flatMap {
+            generatedBundleMetadataHash($0)
+        }
+        let generatedState =
+            ChromeMV3InstalledExtensionGeneratedBundleState(
+                activeVersionID: active?.id,
+                generatedBundleRecordID: active?.generatedBundleRecordID,
+                generatedBundleRootPath: active?.generatedBundleRootPath,
+                generatedBundleHash: generatedBundleHash,
+                generatedManifestHash:
+                    generatedRecord?.generatedManifestSHA256
+                        ?? active?.generatedManifestSHA256,
+                manifestHash:
+                    generatedRecord?.manifestSHA256
+                        ?? active?.manifestSHA256,
+                state: active?.state,
+                generatedBundleAvailable: active != nil,
+                runtimeLoadable: generatedRecord?.runtimeLoadable
+                    ?? active?.runtimeLoadable
+                    ?? false
+            )
+        let sourceType =
+            installedSourceType(sourceKind: record.sourceKind)
+        return ChromeMV3InstalledExtensionState(
+            stableLocalExtensionID: record.extensionID,
+            extensionID: record.extensionID,
+            profileID: record.profileID,
+            associatedProfileID: record.profileID,
+            displayName:
+                manifestSummary?.name.nilIfEmpty ?? record.displayName,
+            displayVersion:
+                manifestSummary?.version.nilIfEmpty ?? record.displayVersion,
+            sourceType: sourceType,
+            sourceKind: record.sourceKind,
+            sourcePath: record.sourcePath,
+            sourceDescriptor:
+                installedSourceDescriptor(
+                    sourceType: sourceType,
+                    lastPathComponent: record.sourceLastPathComponent
+                ),
+            manifestSummary: manifestSummary,
+            manifestHash:
+                generatedRecord?.manifestSHA256
+                    ?? active?.manifestSHA256,
+            originalBundleContentHash:
+                generatedRecord?.originalBundleContentSHA256,
+            originalBundleRecordID: record.originalBundleRecordID,
+            originalBundleRecordPath: record.originalBundleRecordPath,
+            generatedBundleRecordID: active?.generatedBundleRecordID,
+            generatedBundleHash: generatedBundleHash,
+            generatedBundleRootPath: active?.generatedBundleRootPath,
+            installed: true,
+            installIntakeStatus: record.lifecycleState,
+            enabled: record.runtimeState.internalRuntimeEnabled,
+            lifecycleRecordPath: record.reportPaths.registryRecordPath,
+            generatedBundleState: generatedState,
+            localExperimentalLabel:
+                "Local experimental developer preview",
+            productSupportClaim: false,
+            diagnostics:
+                uniqueSortedCompatibilityDiagnostics(
+                    record.diagnostics + [
+                        "Installed extension state is derived from persisted lifecycle metadata only.",
+                        "Installed extension state readout does not create ExtensionManager, WebKit extension, service-worker, content-script, native-host, timer, polling, or bridge objects.",
+                        "Product/default runtime remains unavailable for installed extension state.",
+                    ]
+                )
+        )
+    }
+
+    private func activeGeneratedVersion(
+        forInstalledState record: ChromeMV3ExtensionLifecycleRecord
+    ) -> ChromeMV3GeneratedBundleVersionRecord? {
+        if let activeID = record.activeGeneratedVersionID,
+           let active = record.generatedBundleVersions.first(where: {
+            $0.id == activeID
+           })
+        {
+            return active
+        }
+        return record.generatedBundleVersions.last {
+            $0.state == .active || $0.state == .rollbackActive
+        } ?? record.generatedBundleVersions.last
+    }
+
+    private func installedSourceType(
+        sourceKind: ChromeMV3PackageSourceKind
+    ) -> ChromeMV3InstalledExtensionSourceType {
+        switch sourceKind {
+        case .unpackedDirectory:
+            return .localUnpacked
+        case .zipArchive, .crxArchive:
+            return .localArchive
+        }
+    }
+
+    private func installedSourceDescriptor(
+        sourceType: ChromeMV3InstalledExtensionSourceType,
+        lastPathComponent: String
+    ) -> String {
+        "\(sourceType.rawValue):\(lastPathComponent)"
+    }
+
+    private func generatedBundleMetadataHash(
+        _ record: ChromeMV3GeneratedBundleRecord
+    ) -> String? {
+        guard let data = try? ChromeMV3DeterministicJSON.encodedData(record)
+        else { return nil }
+        return SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
     func listCompatibilityReportViewModels()
         -> [ChromeMV3CompatibilityReportViewModel]
     {
@@ -2090,3 +2230,15 @@ private func safeDiagnosticsPathComponent(_ raw: String) -> String {
         }
     }
 #endif
+
+private func uniqueSortedCompatibilityDiagnostics(
+    _ values: [String]
+) -> [String] {
+    Array(Set(values.filter { $0.isEmpty == false })).sorted()
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
+    }
+}

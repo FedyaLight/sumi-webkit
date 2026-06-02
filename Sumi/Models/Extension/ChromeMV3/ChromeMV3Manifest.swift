@@ -8,7 +8,7 @@
 
 import Foundation
 
-enum ChromeMV3PackageSourceKind: String, Codable, CaseIterable {
+enum ChromeMV3PackageSourceKind: String, Codable, CaseIterable, Sendable {
     case unpackedDirectory
     case zipArchive
     case crxArchive

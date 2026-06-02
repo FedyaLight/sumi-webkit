@@ -68,7 +68,7 @@ struct ChromeMV3InstallSidePanelOffscreenIdentitySummary: Codable, Equatable {
     var runtimeLoadable: Bool
 }
 
-struct ChromeMV3ManifestSummary: Codable, Equatable {
+struct ChromeMV3ManifestSummary: Codable, Equatable, Sendable {
     var manifestVersion: Int
     var name: String
     var version: String
