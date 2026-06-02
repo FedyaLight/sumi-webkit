@@ -261,10 +261,6 @@ class SumiSettingsService {
         energySaverApplies(.useOpaqueChromeSurfaces)
     }
 
-    var shouldSimplifyWorkspaceGradients: Bool {
-        energySaverApplies(.simplifyWorkspaceGradients)
-    }
-
     var shouldDisableDecorativeLoadingEffects: Bool {
         energySaverApplies(.disableDecorativeLoadingEffects)
     }

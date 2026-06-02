@@ -23,7 +23,6 @@ enum SumiEnergySaverMode: String, CaseIterable, Codable, Hashable, Identifiable,
 enum SumiEnergySaverFeature: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
     case reduceInterfaceAnimations
     case useOpaqueChromeSurfaces
-    case simplifyWorkspaceGradients
     case disableDecorativeLoadingEffects
     case deactivateInactiveTabsSooner
 
@@ -35,8 +34,6 @@ enum SumiEnergySaverFeature: String, CaseIterable, Codable, Hashable, Identifiab
             return "Reduce interface animations"
         case .useOpaqueChromeSurfaces:
             return "Use opaque browser chrome"
-        case .simplifyWorkspaceGradients:
-            return "Simplify custom space gradients"
         case .disableDecorativeLoadingEffects:
             return "Pause decorative loading waves"
         case .deactivateInactiveTabsSooner:
@@ -50,8 +47,6 @@ enum SumiEnergySaverFeature: String, CaseIterable, Codable, Hashable, Identifiab
             return "Keeps direct manipulation responsive while removing non-essential transitions."
         case .useOpaqueChromeSurfaces:
             return "Replaces translucent native materials with solid theme surfaces."
-        case .simplifyWorkspaceGradients:
-            return "Skips mesh-gradient and noise layers while Energy Saver is active."
         case .disableDecorativeLoadingEffects:
             return "Stops repeating shimmer-style effects in tab chrome."
         case .deactivateInactiveTabsSooner:
@@ -139,11 +134,20 @@ struct SumiEnergySaverActivation: Equatable, Sendable {
 enum SumiEnergySaverPolicy {
     static let defaultBatteryThreshold = 20
     static let minimumBatteryThreshold = 10
-    static let maximumBatteryThreshold = 100
+    static let maximumBatteryThreshold = 90
+    static let batteryThresholdOptions = Array(stride(from: 10, through: 90, by: 10))
     static let maximumInactiveTabDeactivationDelay: TimeInterval = 60 * 60
 
     static func clampedBatteryThreshold(_ threshold: Int) -> Int {
-        min(max(threshold, minimumBatteryThreshold), maximumBatteryThreshold)
+        let bounded = min(max(threshold, minimumBatteryThreshold), maximumBatteryThreshold)
+        return batteryThresholdOptions.min { lhs, rhs in
+            let lhsDistance = abs(lhs - bounded)
+            let rhsDistance = abs(rhs - bounded)
+            if lhsDistance == rhsDistance {
+                return lhs < rhs
+            }
+            return lhsDistance < rhsDistance
+        } ?? defaultBatteryThreshold
     }
 
     static func activation(

@@ -108,16 +108,17 @@ struct SettingsPerformanceTab: View {
                         title: "Use on battery at or below",
                         subtitle: "Automatic mode also follows macOS Low Power Mode and serious thermal pressure."
                     ) {
-                        Stepper(
-                            value: $settings.energySaverBatteryThreshold,
-                            in: SumiEnergySaverPolicy.minimumBatteryThreshold
-                                ... SumiEnergySaverPolicy.maximumBatteryThreshold,
-                            step: 10
+                        Picker(
+                            "Use on battery at or below",
+                            selection: $settings.energySaverBatteryThreshold
                         ) {
-                            Text("\(settings.energySaverBatteryThreshold)%")
-                                .monospacedDigit()
+                            ForEach(SumiEnergySaverPolicy.batteryThresholdOptions, id: \.self) { threshold in
+                                Text("\(threshold)%").tag(threshold)
+                            }
                         }
-                        .frame(maxWidth: 150)
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .settingsTrailingControl(width: 120)
                     }
                 }
 
