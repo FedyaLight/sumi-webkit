@@ -1147,6 +1147,19 @@ protocol ChromeMV3PopupOptionsWebViewFactory: AnyObject {
         permissionEventDispatcher:
             ChromeMV3PermissionEventDispatching?
     ) throws -> ChromeMV3PopupOptionsWebViewHandle
+
+    func createWebView(
+        loadFileURL: URL,
+        allowingReadAccessTo readAccessURL: URL,
+        bridgeInstallation:
+            ChromeMV3PopupOptionsJSBridgeInstallation,
+        contentScriptEndpointRegistry:
+            ChromeMV3ContentScriptEndpointRegistry?,
+        permissionPromptPresenter:
+            ChromeMV3PermissionPromptPresenting?,
+        permissionEventDispatcher:
+            ChromeMV3PermissionEventDispatching?
+    ) throws -> ChromeMV3PopupOptionsWebViewHandle
 }
 
 @MainActor
@@ -1169,6 +1182,28 @@ extension ChromeMV3PopupOptionsWebViewFactory {
             allowingReadAccessTo: readAccessURL
         )
     }
+
+    func createWebView(
+        loadFileURL: URL,
+        allowingReadAccessTo readAccessURL: URL,
+        bridgeInstallation:
+            ChromeMV3PopupOptionsJSBridgeInstallation,
+        contentScriptEndpointRegistry:
+            ChromeMV3ContentScriptEndpointRegistry?,
+        permissionPromptPresenter:
+            ChromeMV3PermissionPromptPresenting? = nil,
+        permissionEventDispatcher:
+            ChromeMV3PermissionEventDispatching? = nil
+    ) throws -> ChromeMV3PopupOptionsWebViewHandle {
+        _ = contentScriptEndpointRegistry
+        return try createWebView(
+            loadFileURL: loadFileURL,
+            allowingReadAccessTo: readAccessURL,
+            bridgeInstallation: bridgeInstallation,
+            permissionPromptPresenter: permissionPromptPresenter,
+            permissionEventDispatcher: permissionEventDispatcher
+        )
+    }
 }
 
 @MainActor
@@ -1183,6 +1218,8 @@ final class ChromeMV3ProductPopupOptionsHostController {
         ChromeMV3PermissionPromptPresenting?
     private let permissionEventDispatcher:
         ChromeMV3PermissionEventDispatching?
+    private let contentScriptEndpointRegistryProvider:
+        @MainActor () -> ChromeMV3ContentScriptEndpointRegistry?
     private var sessions: [String: ActiveSession] = [:]
 
     init(
@@ -1190,11 +1227,16 @@ final class ChromeMV3ProductPopupOptionsHostController {
         permissionPromptPresenter:
             ChromeMV3PermissionPromptPresenting? = nil,
         permissionEventDispatcher:
-            ChromeMV3PermissionEventDispatching? = nil
+            ChromeMV3PermissionEventDispatching? = nil,
+        contentScriptEndpointRegistryProvider:
+            @escaping @MainActor ()
+                -> ChromeMV3ContentScriptEndpointRegistry? = { nil }
     ) {
         self.factory = factory
         self.permissionPromptPresenter = permissionPromptPresenter
         self.permissionEventDispatcher = permissionEventDispatcher
+        self.contentScriptEndpointRegistryProvider =
+            contentScriptEndpointRegistryProvider
     }
 
     var activeSessionCount: Int {
@@ -1265,6 +1307,8 @@ final class ChromeMV3ProductPopupOptionsHostController {
                 loadFileURL: fileURL,
                 allowingReadAccessTo: readAccessURL,
                 bridgeInstallation: bridgeInstallation,
+                contentScriptEndpointRegistry:
+                    contentScriptEndpointRegistryProvider(),
                 permissionPromptPresenter: permissionPromptPresenter,
                 permissionEventDispatcher: permissionEventDispatcher
             )
@@ -1556,10 +1600,34 @@ final class ChromeMV3ProductPopupOptionsWKWebViewFactory:
         permissionEventDispatcher:
             ChromeMV3PermissionEventDispatching?
     ) throws -> ChromeMV3PopupOptionsWebViewHandle {
+        try createWebView(
+            loadFileURL: loadFileURL,
+            allowingReadAccessTo: readAccessURL,
+            bridgeInstallation: bridgeInstallation,
+            contentScriptEndpointRegistry: nil,
+            permissionPromptPresenter: permissionPromptPresenter,
+            permissionEventDispatcher: permissionEventDispatcher
+        )
+    }
+
+    func createWebView(
+        loadFileURL: URL,
+        allowingReadAccessTo readAccessURL: URL,
+        bridgeInstallation:
+            ChromeMV3PopupOptionsJSBridgeInstallation,
+        contentScriptEndpointRegistry:
+            ChromeMV3ContentScriptEndpointRegistry?,
+        permissionPromptPresenter:
+            ChromeMV3PermissionPromptPresenting?,
+        permissionEventDispatcher:
+            ChromeMV3PermissionEventDispatching?
+    ) throws -> ChromeMV3PopupOptionsWebViewHandle {
         ChromeMV3ProductPopupOptionsWKWebViewHandle(
             loadFileURL: loadFileURL,
             readAccessURL: readAccessURL,
             bridgeInstallation: bridgeInstallation,
+            contentScriptEndpointRegistry:
+                contentScriptEndpointRegistry,
             permissionPromptPresenter: permissionPromptPresenter,
             permissionEventDispatcher: permissionEventDispatcher
         )
@@ -1596,6 +1664,8 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         readAccessURL: URL,
         bridgeInstallation:
             ChromeMV3PopupOptionsJSBridgeInstallation,
+        contentScriptEndpointRegistry:
+            ChromeMV3ContentScriptEndpointRegistry? = nil,
         permissionPromptPresenter:
             ChromeMV3PermissionPromptPresenting?,
         permissionEventDispatcher:
@@ -1610,6 +1680,8 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         {
             let handler = ChromeMV3PopupOptionsJSBridgeHandler(
                 configuration: bridgeInstallation.configuration,
+                contentScriptEndpointRegistry:
+                    contentScriptEndpointRegistry,
                 permissionPromptPresenter: permissionPromptPresenter,
                 permissionEventDispatcher: permissionEventDispatcher
             )

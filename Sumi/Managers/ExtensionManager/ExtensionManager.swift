@@ -148,6 +148,10 @@ final class ExtensionManager: NSObject, ObservableObject {
         maxKeys: 128,
         maxDatesPerKey: 4
     )
+    #if DEBUG
+        var chromeMV3LivePreparedContentScriptRuntime:
+            ChromeMV3LivePreparedContentScriptRuntime?
+    #endif
     let ecRegistry = ExternallyConnectablePortRegistry()
     var extensionLoadGeneration: UInt64 = 0
     var tabOpenNotificationGeneration: UInt64 = 1

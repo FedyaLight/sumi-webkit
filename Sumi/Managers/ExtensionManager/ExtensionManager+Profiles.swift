@@ -58,6 +58,13 @@ extension ExtensionManager {
     }
 
     func switchProfile(profileId: UUID) {
+        #if DEBUG
+            if currentProfileId != profileId {
+                tearDownChromeMV3LivePreparedContentScripts(
+                    reason: "ExtensionManager.switchProfile"
+                )
+            }
+        #endif
         currentProfileId = profileId
         reloadPinnedToolbarExtensionsForCurrentProfile()
 
@@ -518,6 +525,13 @@ extension ExtensionManager {
             )
         }
 
+        #if DEBUG
+            tearDownChromeMV3LivePreparedContentScripts(
+                for: extensionId,
+                reason:
+                    "ExtensionManager.tearDownExtensionRuntimeState(\(extensionId))"
+            )
+        #endif
         backgroundWakeTasks[extensionId]?.cancel()
         backgroundWakeTasks.removeValue(forKey: extensionId)
         backgroundRuntimeStateByExtensionID.removeValue(forKey: extensionId)
@@ -548,6 +562,12 @@ extension ExtensionManager {
             )
         }
 
+        #if DEBUG
+            tearDownChromeMV3LivePreparedContentScripts(
+                reason:
+                    "ExtensionManager.resetLoadedExtensionRuntimeStateForReload"
+            )
+        #endif
         let loadedIDs = Set(extensionContexts.keys)
             .union(loadedExtensionManifests.keys)
             .union(optionsWindows.keys)
@@ -591,6 +611,11 @@ extension ExtensionManager {
             "runtimeTeardown start reason=\(reason) removeUIState=\(removeUIState) releaseController=\(releaseController)"
         )
 
+        #if DEBUG
+            tearDownChromeMV3LivePreparedContentScripts(
+                reason: "ExtensionManager.runtimeTeardown.\(reason)"
+            )
+        #endif
         runtimeInitializationTask?.cancel()
         runtimeInitializationTask = nil
         backgroundWakeTasks.values.forEach { $0.cancel() }

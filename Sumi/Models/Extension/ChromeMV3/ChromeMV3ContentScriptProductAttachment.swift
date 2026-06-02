@@ -1168,7 +1168,7 @@ struct ChromeMV3ContentScriptAttachmentPlan:
             cssResources: cssResources.sorted {
                 $0.injectionOrder < $1.injectionOrder
             },
-            validatedJSFilePaths: validatedJSPaths.sorted(),
+            validatedJSFilePaths: validatedJSPaths,
             validatedCSSFilePaths: validatedCSSPaths,
             supported: normalizedBlockers.isEmpty,
             blockers: normalizedBlockers,
@@ -1179,6 +1179,7 @@ struct ChromeMV3ContentScriptAttachmentPlan:
                             script.css.isEmpty
                                 ? "content_scripts[\(index)] declares no CSS files."
                                 : "content_scripts[\(index)] CSS resources are recorded in deterministic manifest order.",
+                            "content_scripts[\(index)] JS resources are recorded in deterministic manifest order.",
                             normalizedBlockers.isEmpty
                                 ? "content_scripts[\(index)] is eligible for URL and permission preflight."
                                 : "content_scripts[\(index)] is blocked before URL and permission preflight.",
@@ -2082,6 +2083,28 @@ final class ChromeMV3ContentScriptEndpointRegistry {
         }
     }
 
+    func unregisterRuntimeOnMessageListener(
+        extensionID: String,
+        profileID: String,
+        tabID: Int,
+        frameID: Int = 0,
+        documentID: String? = nil,
+        listenerCount: Int
+    ) {
+        updateMatching(
+            extensionID: extensionID,
+            profileID: profileID,
+            tabID: tabID,
+            frameID: frameID,
+            documentID: documentID
+        ) { endpoint in
+            endpoint.messageListenerRegistered = listenerCount > 0
+            endpoint.diagnostics.append(
+                "runtime.onMessage listener removal observed from content script; remaining listeners=\(listenerCount)."
+            )
+        }
+    }
+
     func registerRuntimeOnConnectListener(
         extensionID: String,
         profileID: String,
@@ -2100,6 +2123,28 @@ final class ChromeMV3ContentScriptEndpointRegistry {
             endpoint.endpointState = .listenerRegistered
             endpoint.diagnostics.append(
                 "runtime.onConnect listener registration observed from content script."
+            )
+        }
+    }
+
+    func unregisterRuntimeOnConnectListener(
+        extensionID: String,
+        profileID: String,
+        tabID: Int,
+        frameID: Int = 0,
+        documentID: String? = nil,
+        listenerCount: Int
+    ) {
+        updateMatching(
+            extensionID: extensionID,
+            profileID: profileID,
+            tabID: tabID,
+            frameID: frameID,
+            documentID: documentID
+        ) { endpoint in
+            endpoint.connectListenerRegistered = listenerCount > 0
+            endpoint.diagnostics.append(
+                "runtime.onConnect listener removal observed from content script; remaining listeners=\(listenerCount)."
             )
         }
     }
@@ -2712,6 +2757,32 @@ final class ChromeMV3ContentScriptEndpointRegistry {
             )
         }
         ports.removeAll()
+    }
+
+    func tearDownEndpoint(
+        endpointID: String,
+        reason: String = "Content-script endpoint teardown."
+    ) {
+        guard let index = endpoints.firstIndex(where: {
+            $0.endpointID == endpointID && $0.active
+        }) else { return }
+        disconnectPorts(endpointID: endpointID, reason: reason)
+        endpoints[index].endpointState = .detached
+        endpoints[index].teardownReason = reason
+        endpoints[index].messageListenerRegistered = false
+        endpoints[index].connectListenerRegistered = false
+        jsDispatchers.removeValue(forKey: endpointID)
+        jsDispatcherContentWorldNames.removeValue(forKey: endpointID)
+        appendLifecycle(
+            endpointID: endpointID,
+            state: .detached,
+            reason: reason
+        )
+        appendLifecycle(
+            endpointID: endpointID,
+            state: .teardownComplete,
+            reason: "Content-script endpoint teardown completed."
+        )
     }
 
     private func modelEndpoint(
@@ -3849,6 +3920,11 @@ private extension ChromeMV3StorageValue {
         return object
     }
 
+    var intValue: Int? {
+        guard case .number(let number) = self else { return nil }
+        return Int(number)
+    }
+
     var contentScriptBridgeFoundationObject: Any {
         switch self {
         case .array(let values):
@@ -3967,6 +4043,26 @@ final class ChromeMV3ContentScriptBridgeHost {
                     "runtime.onMessage listener was registered for the content-script endpoint."
                 ]
             )
+        case ("runtime", "unregisterOnMessage"):
+            let listenerCount =
+                bridgeArguments(from: object).first?.objectValue?[
+                    "listenerCount"
+                ]?.intValue ?? 0
+            endpointRegistry.unregisterRuntimeOnMessageListener(
+                extensionID: extensionID,
+                profileID: profileID,
+                tabID: tabID,
+                frameID: frameID,
+                documentID: documentID,
+                listenerCount: listenerCount
+            )
+            return success(
+                bridgeCallID: bridgeCallID,
+                payload: .bool(true),
+                diagnostics: [
+                    "runtime.onMessage listener removal was captured for the content-script endpoint."
+                ]
+            )
         case ("runtime", "registerOnConnect"):
             endpointRegistry.registerRuntimeOnConnectListener(
                 extensionID: extensionID,
@@ -3980,6 +4076,26 @@ final class ChromeMV3ContentScriptBridgeHost {
                 payload: .bool(true),
                 diagnostics: [
                     "runtime.onConnect listener was registered for the content-script endpoint."
+                ]
+            )
+        case ("runtime", "unregisterOnConnect"):
+            let listenerCount =
+                bridgeArguments(from: object).first?.objectValue?[
+                    "listenerCount"
+                ]?.intValue ?? 0
+            endpointRegistry.unregisterRuntimeOnConnectListener(
+                extensionID: extensionID,
+                profileID: profileID,
+                tabID: tabID,
+                frameID: frameID,
+                documentID: documentID,
+                listenerCount: listenerCount
+            )
+            return success(
+                bridgeCallID: bridgeCallID,
+                payload: .bool(true),
+                diagnostics: [
+                    "runtime.onConnect listener removal was captured for the content-script endpoint."
                 ]
             )
         case ("runtime", "getURL"):
@@ -4765,7 +4881,12 @@ final class ChromeMV3ContentScriptWKAttachmentHandle {
                 from: configuration.userContentController
             )
         }
-        endpointRegistry.tearDownAll(reason: reason)
+        if let endpointID {
+            endpointRegistry.tearDownEndpoint(
+                endpointID: endpointID,
+                reason: reason
+            )
+        }
         installedScripts.removeAll()
         installedCSSStyleSheetCount = 0
         scriptHandler = nil
@@ -5237,7 +5358,7 @@ enum ChromeMV3ContentScriptJSBridgeSource {
             });
           }
 
-          function makeEvent(registerMethod) {
+          function makeEvent(registerMethod, unregisterMethod) {
             const listeners = [];
             function responseError(message, listenerCount, dispatchResult, diagnostics) {
               return {
@@ -5452,6 +5573,11 @@ enum ChromeMV3ContentScriptJSBridgeSource {
                 const index = listeners.indexOf(listener);
                 if (index >= 0) {
                   listeners.splice(index, 1);
+                  post("runtime", unregisterMethod, {
+                    arguments: [{
+                      listenerCount: listeners.length
+                    }]
+                  });
                 }
               },
               hasListener(listener) {
@@ -5467,8 +5593,14 @@ enum ChromeMV3ContentScriptJSBridgeSource {
             });
           }
 
-          const onMessageEvent = makeEvent("registerOnMessage");
-          const onConnectEvent = makeEvent("registerOnConnect");
+          const onMessageEvent = makeEvent(
+            "registerOnMessage",
+            "unregisterOnMessage"
+          );
+          const onConnectEvent = makeEvent(
+            "registerOnConnect",
+            "unregisterOnConnect"
+          );
 
           Object.defineProperty(globalThis, "__sumiChromeMV3ContentScriptDispatchTabsMessage", {
             value(request) {

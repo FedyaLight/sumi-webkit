@@ -123,6 +123,13 @@ final class SumiExtensionsModule {
                     .markNormalTabAttachmentGateClosed(
                         trigger: .normalTabAttachmentGateOff
                     )
+                if #available(macOS 15.5, *) {
+                    cachedManager?
+                        .tearDownChromeMV3LivePreparedContentScripts(
+                            reason:
+                                "SumiExtensionsModule normal-tab local experimental gate closed"
+                        )
+                }
             }
         }
     #endif
@@ -4554,12 +4561,20 @@ final class SumiExtensionsModule {
         entrypoint: ChromeMV3ContentScriptLifecycleEntrypoint,
         reason: String
     ) {
+        #if DEBUG
+            let localExperimentalGateAllowed =
+                chromeMV3InternalNormalTabConfigurationAttachmentAllowed
+        #else
+            let localExperimentalGateAllowed = false
+        #endif
         managerIfLoadedAndEnabled()?
             .noteChromeMV3ContentScriptLifecycleEntrypoint(
                 tab: tab,
                 webView: webView,
                 url: url,
                 entrypoint: entrypoint,
+                localExperimentalGateAllowed:
+                    localExperimentalGateAllowed,
                 reason: reason
             )
     }
@@ -4774,7 +4789,16 @@ final class SumiExtensionsModule {
             factory: chromeMV3PopupOptionsWebViewFactory(),
             permissionPromptPresenter:
                 ChromeMV3AppHostedPermissionPromptPresenter(),
-            permissionEventDispatcher: chromeMV3PermissionEventDispatcher
+            permissionEventDispatcher: chromeMV3PermissionEventDispatcher,
+            contentScriptEndpointRegistryProvider: { [weak self] in
+                #if DEBUG
+                    if #available(macOS 15.5, *) {
+                        return self?.cachedManager?
+                            .chromeMV3ContentScriptEndpointRegistryIfLoaded()
+                    }
+                #endif
+                return nil
+            }
         )
         cachedChromeMV3PopupOptionsHostController = controller
         return controller

@@ -45,6 +45,68 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         XCTAssertEqual(registry.summary.portCount, 0)
     }
 
+    func testLivePreparedPackageManagerBinderSourceGuards() throws {
+        let managerSource = try sourceFile(
+            "Sumi/Managers/ExtensionManager/ExtensionManager+ChromeMV3ContentScripts.swift"
+        )
+        let moduleSource = try sourceFile(
+            "Sumi/Managers/ExtensionManager/SumiExtensionsModule.swift"
+        )
+        let popupSource = try sourceFile(
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift"
+        )
+
+        XCTAssertTrue(managerSource.contains(
+            "ChromeMV3GeneratedBundleWriter.metadataFileName"
+        ))
+        XCTAssertTrue(managerSource.contains(
+            "ChromeMV3ManifestValidator"
+        ))
+        XCTAssertTrue(managerSource.contains(
+            "ChromeMV3ContentScriptAttachmentPlan.make"
+        ))
+        XCTAssertTrue(managerSource.contains(
+            "ChromeMV3NormalTabContentScriptPreflightEvaluator"
+        ))
+        XCTAssertTrue(managerSource.contains(
+            "ChromeMV3ContentScriptWKAttachmentExecutor.attachIfAllowed"
+        ))
+        XCTAssertTrue(managerSource.contains(
+            "bindWebViewForMessageDispatch"
+        ))
+        XCTAssertTrue(managerSource.contains(
+            "Manifest content_scripts.matches contributes static injection host scope."
+        ))
+        XCTAssertTrue(managerSource.contains(
+            "profile.isEphemeral == false"
+        ))
+        XCTAssertTrue(managerSource.contains(
+            "browserManager?.windowRegistry?.windows[windowID] != nil"
+        ))
+        XCTAssertTrue(managerSource.contains(
+            #"["http", "https"]"#
+        ))
+        XCTAssertTrue(managerSource.contains(
+            "frameID: 0"
+        ))
+        XCTAssertTrue(managerSource.contains(
+            "contentWorld=sumi.mv3.content."
+        ))
+        XCTAssertTrue(managerSource.contains(
+            "injectionTiming=shim:document_start,declared:manifest_run_at"
+        ))
+        XCTAssertTrue(moduleSource.contains(
+            "chromeMV3InternalNormalTabConfigurationAttachmentAllowed"
+        ))
+        XCTAssertTrue(popupSource.contains(
+            "contentScriptEndpointRegistryProvider"
+        ))
+        XCTAssertFalse(managerSource.contains("collectPageDetailsImmediately"))
+        XCTAssertFalse(managerSource.contains("fillForm"))
+        XCTAssertFalse(managerSource.contains("com.bitwarden.desktop"))
+        XCTAssertFalse(managerSource.contains("WKContentWorld.pageWorld"))
+    }
+
     func testEndpointDoesNotRegisterWhenDefaultGateIsClosed()
         throws
     {
@@ -414,6 +476,37 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
             .contains("CSS file validated"))
         XCTAssertTrue(plan.diagnostics.joined(separator: "\n")
             .contains("scripting.insertCSS remains outside this plan"))
+    }
+
+    func testManifestJSResourcesPreserveDeclaredInjectionOrder() throws {
+        let root = try makeBundle(files: [
+            "z-first.js": "globalThis.sumiOrder = ['first'];\n",
+            "a-second.js": "globalThis.sumiOrder.push('second');\n",
+        ])
+        var manifest = try ChromeMV3ManifestValidator.validateJSONObject([
+            "manifest_version": 3,
+            "name": "Ordered JS Content Script",
+            "version": "1.0.0",
+        ])
+        manifest.contentScripts = [
+            contentScript(js: ["z-first.js", "a-second.js"]),
+        ]
+
+        let plan = ChromeMV3ContentScriptAttachmentPlan.make(
+            manifest: manifest,
+            generatedBundleRootURL: root,
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        let record = try XCTUnwrap(plan.declaredScripts.first)
+
+        XCTAssertEqual(record.jsFiles, ["z-first.js", "a-second.js"])
+        XCTAssertEqual(
+            record.validatedJSFilePaths,
+            ["z-first.js", "a-second.js"]
+        )
+        XCTAssertTrue(record.diagnostics.joined(separator: "\n")
+            .contains("JS resources are recorded"))
     }
 
     func testCSSPathValidationRejectsTraversalAndMissingFile() throws {
@@ -1884,6 +1977,226 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
             harness.registry.summary.lifecycleStates.contains(.teardownComplete)
         )
     }
+
+    @MainActor
+    func testWKAttachmentHandleTeardownKeepsOtherSharedRegistryEndpointAlive()
+        async throws
+    {
+        let first = try makePreflightFixture(
+            tabID: 7,
+            documentID: "document-first"
+        )
+        let second = try makePreflightFixture(
+            tabID: 8,
+            documentID: "document-second"
+        )
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+        let firstConfiguration = WKWebViewConfiguration()
+        firstConfiguration.sumiIsNormalTabWebViewConfiguration = true
+        let secondConfiguration = WKWebViewConfiguration()
+        secondConfiguration.sumiIsNormalTabWebViewConfiguration = true
+        let broker = permissionBroker(
+            hostPermissions: ["https://example.com/*"]
+        )
+        let firstAttachment =
+            ChromeMV3ContentScriptWKAttachmentExecutor.attachIfAllowed(
+                configuration: firstConfiguration,
+                preflight: first.preflight,
+                permissionBroker: broker,
+                endpointRegistry: registry
+            )
+        let secondAttachment =
+            ChromeMV3ContentScriptWKAttachmentExecutor.attachIfAllowed(
+                configuration: secondConfiguration,
+                preflight: second.preflight,
+                permissionBroker: broker,
+                endpointRegistry: registry
+            )
+
+        XCTAssertEqual(registry.summary.activeEndpointCount, 2)
+        firstAttachment.handle?.tearDown(reason: "first endpoint teardown")
+
+        XCTAssertEqual(registry.summary.activeEndpointCount, 1)
+        XCTAssertNotNil(
+            registry.targetEndpoint(
+                extensionID: extensionID,
+                profileID: profileID,
+                tabID: 8,
+                frameID: 0,
+                documentID: "document-second"
+            )
+        )
+
+        secondAttachment.handle?.tearDown(reason: "second endpoint teardown")
+        XCTAssertEqual(registry.summary.activeEndpointCount, 0)
+    }
+
+    @MainActor
+    func testWKPreparedBitwardenDeclaredContentScriptRegistersThenRemovesListenerAfterRuntimePortDisconnect()
+        async throws
+    {
+        let packageRoot = URL(
+            fileURLWithPath:
+                "/Users/fedaefimov/Downloads/Aura/mv3-test-extensions/bitwarden",
+            isDirectory: true
+        )
+        guard FileManager.default.fileExists(
+            atPath: packageRoot.appendingPathComponent("manifest.json").path
+        ) else {
+            throw XCTSkip("Local Bitwarden MV3 package fixture is unavailable.")
+        }
+
+        let storeRoot = try makeBundle(files: [:])
+        let stage = try ChromeMV3OriginalBundleStore(rootURL: storeRoot)
+            .stageUnpackedDirectory(at: packageRoot)
+        let generated = try ChromeMV3GeneratedBundleWriter(rootURL: storeRoot)
+            .writeGeneratedBundle(
+                originalBundleRecord: stage.originalBundleRecord,
+                manifestSnapshot: stage.manifestSnapshot,
+                planningRecord: stage.generatedBundlePlan
+            )
+        let manifest = try ChromeMV3ManifestValidator.validateManifestFile(
+            at: generated.generatedManifestURL
+        )
+        let plan = ChromeMV3ContentScriptAttachmentPlan.make(
+            manifest: manifest,
+            generatedBundleRootURL: generated.generatedBundleRootURL,
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        let broker = permissionBroker(
+            apiPermissions: manifest.permissions,
+            hostPermissions:
+                manifest.hostPermissions
+                    + manifest.contentScripts.flatMap(\.matches)
+        )
+        let pageURL = URL(string: "https://example.com/login")!
+        let preflight = ChromeMV3NormalTabContentScriptPreflightEvaluator
+            .evaluate(
+                input: ChromeMV3NormalTabContentScriptPreflightInput(
+                    moduleEnabled: true,
+                    extensionEnabled: true,
+                    productRuntimePreflightAllowsNormalTabAttachment: true,
+                    contentScriptGate: .developerPreviewAllowed(),
+                    attachmentPlan: plan,
+                    permissionBroker: broker,
+                    tabID: 7,
+                    frameID: 0,
+                    documentID: "bitwarden-real-document",
+                    navigationSequence: 1,
+                    urlString: pageURL.absoluteString,
+                    frameTarget: .make(
+                        tabID: 7,
+                        frameID: 0,
+                        parentFrameID: nil,
+                        documentID: "bitwarden-real-document",
+                        navigationSequence: 1,
+                        urlString: pageURL.absoluteString,
+                        parentURLString: nil,
+                        isMainFrame: true
+                    ),
+                    tabSurface: .normalTab,
+                    generatedBundleActive: true,
+                    webKitUserContentControllerAvailable: true,
+                    teardownPending: false
+                )
+            )
+        XCTAssertEqual(
+            preflight.matchedScripts.flatMap(\.validatedJSFilePaths),
+            [
+                "content/content-message-handler.js",
+                "content/trigger-autofill-script-injection.js",
+            ]
+        )
+
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+        let configuration = WKWebViewConfiguration()
+        configuration.sumiIsNormalTabWebViewConfiguration = true
+        let attachment =
+            ChromeMV3ContentScriptWKAttachmentExecutor.attachIfAllowed(
+                configuration: configuration,
+                preflight: preflight,
+                permissionBroker: broker,
+                endpointRegistry: registry
+            )
+        XCTAssertTrue(attachment.result.attached)
+        let webView = WKWebView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            configuration: configuration
+        )
+        attachment.handle?.bindWebViewForMessageDispatch(webView)
+        try await loadURL(pageURL, html: contentScriptLoginHTML, into: webView)
+
+        for _ in 0..<50 {
+            let endpoint = registry.targetEndpoint(
+                extensionID: extensionID,
+                profileID: profileID,
+                tabID: 7,
+                frameID: 0,
+                documentID: "bitwarden-real-document"
+            )
+            if endpoint?.diagnostics.contains(where: {
+                $0.contains("runtime.onMessage listener removal observed")
+            }) == true {
+                break
+            }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        let capturedEndpoint = try XCTUnwrap(registry.targetEndpoint(
+            extensionID: extensionID,
+            profileID: profileID,
+            tabID: 7,
+            frameID: 0,
+            documentID: "bitwarden-real-document"
+        ))
+        XCTAssertTrue(capturedEndpoint.diagnostics.contains {
+            $0.contains("runtime.onMessage listener registration observed")
+        })
+        XCTAssertTrue(capturedEndpoint.diagnostics.contains {
+            $0.contains("runtime.onMessage listener removal observed")
+        })
+        XCTAssertFalse(capturedEndpoint.messageListenerRegistered)
+
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration:
+                popupConfiguration(hostPermissions: ["https://example.com/*"]),
+            contentScriptEndpointRegistry: registry
+        )
+        let response = await handler.handleAsync(request(
+            namespace: "tabs",
+            methodName: "sendMessage",
+            arguments: [
+                .number(7),
+                .object(["command": .string("sumiSyntheticNoResponseProbe")]),
+                .object([
+                    "frameId": .number(0),
+                    "documentId": .string("bitwarden-real-document"),
+                ]),
+            ]
+        ))
+
+        XCTAssertFalse(response.succeeded)
+        XCTAssertEqual(response.lastErrorCode, "noReceivingEnd")
+        let diagnostics = response.diagnostics.joined(separator: "\n")
+        XCTAssertTrue(
+            diagnostics.contains("dispatchResult=noListener"),
+            diagnostics
+        )
+        XCTAssertTrue(
+            diagnostics.contains(
+                "evaluating real content-script runtime.onMessage listeners"
+            ),
+            diagnostics
+        )
+        XCTAssertFalse(
+            diagnostics.contains("falling back to modeled endpoint delivery"),
+            diagnostics
+        )
+
+        attachment.handle?.tearDown(reason: "Bitwarden declared listener teardown")
+        XCTAssertEqual(registry.summary.activeEndpointCount, 0)
+        XCTAssertEqual(registry.summary.activeJSDispatcherCount, 0)
+    }
     #endif
 
     private func makePreflightFixture(
@@ -1898,6 +2211,7 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         gate: ChromeMV3ContentScriptProductGateRecord =
             .developerPreviewAllowed(),
         tabSurface: ChromeMV3WebViewSurface = .normalTab,
+        tabID: Int = 7,
         frameID: Int = 0,
         documentID: String = "document-1",
         navigationSequence: Int = 1,
@@ -1955,7 +2269,7 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
                     contentScriptGate: gate,
                     attachmentPlan: plan,
                     permissionBroker: broker,
-                    tabID: 7,
+                    tabID: tabID,
                     frameID: frameID,
                     documentID: documentID,
                     navigationSequence: navigationSequence,
@@ -2315,6 +2629,16 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
     private func boolValue(_ value: ChromeMV3StorageValue?) -> Bool? {
         guard case .bool(let bool) = value else { return nil }
         return bool
+    }
+
+    private func sourceFile(_ relativePath: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: root.appendingPathComponent(relativePath),
+            encoding: .utf8
+        )
     }
 }
 
