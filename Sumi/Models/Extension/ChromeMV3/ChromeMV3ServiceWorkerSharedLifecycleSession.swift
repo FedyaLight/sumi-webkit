@@ -148,15 +148,51 @@ struct ChromeMV3ServiceWorkerJSListenerDispatchResult {
     }
 }
 
+struct ChromeMV3ServiceWorkerRuntimePortDeliveryInput {
+    var portID: String
+    var message: ChromeMV3StorageValue?
+    var source: ChromeMV3ServiceWorkerEventSource
+    var sender: ChromeMV3ServiceWorkerEventSenderMetadata
+    var payloadSummary: String
+    var sourceComponentID: String
+    var sourceComponentKind:
+        ChromeMV3ServiceWorkerSharedLifecycleComponentKind
+    var disconnectReason: String?
+    var lastErrorMessage: String?
+}
+
+struct ChromeMV3ServiceWorkerRuntimePortDeliveryResult {
+    var portID: String
+    var delivered: Bool
+    var connected: Bool
+    var postedMessages: [ChromeMV3StorageValue]
+    var onMessageListenerCount: Int
+    var onDisconnectListenerCount: Int
+    var disconnectReason: String?
+    var lastErrorMessage: String?
+    var lifecycleWakeResult: ChromeMV3ServiceWorkerInternalWakeResult?
+    var diagnostics: [String]
+}
+
 typealias ChromeMV3ServiceWorkerJSListenerDispatchHandler =
     (ChromeMV3ServiceWorkerJSListenerDispatchInput)
         -> ChromeMV3ServiceWorkerJSListenerDispatchResult
+
+typealias ChromeMV3ServiceWorkerRuntimePortDeliveryHandler =
+    (ChromeMV3ServiceWorkerRuntimePortDeliveryInput)
+        -> ChromeMV3ServiceWorkerRuntimePortDeliveryResult
 
 private struct ChromeMV3ServiceWorkerJSListenerDispatchRegistration {
     var listenerID: String
     var event: ChromeMV3ServiceWorkerSyntheticListenerEvent
     var sequence: Int
     var dispatch: ChromeMV3ServiceWorkerJSListenerDispatchHandler
+}
+
+private struct ChromeMV3ServiceWorkerRuntimePortDeliveryRegistration {
+    var dispatcherID: String
+    var sequence: Int
+    var deliver: ChromeMV3ServiceWorkerRuntimePortDeliveryHandler
 }
 
 final class ChromeMV3ServiceWorkerSharedLifecycleSession {
@@ -168,8 +204,13 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
         [ChromeMV3ServiceWorkerSyntheticListenerEvent:
             [String: ChromeMV3ServiceWorkerJSListenerDispatchRegistration]] =
                 [:]
+    private var runtimePortMessageDispatchers:
+        [String: ChromeMV3ServiceWorkerRuntimePortDeliveryRegistration] = [:]
+    private var runtimePortDisconnectDispatchers:
+        [String: ChromeMV3ServiceWorkerRuntimePortDeliveryRegistration] = [:]
     private var nextAttachSequence = 1
     private var nextJSListenerDispatchSequence = 1
+    private var nextRuntimePortDeliverySequence = 1
 
     init(
         key: ChromeMV3ServiceWorkerSharedLifecycleSessionKey,
@@ -311,8 +352,12 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
     ) {
         if let event {
             jsListenerDispatchers.removeValue(forKey: event)
+            if event == .runtimeOnConnect {
+                clearRuntimePortDeliveryDispatchers()
+            }
         } else {
             jsListenerDispatchers.removeAll()
+            clearRuntimePortDeliveryDispatchers()
         }
     }
 
@@ -349,6 +394,89 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
                 sourceComponentKind: sourceComponentKind,
                 keepaliveKind: keepaliveKind,
                 portID: portID
+            )
+        )
+    }
+
+    @discardableResult
+    func registerRuntimePortMessageDispatcher(
+        dispatcherID: String,
+        deliver:
+            @escaping ChromeMV3ServiceWorkerRuntimePortDeliveryHandler
+    ) -> String {
+        registerRuntimePortDeliveryDispatcher(
+            dispatcherID: dispatcherID,
+            target: &runtimePortMessageDispatchers,
+            deliver: deliver
+        )
+    }
+
+    @discardableResult
+    func registerRuntimePortDisconnectDispatcher(
+        dispatcherID: String,
+        deliver:
+            @escaping ChromeMV3ServiceWorkerRuntimePortDeliveryHandler
+    ) -> String {
+        registerRuntimePortDeliveryDispatcher(
+            dispatcherID: dispatcherID,
+            target: &runtimePortDisconnectDispatchers,
+            deliver: deliver
+        )
+    }
+
+    func deliverRuntimePortMessage(
+        portID: String,
+        message: ChromeMV3StorageValue,
+        source: ChromeMV3ServiceWorkerEventSource,
+        sender: ChromeMV3ServiceWorkerEventSenderMetadata,
+        payloadSummary: String,
+        sourceComponentID: String,
+        sourceComponentKind:
+            ChromeMV3ServiceWorkerSharedLifecycleComponentKind
+    ) -> ChromeMV3ServiceWorkerRuntimePortDeliveryResult {
+        deliverRuntimePort(
+            registrations: runtimePortMessageDispatchers,
+            fallbackDiagnostic:
+                "No captured service-worker runtime Port message dispatcher is registered.",
+            input: ChromeMV3ServiceWorkerRuntimePortDeliveryInput(
+                portID: portID,
+                message: message,
+                source: source,
+                sender: sender,
+                payloadSummary: payloadSummary,
+                sourceComponentID: sourceComponentID,
+                sourceComponentKind: sourceComponentKind,
+                disconnectReason: nil,
+                lastErrorMessage: nil
+            )
+        )
+    }
+
+    func disconnectRuntimePort(
+        portID: String,
+        source: ChromeMV3ServiceWorkerEventSource,
+        sender: ChromeMV3ServiceWorkerEventSenderMetadata,
+        payloadSummary: String,
+        sourceComponentID: String,
+        sourceComponentKind:
+            ChromeMV3ServiceWorkerSharedLifecycleComponentKind,
+        reason: String,
+        lastErrorMessage: String? = nil
+    ) -> ChromeMV3ServiceWorkerRuntimePortDeliveryResult {
+        deliverRuntimePort(
+            registrations: runtimePortDisconnectDispatchers,
+            fallbackDiagnostic:
+                "No captured service-worker runtime Port disconnect dispatcher is registered.",
+            input: ChromeMV3ServiceWorkerRuntimePortDeliveryInput(
+                portID: portID,
+                message: nil,
+                source: source,
+                sender: sender,
+                payloadSummary: payloadSummary,
+                sourceComponentID: sourceComponentID,
+                sourceComponentKind: sourceComponentKind,
+                disconnectReason: reason,
+                lastErrorMessage: lastErrorMessage
             )
         )
     }
@@ -435,6 +563,7 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
         componentRecords.removeAll()
         nextAttachSequence = 1
         nextJSListenerDispatchSequence = 1
+        nextRuntimePortDeliverySequence = 1
     }
 
     var summary: ChromeMV3ServiceWorkerSharedLifecycleSessionSummary {
@@ -484,6 +613,78 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
         for componentID in componentRecords.keys.sorted() {
             _ = detachComponent(componentID: componentID, reason: reason)
         }
+    }
+
+    private func clearRuntimePortDeliveryDispatchers() {
+        runtimePortMessageDispatchers.removeAll()
+        runtimePortDisconnectDispatchers.removeAll()
+    }
+
+    @discardableResult
+    private func registerRuntimePortDeliveryDispatcher(
+        dispatcherID: String,
+        target:
+            inout [String:
+                ChromeMV3ServiceWorkerRuntimePortDeliveryRegistration],
+        deliver:
+            @escaping ChromeMV3ServiceWorkerRuntimePortDeliveryHandler
+    ) -> String {
+        let normalizedDispatcherID = normalizedSharedLifecycle(
+            dispatcherID,
+            fallback:
+                stableIDSharedLifecycle(
+                    prefix: "runtime-port-delivery-dispatcher",
+                    parts: [
+                        key.profileID,
+                        key.extensionID,
+                        String(nextRuntimePortDeliverySequence),
+                    ]
+                )
+        )
+        target[normalizedDispatcherID] =
+            ChromeMV3ServiceWorkerRuntimePortDeliveryRegistration(
+                dispatcherID: normalizedDispatcherID,
+                sequence: nextRuntimePortDeliverySequence,
+                deliver: deliver
+            )
+        nextRuntimePortDeliverySequence += 1
+        return normalizedDispatcherID
+    }
+
+    private func deliverRuntimePort(
+        registrations:
+            [String: ChromeMV3ServiceWorkerRuntimePortDeliveryRegistration],
+        fallbackDiagnostic: String,
+        input: ChromeMV3ServiceWorkerRuntimePortDeliveryInput
+    ) -> ChromeMV3ServiceWorkerRuntimePortDeliveryResult {
+        let sortedRegistrations = registrations.values.sorted {
+            if $0.sequence != $1.sequence {
+                return $0.sequence < $1.sequence
+            }
+            return $0.dispatcherID < $1.dispatcherID
+        }
+        for registration in sortedRegistrations {
+            let result = registration.deliver(input)
+            if result.delivered || result.connected == false {
+                return result
+            }
+        }
+        return ChromeMV3ServiceWorkerRuntimePortDeliveryResult(
+            portID: input.portID,
+            delivered: false,
+            connected: false,
+            postedMessages: [],
+            onMessageListenerCount: 0,
+            onDisconnectListenerCount: 0,
+            disconnectReason: "Port not found.",
+            lastErrorMessage:
+                "Could not establish connection. Receiving end does not exist.",
+            lifecycleWakeResult: nil,
+            diagnostics: [
+                fallbackDiagnostic,
+                "No runtime Port delivery dispatcher accepted port \(input.portID).",
+            ]
+        )
     }
 }
 

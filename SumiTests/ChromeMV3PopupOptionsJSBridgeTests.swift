@@ -242,6 +242,77 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(response.runtimeLoadable)
     }
 
+    func testRuntimeConnectPortMessagesAndDisconnectUseCapturedDispatcher()
+        throws
+    {
+        let session = try makeSharedLifecycleSession()
+        registerRuntimePortEchoDispatchers(on: session)
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(),
+            sharedLifecycleSession: session
+        )
+
+        let connect = handler.handle(request(
+            namespace: "runtime",
+            methodName: "connect",
+            arguments: [.object(["name": .string("popup-runtime")])],
+            invocationMode: .fireAndForget
+        ))
+        let portID = try XCTUnwrap(
+            stringValue(objectValue(connect.resultPayload)?["portID"])
+        )
+        let post = handler.handle(request(
+            namespace: "runtime",
+            methodName: "port.postMessage",
+            arguments: [
+                .string(portID),
+                .object(["ping": .bool(true)]),
+            ],
+            invocationMode: .fireAndForget
+        ))
+        let disconnect = handler.handle(request(
+            namespace: "runtime",
+            methodName: "port.disconnect",
+            arguments: [.string(portID)],
+            invocationMode: .fireAndForget
+        ))
+        let postPayload = try XCTUnwrap(objectValue(post.resultPayload))
+        let postedMessages = try XCTUnwrap(postPayload["postedMessages"])
+        guard case .array(let messages) = postedMessages,
+              case .object(let firstMessage)? = messages.first
+        else {
+            XCTFail("Expected posted service-worker Port message.")
+            return
+        }
+
+        XCTAssertTrue(connect.succeeded)
+        XCTAssertEqual(
+            stringValue(objectValue(connect.resultPayload)?["name"]),
+            "popup-runtime"
+        )
+        XCTAssertTrue(post.succeeded)
+        XCTAssertEqual(boolValue(postPayload["delivered"]), true)
+        XCTAssertEqual(stringValue(firstMessage["portID"]), portID)
+        XCTAssertEqual(
+            objectValue(firstMessage["echo"]),
+            ["ping": .bool(true)]
+        )
+        XCTAssertTrue(disconnect.succeeded)
+        XCTAssertEqual(
+            boolValue(objectValue(disconnect.resultPayload)?["disconnected"]),
+            true
+        )
+        XCTAssertTrue(
+            session.runtimeOwner.snapshot.activeKeepaliveRecords.isEmpty
+        )
+        XCTAssertTrue(handler.diagnosticsSnapshot.observedMethods.contains(
+            "runtime.port.postMessage"
+        ))
+        XCTAssertTrue(handler.diagnosticsSnapshot.observedMethods.contains(
+            "runtime.port.disconnect"
+        ))
+    }
+
     func testStorageAndPermissionEventsRouteThroughSharedLifecycleWhenProvided()
         throws
     {
@@ -1055,6 +1126,107 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             ChromeMV3ServiceWorkerSharedLifecycleSessionRegistry()
                 .session(profileID: profileID, extensionID: extensionID)
         )
+    }
+
+    private func registerRuntimePortEchoDispatchers(
+        on session: ChromeMV3ServiceWorkerSharedLifecycleSession
+    ) {
+        session.registerJSListenerDispatcher(
+            event: .runtimeOnConnect,
+            listenerID: "popup-js-runtime-on-connect"
+        ) { input in
+            let name: String
+            if case .object(let object)? = input.arguments.first,
+               case .string(let portName)? = object["name"]
+            {
+                name = portName
+            } else {
+                name = ""
+            }
+            let responsePayload: ChromeMV3StorageValue = .object([
+                "name": .string(name),
+                "portID": .string(input.portID ?? ""),
+            ])
+            session.registerListener(
+                event: input.event,
+                listenerID: "popup-js-runtime-on-connect-executed",
+                outcome: .modelDispatched(responsePayload)
+            )
+            let wake = session.routeEvent(
+                reason: input.source.wakeReason,
+                listenerEvent: input.event,
+                sourceComponentID: input.sourceComponentID,
+                sourceComponentKind: input.sourceComponentKind,
+                payload: input.arguments.first,
+                payloadSummary: input.payloadSummary,
+                sourceContext: input.source.sourceContext,
+                keepaliveKind: input.keepaliveKind,
+                portID: input.portID
+            )
+            session.registerRuntimePortMessageDispatcher(
+                dispatcherID: "popup-test-runtime-port-message"
+            ) { portInput in
+                let wake = session.routeEvent(
+                    reason: portInput.source.wakeReason,
+                    listenerEvent: .runtimeOnConnect,
+                    sourceComponentID: portInput.sourceComponentID,
+                    sourceComponentKind: portInput.sourceComponentKind,
+                    payload: portInput.message,
+                    payloadSummary: portInput.payloadSummary,
+                    sourceContext: portInput.source.sourceContext,
+                    portID: portInput.portID
+                )
+                return ChromeMV3ServiceWorkerRuntimePortDeliveryResult(
+                    portID: portInput.portID,
+                    delivered: true,
+                    connected: true,
+                    postedMessages: [
+                        .object([
+                            "echo": portInput.message ?? .null,
+                            "portID": .string(portInput.portID),
+                        ]),
+                    ],
+                    onMessageListenerCount: 1,
+                    onDisconnectListenerCount: 1,
+                    disconnectReason: nil,
+                    lastErrorMessage: nil,
+                    lifecycleWakeResult: wake,
+                    diagnostics: [
+                        "Test runtime Port message dispatcher echoed a service-worker Port.postMessage response.",
+                    ]
+                )
+            }
+            session.registerRuntimePortDisconnectDispatcher(
+                dispatcherID: "popup-test-runtime-port-disconnect"
+            ) { portInput in
+                _ = session.disconnectKeepalive(portID: portInput.portID)
+                return ChromeMV3ServiceWorkerRuntimePortDeliveryResult(
+                    portID: portInput.portID,
+                    delivered: true,
+                    connected: false,
+                    postedMessages: [],
+                    onMessageListenerCount: 1,
+                    onDisconnectListenerCount: 1,
+                    disconnectReason: portInput.disconnectReason,
+                    lastErrorMessage: nil,
+                    lifecycleWakeResult: nil,
+                    diagnostics: [
+                        "Test runtime Port disconnect dispatcher released keepalive state.",
+                    ]
+                )
+            }
+            return ChromeMV3ServiceWorkerJSListenerDispatchResult(
+                event: input.event,
+                listenerID: "popup-js-runtime-on-connect",
+                resultKind: wake.dispatched ? .delivered : .noReceiver,
+                responsePayload: wake.responsePayload,
+                lastErrorMessage: wake.lastErrorMessage,
+                lifecycleWakeResult: wake,
+                diagnostics: [
+                    "Popup test JS onConnect dispatcher routed through shared lifecycle.",
+                ]
+            )
+        }
     }
 
     private func firstTabObject(

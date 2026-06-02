@@ -3292,13 +3292,67 @@ final class ChromeMV3ContentScriptBridgeHost {
                 bridgeCallID,
             ]
         )
+        let connectPayload = ChromeMV3StorageValue.object([
+            "portID": .string(portID),
+            "name": .string(name),
+            "sender": contentScriptSenderLifecyclePayload(),
+        ])
+        if let jsResult = dispatchServiceWorkerJSListener(
+            source: .contentScriptRuntimeConnect,
+            arguments: [connectPayload],
+            payloadSummary: "content-script runtime.connect",
+            keepaliveKind: .runtimePort,
+            portID: portID
+        ) {
+            guard jsResult.dispatched else {
+                let contract = runtimeLastErrorContract(
+                    for: jsResult.resultKind
+                )
+                return ChromeMV3ContentScriptBridgeResponse(
+                    bridgeCallID: bridgeCallID,
+                    succeeded: false,
+                    resultPayload: nil,
+                    lastErrorCode: contract.error.rawValue,
+                    lastErrorMessage:
+                        jsResult.lastErrorMessage
+                        ?? contract.futureLastErrorMessage,
+                    serviceWorkerWakeAttempted:
+                        jsResult.lifecycleWakeResult != nil,
+                    serviceWorkerLifecycleWakeResult:
+                        jsResult.lifecycleWakeResult,
+                    nativeHostLaunchAttempted: false,
+                    diagnostics:
+                        uniqueSortedContentScripts(
+                            jsResult.diagnostics
+                                + contract.diagnostics
+                                + [
+                                    "Content-script runtime.connect reached a captured service-worker JavaScript runtime.onConnect dispatcher but no Port was opened.",
+                                ]
+                        )
+                )
+            }
+            serviceWorkerRuntimePortIDs.insert(portID)
+            return success(
+                bridgeCallID: bridgeCallID,
+                payload: .object([
+                    "portID": .string(portID),
+                    "portKind": .string("serviceWorkerRuntimePort"),
+                    "name": .string(name),
+                    "canWakeServiceWorkerNow": .bool(true),
+                    "runtimeLoadable": .bool(false),
+                ]),
+                serviceWorkerLifecycleWakeResult:
+                    jsResult.lifecycleWakeResult,
+                diagnostics:
+                    jsResult.diagnostics
+                    + [
+                        "Content-script runtime.connect delivered a named Port to captured service-worker runtime.onConnect JavaScript listener(s).",
+                    ]
+            )
+        }
         let lifecycleResult = routeServiceWorkerLifecycleEvent(
             source: .contentScriptRuntimeConnect,
-            payload: .object([
-                "portID": .string(portID),
-                "name": .string(name),
-                "sender": contentScriptSenderLifecyclePayload(),
-            ]),
+            payload: connectPayload,
             payloadSummary: "content-script runtime.connect",
             keepaliveKind: .runtimePort,
             portID: portID
@@ -3361,17 +3415,29 @@ final class ChromeMV3ContentScriptBridgeHost {
             )
         }
         if serviceWorkerRuntimePortIDs.contains(portID) {
-            let lifecycleResult = routeServiceWorkerLifecycleEvent(
+            guard let sharedLifecycleSession else {
+                return blocked(
+                    bridgeCallID: bridgeCallID,
+                    code: .noReceivingEnd,
+                    diagnostics: [
+                        "No shared lifecycle session exists for runtime Port.postMessage."
+                    ]
+                )
+            }
+            let delivery = sharedLifecycleSession.deliverRuntimePortMessage(
+                portID: portID,
+                message: arguments[1],
                 source: .contentScriptRuntimeConnect,
-                payload: .object([
-                    "portID": .string(portID),
-                    "message": arguments[1],
-                ]),
+                sender: contentScriptServiceWorkerSenderMetadata(),
                 payloadSummary:
                     "content-script service-worker Port.postMessage",
-                portID: portID
+                sourceComponentID: lifecycleComponentID,
+                sourceComponentKind: .contentScriptSyntheticEndpoint
             )
-            guard let lifecycleResult, lifecycleResult.dispatched else {
+            if delivery.connected == false {
+                serviceWorkerRuntimePortIDs.remove(portID)
+            }
+            guard delivery.delivered else {
                 let contract = ChromeMV3RuntimeLastErrorContract
                     .contract(for: .noReceivingEnd)
                 return ChromeMV3ContentScriptBridgeResponse(
@@ -3380,34 +3446,35 @@ final class ChromeMV3ContentScriptBridgeHost {
                     resultPayload: nil,
                     lastErrorCode: contract.error.rawValue,
                     lastErrorMessage:
-                        lifecycleResult?.lastErrorMessage
+                        delivery.lastErrorMessage
                         ?? contract.futureLastErrorMessage,
-                    serviceWorkerWakeAttempted: lifecycleResult != nil,
-                    serviceWorkerLifecycleWakeResult: lifecycleResult,
+                    serviceWorkerWakeAttempted:
+                        delivery.lifecycleWakeResult != nil,
+                    serviceWorkerLifecycleWakeResult:
+                        delivery.lifecycleWakeResult,
                     nativeHostLaunchAttempted: false,
                     diagnostics:
                         uniqueSortedContentScripts(
-                            (lifecycleResult?.diagnostics ?? [])
+                            delivery.diagnostics
                                 + contract.diagnostics
                                 + [
-                                    "Content-script service-worker Port.postMessage was not accepted by the local experimental lifecycle.",
+                                    "Content-script service-worker Port.postMessage did not reach a captured service-worker Port.",
                                 ]
                         )
                 )
             }
             return success(
                 bridgeCallID: bridgeCallID,
-                payload: .object([
-                    "portID": .string(portID),
-                    "delivered": .bool(true),
-                    "payload": arguments[1],
-                    "direction": .string("contentScriptToServiceWorker"),
-                ]),
-                serviceWorkerLifecycleWakeResult: lifecycleResult,
+                payload: runtimePortDeliveryPayload(
+                    delivery,
+                    direction: "contentScriptToServiceWorker"
+                ),
+                serviceWorkerLifecycleWakeResult:
+                    delivery.lifecycleWakeResult,
                 diagnostics:
-                    lifecycleResult.diagnostics
+                    delivery.diagnostics
                     + [
-                        "Content-script Port.postMessage routed to the local experimental service-worker Port.",
+                        "Content-script Port.postMessage reached service-worker Port.onMessage.",
                     ]
             )
         }
@@ -3450,20 +3517,46 @@ final class ChromeMV3ContentScriptBridgeHost {
             )
         }
         if serviceWorkerRuntimePortIDs.remove(portID) != nil {
-            sharedLifecycleSession?.disconnectKeepalive(
+            let delivery = sharedLifecycleSession?.disconnectRuntimePort(
                 portID: portID,
-                reason: .reset
+                source: .contentScriptRuntimeConnect,
+                sender: contentScriptServiceWorkerSenderMetadata(),
+                payloadSummary:
+                    "content-script service-worker runtime Port.disconnect",
+                sourceComponentID: lifecycleComponentID,
+                sourceComponentKind: .contentScriptSyntheticEndpoint,
+                reason: "Port.disconnect called by content script."
             )
+            if delivery == nil {
+                sharedLifecycleSession?.disconnectKeepalive(
+                    portID: portID,
+                    reason: .reset
+                )
+            }
             return success(
                 bridgeCallID: bridgeCallID,
-                payload: .object([
-                    "portID": .string(portID),
-                    "disconnected": .bool(true),
-                    "direction": .string("contentScriptToServiceWorker"),
-                ]),
+                payload: runtimePortDeliveryPayload(
+                    delivery
+                        ?? ChromeMV3ServiceWorkerRuntimePortDeliveryResult(
+                            portID: portID,
+                            delivered: true,
+                            connected: false,
+                            postedMessages: [],
+                            onMessageListenerCount: 0,
+                            onDisconnectListenerCount: 0,
+                            disconnectReason:
+                                "Port.disconnect called by content script.",
+                            lastErrorMessage: nil,
+                            lifecycleWakeResult: nil,
+                            diagnostics: [
+                                "Content-script runtime Port keepalive was released without a captured service-worker Port dispatcher."
+                            ]
+                        ),
+                    direction: "contentScriptToServiceWorker"
+                ),
                 diagnostics: [
-                    "Content-script Port.disconnect released the local experimental service-worker Port keepalive."
-                ]
+                    "Content-script Port.disconnect propagated through the local experimental service-worker Port path when a captured dispatcher was present."
+                ] + (delivery?.diagnostics ?? [])
             )
         }
         let delivery = endpointRegistry.disconnectPort(
@@ -3495,6 +3588,28 @@ final class ChromeMV3ContentScriptBridgeHost {
         }
         if let reason = delivery.disconnectReason {
             object["disconnectReason"] = .string(reason)
+        }
+        return .object(object)
+    }
+
+    private func runtimePortDeliveryPayload(
+        _ delivery: ChromeMV3ServiceWorkerRuntimePortDeliveryResult,
+        direction: String
+    ) -> ChromeMV3StorageValue {
+        var object: [String: ChromeMV3StorageValue] = [
+            "portID": .string(delivery.portID),
+            "delivered": .bool(delivery.delivered),
+            "connected": .bool(delivery.connected),
+            "disconnected": .bool(delivery.connected == false),
+            "direction": .string(direction),
+            "postedMessages": .array(delivery.postedMessages),
+            "onMessageListenerCount":
+                .number(Double(delivery.onMessageListenerCount)),
+            "onDisconnectListenerCount":
+                .number(Double(delivery.onDisconnectListenerCount)),
+        ]
+        if let disconnectReason = delivery.disconnectReason {
+            object["disconnectReason"] = .string(disconnectReason)
         }
         return .object(object)
     }
@@ -4114,6 +4229,7 @@ enum ChromeMV3ContentScriptJSBridgeSource {
               let disconnected = false;
               let portID = null;
               const pendingMessages = [];
+              let deliveredMessageCount = 0;
               function markDisconnected(port) {
                 if (disconnected) {
                   return;
@@ -4121,6 +4237,19 @@ enum ChromeMV3ContentScriptJSBridgeSource {
                 disconnected = true;
                 pendingMessages.splice(0, pendingMessages.length);
                 onDisconnect.dispatch(port);
+              }
+              function dispatchPostedMessages(port, payload) {
+                const messages = payload && Array.isArray(payload.postedMessages)
+                  ? payload.postedMessages
+                  : [];
+                const nextMessages = messages.slice(deliveredMessageCount);
+                deliveredMessageCount = messages.length;
+                nextMessages.forEach((postedMessage) => {
+                  onMessage.dispatch(postedMessage, port);
+                });
+                if (payload && payload.connected === false) {
+                  markDisconnected(port);
+                }
               }
               function postPortMessage(port, message) {
                 if (disconnected) {
@@ -4136,7 +4265,9 @@ enum ChromeMV3ContentScriptJSBridgeSource {
                 }).then((response) => {
                   if (!response.succeeded) {
                     markDisconnected(port);
+                    return;
                   }
+                  dispatchPostedMessages(port, response.resultPayload || {});
                 }).catch(() => markDisconnected(port));
               }
               function flushPendingMessages(port) {

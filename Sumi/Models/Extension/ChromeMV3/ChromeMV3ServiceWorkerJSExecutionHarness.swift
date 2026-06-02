@@ -3612,6 +3612,26 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                         ]
                     )
                 }
+                let portOptions: ChromeMV3ServiceWorkerJSPortOptions?
+                if input.event == .runtimeOnConnect {
+                    let portName: String
+                    if case .object(let object)? = input.arguments.first,
+                       case .string(let name)? = object["name"]
+                    {
+                        portName = name
+                    } else {
+                        portName = ""
+                    }
+                    portOptions = ChromeMV3ServiceWorkerJSPortOptions(
+                        portID:
+                            input.portID
+                            ?? self.nextPortID(prefix: "runtime-port"),
+                        name: portName,
+                        nativeFixturePort: false
+                    )
+                } else {
+                    portOptions = nil
+                }
                 let record = self.dispatch(
                     source: input.source,
                     listenerEvent: input.event,
@@ -3620,7 +3640,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                     payloadSummary: input.payloadSummary,
                     sourceComponentID: input.sourceComponentID,
                     sourceComponentKind: input.sourceComponentKind,
-                    portOptions: nil,
+                    portOptions: portOptions,
                     keepaliveKind: input.keepaliveKind,
                     sharedLifecycleSession: session
                 )
@@ -3643,6 +3663,138 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                                 ]
                         )
                 )
+            }
+            if event == .runtimeOnConnect {
+                session.registerRuntimePortMessageDispatcher(
+                    dispatcherID: "js-captured-runtime-port-message"
+                ) { [weak self, weak session] input in
+                    guard let self, let session else {
+                        return ChromeMV3ServiceWorkerRuntimePortDeliveryResult(
+                            portID: input.portID,
+                            delivered: false,
+                            connected: false,
+                            postedMessages: [],
+                            onMessageListenerCount: 0,
+                            onDisconnectListenerCount: 0,
+                            disconnectReason: "Harness unavailable.",
+                            lastErrorMessage:
+                                "Service-worker JavaScript harness is unavailable.",
+                            lifecycleWakeResult: nil,
+                            diagnostics: [
+                                "Captured runtime Port message dispatcher could not run because the harness or lifecycle session was released.",
+                            ]
+                        )
+                    }
+                    guard let message = input.message,
+                          let port = self.deliverPortMessage(
+                            portID: input.portID,
+                            message: message
+                          )
+                    else {
+                        return ChromeMV3ServiceWorkerRuntimePortDeliveryResult(
+                            portID: input.portID,
+                            delivered: false,
+                            connected: false,
+                            postedMessages: [],
+                            onMessageListenerCount: 0,
+                            onDisconnectListenerCount: 0,
+                            disconnectReason: "Port not found.",
+                            lastErrorMessage:
+                                "Could not establish connection. Receiving end does not exist.",
+                            lifecycleWakeResult: nil,
+                            diagnostics: [
+                                "No captured service-worker JavaScript Port exists for \(input.portID).",
+                            ]
+                        )
+                    }
+                    let wake = session.routeEvent(
+                        reason: input.source.wakeReason,
+                        listenerEvent: .runtimeOnConnect,
+                        sourceComponentID: input.sourceComponentID,
+                        sourceComponentKind: input.sourceComponentKind,
+                        payload: message,
+                        payloadSummary: input.payloadSummary,
+                        sourceContext: input.source.sourceContext,
+                        portID: input.portID
+                    )
+                    return ChromeMV3ServiceWorkerRuntimePortDeliveryResult(
+                        portID: input.portID,
+                        delivered: true,
+                        connected: port.connected,
+                        postedMessages: port.postedMessages,
+                        onMessageListenerCount: port.onMessageListenerCount,
+                        onDisconnectListenerCount:
+                            port.onDisconnectListenerCount,
+                        disconnectReason: port.disconnectReason,
+                        lastErrorMessage: nil,
+                        lifecycleWakeResult: wake,
+                        diagnostics:
+                            uniqueSortedServiceWorkerJS(
+                                port.diagnostics
+                                    + wake.diagnostics
+                                    + [
+                                        "runtime Port.postMessage reached the captured service-worker Port.onMessage listeners.",
+                                        "Service-worker Port.postMessage outbox was returned to the caller-side Port.",
+                                    ]
+                            )
+                    )
+                }
+                session.registerRuntimePortDisconnectDispatcher(
+                    dispatcherID: "js-captured-runtime-port-disconnect"
+                ) { [weak self] input in
+                    guard let self else {
+                        return ChromeMV3ServiceWorkerRuntimePortDeliveryResult(
+                            portID: input.portID,
+                            delivered: false,
+                            connected: false,
+                            postedMessages: [],
+                            onMessageListenerCount: 0,
+                            onDisconnectListenerCount: 0,
+                            disconnectReason: "Harness unavailable.",
+                            lastErrorMessage:
+                                "Service-worker JavaScript harness is unavailable.",
+                            lifecycleWakeResult: nil,
+                            diagnostics: [
+                                "Captured runtime Port disconnect dispatcher could not run because the harness was released.",
+                            ]
+                        )
+                    }
+                    let existed = self.disconnectPort(
+                        portID: input.portID,
+                        reason:
+                            input.disconnectReason
+                            ?? "callerRequestedDisconnect",
+                        lastErrorMessage: input.lastErrorMessage
+                    )
+                    let port = self.ports[input.portID]
+                    return ChromeMV3ServiceWorkerRuntimePortDeliveryResult(
+                        portID: input.portID,
+                        delivered: existed,
+                        connected: port?.connected ?? false,
+                        postedMessages: port?.postedMessages ?? [],
+                        onMessageListenerCount:
+                            port?.onMessageListenerCount ?? 0,
+                        onDisconnectListenerCount:
+                            port?.onDisconnectListenerCount ?? 0,
+                        disconnectReason:
+                            port?.disconnectReason
+                            ?? (existed ? input.disconnectReason : "Port not found."),
+                        lastErrorMessage:
+                            existed
+                                ? nil
+                                : "Could not establish connection. Receiving end does not exist.",
+                        lifecycleWakeResult: nil,
+                        diagnostics:
+                            uniqueSortedServiceWorkerJS(
+                                (port?.diagnostics ?? [])
+                                    + [
+                                        existed
+                                            ? "runtime Port.disconnect propagated to the captured service-worker Port.onDisconnect listeners and released keepalive state."
+                                            : "runtime Port.disconnect could not find a captured service-worker Port.",
+                                    ]
+                            )
+                    )
+                }
             }
         }
     }

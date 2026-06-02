@@ -68,6 +68,8 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
             "runtime.lastError",
             "runtime.nativePort.disconnect",
             "runtime.nativePort.postMessage",
+            "runtime.port.disconnect",
+            "runtime.port.postMessage",
             "runtime.sendMessage",
             "runtime.sendNativeMessage",
             "storage.local.clear",
@@ -902,6 +904,10 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             return runtimeConnect(request)
         case ("runtime", "getURL"):
             return runtimeGetURL(request)
+        case ("runtime", "port.postMessage"):
+            return runtimePortPostMessage(request)
+        case ("runtime", "port.disconnect"):
+            return runtimePortDisconnect(request)
         case ("runtime", "sendNativeMessage"):
             return runtimeSendNativeMessage(request)
         case ("runtime", let method) where method == "connect" + "Native":
@@ -1295,12 +1301,64 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 String(syntheticPortIDs.count + 1),
             ]
         )
+        let connectPayload = ChromeMV3StorageValue.object([
+            "portID": .string(portID),
+            "name": .string(connectName),
+        ])
+        if let jsResult = dispatchServiceWorkerJSListener(
+            source: .popupOptionsRuntimeConnect,
+            arguments: [connectPayload],
+            payloadSummary: "popup/options runtime.connect",
+            keepaliveKind: .runtimePort,
+            portID: portID
+        ) {
+            guard jsResult.dispatched else {
+                let contract = runtimeLastErrorContract(
+                    for: jsResult.resultKind
+                )
+                return response(
+                    request: request,
+                    succeeded: false,
+                    lastErrorMessage:
+                        jsResult.lastErrorMessage
+                        ?? contract.futureLastErrorMessage,
+                    lastErrorCode: contract.error.rawValue,
+                    serviceWorkerLifecycleWakeResult:
+                        jsResult.lifecycleWakeResult,
+                    diagnostics:
+                        jsResult.diagnostics
+                        + contract.diagnostics
+                        + [
+                            "runtime.connect reached a captured service-worker JavaScript runtime.onConnect dispatcher but no Port was opened.",
+                        ]
+                )
+            }
+            syntheticPortIDs.insert(portID)
+            serviceWorkerLifecyclePortIDs.insert(portID)
+            return response(
+                request: request,
+                succeeded: true,
+                payload: .object([
+                    "portID": .string(portID),
+                    "portKind": .string("serviceWorkerRuntimePort"),
+                    "name": .string(connectName),
+                    "canOpenRuntimePortNow": .bool(true),
+                    "canWakeServiceWorkerNow": .bool(true),
+                    "runtimeLoadable": .bool(false),
+                ]),
+                serviceWorkerLifecycleWakeResult:
+                    jsResult.lifecycleWakeResult,
+                diagnostics:
+                    jsResult.diagnostics
+                    + [
+                        "runtime.connect delivered a named Port to captured service-worker runtime.onConnect JavaScript listener(s).",
+                        "Port ID \(portID) is bound for later runtime Port.postMessage and disconnect delivery.",
+                    ]
+            )
+        }
         if let lifecycleResult = routeServiceWorkerLifecycleEvent(
             source: .popupOptionsRuntimeConnect,
-            payload: .object([
-                "portID": .string(portID),
-                "name": .string(connectName),
-            ]),
+            payload: connectPayload,
             payloadSummary: "popup/options runtime.connect",
             keepaliveKind: .runtimePort,
             portID: portID
@@ -1359,6 +1417,142 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 "runtime.connect returned a popup/options-scoped synthetic Port object.",
                 "No service-worker wake or real runtime Port was opened.",
             ]
+        )
+    }
+
+    private func runtimePortPostMessage(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        guard request.arguments.count == 2,
+              let portID = request.arguments[0].stringValue
+        else {
+            return invalidArguments(
+                request,
+                "runtime Port postMessage requires portID and message arguments."
+            )
+        }
+        guard serviceWorkerLifecyclePortIDs.contains(portID),
+              let sharedLifecycleSession
+        else {
+            return runtimeLastErrorResponse(
+                request,
+                error: .noReceivingEnd,
+                diagnostics: [
+                    "No open popup/options service-worker runtime Port exists for \(portID).",
+                ]
+            )
+        }
+        let delivery = sharedLifecycleSession.deliverRuntimePortMessage(
+            portID: portID,
+            message: request.arguments[1],
+            source: .popupOptionsRuntimeConnect,
+            sender: popupServiceWorkerSenderMetadata(),
+            payloadSummary:
+                "popup/options service-worker runtime Port.postMessage",
+            sourceComponentID: lifecycleComponentID,
+            sourceComponentKind: .extensionPageHostHarness
+        )
+        if delivery.connected == false {
+            serviceWorkerLifecyclePortIDs.remove(portID)
+            syntheticPortIDs.remove(portID)
+        }
+        guard delivery.delivered else {
+            let contract = ChromeMV3RuntimeLastErrorContract
+                .contract(for: .noReceivingEnd)
+            return response(
+                request: request,
+                succeeded: false,
+                lastErrorMessage:
+                    delivery.lastErrorMessage
+                    ?? contract.futureLastErrorMessage,
+                lastErrorCode: contract.error.rawValue,
+                serviceWorkerLifecycleWakeResult:
+                    delivery.lifecycleWakeResult,
+                diagnostics:
+                    delivery.diagnostics
+                    + contract.diagnostics
+                    + [
+                        "popup/options Port.postMessage did not reach a captured service-worker Port.",
+                    ]
+            )
+        }
+        return response(
+            request: request,
+            succeeded: true,
+            payload: runtimePortDeliveryPayload(
+                delivery,
+                direction: "popupOptionsToServiceWorker"
+            ),
+            serviceWorkerLifecycleWakeResult:
+                delivery.lifecycleWakeResult,
+            diagnostics:
+                delivery.diagnostics
+                + [
+                    "popup/options Port.postMessage reached service-worker Port.onMessage.",
+                ]
+        )
+    }
+
+    private func runtimePortDisconnect(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        guard request.arguments.count == 1,
+              let portID = request.arguments[0].stringValue
+        else {
+            return invalidArguments(
+                request,
+                "runtime Port disconnect requires one portID argument."
+            )
+        }
+        let wasOpen = serviceWorkerLifecyclePortIDs.remove(portID) != nil
+        syntheticPortIDs.remove(portID)
+        let delivery = sharedLifecycleSession?.disconnectRuntimePort(
+            portID: portID,
+            source: .popupOptionsRuntimeConnect,
+            sender: popupServiceWorkerSenderMetadata(),
+            payloadSummary:
+                "popup/options service-worker runtime Port.disconnect",
+            sourceComponentID: lifecycleComponentID,
+            sourceComponentKind: .extensionPageHostHarness,
+            reason: "Port.disconnect called by popup/options."
+        )
+        if delivery == nil, wasOpen {
+            sharedLifecycleSession?.disconnectKeepalive(
+                portID: portID,
+                reason: .reset
+            )
+        }
+        return response(
+            request: request,
+            succeeded: true,
+            payload: runtimePortDeliveryPayload(
+                delivery
+                    ?? ChromeMV3ServiceWorkerRuntimePortDeliveryResult(
+                        portID: portID,
+                        delivered: wasOpen,
+                        connected: false,
+                        postedMessages: [],
+                        onMessageListenerCount: 0,
+                        onDisconnectListenerCount: 0,
+                        disconnectReason:
+                            wasOpen
+                                ? "Port.disconnect called by popup/options."
+                                : "Port not found.",
+                        lastErrorMessage: nil,
+                        lifecycleWakeResult: nil,
+                        diagnostics: [
+                            wasOpen
+                                ? "Popup/options runtime Port keepalive was released without a captured service-worker Port dispatcher."
+                                : "Popup/options runtime Port disconnect was a no-op because the Port was already closed.",
+                        ]
+                    ),
+                direction: "popupOptionsToServiceWorker"
+            ),
+            diagnostics:
+                (delivery?.diagnostics ?? [])
+                + [
+                    "popup/options Port.disconnect propagated through the local experimental service-worker Port path when a captured dispatcher was present.",
+                ]
         )
     }
 
@@ -1632,6 +1826,28 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     "Native fixture Port disconnect releases any mirrored local experimental service-worker keepalive.",
                 ]
         )
+    }
+
+    private func runtimePortDeliveryPayload(
+        _ delivery: ChromeMV3ServiceWorkerRuntimePortDeliveryResult,
+        direction: String
+    ) -> ChromeMV3StorageValue {
+        var object: [String: ChromeMV3StorageValue] = [
+            "portID": .string(delivery.portID),
+            "delivered": .bool(delivery.delivered),
+            "connected": .bool(delivery.connected),
+            "disconnected": .bool(delivery.connected == false),
+            "direction": .string(direction),
+            "postedMessages": .array(delivery.postedMessages),
+            "onMessageListenerCount":
+                .number(Double(delivery.onMessageListenerCount)),
+            "onDisconnectListenerCount":
+                .number(Double(delivery.onDisconnectListenerCount)),
+        ]
+        if let disconnectReason = delivery.disconnectReason {
+            object["disconnectReason"] = .string(disconnectReason)
+        }
+        return .object(object)
     }
 
     private func storageLocal(
@@ -3679,6 +3895,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
               delivery: delivery || null,
               sender: null,
               pendingMessages: [],
+              deliveredMessageCount: 0,
               onMessage: makePortEvent(),
               onDisconnect: makePortEvent()
             };
@@ -3689,6 +3906,19 @@ enum ChromeMV3PopupOptionsJSShimSource {
               state.disconnected = true;
               state.pendingMessages = [];
               dispatchDisconnect(state, port, message || null);
+            }
+            function dispatchPostedMessages(payload) {
+              const messages = payload && Array.isArray(payload.postedMessages)
+                ? payload.postedMessages
+                : [];
+              const nextMessages = messages.slice(state.deliveredMessageCount);
+              state.deliveredMessageCount = messages.length;
+              nextMessages.forEach((postedMessage) => {
+                state.onMessage.dispatch(postedMessage, port);
+              });
+              if (payload && payload.connected === false) {
+                markDisconnected(null);
+              }
             }
             function sendNativePortMessage(message) {
               if (!state.delivery || !state.delivery.namespace || !state.delivery.postMessage) {
@@ -3707,7 +3937,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
               ).then((response) => {
                 if (!response.succeeded) {
                   markDisconnected(response.lastErrorMessage);
+                  return;
                 }
+                dispatchPostedMessages(response.resultPayload || {});
               }).catch(() => markDisconnected("Native messaging port is closed."));
             }
             function flushPendingMessages() {
@@ -3808,7 +4040,11 @@ enum ChromeMV3PopupOptionsJSShimSource {
           Object.defineProperty(runtime, "connect", {
             value() {
               const args = Array.prototype.slice.call(arguments);
-              const port = createPort(parseConnectName(args));
+              const port = createPort(parseConnectName(args), {
+                namespace: "runtime",
+                postMessage: "port.postMessage",
+                disconnect: "port.disconnect"
+              });
               const state = portState.get(port);
               nextPortNumber += 1;
               state.id = [
@@ -3824,6 +4060,8 @@ enum ChromeMV3PopupOptionsJSShimSource {
                   }
                   const payload = response.resultPayload || {};
                   state.id = payload.portID || state.id;
+                  state.sender = payload.sender || null;
+                  state.flushPendingMessages();
                 })
                 .catch(() => state.markDisconnected(null));
               return port;
