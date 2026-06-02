@@ -128,15 +128,21 @@ struct SettingsPerformanceTab: View {
                         .font(.callout.weight(.semibold))
 
                     ForEach(SumiEnergySaverFeature.allCases) { feature in
-                        Toggle(isOn: energySaverFeatureBinding(feature, settings: settings)) {
+                        HStack(alignment: .center, spacing: 16) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(feature.title)
                                 Text(feature.subtitle)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
+
+                            Spacer(minLength: 16)
+
+                            Toggle("", isOn: energySaverFeatureBinding(feature, settings: settings))
+                                .toggleStyle(.switch)
+                                .labelsHidden()
                         }
-                        .toggleStyle(.switch)
                     }
                 }
 
