@@ -1292,6 +1292,93 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         XCTAssertNotEqual(afterTeardown, "rgb(9, 8, 7)")
         XCTAssertEqual(registry.summary.activeCSSAttachmentCount, 0)
     }
+
+    @MainActor
+    func testWKNormalTabRuntimeBridgeSendsMessageAndPerformsDummyFill()
+        async throws
+    {
+        let pageURL = URL(string: "https://example.com/login")!
+        let fixture = try makePreflightFixture(
+            urlString: pageURL.absoluteString,
+            contentScriptSource: """
+            document.addEventListener("DOMContentLoaded", async () => {
+              const response = await chrome.runtime.sendMessage({
+                type: "sumiSyntheticFillLogin"
+              });
+              document.querySelector("#username").value = response.username;
+              document.querySelector("#password").value = response.password;
+              document.body.dataset.sumiRuntimeBridgeFill = response.ok ? "filled" : "blocked";
+            });
+            """
+        )
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+        let session = try makeSharedLifecycleSession()
+        session.registerListener(
+            event: .runtimeOnMessage,
+            listenerID: "normal-tab-runtime-fill-listener",
+            outcome: .modelDispatched(.object([
+                "ok": .bool(true),
+                "username": .string("sumi-test-user@example.test"),
+                "password": .string("sumi-test-password-not-secret"),
+            ]))
+        )
+        let configuration = WKWebViewConfiguration()
+        configuration.sumiIsNormalTabWebViewConfiguration = true
+        let beforeScriptCount =
+            configuration.userContentController.userScripts.count
+
+        let attachment =
+            ChromeMV3ContentScriptWKAttachmentExecutor.attachIfAllowed(
+                configuration: configuration,
+                preflight: fixture.preflight,
+                permissionBroker:
+                    permissionBroker(hostPermissions: ["https://example.com/*"]),
+                endpointRegistry: registry,
+                sharedLifecycleSession: session
+            )
+
+        XCTAssertTrue(attachment.result.attached)
+        XCTAssertTrue(attachment.result.endpointRegistered)
+        XCTAssertGreaterThan(
+            attachment.result.installedUserScriptCount,
+            beforeScriptCount
+        )
+        XCTAssertEqual(attachment.result.installedScriptMessageHandlerCount, 1)
+        XCTAssertEqual(
+            fixture.preflight.matchedScripts.flatMap(\.validatedJSFilePaths),
+            ["content.js"]
+        )
+        XCTAssertFalse(
+            fixture.preflight.diagnostics.joined(separator: "\n")
+                .contains("bootstrap-autofill")
+        )
+
+        let webView = WKWebView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            configuration: configuration
+        )
+        try await loadURL(pageURL, html: contentScriptLoginHTML, into: webView)
+        let filled = try await waitForDummyLoginFill(in: webView)
+
+        XCTAssertEqual(filled["status"], "filled")
+        XCTAssertEqual(filled["username"], "sumi-test-user@example.test")
+        XCTAssertEqual(filled["password"], "sumi-test-password-not-secret")
+        XCTAssertTrue(
+            session.runtimeOwner.snapshot.events.contains {
+                $0.reason == .runtimeMessage
+                    && $0.sourceContext == .contentScript
+            }
+        )
+        XCTAssertEqual(registry.summary.activeEndpointCount, 1)
+
+        attachment.handle?.tearDown(reason: "normal-tab runtime fill teardown")
+        XCTAssertEqual(
+            configuration.userContentController.userScripts.count,
+            beforeScriptCount
+        )
+        XCTAssertEqual(registry.summary.activeEndpointCount, 0)
+        XCTAssertTrue(session.runtimeOwner.snapshot.activeKeepaliveRecords.isEmpty)
+    }
     #endif
 
     private func makePreflightFixture(
@@ -1313,10 +1400,11 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         contentScriptMatches: [String] = ["https://example.com/*"],
         contentScriptExcludeMatches: [String] = [],
         allFrames: Bool = false,
-        includeCSS: Bool = false
+        includeCSS: Bool = false,
+        contentScriptSource: String = "globalThis.__sumiMV3Content = true;\n"
     ) throws -> PreflightFixture {
         var files = [
-            "content.js": "globalThis.__sumiMV3Content = true;\n",
+            "content.js": contentScriptSource,
         ]
         if includeCSS {
             files["style.css"] =
@@ -1502,7 +1590,11 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
 
     #if canImport(WebKit)
     @MainActor
-    private func loadURL(_ url: URL, into webView: WKWebView) async throws {
+    private func loadURL(
+        _ url: URL,
+        html: String = contentScriptCSSHTML,
+        into webView: WKWebView
+    ) async throws {
         let didFinish = expectation(description: "content script CSS page loaded")
         let delegate = ContentScriptCSSNavigationDelegate {
             didFinish.fulfill()
@@ -1511,10 +1603,10 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         if #available(macOS 12.0, *) {
             webView.loadSimulatedRequest(
                 URLRequest(url: url),
-                responseHTML: contentScriptCSSHTML
+                responseHTML: html
             )
         } else {
-            webView.loadHTMLString(contentScriptCSSHTML, baseURL: url)
+            webView.loadHTMLString(html, baseURL: url)
         }
         await fulfillment(of: [didFinish], timeout: 5)
         webView.navigationDelegate = nil
@@ -1534,6 +1626,30 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
                 continuation.resume(returning: result as? String ?? "")
             }
         }
+    }
+
+    @MainActor
+    private func waitForDummyLoginFill(
+        in webView: WKWebView
+    ) async throws -> [String: String] {
+        let script = """
+        ({
+          status: document.body.dataset.sumiRuntimeBridgeFill || "",
+          username: document.querySelector("#username")?.value || "",
+          password: document.querySelector("#password")?.value || ""
+        })
+        """
+        for _ in 0..<50 {
+            let result = try await webView.evaluateJavaScript(script)
+            if let object = result as? [String: String],
+               object["status"] == "filled"
+            {
+                return object
+            }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        let result = try await webView.evaluateJavaScript(script)
+        return result as? [String: String] ?? [:]
     }
     #endif
 
@@ -1569,6 +1685,23 @@ private let contentScriptCSSHTML =
     <html>
       <head><meta charset="utf-8"><title>CSS Scope</title></head>
       <body><main id="probe">probe</main></body>
+    </html>
+    """
+
+private let contentScriptLoginHTML =
+    """
+    <!doctype html>
+    <html>
+      <head><meta charset="utf-8"><title>Synthetic Login</title></head>
+      <body>
+        <form id="synthetic-login-form">
+          <label for="username">Email</label>
+          <input id="username" name="username" autocomplete="username" type="email">
+          <label for="password">Password</label>
+          <input id="password" name="password" autocomplete="current-password" type="password">
+          <button id="submit-login" type="button">Sign in</button>
+        </form>
+      </body>
     </html>
     """
 

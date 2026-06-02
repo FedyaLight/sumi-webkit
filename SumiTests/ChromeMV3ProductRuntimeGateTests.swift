@@ -372,6 +372,64 @@ final class ChromeMV3ProductRuntimeGateTests: XCTestCase {
         XCTAssertTrue(preflight.blockers.isEmpty)
     }
 
+    func testExplicitInternalProductGateAllowsMinimalServiceWorkerMessagingPath()
+        throws
+    {
+        let fixture = try makeInstalledFixture(
+            named: "allowed-service-worker-message",
+            manifest: minimalServiceWorkerContentScriptManifest(),
+            files: [
+                "background.js": """
+                chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+                  sendResponse({ ok: true });
+                });
+                """,
+                "content.js": "chrome.runtime.sendMessage({ ok: true });\n",
+            ]
+        )
+        let gateSet = ChromeMV3ProductRuntimeGateSet
+            .explicitInternalTestAllowed(
+                report: fixture.report,
+                lifecycleRecord: fixture.record,
+                tabID: "fixture-tab"
+            )
+        let input = ChromeMV3ProductNormalTabRuntimePreflightInput.make(
+            report: fixture.report,
+            lifecycleRecord: fixture.record,
+            gateSet: gateSet,
+            tabID: "fixture-tab",
+            sameControllerRequirementSatisfied: true,
+            contentScriptEligibilitySatisfied: true,
+            permissionStateSatisfied: true,
+            minimalServiceWorkerRuntimeMessagingAllows: true
+        )
+        let preflight =
+            ChromeMV3ProductNormalTabRuntimePreflightEvaluator.evaluate(
+                input: input
+            )
+        let plan = ChromeMV3ProductBridgeAttachmentPlan.make(
+            preflight: preflight,
+            report: fixture.report
+        )
+
+        XCTAssertEqual(preflight.extensionEnablement.state, .productTestEnabled)
+        XCTAssertTrue(preflight.canAttachToNormalTabNow)
+        XCTAssertTrue(preflight.canExposeRuntimeBridgeNow)
+        XCTAssertTrue(preflight.canInjectContentScriptsNow)
+        XCTAssertTrue(preflight.canWakeServiceWorkerNow)
+        XCTAssertFalse(preflight.canUseNativeMessagingNow)
+        XCTAssertFalse(preflight.canUseProductNetworkEnforcementNow)
+        XCTAssertTrue(preflight.blockers.isEmpty)
+        XCTAssertTrue(plan.wouldWakeServiceWorkerNow)
+        XCTAssertFalse(plan.wouldUseNativeMessagingNow)
+        XCTAssertFalse(plan.wouldUseProductNetworkEnforcementNow)
+        XCTAssertTrue(plan.items.contains {
+            $0.kind == .serviceWorkerLifecycleSession
+                && $0.planned
+                && $0.activeNow == false
+        })
+    }
+
     func testProductBridgeAttachmentPlanIsDeterministicAndPlanOnly()
         throws
     {
@@ -705,6 +763,24 @@ final class ChromeMV3ProductRuntimeGateTests: XCTestCase {
             ],
             "action": [
                 "default_popup": "panel.html",
+            ],
+        ]
+    }
+
+    private func minimalServiceWorkerContentScriptManifest() -> [String: Any] {
+        [
+            "manifest_version": 3,
+            "name": "Product Gate Minimal Service Worker Message",
+            "version": "1.0.0",
+            "host_permissions": ["https://example.com/*"],
+            "background": [
+                "service_worker": "background.js",
+            ],
+            "content_scripts": [
+                [
+                    "matches": ["https://example.com/*"],
+                    "js": ["content.js"],
+                ],
             ],
         ]
     }

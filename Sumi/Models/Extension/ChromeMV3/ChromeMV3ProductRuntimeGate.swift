@@ -401,7 +401,8 @@ enum ChromeMV3ExtensionProductEnablementEvaluator {
     static func evaluate(
         report: ChromeMV3EndToEndInstallDiagnosticsReport?,
         lifecycleRecord: ChromeMV3ExtensionLifecycleRecord?,
-        gateSet: ChromeMV3ProductRuntimeGateSet
+        gateSet: ChromeMV3ProductRuntimeGateSet,
+        minimalServiceWorkerRuntimeMessagingAllows: Bool = false
     ) -> ChromeMV3ExtensionProductEnablement {
         let profileID = lifecycleRecord?.profileID
             ?? "unresolved-product-profile"
@@ -417,7 +418,11 @@ enum ChromeMV3ExtensionProductEnablementEvaluator {
         let productBlockers = blockers.filter {
             $0.severity == .productBlocked
         }
-        let productAPIBlockers = forbiddenProductAPIBlockers(in: report)
+        let productAPIBlockers = forbiddenProductAPIBlockers(
+            in: report,
+            minimalServiceWorkerRuntimeMessagingAllows:
+                minimalServiceWorkerRuntimeMessagingAllows
+        )
         let extensionGate = gateSet.extensionProductRuntimeGate
         let debugOverride = gateSet.debugOverrideGate
         let state: ChromeMV3ExtensionProductEnablementState
@@ -568,6 +573,7 @@ struct ChromeMV3ProductNormalTabRuntimePreflightInput:
     var nativeMessagingProductPolicyAllows: Bool
     var productNetworkEnforcementPolicyAllows: Bool
     var sidePanelOffscreenIdentityProductPolicyAllows: Bool
+    var minimalServiceWorkerRuntimeMessagingAllows: Bool
     var disabledRuntimeInvariantsSatisfied: Bool
     var report: ChromeMV3EndToEndInstallDiagnosticsReport?
     var lifecycleRecord: ChromeMV3ExtensionLifecycleRecord?
@@ -591,6 +597,7 @@ struct ChromeMV3ProductNormalTabRuntimePreflightInput:
         nativeMessagingProductPolicyAllows: Bool = false,
         productNetworkEnforcementPolicyAllows: Bool = false,
         sidePanelOffscreenIdentityProductPolicyAllows: Bool = false,
+        minimalServiceWorkerRuntimeMessagingAllows: Bool = false,
         disabledRuntimeInvariantsSatisfied: Bool = true
     ) -> ChromeMV3ProductNormalTabRuntimePreflightInput {
         let summary = report?.chromeMV3ProductActiveManifestSummary
@@ -643,6 +650,8 @@ struct ChromeMV3ProductNormalTabRuntimePreflightInput:
                 productNetworkEnforcementPolicyAllows,
             sidePanelOffscreenIdentityProductPolicyAllows:
                 sidePanelOffscreenIdentityProductPolicyAllows,
+            minimalServiceWorkerRuntimeMessagingAllows:
+                minimalServiceWorkerRuntimeMessagingAllows,
             disabledRuntimeInvariantsSatisfied:
                 disabledRuntimeInvariantsSatisfied,
             report: report,
@@ -686,7 +695,9 @@ enum ChromeMV3ProductNormalTabRuntimePreflightEvaluator {
             ChromeMV3ExtensionProductEnablementEvaluator.evaluate(
                 report: input.report,
                 lifecycleRecord: input.lifecycleRecord,
-                gateSet: input.gateSet
+                gateSet: input.gateSet,
+                minimalServiceWorkerRuntimeMessagingAllows:
+                    input.minimalServiceWorkerRuntimeMessagingAllows
             )
         var blockers: [ChromeMV3ProductRuntimePreflightBlocker] = []
         var waivedCompatibilityBlockerIDs: [String] = []
@@ -783,7 +794,9 @@ enum ChromeMV3ProductNormalTabRuntimePreflightEvaluator {
             )
         }
 
-        if summary?.backgroundServiceWorker != nil {
+        if summary?.backgroundServiceWorker != nil,
+           input.minimalServiceWorkerRuntimeMessagingAllows == false
+        {
             blockers.append(
                 blocker(
                     kind: .serviceWorkerProductPolicyBlocked,
@@ -902,6 +915,10 @@ enum ChromeMV3ProductNormalTabRuntimePreflightEvaluator {
             && input.gateSet.allExplicitGatesAllowPreflight
             && extensionEnablement.canEverAttachToProductNormalTab
         let contentScriptsPresent = (summary?.contentScriptCount ?? 0) > 0
+        let serviceWorkerRuntimeMessagingAvailable =
+            canAttach
+                && summary?.backgroundServiceWorker != nil
+                && input.minimalServiceWorkerRuntimeMessagingAllows
         return ChromeMV3ProductNormalTabRuntimePreflight(
             profileID: input.profileID,
             extensionID: input.extensionID,
@@ -918,7 +935,7 @@ enum ChromeMV3ProductNormalTabRuntimePreflightEvaluator {
             canInjectContentScriptsNow:
                 canAttach && contentScriptsPresent
                     && input.contentScriptEligibilitySatisfied,
-            canWakeServiceWorkerNow: false,
+            canWakeServiceWorkerNow: serviceWorkerRuntimeMessagingAvailable,
             canUseNativeMessagingNow: false,
             canUseProductNetworkEnforcementNow: false,
             blockers: blockers,
@@ -975,7 +992,7 @@ enum ChromeMV3ProductNormalTabRuntimePreflightEvaluator {
             canAttach
                 ? "All explicit internal product gates passed for preflight; no runtime was attached."
                 : "Product normal-tab runtime preflight is blocked.",
-            "Service-worker wake, native messaging, product network enforcement, and product UI remain blocked.",
+            "Native messaging, product network enforcement, permanent background runtime, and product UI remain blocked.",
             "This preflight does not mutate WKWebViewConfiguration or register JavaScript.",
         ]
         if blockers.isEmpty == false {
@@ -1829,10 +1846,13 @@ struct ChromeMV3ProductBridgeAttachmentPlan:
             ChromeMV3ProductBridgeAttachmentPlanItem(
                 kind: .serviceWorkerLifecycleSession,
                 title: "Service-worker lifecycle",
-                planned: false,
+                planned: preflight.canWakeServiceWorkerNow,
                 activeNow: false,
                 details: [
-                    "Product service-worker wake remains blocked.",
+                    preflight.canWakeServiceWorkerNow
+                        ? "Minimal one-shot runtime messaging wake is available only through the explicit local experimental normal-tab content-script path."
+                        : "Product service-worker wake remains blocked.",
+                    "Permanent background service-worker runtime remains blocked.",
                 ]
             ),
             ChromeMV3ProductBridgeAttachmentPlanItem(
@@ -1887,7 +1907,7 @@ struct ChromeMV3ProductBridgeAttachmentPlan:
                 preflight.canExposeRuntimeBridgeNow ? namespaces : [],
             wouldInjectContentScriptsNow:
                 preflight.canInjectContentScriptsNow,
-            wouldWakeServiceWorkerNow: false,
+            wouldWakeServiceWorkerNow: preflight.canWakeServiceWorkerNow,
             wouldUseNativeMessagingNow: false,
             wouldUseProductNetworkEnforcementNow: false,
             teardownPolicy: teardown,
@@ -2090,9 +2110,10 @@ private func relatedProductBlockerIDs(
 }
 
 private func forbiddenProductAPIBlockers(
-    in report: ChromeMV3EndToEndInstallDiagnosticsReport?
+    in report: ChromeMV3EndToEndInstallDiagnosticsReport?,
+    minimalServiceWorkerRuntimeMessagingAllows: Bool = false
 ) -> [ChromeMV3APIBlockerRecord] {
-    let forbiddenSources: Set<ChromeMV3APIBlockerSource> = [
+    var forbiddenSources: Set<ChromeMV3APIBlockerSource> = [
         .nativeMessaging,
         .network,
         .offscreen,
@@ -2102,6 +2123,9 @@ private func forbiddenProductAPIBlockers(
         .serviceWorker,
         .sidePanel,
     ]
+    if minimalServiceWorkerRuntimeMessagingAllows {
+        forbiddenSources.remove(.serviceWorker)
+    }
     return report?.blockerTaxonomy.filter {
         $0.severity == .productBlocked
             && forbiddenSources.contains($0.source)

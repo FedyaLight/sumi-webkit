@@ -1329,226 +1329,244 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
                     == expectedSendMessagePolicy
             }
         )
-        XCTAssertEqual(
-            bitwarden.serviceWorkerEventReadiness.nextBlockerClassification,
-            .dispatchDelivered
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
-                .contains("Captured listener families dispatched successfully")
-        )
-        XCTAssertFalse(
-            bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
-                .contains("chrome.runtime.sendMessage")
-        )
-        XCTAssertEqual(
-            bitwarden.serviceWorkerEventReadiness.runtimeSendMessageSummary,
-            [
-                "seq=1:overload=messageCallback:shape=object:keyCount=1:result=noListener:responseShape=none:listeners=0:callback=true:promise=false:crossExtension=false:recursionBlocked=false:lastError=Could not establish connection. Receiving end does not exist.",
-            ]
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.precedingChromeAPICalls
-                .contains("chrome.runtime.sendMessage")
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.runtimeSendMessageSummary
-                .allSatisfy {
-                    !$0.contains("token")
-                        && !$0.contains("secret")
-                        && !$0.contains("vault")
-                        && !$0.contains("password")
+        if bitwarden.packageSource == .realLocalUnpacked {
+            XCTAssertEqual(
+                bitwarden.serviceWorkerEventReadiness.nextBlockerClassification,
+                .dispatchDelivered
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
+                    .contains("Captured listener families dispatched successfully")
+            )
+            XCTAssertFalse(
+                bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
+                    .contains("chrome.runtime.sendMessage")
+            )
+            XCTAssertEqual(
+                bitwarden.serviceWorkerEventReadiness.runtimeSendMessageSummary,
+                [
+                    "seq=1:overload=messageCallback:shape=object:keyCount=1:result=noListener:responseShape=none:listeners=0:callback=true:promise=false:crossExtension=false:recursionBlocked=false:lastError=Could not establish connection. Receiving end does not exist.",
+                ]
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.precedingChromeAPICalls
+                    .contains("chrome.runtime.sendMessage")
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.runtimeSendMessageSummary
+                    .allSatisfy {
+                        !$0.contains("token")
+                            && !$0.contains("secret")
+                            && !$0.contains("vault")
+                            && !$0.contains("password")
+                    }
+            )
+            XCTAssertFalse(
+                bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
+                    .contains("chrome.i18n.getMessage")
+            )
+            XCTAssertFalse(
+                bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
+                    .contains("chrome.alarms.create")
+            )
+            XCTAssertFalse(
+                bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
+                    .contains("chrome.alarms.get")
+            )
+            XCTAssertEqual(
+                bitwarden.serviceWorkerEventReadiness.deviceFailureClassification,
+                .resolvedWorkerNavigatorBrowserFamilySignal
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.deviceFailureDetail
+                    .contains("without inserting fake device identity")
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.workerNavigatorUserAgentResult
+                    .contains("Chrome/0")
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.precedingChromeAPICalls
+                    .contains("chrome.i18n.getUILanguage")
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.storageOperationSummary
+                    .allSatisfy {
+                        !$0.contains("token")
+                            && !$0.contains("secret")
+                            && !$0.contains("vault")
+                    }
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.fetchClassificationSummary
+                    .contains {
+                        $0.contains("b9f569e387bfc3d589be.module.wasm")
+                            && $0.contains("allowed=true")
+                            && $0.contains("status=200")
+                    }
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness
+                    .generatedBundleFetchResourceSummary.contains {
+                        $0.contains("b9f569e387bfc3d589be.module.wasm")
+                            && $0.contains(":copied:none")
+                    }
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.webAssemblyCapabilityResult
+                    .contains("instantiate=true")
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.webAssemblyCapabilityResult
+                    .contains("instantiateStreaming=false")
+            )
+            XCTAssertFalse(
+                bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
+                    .contains("fetch remains classified but disabled")
+            )
+            XCTAssertFalse(
+                bitwarden.serviceWorkerEventReadiness.fetchClassificationSummary
+                    .contains { $0.contains("notCopiedGeneratedResource") }
+            )
+            XCTAssertFalse(
+                bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
+                    .contains("chrome.i18n.getUILanguage")
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.i18nCapabilityResult
+                    .contains("getUILanguage=true")
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.i18nCapabilityResult
+                    .contains("getMessage=true")
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.i18nCapabilityResult
+                    .contains("requestedMessages=addCardMenu")
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.alarmPolicyResult
+                    .contains("explicitTriggerOnly=true")
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.alarmPolicyResult
+                    .contains("wallClockScheduling=false")
+            )
+            XCTAssertEqual(
+                bitwarden.serviceWorkerEventReadiness.alarmRecords.map(\.name),
+                ["phishingDomainUpdate"]
+            )
+            XCTAssertEqual(
+                bitwarden.serviceWorkerEventReadiness.alarmRecords.first?
+                    .delayInMinutes,
+                1440
+            )
+            XCTAssertEqual(
+                bitwarden.serviceWorkerEventReadiness.alarmRecords.first?
+                    .periodInMinutes,
+                1440
+            )
+            XCTAssertEqual(
+                bitwarden.serviceWorkerEventReadiness.alarmOperationSummary,
+                [
+                    "create:succeeded:phishingDomainUpdate:none",
+                    "get:succeeded:phishingDomainUpdate:none",
+                ]
+            )
+            XCTAssertEqual(
+                bitwarden.serviceWorkerEventReadiness.alarmDispatchResult,
+                "attempted: result=delivered, alarm=phishingDomainUpdate, event=alarmsOnAlarm."
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.i18nOperationSummary
+                    .contains {
+                        $0.hasPrefix(
+                            "chrome.i18n.getUILanguage:fulfilled:"
+                        )
+                    }
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.i18nOperationSummary
+                    .contains {
+                        $0.hasPrefix(
+                            "chrome.i18n.getMessage:fulfilled:copyPassword:"
+                        )
+                    }
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.fetchClassificationResult
+                    .contains("networkExecution=false")
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.cryptoCapabilityResult
+                    .contains("subtleMethods=digest")
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.jsExecutionPolicy
+                    .webCryptoAvailableInLocalExperimentalGate
+            )
+            XCTAssertFalse(
+                bitwarden.serviceWorkerEventReadiness.jsExecutionPolicy
+                    .webCryptoAvailableByDefault
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness
+                    .cryptoSubtleSupportedAlgorithms.contains("digest:SHA-256")
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness
+                    .cryptoSubtleBlockedAlgorithms.contains("PBKDF2")
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.dynamicImportRewriteResult
+                    .hasPrefix("notRequired:")
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.importScriptsResult
+                    .contains("719.background.js")
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.computedImportScriptsResult
+                    .hasPrefix("resolved:")
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.dependencyInventory
+                    .dynamicImportExpressions.isEmpty
+            )
+            XCTAssertNotEqual(
+                bitwarden.serviceWorkerEventReadiness.executionStartResult?
+                    .exceptionDetails?.classification,
+                .missingWebAPI
+            )
+            XCTAssertNotEqual(
+                bitwarden.serviceWorkerEventReadiness.executionStartResult?
+                    .exceptionDetails?.inferredMissingProperty,
+                "crypto.subtle"
+            )
+            XCTAssertTrue(
+                bitwarden.serviceWorkerEventReadiness.dependencyInventory
+                    .importScriptsCalls.contains {
+                        $0.shape == .concatenation
+                            || $0.shape == .unknownComputed
+                    }
+            )
+        } else {
+            XCTAssertEqual(bitwarden.packageSource, .fixtureFallback)
+            XCTAssertEqual(bitwarden.intake, .fixtureOnly)
+            XCTAssertTrue(
+                bitwarden.packageBlockers.contains { blocker in
+                    let lowercased = blocker.lowercased()
+                    return lowercased.contains("missing")
+                        || lowercased.contains("fixture")
+                        || lowercased.contains("fallback")
                 }
-        )
-        XCTAssertFalse(
-            bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
-                .contains("chrome.i18n.getMessage")
-        )
-        XCTAssertFalse(
-            bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
-                .contains("chrome.alarms.create")
-        )
-        XCTAssertFalse(
-            bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
-                .contains("chrome.alarms.get")
-        )
-        XCTAssertEqual(
-            bitwarden.serviceWorkerEventReadiness.deviceFailureClassification,
-            .resolvedWorkerNavigatorBrowserFamilySignal
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.deviceFailureDetail
-                .contains("without inserting fake device identity")
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.workerNavigatorUserAgentResult
-                .contains("Chrome/0")
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.precedingChromeAPICalls
-                .contains("chrome.i18n.getUILanguage")
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.storageOperationSummary
-                .allSatisfy {
-                    !$0.contains("token")
-                        && !$0.contains("secret")
-                        && !$0.contains("vault")
-                }
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.fetchClassificationSummary
-                .contains {
-                    $0.contains("b9f569e387bfc3d589be.module.wasm")
-                        && $0.contains("allowed=true")
-                        && $0.contains("status=200")
-                }
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness
-                .generatedBundleFetchResourceSummary.contains {
-                    $0.contains("b9f569e387bfc3d589be.module.wasm")
-                        && $0.contains(":copied:none")
-                }
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.webAssemblyCapabilityResult
-                .contains("instantiate=true")
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.webAssemblyCapabilityResult
-                .contains("instantiateStreaming=false")
-        )
-        XCTAssertFalse(
-            bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
-                .contains("fetch remains classified but disabled")
-        )
-        XCTAssertFalse(
-            bitwarden.serviceWorkerEventReadiness.fetchClassificationSummary
-                .contains { $0.contains("notCopiedGeneratedResource") }
-        )
-        XCTAssertFalse(
-            bitwarden.serviceWorkerEventReadiness.nextBlockerDetail
-                .contains("chrome.i18n.getUILanguage")
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.i18nCapabilityResult
-                .contains("getUILanguage=true")
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.i18nCapabilityResult
-                .contains("getMessage=true")
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.i18nCapabilityResult
-                .contains("requestedMessages=addCardMenu")
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.alarmPolicyResult
-                .contains("explicitTriggerOnly=true")
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.alarmPolicyResult
-                .contains("wallClockScheduling=false")
-        )
-        XCTAssertEqual(
-            bitwarden.serviceWorkerEventReadiness.alarmRecords.map(\.name),
-            ["phishingDomainUpdate"]
-        )
-        XCTAssertEqual(
-            bitwarden.serviceWorkerEventReadiness.alarmRecords.first?
-                .delayInMinutes,
-            1440
-        )
-        XCTAssertEqual(
-            bitwarden.serviceWorkerEventReadiness.alarmRecords.first?
-                .periodInMinutes,
-            1440
-        )
-        XCTAssertEqual(
-            bitwarden.serviceWorkerEventReadiness.alarmOperationSummary,
-            [
-                "create:succeeded:phishingDomainUpdate:none",
-                "get:succeeded:phishingDomainUpdate:none",
-            ]
-        )
-        XCTAssertEqual(
-            bitwarden.serviceWorkerEventReadiness.alarmDispatchResult,
-            "attempted: result=delivered, alarm=phishingDomainUpdate, event=alarmsOnAlarm."
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.i18nOperationSummary
-                .contains {
-                    $0.hasPrefix(
-                        "chrome.i18n.getUILanguage:fulfilled:"
-                    )
-                }
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.i18nOperationSummary
-                .contains {
-                    $0.hasPrefix(
-                        "chrome.i18n.getMessage:fulfilled:copyPassword:"
-                    )
-                }
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.fetchClassificationResult
-                .contains("networkExecution=false")
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.cryptoCapabilityResult
-                .contains("subtleMethods=digest")
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.jsExecutionPolicy
-                .webCryptoAvailableInLocalExperimentalGate
-        )
-        XCTAssertFalse(
-            bitwarden.serviceWorkerEventReadiness.jsExecutionPolicy
-                .webCryptoAvailableByDefault
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness
-                .cryptoSubtleSupportedAlgorithms.contains("digest:SHA-256")
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness
-                .cryptoSubtleBlockedAlgorithms.contains("PBKDF2")
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.dynamicImportRewriteResult
-                .hasPrefix("notRequired:")
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.importScriptsResult
-                .contains("719.background.js")
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.computedImportScriptsResult
-                .hasPrefix("resolved:")
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.dependencyInventory
-                .dynamicImportExpressions.isEmpty
-        )
-        XCTAssertNotEqual(
-            bitwarden.serviceWorkerEventReadiness.executionStartResult?
-                .exceptionDetails?.classification,
-            .missingWebAPI
-        )
-        XCTAssertNotEqual(
-            bitwarden.serviceWorkerEventReadiness.executionStartResult?
-                .exceptionDetails?.inferredMissingProperty,
-            "crypto.subtle"
-        )
-        XCTAssertTrue(
-            bitwarden.serviceWorkerEventReadiness.dependencyInventory
-                .importScriptsCalls.contains {
-                    $0.shape == .concatenation
-                        || $0.shape == .unknownComputed
-                }
-        )
+            )
+            XCTAssertEqual(
+                bitwarden.fixtureDelta.fixtureFallbackID,
+                ChromeMV3PasswordManagerRealPackageClass.bitwarden
+                    .fixtureFallbackKind.rawValue
+            )
+        }
         XCTAssertEqual(
             onePassword.serviceWorkerEventReadiness.nextBlockerClassification,
             .moduleWorkerUnsupported
