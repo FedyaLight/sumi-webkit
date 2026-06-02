@@ -182,7 +182,8 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertFalse(row.productSupportClaim)
         XCTAssertEqual(
             row.diagnosticAction.capabilityID,
-            .reviewedGeneratedResourceNormalTabSmoke
+            ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog
+                .reviewedGeneratedResourceNormalTabDiagnosticID
         )
         XCTAssertFalse(row.diagnosticAction.capabilityAvailable)
         XCTAssertFalse(row.diagnosticAction.available)
@@ -359,6 +360,105 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             detail.reviewedResourceDiagnosticAction.lastArtifactPath
         )
         XCTAssertFalse(fixture.module.hasLoadedRuntime)
+    }
+
+    @MainActor
+    func testURLHubListsMultipleReviewedResourceCapabilitiesGenerically()
+        throws
+    {
+        let root = try makeTemporaryDirectory()
+        let module = try makeModule(enabled: true)
+        let bitwardenSource = try makeFixture(
+            named: "urlhub-additive-bitwarden",
+            manifest:
+                bitwardenManualSmokeManifest(name: "urlhub-additive-bitwarden"),
+            files: bitwardenManualSmokeFiles()
+        )
+        let syntheticSource = try makeFixture(
+            named: "urlhub-additive-synthetic",
+            manifest:
+                syntheticReviewedResourceManifest(
+                    name: "urlhub-additive-synthetic"
+                ),
+            files: syntheticReviewedResourceFiles()
+        )
+        let bitwardenInstall = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: bitwardenSource,
+            profileID: "profile-urlhub-additive",
+            enableInternal: true
+        )
+        let syntheticInstall = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: syntheticSource,
+            profileID: "profile-urlhub-additive",
+            enableInternal: true
+        )
+        let bitwardenRecord = try XCTUnwrap(
+            bitwardenInstall.lifecycleOperationResult?.record
+        )
+        let syntheticRecord = try XCTUnwrap(
+            syntheticInstall.lifecycleOperationResult?.record
+        )
+
+        let section = try XCTUnwrap(
+            module.chromeMV3URLHubSectionViewModelIfEnabled(
+                rootURL: root,
+                currentPage:
+                    syntheticPageContext(profileID: "profile-urlhub-additive"),
+                now: fixedDate
+            )
+        )
+
+        XCTAssertEqual(section.rows.count, 2)
+        let rowsByExtension = Dictionary(
+            uniqueKeysWithValues: section.rows.map { ($0.extensionID, $0) }
+        )
+        let bitwardenRow = try XCTUnwrap(
+            rowsByExtension[bitwardenRecord.extensionID]
+        )
+        let syntheticRow = try XCTUnwrap(
+            rowsByExtension[syntheticRecord.extensionID]
+        )
+
+        XCTAssertEqual(
+            bitwardenRow.diagnosticAction.capabilityID,
+            ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog
+                .reviewedGeneratedResourceNormalTabDiagnosticID
+        )
+        XCTAssertEqual(
+            bitwardenRow.diagnosticAction.capability?.fixtureProvenance,
+            "bitwardenCompatibilityFixture"
+        )
+        XCTAssertEqual(
+            syntheticRow.diagnosticAction.capabilityID,
+            ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog
+                .syntheticReviewedResourceNormalTabDiagnosticID
+        )
+        XCTAssertEqual(
+            syntheticRow.diagnosticAction.capability?.fixtureProvenance,
+            "syntheticNonVendorReviewedResourceFixture"
+        )
+        XCTAssertEqual(
+            syntheticRow.diagnosticAction.capability?.reviewedResourcePath,
+            "content/sumi-reviewed-resource-marker.js"
+        )
+        XCTAssertTrue(syntheticRow.diagnosticAction.capabilityAvailable)
+        XCTAssertTrue(syntheticRow.diagnosticAction.available)
+        XCTAssertFalse(section.lifetime.artifactWrittenByReadout)
+        XCTAssertFalse(module.hasLoadedRuntime)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath:
+                    ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifactWriter
+                    .reportURL(
+                        rootURL: root,
+                        profileID: syntheticRecord.profileID,
+                        extensionID: syntheticRecord.extensionID
+                    )
+                    .path
+            )
+        )
     }
 
     @MainActor
@@ -557,6 +657,18 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         ]
     }
 
+    private func syntheticReviewedResourceManifest(name: String) -> [String: Any] {
+        [
+            "manifest_version": 3,
+            "name": "Synthetic \(name)",
+            "version": "1.0.0",
+            "permissions": ["scripting", "activeTab"],
+            "background": [
+                "service_worker": "background.js",
+            ],
+        ]
+    }
+
     private func genericMV3Manifest(name: String) -> [String: Any] {
         [
             "manifest_version": 3,
@@ -587,6 +699,23 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         ]
     }
 
+    private func syntheticReviewedResourceFiles() -> [String: String] {
+        [
+            "background.js": """
+            function runSyntheticReviewedResourceMarker(tabId) {
+              return chrome.scripting.executeScript({
+                target: { tabId, frameIds: [0] },
+                files: ["content/sumi-reviewed-resource-marker.js"],
+                world: "ISOLATED",
+                injectImmediately: true
+              });
+            }
+            """,
+            "content/sumi-reviewed-resource-marker.js":
+                syntheticReviewedResourceMarkerScript(),
+        ]
+    }
+
     private func bitwardenReviewedBootstrapScript() -> String {
         """
         (() => {
@@ -614,6 +743,35 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
           chrome.runtime.connect({ name: "autofill-injected-script-port" });
           window.bitwardenAutofillInit = {
             destroy() { chrome.runtime.onMessage.removeListener(listener); }
+          };
+        })();
+        """
+    }
+
+    private func syntheticReviewedResourceMarkerScript() -> String {
+        """
+        (() => {
+          const marker = globalThis.__sumiSyntheticReviewedResourceMarker || {};
+          const username = document.getElementById("sumi-login-email");
+          const password = document.getElementById("sumi-login-password");
+          if (username && typeof marker.username === "string") {
+            username.value = marker.username;
+            username.dataset.sumiReviewedResourceMarker = "username";
+          }
+          if (password && typeof marker.password === "string") {
+            password.value = marker.password;
+            password.dataset.sumiReviewedResourceMarker = "password";
+          }
+          globalThis.__sumiSyntheticReviewedResourceDiagnostic = {
+            fixture: "sumiSyntheticReviewedResource",
+            touched: [
+              username ? username.id : "missing-username",
+              password ? password.id : "missing-password"
+            ],
+            destroy() {
+              delete globalThis.__sumiSyntheticReviewedResourceDiagnostic;
+              delete globalThis.__sumiSyntheticReviewedResourceMarker;
+            }
           };
         })();
         """

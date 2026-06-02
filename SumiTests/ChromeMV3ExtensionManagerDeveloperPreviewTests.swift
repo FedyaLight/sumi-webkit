@@ -492,6 +492,218 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         XCTAssertFalse(fixture.module.hasLoadedRuntime)
     }
 
+    func testReviewedResourceCapabilityCatalogIsAdditiveAndNonVendor()
+        throws
+    {
+        let registrations =
+            ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog
+            .fixtureRegistrations
+
+        XCTAssertEqual(registrations.count, 2)
+        XCTAssertEqual(
+            Set(registrations.map(\.capabilityID)),
+            [
+                ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog
+                    .reviewedGeneratedResourceNormalTabDiagnosticID,
+                ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog
+                    .syntheticReviewedResourceNormalTabDiagnosticID,
+            ]
+        )
+        XCTAssertEqual(
+            Set(registrations.map(\.reviewedResourcePath)),
+            [
+                "content/bootstrap-autofill.js",
+                "content/sumi-reviewed-resource-marker.js",
+            ]
+        )
+        XCTAssertTrue(registrations.allSatisfy { !$0.productSupportClaim })
+        XCTAssertTrue(registrations.allSatisfy {
+            $0.executionBoundary.isolatedWorldOnly
+                && $0.executionBoundary.topFrameOnly
+                && $0.executionBoundary.normalTabOnly
+                && $0.executionBoundary.syntheticHTTPSOnly
+                && !$0.executionBoundary.fileSchemeAllowed
+                && !$0.executionBoundary.arbitraryScriptingAllowed
+        })
+        let synthetic = try XCTUnwrap(registrations.first {
+            $0.capabilityID
+                == ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog
+                .syntheticReviewedResourceNormalTabDiagnosticID
+        })
+        XCTAssertEqual(
+            synthetic.fixtureProvenance,
+            "syntheticNonVendorReviewedResourceFixture"
+        )
+        XCTAssertFalse(synthetic.fixtureProvenance.contains("bitwarden"))
+        XCTAssertFalse(synthetic.reviewedResourcePath.contains("bitwarden"))
+    }
+
+    @MainActor
+    func testSyntheticReviewedResourceUsesGenericManagerAndURLHubFlow()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Named WKContentWorld execution requires macOS 15.5.")
+        }
+        let fixture = try installSyntheticManualSmokeFixture(
+            named: "manual-smoke-synthetic-reviewed",
+            profileID: "profile-manual-synthetic-reviewed",
+            enableInternal: true
+        )
+        let detail = try XCTUnwrap(
+            fixture.module.chromeMV3ExtensionManagerDetailViewModelIfEnabled(
+                rootURL: fixture.root,
+                profileID: fixture.record.profileID,
+                extensionID: fixture.record.extensionID
+            )
+        )
+        let capability = try XCTUnwrap(
+            detail.reviewedResourceDiagnosticCapabilities.first
+        )
+        let artifactURL =
+            ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifactWriter.reportURL(
+                rootURL: fixture.root,
+                profileID: fixture.record.profileID,
+                extensionID: fixture.record.extensionID
+            )
+        let currentPage = ChromeMV3URLHubCurrentPageContext(
+            profileID: fixture.record.profileID,
+            tabID: "synthetic-reviewed-urlhub-tab",
+            urlString:
+                ChromeMV3URLHubDeveloperPreviewModelBuilder
+                .syntheticDiagnosticURLString,
+            tabSurface: .normalTab
+        )
+        let section = try XCTUnwrap(
+            fixture.module.chromeMV3URLHubSectionViewModelIfEnabled(
+                rootURL: fixture.root,
+                currentPage: currentPage,
+                now: fixedDate
+            )
+        )
+        let row = try XCTUnwrap(section.rows.first)
+
+        XCTAssertEqual(detail.reviewedResourceDiagnosticCapabilities.count, 1)
+        XCTAssertTrue(detail.reviewedResourceDiagnosticAction.available)
+        XCTAssertEqual(
+            capability.capabilityID,
+            ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog
+                .syntheticReviewedResourceNormalTabDiagnosticID
+        )
+        XCTAssertEqual(
+            capability.fixtureProvenance,
+            "syntheticNonVendorReviewedResourceFixture"
+        )
+        XCTAssertEqual(
+            capability.reviewedResourcePath,
+            "content/sumi-reviewed-resource-marker.js"
+        )
+        XCTAssertEqual(capability.generatedResourceStatus, .available)
+        XCTAssertEqual(
+            capability.generatedResourceHash,
+            ChromeMV3LocalExperimentalReviewedResourceRegistry
+                .syntheticReviewedResourceMarker.reviewedSHA256
+        )
+        XCTAssertTrue(capability.sourceGeneratedByteEqual)
+        XCTAssertFalse(capability.productSupportClaim)
+        XCTAssertEqual(row.diagnosticAction.capabilityID, capability.capabilityID)
+        XCTAssertEqual(
+            row.diagnosticAction.capability?.fixtureProvenance,
+            capability.fixtureProvenance
+        )
+        XCTAssertTrue(row.diagnosticAction.available)
+        XCTAssertFalse(section.lifetime.artifactWrittenByReadout)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: artifactURL.path))
+
+        let wrongCapability = await fixture.module
+            .chromeMV3RunReviewedResourceDiagnosticActionThroughManager(
+                rootURL: fixture.root,
+                profileID: fixture.record.profileID,
+                extensionID: fixture.record.extensionID,
+                capabilityID:
+                    ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog
+                    .reviewedGeneratedResourceNormalTabDiagnosticID,
+                now: { self.fixedDate }
+            )
+
+        XCTAssertEqual(wrongCapability.status, .blocked)
+        XCTAssertNil(wrongCapability.reviewedResourceDiagnosticResult)
+        XCTAssertNil(wrongCapability.reviewedResourceDiagnosticArtifact)
+        XCTAssertTrue(wrongCapability.blockedDiagnostics.contains {
+            $0.message.contains("not registered for this generated resource")
+        })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: artifactURL.path))
+        assertNoRuntimeSideEffects(wrongCapability, module: fixture.module)
+
+        let diagnostic = await fixture.module
+            .chromeMV3RunReviewedResourceDiagnosticActionThroughURLHub(
+                rootURL: fixture.root,
+                profileID: fixture.record.profileID,
+                extensionID: fixture.record.extensionID,
+                capabilityID: capability.capabilityID,
+                currentPage: currentPage,
+                now: { self.fixedDate }
+            )
+        let artifact = try XCTUnwrap(
+            diagnostic.reviewedResourceDiagnosticArtifact
+        )
+        let artifactString =
+            String(data: try Data(contentsOf: artifactURL), encoding: .utf8)
+                ?? ""
+
+        XCTAssertTrue(
+            diagnostic.succeeded,
+            diagnostic.diagnostics.joined(separator: "\n")
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: artifactURL.path))
+        XCTAssertEqual(artifact.schemaVersion, 2)
+        XCTAssertEqual(artifact.capabilityID, capability.capabilityID)
+        XCTAssertEqual(
+            artifact.fixtureProvenance,
+            "syntheticNonVendorReviewedResourceFixture"
+        )
+        XCTAssertEqual(
+            artifact.artifactOutputKind,
+            "reviewedResourceDiagnosticActionArtifact"
+        )
+        XCTAssertFalse(artifact.productSupportClaim)
+        XCTAssertEqual(
+            artifact.reviewedResourcePath,
+            "content/sumi-reviewed-resource-marker.js"
+        )
+        XCTAssertEqual(
+            artifact.reviewedResourceHash,
+            ChromeMV3LocalExperimentalReviewedResourceRegistry
+                .syntheticReviewedResourceMarker.reviewedSHA256
+        )
+        XCTAssertEqual(artifact.generatedResourceHash, artifact.reviewedResourceHash)
+        XCTAssertEqual(artifact.sourceResourceHash, artifact.generatedResourceHash)
+        XCTAssertTrue(artifact.sourceGeneratedByteEqual)
+        XCTAssertEqual(artifact.previousReviewedHashes, [])
+        XCTAssertEqual(artifact.fieldsTouched, [
+            "sumi-login-email",
+            "sumi-login-password",
+        ])
+        XCTAssertTrue(artifact.teardownCompleted)
+        XCTAssertEqual(artifact.retainedObjectCount, 0)
+        XCTAssertTrue(artifact.actionManualOnly)
+        XCTAssertFalse(artifact.managerReadoutExecutedSmoke)
+        XCTAssertTrue(artifact.noRealSecrets)
+        XCTAssertTrue(artifact.noRawCredentials)
+        XCTAssertTrue(artifact.noRealWebsiteData)
+        XCTAssertFalse(
+            artifact.runtimeBehaviorIntentionallyUnchanged
+                .productRuntimeExposed
+        )
+        XCTAssertFalse(
+            artifact.runtimeBehaviorIntentionallyUnchanged
+                .arbitraryScriptingEnabled
+        )
+        XCTAssertFalse(artifactString.contains("masterPassword"))
+        XCTAssertFalse(artifactString.contains("accessToken"))
+        assertNoRuntimeSideEffects(diagnostic, module: fixture.module)
+    }
+
     func testManualSmokeArtifactSchemaRequiresVersionAndToleratesEvolution()
         throws
     {
@@ -1777,6 +1989,33 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         )
     }
 
+    @MainActor
+    private func installSyntheticManualSmokeFixture(
+        named name: String,
+        profileID: String,
+        enableInternal: Bool
+    ) throws -> InstalledManagerFixture {
+        let root = try makeTemporaryDirectory()
+        let source = try makeFixture(
+            named: name,
+            manifest: syntheticReviewedResourceManifest(name: name),
+            files: syntheticReviewedResourceFiles()
+        )
+        let module = try makeModule(enabled: true)
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: source,
+            profileID: profileID,
+            enableInternal: enableInternal
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+        return InstalledManagerFixture(
+            root: root,
+            module: module,
+            record: record
+        )
+    }
+
     private func bitwardenManualSmokeManifest(name: String) -> [String: Any] {
         [
             "manifest_version": 3,
@@ -1797,6 +2036,18 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         ]
     }
 
+    private func syntheticReviewedResourceManifest(name: String) -> [String: Any] {
+        [
+            "manifest_version": 3,
+            "name": "Synthetic \(name)",
+            "version": "1.0.0",
+            "permissions": ["scripting", "activeTab"],
+            "background": [
+                "service_worker": "background.js",
+            ],
+        ]
+    }
+
     private func bitwardenManualSmokeFiles() -> [String: String] {
         [
             "background.js": """
@@ -1813,6 +2064,23 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
             chrome.runtime.sendMessage({ command: "triggerAutofillScriptInjection" });
             """,
             "content/bootstrap-autofill.js": bitwardenReviewedBootstrapScript(),
+        ]
+    }
+
+    private func syntheticReviewedResourceFiles() -> [String: String] {
+        [
+            "background.js": """
+            function runSyntheticReviewedResourceMarker(tabId) {
+              return chrome.scripting.executeScript({
+                target: { tabId, frameIds: [0] },
+                files: ["content/sumi-reviewed-resource-marker.js"],
+                world: "ISOLATED",
+                injectImmediately: true
+              });
+            }
+            """,
+            "content/sumi-reviewed-resource-marker.js":
+                syntheticReviewedResourceMarkerScript(),
         ]
     }
 
@@ -1843,6 +2111,35 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
           chrome.runtime.connect({ name: "autofill-injected-script-port" });
           window.bitwardenAutofillInit = {
             destroy() { chrome.runtime.onMessage.removeListener(listener); }
+          };
+        })();
+        """
+    }
+
+    private func syntheticReviewedResourceMarkerScript() -> String {
+        """
+        (() => {
+          const marker = globalThis.__sumiSyntheticReviewedResourceMarker || {};
+          const username = document.getElementById("sumi-login-email");
+          const password = document.getElementById("sumi-login-password");
+          if (username && typeof marker.username === "string") {
+            username.value = marker.username;
+            username.dataset.sumiReviewedResourceMarker = "username";
+          }
+          if (password && typeof marker.password === "string") {
+            password.value = marker.password;
+            password.dataset.sumiReviewedResourceMarker = "password";
+          }
+          globalThis.__sumiSyntheticReviewedResourceDiagnostic = {
+            fixture: "sumiSyntheticReviewedResource",
+            touched: [
+              username ? username.id : "missing-username",
+              password ? password.id : "missing-password"
+            ],
+            destroy() {
+              delete globalThis.__sumiSyntheticReviewedResourceDiagnostic;
+              delete globalThis.__sumiSyntheticReviewedResourceMarker;
+            }
           };
         })();
         """

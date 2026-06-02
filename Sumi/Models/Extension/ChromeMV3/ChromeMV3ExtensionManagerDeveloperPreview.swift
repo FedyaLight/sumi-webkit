@@ -739,6 +739,8 @@ struct ChromeMV3ReviewedResourceDiagnosticCapability:
 enum ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog {
     static let reviewedGeneratedResourceNormalTabDiagnosticID =
         "reviewedGeneratedResourceNormalTabDiagnostic"
+    static let syntheticReviewedResourceNormalTabDiagnosticID =
+        "syntheticReviewedResourceNormalTabDiagnostic"
     static let notProductSupportLabel =
         "Diagnostic only - not product support"
 
@@ -774,8 +776,38 @@ enum ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog {
                     arbitraryScriptingAllowed: false
                 )
         )
+    static let syntheticReviewedResourceMarkerFixture =
+        ChromeMV3ReviewedResourceDiagnosticFixtureRegistration(
+            capabilityID: syntheticReviewedResourceNormalTabDiagnosticID,
+            displayLabel: "Run synthetic reviewed-resource diagnostic",
+            fixtureProvenance: "syntheticNonVendorReviewedResourceFixture",
+            reviewedResourcePath:
+                ChromeMV3LocalExperimentalReviewedResourceRegistry
+                .syntheticReviewedResourceMarker.resourcePath,
+            reviewedResourceHash:
+                ChromeMV3LocalExperimentalReviewedResourceRegistry
+                .syntheticReviewedResourceMarker.reviewedSHA256,
+            previousReviewedHashes: [],
+            artifactOutputKind:
+                "reviewedResourceDiagnosticActionArtifact",
+            localExperimentalLabel:
+                "Local experimental synthetic reviewed-resource diagnostic",
+            productSupportClaim: false,
+            executionBoundary:
+                ChromeMV3ReviewedResourceDiagnosticExecutionBoundary(
+                    isolatedWorldOnly: true,
+                    topFrameOnly: true,
+                    normalTabOnly: true,
+                    syntheticHTTPSOnly: true,
+                    fileSchemeAllowed: false,
+                    aboutBlankAllowed: false,
+                    matchOriginAsFallbackAllowed: false,
+                    arbitraryScriptingAllowed: false
+                )
+        )
     static let fixtureRegistrations = [
         bitwardenBootstrapAutofillFixture,
+        syntheticReviewedResourceMarkerFixture,
     ]
 
     static func reviewedResource(
@@ -845,8 +877,6 @@ enum ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog {
                 ? nil : "extensionInternalRecordDisabled",
             status == .available
                 ? nil : "generatedResource.\(status.rawValue)",
-            readiness.preflight.reviewedResource.present
-                ? nil : "reviewedGeneratedResourceMissing",
         ].compactMap { $0 }.sorted()
         return ChromeMV3ReviewedResourceDiagnosticCapability(
             extensionID: record.extensionID,
@@ -1676,8 +1706,7 @@ struct ChromeMV3ExtensionManagerReviewedResourceDiagnosticActionRecord:
             diagnostics.append(.reviewedResourceDiagnosticExtensionDisabled)
         }
         if capability?.actionAvailable != true
-            || readiness.preflight.reviewedResource.present == false
-            || readiness.preflight.reviewedResource.generatedResourceHash == nil
+            || capability?.generatedResourceHash == nil
         {
             diagnostics.append(.reviewedResourceDiagnosticReviewedFileMissing)
         }
@@ -1708,10 +1737,14 @@ struct ChromeMV3ExtensionManagerReviewedResourceDiagnosticActionRecord:
                 "localExperimentalManagerGateOpen": localExperimentalGateOpen,
                 "extensionInternalRecordEnabled":
                     record.runtimeState.internalRuntimeEnabled,
+                "reviewedResourcePresent":
+                    capability?.generatedResourceStatus == .available,
+                "reviewedResourceHashRecorded":
+                    capability?.generatedResourceHash != nil,
                 "reviewedBootstrapPresent":
-                    readiness.preflight.reviewedResource.present,
+                    capability?.generatedResourceStatus == .available,
                 "reviewedBootstrapHashRecorded":
-                    readiness.preflight.reviewedResource.generatedResourceHash != nil,
+                    capability?.generatedResourceHash != nil,
                 "reviewedResourceCapabilityRegistered": capability != nil,
                 "reviewedResourceHashMatched":
                     capability?.generatedResourceStatus == .available,
@@ -4054,12 +4087,27 @@ enum ChromeMV3ExtensionManagerActionRunner {
                 )
         )
         guard action.available,
-              let capability = action.capability,
-              capability.capabilityID == capabilityID
+              let capability = action.capability
         else {
             return .blocked(
                 action: .runReviewedResourceDiagnosticAction,
                 diagnostics: action.unavailableDiagnostics
+            )
+        }
+        guard capability.capabilityID == capabilityID else {
+            return .blocked(
+                action: .runReviewedResourceDiagnosticAction,
+                diagnostics: [
+                    .make(
+                        .reviewedResourceDiagnosticUnavailable,
+                        severity: .productBlocked,
+                        message:
+                            "Reviewed-resource diagnostic capability ID '\(capabilityID)' is not registered for this generated resource.",
+                        remediation:
+                            "Invoke the catalog capability ID '\(capability.capabilityID)' discovered from the reviewed generated resource."
+                    ),
+                    .reviewedResourceDiagnosticNotProductSupport,
+                ]
             )
         }
 

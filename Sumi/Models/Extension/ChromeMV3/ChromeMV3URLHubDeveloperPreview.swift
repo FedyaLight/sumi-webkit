@@ -194,22 +194,8 @@ struct ChromeMV3URLHubDiagnosticAction:
     Equatable,
     Sendable
 {
-    enum Capability:
-        String,
-        Codable,
-        CaseIterable,
-        Comparable,
-        Sendable
-    {
-        case reviewedGeneratedResourceNormalTabSmoke
-
-        static func < (lhs: Capability, rhs: Capability) -> Bool {
-            lhs.rawValue < rhs.rawValue
-        }
-    }
-
     var actionID: ChromeMV3ExtensionManagerActionKind
-    var capabilityID: Capability
+    var capabilityID: String
     var capability: ChromeMV3ReviewedResourceDiagnosticCapability?
     var capabilityAvailable: Bool
     var title: String
@@ -698,7 +684,10 @@ enum ChromeMV3URLHubDeveloperPreviewModelBuilder {
                 : managerAction.lastBlockers.isEmpty
         return ChromeMV3URLHubDiagnosticAction(
             actionID: .runReviewedResourceDiagnosticAction,
-            capabilityID: .reviewedGeneratedResourceNormalTabSmoke,
+            capabilityID:
+                managerAction.capability?.capabilityID
+                    ?? ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog
+                    .reviewedGeneratedResourceNormalTabDiagnosticID,
             capability: capability,
             capabilityAvailable: capabilityAvailable,
             title:
@@ -779,6 +768,7 @@ extension SumiExtensionsModule {
         }
 
         guard row.diagnosticAction.available,
+              row.diagnosticAction.capabilityID == capabilityID,
               row.diagnosticAction.capability?.capabilityID == capabilityID
         else {
             return .blocked(

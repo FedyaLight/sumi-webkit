@@ -2,8 +2,8 @@
 //  ChromeMV3LocalExperimentalProgrammaticInjection.swift
 //  Sumi
 //
-//  Narrow local-only modeled programmatic injection for the reviewed Bitwarden
-//  detect/fill bootstrap shape. This does not expose arbitrary script execution.
+//  Narrow local-only modeled programmatic injection for reviewed diagnostic
+//  generated resources. This does not expose arbitrary script execution.
 //
 
 import CryptoKit
@@ -95,10 +95,9 @@ struct ChromeMV3LocalExperimentalProgrammaticInjectionPolicy:
         isolatedWorldOnly: true,
         topFrameOnly: true,
         generatedBundleFilesOnly: true,
-        allowedGeneratedBundleFiles: [
+        allowedGeneratedBundleFiles:
             ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
-                .bitwardenDetectFillBootstrapFile,
-        ],
+            .reviewedGeneratedBundleResourceAllowlist,
         arbitraryFunctionInjectionAllowed: false,
         argumentsAllowed: false,
         mainWorldAllowed: false,
@@ -169,6 +168,42 @@ enum ChromeMV3LocalExperimentalReviewedResourceRegistry {
                 "synthetic HTTPS only",
             ]
         )
+
+    static let syntheticReviewedResourceMarker =
+        ChromeMV3LocalExperimentalReviewedResourceRecord(
+            resourcePath:
+                ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
+                .syntheticReviewedResourceMarkerFile,
+            reviewedSHA256:
+                "4e43384cab92e840effc30c2c5e128a1a8a48fb8587cf799349e8c35938f6b9e",
+            previousReviewedSHA256: nil,
+            reviewReason: "syntheticNonVendorReviewedResourceFixture",
+            packageName: "Sumi Synthetic Reviewed Resource Fixture",
+            packageVersion: "1.0.0",
+            shapeSummary: [
+                "resourcePath=content/sumi-reviewed-resource-marker.js",
+                "generated-bundle-contained",
+                "package-owned",
+                "non-vendor synthetic fixture",
+                "dummy DOM marker only",
+                "no function injection",
+                "no args",
+                "isolated world",
+                "top frame",
+                "synthetic HTTPS only",
+            ]
+        )
+
+    static let records = [
+        bitwardenBootstrapAutofill,
+        syntheticReviewedResourceMarker,
+    ]
+
+    static func record(
+        forResourcePath path: String
+    ) -> ChromeMV3LocalExperimentalReviewedResourceRecord? {
+        records.first { $0.resourcePath == path }
+    }
 }
 
 struct ChromeMV3LocalExperimentalProgrammaticInjectionResourceResolution:
@@ -398,7 +433,11 @@ final class ChromeMV3LocalExperimentalProgrammaticInjectionSession {
         if request.injectImmediately == false {
             blockers.append(.injectImmediatelyRequired)
         }
-        if request.files != policy.allowedGeneratedBundleFiles {
+        if request.files.count != 1
+            || request.files.first.map({
+                policy.allowedGeneratedBundleFiles.contains($0)
+            }) != true
+        {
             blockers.append(.unsupportedTargetShape)
         }
         if audit.packageShapeMatched == false {
@@ -464,9 +503,8 @@ final class ChromeMV3LocalExperimentalProgrammaticInjectionSession {
         var blockers:
             [ChromeMV3LocalExperimentalProgrammaticInjectionBlocker] = []
         let lowercased = requestedPath.lowercased()
-        if requestedPath
-            != ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
-                .bitwardenDetectFillBootstrapFile
+        if ChromeMV3LocalExperimentalReviewedResourceRegistry
+            .record(forResourcePath: requestedPath) == nil
         {
             blockers.append(.reviewedGeneratedBundleFileRequired)
         }
@@ -629,21 +667,44 @@ enum ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog {
         "content/bootstrap-autofill.js"
     static let bitwardenTriggerFile =
         "content/trigger-autofill-script-injection.js"
+    static let syntheticReviewedResourceMarkerFile =
+        "content/sumi-reviewed-resource-marker.js"
+
+    static var reviewedGeneratedBundleResourceAllowlist: [String] {
+        ChromeMV3LocalExperimentalReviewedResourceRegistry.records
+            .map(\.resourcePath)
+            .sorted()
+    }
 
     static func reviewedGeneratedBundleResourcePaths(
         manifest: [String: Any],
         originalRootURL: URL
     ) -> [String] {
-        guard exactBitwardenDetectFillShapePresent(
+        var paths: [String] = []
+        if exactBitwardenDetectFillShapePresent(
             manifest: manifest,
             rootURL: originalRootURL
-        ) else { return [] }
-        return [bitwardenDetectFillBootstrapFile]
+        ) {
+            paths.append(bitwardenDetectFillBootstrapFile)
+        }
+        if exactSyntheticReviewedResourceMarkerShapePresent(
+            manifest: manifest,
+            rootURL: originalRootURL
+        ) {
+            paths.append(syntheticReviewedResourceMarkerFile)
+        }
+        return Array(Set(paths)).sorted()
     }
 
     static func audit(
         _ request: ChromeMV3LocalExperimentalProgrammaticInjectionRequest
     ) -> ChromeMV3LocalExperimentalProgrammaticInjectionShapeAudit {
+        guard request.files == [bitwardenDetectFillBootstrapFile] else {
+            if request.files == [syntheticReviewedResourceMarkerFile] {
+                return syntheticReviewedResourceMarkerAudit(request)
+            }
+            return unsupportedReviewedResourceAudit(request)
+        }
         let root = request.packageRootPath.map {
             URL(fileURLWithPath: $0, isDirectory: true)
         }
@@ -835,6 +896,230 @@ enum ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog {
         )
     }
 
+    private static func syntheticReviewedResourceMarkerAudit(
+        _ request: ChromeMV3LocalExperimentalProgrammaticInjectionRequest
+    ) -> ChromeMV3LocalExperimentalProgrammaticInjectionShapeAudit {
+        let root = request.packageRootPath.map {
+            URL(fileURLWithPath: $0, isDirectory: true)
+        }
+        let reviewedRecord =
+            ChromeMV3LocalExperimentalReviewedResourceRegistry
+            .syntheticReviewedResourceMarker
+        let background = root.flatMap {
+            read($0.appendingPathComponent("background.js"))
+        } ?? ""
+        let sourceURL = root?
+            .appendingPathComponent(syntheticReviewedResourceMarkerFile)
+            .standardizedFileURL
+        let sourceData = sourceURL.flatMap { readData($0) }
+        let source = sourceData.flatMap {
+            String(data: $0, encoding: .utf8)
+        } ?? ""
+        let generatedRootURL = request.generatedBundle.rootPath.map {
+            URL(fileURLWithPath: $0, isDirectory: true)
+                .standardizedFileURL
+        }
+        let generatedURL = generatedRootURL?
+            .appendingPathComponent(syntheticReviewedResourceMarkerFile)
+            .standardizedFileURL
+        let generatedBundleContained =
+            request.generatedBundle.copiedResourcePaths.contains(
+                syntheticReviewedResourceMarkerFile
+            )
+                && generatedRootURL.map { root in
+                    generatedURL.map {
+                        contains(root: root, candidate: $0)
+                    } ?? false
+                } == true
+        let generatedData =
+            generatedBundleContained
+                ? generatedURL.flatMap { readData($0) }
+                : nil
+        let sourceSHA256 = sourceData.map(sha256)
+        let generatedSHA256 = generatedData.map(sha256)
+        let sourceAndGeneratedByteEqual =
+            sourceData != nil
+                && generatedData != nil
+                && sourceData == generatedData
+        let manifestURL = root?.appendingPathComponent("manifest.json")
+        let manifestData = manifestURL.flatMap { readData($0) }
+        let manifestMetadata = metadata(fromManifestData: manifestData)
+        let reviewedResourcePathExact =
+            request.files == [syntheticReviewedResourceMarkerFile]
+        let packageOwnedFiles =
+            reviewedResourcePathExact && source.isEmpty == false
+        let basePackageShapeMatched =
+            background.contains("chrome.scripting.executeScript")
+                && background.contains(syntheticReviewedResourceMarkerFile)
+                && source.contains("__sumiSyntheticReviewedResourceMarker")
+                && source.contains("__sumiSyntheticReviewedResourceDiagnostic")
+                && source.contains("sumi-login-email")
+                && source.contains("sumi-login-password")
+        let noRemoteScript =
+            source.contains("document.createElement(\"script") == false
+                && source.contains("document.createElement('script") == false
+        let noRuntimeGeneratedJS =
+            source.contains("eval(") == false
+                && source.contains("new Function(") == false
+                && source.contains("import(") == false
+        let noNetworkAuthNativeHostRequirement =
+            source.contains("fetch(") == false
+                && source.contains("XMLHttpRequest") == false
+                && source.contains("WebSocket") == false
+                && source.contains("connect" + "Native") == false
+                && source.contains("send" + "NativeMessage") == false
+        let compatibleWithIsolatedTopFrameSyntheticHTTPS =
+            request.world == "ISOLATED"
+                && request.frameIDs == [0]
+                && request.allFrames == false
+                && (request.functionSource?.isEmpty ?? true)
+                && request.arguments.isEmpty
+                && URL(string: request.targetURL)?.scheme?.lowercased()
+                    == "https"
+                && request.targetURL == request.syntheticLoginURL
+        var shapeBlockers: [String] = []
+        if reviewedResourcePathExact == false {
+            shapeBlockers.append("reviewedResourcePathChanged")
+        }
+        if generatedBundleContained == false {
+            shapeBlockers.append("generatedBundleContainmentMissing")
+        }
+        if sourceAndGeneratedByteEqual == false {
+            shapeBlockers.append("sourceGeneratedCopyMismatch")
+        }
+        if basePackageShapeMatched == false {
+            shapeBlockers.append("reviewedShapeChanged")
+        }
+        if noRemoteScript == false {
+            shapeBlockers.append("remoteScriptInjectionDetected")
+        }
+        if noRuntimeGeneratedJS == false {
+            shapeBlockers.append("runtimeGeneratedJavaScriptDetected")
+        }
+        if noNetworkAuthNativeHostRequirement == false {
+            shapeBlockers.append("networkAuthOrNativeHostRequirementDetected")
+        }
+        if compatibleWithIsolatedTopFrameSyntheticHTTPS == false {
+            shapeBlockers.append("isolatedTopFrameSyntheticHTTPSShapeChanged")
+        }
+        let shapeEquivalentToReviewedRecord = shapeBlockers.isEmpty
+        let reviewedResourceAudit =
+            ChromeMV3LocalExperimentalReviewedResourceAudit(
+                resourcePath: syntheticReviewedResourceMarkerFile,
+                sourcePackagePath: sourceURL?.path,
+                generatedResourcePath: generatedURL?.path,
+                sourcePackageSHA256: sourceSHA256,
+                generatedResourceSHA256: generatedSHA256,
+                expectedReviewedSHA256: reviewedRecord.reviewedSHA256,
+                previousReviewedSHA256:
+                    reviewedRecord.previousReviewedSHA256,
+                manifestSHA256: manifestData.map(sha256),
+                packageName: manifestMetadata.name,
+                packageVersion: manifestMetadata.version,
+                sourceAndGeneratedByteEqual: sourceAndGeneratedByteEqual,
+                generatedBundleContained: generatedBundleContained,
+                reviewedResourcePathExact: reviewedResourcePathExact,
+                packageOwned: packageOwnedFiles && generatedBundleContained,
+                noRemoteScript: noRemoteScript,
+                noRuntimeGeneratedJS: noRuntimeGeneratedJS,
+                noNetworkAuthNativeHostRequirement:
+                    noNetworkAuthNativeHostRequirement,
+                compatibleWithIsolatedTopFrameSyntheticHTTPS:
+                    compatibleWithIsolatedTopFrameSyntheticHTTPS,
+                shapeEquivalentToReviewedRecord:
+                    shapeEquivalentToReviewedRecord,
+                reviewReason: reviewedRecord.reviewReason,
+                shapeBlockers: shapeBlockers.sorted(),
+                diagnostics: [
+                    "Reviewed resource audit reason: \(reviewedRecord.reviewReason).",
+                    "Reviewed resource expected SHA-256: \(reviewedRecord.reviewedSHA256).",
+                    "Previous reviewed SHA-256: \(reviewedRecord.previousReviewedSHA256 ?? "none").",
+                    "Source package SHA-256: \(sourceSHA256 ?? "missing").",
+                    "Generated resource SHA-256: \(generatedSHA256 ?? "missing").",
+                    "Source/generated byte-equal: \(sourceAndGeneratedByteEqual).",
+                    "Package metadata: name=\(manifestMetadata.name ?? "unknown"), version=\(manifestMetadata.version ?? "unknown").",
+                    shapeEquivalentToReviewedRecord
+                        ? "Synthetic reviewed resource shape is equivalent to the local experimental reviewed record."
+                        : "Synthetic reviewed resource shape is blocked pending review: \(shapeBlockers.sorted().joined(separator: ", ")).",
+                ]
+            )
+        return ChromeMV3LocalExperimentalProgrammaticInjectionShapeAudit(
+            apiUsed: "chrome.scripting.executeScript",
+            sourceFile: "background.js",
+            sourceChunk:
+                "runtime.background synthetic reviewed-resource diagnostic marker file",
+            callLocation:
+                "service-worker-triggered package-owned file injection for \(syntheticReviewedResourceMarkerFile)",
+            legacyTabsInjectionPresent:
+                background.contains("chrome.tabs.executeScript"),
+            internalInjectedScriptBridgePresent: false,
+            contentScriptDOMInjectionPresent:
+                source.contains("__sumiSyntheticReviewedResourceDiagnostic"),
+            otherInjectionPresent: false,
+            packageOwnedFiles: packageOwnedFiles,
+            packageOwnedFunction: false,
+            packageShapeMatched: basePackageShapeMatched,
+            reviewedBootstrapSHA256: generatedSHA256,
+            reviewedResourceAudit: reviewedResourceAudit,
+            tabID: request.tabID,
+            frameIDs: request.frameIDs,
+            allFrames: request.allFrames,
+            world: request.world,
+            files: request.files,
+            functionInjected: request.functionSource?.isEmpty == false,
+            argumentCount: request.arguments.count,
+            injectImmediately: request.injectImmediately,
+            generatedBundleFilesOnly: true,
+            syntheticLoginTarget:
+                request.targetURL == request.syntheticLoginURL,
+            hostPermissionOrActiveTabAllowed:
+                request.hostPermissionOrActiveTabAllowed,
+            diagnostics: [
+                basePackageShapeMatched
+                    ? "Matched the reviewed synthetic non-vendor marker resource shape."
+                    : "Did not match the reviewed synthetic non-vendor marker resource shape.",
+                "Reviewed resource source/generated equality recorded as \(sourceAndGeneratedByteEqual).",
+                "Reviewed resource audit blockers: \(shapeBlockers.sorted().joined(separator: ", ")).",
+            ]
+        )
+    }
+
+    private static func unsupportedReviewedResourceAudit(
+        _ request: ChromeMV3LocalExperimentalProgrammaticInjectionRequest
+    ) -> ChromeMV3LocalExperimentalProgrammaticInjectionShapeAudit {
+        ChromeMV3LocalExperimentalProgrammaticInjectionShapeAudit(
+            apiUsed: "unsupportedReviewedResource",
+            sourceFile: "unsupportedReviewedResource",
+            sourceChunk: "unsupportedReviewedResource",
+            callLocation: "unsupportedReviewedResource",
+            legacyTabsInjectionPresent: false,
+            internalInjectedScriptBridgePresent: false,
+            contentScriptDOMInjectionPresent: false,
+            otherInjectionPresent: false,
+            packageOwnedFiles: false,
+            packageOwnedFunction: false,
+            packageShapeMatched: false,
+            reviewedBootstrapSHA256: nil,
+            reviewedResourceAudit: nil,
+            tabID: request.tabID,
+            frameIDs: request.frameIDs,
+            allFrames: request.allFrames,
+            world: request.world,
+            files: request.files,
+            functionInjected: request.functionSource?.isEmpty == false,
+            argumentCount: request.arguments.count,
+            injectImmediately: request.injectImmediately,
+            generatedBundleFilesOnly: true,
+            syntheticLoginTarget:
+                request.targetURL == request.syntheticLoginURL,
+            hostPermissionOrActiveTabAllowed:
+                request.hostPermissionOrActiveTabAllowed,
+            diagnostics: [
+                "Requested generated-bundle file is not registered as a reviewed diagnostic resource.",
+            ]
+        )
+    }
+
     private static func exactBitwardenDetectFillShapePresent(
         manifest: [String: Any],
         rootURL: URL
@@ -857,6 +1142,26 @@ enum ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog {
                 read(rootURL.appendingPathComponent(bitwardenDetectFillBootstrapFile)),
             bootstrap.contains("collectPageDetailsImmediately"),
             bootstrap.contains("fillForm")
+        else { return false }
+        return true
+    }
+
+    private static func exactSyntheticReviewedResourceMarkerShapePresent(
+        manifest: [String: Any],
+        rootURL: URL
+    ) -> Bool {
+        guard
+            let background = manifest["background"] as? [String: Any],
+            background["service_worker"] as? String == "background.js",
+            let worker = read(rootURL.appendingPathComponent("background.js")),
+            worker.contains("chrome.scripting.executeScript"),
+            worker.contains(syntheticReviewedResourceMarkerFile),
+            let marker =
+                read(rootURL.appendingPathComponent(syntheticReviewedResourceMarkerFile)),
+            marker.contains("__sumiSyntheticReviewedResourceMarker"),
+            marker.contains("__sumiSyntheticReviewedResourceDiagnostic"),
+            marker.contains("sumi-login-email"),
+            marker.contains("sumi-login-password")
         else { return false }
         return true
     }

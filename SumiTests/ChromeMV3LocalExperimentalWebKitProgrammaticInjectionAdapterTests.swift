@@ -196,6 +196,54 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
     }
 
     @MainActor
+    func testManualNormalTabSmokeExecutesSyntheticReviewedMarkerFixture()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Named WKContentWorld execution requires macOS 15.5.")
+        }
+        let result = await
+            ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter
+            .runManualNormalTabSmoke(
+                try makeSyntheticFixture().manualSmokeRequest()
+            )
+
+        XCTAssertTrue(result.allowed, "\(result.blockers): \(result.diagnostics)")
+        XCTAssertEqual(
+            result.injectionPlan.reviewedScriptPath,
+            "content/sumi-reviewed-resource-marker.js"
+        )
+        XCTAssertTrue(result.reviewedScriptExecutedByWebKit)
+        XCTAssertTrue(result.fixedHarnessShimInstalled)
+        XCTAssertTrue(result.fixedDetectFillDispatchCompleted)
+        XCTAssertEqual(result.fieldsTouched, [
+            "sumi-login-email",
+            "sumi-login-password",
+        ])
+        XCTAssertEqual(
+            result.domObservationAfter.usernameValue,
+            "sumi-test-user@example.test"
+        )
+        XCTAssertEqual(
+            result.domObservationAfter.passwordValue,
+            "sumi-test-password-not-secret"
+        )
+        XCTAssertTrue(result.domObservationAfter.finalValuesMatchDummyFill)
+        XCTAssertTrue(result.teardown.completed)
+        XCTAssertEqual(result.teardown.retainedObjectCountAfterTeardown, 0)
+        XCTAssertTrue(
+            result.teardown.endpointsCreated.contains(
+                "synthetic reviewed-resource marker object"
+            )
+        )
+        XCTAssertFalse(result.teardown.endpointsCreated.contains {
+            $0.contains("Bitwarden")
+        })
+        XCTAssertTrue(result.thrownErrors.isEmpty)
+        XCTAssertEqual(result.webKitExecutionResult, "pass")
+    }
+
+    @MainActor
     func testProductNormalTabExecutionExperimentUsesReviewedHashAndReportsCost()
         async throws
     {
@@ -908,6 +956,40 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
         return Fixture(package: package, generated: generated)
     }
 
+    private func makeSyntheticFixture() throws -> Fixture {
+        let root = try temporaryDirectory()
+        let package = root.appendingPathComponent("package", isDirectory: true)
+        let generated =
+            root.appendingPathComponent("generated", isDirectory: true)
+        try write(
+            "chrome.scripting.executeScript({files:['content/sumi-reviewed-resource-marker.js']});",
+            to: package.appendingPathComponent("background.js")
+        )
+        try write(
+            syntheticReviewedResourceMarkerScript,
+            to:
+                package.appendingPathComponent(
+                    "content/sumi-reviewed-resource-marker.js"
+                )
+        )
+        try write(
+            syntheticReviewedResourceMarkerScript,
+            to:
+                generated.appendingPathComponent(
+                    "content/sumi-reviewed-resource-marker.js"
+                )
+        )
+        try write(
+            "not reviewed",
+            to: generated.appendingPathComponent("content/not-reviewed.js")
+        )
+        return Fixture(
+            package: package,
+            generated: generated,
+            reviewedResourcePath: "content/sumi-reviewed-resource-marker.js"
+        )
+    }
+
     private func write(_ contents: String, to url: URL) throws {
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),
@@ -936,6 +1018,7 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
     private struct Fixture {
         var package: URL
         var generated: URL
+        var reviewedResourcePath: String = "content/bootstrap-autofill.js"
 
         func modeledRequest()
             -> ChromeMV3LocalExperimentalProgrammaticInjectionRequest
@@ -950,7 +1033,7 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
                         recordAvailable: true,
                         rootPath: generated.path,
                         copiedResourcePaths: [
-                            "content/bootstrap-autofill.js",
+                            reviewedResourcePath,
                             "content/not-reviewed.js",
                         ]
                     ),
@@ -961,7 +1044,7 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
                 frameIDs: [0],
                 allFrames: false,
                 world: "ISOLATED",
-                files: ["content/bootstrap-autofill.js"],
+                files: [reviewedResourcePath],
                 functionSource: nil,
                 arguments: [],
                 injectImmediately: true,
@@ -1042,7 +1125,7 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
                 .generatedResourceSHA256
                     ?? attempt.shapeAudit.reviewedBootstrapSHA256
             let resource = ChromeMV3ProductNormalTabReviewedResource(
-                reviewedScriptPath: "content/bootstrap-autofill.js",
+                reviewedScriptPath: reviewedResourcePath,
                 generatedResourceHash:
                     reviewedResourcePresent
                         ? generatedResourceSHA256
@@ -1139,6 +1222,35 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
           chrome.runtime.connect({ name: "autofill-injected-script-port" });
           window.bitwardenAutofillInit = {
             destroy() { chrome.runtime.onMessage.removeListener(listener); }
+          };
+        })();
+        """
+    }
+
+    private var syntheticReviewedResourceMarkerScript: String {
+        """
+        (() => {
+          const marker = globalThis.__sumiSyntheticReviewedResourceMarker || {};
+          const username = document.getElementById("sumi-login-email");
+          const password = document.getElementById("sumi-login-password");
+          if (username && typeof marker.username === "string") {
+            username.value = marker.username;
+            username.dataset.sumiReviewedResourceMarker = "username";
+          }
+          if (password && typeof marker.password === "string") {
+            password.value = marker.password;
+            password.dataset.sumiReviewedResourceMarker = "password";
+          }
+          globalThis.__sumiSyntheticReviewedResourceDiagnostic = {
+            fixture: "sumiSyntheticReviewedResource",
+            touched: [
+              username ? username.id : "missing-username",
+              password ? password.id : "missing-password"
+            ],
+            destroy() {
+              delete globalThis.__sumiSyntheticReviewedResourceDiagnostic;
+              delete globalThis.__sumiSyntheticReviewedResourceMarker;
+            }
           };
         })();
         """

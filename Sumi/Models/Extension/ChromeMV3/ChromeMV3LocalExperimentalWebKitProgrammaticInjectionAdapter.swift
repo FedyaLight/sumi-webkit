@@ -1382,9 +1382,11 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
             blockers.append(.blockedByNonSyntheticOrigin)
         }
         if request.modeledInjectionAttempt.allowed == false
-            || request.injectionPlan.reviewedScriptPath
-                != ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
-                .bitwardenDetectFillBootstrapFile
+            || request.modeledInjectionAttempt.shapeAudit.files
+                != [request.injectionPlan.reviewedScriptPath]
+            || ChromeMV3LocalExperimentalReviewedResourceRegistry.record(
+                forResourcePath: request.injectionPlan.reviewedScriptPath
+            ) == nil
         {
             blockers.append(.blockedByMissingReviewedResource)
         }
@@ -1504,69 +1506,101 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
                 else {
                     throw AdapterError.syntheticFixtureURLMismatch
                 }
-                _ = try await activeWebView.evaluateJavaScript(
-                    fixedIsolatedHarnessShim,
-                    in: nil,
-                    contentWorld: contentWorld
-                )
-                fixedHarnessShimInstalled = true
-                activeWebView.evaluateJavaScript(
-                    reviewedSource,
-                    in: nil,
-                    in: contentWorld,
-                    completionHandler: nil
-                )
-                let initialized = try await activeWebView.evaluateJavaScript(
-                    "!!globalThis.bitwardenAutofillInit",
-                    in: nil,
-                    contentWorld: contentWorld
-                )
-                guard initialized as? Bool == true else {
+                switch request.injectionPlan.reviewedScriptPath {
+                case ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
+                    .bitwardenDetectFillBootstrapFile:
+                    _ = try await activeWebView.evaluateJavaScript(
+                        fixedIsolatedHarnessShim,
+                        in: nil,
+                        contentWorld: contentWorld
+                    )
+                    fixedHarnessShimInstalled = true
+                    activeWebView.evaluateJavaScript(
+                        reviewedSource,
+                        in: nil,
+                        in: contentWorld,
+                        completionHandler: nil
+                    )
+                    let initialized = try await activeWebView.evaluateJavaScript(
+                        "!!globalThis.bitwardenAutofillInit",
+                        in: nil,
+                        contentWorld: contentWorld
+                    )
+                    guard initialized as? Bool == true else {
+                        throw AdapterError.reviewedScriptInitializationUnavailable
+                    }
+                    reviewedScriptExecuted = true
+                    let detectResult = try await eventDrivenDispatch(
+                        fixedDetectDispatch,
+                        stage: "detect",
+                        webView: activeWebView,
+                        contentWorld: contentWorld,
+                        observer: messageObserver
+                    )
+                    guard detectResult["ok"] as? Bool == true,
+                          let usernameOpid =
+                            detectResult["usernameOpid"] as? String,
+                          let passwordOpid =
+                            detectResult["passwordOpid"] as? String
+                    else {
+                        throw AdapterError.detectFillDispatchFailed(
+                            detectResult["message"] as? String
+                                ?? "unknown fixed detect dispatch failure"
+                        )
+                    }
+                    let fillResult = try await eventDrivenDispatch(
+                        fixedFillDispatch,
+                        stage: "fill",
+                        webView: activeWebView,
+                        contentWorld: contentWorld,
+                        observer: messageObserver,
+                        replacements: [
+                            "__SUMI_DUMMY_USERNAME__":
+                                jsStringLiteral(request.dummyUsername),
+                            "__SUMI_DUMMY_PASSWORD__":
+                                jsStringLiteral(request.dummyPassword),
+                            "__SUMI_USERNAME_OPID__":
+                                jsStringLiteral(usernameOpid),
+                            "__SUMI_PASSWORD_OPID__":
+                                jsStringLiteral(passwordOpid),
+                        ]
+                    )
+                    guard fillResult["ok"] as? Bool == true else {
+                        throw AdapterError.detectFillDispatchFailed(
+                            fillResult["message"] as? String
+                                ?? "unknown fixed fill dispatch failure"
+                        )
+                    }
+                    fixedDetectFillDispatchCompleted = true
+                case ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
+                    .syntheticReviewedResourceMarkerFile:
+                    _ = try await activeWebView.evaluateJavaScript(
+                        syntheticReviewedResourceMarkerSetup(
+                            username: request.dummyUsername,
+                            password: request.dummyPassword
+                        ),
+                        in: nil,
+                        contentWorld: contentWorld
+                    )
+                    fixedHarnessShimInstalled = true
+                    _ = try await activeWebView.evaluateJavaScript(
+                        reviewedSource,
+                        in: nil,
+                        contentWorld: contentWorld
+                    )
+                    let initialized = try await activeWebView.evaluateJavaScript(
+                        "!!globalThis.__sumiSyntheticReviewedResourceDiagnostic",
+                        in: nil,
+                        contentWorld: contentWorld
+                    )
+                    guard initialized as? Bool == true else {
+                        throw AdapterError.reviewedScriptInitializationUnavailable
+                    }
+                    reviewedScriptExecuted = true
+                    fixedDetectFillDispatchCompleted = true
+                default:
                     throw AdapterError.reviewedScriptInitializationUnavailable
                 }
-                reviewedScriptExecuted = true
-                let detectResult = try await eventDrivenDispatch(
-                    fixedDetectDispatch,
-                    stage: "detect",
-                    webView: activeWebView,
-                    contentWorld: contentWorld,
-                    observer: messageObserver
-                )
-                guard detectResult["ok"] as? Bool == true,
-                      let usernameOpid =
-                        detectResult["usernameOpid"] as? String,
-                      let passwordOpid =
-                        detectResult["passwordOpid"] as? String
-                else {
-                    throw AdapterError.detectFillDispatchFailed(
-                        detectResult["message"] as? String
-                            ?? "unknown fixed detect dispatch failure"
-                    )
-                }
-                let fillResult = try await eventDrivenDispatch(
-                    fixedFillDispatch,
-                    stage: "fill",
-                    webView: activeWebView,
-                    contentWorld: contentWorld,
-                    observer: messageObserver,
-                    replacements: [
-                        "__SUMI_DUMMY_USERNAME__":
-                            jsStringLiteral(request.dummyUsername),
-                        "__SUMI_DUMMY_PASSWORD__":
-                            jsStringLiteral(request.dummyPassword),
-                        "__SUMI_USERNAME_OPID__":
-                            jsStringLiteral(usernameOpid),
-                        "__SUMI_PASSWORD_OPID__":
-                            jsStringLiteral(passwordOpid),
-                    ]
-                )
-                guard fillResult["ok"] as? Bool == true else {
-                    throw AdapterError.detectFillDispatchFailed(
-                        fillResult["message"] as? String
-                            ?? "unknown fixed fill dispatch failure"
-                    )
-                }
-                fixedDetectFillDispatchCompleted = true
                 after = try await inspectDOM(
                     activeWebView,
                     phase: "after",
@@ -1594,6 +1628,29 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
                 && scopedTeardown.scriptMessageHandlerCountAfterTeardown == 0
                 && webView == nil
                 && configuration == nil
+        let reviewedResourceEndpoints: [String]
+        let reviewedResourceObjectsRemoved: [String]
+        if request.injectionPlan.reviewedScriptPath
+            == ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
+            .syntheticReviewedResourceMarkerFile
+        {
+            reviewedResourceEndpoints = [
+                "synthetic reviewed-resource marker object",
+            ]
+            reviewedResourceObjectsRemoved = [
+                "synthetic reviewed-resource marker state",
+                "synthetic reviewed-resource dummy marker input",
+            ]
+        } else {
+            reviewedResourceEndpoints = [
+                "sumiBitwardenSyntheticCompletion",
+                "reviewed Bitwarden runtime.onMessage listener",
+            ]
+            reviewedResourceObjectsRemoved = [
+                "reviewed Bitwarden listener state",
+                "synthetic chrome runtime shim",
+            ]
+        }
         let manualTeardown =
             ChromeMV3LocalExperimentalNormalTabManualSmokeTeardown(
                 required: true,
@@ -1609,15 +1666,13 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
                 ],
                 handlersCreated: [completionMessageHandlerName],
                 userScriptsCreated: [],
-                endpointsCreated: [
-                    "sumiBitwardenSyntheticCompletion",
-                    "reviewed Bitwarden runtime.onMessage listener",
-                ],
+                endpointsCreated: reviewedResourceEndpoints,
                 objectsRemoved: [
                     "navigationDelegate",
                     "scriptMessageHandler:\(completionMessageHandlerName)",
-                    "reviewed Bitwarden listener state",
-                    "synthetic chrome runtime shim",
+                ]
+                    + reviewedResourceObjectsRemoved
+                    + [
                     "WKWebView reference",
                     "WKWebViewConfiguration reference",
                 ],
@@ -1641,6 +1696,12 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
                 && fixedDetectFillDispatchCompleted
                 && fieldsTouched.count == 2
                 && manualTeardown.completed
+        let successDiagnostic =
+            request.injectionPlan.reviewedScriptPath
+                == ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
+                .syntheticReviewedResourceMarkerFile
+                ? "Manual normal-tab smoke executed the reviewed synthetic non-vendor marker resource on the synthetic HTTPS test page and wrote only dummy values."
+                : "Manual normal-tab smoke executed the reviewed Bitwarden bootstrap on the synthetic HTTPS test page and wrote only dummy values."
         return ChromeMV3LocalExperimentalNormalTabManualSmokeResult(
             attempted: true,
             allowed: success,
@@ -1685,8 +1746,7 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
                         + manualTeardown.diagnostics
                         + thrownErrors
                         + [
-                            success
-                                ? "Manual normal-tab smoke executed the reviewed Bitwarden bootstrap on the synthetic HTTPS test page and wrote only dummy values."
+                            success ? successDiagnostic
                                 : "Manual normal-tab smoke did not complete successfully.",
                             "Product/default runtime remains unavailable and no product support is claimed.",
                         ]
@@ -1804,19 +1864,34 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
               attempt.resourceResolutions.count == 1,
               let resolution = attempt.resourceResolutions.first,
               resolution.status == .copiedGeneratedBundleFile,
-              resolution.requestedPath
-                == ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
-                .bitwardenDetectFillBootstrapFile,
+              let reviewedRecord =
+                ChromeMV3LocalExperimentalReviewedResourceRegistry.record(
+                    forResourcePath: resolution.requestedPath
+                ),
               let path = resolution.resolvedFileSystemPath,
               let source = try? String(
                   contentsOf: URL(fileURLWithPath: path),
                   encoding: .utf8
               ),
-              source.contains("collectPageDetailsImmediately"),
-              source.contains("fillForm"),
-              source.contains("chrome.runtime.onMessage.addListener"),
               sha256(source) == expectedSHA256
         else { return nil }
+        switch reviewedRecord.resourcePath {
+        case ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
+            .bitwardenDetectFillBootstrapFile:
+            guard source.contains("collectPageDetailsImmediately"),
+                  source.contains("fillForm"),
+                  source.contains("chrome.runtime.onMessage.addListener")
+            else { return nil }
+        case ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
+            .syntheticReviewedResourceMarkerFile:
+            guard source.contains("__sumiSyntheticReviewedResourceMarker"),
+                  source.contains("__sumiSyntheticReviewedResourceDiagnostic"),
+                  source.contains("sumi-login-email"),
+                  source.contains("sumi-login-password")
+            else { return nil }
+        default:
+            return nil
+        }
         return source
     }
 
@@ -2308,9 +2383,32 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
         }
       } catch (_) {}
       try { delete globalThis.chrome; } catch (_) {}
+      try {
+        if (globalThis.__sumiSyntheticReviewedResourceDiagnostic &&
+            typeof globalThis.__sumiSyntheticReviewedResourceDiagnostic.destroy === "function") {
+          globalThis.__sumiSyntheticReviewedResourceDiagnostic.destroy();
+        }
+        delete globalThis.__sumiSyntheticReviewedResourceDiagnostic;
+        delete globalThis.__sumiSyntheticReviewedResourceMarker;
+      } catch (_) {}
       return true;
     })();
     """
+
+    private static func syntheticReviewedResourceMarkerSetup(
+        username: String,
+        password: String
+    ) -> String {
+        """
+        (() => {
+          globalThis.__sumiSyntheticReviewedResourceMarker = {
+            username: \(jsStringLiteral(username)),
+            password: \(jsStringLiteral(password))
+          };
+          return true;
+        })();
+        """
+    }
 }
 
 @available(macOS 15.5, *)

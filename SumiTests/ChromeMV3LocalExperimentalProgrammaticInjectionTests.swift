@@ -211,7 +211,10 @@ final class ChromeMV3LocalExperimentalProgrammaticInjectionTests:
         XCTAssertTrue(policy.generatedBundleFilesOnly)
         XCTAssertEqual(
             policy.allowedGeneratedBundleFiles,
-            ["content/bootstrap-autofill.js"]
+            [
+                "content/bootstrap-autofill.js",
+                "content/sumi-reviewed-resource-marker.js",
+            ]
         )
         XCTAssertFalse(policy.arbitraryFunctionInjectionAllowed)
         XCTAssertFalse(policy.argumentsAllowed)
@@ -222,6 +225,42 @@ final class ChromeMV3LocalExperimentalProgrammaticInjectionTests:
         XCTAssertFalse(policy.productNormalTabsAllowed)
         XCTAssertTrue(policy.requiresHostPermissionOrActiveTab)
         XCTAssertTrue(policy.teardownRequired)
+    }
+
+    func testSyntheticReviewedResourceMarkerIsAdditiveAndReviewedOnly()
+        throws
+    {
+        let fixture = try makeSyntheticFixture()
+        let attempt =
+            ChromeMV3LocalExperimentalProgrammaticInjectionSession()
+            .attempt(fixture.request())
+        let audit = try XCTUnwrap(attempt.shapeAudit.reviewedResourceAudit)
+
+        XCTAssertTrue(attempt.allowed, "\(attempt.blockers)")
+        XCTAssertEqual(
+            attempt.resourceResolutions.first?.status,
+            .copiedGeneratedBundleFile
+        )
+        XCTAssertEqual(
+            audit.resourcePath,
+            "content/sumi-reviewed-resource-marker.js"
+        )
+        XCTAssertEqual(
+            audit.expectedReviewedSHA256,
+            ChromeMV3LocalExperimentalReviewedResourceRegistry
+                .syntheticReviewedResourceMarker.reviewedSHA256
+        )
+        XCTAssertEqual(audit.sourcePackageSHA256, audit.generatedResourceSHA256)
+        XCTAssertTrue(audit.sourceAndGeneratedByteEqual)
+        XCTAssertTrue(audit.generatedBundleContained)
+        XCTAssertTrue(audit.reviewedResourcePathExact)
+        XCTAssertTrue(audit.packageOwned)
+        XCTAssertTrue(audit.noRemoteScript)
+        XCTAssertTrue(audit.noRuntimeGeneratedJS)
+        XCTAssertTrue(audit.noNetworkAuthNativeHostRequirement)
+        XCTAssertTrue(audit.compatibleWithIsolatedTopFrameSyntheticHTTPS)
+        XCTAssertTrue(audit.shapeEquivalentToReviewedRecord)
+        XCTAssertTrue(audit.shapeBlockers.isEmpty)
     }
 
     private func assertBlocked(
@@ -275,6 +314,64 @@ final class ChromeMV3LocalExperimentalProgrammaticInjectionTests:
         return Fixture(package: package, generated: generated)
     }
 
+    private func makeSyntheticFixture() throws -> Fixture {
+        let root = try temporaryDirectory()
+        let package = root.appendingPathComponent("package", isDirectory: true)
+        let generated = root.appendingPathComponent("generated", isDirectory: true)
+        try write(
+            "chrome.scripting.executeScript({files:['content/sumi-reviewed-resource-marker.js']});",
+            to: package.appendingPathComponent("background.js")
+        )
+        try write(
+            syntheticReviewedResourceMarkerScript,
+            to:
+                package.appendingPathComponent(
+                    "content/sumi-reviewed-resource-marker.js"
+                )
+        )
+        try write(
+            syntheticReviewedResourceMarkerScript,
+            to:
+                generated.appendingPathComponent(
+                    "content/sumi-reviewed-resource-marker.js"
+                )
+        )
+        return Fixture(
+            package: package,
+            generated: generated,
+            reviewedResourcePath: "content/sumi-reviewed-resource-marker.js"
+        )
+    }
+
+    private var syntheticReviewedResourceMarkerScript: String {
+        """
+        (() => {
+          const marker = globalThis.__sumiSyntheticReviewedResourceMarker || {};
+          const username = document.getElementById("sumi-login-email");
+          const password = document.getElementById("sumi-login-password");
+          if (username && typeof marker.username === "string") {
+            username.value = marker.username;
+            username.dataset.sumiReviewedResourceMarker = "username";
+          }
+          if (password && typeof marker.password === "string") {
+            password.value = marker.password;
+            password.dataset.sumiReviewedResourceMarker = "password";
+          }
+          globalThis.__sumiSyntheticReviewedResourceDiagnostic = {
+            fixture: "sumiSyntheticReviewedResource",
+            touched: [
+              username ? username.id : "missing-username",
+              password ? password.id : "missing-password"
+            ],
+            destroy() {
+              delete globalThis.__sumiSyntheticReviewedResourceDiagnostic;
+              delete globalThis.__sumiSyntheticReviewedResourceMarker;
+            }
+          };
+        })();
+        """
+    }
+
     private func write(_ contents: String, to url: URL) throws {
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),
@@ -303,6 +400,7 @@ final class ChromeMV3LocalExperimentalProgrammaticInjectionTests:
     private struct Fixture {
         var package: URL
         var generated: URL
+        var reviewedResourcePath: String = "content/bootstrap-autofill.js"
 
         func request()
             -> ChromeMV3LocalExperimentalProgrammaticInjectionRequest
@@ -317,7 +415,7 @@ final class ChromeMV3LocalExperimentalProgrammaticInjectionTests:
                         recordAvailable: true,
                         rootPath: generated.path,
                         copiedResourcePaths: [
-                            "content/bootstrap-autofill.js",
+                            reviewedResourcePath,
                         ]
                     ),
                 packageRootPath: package.path,
@@ -327,7 +425,7 @@ final class ChromeMV3LocalExperimentalProgrammaticInjectionTests:
                 frameIDs: [0],
                 allFrames: false,
                 world: "ISOLATED",
-                files: ["content/bootstrap-autofill.js"],
+                files: [reviewedResourcePath],
                 functionSource: nil,
                 arguments: [],
                 injectImmediately: true,
