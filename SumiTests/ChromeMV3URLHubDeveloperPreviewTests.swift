@@ -263,6 +263,171 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
     }
 
     @MainActor
+    func testURLHubActionClickLoadsNewlySyncedRecordIntoReadyRuntime()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        let firstSource = try makeFixture(
+            named: "urlhub-ready-runtime-first-popup",
+            manifest: genericActionPopupManifest(
+                name: "First Popup",
+                permissions: ["activeTab"]
+            ),
+            files: [
+                "popup.html": "<!doctype html><title>First Popup</title>",
+            ]
+        )
+        let secondSource = try makeFixture(
+            named: "urlhub-ready-runtime-second-popup",
+            manifest: genericActionPopupManifest(
+                name: "Second Popup",
+                permissions: ["activeTab"]
+            ),
+            files: [
+                "popup.html": "<!doctype html><title>Second Popup</title>",
+            ]
+        )
+        let module = try makeModule(enabled: true, includesModelContext: true)
+        let firstInstall = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: firstSource,
+            profileID: "profile-urlhub-ready-runtime",
+            enableInternal: true
+        )
+        let firstRecord = try XCTUnwrap(
+            firstInstall.lifecycleOperationResult?.record
+        )
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: firstRecord.extensionID
+        )
+        let manager = try XCTUnwrap(module.managerIfEnabled())
+
+        let runtimeReady = await manager.requestExtensionRuntimeAndWait(
+            reason: .extensionAction
+        )
+        XCTAssertTrue(runtimeReady)
+        XCTAssertNotNil(manager.getExtensionContext(for: firstRecord.extensionID))
+        XCTAssertEqual(manager.runtimeState, .ready)
+
+        let secondInstall = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: secondSource,
+            profileID: "profile-urlhub-ready-runtime",
+            enableInternal: true
+        )
+        let secondRecord = try XCTUnwrap(
+            secondInstall.lifecycleOperationResult?.record
+        )
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: secondRecord.extensionID
+        )
+
+        XCTAssertNil(manager.getExtensionContext(for: secondRecord.extensionID))
+        XCTAssertEqual(manager.runtimeState, .ready)
+
+        let result = await module.openActionPopupFromURLHub(
+            extensionId: secondRecord.extensionID,
+            currentTab: Tab(url: URL(string: "https://example.com/login")!)
+        )
+
+        XCTAssertTrue(result.opened)
+        XCTAssertNil(result.blocker)
+        XCTAssertNotNil(manager.getExtensionContext(for: secondRecord.extensionID))
+        XCTAssertEqual(manager.extensionController?.extensionContexts.count, 2)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(".diagnostics").path
+            )
+        )
+    }
+
+    @MainActor
+    func testURLHubActionClickReportsSelectedPackageContextLoadFailurePrecisely()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        let firstSource = try makeFixture(
+            named: "urlhub-ready-runtime-valid-popup",
+            manifest: genericActionPopupManifest(
+                name: "Valid Popup",
+                permissions: ["activeTab"]
+            ),
+            files: [
+                "popup.html": "<!doctype html><title>Valid Popup</title>",
+            ]
+        )
+        let brokenSource = try makeFixture(
+            named: "urlhub-ready-runtime-broken-popup",
+            manifest: genericActionPopupManifest(
+                name: "Broken Popup",
+                permissions: ["activeTab"]
+            ),
+            files: [
+                "popup.html": "<!doctype html><title>Broken Popup</title>",
+            ]
+        )
+        let module = try makeModule(enabled: true, includesModelContext: true)
+        let firstInstall = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: firstSource,
+            profileID: "profile-urlhub-load-failure",
+            enableInternal: true
+        )
+        let firstRecord = try XCTUnwrap(
+            firstInstall.lifecycleOperationResult?.record
+        )
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: firstRecord.extensionID
+        )
+        let manager = try XCTUnwrap(module.managerIfEnabled())
+        let runtimeReady = await manager.requestExtensionRuntimeAndWait(
+            reason: .extensionAction
+        )
+        XCTAssertTrue(runtimeReady)
+
+        let brokenInstall = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: brokenSource,
+            profileID: "profile-urlhub-load-failure",
+            enableInternal: true
+        )
+        let brokenRecord = try XCTUnwrap(
+            brokenInstall.lifecycleOperationResult?.record
+        )
+        let waitedBrokenAction = await waitForEnabledExtension(
+            in: module,
+            extensionId: brokenRecord.extensionID
+        )
+        let brokenAction = try XCTUnwrap(waitedBrokenAction)
+        try FileManager.default.removeItem(
+            at: URL(fileURLWithPath: brokenAction.packagePath)
+                .appendingPathComponent("manifest.json")
+        )
+
+        let result = await module.openActionPopupFromURLHub(
+            extensionId: brokenRecord.extensionID,
+            currentTab: Tab(url: URL(string: "https://example.com/login")!)
+        )
+
+        XCTAssertFalse(result.opened)
+        XCTAssertEqual(result.blocker, .runtimeLoadFailed)
+        XCTAssertTrue(
+            result.message.contains(
+                "WebKit context load failed for the selected local package"
+            )
+        )
+        XCTAssertFalse(
+            result.message.contains(
+                "did not produce a loaded WebKit extension context"
+            )
+        )
+        XCTAssertNil(manager.getExtensionContext(for: brokenRecord.extensionID))
+    }
+
+    @MainActor
     func testURLHubActionClickPreflightBlocksNoPopupWithoutRuntime()
         async throws
     {

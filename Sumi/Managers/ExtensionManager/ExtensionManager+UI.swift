@@ -82,6 +82,9 @@ extension ExtensionManager: NSPopoverDelegate {
                 message: "The extension is not installed in Sumi's local MV3 action surface."
             )
         }
+        extensionRuntimeTrace(
+            "urlHubAction click extensionId=\(extensionId) manifestHash=\(installedExtension.manifestRootFingerprint) generatedBundlePath=\(installedExtension.packagePath) originalPackagePath=\(installedExtension.sourceBundlePath) extensionEnabled=\(installedExtension.isEnabled) runtimeState=\(runtimeState.rawValue) contextLoaded=\(getExtensionContext(for: extensionId) != nil) currentProfile=\(currentProfileId?.uuidString ?? "nil") tabProfile=\(currentTab?.profileId?.uuidString ?? "nil") tabOffRecord=\(currentTab?.isEphemeral ?? false) currentURL=\(currentTab?.url.absoluteString ?? "nil")"
+        )
         guard installedExtension.isEnabled else {
             return .blocked(
                 .extensionDisabled,
@@ -127,6 +130,9 @@ extension ExtensionManager: NSPopoverDelegate {
                 message: "\(installedExtension.name) declares a module service worker, which remains unsupported in this popup path."
             )
         }
+        extensionRuntimeTrace(
+            "urlHubAction preflight passed extensionId=\(extensionId) localExperimentalRecordEnabled=true currentTabEligible=true currentPagePermission=true moduleWorkerUnsupported=false"
+        )
 
         guard await requestExtensionRuntimeAndWait(reason: .extensionAction) else {
             return .blocked(
@@ -134,10 +140,28 @@ extension ExtensionManager: NSPopoverDelegate {
                 message: "\(installedExtension.name) could not load WebKit extension runtime for the action popup."
             )
         }
-        guard let extensionContext = getExtensionContext(for: extensionId) else {
+        extensionRuntimeTrace(
+            "urlHubAction runtime ready extensionId=\(extensionId) loadedContexts=\(extensionContexts.count) selectedContextLoaded=\(getExtensionContext(for: extensionId) != nil)"
+        )
+
+        let extensionContext: WKWebExtensionContext
+        do {
+            guard let loadedContext = try await loadActionPopupContextIfNeeded(
+                for: installedExtension
+            ) else {
+                return .blocked(
+                    .contextUnavailable,
+                    message: "\(installedExtension.name) has no enabled persisted local package record for WebKit context loading."
+                )
+            }
+            extensionContext = loadedContext
+        } catch {
+            extensionRuntimeTrace(
+                "urlHubAction selected context load failed extensionId=\(extensionId) error=\(error.localizedDescription)"
+            )
             return .blocked(
-                .contextUnavailable,
-                message: "\(installedExtension.name) did not produce a loaded WebKit extension context."
+                .runtimeLoadFailed,
+                message: "\(installedExtension.name) WebKit context load failed for the selected local package: \(error.localizedDescription)"
             )
         }
 
@@ -167,12 +191,38 @@ extension ExtensionManager: NSPopoverDelegate {
             )
         }
 
+        extensionRuntimeTrace(
+            "urlHubAction performAction extensionId=\(extensionId) actionLabel=\(action.label) actionEnabled=\(action.isEnabled) presentsPopup=\(action.presentsPopup)"
+        )
         extensionContext.performAction(for: adapter)
         recordRuntimeMetric(for: extensionId) { metrics in
             metrics.lastBackgroundWakeReason = .actionPopup
             metrics.backgroundWakeCount += 1
         }
         return .openedPopup
+    }
+
+    private func loadActionPopupContextIfNeeded(
+        for installedExtension: InstalledExtension
+    ) async throws -> WKWebExtensionContext? {
+        if let extensionContext = getExtensionContext(for: installedExtension.id) {
+            return extensionContext
+        }
+
+        guard let entity = try extensionEntity(for: installedExtension.id),
+              entity.isEnabled
+        else {
+            return nil
+        }
+
+        extensionRuntimeTrace(
+            "urlHubAction loading selected missing context extensionId=\(installedExtension.id) runtimeState=\(runtimeState.rawValue) packagePath=\(entity.packagePath)"
+        )
+        _ = try await loadEnabledExtension(
+            from: entity,
+            expectedLoadGeneration: extensionLoadGeneration
+        )
+        return getExtensionContext(for: installedExtension.id)
     }
 
     private func isModuleWorkerUnsupported(
