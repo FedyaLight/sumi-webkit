@@ -84,7 +84,7 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         let webStore = module
             .chromeMV3ChromeWebStoreInstallDiagnosticThroughManager()
         let manualSmoke = await module
-            .chromeMV3RunBitwardenManualSmokeThroughManager(
+            .chromeMV3RunReviewedResourceDiagnosticActionThroughManager(
                 rootURL: root,
                 profileID: "profile-disabled",
                 extensionID: "extension-disabled"
@@ -97,7 +97,7 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         XCTAssertTrue(install.blockedDiagnostics.contains {
             $0.code == .moduleDisabled
         })
-        XCTAssertNil(manualSmoke.manualSmokeArtifact)
+        XCTAssertNil(manualSmoke.reviewedResourceDiagnosticArtifact)
         XCTAssertFalse(
             FileManager.default.fileExists(
                 atPath: root.appendingPathComponent("lifecycle").path
@@ -288,19 +288,20 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         XCTAssertTrue(detail.actions.contains {
             $0.action == .importZipArchive && $0.available
         })
-        XCTAssertFalse(detail.manualSmokeAction.available)
-        XCTAssertTrue(detail.manualSmokeAction.manualOnly)
-        XCTAssertNil(detail.manualSmokeAction.lastArtifactPath)
+        XCTAssertFalse(detail.reviewedResourceDiagnosticAction.available)
+        XCTAssertTrue(detail.reviewedResourceDiagnosticAction.manualOnly)
+        XCTAssertNil(detail.reviewedResourceDiagnosticAction.lastArtifactPath)
+        XCTAssertTrue(detail.reviewedResourceDiagnosticCapabilities.isEmpty)
         XCTAssertTrue(detail.actions.contains {
-            $0.action == .runBitwardenManualSmoke && !$0.available
+            $0.action == .runReviewedResourceDiagnosticAction && !$0.available
                 && $0.unavailableDiagnostics.contains {
-                    $0.code == .manualSmokeReviewedFileMissing
+                    $0.code == .reviewedResourceDiagnosticReviewedFileMissing
                 }
         })
         XCTAssertFalse(
             FileManager.default.fileExists(
                 atPath:
-                    ChromeMV3ExtensionManagerManualSmokeArtifactWriter
+                    ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifactWriter
                     .reportURL(
                         rootURL: root,
                         profileID: record.profileID,
@@ -330,15 +331,15 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
             )
         )
 
-        XCTAssertFalse(detail.manualSmokeAction.available)
-        XCTAssertTrue(detail.manualSmokeAction.gateState[
+        XCTAssertFalse(detail.reviewedResourceDiagnosticAction.available)
+        XCTAssertTrue(detail.reviewedResourceDiagnosticAction.gateState[
             "localExperimentalManagerGateOpen"
         ] == false)
-        XCTAssertTrue(detail.manualSmokeAction.unavailableDiagnostics.contains {
-            $0.code == .manualSmokeLocalExperimentalGateClosed
+        XCTAssertTrue(detail.reviewedResourceDiagnosticAction.unavailableDiagnostics.contains {
+            $0.code == .reviewedResourceDiagnosticLocalExperimentalGateClosed
         })
         XCTAssertTrue(detail.actions.contains {
-            $0.action == .runBitwardenManualSmoke && !$0.available
+            $0.action == .runReviewedResourceDiagnosticAction && !$0.available
         })
         XCTAssertFalse(fixture.module.hasLoadedRuntime)
     }
@@ -361,25 +362,25 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
             )
         )
         let artifactURL =
-            ChromeMV3ExtensionManagerManualSmokeArtifactWriter.reportURL(
+            ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifactWriter.reportURL(
                 rootURL: fixture.root,
                 profileID: fixture.record.profileID,
                 extensionID: fixture.record.extensionID
             )
 
-        XCTAssertFalse(detail.manualSmokeAction.available)
-        XCTAssertTrue(detail.manualSmokeAction.gateState[
+        XCTAssertFalse(detail.reviewedResourceDiagnosticAction.available)
+        XCTAssertTrue(detail.reviewedResourceDiagnosticAction.gateState[
             "extensionInternalRecordEnabled"
         ] == false)
-        XCTAssertTrue(detail.manualSmokeAction.unavailableDiagnostics.contains {
-            $0.code == .manualSmokeExtensionDisabled
+        XCTAssertTrue(detail.reviewedResourceDiagnosticAction.unavailableDiagnostics.contains {
+            $0.code == .reviewedResourceDiagnosticExtensionDisabled
         })
         XCTAssertTrue(detail.actions.contains {
-            $0.action == .runBitwardenManualSmoke && !$0.available
+            $0.action == .runReviewedResourceDiagnosticAction && !$0.available
         })
 
         let result = await fixture.module
-            .chromeMV3RunBitwardenManualSmokeThroughManager(
+            .chromeMV3RunReviewedResourceDiagnosticActionThroughManager(
                 rootURL: fixture.root,
                 profileID: fixture.record.profileID,
                 extensionID: fixture.record.extensionID,
@@ -387,17 +388,17 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
             )
 
         XCTAssertEqual(result.status, .blocked)
-        XCTAssertNil(result.manualSmokeResult)
-        XCTAssertNil(result.manualSmokeArtifact)
+        XCTAssertNil(result.reviewedResourceDiagnosticResult)
+        XCTAssertNil(result.reviewedResourceDiagnosticArtifact)
         XCTAssertTrue(result.blockedDiagnostics.contains {
-            $0.code == .manualSmokeExtensionDisabled
+            $0.code == .reviewedResourceDiagnosticExtensionDisabled
         })
         XCTAssertFalse(FileManager.default.fileExists(atPath: artifactURL.path))
         assertNoRuntimeSideEffects(result, module: fixture.module)
     }
 
     @MainActor
-    func testManualSmokeActionReadoutDoesNotExecuteOrWriteArtifact()
+    func testReviewedResourceDiagnosticReadoutBlocksUnreviewedSyntheticFixture()
         throws
     {
         let fixture = try installBitwardenManualSmokeFixture(
@@ -414,29 +415,47 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
             )
         )
         let artifactURL =
-            ChromeMV3ExtensionManagerManualSmokeArtifactWriter.reportURL(
+            ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifactWriter.reportURL(
                 rootURL: fixture.root,
                 profileID: fixture.record.profileID,
                 extensionID: fixture.record.extensionID
             )
 
-        XCTAssertTrue(detail.manualSmokeAction.available)
-        XCTAssertEqual(detail.manualSmokeAction.actionID, .runBitwardenManualSmoke)
-        XCTAssertTrue(detail.manualSmokeAction.manualOnly)
-        XCTAssertNil(detail.manualSmokeAction.lastRunStatus)
-        XCTAssertNil(detail.manualSmokeAction.lastArtifactPath)
-        XCTAssertTrue(detail.manualSmokeAction.gateState[
-            "managerReadoutExecutesSmoke"
+        XCTAssertFalse(detail.reviewedResourceDiagnosticAction.available)
+        XCTAssertEqual(detail.reviewedResourceDiagnosticAction.actionID, .runReviewedResourceDiagnosticAction)
+        XCTAssertTrue(detail.reviewedResourceDiagnosticAction.manualOnly)
+        XCTAssertNil(detail.reviewedResourceDiagnosticAction.lastRunStatus)
+        XCTAssertNil(detail.reviewedResourceDiagnosticAction.lastArtifactPath)
+        let capability = try XCTUnwrap(
+            detail.reviewedResourceDiagnosticCapabilities.first
+        )
+        XCTAssertEqual(detail.reviewedResourceDiagnosticCapabilities.count, 1)
+        XCTAssertEqual(
+            capability.capabilityID,
+            ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog
+                .reviewedGeneratedResourceNormalTabDiagnosticID
+        )
+        XCTAssertEqual(
+            capability.generatedResourceStatus,
+            .reviewedHashMismatch
+        )
+        XCTAssertTrue(capability.sourceGeneratedByteEqual)
+        XCTAssertFalse(capability.productSupportClaim)
+        XCTAssertTrue(detail.reviewedResourceDiagnosticAction.gateState[
+            "managerReadoutExecutesDiagnosticAction"
         ] == false)
         XCTAssertTrue(detail.actions.contains {
-            $0.action == .runBitwardenManualSmoke && $0.available
+            $0.action == .runReviewedResourceDiagnosticAction && !$0.available
+                && $0.unavailableDiagnostics.contains {
+                    $0.code == .reviewedResourceDiagnosticReviewedFileMissing
+                }
         })
         XCTAssertFalse(FileManager.default.fileExists(atPath: artifactURL.path))
         XCTAssertFalse(fixture.module.hasLoadedRuntime)
     }
 
     @MainActor
-    func testExplicitManualSmokeRunsAndWritesSanitizedArtifact()
+    func testReviewedResourceDiagnosticRejectsUnreviewedSyntheticFixture()
         async throws
     {
         guard #available(macOS 15.5, *) else {
@@ -449,141 +468,27 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         )
 
         let result = await fixture.module
-            .chromeMV3RunBitwardenManualSmokeThroughManager(
+            .chromeMV3RunReviewedResourceDiagnosticActionThroughManager(
                 rootURL: fixture.root,
                 profileID: fixture.record.profileID,
                 extensionID: fixture.record.extensionID,
                 now: { self.fixedDate }
             )
-        let artifact = try XCTUnwrap(result.manualSmokeArtifact)
         let artifactURL =
-            ChromeMV3ExtensionManagerManualSmokeArtifactWriter.reportURL(
+            ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifactWriter.reportURL(
                 rootURL: fixture.root,
                 profileID: fixture.record.profileID,
                 extensionID: fixture.record.extensionID
             )
-        let artifactData = try Data(contentsOf: artifactURL)
-        let artifactString = String(data: artifactData, encoding: .utf8) ?? ""
-        let detailAfter = try XCTUnwrap(
-            fixture.module.chromeMV3ExtensionManagerDetailViewModelIfEnabled(
-                rootURL: fixture.root,
-                profileID: fixture.record.profileID,
-                extensionID: fixture.record.extensionID
-            )
-        )
 
-        XCTAssertEqual(result.status, .succeeded, result.diagnostics.joined(separator: "\n"))
-        XCTAssertTrue(result.manualSmokeResult?.allowed == true)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: artifactURL.path))
-        let artifactDirectoryContents =
-            try FileManager.default.contentsOfDirectory(
-                at: artifactURL.deletingLastPathComponent(),
-                includingPropertiesForKeys: nil
-            )
-        XCTAssertEqual(
-            artifactDirectoryContents.filter {
-                $0.lastPathComponent
-                    == ChromeMV3ExtensionManagerManualSmokeArtifactWriter
-                    .reportFileName
-            }.count,
-            1
-        )
-        XCTAssertEqual(artifact.schemaVersion, 1)
-        XCTAssertEqual(artifact.profileID, fixture.record.profileID)
-        XCTAssertEqual(artifact.extensionID, fixture.record.extensionID)
-        XCTAssertEqual(artifact.smokeKind, "bitwardenManualNormalTabSmoke")
-        XCTAssertEqual(artifact.reviewedScriptPath, "content/bootstrap-autofill.js")
-        XCTAssertEqual(artifact.syntheticURL, "https://sumi.local.test/login")
-        XCTAssertEqual(artifact.syntheticOrigin, "https://sumi.local.test")
-        XCTAssertTrue(artifact.actionManualOnly)
-        XCTAssertFalse(artifact.managerReadoutExecutedSmoke)
-        XCTAssertEqual(artifact.fieldsTouched, [
-            "sumi-login-email",
-            "sumi-login-password",
-        ])
-        XCTAssertTrue(artifact.dummyValueMarkers.contains(
-            "usernameSyntheticDummyMatched"
-        ))
-        XCTAssertTrue(artifact.dummyValueMarkers.contains(
-            "passwordSyntheticDummyMatched"
-        ))
-        XCTAssertTrue(artifact.teardownCompleted)
-        XCTAssertEqual(artifact.retainedObjectCount, 0)
-        XCTAssertTrue(artifact.noRealSecrets)
-        XCTAssertTrue(artifact.noRawCredentials)
-        XCTAssertTrue(artifact.noRealWebsiteData)
-        XCTAssertFalse(
-            artifact.runtimeBehaviorIntentionallyUnchanged
-                .productDefaultRuntimeAvailable
-        )
-        XCTAssertFalse(
-            artifact.runtimeBehaviorIntentionallyUnchanged
-                .productRuntimeExposed
-        )
-        XCTAssertFalse(
-            artifact.runtimeBehaviorIntentionallyUnchanged
-                .arbitraryScriptingEnabled
-        )
-        XCTAssertFalse(
-            artifact.runtimeBehaviorIntentionallyUnchanged.mainWorldEnabled
-        )
-        XCTAssertFalse(
-            artifact.runtimeBehaviorIntentionallyUnchanged.multiFrameEnabled
-        )
-        XCTAssertFalse(
-            artifact.runtimeBehaviorIntentionallyUnchanged.fileSchemeEnabled
-        )
-        XCTAssertFalse(
-            artifact.runtimeBehaviorIntentionallyUnchanged
-                .networkAuthNativeHostEnabled
-        )
-        XCTAssertFalse(
-            artifact.runtimeBehaviorIntentionallyUnchanged
-                .webStoreOrRemoteCRXEnabled
-        )
-        XCTAssertFalse(
-            artifact.runtimeBehaviorIntentionallyUnchanged
-                .timersOrPollingEnabled
-        )
-        XCTAssertEqual(
-            artifact.schemaBoundary.diagnosticScope,
-            "localExperimentalManualSmoke"
-        )
-        XCTAssertTrue(artifact.schemaBoundary.localExperimentalOnly)
-        XCTAssertFalse(artifact.schemaBoundary.stableProductSupportClaimed)
-        XCTAssertTrue(
-            artifact.schemaBoundary.generalMV3CapabilityFields
-                .contains("reviewedScriptHash")
-        )
-        XCTAssertTrue(
-            artifact.schemaBoundary.productNormalTabReadinessFields
-                .contains(
-                    "runtimeBehaviorIntentionallyUnchanged.productRuntimeExposed"
-                )
-        )
-        XCTAssertTrue(
-            artifact.schemaBoundary.bitwardenFixtureSpecificFields.contains {
-                $0.contains("content/bootstrap-autofill.js")
-            }
-        )
-        XCTAssertTrue(artifact.schemaBoundary.protonFixtureSpecificFields.isEmpty)
-        XCTAssertTrue(
-            artifact.schemaBoundary.onePasswordFixtureSpecificFields.isEmpty
-        )
-        XCTAssertTrue(
-            artifact.schemaBoundary.deprecatedOrAmbiguousFields.isEmpty
-        )
-        XCTAssertFalse(artifactString.contains("sumi-test-user@example.test"))
-        XCTAssertFalse(artifactString.contains("sumi-test-password-not-secret"))
-        XCTAssertFalse(artifactString.contains("masterPassword"))
-        XCTAssertFalse(artifactString.contains("accessToken"))
-        XCTAssertEqual(detailAfter.manualSmokeAction.lastRunStatus, .succeeded)
-        XCTAssertEqual(detailAfter.manualSmokeAction.lastArtifactPath, artifactURL.path)
-        XCTAssertEqual(detailAfter.manualSmokeAction.lastTeardownStatus, "completed")
-        XCTAssertEqual(detailAfter.manualSmokeAction.lastRetainedObjectCount, 0)
-        XCTAssertTrue(detailAfter.manualSmokeAction.notProductSupportWarning.contains(
-            "stable product path"
-        ))
+        XCTAssertEqual(result.status, .blocked)
+        XCTAssertNil(result.reviewedResourceDiagnosticResult)
+        XCTAssertNil(result.reviewedResourceDiagnosticArtifact)
+        XCTAssertTrue(result.blockedDiagnostics.contains {
+            $0.code == .reviewedResourceDiagnosticReviewedFileMissing
+        })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: artifactURL.path))
+        assertNoRuntimeSideEffects(result, module: fixture.module)
         XCTAssertFalse(fixture.module.hasLoadedRuntime)
     }
 
@@ -593,7 +498,7 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         let root = try makeTemporaryDirectory()
         let profileID = "profile-schema-evolution"
         let extensionID = "extension-schema-evolution"
-        var object = manualSmokeArtifactJSONObject(
+        var object = reviewedResourceDiagnosticArtifactJSONObject(
             profileID: profileID,
             extensionID: extensionID
         )
@@ -605,7 +510,7 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         object.removeValue(forKey: "schemaBoundary")
         try writeJSONObject(
             object,
-            to: ChromeMV3ExtensionManagerManualSmokeArtifactWriter.reportURL(
+            to: ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifactWriter.reportURL(
                 rootURL: root,
                 profileID: profileID,
                 extensionID: extensionID
@@ -613,7 +518,7 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         )
 
         let decoded = try XCTUnwrap(
-            ChromeMV3ExtensionManagerManualSmokeArtifactWriter.latestArtifact(
+            ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifactWriter.latestArtifact(
                 rootURL: root,
                 profileID: profileID,
                 extensionID: extensionID
@@ -623,7 +528,7 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         XCTAssertNil(decoded.reviewedScriptHash)
         XCTAssertEqual(
             decoded.schemaBoundary,
-            ChromeMV3ExtensionManagerManualSmokeSchemaBoundary.current
+            ChromeMV3ExtensionManagerReviewedResourceDiagnosticSchemaBoundary.current
         )
         XCTAssertTrue(decoded.noRealSecrets)
         XCTAssertTrue(decoded.noRawCredentials)
@@ -639,7 +544,7 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         decoder.dateDecodingStrategy = .iso8601
         XCTAssertThrowsError(
             try decoder.decode(
-                ChromeMV3ExtensionManagerManualSmokeArtifact.self,
+                ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifact.self,
                 from: data
             )
         )
@@ -654,7 +559,7 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
             profileID: "profile-manual-legacy-artifact",
             enableInternal: true
         )
-        var object = manualSmokeArtifactJSONObject(
+        var object = reviewedResourceDiagnosticArtifactJSONObject(
             profileID: fixture.record.profileID,
             extensionID: fixture.record.extensionID
         )
@@ -662,7 +567,7 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         object.removeValue(forKey: "reviewedScriptHash")
         try writeJSONObject(
             object,
-            to: ChromeMV3ExtensionManagerManualSmokeArtifactWriter.reportURL(
+            to: ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifactWriter.legacyReportURL(
                 rootURL: fixture.root,
                 profileID: fixture.record.profileID,
                 extensionID: fixture.record.extensionID
@@ -677,16 +582,18 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(detail.manualSmokeAction.lastRunStatus, .succeeded)
-        XCTAssertEqual(detail.manualSmokeAction.lastRetainedObjectCount, 0)
-        XCTAssertEqual(detail.manualSmokeAction.lastTeardownStatus, "completed")
-        XCTAssertTrue(detail.manualSmokeAction.manualOnly)
+        XCTAssertEqual(detail.reviewedResourceDiagnosticAction.lastRunStatus, .succeeded)
+        XCTAssertEqual(detail.reviewedResourceDiagnosticAction.lastRetainedObjectCount, 0)
+        XCTAssertEqual(detail.reviewedResourceDiagnosticAction.lastTeardownStatus, "completed")
+        XCTAssertTrue(detail.reviewedResourceDiagnosticAction.manualOnly)
         XCTAssertTrue(
-            detail.manualSmokeAction.notProductSupportWarning
-                .contains("stable product path")
+            detail.reviewedResourceDiagnosticAction.notProductSupportWarning
+                .contains("stable product support")
         )
         XCTAssertFalse(
-            detail.manualSmokeAction.gateState["managerReadoutExecutesSmoke"]
+            detail.reviewedResourceDiagnosticAction.gateState[
+                "managerReadoutExecutesDiagnosticAction"
+            ]
                 ?? true
         )
         XCTAssertFalse(fixture.module.hasLoadedRuntime)
@@ -1048,7 +955,7 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
             extensionID: record.extensionID
         )
         let artifactURL =
-            ChromeMV3ExtensionManagerManualSmokeArtifactWriter.reportURL(
+            ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifactWriter.reportURL(
                 rootURL: root,
                 profileID: record.profileID,
                 extensionID: record.extensionID
@@ -1080,19 +987,88 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         assertNoRuntimeSideEffects(enable, module: module)
 
         let diagnostic = await module
-            .chromeMV3RunURLHubDiagnosticSmokeThroughURLHub(
+            .chromeMV3RunReviewedResourceDiagnosticActionThroughURLHub(
                 rootURL: root,
                 profileID: record.profileID,
                 extensionID: record.extensionID,
                 currentPage: currentPage,
                 now: { self.fixedDate }
             )
+        let artifact = try XCTUnwrap(
+            diagnostic.reviewedResourceDiagnosticArtifact
+        )
+        let artifactData = try Data(contentsOf: artifactURL)
+        let artifactString = String(data: artifactData, encoding: .utf8) ?? ""
 
         XCTAssertTrue(
             diagnostic.succeeded,
             diagnostic.diagnostics.joined(separator: "\n")
         )
         XCTAssertTrue(FileManager.default.fileExists(atPath: artifactURL.path))
+        XCTAssertEqual(artifact.schemaVersion, 2)
+        XCTAssertEqual(
+            artifact.capabilityID,
+            ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog
+                .reviewedGeneratedResourceNormalTabDiagnosticID
+        )
+        XCTAssertEqual(
+            artifact.fixtureProvenance,
+            "bitwardenCompatibilityFixture"
+        )
+        XCTAssertEqual(
+            artifact.artifactOutputKind,
+            "reviewedResourceDiagnosticActionArtifact"
+        )
+        XCTAssertFalse(artifact.productSupportClaim)
+        XCTAssertEqual(artifact.smokeKind, "reviewedResourceDiagnosticAction")
+        XCTAssertEqual(
+            artifact.reviewedResourcePath,
+            "content/bootstrap-autofill.js"
+        )
+        XCTAssertEqual(
+            artifact.reviewedResourceHash,
+            ChromeMV3LocalExperimentalReviewedResourceRegistry
+                .bitwardenBootstrapAutofill.reviewedSHA256
+        )
+        XCTAssertEqual(
+            artifact.generatedResourceHash,
+            artifact.reviewedResourceHash
+        )
+        XCTAssertEqual(
+            artifact.sourceResourceHash,
+            artifact.generatedResourceHash
+        )
+        XCTAssertTrue(artifact.sourceGeneratedByteEqual)
+        XCTAssertEqual(
+            artifact.previousReviewedHashes,
+            [
+                ChromeMV3LocalExperimentalReviewedResourceRegistry
+                    .bitwardenBootstrapAutofill.previousReviewedSHA256,
+            ].compactMap { $0 }
+        )
+        XCTAssertTrue(artifact.teardownCompleted)
+        XCTAssertEqual(artifact.retainedObjectCount, 0)
+        XCTAssertTrue(artifact.noRealSecrets)
+        XCTAssertTrue(artifact.noRawCredentials)
+        XCTAssertTrue(artifact.noRealWebsiteData)
+        XCTAssertTrue(artifact.actionManualOnly)
+        XCTAssertFalse(artifact.managerReadoutExecutedSmoke)
+        XCTAssertEqual(
+            artifact.schemaBoundary.diagnosticScope,
+            "localExperimentalReviewedResourceDiagnosticAction"
+        )
+        XCTAssertTrue(artifact.schemaBoundary.localExperimentalOnly)
+        XCTAssertFalse(artifact.schemaBoundary.stableProductSupportClaimed)
+        XCTAssertFalse(
+            artifact.runtimeBehaviorIntentionallyUnchanged
+                .productRuntimeExposed
+        )
+        XCTAssertFalse(
+            artifact.runtimeBehaviorIntentionallyUnchanged
+                .arbitraryScriptingEnabled
+        )
+        XCTAssertFalse(artifactString.contains("masterPassword"))
+        XCTAssertFalse(artifactString.contains("accessToken"))
         assertNoRuntimeSideEffects(diagnostic, module: module)
     }
 
@@ -1593,6 +1569,19 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         XCTAssertTrue(managerSource.contains("Import Unpacked"))
         XCTAssertTrue(managerSource.contains("Import ZIP"))
         XCTAssertTrue(managerSource.contains("productSupportClaim"))
+        XCTAssertTrue(
+            managerSource.contains("ChromeMV3ReviewedResourceDiagnosticCapability")
+        )
+        XCTAssertTrue(managerSource.contains("fixtureRegistrations"))
+        XCTAssertTrue(
+            managerSource.contains("runReviewedResourceDiagnosticAction")
+        )
+        XCTAssertFalse(managerAndSettings.contains("runBitwardenManualSmoke"))
+        XCTAssertFalse(
+            managerAndSettings.contains(
+                "chromeMV3RunBitwardenManualSmokeThroughManager"
+            )
+        )
         XCTAssertFalse(managerSource.contains("Label(\"Web Store\""))
         XCTAssertFalse(
             managerAndSettings.contains(
@@ -1859,7 +1848,7 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         """
     }
 
-    private func manualSmokeArtifactJSONObject(
+    private func reviewedResourceDiagnosticArtifactJSONObject(
         profileID: String,
         extensionID: String
     ) -> [String: Any] {

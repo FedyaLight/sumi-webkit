@@ -8,6 +8,7 @@
 //  hosts, or enable product network enforcement.
 //
 
+import CryptoKit
 import Foundation
 import SwiftUI
 
@@ -52,7 +53,7 @@ enum ChromeMV3ExtensionManagerActionKind:
     case openActionPopup
     case openOptions
     case closePopupOptions
-    case runBitwardenManualSmoke
+    case runReviewedResourceDiagnosticAction
     case exportDiagnosticsJSON
     case chromeWebStoreInstall
 
@@ -109,11 +110,11 @@ enum ChromeMV3ExtensionManagerBlockedDiagnosticCode:
     case popupOptionsProductGateBlocked
     case popupOptionsExtensionDisabled
     case popupOptionsResourceBlocked
-    case manualSmokeUnavailable
-    case manualSmokeLocalExperimentalGateClosed
-    case manualSmokeReviewedFileMissing
-    case manualSmokeExtensionDisabled
-    case manualSmokeNotProductSupport
+    case reviewedResourceDiagnosticUnavailable
+    case reviewedResourceDiagnosticLocalExperimentalGateClosed
+    case reviewedResourceDiagnosticReviewedFileMissing
+    case reviewedResourceDiagnosticExtensionDisabled
+    case reviewedResourceDiagnosticNotProductSupport
     case toolbarActionUIDeferred
 
     static func < (
@@ -259,19 +260,19 @@ struct ChromeMV3ExtensionManagerDocumentationSource:
             title: "Apple WKContentWorld documentation",
             url: "https://developer.apple.com/documentation/webkit/wkcontentworld",
             boundary: "isolated content-world execution",
-            finding: "WKContentWorld separates JavaScript variable environments but DOM changes remain visible; Sumi therefore keeps manual smoke restricted to a synthetic HTTPS login page and dummy-only values."
+            finding: "WKContentWorld separates JavaScript variable environments but DOM changes remain visible; Sumi therefore keeps reviewed-resource diagnostics restricted to a synthetic HTTPS login page and dummy-only values."
         ),
         ChromeMV3ExtensionManagerDocumentationSource(
             title: "Apple WKUserContentController documentation",
             url: "https://developer.apple.com/documentation/webkit/wkusercontentcontroller",
             boundary: "script and handler teardown",
-            finding: "WKUserContentController manages injected scripts and script message handlers, including removal APIs; manual smoke records explicit handler/script teardown."
+            finding: "WKUserContentController manages injected scripts and script message handlers, including removal APIs; the reviewed-resource diagnostic records explicit handler/script teardown."
         ),
         ChromeMV3ExtensionManagerDocumentationSource(
             title: "Apple WKWebsiteDataStore nonPersistent documentation",
             url: "https://developer.apple.com/documentation/webkit/wkwebsitedatastore/nonpersistent()",
             boundary: "synthetic smoke storage isolation",
-            finding: "WKWebsiteDataStore exposes a nonpersistent data store; manual smoke uses it for the synthetic normal-tab WebKit object and keeps persistent browsing data disabled."
+            finding: "WKWebsiteDataStore exposes a nonpersistent data store; the reviewed-resource diagnostic uses it for the synthetic normal-tab WebKit object and keeps persistent browsing data disabled."
         ),
         ChromeMV3ExtensionManagerDocumentationSource(
             title: "Apple WKWebExtensionContext header",
@@ -510,38 +511,38 @@ extension ChromeMV3ExtensionManagerBlockedDiagnostic {
         remediation: "Fix missing, unsafe, remote, or dynamic popup/options resources before opening the UI."
     )
 
-    static let manualSmokeUnavailable = make(
-        .manualSmokeUnavailable,
+    static let reviewedResourceDiagnosticUnavailable = make(
+        .reviewedResourceDiagnosticUnavailable,
         severity: .productBlocked,
-        message: "The Bitwarden manual normal-tab smoke action is unavailable.",
-        remediation: "Enable the internal extension record, keep the local experimental manager gate open, and ensure the reviewed generated-bundle bootstrap file is present."
+        message: "The reviewed-resource diagnostic action is unavailable.",
+        remediation: "Enable the internal extension record, keep the local experimental manager gate open, and ensure a registered reviewed generated-bundle resource is present with its expected hash."
     )
 
-    static let manualSmokeLocalExperimentalGateClosed = make(
-        .manualSmokeLocalExperimentalGateClosed,
+    static let reviewedResourceDiagnosticLocalExperimentalGateClosed = make(
+        .reviewedResourceDiagnosticLocalExperimentalGateClosed,
         severity: .productBlocked,
-        message: "The manual smoke local experimental gate is closed.",
-        remediation: "Invoke the explicit local experimental manager action only from an internal DEBUG/developer-preview path."
+        message: "The reviewed-resource diagnostic local experimental gate is closed.",
+        remediation: "Invoke the explicit reviewed-resource diagnostic action only from an internal DEBUG/developer-preview path."
     )
 
-    static let manualSmokeReviewedFileMissing = make(
-        .manualSmokeReviewedFileMissing,
+    static let reviewedResourceDiagnosticReviewedFileMissing = make(
+        .reviewedResourceDiagnosticReviewedFileMissing,
         severity: .fatalRuntime,
-        message: "The reviewed Bitwarden content/bootstrap-autofill.js generated-bundle file is missing or unhashed.",
-        remediation: "Rebuild the generated bundle and rerun diagnostics before attempting the manual smoke."
+        message: "No registered reviewed generated-bundle resource is available with its expected hash and source/generated byte equality.",
+        remediation: "Rebuild the generated bundle and rerun diagnostics before attempting the reviewed-resource diagnostic action."
     )
 
-    static let manualSmokeExtensionDisabled = make(
-        .manualSmokeExtensionDisabled,
+    static let reviewedResourceDiagnosticExtensionDisabled = make(
+        .reviewedResourceDiagnosticExtensionDisabled,
         severity: .productBlocked,
-        message: "The internal extension record is disabled; manual smoke will not create a synthetic normal-tab WebKit object.",
-        remediation: "Enable the internal extension record in the local experimental manager before invoking the smoke."
+        message: "The internal extension record is disabled; the reviewed-resource diagnostic action will not create a synthetic normal-tab WebKit object.",
+        remediation: "Enable the internal extension record in the local experimental manager before invoking the reviewed-resource diagnostic action."
     )
 
-    static let manualSmokeNotProductSupport = make(
-        .manualSmokeNotProductSupport,
+    static let reviewedResourceDiagnosticNotProductSupport = make(
+        .reviewedResourceDiagnosticNotProductSupport,
         severity: .info,
-        message: "Manual smoke is a local experimental diagnostic only and is not a Bitwarden product-support claim.",
+        message: "Reviewed-resource execution is a local experimental diagnostic only and is not a product-support claim.",
         remediation: "Keep product/default runtime off and use the artifact as diagnostics only."
     )
 
@@ -621,7 +622,333 @@ struct ChromeMV3ExtensionManagerActionDescriptor:
     var unavailableDiagnostics: [ChromeMV3ExtensionManagerBlockedDiagnostic]
 }
 
-struct ChromeMV3ExtensionManagerManualSmokeDOMSummary:
+enum ChromeMV3ReviewedResourceDiagnosticGeneratedResourceStatus:
+    String,
+    Codable,
+    Equatable,
+    Sendable
+{
+    case available
+    case missing
+    case reviewedHashMismatch
+    case sourceGeneratedMismatch
+}
+
+enum ChromeMV3ReviewedResourceDiagnosticCurrentPageEligibility:
+    String,
+    Codable,
+    Equatable,
+    Sendable
+{
+    case notEvaluatedByManagerReadout
+    case eligible
+    case blocked
+}
+
+struct ChromeMV3ReviewedResourceDiagnosticExecutionBoundary:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var isolatedWorldOnly: Bool
+    var topFrameOnly: Bool
+    var normalTabOnly: Bool
+    var syntheticHTTPSOnly: Bool
+    var fileSchemeAllowed: Bool
+    var aboutBlankAllowed: Bool
+    var matchOriginAsFallbackAllowed: Bool
+    var arbitraryScriptingAllowed: Bool
+}
+
+struct ChromeMV3ReviewedResourceDiagnosticFixtureRegistration:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var capabilityID: String
+    var displayLabel: String
+    var fixtureProvenance: String
+    var reviewedResourcePath: String
+    var reviewedResourceHash: String
+    var previousReviewedHashes: [String]
+    var artifactOutputKind: String
+    var localExperimentalLabel: String
+    var productSupportClaim: Bool
+    var executionBoundary:
+        ChromeMV3ReviewedResourceDiagnosticExecutionBoundary
+}
+
+struct ChromeMV3ReviewedResourceDiagnosticCapability:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var extensionID: String
+    var profileID: String
+    var capabilityID: String
+    var displayLabel: String
+    var fixtureProvenance: String
+    var reviewedResourcePath: String
+    var reviewedResourceHash: String
+    var previousReviewedHashes: [String]
+    var sourceResourceHash: String?
+    var generatedResourceHash: String?
+    var generatedResourceStatus:
+        ChromeMV3ReviewedResourceDiagnosticGeneratedResourceStatus
+    var sourceGeneratedByteEqual: Bool
+    var syntheticCurrentPageOnly: Bool
+    var currentPageEligibility:
+        ChromeMV3ReviewedResourceDiagnosticCurrentPageEligibility
+    var permissionOrActiveTabState: String
+    var localExperimentalGateOpen: Bool
+    var actionAvailable: Bool
+    var executionBoundary:
+        ChromeMV3ReviewedResourceDiagnosticExecutionBoundary
+    var artifactOutputKind: String
+    var localExperimentalLabel: String
+    var productSupportClaim: Bool
+    var blockers: [String]
+    var diagnostics: [String]
+
+    func applyingCurrentPage(
+        _ readiness: ChromeMV3URLHubCurrentPageReadiness
+    ) -> Self {
+        var copy = self
+        copy.currentPageEligibility =
+            readiness.explicitDiagnosticActionCanRun ? .eligible : .blocked
+        copy.permissionOrActiveTabState =
+            readiness.actionHostAccessDecision.hasHostAccess
+                ? readiness.actionHostAccessDecision.grantSource.rawValue
+                : readiness.actionHostAccessDecision.status.rawValue
+        copy.actionAvailable =
+            actionAvailable && readiness.explicitDiagnosticActionCanRun
+        copy.blockers =
+            Array(
+                Set(
+                    blockers + readiness.blockers.map(\.rawValue)
+                )
+            ).sorted()
+        copy.diagnostics =
+            uniqueSortedExtensionManager(
+                diagnostics + readiness.diagnostics
+            )
+        return copy
+    }
+}
+
+enum ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog {
+    static let reviewedGeneratedResourceNormalTabDiagnosticID =
+        "reviewedGeneratedResourceNormalTabDiagnostic"
+    static let notProductSupportLabel =
+        "Diagnostic only - not product support"
+
+    static let bitwardenBootstrapAutofillFixture =
+        ChromeMV3ReviewedResourceDiagnosticFixtureRegistration(
+            capabilityID: reviewedGeneratedResourceNormalTabDiagnosticID,
+            displayLabel: "Run reviewed-resource diagnostic",
+            fixtureProvenance: "bitwardenCompatibilityFixture",
+            reviewedResourcePath:
+                ChromeMV3LocalExperimentalReviewedResourceRegistry
+                .bitwardenBootstrapAutofill.resourcePath,
+            reviewedResourceHash:
+                ChromeMV3LocalExperimentalReviewedResourceRegistry
+                .bitwardenBootstrapAutofill.reviewedSHA256,
+            previousReviewedHashes: [
+                ChromeMV3LocalExperimentalReviewedResourceRegistry
+                    .bitwardenBootstrapAutofill.previousReviewedSHA256,
+            ].compactMap { $0 },
+            artifactOutputKind:
+                "reviewedResourceDiagnosticActionArtifact",
+            localExperimentalLabel:
+                "Local experimental reviewed-resource diagnostic",
+            productSupportClaim: false,
+            executionBoundary:
+                ChromeMV3ReviewedResourceDiagnosticExecutionBoundary(
+                    isolatedWorldOnly: true,
+                    topFrameOnly: true,
+                    normalTabOnly: true,
+                    syntheticHTTPSOnly: true,
+                    fileSchemeAllowed: false,
+                    aboutBlankAllowed: false,
+                    matchOriginAsFallbackAllowed: false,
+                    arbitraryScriptingAllowed: false
+                )
+        )
+    static let fixtureRegistrations = [
+        bitwardenBootstrapAutofillFixture,
+    ]
+
+    static func reviewedResource(
+        record: ChromeMV3ExtensionLifecycleRecord,
+        report: ChromeMV3EndToEndInstallDiagnosticsReport?
+    ) -> ChromeMV3ProductNormalTabReviewedResource {
+        let active = activeGeneratedVersion(record: record, report: report)
+        guard let registration = fixtureRegistration(active: active) else {
+            return .unregistered()
+        }
+        return .reviewedGeneratedBundleFile(
+            path: registration.reviewedResourcePath,
+            generatedBundleRootPath: active?.generatedBundleRootPath,
+            copiedResourcePaths:
+                active?.generatedBundleRecord.copiedResourcePaths ?? [],
+            hash: generatedHash(
+                active: active,
+                registration: registration
+            )
+        )
+    }
+
+    static func registeredCapability(
+        record: ChromeMV3ExtensionLifecycleRecord,
+        report: ChromeMV3EndToEndInstallDiagnosticsReport?,
+        gate: ChromeMV3ExtensionManagerGate,
+        readiness: ChromeMV3ProductNormalTabReadinessReport
+    ) -> ChromeMV3ReviewedResourceDiagnosticCapability? {
+        let active = activeGeneratedVersion(record: record, report: report)
+        guard let registration = fixtureRegistration(active: active) else {
+            return nil
+        }
+
+        let sourceData = active.flatMap {
+            resourceData(
+                rootPath: $0.generatedBundleRecord.originalBundleRootPath,
+                relativePath: registration.reviewedResourcePath
+            )
+        }
+        let generatedData = active.flatMap {
+            resourceData(
+                rootPath: $0.generatedBundleRootPath,
+                relativePath: registration.reviewedResourcePath
+            )
+        }
+        let sourceHash = sourceData.map(sha256)
+        let generatedHash = generatedData.map(sha256)
+        let byteEqual =
+            sourceData != nil && generatedData != nil
+                && sourceData == generatedData
+        let status: ChromeMV3ReviewedResourceDiagnosticGeneratedResourceStatus
+        if sourceData == nil || generatedData == nil {
+            status = .missing
+        } else if byteEqual == false {
+            status = .sourceGeneratedMismatch
+        } else if generatedHash != registration.reviewedResourceHash {
+            status = .reviewedHashMismatch
+        } else {
+            status = .available
+        }
+        let localExperimentalGateOpen =
+            gate.managerAvailableInDeveloperPreview
+        let blockers = [
+            localExperimentalGateOpen
+                ? nil : "localExperimentalGateClosed",
+            record.runtimeState.internalRuntimeEnabled
+                ? nil : "extensionInternalRecordDisabled",
+            status == .available
+                ? nil : "generatedResource.\(status.rawValue)",
+            readiness.preflight.reviewedResource.present
+                ? nil : "reviewedGeneratedResourceMissing",
+        ].compactMap { $0 }.sorted()
+        return ChromeMV3ReviewedResourceDiagnosticCapability(
+            extensionID: record.extensionID,
+            profileID: record.profileID,
+            capabilityID: registration.capabilityID,
+            displayLabel: registration.displayLabel,
+            fixtureProvenance: registration.fixtureProvenance,
+            reviewedResourcePath: registration.reviewedResourcePath,
+            reviewedResourceHash: registration.reviewedResourceHash,
+            previousReviewedHashes: registration.previousReviewedHashes,
+            sourceResourceHash: sourceHash,
+            generatedResourceHash: generatedHash,
+            generatedResourceStatus: status,
+            sourceGeneratedByteEqual: byteEqual,
+            syntheticCurrentPageOnly: true,
+            currentPageEligibility: .notEvaluatedByManagerReadout,
+            permissionOrActiveTabState:
+                readiness.preflight.hostAccessDecision.grantSource.rawValue,
+            localExperimentalGateOpen: localExperimentalGateOpen,
+            actionAvailable: blockers.isEmpty,
+            executionBoundary: registration.executionBoundary,
+            artifactOutputKind: registration.artifactOutputKind,
+            localExperimentalLabel: registration.localExperimentalLabel,
+            productSupportClaim: registration.productSupportClaim,
+            blockers: blockers,
+            diagnostics: [
+                "Reviewed-resource diagnostic capability is registered from fixture metadata, not extension-id-specific product behavior.",
+                "Generated resource status: \(status.rawValue).",
+                "Source/generated byte equality: \(byteEqual).",
+                "Product support claim: \(registration.productSupportClaim).",
+            ]
+        )
+    }
+
+    private static func fixtureRegistration(
+        active: ChromeMV3GeneratedBundleVersionRecord?
+    ) -> ChromeMV3ReviewedResourceDiagnosticFixtureRegistration? {
+        let copiedResourcePaths =
+            active?.generatedBundleRecord.copiedResourcePaths ?? []
+        let copiedRegistrations = fixtureRegistrations.filter {
+            copiedResourcePaths.contains($0.reviewedResourcePath)
+        }
+        return copiedRegistrations.first {
+            generatedHash(active: active, registration: $0)
+                == $0.reviewedResourceHash
+        } ?? copiedRegistrations.first
+    }
+
+    private static func activeGeneratedVersion(
+        record: ChromeMV3ExtensionLifecycleRecord,
+        report: ChromeMV3EndToEndInstallDiagnosticsReport?
+    ) -> ChromeMV3GeneratedBundleVersionRecord? {
+        if let activeID = record.activeGeneratedVersionID,
+           let active = record.generatedBundleVersions.first(where: {
+               $0.id == activeID
+           })
+        {
+            return active
+        }
+        return report?.generatedBundleVersionState.last {
+            $0.state == .active || $0.state == .rollbackActive
+        }
+            ?? record.generatedBundleVersions.last {
+                $0.state == .active || $0.state == .rollbackActive
+            }
+            ?? record.generatedBundleVersions.last
+    }
+
+    private static func generatedHash(
+        active: ChromeMV3GeneratedBundleVersionRecord?,
+        registration:
+            ChromeMV3ReviewedResourceDiagnosticFixtureRegistration
+    ) -> String? {
+        active.flatMap {
+            resourceData(
+                rootPath: $0.generatedBundleRootPath,
+                relativePath: registration.reviewedResourcePath
+            )
+        }
+        .map(sha256)
+    }
+
+    private static func resourceData(
+        rootPath: String,
+        relativePath: String
+    ) -> Data? {
+        try? Data(
+            contentsOf:
+                URL(fileURLWithPath: rootPath, isDirectory: true)
+                .appendingPathComponent(relativePath)
+                .standardizedFileURL
+        )
+    }
+
+    private static func sha256(_ data: Data) -> String {
+        SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+}
+
+struct ChromeMV3ExtensionManagerReviewedResourceDiagnosticDOMSummary:
     Codable,
     Equatable
 {
@@ -643,7 +970,7 @@ struct ChromeMV3ExtensionManagerManualSmokeDOMSummary:
         dummyUsername: String,
         dummyPassword: String
     ) -> Self {
-        ChromeMV3ExtensionManagerManualSmokeDOMSummary(
+        ChromeMV3ExtensionManagerReviewedResourceDiagnosticDOMSummary(
             phase: snapshot.phase,
             url: snapshot.url,
             origin: snapshot.origin,
@@ -666,7 +993,7 @@ struct ChromeMV3ExtensionManagerManualSmokeDOMSummary:
     }
 }
 
-struct ChromeMV3ExtensionManagerManualSmokeRuntimeBehavior:
+struct ChromeMV3ExtensionManagerReviewedResourceDiagnosticRuntimeBehavior:
     Codable,
     Equatable
 {
@@ -682,7 +1009,7 @@ struct ChromeMV3ExtensionManagerManualSmokeRuntimeBehavior:
     var timersOrPollingEnabled: Bool
 }
 
-struct ChromeMV3ExtensionManagerManualSmokeSchemaBoundary:
+struct ChromeMV3ExtensionManagerReviewedResourceDiagnosticSchemaBoundary:
     Codable,
     Equatable
 {
@@ -698,10 +1025,21 @@ struct ChromeMV3ExtensionManagerManualSmokeSchemaBoundary:
     var deprecatedOrAmbiguousFields: [String]
 
     static let current = Self(
-        diagnosticScope: "localExperimentalManualSmoke",
+        diagnosticScope: "localExperimentalReviewedResourceDiagnosticAction",
         localExperimentalOnly: true,
         stableProductSupportClaimed: false,
         generalMV3CapabilityFields: [
+            "capabilityID",
+            "capabilityDisplayLabel",
+            "fixtureProvenance",
+            "artifactOutputKind",
+            "productSupportClaim",
+            "reviewedResourcePath",
+            "reviewedResourceHash",
+            "previousReviewedHashes",
+            "sourceResourceHash",
+            "generatedResourceHash",
+            "sourceGeneratedByteEqual",
             "reviewedScriptPath",
             "reviewedScriptHash",
             "syntheticOrigin",
@@ -740,7 +1078,7 @@ struct ChromeMV3ExtensionManagerManualSmokeSchemaBoundary:
             "diagnostics",
         ],
         bitwardenFixtureSpecificFields: [
-            "smokeKind=bitwardenManualNormalTabSmoke",
+            "fixtureProvenance=bitwardenCompatibilityFixture",
             "reviewedScriptPath=content/bootstrap-autofill.js",
             "fieldsTouched=sumi-login-email/sumi-login-password",
             "dummyValueMarkers=username/password synthetic dummy markers",
@@ -751,40 +1089,51 @@ struct ChromeMV3ExtensionManagerManualSmokeSchemaBoundary:
     )
 }
 
-struct ChromeMV3ExtensionManagerManualSmokeArtifact:
+struct ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifact:
     Codable,
     Equatable
 {
-    static let schemaVersion = 1
-    static let smokeKind = "bitwardenManualNormalTabSmoke"
+    static let schemaVersion = 2
+    static let smokeKind = "reviewedResourceDiagnosticAction"
 
     var schemaVersion: Int
     var generatedAt: Date
     var runID: String
     var profileID: String
     var extensionID: String
+    var capabilityID: String
+    var capabilityDisplayLabel: String
+    var fixtureProvenance: String
+    var artifactOutputKind: String
+    var productSupportClaim: Bool
     var packageSource: ChromeMV3PackageSourceKind
     var packagePath: String
     var smokeKind: String
+    var reviewedResourcePath: String
+    var reviewedResourceHash: String?
+    var previousReviewedHashes: [String]
+    var sourceResourceHash: String?
+    var generatedResourceHash: String?
+    var sourceGeneratedByteEqual: Bool
     var reviewedScriptPath: String
     var reviewedScriptHash: String?
     var syntheticURL: String
     var syntheticOrigin: String
     var schemaBoundary:
-        ChromeMV3ExtensionManagerManualSmokeSchemaBoundary
+        ChromeMV3ExtensionManagerReviewedResourceDiagnosticSchemaBoundary
     var gatePreflightEligible: Bool
     var gatePreflightBlockers: [String]
     var actionManualOnly: Bool
     var managerReadoutExecutedSmoke: Bool
-    var domBefore: ChromeMV3ExtensionManagerManualSmokeDOMSummary
-    var domAfter: ChromeMV3ExtensionManagerManualSmokeDOMSummary
+    var domBefore: ChromeMV3ExtensionManagerReviewedResourceDiagnosticDOMSummary
+    var domAfter: ChromeMV3ExtensionManagerReviewedResourceDiagnosticDOMSummary
     var fieldsTouched: [String]
     var dummyValueMarkers: [String]
     var teardownCompleted: Bool
     var teardownStatus: ChromeMV3LocalExperimentalNormalTabManualSmokeTeardown
     var retainedObjectCount: Int
     var runtimeBehaviorIntentionallyUnchanged:
-        ChromeMV3ExtensionManagerManualSmokeRuntimeBehavior
+        ChromeMV3ExtensionManagerReviewedResourceDiagnosticRuntimeBehavior
     var blockers: [String]
     var noRealSecrets: Bool
     var noRawCredentials: Bool
@@ -798,9 +1147,20 @@ struct ChromeMV3ExtensionManagerManualSmokeArtifact:
         case runID
         case profileID
         case extensionID
+        case capabilityID
+        case capabilityDisplayLabel
+        case fixtureProvenance
+        case artifactOutputKind
+        case productSupportClaim
         case packageSource
         case packagePath
         case smokeKind
+        case reviewedResourcePath
+        case reviewedResourceHash
+        case previousReviewedHashes
+        case sourceResourceHash
+        case generatedResourceHash
+        case sourceGeneratedByteEqual
         case reviewedScriptPath
         case reviewedScriptHash
         case syntheticURL
@@ -832,29 +1192,40 @@ struct ChromeMV3ExtensionManagerManualSmokeArtifact:
         runID: String,
         profileID: String,
         extensionID: String,
+        capabilityID: String,
+        capabilityDisplayLabel: String,
+        fixtureProvenance: String,
+        artifactOutputKind: String,
+        productSupportClaim: Bool,
         packageSource: ChromeMV3PackageSourceKind,
         packagePath: String,
         smokeKind: String,
+        reviewedResourcePath: String,
+        reviewedResourceHash: String?,
+        previousReviewedHashes: [String],
+        sourceResourceHash: String?,
+        generatedResourceHash: String?,
+        sourceGeneratedByteEqual: Bool,
         reviewedScriptPath: String,
         reviewedScriptHash: String?,
         syntheticURL: String,
         syntheticOrigin: String,
         schemaBoundary:
-            ChromeMV3ExtensionManagerManualSmokeSchemaBoundary =
+            ChromeMV3ExtensionManagerReviewedResourceDiagnosticSchemaBoundary =
             .current,
         gatePreflightEligible: Bool,
         gatePreflightBlockers: [String],
         actionManualOnly: Bool,
         managerReadoutExecutedSmoke: Bool,
-        domBefore: ChromeMV3ExtensionManagerManualSmokeDOMSummary,
-        domAfter: ChromeMV3ExtensionManagerManualSmokeDOMSummary,
+        domBefore: ChromeMV3ExtensionManagerReviewedResourceDiagnosticDOMSummary,
+        domAfter: ChromeMV3ExtensionManagerReviewedResourceDiagnosticDOMSummary,
         fieldsTouched: [String],
         dummyValueMarkers: [String],
         teardownCompleted: Bool,
         teardownStatus: ChromeMV3LocalExperimentalNormalTabManualSmokeTeardown,
         retainedObjectCount: Int,
         runtimeBehaviorIntentionallyUnchanged:
-            ChromeMV3ExtensionManagerManualSmokeRuntimeBehavior,
+            ChromeMV3ExtensionManagerReviewedResourceDiagnosticRuntimeBehavior,
         blockers: [String],
         noRealSecrets: Bool,
         noRawCredentials: Bool,
@@ -867,9 +1238,20 @@ struct ChromeMV3ExtensionManagerManualSmokeArtifact:
         self.runID = runID
         self.profileID = profileID
         self.extensionID = extensionID
+        self.capabilityID = capabilityID
+        self.capabilityDisplayLabel = capabilityDisplayLabel
+        self.fixtureProvenance = fixtureProvenance
+        self.artifactOutputKind = artifactOutputKind
+        self.productSupportClaim = productSupportClaim
         self.packageSource = packageSource
         self.packagePath = packagePath
         self.smokeKind = smokeKind
+        self.reviewedResourcePath = reviewedResourcePath
+        self.reviewedResourceHash = reviewedResourceHash
+        self.previousReviewedHashes = previousReviewedHashes
+        self.sourceResourceHash = sourceResourceHash
+        self.generatedResourceHash = generatedResourceHash
+        self.sourceGeneratedByteEqual = sourceGeneratedByteEqual
         self.reviewedScriptPath = reviewedScriptPath
         self.reviewedScriptHash = reviewedScriptHash
         self.syntheticURL = syntheticURL
@@ -903,12 +1285,57 @@ struct ChromeMV3ExtensionManagerManualSmokeArtifact:
         runID = try container.decode(String.self, forKey: .runID)
         profileID = try container.decode(String.self, forKey: .profileID)
         extensionID = try container.decode(String.self, forKey: .extensionID)
+        capabilityID = try container.decodeIfPresent(
+            String.self,
+            forKey: .capabilityID
+        ) ?? ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog
+            .reviewedGeneratedResourceNormalTabDiagnosticID
+        capabilityDisplayLabel = try container.decodeIfPresent(
+            String.self,
+            forKey: .capabilityDisplayLabel
+        ) ?? "Legacy reviewed-resource diagnostic"
+        fixtureProvenance = try container.decodeIfPresent(
+            String.self,
+            forKey: .fixtureProvenance
+        ) ?? "legacyBitwardenCompatibilityFixture"
+        artifactOutputKind = try container.decodeIfPresent(
+            String.self,
+            forKey: .artifactOutputKind
+        ) ?? "legacyManualNormalTabSmokeArtifact"
+        productSupportClaim = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .productSupportClaim
+        ) ?? false
         packageSource = try container.decode(
             ChromeMV3PackageSourceKind.self,
             forKey: .packageSource
         )
         packagePath = try container.decode(String.self, forKey: .packagePath)
         smokeKind = try container.decode(String.self, forKey: .smokeKind)
+        reviewedResourcePath = try container.decodeIfPresent(
+            String.self,
+            forKey: .reviewedResourcePath
+        ) ?? container.decode(String.self, forKey: .reviewedScriptPath)
+        reviewedResourceHash = try container.decodeIfPresent(
+            String.self,
+            forKey: .reviewedResourceHash
+        ) ?? container.decodeIfPresent(String.self, forKey: .reviewedScriptHash)
+        previousReviewedHashes = try container.decodeIfPresent(
+            [String].self,
+            forKey: .previousReviewedHashes
+        ) ?? []
+        sourceResourceHash = try container.decodeIfPresent(
+            String.self,
+            forKey: .sourceResourceHash
+        )
+        generatedResourceHash = try container.decodeIfPresent(
+            String.self,
+            forKey: .generatedResourceHash
+        ) ?? container.decodeIfPresent(String.self, forKey: .reviewedScriptHash)
+        sourceGeneratedByteEqual = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .sourceGeneratedByteEqual
+        ) ?? false
         reviewedScriptPath = try container.decode(
             String.self,
             forKey: .reviewedScriptPath
@@ -923,7 +1350,7 @@ struct ChromeMV3ExtensionManagerManualSmokeArtifact:
             forKey: .syntheticOrigin
         )
         schemaBoundary = try container.decodeIfPresent(
-            ChromeMV3ExtensionManagerManualSmokeSchemaBoundary.self,
+            ChromeMV3ExtensionManagerReviewedResourceDiagnosticSchemaBoundary.self,
             forKey: .schemaBoundary
         ) ?? .current
         gatePreflightEligible = try container.decode(
@@ -943,11 +1370,11 @@ struct ChromeMV3ExtensionManagerManualSmokeArtifact:
             forKey: .managerReadoutExecutedSmoke
         )
         domBefore = try container.decode(
-            ChromeMV3ExtensionManagerManualSmokeDOMSummary.self,
+            ChromeMV3ExtensionManagerReviewedResourceDiagnosticDOMSummary.self,
             forKey: .domBefore
         )
         domAfter = try container.decode(
-            ChromeMV3ExtensionManagerManualSmokeDOMSummary.self,
+            ChromeMV3ExtensionManagerReviewedResourceDiagnosticDOMSummary.self,
             forKey: .domAfter
         )
         fieldsTouched = try container.decode([String].self, forKey: .fieldsTouched)
@@ -968,7 +1395,7 @@ struct ChromeMV3ExtensionManagerManualSmokeArtifact:
             forKey: .retainedObjectCount
         )
         runtimeBehaviorIntentionallyUnchanged = try container.decode(
-            ChromeMV3ExtensionManagerManualSmokeRuntimeBehavior.self,
+            ChromeMV3ExtensionManagerReviewedResourceDiagnosticRuntimeBehavior.self,
             forKey: .runtimeBehaviorIntentionallyUnchanged
         )
         blockers = try container.decode([String].self, forKey: .blockers)
@@ -988,19 +1415,31 @@ struct ChromeMV3ExtensionManagerManualSmokeArtifact:
     static func make(
         result: ChromeMV3LocalExperimentalNormalTabManualSmokeResult,
         record: ChromeMV3ExtensionLifecycleRecord,
+        capability: ChromeMV3ReviewedResourceDiagnosticCapability,
         generatedAt: Date
     ) -> Self {
         let runID =
-            "bitwarden-manual-smoke-\(record.profileID)-\(record.extensionID)-\(Int(generatedAt.timeIntervalSince1970))"
-        return ChromeMV3ExtensionManagerManualSmokeArtifact(
+            "reviewed-resource-diagnostic-\(record.profileID)-\(record.extensionID)-\(Int(generatedAt.timeIntervalSince1970))"
+        return ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifact(
             schemaVersion: schemaVersion,
             generatedAt: generatedAt,
             runID: runID,
             profileID: record.profileID,
             extensionID: record.extensionID,
+            capabilityID: capability.capabilityID,
+            capabilityDisplayLabel: capability.displayLabel,
+            fixtureProvenance: capability.fixtureProvenance,
+            artifactOutputKind: capability.artifactOutputKind,
+            productSupportClaim: capability.productSupportClaim,
             packageSource: record.sourceKind,
             packagePath: record.sourcePath,
             smokeKind: smokeKind,
+            reviewedResourcePath: capability.reviewedResourcePath,
+            reviewedResourceHash: capability.reviewedResourceHash,
+            previousReviewedHashes: capability.previousReviewedHashes,
+            sourceResourceHash: capability.sourceResourceHash,
+            generatedResourceHash: capability.generatedResourceHash,
+            sourceGeneratedByteEqual: capability.sourceGeneratedByteEqual,
             reviewedScriptPath: result.injectionPlan.reviewedScriptPath,
             reviewedScriptHash: result.injectionPlan.generatedResourceHash,
             syntheticURL: result.injectionPlan.syntheticURL,
@@ -1040,7 +1479,7 @@ struct ChromeMV3ExtensionManagerManualSmokeArtifact:
             retainedObjectCount:
                 result.teardown.retainedObjectCountAfterTeardown,
             runtimeBehaviorIntentionallyUnchanged:
-                ChromeMV3ExtensionManagerManualSmokeRuntimeBehavior(
+                ChromeMV3ExtensionManagerReviewedResourceDiagnosticRuntimeBehavior(
                     productDefaultRuntimeAvailable:
                         result.productDefaultRuntimeAvailable,
                     productRuntimeExposed: false,
@@ -1058,7 +1497,7 @@ struct ChromeMV3ExtensionManagerManualSmokeArtifact:
             noRawCredentials: true,
             noRealWebsiteData: true,
             notProductSupportWarning:
-                "Local experimental diagnostic only; this is not a Bitwarden support claim and does not enable product/default runtime.",
+                "Local experimental reviewed-resource diagnostic only; this is not a product-support claim and does not enable product/default runtime.",
             diagnostics:
                 uniqueSortedExtensionManager(
                     result.diagnostics
@@ -1071,10 +1510,14 @@ struct ChromeMV3ExtensionManagerManualSmokeArtifact:
     }
 }
 
-enum ChromeMV3ExtensionManagerManualSmokeArtifactWriter {
+enum ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifactWriter {
     static let diagnosticsDirectoryName =
-        ".diagnostics/chrome-mv3-manual-smoke"
+        ".diagnostics/chrome-mv3-reviewed-resource-diagnostic"
     static let reportFileName =
+        "reviewed-resource-diagnostic-action.json"
+    static let legacyDiagnosticsDirectoryName =
+        ".diagnostics/chrome-mv3-manual-smoke"
+    static let legacyReportFileName =
         "bitwarden-manual-normal-tab-smoke.json"
 
     static func reportURL(
@@ -1092,29 +1535,74 @@ enum ChromeMV3ExtensionManagerManualSmokeArtifactWriter {
             .appendingPathComponent(reportFileName)
     }
 
+    static func legacyReportURL(
+        rootURL: URL,
+        profileID: String,
+        extensionID: String
+    ) -> URL {
+        rootURL.standardizedFileURL
+            .appendingPathComponent(
+                legacyDiagnosticsDirectoryName,
+                isDirectory: true
+            )
+            .appendingPathComponent(safePathComponent(profileID), isDirectory: true)
+            .appendingPathComponent(safePathComponent(extensionID), isDirectory: true)
+            .appendingPathComponent(legacyReportFileName)
+    }
+
     static func latestArtifact(
         rootURL: URL,
         profileID: String,
         extensionID: String,
         fileManager: FileManager = .default
-    ) -> ChromeMV3ExtensionManagerManualSmokeArtifact? {
-        let url = reportURL(
-            rootURL: rootURL,
-            profileID: profileID,
-            extensionID: extensionID
-        )
-        guard fileManager.fileExists(atPath: url.path) else { return nil }
+    ) -> ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifact? {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return try? decoder.decode(
-            ChromeMV3ExtensionManagerManualSmokeArtifact.self,
-            from: Data(contentsOf: url)
-        )
+        for url in [
+            reportURL(
+                rootURL: rootURL,
+                profileID: profileID,
+                extensionID: extensionID
+            ),
+            legacyReportURL(
+                rootURL: rootURL,
+                profileID: profileID,
+                extensionID: extensionID
+            ),
+        ] where fileManager.fileExists(atPath: url.path) {
+            if let artifact = try? decoder.decode(
+                ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifact.self,
+                from: Data(contentsOf: url)
+            ) {
+                return artifact
+            }
+        }
+        return nil
+    }
+
+    static func latestArtifactURL(
+        rootURL: URL,
+        profileID: String,
+        extensionID: String,
+        fileManager: FileManager = .default
+    ) -> URL? {
+        [
+            reportURL(
+                rootURL: rootURL,
+                profileID: profileID,
+                extensionID: extensionID
+            ),
+            legacyReportURL(
+                rootURL: rootURL,
+                profileID: profileID,
+                extensionID: extensionID
+            ),
+        ].first { fileManager.fileExists(atPath: $0.path) }
     }
 
     @discardableResult
     static func write(
-        _ artifact: ChromeMV3ExtensionManagerManualSmokeArtifact,
+        _ artifact: ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifact,
         rootURL: URL
     ) throws -> URL {
         let url = reportURL(
@@ -1141,7 +1629,7 @@ enum ChromeMV3ExtensionManagerManualSmokeArtifactWriter {
     }
 }
 
-struct ChromeMV3ExtensionManagerManualSmokeActionRecord:
+struct ChromeMV3ExtensionManagerReviewedResourceDiagnosticActionRecord:
     Codable,
     Equatable
 {
@@ -1150,6 +1638,7 @@ struct ChromeMV3ExtensionManagerManualSmokeActionRecord:
     var profileID: String
     var packageSource: ChromeMV3PackageSourceKind
     var packagePath: String
+    var capability: ChromeMV3ReviewedResourceDiagnosticCapability?
     var gateState: [String: Bool]
     var available: Bool
     var enabledReason: String?
@@ -1168,42 +1657,53 @@ struct ChromeMV3ExtensionManagerManualSmokeActionRecord:
         record: ChromeMV3ExtensionLifecycleRecord,
         gate: ChromeMV3ExtensionManagerGate,
         readiness: ChromeMV3ProductNormalTabReadinessReport,
-        lastArtifact: ChromeMV3ExtensionManagerManualSmokeArtifact? = nil
+        lastArtifact: ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifact? = nil
     ) -> Self {
         var diagnostics: [ChromeMV3ExtensionManagerBlockedDiagnostic] = []
         let localExperimentalGateOpen = gate.managerAvailableInDeveloperPreview
+        let capability =
+            ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog
+            .registeredCapability(
+                record: record,
+                report: nil,
+                gate: gate,
+                readiness: readiness
+            )
         if localExperimentalGateOpen == false {
-            diagnostics.append(.manualSmokeLocalExperimentalGateClosed)
+            diagnostics.append(.reviewedResourceDiagnosticLocalExperimentalGateClosed)
         }
         if record.runtimeState.internalRuntimeEnabled == false {
-            diagnostics.append(.manualSmokeExtensionDisabled)
+            diagnostics.append(.reviewedResourceDiagnosticExtensionDisabled)
         }
-        if readiness.preflight.reviewedResource.present == false
+        if capability?.actionAvailable != true
+            || readiness.preflight.reviewedResource.present == false
             || readiness.preflight.reviewedResource.generatedResourceHash == nil
         {
-            diagnostics.append(.manualSmokeReviewedFileMissing)
+            diagnostics.append(.reviewedResourceDiagnosticReviewedFileMissing)
         }
         if diagnostics.isEmpty == false {
-            diagnostics.append(.manualSmokeUnavailable)
+            diagnostics.append(.reviewedResourceDiagnosticUnavailable)
         }
-        diagnostics.append(.manualSmokeNotProductSupport)
+        diagnostics.append(.reviewedResourceDiagnosticNotProductSupport)
         let blockingDiagnostics = diagnostics.filter {
             $0.severity != .info
         }
         let available = blockingDiagnostics.isEmpty
-        let artifactPath = lastArtifact.map { _ in
-            ChromeMV3ExtensionManagerManualSmokeArtifactWriter.reportURL(
+        let artifactPath = lastArtifact.flatMap { _ in
+            ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifactWriter
+            .latestArtifactURL(
                 rootURL: rootURL,
                 profileID: record.profileID,
                 extensionID: record.extensionID
-            ).path
+            )?.path
         }
-        return ChromeMV3ExtensionManagerManualSmokeActionRecord(
-            actionID: .runBitwardenManualSmoke,
+        return ChromeMV3ExtensionManagerReviewedResourceDiagnosticActionRecord(
+            actionID: .runReviewedResourceDiagnosticAction,
             extensionID: record.extensionID,
             profileID: record.profileID,
             packageSource: record.sourceKind,
             packagePath: record.sourcePath,
+            capability: capability,
             gateState: [
                 "localExperimentalManagerGateOpen": localExperimentalGateOpen,
                 "extensionInternalRecordEnabled":
@@ -1212,14 +1712,19 @@ struct ChromeMV3ExtensionManagerManualSmokeActionRecord:
                     readiness.preflight.reviewedResource.present,
                 "reviewedBootstrapHashRecorded":
                     readiness.preflight.reviewedResource.generatedResourceHash != nil,
+                "reviewedResourceCapabilityRegistered": capability != nil,
+                "reviewedResourceHashMatched":
+                    capability?.generatedResourceStatus == .available,
+                "sourceGeneratedByteEqual":
+                    capability?.sourceGeneratedByteEqual == true,
                 "productDefaultRuntimeAvailable":
                     readiness.policy.productDefaultRuntimeAvailable,
-                "managerReadoutExecutesSmoke": false,
+                "managerReadoutExecutesDiagnosticAction": false,
             ],
             available: available,
             enabledReason:
                 available
-                    ? "All local experimental manual smoke prerequisites are satisfied for explicit invocation."
+                    ? "All local experimental reviewed-resource diagnostic prerequisites are satisfied for explicit invocation."
                     : nil,
             disabledReason:
                 available
@@ -1244,7 +1749,7 @@ struct ChromeMV3ExtensionManagerManualSmokeActionRecord:
                 },
             lastRetainedObjectCount: lastArtifact?.retainedObjectCount,
             notProductSupportWarning:
-                "Local experimental diagnostic only; stable product path and Bitwarden support remain unclaimed.",
+                "Local experimental reviewed-resource diagnostic only; stable product support remains unclaimed.",
             unavailableDiagnostics:
                 Array(
                     Dictionary(grouping: diagnostics, by: \.code)
@@ -2428,8 +2933,10 @@ struct ChromeMV3ExtensionManagerDetailViewModel:
     var compatibilityReport: ChromeMV3CompatibilityReportViewModel?
     var productEnablementPreflight:
         ChromeMV3ProductEnablementPreflightSection
-    var manualSmokeAction:
-        ChromeMV3ExtensionManagerManualSmokeActionRecord
+    var reviewedResourceDiagnosticCapabilities:
+        [ChromeMV3ReviewedResourceDiagnosticCapability]
+    var reviewedResourceDiagnosticAction:
+        ChromeMV3ExtensionManagerReviewedResourceDiagnosticActionRecord
     var apiSupportMatrix: [ChromeMV3CompatibilityAPIMatrixRow]
     var blockersBySeverity: [ChromeMV3CompatibilityBlockerGroup]
     var blockersBySource: [ChromeMV3CompatibilityBlockerGroup]
@@ -2463,10 +2970,10 @@ struct ChromeMV3ExtensionManagerActionResult:
     var report: ChromeMV3EndToEndInstallDiagnosticsReport?
     var packageIntakeReport: ChromeMV3PackageIntakeReport?
     var popupOptionsRunResult: ChromeMV3ProductPopupOptionsRunResult?
-    var manualSmokeResult:
+    var reviewedResourceDiagnosticResult:
         ChromeMV3LocalExperimentalNormalTabManualSmokeResult?
-    var manualSmokeArtifact:
-        ChromeMV3ExtensionManagerManualSmokeArtifact?
+    var reviewedResourceDiagnosticArtifact:
+        ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifact?
     var diagnosticsJSON: String?
     var blockedDiagnostics: [ChromeMV3ExtensionManagerBlockedDiagnostic]
     var diagnostics: [String]
@@ -2493,8 +3000,8 @@ struct ChromeMV3ExtensionManagerActionResult:
             report: result.report,
             packageIntakeReport: packageIntakeReport,
             popupOptionsRunResult: nil,
-            manualSmokeResult: nil,
-            manualSmokeArtifact: nil,
+            reviewedResourceDiagnosticResult: nil,
+            reviewedResourceDiagnosticArtifact: nil,
             diagnosticsJSON: nil,
             blockedDiagnostics: [],
             diagnostics: result.diagnostics,
@@ -2519,8 +3026,8 @@ struct ChromeMV3ExtensionManagerActionResult:
             report: nil,
             packageIntakeReport: nil,
             popupOptionsRunResult: nil,
-            manualSmokeResult: nil,
-            manualSmokeArtifact: nil,
+            reviewedResourceDiagnosticResult: nil,
+            reviewedResourceDiagnosticArtifact: nil,
             diagnosticsJSON: nil,
             blockedDiagnostics: diagnostics.sorted { $0.code < $1.code },
             diagnostics: diagnostics.map(\.message).sorted(),
@@ -2544,8 +3051,8 @@ struct ChromeMV3ExtensionManagerActionResult:
             report: report,
             packageIntakeReport: nil,
             popupOptionsRunResult: nil,
-            manualSmokeResult: nil,
-            manualSmokeArtifact: nil,
+            reviewedResourceDiagnosticResult: nil,
+            reviewedResourceDiagnosticArtifact: nil,
             diagnosticsJSON: nil,
             blockedDiagnostics: [],
             diagnostics: [
@@ -2572,8 +3079,8 @@ struct ChromeMV3ExtensionManagerActionResult:
             report: nil,
             packageIntakeReport: nil,
             popupOptionsRunResult: nil,
-            manualSmokeResult: nil,
-            manualSmokeArtifact: nil,
+            reviewedResourceDiagnosticResult: nil,
+            reviewedResourceDiagnosticArtifact: nil,
             diagnosticsJSON: json,
             blockedDiagnostics: [],
             diagnostics: [
@@ -2602,8 +3109,8 @@ struct ChromeMV3ExtensionManagerActionResult:
             report: nil,
             packageIntakeReport: report,
             popupOptionsRunResult: nil,
-            manualSmokeResult: nil,
-            manualSmokeArtifact: nil,
+            reviewedResourceDiagnosticResult: nil,
+            reviewedResourceDiagnosticArtifact: nil,
             diagnosticsJSON: nil,
             blockedDiagnostics: [],
             diagnostics: (
@@ -2640,8 +3147,8 @@ struct ChromeMV3ExtensionManagerActionResult:
             report: nil,
             packageIntakeReport: nil,
             popupOptionsRunResult: result,
-            manualSmokeResult: nil,
-            manualSmokeArtifact: nil,
+            reviewedResourceDiagnosticResult: nil,
+            reviewedResourceDiagnosticArtifact: nil,
             diagnosticsJSON: nil,
             blockedDiagnostics: popupOptionsDiagnostics(
                 action: action,
@@ -2657,37 +3164,37 @@ struct ChromeMV3ExtensionManagerActionResult:
         )
     }
 
-    static func manualSmoke(
+    static func reviewedResourceDiagnostic(
         result: ChromeMV3LocalExperimentalNormalTabManualSmokeResult?,
-        artifact: ChromeMV3ExtensionManagerManualSmokeArtifact?,
+        artifact: ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifact?,
         artifactPath: String?,
         status: ChromeMV3ExtensionManagerActionStatus
     ) -> ChromeMV3ExtensionManagerActionResult {
         ChromeMV3ExtensionManagerActionResult(
-            action: .runBitwardenManualSmoke,
+            action: .runReviewedResourceDiagnosticAction,
             status: status,
             lifecycleOperationResult: nil,
             report: nil,
             packageIntakeReport: nil,
             popupOptionsRunResult: nil,
-            manualSmokeResult: result,
-            manualSmokeArtifact: artifact,
+            reviewedResourceDiagnosticResult: result,
+            reviewedResourceDiagnosticArtifact: artifact,
             diagnosticsJSON: nil,
             blockedDiagnostics:
                 result?.allowed == true
-                    ? [.manualSmokeNotProductSupport]
+                    ? [.reviewedResourceDiagnosticNotProductSupport]
                     : [
-                        .manualSmokeUnavailable,
-                        .manualSmokeNotProductSupport,
+                        .reviewedResourceDiagnosticUnavailable,
+                        .reviewedResourceDiagnosticNotProductSupport,
                     ],
             diagnostics:
                 uniqueSortedExtensionManager(
                     (result?.diagnostics ?? [])
                         + [
                             artifactPath.map {
-                                "Manual smoke artifact path: \($0)."
-                            } ?? "Manual smoke artifact was not written.",
-                            "Product/default runtime remains unavailable; this action is not a Bitwarden support claim.",
+                                "Reviewed-resource diagnostic artifact path: \($0)."
+                            } ?? "Reviewed-resource diagnostic artifact was not written.",
+                            "Product/default runtime remains unavailable; this action is not a product-support claim.",
                         ]
                 ),
             productFlags: .unavailable,
@@ -2845,19 +3352,19 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
                 summary: report?.managerActiveManifestSummary,
                 record: record
             )
-        let lastManualSmokeArtifact =
-            ChromeMV3ExtensionManagerManualSmokeArtifactWriter.latestArtifact(
+        let lastReviewedResourceDiagnosticArtifact =
+            ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifactWriter.latestArtifact(
                 rootURL: rootURL,
                 profileID: record.profileID,
                 extensionID: record.extensionID
             )
-        let manualSmokeAction =
-            ChromeMV3ExtensionManagerManualSmokeActionRecord.make(
+        let reviewedResourceDiagnosticAction =
+            ChromeMV3ExtensionManagerReviewedResourceDiagnosticActionRecord.make(
                 rootURL: rootURL,
                 record: record,
                 gate: gate,
                 readiness: preflight.normalTabReadiness,
-                lastArtifact: lastManualSmokeArtifact
+                lastArtifact: lastReviewedResourceDiagnosticArtifact
             )
 
         return ChromeMV3ExtensionManagerDetailViewModel(
@@ -2870,7 +3377,9 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
                     ?? generatedBundleState(record: record),
             compatibilityReport: compatibility,
             productEnablementPreflight: preflight,
-            manualSmokeAction: manualSmokeAction,
+            reviewedResourceDiagnosticCapabilities:
+                reviewedResourceDiagnosticAction.capability.map { [$0] } ?? [],
+            reviewedResourceDiagnosticAction: reviewedResourceDiagnosticAction,
             apiSupportMatrix: compatibility?.apiSupportMatrix ?? [],
             blockersBySeverity: compatibility?.blockersBySeverity ?? [],
             blockersBySource: compatibility?.blockersBySource ?? [],
@@ -2912,7 +3421,7 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
                 record: record,
                 report: report,
                 popupOptionsLaunchState: popupOptions,
-                manualSmokeAction: manualSmokeAction
+                reviewedResourceDiagnosticAction: reviewedResourceDiagnosticAction
             ),
             diagnosticsReportPath: record.reportPaths.compatibilityReportPath,
             diagnosticsJSONAvailable:
@@ -3061,8 +3570,8 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
         report: ChromeMV3EndToEndInstallDiagnosticsReport?,
         popupOptionsLaunchState:
             ChromeMV3ProductPopupOptionsLaunchState? = nil,
-        manualSmokeAction:
-            ChromeMV3ExtensionManagerManualSmokeActionRecord? = nil
+        reviewedResourceDiagnosticAction:
+            ChromeMV3ExtensionManagerReviewedResourceDiagnosticActionRecord? = nil
     ) -> [ChromeMV3ExtensionManagerActionDescriptor] {
         let installed = record != nil && record?.lifecycleState != .uninstalled
         let enabled = record?.runtimeState.internalRuntimeEnabled == true
@@ -3075,7 +3584,7 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
                 enabled: enabled,
                 reportAvailable: report != nil,
                 popupOptionsLaunchState: popupOptionsLaunchState,
-                manualSmokeAction: manualSmokeAction
+                reviewedResourceDiagnosticAction: reviewedResourceDiagnosticAction
             )
         }
     }
@@ -3088,8 +3597,8 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
         reportAvailable: Bool,
         popupOptionsLaunchState:
             ChromeMV3ProductPopupOptionsLaunchState?,
-        manualSmokeAction:
-            ChromeMV3ExtensionManagerManualSmokeActionRecord?
+        reviewedResourceDiagnosticAction:
+            ChromeMV3ExtensionManagerReviewedResourceDiagnosticActionRecord?
     ) -> ChromeMV3ExtensionManagerActionDescriptor {
         let runtimeAction = action == .chromeWebStoreInstall
         let mutates = mutatesLifecycle(action)
@@ -3181,13 +3690,13 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
         if action == .closePopupOptions && installed == false {
             unavailable.append(.recordMissing)
         }
-        if action == .runBitwardenManualSmoke
-            && manualSmokeAction?.available != true
+        if action == .runReviewedResourceDiagnosticAction
+            && reviewedResourceDiagnosticAction?.available != true
         {
             unavailable.append(
                 contentsOf:
-                    manualSmokeAction?.unavailableDiagnostics
-                    ?? [.manualSmokeUnavailable]
+                    reviewedResourceDiagnosticAction?.unavailableDiagnostics
+                    ?? [.reviewedResourceDiagnosticUnavailable]
             )
         }
 
@@ -3233,7 +3742,7 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
              .importZipArchive:
             return true
         case .importCRXArchive, .openActionPopup, .openOptions,
-             .closePopupOptions, .runBitwardenManualSmoke,
+             .closePopupOptions, .runReviewedResourceDiagnosticAction,
              .exportDiagnosticsJSON,
              .chromeWebStoreInstall:
             return false
@@ -3247,7 +3756,7 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
         case .enableInternal, .disableInternal, .updateFromUnpacked,
              .rebuild, .retryDiagnostics, .runDiagnostics, .recover,
              .uninstall, .reset, .openActionPopup, .openOptions,
-             .closePopupOptions, .runBitwardenManualSmoke,
+             .closePopupOptions, .runReviewedResourceDiagnosticAction,
              .exportDiagnosticsJSON:
             return true
         case .installUnpacked, .importZipArchive, .importCRXArchive,
@@ -3290,8 +3799,8 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
             return "Open Options"
         case .closePopupOptions:
             return "Close Popup/Options"
-        case .runBitwardenManualSmoke:
-            return "Run Bitwarden Manual Smoke"
+        case .runReviewedResourceDiagnosticAction:
+            return "Run Reviewed-Resource Diagnostic"
         case .exportDiagnosticsJSON:
             return "Copy Diagnostics JSON"
         case .chromeWebStoreInstall:
@@ -3496,18 +4005,19 @@ enum ChromeMV3ExtensionManagerActionRunner {
     }
 
     @MainActor
-    static func runBitwardenManualSmoke(
+    static func runReviewedResourceDiagnosticAction(
         rootURL: URL,
         profileID: String,
         extensionID: String,
+        capabilityID: String,
         gate: ChromeMV3ExtensionManagerGate,
         now: () -> Date = Date.init
     ) async -> ChromeMV3ExtensionManagerActionResult {
         guard gate.managerAvailableInDeveloperPreview else {
             return .blocked(
-                action: .runBitwardenManualSmoke,
+                action: .runReviewedResourceDiagnosticAction,
                 diagnostics: gate.diagnostics
-                    + [.manualSmokeLocalExperimentalGateClosed]
+                    + [.reviewedResourceDiagnosticLocalExperimentalGateClosed]
             )
         }
         let registry = ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
@@ -3518,7 +4028,7 @@ enum ChromeMV3ExtensionManagerActionRunner {
             )
         else {
             return .blocked(
-                action: .runBitwardenManualSmoke,
+                action: .runReviewedResourceDiagnosticAction,
                 diagnostics: [.recordMissing]
             )
         }
@@ -3530,22 +4040,25 @@ enum ChromeMV3ExtensionManagerActionRunner {
             report: report,
             lifecycleRecord: record
         )
-        let action = ChromeMV3ExtensionManagerManualSmokeActionRecord.make(
+        let action = ChromeMV3ExtensionManagerReviewedResourceDiagnosticActionRecord.make(
             rootURL: rootURL,
             record: record,
             gate: gate,
             readiness: preflight.normalTabReadiness,
             lastArtifact:
-                ChromeMV3ExtensionManagerManualSmokeArtifactWriter
+                ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifactWriter
                 .latestArtifact(
                     rootURL: rootURL,
                     profileID: profileID,
                     extensionID: extensionID
                 )
         )
-        guard action.available else {
+        guard action.available,
+              let capability = action.capability,
+              capability.capabilityID == capabilityID
+        else {
             return .blocked(
-                action: .runBitwardenManualSmoke,
+                action: .runReviewedResourceDiagnosticAction,
                 diagnostics: action.unavailableDiagnostics
             )
         }
@@ -3553,10 +4066,10 @@ enum ChromeMV3ExtensionManagerActionRunner {
         #if DEBUG
             guard #available(macOS 15.5, *) else {
                 return .blocked(
-                    action: .runBitwardenManualSmoke,
+                    action: .runReviewedResourceDiagnosticAction,
                     diagnostics: [
                         .make(
-                            .manualSmokeUnavailable,
+                            .reviewedResourceDiagnosticUnavailable,
                             severity: .deferred,
                             message: "Manual normal-tab smoke requires macOS 15.5 WKContentWorld evaluation APIs.",
                             remediation: "Run the local experimental smoke on macOS 15.5 or newer."
@@ -3564,23 +4077,25 @@ enum ChromeMV3ExtensionManagerActionRunner {
                     ]
                 )
             }
-            let request = manualSmokeRequest(
+            let request = reviewedResourceDiagnosticRequest(
                 record: record,
                 report: report,
-                gate: gate
+                gate: gate,
+                capability: capability
             )
             let result = await
                 ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter
                 .runManualNormalTabSmoke(request)
             let artifact =
-                ChromeMV3ExtensionManagerManualSmokeArtifact.make(
+                ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifact.make(
                     result: result,
                     record: record,
+                    capability: capability,
                     generatedAt: now()
                 )
-            let artifactURL = try? ChromeMV3ExtensionManagerManualSmokeArtifactWriter
+            let artifactURL = try? ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifactWriter
                 .write(artifact, rootURL: rootURL)
-            return .manualSmoke(
+            return .reviewedResourceDiagnostic(
                 result: result,
                 artifact: artifactURL == nil ? nil : artifact,
                 artifactPath: artifactURL?.path,
@@ -3590,8 +4105,8 @@ enum ChromeMV3ExtensionManagerActionRunner {
             )
         #else
             return .blocked(
-                action: .runBitwardenManualSmoke,
-                diagnostics: [.manualSmokeLocalExperimentalGateClosed]
+                action: .runReviewedResourceDiagnosticAction,
+                diagnostics: [.reviewedResourceDiagnosticLocalExperimentalGateClosed]
             )
         #endif
     }
@@ -3613,10 +4128,11 @@ enum ChromeMV3ExtensionManagerActionRunner {
         return .fromLifecycle(action: .recover, result: result)
     }
 
-    private static func manualSmokeRequest(
+    private static func reviewedResourceDiagnosticRequest(
         record: ChromeMV3ExtensionLifecycleRecord,
         report: ChromeMV3EndToEndInstallDiagnosticsReport?,
-        gate: ChromeMV3ExtensionManagerGate
+        gate: ChromeMV3ExtensionManagerGate,
+        capability: ChromeMV3ReviewedResourceDiagnosticCapability
     ) -> ChromeMV3LocalExperimentalNormalTabManualSmokeRequest {
         let active = activeGeneratedVersion(record: record, report: report)
         let generated =
@@ -3644,8 +4160,7 @@ enum ChromeMV3ExtensionManagerActionRunner {
                 allFrames: false,
                 world: ChromeMV3ContentScriptWorld.isolated.rawValue,
                 files: [
-                    ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
-                        .bitwardenDetectFillBootstrapFile,
+                    capability.reviewedResourcePath,
                 ],
                 functionSource: nil,
                 arguments: [],
@@ -3683,8 +4198,7 @@ enum ChromeMV3ExtensionManagerActionRunner {
                 ?? attempt.shapeAudit.reviewedBootstrapSHA256
         let reviewedResource = ChromeMV3ProductNormalTabReviewedResource(
             reviewedScriptPath:
-                ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
-                .bitwardenDetectFillBootstrapFile,
+                capability.reviewedResourcePath,
             generatedResourceHash: generatedResourceSHA256,
             generatedResourceFileSystemPath:
                 resolution?.resolvedFileSystemPath,
@@ -3703,7 +4217,8 @@ enum ChromeMV3ExtensionManagerActionRunner {
                     profileID: record.profileID,
                     extensionID: record.extensionID,
                     tabID: "\(attempt.shapeAudit.tabID)",
-                    documentID: "manager-bitwarden-manual-smoke-main-frame",
+                    documentID:
+                        "manager-reviewed-resource-diagnostic-top-frame",
                     urlString: url,
                     moduleEnabled: gate.managerAvailableInDeveloperPreview,
                     extensionEnabled:
@@ -4276,7 +4791,7 @@ struct ChromeMV3ExtensionManagerView: View {
                             ? "local experimental" : "unavailable"
                     )
                     fact(
-                        "Manual Smoke",
+                        "Reviewed Diagnostic",
                         readiness.policy
                             .manualNormalTabSmokeAvailableInLocalExperimentalGate
                             ? (
@@ -4319,27 +4834,50 @@ struct ChromeMV3ExtensionManagerView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-                let smokeAction = detail.manualSmokeAction
+                let smokeAction = detail.reviewedResourceDiagnosticAction
                 let smokeArtifactState =
                     smokeAction.lastArtifactPath == nil ? "none" : "written"
                 let smokeRetainedObjectCount =
                     smokeAction.lastRetainedObjectCount.map(String.init)
                     ?? "not run"
+                let capability = smokeAction.capability
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 150), spacing: 8)],
                     alignment: .leading,
                     spacing: 8
                 ) {
                     fact(
-                        "Smoke Action",
+                        "Diagnostic Action",
                         smokeAction.available ? "available" : "unavailable"
+                    )
+                    fact(
+                        "Capability",
+                        capability?.capabilityID ?? "not registered"
+                    )
+                    fact(
+                        "Generated Resource",
+                        capability?.generatedResourceStatus.rawValue
+                            ?? "not registered"
+                    )
+                    fact(
+                        "Source/Generated",
+                        capability?.sourceGeneratedByteEqual == true
+                            ? "byte equal" : "unavailable"
+                    )
+                    fact(
+                        "Fixture Provenance",
+                        capability?.fixtureProvenance ?? "none"
+                    )
+                    fact(
+                        "Artifact Kind",
+                        capability?.artifactOutputKind ?? "none"
                     )
                     fact(
                         "Manual Only",
                         smokeAction.manualOnly ? "yes" : "no"
                     )
                     fact(
-                        "Last Smoke",
+                        "Last Diagnostic",
                         smokeAction.lastRunStatus?.rawValue ?? "not run"
                     )
                     fact(
@@ -4347,7 +4885,7 @@ struct ChromeMV3ExtensionManagerView: View {
                         smokeArtifactState
                     )
                     fact(
-                        "Smoke Teardown",
+                        "Diagnostic Teardown",
                         smokeAction.lastTeardownStatus ?? "not run"
                     )
                     fact(
@@ -4355,21 +4893,21 @@ struct ChromeMV3ExtensionManagerView: View {
                         smokeRetainedObjectCount
                     )
                 }
-                Text(manualSmokeActionSummary(smokeAction))
+                Text(reviewedResourceDiagnosticActionSummary(smokeAction))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
         }
 
-        private func manualSmokeActionSummary(
+        private func reviewedResourceDiagnosticActionSummary(
             _ smokeAction:
-                ChromeMV3ExtensionManagerManualSmokeActionRecord
+                ChromeMV3ExtensionManagerReviewedResourceDiagnosticActionRecord
         ) -> String {
             var parts = [
                 smokeAction.disabledReason
                     ?? smokeAction.enabledReason
-                    ?? "No manual smoke action state is available.",
+                    ?? "No reviewed-resource diagnostic action state is available.",
                 smokeAction.notProductSupportWarning
             ]
 
@@ -5245,7 +5783,7 @@ struct ChromeMV3ExtensionManagerView: View {
                  .chromeWebStoreInstall, .enableInternal, .disableInternal,
                  .openActionPopup, .openOptions, .closePopupOptions:
                 return false
-            case .runBitwardenManualSmoke:
+            case .runReviewedResourceDiagnosticAction:
                 return detail.gate.managerAvailableInDeveloperPreview
             default:
                 return true
@@ -5256,8 +5794,8 @@ struct ChromeMV3ExtensionManagerView: View {
             _ descriptor: ChromeMV3ExtensionManagerActionDescriptor,
             detail: ChromeMV3ExtensionManagerDetailViewModel
         ) -> String {
-            if descriptor.action == .runBitwardenManualSmoke {
-                return detail.manualSmokeAction.notProductSupportWarning
+            if descriptor.action == .runReviewedResourceDiagnosticAction {
+                return detail.reviewedResourceDiagnosticAction.notProductSupportWarning
             }
             return descriptor.unavailableDiagnostics.first?.message
                 ?? descriptor.title

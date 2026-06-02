@@ -323,10 +323,10 @@ struct SumiExtensionsSettingsPane: View {
                     profileID: profileID,
                     extensionID: extensionID
                 )
-        case .runBitwardenManualSmoke:
+        case .runReviewedResourceDiagnosticAction:
             Task { @MainActor in
                 let result = await browserManager.extensionsModule
-                    .chromeMV3RunBitwardenManualSmokeThroughManager(
+                    .chromeMV3RunReviewedResourceDiagnosticActionThroughManager(
                         rootURL: rootURL,
                         profileID: profileID,
                         extensionID: extensionID

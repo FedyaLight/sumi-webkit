@@ -1225,6 +1225,20 @@ struct ChromeMV3ProductNormalTabReviewedResource:
         let reviewedPath =
             ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
             .bitwardenDetectFillBootstrapFile
+        return reviewedGeneratedBundleFile(
+            path: reviewedPath,
+            generatedBundleRootPath: generatedBundleRootPath,
+            copiedResourcePaths: copiedResourcePaths,
+            hash: hash
+        )
+    }
+
+    static func reviewedGeneratedBundleFile(
+        path reviewedPath: String,
+        generatedBundleRootPath: String?,
+        copiedResourcePaths: [String],
+        hash: String?
+    ) -> ChromeMV3ProductNormalTabReviewedResource {
         let copied = copiedResourcePaths.contains(reviewedPath)
         let fileSystemPath = generatedBundleRootPath.map {
             URL(fileURLWithPath: $0)
@@ -1245,6 +1259,19 @@ struct ChromeMV3ProductNormalTabReviewedResource:
                 hash == nil
                     ? "Reviewed generated-bundle file hash is unavailable."
                     : "Reviewed generated-bundle file hash is recorded.",
+            ]
+        )
+    }
+
+    static func unregistered() -> ChromeMV3ProductNormalTabReviewedResource {
+        ChromeMV3ProductNormalTabReviewedResource(
+            reviewedScriptPath: "",
+            generatedResourceHash: nil,
+            generatedResourceFileSystemPath: nil,
+            present: false,
+            packageOwned: false,
+            diagnostics: [
+                "No reviewed generated-bundle resource capability is registered.",
             ]
         )
     }

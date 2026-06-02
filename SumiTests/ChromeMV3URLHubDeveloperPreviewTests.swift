@@ -53,7 +53,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
     }
 
     @MainActor
-    func testURLHubPassiveReadoutShowsBitwardenDiagnosticRow()
+    func testURLHubPassiveReadoutBlocksUnreviewedSyntheticFixture()
         throws
     {
         let fixture = try installBitwardenURLHubFixture(
@@ -62,7 +62,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             enableInternal: true
         )
         let artifactURL =
-            ChromeMV3ExtensionManagerManualSmokeArtifactWriter.reportURL(
+            ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifactWriter.reportURL(
                 rootURL: fixture.root,
                 profileID: fixture.record.profileID,
                 extensionID: fixture.record.extensionID
@@ -97,11 +97,23 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertTrue(row.enabled)
         XCTAssertTrue(row.readiness.localExperimentalGateOpen)
         XCTAssertTrue(row.readiness.currentPageIsSyntheticDiagnosticPage)
-        XCTAssertTrue(row.readiness.explicitDiagnosticActionCanRun)
+        XCTAssertFalse(row.readiness.explicitDiagnosticActionCanRun)
         XCTAssertTrue(row.readiness.productRuntimeStayedOff)
         XCTAssertFalse(row.readiness.productDefaultRuntimeAvailable)
-        XCTAssertEqual(row.readiness.blockers, [])
-        XCTAssertTrue(row.diagnosticAction.available)
+        XCTAssertEqual(row.readiness.blockers, [.blockedByRuntimeGate])
+        XCTAssertFalse(row.diagnosticAction.available)
+        let capability = try XCTUnwrap(row.diagnosticAction.capability)
+        XCTAssertEqual(
+            capability.capabilityID,
+            ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog
+                .reviewedGeneratedResourceNormalTabDiagnosticID
+        )
+        XCTAssertEqual(
+            capability.generatedResourceStatus,
+            .reviewedHashMismatch
+        )
+        XCTAssertTrue(capability.sourceGeneratedByteEqual)
+        XCTAssertFalse(capability.productSupportClaim)
         XCTAssertNil(row.diagnosticAction.lastArtifactPath)
         XCTAssertNil(row.diagnosticAction.lastRunStatus)
         XCTAssertFalse(section.lifetime.artifactWrittenByReadout)
@@ -174,9 +186,10 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         )
         XCTAssertFalse(row.diagnosticAction.capabilityAvailable)
         XCTAssertFalse(row.diagnosticAction.available)
+        XCTAssertNil(row.diagnosticAction.capability)
         XCTAssertTrue(
             row.diagnosticAction.unavailableDiagnostics.contains {
-                $0.code == .manualSmokeReviewedFileMissing
+                $0.code == .reviewedResourceDiagnosticReviewedFileMissing
             }
         )
         XCTAssertFalse(module.hasLoadedRuntime)
@@ -265,7 +278,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertFalse(
             FileManager.default.fileExists(
                 atPath:
-                    ChromeMV3ExtensionManagerManualSmokeArtifactWriter
+                    ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifactWriter
                     .reportURL(
                         rootURL: fixture.root,
                         profileID: fixture.record.profileID,
@@ -339,17 +352,17 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertEqual(row.enabled, detail.listItem.internalEnabled)
         XCTAssertEqual(
             row.diagnosticAction.actionID,
-            detail.manualSmokeAction.actionID
+            detail.reviewedResourceDiagnosticAction.actionID
         )
         XCTAssertEqual(
             row.diagnosticAction.lastArtifactPath,
-            detail.manualSmokeAction.lastArtifactPath
+            detail.reviewedResourceDiagnosticAction.lastArtifactPath
         )
         XCTAssertFalse(fixture.module.hasLoadedRuntime)
     }
 
     @MainActor
-    func testURLHubExplicitActionWritesArtifactOnlyAfterInvocation()
+    func testURLHubExplicitActionRejectsUnreviewedSyntheticFixture()
         async throws
     {
         guard #available(macOS 15.5, *) else {
@@ -362,7 +375,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         )
         let context = syntheticPageContext(profileID: fixture.record.profileID)
         let artifactURL =
-            ChromeMV3ExtensionManagerManualSmokeArtifactWriter.reportURL(
+            ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifactWriter.reportURL(
                 rootURL: fixture.root,
                 profileID: fixture.record.profileID,
                 extensionID: fixture.record.extensionID
@@ -376,10 +389,10 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 now: fixedDate
             )?.rows.first
         )
-        XCTAssertTrue(before.diagnosticAction.available)
+        XCTAssertFalse(before.diagnosticAction.available)
 
         let result = await fixture.module
-            .chromeMV3RunURLHubDiagnosticSmokeThroughURLHub(
+            .chromeMV3RunReviewedResourceDiagnosticActionThroughURLHub(
                 rootURL: fixture.root,
                 profileID: fixture.record.profileID,
                 extensionID: fixture.record.extensionID,
@@ -387,9 +400,10 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 now: { self.fixedDate }
             )
 
-        XCTAssertEqual(result.status, .succeeded)
-        XCTAssertTrue(result.manualSmokeResult?.allowed == true)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: artifactURL.path))
+        XCTAssertEqual(result.status, .blocked)
+        XCTAssertNil(result.reviewedResourceDiagnosticResult)
+        XCTAssertNil(result.reviewedResourceDiagnosticArtifact)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: artifactURL.path))
         let after = try XCTUnwrap(
             fixture.module.chromeMV3URLHubSectionViewModelIfEnabled(
                 rootURL: fixture.root,
@@ -397,11 +411,11 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 now: fixedDate
             )?.rows.first
         )
-        XCTAssertEqual(after.diagnosticAction.lastRunStatus, .succeeded)
-        XCTAssertEqual(after.diagnosticAction.lastArtifactPath, artifactURL.path)
-        XCTAssertEqual(after.diagnosticAction.lastRetainedObjectCount, 0)
-        XCTAssertTrue(after.diagnosticAction.lastTeardownCompleted == true)
-        XCTAssertTrue(after.diagnosticAction.lastDOMFillSucceeded == true)
+        XCTAssertNil(after.diagnosticAction.lastRunStatus)
+        XCTAssertNil(after.diagnosticAction.lastArtifactPath)
+        XCTAssertNil(after.diagnosticAction.lastRetainedObjectCount)
+        XCTAssertNil(after.diagnosticAction.lastTeardownCompleted)
+        XCTAssertNil(after.diagnosticAction.lastDOMFillSucceeded)
         assertNoRuntimeSideEffects(result, module: fixture.module)
     }
 
@@ -426,7 +440,16 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertTrue(modelSource.contains("listInstalledExtensionStates"))
         XCTAssertTrue(modelSource.contains("productSupportClaim"))
         XCTAssertTrue(modelSource.contains("not product support"))
+        XCTAssertTrue(
+            modelSource.contains("ChromeMV3ReviewedResourceDiagnosticCapability")
+        )
+        XCTAssertTrue(
+            modelSource.contains("runReviewedResourceDiagnosticAction")
+        )
         XCTAssertTrue(modelSource.contains("chromeMV3URLHubSectionViewModelIfEnabled"))
+        XCTAssertFalse(modelSource.contains("runBitwarden"))
+        XCTAssertFalse(modelSource.contains("Bitwarden"))
+        XCTAssertFalse(modelSource.contains("bitwarden"))
         XCTAssertFalse(modelSource.contains("managerIfEnabled()"))
         XCTAssertFalse(modelSource.contains("WKWebView"))
         XCTAssertFalse(modelSource.contains("WKWebExtensionController"))

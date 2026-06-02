@@ -672,7 +672,7 @@ struct URLBarHubPopover: View {
         let context = chromeMV3URLHubCurrentPageContext
         Task { @MainActor in
             let result = await browserManager.extensionsModule
-                .chromeMV3RunURLHubDiagnosticSmokeThroughURLHub(
+                .chromeMV3RunReviewedResourceDiagnosticActionThroughURLHub(
                     profileID: row.profileID,
                     extensionID: row.extensionID,
                     currentPage: context
@@ -1423,8 +1423,8 @@ private struct URLHubMV3DeveloperPreviewSection: View {
         if lastActionRowID == row.id {
             return lastActionResult
         }
-        if lastActionResult.manualSmokeArtifact?.profileID == row.profileID,
-           lastActionResult.manualSmokeArtifact?.extensionID == row.extensionID
+        if lastActionResult.reviewedResourceDiagnosticArtifact?.profileID == row.profileID,
+           lastActionResult.reviewedResourceDiagnosticArtifact?.extensionID == row.extensionID
         {
             return lastActionResult
         }

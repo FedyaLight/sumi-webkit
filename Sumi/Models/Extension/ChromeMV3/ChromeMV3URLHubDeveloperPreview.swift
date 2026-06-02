@@ -8,7 +8,6 @@
 //  objects while rendering.
 //
 
-import CryptoKit
 import Foundation
 
 struct ChromeMV3URLHubCurrentPageContext:
@@ -211,6 +210,7 @@ struct ChromeMV3URLHubDiagnosticAction:
 
     var actionID: ChromeMV3ExtensionManagerActionKind
     var capabilityID: Capability
+    var capability: ChromeMV3ReviewedResourceDiagnosticCapability?
     var capabilityAvailable: Bool
     var title: String
     var available: Bool
@@ -387,8 +387,8 @@ enum ChromeMV3URLHubDeveloperPreviewModelBuilder {
             currentPageIsSyntheticDiagnosticPage:
                 currentURL == syntheticDiagnosticURLString
         )
-        let manualSmokeAction =
-            ChromeMV3ExtensionManagerManualSmokeActionRecord.make(
+        let reviewedResourceDiagnosticAction =
+            ChromeMV3ExtensionManagerReviewedResourceDiagnosticActionRecord.make(
                 rootURL: rootURL,
                 record: record,
                 gate: gate,
@@ -399,7 +399,7 @@ enum ChromeMV3URLHubDeveloperPreviewModelBuilder {
                     gate: gate
                 ),
                 lastArtifact:
-                    ChromeMV3ExtensionManagerManualSmokeArtifactWriter
+                    ChromeMV3ExtensionManagerReviewedResourceDiagnosticArtifactWriter
                     .latestArtifact(
                         rootURL: rootURL,
                         profileID: record.profileID,
@@ -421,8 +421,8 @@ enum ChromeMV3URLHubDeveloperPreviewModelBuilder {
                         && record.lifecycleState != .corrupt,
                     localExperimentalProductGateAllowed:
                         gate.managerAvailableInDeveloperPreview,
-                    runtimeGateAllowsReadiness: manualSmokeAction.available,
-                    contentScriptRouteReady: manualSmokeAction.available,
+                    runtimeGateAllowsReadiness: reviewedResourceDiagnosticAction.available,
+                    contentScriptRouteReady: reviewedResourceDiagnosticAction.available,
                     serviceWorkerRouteReady: true,
                     tabSurface: currentPage.tabSurface,
                     syntheticHTTPSOrigin:
@@ -454,7 +454,7 @@ enum ChromeMV3URLHubDeveloperPreviewModelBuilder {
         )
         let action = diagnosticAction(
             readiness: readiness,
-            managerAction: manualSmokeAction
+            managerAction: reviewedResourceDiagnosticAction
         )
         return ChromeMV3URLHubExtensionRow(
             profileID: state.profileID,
@@ -660,43 +660,21 @@ enum ChromeMV3URLHubDeveloperPreviewModelBuilder {
         record: ChromeMV3ExtensionLifecycleRecord,
         report: ChromeMV3EndToEndInstallDiagnosticsReport?
     ) -> ChromeMV3ProductNormalTabReviewedResource {
-        let activeVersion =
-            record.activeGeneratedVersionID.flatMap { activeID in
-                record.generatedBundleVersions.first { $0.id == activeID }
-            }
-            ?? report?.generatedBundleVersionState.last {
-                $0.state == .active || $0.state == .rollbackActive
-            }
-            ?? record.generatedBundleVersions.last {
-                $0.state == .active || $0.state == .rollbackActive
-            }
-            ?? record.generatedBundleVersions.last
-        let reviewedPath =
-            ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
-            .bitwardenDetectFillBootstrapFile
-        let hash = activeVersion.flatMap {
-            generatedResourceSHA256(
-                rootPath: $0.generatedBundleRootPath,
-                relativePath: reviewedPath
-            )
-        }
-        return ChromeMV3ProductNormalTabReviewedResource.bootstrapAutofill(
-            generatedBundleRootPath: activeVersion?.generatedBundleRootPath,
-            copiedResourcePaths:
-                activeVersion?.generatedBundleRecord.copiedResourcePaths ?? [],
-            hash: hash
+        ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog.reviewedResource(
+            record: record,
+            report: report
         )
     }
 
     private static func diagnosticAction(
         readiness: ChromeMV3URLHubCurrentPageReadiness,
-        managerAction: ChromeMV3ExtensionManagerManualSmokeActionRecord
+        managerAction: ChromeMV3ExtensionManagerReviewedResourceDiagnosticActionRecord
     ) -> ChromeMV3URLHubDiagnosticAction {
         var diagnostics = managerAction.unavailableDiagnostics
         if readiness.explicitDiagnosticActionCanRun == false {
             diagnostics.append(
                 .make(
-                    .manualSmokeUnavailable,
+                    .reviewedResourceDiagnosticUnavailable,
                     severity: .productBlocked,
                     message:
                         "URL-hub current-page diagnostic is blocked by \(readiness.blockers.map(\.rawValue).joined(separator: ", ")).",
@@ -708,9 +686,8 @@ enum ChromeMV3URLHubDeveloperPreviewModelBuilder {
         let blockingDiagnostics = diagnostics.filter {
             $0.severity != .info
         }
-        let capabilityAvailable =
-            readiness.reviewedResource.present
-                && readiness.reviewedResource.generatedResourceHash != nil
+        let capability = managerAction.capability?.applyingCurrentPage(readiness)
+        let capabilityAvailable = capability?.actionAvailable == true
         let available = managerAction.available
             && readiness.explicitDiagnosticActionCanRun
             && capabilityAvailable
@@ -720,10 +697,13 @@ enum ChromeMV3URLHubDeveloperPreviewModelBuilder {
                 ? nil
                 : managerAction.lastBlockers.isEmpty
         return ChromeMV3URLHubDiagnosticAction(
-            actionID: .runBitwardenManualSmoke,
+            actionID: .runReviewedResourceDiagnosticAction,
             capabilityID: .reviewedGeneratedResourceNormalTabSmoke,
+            capability: capability,
             capabilityAvailable: capabilityAvailable,
-            title: "Run diagnostic smoke",
+            title:
+                capability?.displayLabel
+                    ?? "Reviewed-resource diagnostic unavailable",
             available: available,
             disabledReason:
                 available
@@ -748,18 +728,6 @@ enum ChromeMV3URLHubDeveloperPreviewModelBuilder {
         )
     }
 
-    private static func generatedResourceSHA256(
-        rootPath: String,
-        relativePath: String
-    ) -> String? {
-        let fileURL = URL(fileURLWithPath: rootPath, isDirectory: true)
-            .appendingPathComponent(relativePath)
-            .standardizedFileURL
-        guard let data = try? Data(contentsOf: fileURL) else { return nil }
-        return SHA256.hash(data: data)
-            .map { String(format: "%02x", $0) }
-            .joined()
-    }
 }
 
 extension SumiExtensionsModule {
@@ -780,11 +748,14 @@ extension SumiExtensionsModule {
         )
     }
 
-    func chromeMV3RunURLHubDiagnosticSmokeThroughURLHub(
+    func chromeMV3RunReviewedResourceDiagnosticActionThroughURLHub(
         rootURL: URL =
             ChromeMV3ExtensionManagerStoreLocation.defaultRootURL(),
         profileID: String,
         extensionID: String,
+        capabilityID: String =
+            ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog
+            .reviewedGeneratedResourceNormalTabDiagnosticID,
         currentPage: ChromeMV3URLHubCurrentPageContext,
         now: @escaping () -> Date = Date.init
     ) async -> ChromeMV3ExtensionManagerActionResult {
@@ -799,25 +770,28 @@ extension SumiExtensionsModule {
             })
         else {
             return .blocked(
-                action: .runBitwardenManualSmoke,
+                action: .runReviewedResourceDiagnosticAction,
                 diagnostics: [
-                    .manualSmokeLocalExperimentalGateClosed,
-                    .manualSmokeNotProductSupport,
+                    .reviewedResourceDiagnosticLocalExperimentalGateClosed,
+                    .reviewedResourceDiagnosticNotProductSupport,
                 ]
             )
         }
 
-        guard row.diagnosticAction.available else {
+        guard row.diagnosticAction.available,
+              row.diagnosticAction.capability?.capabilityID == capabilityID
+        else {
             return .blocked(
-                action: .runBitwardenManualSmoke,
+                action: .runReviewedResourceDiagnosticAction,
                 diagnostics: row.diagnosticAction.unavailableDiagnostics
             )
         }
 
-        return await chromeMV3RunBitwardenManualSmokeThroughManager(
+        return await chromeMV3RunReviewedResourceDiagnosticActionThroughManager(
             rootURL: rootURL,
             profileID: profileID,
             extensionID: extensionID,
+            capabilityID: capabilityID,
             now: now
         )
     }

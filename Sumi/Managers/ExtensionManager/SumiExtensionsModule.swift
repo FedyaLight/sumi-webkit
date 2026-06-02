@@ -3588,25 +3588,29 @@ final class SumiExtensionsModule {
         return result
     }
 
-    func chromeMV3RunBitwardenManualSmokeThroughManager(
+    func chromeMV3RunReviewedResourceDiagnosticActionThroughManager(
         rootURL: URL,
         profileID: String,
         extensionID: String,
+        capabilityID: String =
+            ChromeMV3ReviewedResourceDiagnosticCapabilityCatalog
+            .reviewedGeneratedResourceNormalTabDiagnosticID,
         now: @escaping () -> Date = Date.init
     ) async -> ChromeMV3ExtensionManagerActionResult {
         let gate = chromeMV3ExtensionManagerGate()
         guard gate.managerAvailableInDeveloperPreview else {
             return ChromeMV3ExtensionManagerActionResult.blocked(
-                action: .runBitwardenManualSmoke,
+                action: .runReviewedResourceDiagnosticAction,
                 diagnostics: gate.diagnostics
-                    + [.manualSmokeLocalExperimentalGateClosed]
+                    + [.reviewedResourceDiagnosticLocalExperimentalGateClosed]
             )
         }
         return await ChromeMV3ExtensionManagerActionRunner
-            .runBitwardenManualSmoke(
+            .runReviewedResourceDiagnosticAction(
                 rootURL: rootURL,
                 profileID: profileID,
                 extensionID: extensionID,
+                capabilityID: capabilityID,
                 gate: gate,
                 now: now
             )
