@@ -141,7 +141,7 @@ struct ChromeMV3OriginalBundleStageResult: Equatable {
 }
 
 struct ChromeMV3OriginalBundleStore {
-    static let currentGeneratorVersion = "sumi-chrome-mv3-generated-bundle-plan-v2"
+    static let currentGeneratorVersion = "sumi-chrome-mv3-generated-bundle-plan-v3"
 
     var rootURL: URL
     var now: () -> Date
@@ -532,6 +532,8 @@ private struct ChromeMV3OriginalBundleDigest {
                 segment.isEmpty == false
                     && segment != "."
                     && segment != ".."
+                    && segment.lowercased().hasSuffix(".app") == false
+                    && segment.lowercased().hasSuffix(".appex") == false
             })
         else {
             throw ChromeMV3OriginalBundleStoreError.unsafeBundlePath(relativePath)

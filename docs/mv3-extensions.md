@@ -110,6 +110,18 @@ The user-facing goal is that a user can install an unpacked or zipped
 password-manager extension, unlock it from the browser UI, and use it on normal
 tabs without enabling extension runtime behavior in helper web views.
 
+Prepared generated bundles preserve every safe regular file below the staged
+extension root, while writing `manifest.json` separately from the validated
+canonical snapshot. This is safer and more compatible than inferring a copy
+allowlist from manifest entries: extension-owned popup, options, and side-panel
+pages can load package-local CSS, JavaScript, fonts, images, and localization
+catalogs without declaring those files as web-accessible resources. Intake
+rejects unsafe paths, root escapes, symbolic links, non-regular files, and
+nested Safari `.app` or `.appex` packages. Sumi-generated metadata and runtime
+template namespaces are reserved and cannot be pre-seeded by a source package.
+Preserving a local file does not expand its exposure to web origins because the
+source manifest is unchanged, and no package scripts execute during intake.
+
 ## Compatibility Reporting
 
 The extension UI should report supported, partial, deferred, and unsupported

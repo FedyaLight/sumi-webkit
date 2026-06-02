@@ -371,7 +371,7 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
         }
     }
 
-    func testCopiesSafeManifestReferencedResourcesOnly() throws {
+    func testPreservesAllSafePackageLocalResources() throws {
         let manifest: [String: Any] = [
             "manifest_version": 3,
             "name": "Resource Copy",
@@ -473,6 +473,7 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
             "scripts/background.js",
             "sidepanel.html",
             "ui/popup.html",
+            "unreferenced.js",
         ]
         XCTAssertEqual(result.record.copiedResourcePaths, expectedCopiedPaths)
         for path in expectedCopiedPaths {
@@ -485,7 +486,7 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
                 path
             )
         }
-        XCTAssertFalse(
+        XCTAssertTrue(
             FileManager.default.fileExists(
                 atPath: result.generatedBundleRootURL
                     .appendingPathComponent("unreferenced.js")
@@ -493,6 +494,189 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
             )
         )
         XCTAssertTrue(result.record.resourceWarnings.isEmpty)
+        XCTAssertEqual(
+            result.record.resourcePreservationReport?.policy,
+            "copyAllSafePackageLocalRegularFiles"
+        )
+        XCTAssertEqual(
+            result.record.resourcePreservationReport?.originalRegularFileCount,
+            expectedCopiedPaths.count + 1
+        )
+        XCTAssertEqual(
+            result.record.resourcePreservationReport?.copiedPackageResourceCount,
+            expectedCopiedPaths.count
+        )
+        XCTAssertEqual(
+            result.record.resourcePreservationReport?
+                .missingManifestReferencedResourcePaths,
+            []
+        )
+        XCTAssertEqual(
+            result.record.resourcePreservationReport?
+                .missingExtensionPageDependencyPaths,
+            []
+        )
+    }
+
+    func testPreservesPopupDependenciesLocalesAndManagedSchema() throws {
+        let stage = try stageBundle(
+            named: "popup-package-local-dependencies",
+            manifest: [
+                "manifest_version": 3,
+                "name": "Popup Package Dependencies",
+                "version": "1.0",
+                "default_locale": "en",
+                "action": [
+                    "default_popup": "popup/index.html",
+                ],
+                "storage": [
+                    "managed_schema": "managed_schema.json",
+                ],
+            ],
+            files: [
+                "popup/index.html": """
+                    <!doctype html>
+                    <link href="main.css" rel="stylesheet">
+                    <script defer src="polyfills.js"></script>
+                    <script defer src="main.js"></script>
+                    """,
+                "popup/main.css": """
+                    @font-face { src: url("fonts/inter.woff2"); }
+                    body { background-image: url("images/logo.png"); }
+                    """,
+                "popup/polyfills.js": "",
+                "popup/main.js": "",
+                "popup/fonts/inter.woff2": "font",
+                "popup/images/logo.png": "image",
+                "_locales/en/messages.json": #"{"extName":{"message":"Fixture"}}"#,
+                "managed_schema.json": #"{"type":"object"}"#,
+            ]
+        )
+
+        let result = try makeWriter(rootURL: stage.storeRoot)
+            .writeGeneratedBundle(
+                originalBundleRecord: stage.result.originalBundleRecord,
+                manifestSnapshot: stage.result.manifestSnapshot,
+                planningRecord: stage.result.generatedBundlePlan
+            )
+
+        for path in [
+            "_locales/en/messages.json",
+            "managed_schema.json",
+            "popup/fonts/inter.woff2",
+            "popup/images/logo.png",
+            "popup/index.html",
+            "popup/main.css",
+            "popup/main.js",
+            "popup/polyfills.js",
+        ] {
+            XCTAssertTrue(result.record.copiedResourcePaths.contains(path), path)
+            XCTAssertTrue(
+                FileManager.default.fileExists(
+                    atPath: result.generatedBundleRootURL
+                        .appendingPathComponent(path)
+                        .path
+                ),
+                path
+            )
+        }
+        XCTAssertEqual(
+            result.record.resourcePreservationReport?
+                .missingExtensionPageDependencyPaths,
+            []
+        )
+    }
+
+    func testReportsMissingStaticPopupDependencyWithoutExecutingPage() throws {
+        let stage = try stageBundle(
+            named: "popup-missing-dependency",
+            manifest: [
+                "manifest_version": 3,
+                "name": "Popup Missing Dependency",
+                "version": "1.0",
+                "action": [
+                    "default_popup": "popup/index.html",
+                ],
+            ],
+            files: [
+                "popup/index.html": """
+                    <!doctype html>
+                    <script defer src="missing.js"></script>
+                    """,
+            ]
+        )
+
+        let result = try makeWriter(rootURL: stage.storeRoot)
+            .writeGeneratedBundle(
+                originalBundleRecord: stage.result.originalBundleRecord,
+                manifestSnapshot: stage.result.manifestSnapshot,
+                planningRecord: stage.result.generatedBundlePlan
+            )
+
+        XCTAssertEqual(
+            result.record.resourcePreservationReport?
+                .missingExtensionPageDependencyPaths,
+            ["popup/missing.js"]
+        )
+    }
+
+    func testLocalBitwardenPopupDependenciesArePreservedWhenFixtureExists()
+        throws
+    {
+        let packageRoot = projectRoot()
+            .deletingLastPathComponent()
+            .appendingPathComponent("mv3-test-extensions/bitwarden")
+        try XCTSkipUnless(
+            FileManager.default.fileExists(
+                atPath: packageRoot.appendingPathComponent("manifest.json").path
+            ),
+            "Bitwarden real package fixture is not available."
+        )
+        let storeRoot = try makeTemporaryDirectory()
+        let stage = try ChromeMV3OriginalBundleStore(
+            rootURL: storeRoot,
+            now: { self.fixedInstallDate }
+        ).stageUnpackedDirectory(at: packageRoot)
+        let result = try makeWriter(rootURL: storeRoot).writeGeneratedBundle(
+            originalBundleRecord: stage.originalBundleRecord,
+            manifestSnapshot: stage.manifestSnapshot,
+            planningRecord: stage.generatedBundlePlan
+        )
+
+        for path in [
+            "_locales/en/messages.json",
+            "managed_schema.json",
+            "popup/images/loading.svg",
+            "popup/index.html",
+            "popup/main.css",
+            "popup/main.js",
+            "popup/polyfills.js",
+            "popup/vendor-angular.js",
+            "popup/vendor.js",
+        ] {
+            XCTAssertTrue(result.record.copiedResourcePaths.contains(path), path)
+            XCTAssertTrue(
+                FileManager.default.fileExists(
+                    atPath: result.generatedBundleRootURL
+                        .appendingPathComponent(path)
+                        .path
+                ),
+                path
+            )
+        }
+        XCTAssertEqual(
+            result.record.resourcePreservationReport?.originalRegularFileCount,
+            stage.originalBundleRecord.sourceMetadata.fileCount
+        )
+        XCTAssertEqual(
+            result.record.resourcePreservationReport?.copiedPackageResourceCount,
+            stage.originalBundleRecord.sourceMetadata.fileCount - 1
+        )
+        XCTAssertEqual(
+            result.record.resourcePreservationReport?
+                .missingExtensionPageDependencyPaths,
+            []
+        )
     }
 
     func testCopiesStaticImportScriptsDependenciesFromClassicServiceWorker()
@@ -534,20 +718,22 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
             )
 
         let expectedCopiedPaths = [
+            "outside.js",
             "scripts/background.js",
             "scripts/deps/one.js",
+            "scripts/dynamic.js",
             "scripts/nested/child/three.js",
             "scripts/nested/two.js",
         ]
         XCTAssertEqual(result.record.copiedResourcePaths, expectedCopiedPaths)
-        XCTAssertFalse(
+        XCTAssertTrue(
             FileManager.default.fileExists(
                 atPath: result.generatedBundleRootURL
                     .appendingPathComponent("scripts/dynamic.js")
                     .path
             )
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             FileManager.default.fileExists(
                 atPath: result.generatedBundleRootURL
                     .appendingPathComponent("outside.js")
@@ -599,9 +785,10 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
                 "concat.js",
                 "map-one.js",
                 "map-two.js",
+                "runtime-only.js",
             ]
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             FileManager.default.fileExists(
                 atPath: result.generatedBundleRootURL
                     .appendingPathComponent("runtime-only.js")
@@ -656,9 +843,10 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
             [
                 "719.background.js",
                 "background.js",
+                "runtime-only.background.js",
             ]
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             FileManager.default.fileExists(
                 atPath: result.generatedBundleRootURL
                     .appendingPathComponent("runtime-only.background.js")
@@ -755,7 +943,7 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
             result.record.copiedResourcePaths
                 .contains("b9f569e387bfc3d589be.module.wasm")
         )
-        XCTAssertFalse(result.record.copiedResourcePaths.contains("other.wasm"))
+        XCTAssertTrue(result.record.copiedResourcePaths.contains("other.wasm"))
         XCTAssertEqual(
             try Data(
                 contentsOf: result.generatedBundleRootURL
@@ -867,7 +1055,32 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
         ) { error in
             XCTAssertTrue(
                 String(describing: error)
-                    .localizedCaseInsensitiveContains("symbolic link")
+                    .localizedCaseInsensitiveContains("symbolic link"),
+                String(describing: error)
+            )
+        }
+    }
+
+    func testRejectsSourcePackagePreseededGeneratedOutputPath() throws {
+        let stage = try stageBundle(
+            named: "reserved-generated-output",
+            manifest: minimalManifest(),
+            files: [
+                "background.js": "",
+                "_sumi_runtime/chrome-shim.common.js": "preseeded",
+            ]
+        )
+
+        XCTAssertThrowsError(
+            try makeWriter(rootURL: stage.storeRoot).writeGeneratedBundle(
+                originalBundleRecord: stage.result.originalBundleRecord,
+                manifestSnapshot: stage.result.manifestSnapshot,
+                planningRecord: stage.result.generatedBundlePlan
+            )
+        ) { error in
+            XCTAssertTrue(
+                String(describing: error)
+                    .contains("generatedOutputReserved")
             )
         }
     }
@@ -914,10 +1127,15 @@ final class ChromeMV3GeneratedBundleWriterTests: XCTestCase {
             "WKWebExtension" + "Controller(",
             "WKWebExtension" + "Context(",
             "WK" + "WebExtension(",
+            "WK" + "WebView(",
             "webExtension" + "Controller =",
             "add" + "UserScript",
             "connect" + "Native",
             "NativeMessaging" + "Handler(",
+            "import " + "JavaScriptCore",
+            "evaluate" + "JavaScript",
+            "URL" + "Session",
+            "Process" + "(",
         ] {
             XCTAssertFalse(source.contains(forbidden), forbidden)
         }

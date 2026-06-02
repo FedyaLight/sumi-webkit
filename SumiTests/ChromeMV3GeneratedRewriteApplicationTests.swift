@@ -187,7 +187,7 @@ final class ChromeMV3GeneratedRewriteApplicationTests: XCTestCase {
     }
 
     func testPopupWithHeadIsRewrittenOnlyInVariant() throws {
-        let popupHTML = "<!doctype html><html><head><title>Popup</title></head><body></body></html>\n"
+        let popupHTML = "<!doctype html><html><head><title>Popup</title><link href=\"popup/main.css\" rel=\"stylesheet\"></head><body><script src=\"popup/main.js\"></script></body></html>\n"
         let fixture = try writeBundle(
             named: "rewrite-popup-head",
             manifest: [
@@ -200,6 +200,9 @@ final class ChromeMV3GeneratedRewriteApplicationTests: XCTestCase {
             ],
             files: [
                 "popup.html": popupHTML,
+                "popup/main.css": "body { background-image: url(\"images/logo.png\"); }\n",
+                "popup/main.js": "document.body.dataset.ready = 'true';\n",
+                "popup/images/logo.png": "image",
             ]
         )
 
@@ -227,6 +230,18 @@ final class ChromeMV3GeneratedRewriteApplicationTests: XCTestCase {
                         && $0.shimTagsPresent
                 }
         )
+        for path in [
+            "popup/main.css",
+            "popup/main.js",
+            "popup/images/logo.png",
+        ] {
+            XCTAssertTrue(
+                FileManager.default.fileExists(
+                    atPath: result.variantRootURL.appendingPathComponent(path).path
+                ),
+                path
+            )
+        }
     }
 
     func testPopupWithoutHeadUsesCandidateOnlyInVariant() throws {

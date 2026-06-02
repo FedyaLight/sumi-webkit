@@ -888,6 +888,8 @@ private func validateSafeRelativePath(_ relativePath: String) throws {
             segment.isEmpty == false
                 && segment != "."
                 && segment != ".."
+                && segment.lowercased().hasSuffix(".app") == false
+                && segment.lowercased().hasSuffix(".appex") == false
         })
     else {
         throw ChromeMV3GeneratedRewriteVariantWriterError.unsafeRelativePath(

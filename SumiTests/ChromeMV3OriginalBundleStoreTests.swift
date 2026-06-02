@@ -88,6 +88,36 @@ final class ChromeMV3OriginalBundleStoreTests: XCTestCase {
         }
     }
 
+    func testRejectsNestedAppAndAppexPackagesBeforeStaging() throws {
+        for packageName in ["Legacy.app", "Legacy.appex"] {
+            let fixture = try makeFixture(
+                named: "nested-\(packageName)-fixture",
+                manifest: minimalManifest(),
+                files: [
+                    "background.js": "",
+                    "nested/\(packageName)/Contents/payload.txt": "blocked",
+                ]
+            )
+            let storeRoot = try makeTemporaryDirectory()
+
+            XCTAssertThrowsError(
+                try makeStore(rootURL: storeRoot).stageUnpackedDirectory(
+                    at: fixture
+                )
+            ) { error in
+                XCTAssertTrue(
+                    String(describing: error)
+                        .contains("Unsafe extension bundle path")
+                )
+            }
+            XCTAssertFalse(
+                FileManager.default.fileExists(
+                    atPath: storeRoot.appendingPathComponent("originals").path
+                )
+            )
+        }
+    }
+
     func testRejectsMV2ThroughExistingValidatorBeforeStaging() throws {
         let fixture = try makeFixture(
             named: "mv2",

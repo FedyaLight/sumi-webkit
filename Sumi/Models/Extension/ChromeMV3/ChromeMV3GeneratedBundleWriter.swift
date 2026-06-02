@@ -3,8 +3,8 @@
 //  Sumi
 //
 //  Deterministic generated-bundle draft writer for staged Chrome MV3 originals.
-//  This layer copies manifest-referenced files and manifest locale catalogs;
-//  it does not generate, load, register, or execute extension runtime code.
+//  This layer preserves safe package-local files and validates manifest
+//  references; it does not load, register, or execute extension runtime code.
 //
 
 import CryptoKit
@@ -98,6 +98,19 @@ struct ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord:
     var diagnostics: [String]
 }
 
+struct ChromeMV3GeneratedBundleResourcePreservationReport:
+    Codable,
+    Equatable
+{
+    var policy: String
+    var originalRegularFileCount: Int
+    var copiedPackageResourceCount: Int
+    var generatedManifestWrittenSeparately: Bool
+    var missingManifestReferencedResourcePaths: [String]
+    var missingExtensionPageDependencyPaths: [String]
+    var diagnostics: [String]
+}
+
 struct ChromeMV3WrittenRuntimeTemplateResource: Codable, Equatable {
     var moduleName: ChromeMV3RuntimeTemplateModuleName
     var outputRelativePath: String
@@ -139,6 +152,8 @@ struct ChromeMV3GeneratedBundleRecord: Codable, Equatable {
     var serviceWorkerFetchResourceRecords:
         [ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord]?
     var resourceWarnings: [ChromeMV3GeneratedBundleResourceWarning]
+    var resourcePreservationReport:
+        ChromeMV3GeneratedBundleResourcePreservationReport?
     var writtenInertRuntimeTemplateResources: [ChromeMV3WrittenRuntimeTemplateResource]
     var inertRuntimeTemplatesWritten: Bool
     var executableRuntimeFilesWritten: Bool
@@ -244,6 +259,7 @@ struct ChromeMV3GeneratedBundleWriter {
             resourceDiscovery.resources,
             preflightServiceWorkerFetchResourceRecords:
                 resourceDiscovery.serviceWorkerFetchResourceRecords,
+            manifest: manifestObject,
             from: originalRootURL,
             to: temporaryBundleRootURL
         )
@@ -274,7 +290,7 @@ struct ChromeMV3GeneratedBundleWriter {
         )
 
         var record = ChromeMV3GeneratedBundleRecord(
-            schemaVersion: 4,
+            schemaVersion: 5,
             id: "generated-\(originalBundleRecord.sourceMetadata.contentSHA256.prefix(32))",
             createdAt: planningRecord.createdAt,
             generatedBundleRootPath: generatedBundleRootURL.standardizedFileURL.path,
@@ -323,6 +339,7 @@ struct ChromeMV3GeneratedBundleWriter {
                 copyResult.serviceWorkerFetchResourceRecords
                     .sorted(by: serviceWorkerFetchResourceRecordSort),
             resourceWarnings: copyResult.warnings.sorted(by: resourceWarningSort),
+            resourcePreservationReport: copyResult.resourcePreservationReport,
             writtenInertRuntimeTemplateResources: writtenRuntimeTemplateResources,
             inertRuntimeTemplatesWritten: writtenRuntimeTemplateResources
                 .isEmpty == false,
@@ -535,6 +552,14 @@ struct ChromeMV3GeneratedBundleWriter {
             )
         }
 
+        if let storage = manifest["storage"] as? [String: Any] {
+            try appendExactPath(
+                storage["managed_schema"],
+                field: "storage.managed_schema",
+                to: &resources
+            )
+        }
+
         if let action = manifest["action"] as? [String: Any] {
             try appendExactPath(
                 action["default_popup"],
@@ -588,6 +613,25 @@ struct ChromeMV3GeneratedBundleWriter {
         try appendExactPath(
             manifest["devtools_page"],
             field: "devtools_page",
+            to: &resources
+        )
+
+        if let sandbox = manifest["sandbox"] as? [String: Any] {
+            try appendExactPaths(
+                sandbox["pages"],
+                field: "sandbox.pages",
+                to: &resources
+            )
+        }
+
+        try appendOverridePaths(
+            manifest["chrome_url_overrides"],
+            field: "chrome_url_overrides",
+            to: &resources
+        )
+        try appendOverridePaths(
+            manifest["browser_url_overrides"],
+            field: "browser_url_overrides",
             to: &resources
         )
 
@@ -1194,6 +1238,21 @@ struct ChromeMV3GeneratedBundleWriter {
         }
     }
 
+    private func appendOverridePaths(
+        _ value: Any?,
+        field: String,
+        to resources: inout [ManifestResourceReference]
+    ) throws {
+        guard let overrides = value as? [String: Any] else { return }
+        for key in overrides.keys.sorted() {
+            try appendExactPath(
+                overrides[key],
+                field: "\(field).\(key)",
+                to: &resources
+            )
+        }
+    }
+
     private func appendWebAccessibleResourcePaths(
         _ value: Any?,
         field: String,
@@ -1303,10 +1362,15 @@ struct ChromeMV3GeneratedBundleWriter {
         _ resources: [ManifestResourceReference],
         preflightServiceWorkerFetchResourceRecords:
             [ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord],
+        manifest: [String: Any],
         from originalRootURL: URL,
         to generatedBundleRootURL: URL
     ) throws -> ResourceCopyResult {
-        var copiedPaths = Set<String>()
+        let packageCopy = try copySafePackageResources(
+            from: originalRootURL,
+            to: generatedBundleRootURL
+        )
+        var copiedPaths = Set(packageCopy.copiedRelativePaths)
         var warnings: [ChromeMV3GeneratedBundleResourceWarning] = []
         var serviceWorkerFetchResourceRecords =
             preflightServiceWorkerFetchResourceRecords
@@ -1334,7 +1398,7 @@ struct ChromeMV3GeneratedBundleWriter {
                         code: .unsupportedWebAccessibleResourcePattern,
                         field: resource.field,
                         path: resource.path,
-                        message: "Skipped unsupported web_accessible_resources wildcard pattern in generated-bundle draft."
+                        message: "Preserved safe package-local files without expanding this web_accessible_resources wildcard or changing manifest exposure."
                     )
                 )
             case .serviceWorkerFetchCandidate:
@@ -1349,13 +1413,322 @@ struct ChromeMV3GeneratedBundleWriter {
             }
         }
 
+        let missingManifestReferencedResourcePaths = resources.compactMap {
+            resource -> String? in
+            guard resource.policy == .exactRequired,
+                  resource.path != "manifest.json",
+                  copiedPaths.contains(resource.path) == false
+            else { return nil }
+            return resource.path
+        }
+        let missingExtensionPageDependencyPaths =
+            staticallyMissingExtensionPageDependencyPaths(
+                in: manifest,
+                originalRootURL: originalRootURL,
+                copiedPaths: copiedPaths
+            )
+
         return ResourceCopyResult(
             copiedRelativePaths: copiedPaths.sorted(),
             warnings: warnings,
             serviceWorkerFetchResourceRecords:
                 uniqueServiceWorkerFetchResourceRecords(
                     serviceWorkerFetchResourceRecords
+                ),
+            resourcePreservationReport:
+                ChromeMV3GeneratedBundleResourcePreservationReport(
+                    policy: "copyAllSafePackageLocalRegularFiles",
+                    originalRegularFileCount: packageCopy
+                        .originalRegularFileCount,
+                    copiedPackageResourceCount: copiedPaths.count,
+                    generatedManifestWrittenSeparately: true,
+                    missingManifestReferencedResourcePaths:
+                        uniqueSortedGeneratedBundleWriter(
+                            missingManifestReferencedResourcePaths
+                        ),
+                    missingExtensionPageDependencyPaths:
+                        missingExtensionPageDependencyPaths,
+                    diagnostics: [
+                        "All safe regular files below the staged extension root are preserved deterministically.",
+                        "manifest.json is written separately from the validated canonical snapshot.",
+                        "The source manifest is unchanged, so preserving package-local files does not widen web_accessible_resources exposure.",
+                        "No extension scripts are executed during generated-bundle intake.",
+                    ]
                 )
+        )
+    }
+
+    private func copySafePackageResources(
+        from originalRootURL: URL,
+        to generatedBundleRootURL: URL
+    ) throws -> SafePackageResourceCopyResult {
+        guard
+            let enumerator = FileManager.default.enumerator(
+                at: originalRootURL,
+                includingPropertiesForKeys: [
+                    .isDirectoryKey,
+                    .isRegularFileKey,
+                    .isSymbolicLinkKey,
+                ],
+                options: []
+            )
+        else {
+            throw ChromeMV3GeneratedBundleWriterError.missingOriginalBundle(
+                originalRootURL.path
+            )
+        }
+
+        var regularFiles: [(path: String, url: URL)] = []
+        for case let itemURL as URL in enumerator {
+            let standardizedURL = itemURL.standardizedFileURL
+            let relativePath = try relativePath(
+                for: standardizedURL,
+                under: originalRootURL
+            )
+            try validateSafePackageRelativePath(relativePath)
+            if isSymbolicLink(at: standardizedURL) {
+                enumerator.skipDescendants()
+                throw ChromeMV3GeneratedBundleWriterError
+                    .symbolicLinkReferencedResource(relativePath)
+            }
+            let values = try standardizedURL.resourceValues(forKeys: [
+                .isDirectoryKey,
+                .isRegularFileKey,
+                .isSymbolicLinkKey,
+            ])
+            if values.isSymbolicLink == true {
+                enumerator.skipDescendants()
+                throw ChromeMV3GeneratedBundleWriterError
+                    .symbolicLinkReferencedResource(relativePath)
+            }
+            if values.isDirectory == true {
+                continue
+            }
+            guard values.isRegularFile == true else {
+                throw ChromeMV3GeneratedBundleWriterError
+                    .nonRegularReferencedResource(relativePath)
+            }
+            regularFiles.append((path: relativePath, url: standardizedURL))
+        }
+
+        var copiedPaths: [String] = []
+        for file in regularFiles.sorted(by: { $0.path < $1.path }) {
+            guard file.path != "manifest.json" else { continue }
+            let destinationURL = generatedBundleRootURL
+                .appendingPathComponent(file.path)
+            try FileManager.default.createDirectory(
+                at: destinationURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try Data(contentsOf: file.url).write(
+                to: destinationURL,
+                options: [.atomic]
+            )
+            copiedPaths.append(file.path)
+        }
+        return SafePackageResourceCopyResult(
+            originalRegularFileCount: regularFiles.count,
+            copiedRelativePaths: copiedPaths
+        )
+    }
+
+    private func validateSafePackageRelativePath(_ relativePath: String) throws {
+        _ = try normalizedResourcePath(
+            relativePath,
+            field: "package.resources"
+        )
+        guard isReservedGeneratedOutputPath(relativePath) == false else {
+            throw ChromeMV3GeneratedBundleWriterError.unsafeResourcePath(
+                field: "package.resources.generatedOutputReserved",
+                path: relativePath
+            )
+        }
+        let containsSafariPackage = relativePath.split(separator: "/")
+            .contains { segment in
+                let lowercased = segment.lowercased()
+                return lowercased.hasSuffix(".app")
+                    || lowercased.hasSuffix(".appex")
+            }
+        guard containsSafariPackage == false else {
+            throw ChromeMV3GeneratedBundleWriterError.unsafeResourcePath(
+                field: "package.resources.safariPackageBlocked",
+                path: relativePath
+            )
+        }
+    }
+
+    private func isReservedGeneratedOutputPath(_ relativePath: String) -> Bool {
+        let reservedDirectories = [
+            ChromeMV3RuntimeResourceTemplateCatalog.runtimeDirectoryName,
+            ChromeMV3ManifestRewriteDryRunRenderer.dryRunDirectoryName,
+        ]
+        if reservedDirectories.contains(where: { directory in
+            relativePath == directory
+                || relativePath.hasPrefix(directory + "/")
+        }) {
+            return true
+        }
+        return [
+            Self.metadataFileName,
+            Self.runtimeResourcePlanFileName,
+            Self.manifestRewritePreviewFileName,
+            ChromeMV3GeneratedRewriteVariantWriter.applicationReportFileName,
+            ChromeMV3RuntimeLoadabilityVerifier.reportFileName,
+        ].contains(relativePath)
+    }
+
+    private func staticallyMissingExtensionPageDependencyPaths(
+        in manifest: [String: Any],
+        originalRootURL: URL,
+        copiedPaths: Set<String>
+    ) -> [String] {
+        var pendingPaths = extensionPagePaths(in: manifest)
+        var scannedPaths = Set<String>()
+        var missingPaths = Set<String>()
+
+        while pendingPaths.isEmpty == false {
+            let pagePath = pendingPaths.removeFirst()
+            guard scannedPaths.insert(pagePath).inserted else { continue }
+            guard copiedPaths.contains(pagePath) else {
+                missingPaths.insert(pagePath)
+                continue
+            }
+            guard
+                let sourceURL = try? safeSourceURL(
+                    relativePath: pagePath,
+                    rootURL: originalRootURL,
+                    field: "extensionPageDependencies.scan"
+                ),
+                let source = try? String(contentsOf: sourceURL, encoding: .utf8)
+            else { continue }
+
+            for dependencyPath in staticallyReferencedDependencyPaths(
+                in: source,
+                parentPath: pagePath
+            ) {
+                guard copiedPaths.contains(dependencyPath) else {
+                    missingPaths.insert(dependencyPath)
+                    continue
+                }
+                let pathExtension = URL(fileURLWithPath: dependencyPath)
+                    .pathExtension
+                    .lowercased()
+                if pathExtension == "html" || pathExtension == "css" {
+                    pendingPaths.append(dependencyPath)
+                }
+            }
+        }
+        return missingPaths.sorted()
+    }
+
+    private func extensionPagePaths(in manifest: [String: Any]) -> [String] {
+        var paths: [String] = []
+        func append(_ value: Any?) {
+            guard let path = value as? String,
+                  let normalized = try? normalizedResourcePath(
+                    path,
+                    field: "extensionPageDependencies.manifest"
+                  )
+            else { return }
+            paths.append(normalized)
+        }
+        append(manifest["options_page"])
+        append(manifest["devtools_page"])
+        if let optionsUI = manifest["options_ui"] as? [String: Any] {
+            append(optionsUI["page"])
+        }
+        if let action = manifest["action"] as? [String: Any] {
+            append(action["default_popup"])
+        }
+        if let sidePanel = manifest["side_panel"] as? [String: Any] {
+            append(sidePanel["default_path"])
+        }
+        if let sandbox = manifest["sandbox"] as? [String: Any],
+           let sandboxPages = sandbox["pages"] as? [String]
+        {
+            sandboxPages.forEach { append($0) }
+        }
+        for key in ["chrome_url_overrides", "browser_url_overrides"] {
+            guard let overrides = manifest[key] as? [String: Any] else {
+                continue
+            }
+            overrides.keys.sorted().forEach { append(overrides[$0]) }
+        }
+        return uniqueSortedGeneratedBundleWriter(paths)
+    }
+
+    private func staticallyReferencedDependencyPaths(
+        in source: String,
+        parentPath: String
+    ) -> [String] {
+        let pathExtension = URL(fileURLWithPath: parentPath)
+            .pathExtension
+            .lowercased()
+        let pattern: String
+        switch pathExtension {
+        case "html", "htm":
+            pattern = #"(?i)(?:src|href)\s*=\s*["']([^"']+)["']"#
+        case "css":
+            pattern = #"(?i)url\(\s*["']?([^"')]+)["']?\s*\)"#
+        default:
+            return []
+        }
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return []
+        }
+        let range = NSRange(source.startIndex..., in: source)
+        return uniqueSortedGeneratedBundleWriter(
+            regex.matches(in: source, range: range).compactMap { match in
+                guard match.numberOfRanges > 1,
+                      let captureRange = Range(match.range(at: 1), in: source)
+                else { return nil }
+                return resolvedPackageLocalDependencyPath(
+                    String(source[captureRange]),
+                    parentPath: parentPath
+                )
+            }
+        )
+    }
+
+    private func resolvedPackageLocalDependencyPath(
+        _ dependency: String,
+        parentPath: String
+    ) -> String? {
+        let trimmed = dependency.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false,
+              trimmed.hasPrefix("#") == false,
+              trimmed.hasPrefix("//") == false,
+              URLComponents(string: trimmed)?.scheme == nil
+        else { return nil }
+        let pathBeforeFragment = trimmed.split(
+            separator: "#",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        ).first.map(String.init) ?? trimmed
+        let pathOnly = pathBeforeFragment.split(
+            separator: "?",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        ).first.map(String.init) ?? pathBeforeFragment
+        let decoded = pathOnly.removingPercentEncoding ?? pathOnly
+        var segments = decoded.hasPrefix("/")
+            ? []
+            : parentPath.split(separator: "/").dropLast().map(String.init)
+        for segment in decoded.split(separator: "/", omittingEmptySubsequences: false) {
+            switch segment {
+            case "", ".":
+                continue
+            case "..":
+                guard segments.isEmpty == false else { return nil }
+                segments.removeLast()
+            default:
+                segments.append(String(segment))
+            }
+        }
+        let resolved = segments.joined(separator: "/")
+        return try? normalizedResourcePath(
+            resolved,
+            field: "extensionPageDependencies.scan"
         )
     }
 
@@ -1755,12 +2128,32 @@ struct ChromeMV3GeneratedBundleWriter {
     }
 
     private func relativePath(for url: URL, under rootURL: URL) throws -> String {
-        let rootPath = rootURL.path.hasSuffix("/") ? rootURL.path : rootURL.path + "/"
-        guard url.path.hasPrefix(rootPath) else {
-            throw ChromeMV3GeneratedBundleWriterError
-                .sourceEscapedOriginalRoot(url.path)
+        var candidateRootPaths = [
+            rootURL.standardizedFileURL.path,
+            rootURL.resolvingSymlinksInPath().path,
+        ]
+        if let canonicalRootPath = canonicalPath(for: rootURL) {
+            candidateRootPaths.append(canonicalRootPath)
         }
-        return String(url.path.dropFirst(rootPath.count))
+        for candidateRootPath in candidateRootPaths {
+            let rootPath = candidateRootPath.hasSuffix("/")
+                ? candidateRootPath
+                : candidateRootPath + "/"
+            if url.path.hasPrefix(rootPath) {
+                return String(url.path.dropFirst(rootPath.count))
+            }
+        }
+        throw ChromeMV3GeneratedBundleWriterError
+            .sourceEscapedOriginalRoot(url.path)
+    }
+
+    private func canonicalPath(for url: URL) -> String? {
+        var value: AnyObject?
+        try? (url.standardizedFileURL as NSURL).getResourceValue(
+            &value,
+            forKey: .canonicalPathKey
+        )
+        return value as? String
     }
 
     private func sha256Hex(_ data: Data) -> String {
@@ -1864,6 +2257,13 @@ private struct ResourceCopyResult {
     var warnings: [ChromeMV3GeneratedBundleResourceWarning]
     var serviceWorkerFetchResourceRecords:
         [ChromeMV3GeneratedBundleServiceWorkerFetchResourceRecord]
+    var resourcePreservationReport:
+        ChromeMV3GeneratedBundleResourcePreservationReport
+}
+
+private struct SafePackageResourceCopyResult {
+    var originalRegularFileCount: Int
+    var copiedRelativePaths: [String]
 }
 
 private struct ServiceWorkerFetchCandidate {
