@@ -29,6 +29,7 @@ final class SumiExtensionsModule {
     private var cachedManager: ExtensionManager?
     private var cachedChromeMV3EmptyControllerOwner:
         ChromeMV3EmptyControllerOwner?
+    private var pendingActionAnchors: [String: [WeakAnchor]] = [:]
     private var cachedChromeMV3PopupOptionsHostController:
         ChromeMV3ProductPopupOptionsHostController?
     private var lastChromeMV3PopupOptionsRunResult:
@@ -182,6 +183,10 @@ final class SumiExtensionsModule {
         cachedManager != nil
     }
 
+    var hasLoadedWebExtensionController: Bool {
+        cachedManager?.extensionController != nil
+    }
+
     func attach(browserManager: BrowserManager) {
         self.browserManager = browserManager
         cachedManager?.attach(browserManager: browserManager)
@@ -232,6 +237,7 @@ final class SumiExtensionsModule {
             tearDownChromeMV3PopupOptionsHostController(reason: .moduleDisabled)
             tearDownChromeMV3EmptyControllerOwner()
             tearDownLoadedRuntime(reason: "SumiExtensionsModule.setEnabled(false)")
+            pendingActionAnchors.removeAll()
         }
     }
 
@@ -258,6 +264,7 @@ final class SumiExtensionsModule {
         if let browserManager {
             manager.attach(browserManager: browserManager)
         }
+        transferPendingActionAnchors(to: manager)
         surfaceStore.bind(manager)
         return manager
     }
@@ -3380,6 +3387,7 @@ final class SumiExtensionsModule {
         #if DEBUG
             lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
         #endif
+        syncChromeMV3ActionSurface(after: result)
         return result
     }
 
@@ -3445,6 +3453,7 @@ final class SumiExtensionsModule {
         #if DEBUG
             lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
         #endif
+        syncChromeMV3ActionSurface(after: result)
         return result
     }
 
@@ -3473,6 +3482,7 @@ final class SumiExtensionsModule {
         #if DEBUG
             lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
         #endif
+        syncChromeMV3ActionSurface(after: result)
         return result
     }
 
@@ -3506,6 +3516,7 @@ final class SumiExtensionsModule {
         #if DEBUG
             lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
         #endif
+        syncChromeMV3ActionSurface(after: result)
         return result
     }
 
@@ -3532,6 +3543,7 @@ final class SumiExtensionsModule {
         #if DEBUG
             lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
         #endif
+        syncChromeMV3ActionSurface(after: result)
         return result
     }
 
@@ -3559,6 +3571,7 @@ final class SumiExtensionsModule {
         #if DEBUG
             lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
         #endif
+        syncChromeMV3ActionSurface(after: result)
         return result
     }
 
@@ -3585,6 +3598,7 @@ final class SumiExtensionsModule {
         #if DEBUG
             lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
         #endif
+        syncChromeMV3ActionSurface(after: result)
         return result
     }
 
@@ -3638,6 +3652,7 @@ final class SumiExtensionsModule {
         #if DEBUG
             lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
         #endif
+        syncChromeMV3ActionSurface(after: result)
         return result
     }
 
@@ -3668,6 +3683,7 @@ final class SumiExtensionsModule {
         #if DEBUG
             lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
         #endif
+        syncChromeMV3ActionSurface(after: result)
         return result
     }
 
@@ -3698,6 +3714,7 @@ final class SumiExtensionsModule {
         #if DEBUG
             lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
         #endif
+        syncChromeMV3ActionSurface(after: result)
         return result
     }
 
@@ -4562,14 +4579,28 @@ final class SumiExtensionsModule {
         enabledExtensions: [InstalledExtension],
         sumiScriptsManagerEnabled: Bool
     ) -> [PinnedToolbarSlot] {
-        managerIfLoadedAndEnabled()?.orderedPinnedToolbarSlots(
-            enabledExtensions: enabledExtensions,
-            sumiScriptsManagerEnabled: sumiScriptsManagerEnabled
-        ) ?? []
+        if let manager = managerIfLoadedAndEnabled() {
+            return manager.orderedPinnedToolbarSlots(
+                enabledExtensions: enabledExtensions,
+                sumiScriptsManagerEnabled: sumiScriptsManagerEnabled
+            )
+        }
+
+        var slots: [PinnedToolbarSlot] = []
+        if sumiScriptsManagerEnabled {
+            slots.append(.sumiScriptsManager)
+        }
+        slots.append(
+            contentsOf: enabledExtensions
+                .filter(\.isEnabled)
+                .filter(\.hasAction)
+                .map { .webExtension($0) }
+        )
+        return slots
     }
 
     func isPinnedToToolbar(_ extensionId: String) -> Bool {
-        managerIfLoadedAndEnabled()?.isPinnedToToolbar(extensionId) ?? false
+        managerIfLoadedAndEnabled()?.isPinnedToToolbar(extensionId) ?? true
     }
 
     func pinToToolbar(_ extensionId: String) {
@@ -4593,15 +4624,58 @@ final class SumiExtensionsModule {
         managerIfLoadedAndEnabled()?.getExtensionContext(for: extensionId)
     }
 
+    func openActionPopupFromURLHub(
+        extensionId: String,
+        currentTab: Tab?
+    ) async -> BrowserExtensionActionPopupRequestResult {
+        guard isEnabled else {
+            return .blocked(
+                .moduleDisabled,
+                message: "The Extensions module is disabled."
+            )
+        }
+        guard let manager = managerIfEnabled() else {
+            return .blocked(
+                .runtimeUnavailable,
+                message: "Sumi could not create the local extension manager for this action popup."
+            )
+        }
+        transferPendingActionAnchors(to: manager)
+        return await manager.openActionPopupFromURLHub(
+            extensionId: extensionId,
+            currentTab: currentTab
+        )
+    }
+
     func stableAdapter(for tab: Tab) -> ExtensionTabAdapter? {
         managerIfLoadedAndEnabled()?.stableAdapter(for: tab)
     }
 
     func setActionAnchorIfLoaded(for extensionId: String, anchorView: NSView) {
+        storePendingActionAnchor(for: extensionId, anchorView: anchorView)
         managerIfLoadedAndEnabled()?.setActionAnchor(
             for: extensionId,
             anchorView: anchorView
         )
+    }
+
+    private func storePendingActionAnchor(
+        for extensionId: String,
+        anchorView: NSView
+    ) {
+        var anchors = pendingActionAnchors[extensionId] ?? []
+        anchors.removeAll { $0.view == nil || $0.view === anchorView }
+        anchors.append(WeakAnchor(view: anchorView, window: anchorView.window))
+        pendingActionAnchors[extensionId] = Array(anchors.suffix(8))
+    }
+
+    private func transferPendingActionAnchors(to manager: ExtensionManager) {
+        for (extensionId, anchors) in pendingActionAnchors {
+            for anchor in anchors {
+                guard let view = anchor.view else { continue }
+                manager.setActionAnchor(for: extensionId, anchorView: view)
+            }
+        }
     }
 
     func cancelNativeMessagingSessionsIfLoaded(reason: String) {
@@ -4696,6 +4770,37 @@ final class SumiExtensionsModule {
             ?? "internal-debug-profile"
     }
 
+    private func syncChromeMV3ActionSurface(
+        after result: ChromeMV3ExtensionManagerActionResult
+    ) {
+        guard isEnabled,
+              context != nil,
+              let lifecycleResult = result.lifecycleOperationResult
+        else {
+            return
+        }
+
+        guard let manager = managerIfEnabled() else {
+            return
+        }
+
+        do {
+            if let record = lifecycleResult.record {
+                try manager.syncChromeMV3LifecycleRecordToActionSurface(record)
+            } else if let previousRecord = lifecycleResult.previousRecord,
+                      [.uninstall, .reset].contains(lifecycleResult.operation)
+            {
+                try manager.removeChromeMV3ActionSurfaceRecord(
+                    extensionId: previousRecord.extensionID
+                )
+            }
+        } catch {
+            ExtensionManager.logger.error(
+                "Failed to sync Chrome MV3 action surface for \(lifecycleResult.record?.extensionID ?? lifecycleResult.previousRecord?.extensionID ?? "unknown", privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
     private func nativeMessagingPermissionStateForManager(
         rootURL: URL,
         profileID: String,
@@ -4745,13 +4850,12 @@ final class SumiExtensionsModule {
 
     private func managerIfNeededForNormalTabRuntime() -> ExtensionManager? {
         guard isEnabled else { return nil }
-
-        if let cachedManager {
-            return cachedManager.hasEnabledInstalledExtensions ? cachedManager : nil
+        guard let cachedManager,
+              cachedManager.extensionController != nil
+        else {
+            return nil
         }
-
-        guard hasEnabledPersistedExtensions() else { return nil }
-        return managerIfEnabled()
+        return cachedManager.hasEnabledInstalledExtensions ? cachedManager : nil
     }
 
     private func hasEnabledPersistedExtensions() -> Bool {

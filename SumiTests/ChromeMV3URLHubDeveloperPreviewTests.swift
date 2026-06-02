@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -194,6 +195,326 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             }
         )
         XCTAssertFalse(module.hasLoadedRuntime)
+    }
+
+    @MainActor
+    func testEnabledLocalMV3ActionSyncsIntoURLHubActionSurfaceWithoutRuntimeObjects()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        let source = try makeFixture(
+            named: "urlhub-generic-action-popup",
+            manifest: genericActionPopupManifest(
+                name: "Generic Popup MV3",
+                permissions: ["activeTab"]
+            ),
+            files: [
+                "popup.html": "<!doctype html><title>Popup</title>",
+            ]
+        )
+        let module = try makeModule(enabled: true, includesModelContext: true)
+
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: source,
+            profileID: "profile-urlhub-generic-action",
+            enableInternal: true
+        )
+        let lifecycleRecord = try XCTUnwrap(
+            install.lifecycleOperationResult?.record
+        )
+
+        let syncedAction = await waitForEnabledExtension(
+            in: module,
+            extensionId: lifecycleRecord.extensionID
+        )
+        let action = try XCTUnwrap(syncedAction)
+
+        XCTAssertTrue(install.succeeded)
+        XCTAssertEqual(module.surfaceStore.enabledExtensions.count, 1)
+        XCTAssertEqual(action.id, lifecycleRecord.extensionID)
+        XCTAssertEqual(action.name, "Generic Popup MV3")
+        XCTAssertTrue(action.hasAction)
+        XCTAssertEqual(action.defaultPopupPath, "popup.html")
+        XCTAssertEqual(action.sourceKind, .directory)
+        XCTAssertTrue(action.isEnabled)
+        let activeGeneratedVersionID = try XCTUnwrap(
+            lifecycleRecord.activeGeneratedVersionID
+        )
+        let activeGeneratedVersion = try XCTUnwrap(
+            lifecycleRecord.generatedBundleVersions.first {
+                $0.id == activeGeneratedVersionID
+            }
+        )
+        XCTAssertEqual(
+            action.packagePath,
+            activeGeneratedVersion.generatedBundleRootPath
+        )
+        XCTAssertEqual(
+            action.sourceBundlePath,
+            lifecycleRecord.originalBundleRootPath
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(".diagnostics").path
+            )
+        )
+        XCTAssertFalse(module.hasLoadedWebExtensionController)
+    }
+
+    @MainActor
+    func testURLHubActionClickPreflightBlocksNoPopupWithoutRuntime()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        let source = try makeFixture(
+            named: "urlhub-action-no-popup",
+            manifest: genericMV3Manifest(name: "Generic Action No Popup"),
+            files: [:]
+        )
+        let module = try makeModule(enabled: true, includesModelContext: true)
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: source,
+            profileID: "profile-urlhub-action-no-popup",
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: record.extensionID
+        )
+        let result = await module.openActionPopupFromURLHub(
+            extensionId: record.extensionID,
+            currentTab: Tab(url: URL(string: "https://example.com/login")!)
+        )
+
+        XCTAssertFalse(result.opened)
+        XCTAssertEqual(result.blocker, .noActionPopup)
+        XCTAssertFalse(result.message.isEmpty)
+        XCTAssertFalse(module.hasLoadedWebExtensionController)
+    }
+
+    @MainActor
+    func testURLHubActionClickPreflightBlocksMissingCurrentPagePermission()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        let source = try makeFixture(
+            named: "urlhub-action-missing-permission",
+            manifest: genericActionPopupManifest(
+                name: "Generic Popup No Host Permission"
+            ),
+            files: [
+                "popup.html": "<!doctype html><title>Popup</title>",
+            ]
+        )
+        let module = try makeModule(enabled: true, includesModelContext: true)
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: source,
+            profileID: "profile-urlhub-action-missing-permission",
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: record.extensionID
+        )
+        let result = await module.openActionPopupFromURLHub(
+            extensionId: record.extensionID,
+            currentTab: Tab(url: URL(string: "https://example.com/login")!)
+        )
+
+        XCTAssertFalse(result.opened)
+        XCTAssertEqual(result.blocker, .currentPagePermissionMissing)
+        XCTAssertFalse(result.message.isEmpty)
+        XCTAssertFalse(module.hasLoadedWebExtensionController)
+    }
+
+    @MainActor
+    func testURLHubActionClickPreflightBlocksDisabledExtensionWithoutRuntime()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        let source = try makeFixture(
+            named: "urlhub-action-disabled-extension",
+            manifest: genericActionPopupManifest(
+                name: "Generic Popup Disabled",
+                permissions: ["activeTab"]
+            ),
+            files: [
+                "popup.html": "<!doctype html><title>Popup</title>",
+            ]
+        )
+        let module = try makeModule(enabled: true, includesModelContext: true)
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: source,
+            profileID: "profile-urlhub-action-disabled-extension",
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: record.extensionID
+        )
+        let disabled = module
+            .chromeMV3SetInternalExtensionEnabledThroughManager(
+                false,
+                rootURL: root,
+                profileID: record.profileID,
+                extensionID: record.extensionID
+            )
+        XCTAssertTrue(disabled.succeeded)
+        _ = module.managerIfEnabled()?.loadInstalledExtensionMetadata()
+
+        let result = await module.openActionPopupFromURLHub(
+            extensionId: record.extensionID,
+            currentTab: Tab(url: URL(string: "https://example.com/login")!)
+        )
+
+        XCTAssertFalse(result.opened)
+        XCTAssertEqual(result.blocker, .extensionDisabled)
+        XCTAssertFalse(result.message.isEmpty)
+        XCTAssertFalse(module.hasLoadedWebExtensionController)
+    }
+
+    @MainActor
+    func testURLHubActionClickPreflightBlocksMissingEligibleTabWithoutRuntime()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        let source = try makeFixture(
+            named: "urlhub-action-no-tab",
+            manifest: genericActionPopupManifest(
+                name: "Generic Popup Missing Tab",
+                permissions: ["activeTab"]
+            ),
+            files: [
+                "popup.html": "<!doctype html><title>Popup</title>",
+            ]
+        )
+        let module = try makeModule(enabled: true, includesModelContext: true)
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: source,
+            profileID: "profile-urlhub-action-no-tab",
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: record.extensionID
+        )
+        let result = await module.openActionPopupFromURLHub(
+            extensionId: record.extensionID,
+            currentTab: nil
+        )
+
+        XCTAssertFalse(result.opened)
+        XCTAssertEqual(result.blocker, .noEligibleTab)
+        XCTAssertFalse(result.message.isEmpty)
+        XCTAssertFalse(module.hasLoadedWebExtensionController)
+    }
+
+    @MainActor
+    func testURLHubActionClickPreflightBlocksModuleWorkerWithoutRuntime()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        var manifest = genericActionPopupManifest(
+            name: "Generic Popup Module Worker",
+            permissions: ["activeTab"]
+        )
+        manifest["background"] = [
+            "service_worker": "background.js",
+            "type": "module",
+        ]
+        let source = try makeFixture(
+            named: "urlhub-action-module-worker",
+            manifest: manifest,
+            files: [
+                "background.js": "export {};",
+                "popup.html": "<!doctype html><title>Popup</title>",
+            ]
+        )
+        let module = try makeModule(enabled: true, includesModelContext: true)
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: source,
+            profileID: "profile-urlhub-action-module-worker",
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: record.extensionID
+        )
+        let result = await module.openActionPopupFromURLHub(
+            extensionId: record.extensionID,
+            currentTab: Tab(url: URL(string: "https://example.com/login")!)
+        )
+
+        XCTAssertFalse(result.opened)
+        XCTAssertEqual(result.blocker, .moduleWorkerUnsupported)
+        XCTAssertFalse(result.message.isEmpty)
+        XCTAssertFalse(module.hasLoadedWebExtensionController)
+    }
+
+    @MainActor
+    func testURLHubActionClickPreflightBlocksOffRecordExtensionWithoutRuntime()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        let source = try makeFixture(
+            named: "urlhub-action-off-record",
+            manifest: genericActionPopupManifest(
+                name: "Generic Popup Off Record",
+                permissions: ["activeTab"]
+            ),
+            files: [
+                "popup.html": "<!doctype html><title>Popup</title>",
+            ]
+        )
+        let module = try makeModule(enabled: true, includesModelContext: true)
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: source,
+            profileID: "profile-urlhub-action-off-record",
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: record.extensionID
+        )
+        let privateProfile = Profile.createEphemeral()
+        let browserManager = BrowserManager(extensionsModule: module)
+        browserManager.profileManager.profiles = [privateProfile]
+        browserManager.currentProfile = privateProfile
+        let privateTab = Tab(
+            url: URL(string: "https://example.com/login")!,
+            browserManager: browserManager
+        )
+        privateTab.profileId = privateProfile.id
+        XCTAssertTrue(privateTab.isEphemeral)
+
+        let result = await module.openActionPopupFromURLHub(
+            extensionId: record.extensionID,
+            currentTab: privateTab
+        )
+
+        XCTAssertFalse(result.opened)
+        XCTAssertEqual(result.blocker, .noEligibleTab)
+        XCTAssertFalse(result.message.isEmpty)
+        XCTAssertFalse(module.hasLoadedWebExtensionController)
     }
 
     @MainActor
@@ -528,7 +849,19 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         let hubSource = try source(
             "Sumi/Components/Sidebar/URLBarHubPopover.swift"
         )
-        let combined = modelSource + "\n" + hubSource
+        let actionViewSource = try source(
+            "Sumi/Components/Extensions/ExtensionActionView.swift"
+        )
+        let managerUISource = try source(
+            "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift"
+        )
+        let sidebarHeaderSource = try source(
+            "Navigation/Sidebar/SidebarHeader.swift"
+        )
+        let moduleSource = try source(
+            "Sumi/Managers/ExtensionManager/SumiExtensionsModule.swift"
+        )
+        let combined = modelSource + "\n" + hubSource + "\n" + actionViewSource
         let manualSmokeRunnerCall =
             ".run" + "Manual" + "Normal" + "Tab" + "Smoke(request)"
         let artifactWriterCall =
@@ -561,8 +894,35 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertFalse(modelSource.contains("Timer.publish"))
         XCTAssertFalse(modelSource.contains("ExtensionToolbar"))
         XCTAssertFalse(modelSource.contains("toolbar action"))
+        XCTAssertFalse(sidebarHeaderSource.contains("ExtensionActionView("))
+        XCTAssertFalse(actionViewSource.contains("Pin to Toolbar"))
+        XCTAssertFalse(actionViewSource.contains("Unpin from Toolbar"))
         XCTAssertFalse(hubSource.contains(manualSmokeRunnerCall))
         XCTAssertFalse(hubSource.contains(artifactWriterCall))
+        XCTAssertTrue(actionViewSource.contains("openActionPopupFromURLHub"))
+        XCTAssertTrue(managerUISource.contains("performAction(for: adapter)"))
+        XCTAssertTrue(managerUISource.contains("extensionContext.action(for: adapter)"))
+        XCTAssertTrue(managerUISource.contains("presentsPopup"))
+        XCTAssertTrue(managerUISource.contains("guard action.isEnabled"))
+        XCTAssertTrue(managerUISource.contains("extensionContext.performAction(for: adapter)"))
+        XCTAssertTrue(managerUISource.contains("requestExtensionRuntimeAndWait(reason: .extensionAction)"))
+        XCTAssertTrue(
+            managerUISource.contains("currentPagePermissionMissing")
+        )
+        XCTAssertTrue(managerUISource.contains("noEligibleTab"))
+        XCTAssertTrue(managerUISource.contains("extensionDisabled"))
+        XCTAssertTrue(managerUISource.contains("moduleWorkerUnsupported"))
+        XCTAssertFalse(managerUISource.contains("runReviewedResourceDiagnosticAction"))
+        XCTAssertFalse(
+            actionViewSource.contains("chromeMV3OpenActionPopupThroughManager")
+        )
+        XCTAssertFalse(
+            actionViewSource.contains("runReviewedResourceDiagnosticAction")
+        )
+        XCTAssertTrue(moduleSource.contains("managerIfNeededForNormalTabRuntime"))
+        XCTAssertTrue(
+            moduleSource.contains("cachedManager.extensionController != nil")
+        )
         XCTAssertFalse(modelSource.contains(manualSmokeRunnerCall))
         XCTAssertFalse(modelSource.contains(artifactWriterCall))
         XCTAssertFalse(combined.contains("masterPassword"))
@@ -599,14 +959,27 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
     }
 
     @MainActor
-    private func makeModule(enabled: Bool) throws -> SumiExtensionsModule {
+    private func makeModule(
+        enabled: Bool,
+        includesModelContext: Bool = false
+    ) throws -> SumiExtensionsModule {
         let harness = TestDefaultsHarness()
         let registry = SumiModuleRegistry(
             settingsStore:
                 SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
         registry.setEnabled(enabled, for: .extensions)
-        return SumiExtensionsModule(moduleRegistry: registry)
+        guard includesModelContext else {
+            return SumiExtensionsModule(moduleRegistry: registry)
+        }
+        let container = try ModelContainer(
+            for: Schema([ExtensionEntity.self]),
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        return SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: ModelContext(container)
+        )
     }
 
     private func syntheticPageContext(
@@ -678,6 +1051,29 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 "default_title": name,
             ],
         ]
+    }
+
+    private func genericActionPopupManifest(
+        name: String,
+        permissions: [String] = [],
+        hostPermissions: [String] = []
+    ) -> [String: Any] {
+        var manifest: [String: Any] = [
+            "manifest_version": 3,
+            "name": name,
+            "version": "1.0.0",
+            "action": [
+                "default_title": name,
+                "default_popup": "popup.html",
+            ],
+        ]
+        if permissions.isEmpty == false {
+            manifest["permissions"] = permissions
+        }
+        if hostPermissions.isEmpty == false {
+            manifest["host_permissions"] = hostPermissions
+        }
+        return manifest
     }
 
     private func bitwardenManualSmokeFiles() -> [String: String] {
@@ -816,6 +1212,25 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         )
         temporaryDirectories.append(directory)
         return directory
+    }
+
+    @MainActor
+    private func waitForEnabledExtension(
+        in module: SumiExtensionsModule,
+        extensionId: String
+    ) async -> InstalledExtension? {
+        for _ in 0..<20 {
+            if let installedExtension = module.surfaceStore.enabledExtensions.first(
+                where: { $0.id == extensionId }
+            ) {
+                return installedExtension
+            }
+            await Task.yield()
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return module.surfaceStore.enabledExtensions.first {
+            $0.id == extensionId
+        }
     }
 
     @MainActor

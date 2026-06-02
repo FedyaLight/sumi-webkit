@@ -153,10 +153,26 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
 
     func webExtensionController(
         _ controller: WKWebExtensionController,
+        didUpdate action: WKWebExtension.Action,
+        forExtensionContext extensionContext: WKWebExtensionContext
+    ) {
+        updateActionSurfaceState(
+            for: action,
+            extensionContext: extensionContext
+        )
+    }
+
+    func webExtensionController(
+        _ controller: WKWebExtensionController,
         presentActionPopup action: WKWebExtension.Action,
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
+        updateActionSurfaceState(
+            for: action,
+            extensionContext: extensionContext
+        )
+
         let manifest = extensionID(for: extensionContext)
             .flatMap { loadedExtensionManifests[$0] } ?? [:]
 

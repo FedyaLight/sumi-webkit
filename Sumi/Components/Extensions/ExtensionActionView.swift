@@ -197,12 +197,6 @@ private struct SumiScriptsToolbarControl: View {
     @State private var isPressed = false
     @State private var showingPopup = false
 
-    private var sumiToolbarId: String { SumiScriptsToolbarConstants.nativeToolbarItemID }
-
-    private var isPinnedToToolbar: Bool {
-        browserManager.extensionsModule.isPinnedToToolbar(sumiToolbarId)
-    }
-
     var body: some View {
         Button {
             showingPopup.toggle()
@@ -228,14 +222,6 @@ private struct SumiScriptsToolbarControl: View {
                     .overlay {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .stroke(URLBarHubNativeStyle.separator, lineWidth: 0.5)
-                    }
-                    .overlay(alignment: .topTrailing) {
-                        if isPinnedToToolbar {
-                            Image(systemName: "pin.fill")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(URLBarHubNativeStyle.secondaryText)
-                                .padding(6)
-                        }
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .scaleEffect(hubButtonScale)
@@ -282,27 +268,8 @@ private struct SumiScriptsToolbarControl: View {
         return 1
     }
 
-    private func toggleSumiScriptsToolbarPin() {
-        if isPinnedToToolbar {
-            browserManager.extensionsModule.unpinFromToolbar(sumiToolbarId)
-        } else {
-            browserManager.extensionsModule.pinToToolbar(sumiToolbarId)
-        }
-    }
-
     private func sumiScriptsContextMenuEntries() -> [SidebarContextMenuEntry] {
         [
-            .action(
-                SidebarContextMenuAction(
-                    title: isPinnedToToolbar ? "Unpin from Toolbar" : "Pin to Toolbar",
-                    systemImage: isPinnedToToolbar ? "pin.slash" : "pin",
-                    classification: .stateMutationNonStructural,
-                    action: {
-                        toggleSumiScriptsToolbarPin()
-                    }
-                )
-            ),
-            .separator,
             .action(
                 SidebarContextMenuAction(
                     title: "Manage Userscripts",
@@ -346,6 +313,8 @@ struct ExtensionActionButton: View {
     let ext: InstalledExtension
     var layout: ExtensionActionLayout = .compactStrip
     @EnvironmentObject var browserManager: BrowserManager
+    @EnvironmentObject private var extensionSurfaceStore:
+        BrowserExtensionSurfaceStore
     @Environment(BrowserWindowState.self) private var windowState
     @State private var isHovering: Bool = false
     @State private var isPressed = false
@@ -357,7 +326,9 @@ struct ExtensionActionButton: View {
             buttonLabel
         }
         .buttonStyle(.plain)
-        .help(ext.name)
+        .help(actionTitle)
+        .disabled(actionState?.isEnabled == false)
+        .opacity(actionState?.isEnabled == false ? 0.55 : 1)
         .sumiAppKitContextMenu(entries: extensionContextMenuEntries)
         .onHover { state in
             isHovering = state
@@ -388,6 +359,9 @@ struct ExtensionActionButton: View {
                         )
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 7))
+                    .overlay(alignment: .topTrailing) {
+                        actionBadgeView
+                    }
             case .hubTiles:
                 iconView(tint: URLBarHubNativeStyle.primaryText)
                     .frame(maxWidth: .infinity)
@@ -404,11 +378,9 @@ struct ExtensionActionButton: View {
                             .stroke(URLBarHubNativeStyle.separator, lineWidth: 0.5)
                     }
                     .overlay(alignment: .topTrailing) {
-                        if isPinnedToToolbar {
-                            Image(systemName: "pin.fill")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(URLBarHubNativeStyle.secondaryText)
-                                .padding(6)
+                        if let badgeText = visibleBadgeText {
+                            actionBadge(badgeText)
+                                .padding(3)
                         }
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -419,7 +391,14 @@ struct ExtensionActionButton: View {
 
     @ViewBuilder
     private func iconView(tint: Color) -> some View {
-        if let iconPath = ext.iconPath,
+        if let actionIcon = actionState?.icon {
+            Image(nsImage: actionIcon)
+                .resizable()
+                .interpolation(.high)
+                .antialiased(true)
+                .scaledToFit()
+                .frame(width: 16, height: 16)
+        } else if let iconPath = ext.iconPath,
            let nsImage = ExtensionIconCache.shared.image(
                extensionId: ext.id,
                iconPath: iconPath
@@ -439,6 +418,53 @@ struct ExtensionActionButton: View {
         }
     }
 
+    @ViewBuilder
+    private var actionBadgeView: some View {
+        if let badgeText = visibleBadgeText {
+            actionBadge(badgeText)
+                .offset(x: 4, y: -4)
+        }
+    }
+
+    private func actionBadge(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 8, weight: .bold, design: .rounded))
+            .monospacedDigit()
+            .foregroundStyle(.white)
+            .lineLimit(1)
+            .minimumScaleFactor(0.65)
+            .padding(.horizontal, 3)
+            .frame(minWidth: 10, minHeight: 10)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Color.red.opacity(actionState?.hasUnreadBadgeText == true ? 0.95 : 0.78))
+            )
+    }
+
+    private var actionState: BrowserExtensionActionSurfaceState? {
+        extensionSurfaceStore.actionStatesByExtensionID[ext.id]
+    }
+
+    private var actionTitle: String {
+        guard let label = actionState?.label
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            label.isEmpty == false
+        else {
+            return ext.name
+        }
+        return label
+    }
+
+    private var visibleBadgeText: String? {
+        guard let badgeText = actionState?.badgeText
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            badgeText.isEmpty == false
+        else {
+            return nil
+        }
+        return String(badgeText.prefix(4))
+    }
+
     private var hubBackgroundFill: Color {
         isHovering ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubNativeStyle.controlBackground
     }
@@ -453,50 +479,24 @@ struct ExtensionActionButton: View {
         return 1
     }
 
-    private var isPinnedToToolbar: Bool {
-        browserManager.extensionsModule.isPinnedToToolbar(ext.id)
-    }
-
     private func showExtensionPopup() {
-        browserManager.extensionsModule.requestExtensionRuntime(
-            reason: .extensionAction
-        )
-
-        guard let extensionContext = browserManager.extensionsModule.getExtensionContext(for: ext.id) else {
-            browserManager.showBrowserExtensionsUnavailableAlert(
-                extensionName: ext.name
-            )
-            return
-        }
-
         let currentTab = browserManager.currentTab(for: windowState)
-        let adapter = currentTab.flatMap {
-            browserManager.extensionsModule.stableAdapter(for: $0)
-        }
-        extensionContext.performAction(for: adapter)
-    }
-
-    private func toggleToolbarPin() {
-        if isPinnedToToolbar {
-            browserManager.extensionsModule.unpinFromToolbar(ext.id)
-        } else {
-            browserManager.extensionsModule.pinToToolbar(ext.id)
+        Task { @MainActor in
+            let result = await browserManager.extensionsModule
+                .openActionPopupFromURLHub(
+                    extensionId: ext.id,
+                    currentTab: currentTab
+                )
+            guard result.opened == false else { return }
+            browserManager.showBrowserExtensionsUnavailableAlert(
+                extensionName: ext.name,
+                informativeText: result.message
+            )
         }
     }
 
     private func extensionContextMenuEntries() -> [SidebarContextMenuEntry] {
         [
-            .action(
-                SidebarContextMenuAction(
-                    title: isPinnedToToolbar ? "Unpin from Toolbar" : "Pin to Toolbar",
-                    systemImage: isPinnedToToolbar ? "pin.slash" : "pin",
-                    classification: .stateMutationNonStructural,
-                    action: {
-                        toggleToolbarPin()
-                    }
-                )
-            ),
-            .separator,
             .action(
                 SidebarContextMenuAction(
                     title: "Manage Extensions",

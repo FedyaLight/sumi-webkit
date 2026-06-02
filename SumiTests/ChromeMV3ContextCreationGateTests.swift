@@ -545,6 +545,7 @@ final class ChromeMV3ContextCreationGateTests: XCTestCase {
             "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift",
             "SumiTests/ChromeMV3PasswordManagerRealPackageCompatibilityTests.swift",
             "SumiTests/ChromeMV3ServiceWorkerJSExecutionHarnessTests.swift",
+            "SumiTests/ChromeMV3URLHubDeveloperPreviewTests.swift",
         ]
         let chromeMV3Source = sourceFiles
             .filter { source in

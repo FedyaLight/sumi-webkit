@@ -14,9 +14,7 @@ extension ExtensionManager {
             switchProfile(profileId: currentProfile.id)
         }
 
-        if hasEnabledInstalledExtensions {
-            requestExtensionRuntime(reason: .attach)
-        } else if let controller = extensionController {
+        if let controller = extensionController {
             extensionRuntimeTrace(
                 "attach browserManager controller=\(extensionRuntimeControllerDescription(controller)) windows=\(browserManager.windowRegistry?.allWindows.count ?? 0) tabs=\(browserManager.tabManager.allTabs().count)"
             )
@@ -523,6 +521,7 @@ extension ExtensionManager {
         backgroundWakeTasks[extensionId]?.cancel()
         backgroundWakeTasks.removeValue(forKey: extensionId)
         backgroundRuntimeStateByExtensionID.removeValue(forKey: extensionId)
+        clearActionSurfaceState(for: extensionId)
         unloadExtensionContextIfNeeded(for: extensionId)
         removeExtensionErrorObserver(for: extensionId)
         loadedExtensionManifests.removeValue(forKey: extensionId)
@@ -560,6 +559,7 @@ extension ExtensionManager {
 
         extensionContexts.removeAll()
         loadedExtensionManifests.removeAll()
+        actionStatesByExtensionID.removeAll()
         backgroundWakeTasks.values.forEach { $0.cancel() }
         backgroundWakeTasks.removeAll()
         backgroundRuntimeStateByExtensionID.removeAll()
@@ -630,6 +630,7 @@ extension ExtensionManager {
 
         extensionContexts.removeAll()
         loadedExtensionManifests.removeAll()
+        actionStatesByExtensionID.removeAll()
         backgroundWakeTasks.removeAll()
         backgroundRuntimeStateByExtensionID.removeAll()
         runtimeMetricsByExtensionID.removeAll()

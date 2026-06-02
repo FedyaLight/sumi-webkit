@@ -109,10 +109,27 @@ extension ExtensionManager {
         let enabledByID = Dictionary(
             uniqueKeysWithValues: enabledExtensions
                 .filter(\.isEnabled)
+                .filter(\.hasAction)
                 .map { ($0.id, $0) }
         )
+        let normalizedPinnedIDs =
+            Self.normalizedPinnedToolbarExtensionIDs(pinnedToolbarExtensionIDs)
 
-        return Self.normalizedPinnedToolbarExtensionIDs(pinnedToolbarExtensionIDs).compactMap { id -> PinnedToolbarSlot? in
+        if normalizedPinnedIDs.isEmpty {
+            var slots: [PinnedToolbarSlot] = []
+            if sumiScriptsManagerEnabled {
+                slots.append(.sumiScriptsManager)
+            }
+            slots.append(
+                contentsOf: enabledExtensions
+                    .filter(\.isEnabled)
+                    .filter(\.hasAction)
+                    .map { .webExtension($0) }
+            )
+            return slots
+        }
+
+        return normalizedPinnedIDs.compactMap { id -> PinnedToolbarSlot? in
             if id == SumiScriptsToolbarConstants.nativeToolbarItemID {
                 return sumiScriptsManagerEnabled ? .sumiScriptsManager : nil
             }
@@ -294,6 +311,77 @@ extension ExtensionManager {
             activationSummary: activationSummary,
             manifest: manifest
         )
+    }
+
+    @discardableResult
+    func syncChromeMV3LifecycleRecordToActionSurface(
+        _ record: ChromeMV3ExtensionLifecycleRecord
+    ) throws -> InstalledExtension? {
+        guard record.lifecycleState != .uninstalled else {
+            try removeChromeMV3ActionSurfaceRecord(
+                extensionId: record.extensionID
+            )
+            return nil
+        }
+
+        guard let activeGeneratedVersionID = record.activeGeneratedVersionID,
+              let activeVersion = record.generatedBundleVersions.first(where: {
+                  $0.id == activeGeneratedVersionID
+              })
+        else {
+            try removeChromeMV3ActionSurfaceRecord(
+                extensionId: record.extensionID
+            )
+            return nil
+        }
+
+        let generatedBundleRoot = URL(
+            fileURLWithPath: activeVersion.generatedBundleRootPath,
+            isDirectory: true
+        )
+        guard FileManager.default.fileExists(atPath: generatedBundleRoot.path) else {
+            try removeChromeMV3ActionSurfaceRecord(
+                extensionId: record.extensionID
+            )
+            return nil
+        }
+
+        let manifest = try ExtensionUtils.validateManifest(
+            at: generatedBundleRoot.appendingPathComponent("manifest.json")
+        )
+        try validateMV3Requirements(
+            manifest: manifest,
+            baseURL: generatedBundleRoot
+        )
+
+        let existing = try extensionEntity(for: record.extensionID)
+        let installedRecord = try makeInstalledRecord(
+            extensionId: record.extensionID,
+            manifest: manifest,
+            extensionRoot: generatedBundleRoot,
+            isEnabled: record.lifecycleState == .enabledInternal,
+            sourceKind: .directory,
+            sourceBundlePath: record.originalBundleRootPath,
+            sourceFingerprintURL: URL(
+                fileURLWithPath: record.originalBundleRootPath,
+                isDirectory: true
+            ),
+            existingEntity: existing
+        )
+
+        try persist(record: installedRecord)
+        upsertInstalledExtension(installedRecord)
+        return installedRecord
+    }
+
+    func removeChromeMV3ActionSurfaceRecord(extensionId: String) throws {
+        tearDownExtensionRuntimeState(for: extensionId, removeUIState: true)
+        if let entity = try extensionEntity(for: extensionId) {
+            context.delete(entity)
+            try context.save()
+        }
+        installedExtensions.removeAll { $0.id == extensionId }
+        reconcilePinnedToolbarExtensions()
     }
 
     func extensionID(

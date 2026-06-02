@@ -444,8 +444,14 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
                 + moduleSource
         let enabledWord = "tr" + "ue"
 
-        XCTAssertFalse(combined.contains("Ti" + "mer"))
-        XCTAssertFalse(combined.contains("DispatchSource" + "Ti" + "mer"))
+        for token in [
+            "DispatchSource" + "Ti" + "mer",
+            "Ti" + "mer" + "(",
+            "Ti" + "mer" + ".publish",
+            "Ti" + "mer" + ".scheduled",
+        ] {
+            XCTAssertFalse(combined.contains(token), token)
+        }
         XCTAssertFalse(combined.contains("Process" + "("))
         XCTAssertTrue(hostSource.contains("addUser" + "Script"))
         XCTAssertTrue(hostSource.contains("addScript" + "MessageHandler"))

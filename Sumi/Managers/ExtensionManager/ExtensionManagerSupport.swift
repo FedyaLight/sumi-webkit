@@ -8,6 +8,51 @@
 import AppKit
 import Foundation
 
+enum BrowserExtensionActionPopupBlocker:
+    String,
+    Codable,
+    Equatable
+{
+    case moduleDisabled
+    case extensionNotInstalled
+    case extensionDisabled
+    case actionMissing
+    case actionDisabled
+    case noActionPopup
+    case noEligibleTab
+    case currentPagePermissionMissing
+    case moduleWorkerUnsupported
+    case runtimeUnavailable
+    case runtimeLoadFailed
+    case contextUnavailable
+}
+
+struct BrowserExtensionActionPopupRequestResult:
+    Codable,
+    Equatable
+{
+    var opened: Bool
+    var blocker: BrowserExtensionActionPopupBlocker?
+    var message: String
+
+    static let openedPopup = BrowserExtensionActionPopupRequestResult(
+        opened: true,
+        blocker: nil,
+        message: "Extension action popup requested through WebKit."
+    )
+
+    static func blocked(
+        _ blocker: BrowserExtensionActionPopupBlocker,
+        message: String
+    ) -> BrowserExtensionActionPopupRequestResult {
+        BrowserExtensionActionPopupRequestResult(
+            opened: false,
+            blocker: blocker,
+            message: message
+        )
+    }
+}
+
 @available(macOS 15.5, *)
 final class WeakAnchor {
     weak var view: NSView?

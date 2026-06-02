@@ -46,6 +46,188 @@ final class ExtensionOptionsWindowDelegate: NSObject, NSWindowDelegate, WKUIDele
 @available(macOS 15.5, *)
 @MainActor
 extension ExtensionManager: NSPopoverDelegate {
+    func updateActionSurfaceState(
+        for action: WKWebExtension.Action,
+        extensionContext: WKWebExtensionContext
+    ) {
+        guard let extensionId = extensionID(for: extensionContext) else {
+            return
+        }
+
+        actionStatesByExtensionID[extensionId] =
+            BrowserExtensionActionSurfaceState(
+                extensionID: extensionId,
+                label: action.label,
+                badgeText: action.badgeText,
+                hasUnreadBadgeText: action.hasUnreadBadgeText,
+                isEnabled: action.isEnabled,
+                presentsPopup: action.presentsPopup,
+                icon: action.icon(for: CGSize(width: 18, height: 18))
+            )
+    }
+
+    func clearActionSurfaceState(for extensionId: String) {
+        actionStatesByExtensionID.removeValue(forKey: extensionId)
+    }
+
+    func openActionPopupFromURLHub(
+        extensionId: String,
+        currentTab: Tab?
+    ) async -> BrowserExtensionActionPopupRequestResult {
+        guard let installedExtension = installedExtensions.first(where: {
+            $0.id == extensionId
+        }) else {
+            return .blocked(
+                .extensionNotInstalled,
+                message: "The extension is not installed in Sumi's local MV3 action surface."
+            )
+        }
+        guard installedExtension.isEnabled else {
+            return .blocked(
+                .extensionDisabled,
+                message: "\(installedExtension.name) is disabled."
+            )
+        }
+        guard installedExtension.hasAction else {
+            return .blocked(
+                .actionMissing,
+                message: "\(installedExtension.name) does not declare a Chrome action."
+            )
+        }
+        guard installedExtension.defaultPopupPath != nil else {
+            return .blocked(
+                .noActionPopup,
+                message: "\(installedExtension.name) does not declare action.default_popup; action-click dispatch is deferred."
+            )
+        }
+        guard let currentTab else {
+            return .blocked(
+                .noEligibleTab,
+                message: "No active eligible tab is available for the extension action."
+            )
+        }
+        guard currentTab.isEphemeral == false else {
+            return .blocked(
+                .noEligibleTab,
+                message: "Private tabs are not eligible for local MV3 action popups."
+            )
+        }
+        guard hasActionCurrentPagePermission(
+            installedExtension,
+            currentURL: currentTab.url
+        ) else {
+            return .blocked(
+                .currentPagePermissionMissing,
+                message: "\(installedExtension.name) does not have host permission or activeTab for the current page."
+            )
+        }
+        guard isModuleWorkerUnsupported(installedExtension) == false else {
+            return .blocked(
+                .moduleWorkerUnsupported,
+                message: "\(installedExtension.name) declares a module service worker, which remains unsupported in this popup path."
+            )
+        }
+
+        guard await requestExtensionRuntimeAndWait(reason: .extensionAction) else {
+            return .blocked(
+                runtimeState == .failed ? .runtimeLoadFailed : .runtimeUnavailable,
+                message: "\(installedExtension.name) could not load WebKit extension runtime for the action popup."
+            )
+        }
+        guard let extensionContext = getExtensionContext(for: extensionId) else {
+            return .blocked(
+                .contextUnavailable,
+                message: "\(installedExtension.name) did not produce a loaded WebKit extension context."
+            )
+        }
+
+        let adapter = stableAdapter(for: currentTab)
+        guard let action = extensionContext.action(for: adapter) else {
+            return .blocked(
+                .actionMissing,
+                message: "WebKit did not expose an action for \(installedExtension.name)."
+            )
+        }
+
+        updateActionSurfaceState(
+            for: action,
+            extensionContext: extensionContext
+        )
+
+        guard action.isEnabled else {
+            return .blocked(
+                .actionDisabled,
+                message: "\(action.label) is disabled for the current page."
+            )
+        }
+        guard action.presentsPopup else {
+            return .blocked(
+                .noActionPopup,
+                message: "\(action.label) has no WebKit action popup for the current page."
+            )
+        }
+
+        extensionContext.performAction(for: adapter)
+        recordRuntimeMetric(for: extensionId) { metrics in
+            metrics.lastBackgroundWakeReason = .actionPopup
+            metrics.backgroundWakeCount += 1
+        }
+        return .openedPopup
+    }
+
+    private func isModuleWorkerUnsupported(
+        _ installedExtension: InstalledExtension
+    ) -> Bool {
+        guard let background = installedExtension.manifest["background"]
+                as? [String: Any],
+              let type = background["type"] as? String
+        else {
+            return false
+        }
+        return type.caseInsensitiveCompare("module") == .orderedSame
+    }
+
+    private func hasActionCurrentPagePermission(
+        _ installedExtension: InstalledExtension,
+        currentURL: URL
+    ) -> Bool {
+        guard ["http", "https"].contains(currentURL.scheme?.lowercased() ?? "") else {
+            return false
+        }
+
+        let manifest = installedExtension.manifest
+        let permissions = stringArray(from: manifest["permissions"])
+        let optionalPermissions = stringArray(from: manifest["optional_permissions"])
+        if (permissions + optionalPermissions).contains("activeTab") {
+            return true
+        }
+
+        let contentScriptMatches =
+            (manifest["content_scripts"] as? [[String: Any]] ?? [])
+                .flatMap { stringArray(from: $0["matches"]) }
+        let hostPatterns =
+            stringArray(from: manifest["host_permissions"])
+            + permissions.filter(Self.isHostPermissionPattern)
+            + contentScriptMatches
+
+        return hostPatterns.contains {
+            ChromeMV3HostMatchPattern($0).matches(
+                url: currentURL.absoluteString
+            )
+        }
+    }
+
+    private static func isHostPermissionPattern(_ value: String) -> Bool {
+        value == "<all_urls>"
+            || value.hasPrefix("http://")
+            || value.hasPrefix("https://")
+            || value.hasPrefix("*://")
+    }
+
+    private func stringArray(from value: Any?) -> [String] {
+        value as? [String] ?? []
+    }
+
     func prepareWebViewConfigurationForExtensionRuntime(
         _ configuration: WKWebViewConfiguration,
         reason: String = #function

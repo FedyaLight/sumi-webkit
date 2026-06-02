@@ -57,6 +57,8 @@ final class ExtensionManager: NSObject, ObservableObject {
     ]
 
     @Published var installedExtensions: [InstalledExtension] = []
+    @Published var actionStatesByExtensionID:
+        [String: BrowserExtensionActionSurfaceState] = [:]
     @Published private(set) var isExtensionSupportAvailable =
         ExtensionUtils.isExtensionSupportAvailable
     @Published var extensionsLoaded = false

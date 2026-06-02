@@ -10,7 +10,6 @@ import SwiftUI
 /// Header section of the sidebar (window controls, navigation buttons, URL bar)
 struct SidebarHeader: View {
     @EnvironmentObject var browserManager: BrowserManager
-    @EnvironmentObject private var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) var sumiSettings
 
@@ -31,40 +30,10 @@ struct SidebarHeader: View {
                 .environmentObject(browserManager)
                 .environment(windowState)
 
-            extensionActionCluster
-
             Spacer(minLength: 0)
         }
         .padding(.horizontal, SidebarChromeMetrics.horizontalPadding)
         .frame(height: SidebarChromeMetrics.controlStripHeight)
-    }
-
-    @ViewBuilder
-    private var extensionActionCluster: some View {
-        let enabledExtensions = extensionSurfaceStore.enabledExtensions
-        let totalActions = browserManager.extensionsModule.orderedPinnedToolbarSlots(
-            enabledExtensions: enabledExtensions.filter { $0.isEnabled },
-            sumiScriptsManagerEnabled: browserManager.userscriptsModule.isEnabled
-        ).count
-
-        if totalActions > 0 {
-            GeometryReader { proxy in
-                let visibleCount = ExtensionActionVisibility.visibleCount(
-                    totalActions: totalActions,
-                    availableWidth: proxy.size.width
-                )
-
-                ExtensionActionView(
-                    extensions: enabledExtensions,
-                    visibleActionLimit: visibleCount
-                )
-                .environmentObject(browserManager)
-                .environment(windowState)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            }
-            .frame(height: 32)
-            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-        }
     }
 
     private var sidebarURLBar: some View {
