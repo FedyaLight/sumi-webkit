@@ -1481,6 +1481,7 @@ struct ChromeMV3ContentScriptEndpointMetadata:
     var parentFrameID: Int?
     var documentID: String
     var navigationSequence: Int
+    var contentWorldName: String?
     var frameScope: ChromeMV3ContentScriptFrameSupport
     var url: String?
     var origin: String?
@@ -1511,6 +1512,7 @@ struct ChromeMV3ContentScriptEndpointRecord:
     var frameID: Int
     var documentID: String
     var navigationSequence: Int
+    var contentWorldName: String?
     var frameTarget: ChromeMV3ContentScriptFrameTarget
     var frameScope: ChromeMV3ContentScriptFrameSupport
     var attachedScriptIDs: [String]
@@ -1547,6 +1549,7 @@ struct ChromeMV3ContentScriptEndpointRecord:
             parentFrameID: senderMetadata.parentFrameID,
             documentID: documentID,
             navigationSequence: navigationSequence,
+            contentWorldName: contentWorldName,
             frameScope: frameScope,
             url: senderMetadata.url,
             origin: senderMetadata.origin,
@@ -1631,6 +1634,134 @@ struct ChromeMV3ContentScriptPortDeliveryResult:
     var diagnostics: [String]
 }
 
+struct ChromeMV3ContentScriptJSDispatchRequest:
+    Equatable,
+    Sendable
+{
+    var bridgeCallID: String
+    var endpointID: String
+    var extensionID: String
+    var profileID: String
+    var sourceContext: ChromeMV3JSBridgeSourceContext
+    var message: ChromeMV3StorageValue
+    var sender: ChromeMV3StorageValue
+    var timeoutMilliseconds: Int
+
+    var foundationObject: [String: Any] {
+        [
+            "bridgeCallID": bridgeCallID,
+            "endpointID": endpointID,
+            "extensionID": extensionID,
+            "profileID": profileID,
+            "sourceContext": sourceContext.rawValue,
+            "message": message.contentScriptBridgeFoundationObject,
+            "sender": sender.contentScriptBridgeFoundationObject,
+            "timeoutMilliseconds": timeoutMilliseconds,
+        ]
+    }
+}
+
+struct ChromeMV3ContentScriptJSDispatchResult:
+    Equatable,
+    Sendable
+{
+    var succeeded: Bool
+    var responsePayload: ChromeMV3StorageValue?
+    var lastErrorCode: String?
+    var lastErrorMessage: String?
+    var listenerCount: Int
+    var dispatchResult: String
+    var responseResult: String
+    var diagnostics: [String]
+
+    static func blocked(
+        code: ChromeMV3RuntimeLastErrorCase,
+        listenerCount: Int = 0,
+        dispatchResult: String,
+        diagnostics: [String]
+    ) -> ChromeMV3ContentScriptJSDispatchResult {
+        let contract = ChromeMV3RuntimeLastErrorContract.contract(for: code)
+        return ChromeMV3ContentScriptJSDispatchResult(
+            succeeded: false,
+            responsePayload: nil,
+            lastErrorCode: code.rawValue,
+            lastErrorMessage: contract.futureLastErrorMessage,
+            listenerCount: listenerCount,
+            dispatchResult: dispatchResult,
+            responseResult: code.rawValue,
+            diagnostics:
+                uniqueSortedContentScripts(diagnostics + contract.diagnostics)
+        )
+    }
+
+    static func parseWebKitValue(
+        _ value: Any?,
+        fallbackDiagnostics: [String]
+    ) -> ChromeMV3ContentScriptJSDispatchResult {
+        guard let object = value as? [String: Any] else {
+            return blocked(
+                code: .contextNotLoaded,
+                dispatchResult: "invalidWebKitResult",
+                diagnostics:
+                    fallbackDiagnostics
+                    + [
+                        "Content-world JavaScript dispatcher returned a non-object result.",
+                    ]
+            )
+        }
+        let payload = object["resultPayload"].flatMap {
+            ChromeMV3StorageValue(contentScriptBridgeWebKitValue: $0)
+        }
+        let listenerCount =
+            (object["listenerCount"] as? NSNumber)?.intValue
+            ?? object["listenerCount"] as? Int
+            ?? 0
+        let succeeded = object["succeeded"] as? Bool ?? false
+        let dispatchResult =
+            object["dispatchResult"] as? String
+            ?? (succeeded ? "delivered" : "blocked")
+        let responseResult =
+            object["responseResult"] as? String
+            ?? payload.map(valueShape)
+            ?? (object["lastErrorCode"] as? String)
+            ?? "none"
+        let diagnostics =
+            (object["diagnostics"] as? [String] ?? [])
+            + fallbackDiagnostics
+        return ChromeMV3ContentScriptJSDispatchResult(
+            succeeded: succeeded,
+            responsePayload: payload,
+            lastErrorCode: object["lastErrorCode"] as? String,
+            lastErrorMessage: object["lastErrorMessage"] as? String,
+            listenerCount: listenerCount,
+            dispatchResult: dispatchResult,
+            responseResult: responseResult,
+            diagnostics: uniqueSortedContentScripts(diagnostics)
+        )
+    }
+
+    private static func valueShape(_ value: ChromeMV3StorageValue) -> String {
+        switch value {
+        case .array(let values):
+            return "array:\(values.count)"
+        case .bool:
+            return "bool"
+        case .null:
+            return "null"
+        case .number:
+            return "number"
+        case .object(let object):
+            return "object:" + object.keys.sorted().joined(separator: ",")
+        case .string:
+            return "string"
+        }
+    }
+}
+
+typealias ChromeMV3ContentScriptJSDispatchHandler =
+    @MainActor (ChromeMV3ContentScriptJSDispatchRequest) async
+        -> ChromeMV3ContentScriptJSDispatchResult
+
 struct ChromeMV3ContentScriptEndpointRegistrySummary:
     Codable,
     Equatable,
@@ -1652,6 +1783,7 @@ struct ChromeMV3ContentScriptEndpointRegistrySummary:
     var endpointMetadata: [ChromeMV3ContentScriptEndpointMetadata]
     var lifecycleStates: [ChromeMV3ContentScriptEndpointLifecycleState]
     var portDisconnectReasons: [String]
+    var activeJSDispatcherCount: Int
     var diagnostics: [String]
 }
 
@@ -1691,6 +1823,9 @@ final class ChromeMV3ContentScriptEndpointRegistry {
         [ChromeMV3ContentScriptEndpointLifecycleRecord] = []
     private var ports: [ChromeMV3ContentScriptModeledPortRecord] = []
     private var portMessages: [ChromeMV3ContentScriptPortMessageRecord] = []
+    private var jsDispatchers:
+        [String: ChromeMV3ContentScriptJSDispatchHandler] = [:]
+    private var jsDispatcherContentWorldNames: [String: String] = [:]
     private var nextSequence = 1
 
     init() {}
@@ -1727,6 +1862,10 @@ final class ChromeMV3ContentScriptEndpointRegistry {
                 uniqueSortedContentScripts(
                     ports.compactMap(\.disconnectReason)
                 ),
+            activeJSDispatcherCount:
+                active.filter {
+                    jsDispatchers[$0.endpointID] != nil
+                }.count,
             diagnostics:
                 uniqueSortedContentScripts(
                     endpoints.flatMap(\.diagnostics)
@@ -1736,6 +1875,7 @@ final class ChromeMV3ContentScriptEndpointRegistry {
                         + [
                             "Content-script endpoint registry is explicit and instance-local.",
                             "No tab scanning or background scheduling is performed.",
+                            "Active content-world JS dispatchers: \(active.filter { jsDispatchers[$0.endpointID] != nil }.count).",
                         ]
                 )
         )
@@ -1749,7 +1889,8 @@ final class ChromeMV3ContentScriptEndpointRegistry {
     func registerEndpoint(
         preflight: ChromeMV3NormalTabContentScriptPreflight,
         messageListenerRegistered: Bool = false,
-        connectListenerRegistered: Bool = false
+        connectListenerRegistered: Bool = false,
+        contentWorldName: String? = nil
     ) -> ChromeMV3ContentScriptEndpointRecord? {
         guard preflight.canRegisterEndpointNow else { return nil }
         let endpointID = stableIDContentScripts(
@@ -1772,6 +1913,7 @@ final class ChromeMV3ContentScriptEndpointRegistry {
             frameID: preflight.frameID,
             documentID: preflight.documentID,
             navigationSequence: preflight.navigationSequence,
+            contentWorldName: contentWorldName,
             frameTarget: preflight.frameTarget,
             frameScope: .topFrameOnly,
             attachedScriptIDs:
@@ -1840,8 +1982,12 @@ final class ChromeMV3ContentScriptEndpointRegistry {
                     preflight.diagnostics
                         + [
                             "Content-script endpoint registered for extension/tab/frame/navigation scope.",
+                            contentWorldName.map {
+                                "Content-script endpoint content world: \($0)."
+                            },
                             "Manifest CSS attachment records, if present, are scoped to the same endpoint lifecycle.",
                         ]
+                        .compactMap { $0 }
                 )
         )
         endpoints.append(record)
@@ -1858,6 +2004,60 @@ final class ChromeMV3ContentScriptEndpointRegistry {
             )
         }
         return record
+    }
+
+    func hasJSDispatcher(endpointID: String) -> Bool {
+        jsDispatchers[endpointID] != nil
+    }
+
+    func registerJSDispatcher(
+        endpointID: String,
+        contentWorldName: String?,
+        dispatcher: @escaping ChromeMV3ContentScriptJSDispatchHandler
+    ) {
+        guard endpoints.contains(where: {
+            $0.endpointID == endpointID && $0.active
+        }) else { return }
+        jsDispatchers[endpointID] = dispatcher
+        if let contentWorldName {
+            jsDispatcherContentWorldNames[endpointID] = contentWorldName
+        }
+        updateEndpoint(endpointID: endpointID) { endpoint in
+            endpoint.contentWorldName =
+                contentWorldName ?? endpoint.contentWorldName
+            endpoint.diagnostics.append(
+                "Real content-world JavaScript dispatch evaluator registered."
+            )
+        }
+        appendLifecycle(
+            endpointID: endpointID,
+            state: .listenerRegistered,
+            reason:
+                "Content-world JavaScript tabs.sendMessage dispatcher registered."
+        )
+    }
+
+    func unregisterJSDispatcher(
+        endpointID: String,
+        reason: String
+    ) {
+        jsDispatchers.removeValue(forKey: endpointID)
+        jsDispatcherContentWorldNames.removeValue(forKey: endpointID)
+        updateEndpoint(endpointID: endpointID) { endpoint in
+            endpoint.diagnostics.append(
+                "Real content-world JavaScript dispatch evaluator removed: \(reason)"
+            )
+        }
+    }
+
+    @MainActor
+    func dispatchTabsMessageToJS(
+        _ request: ChromeMV3ContentScriptJSDispatchRequest
+    ) async -> ChromeMV3ContentScriptJSDispatchResult? {
+        guard let dispatcher = jsDispatchers[request.endpointID] else {
+            return nil
+        }
+        return await dispatcher(request)
     }
 
     func registerRuntimeOnMessageListener(
@@ -2463,6 +2663,10 @@ final class ChromeMV3ContentScriptEndpointRegistry {
             endpoints[index].teardownReason = reason
             endpoints[index].messageListenerRegistered = false
             endpoints[index].connectListenerRegistered = false
+            jsDispatchers.removeValue(forKey: endpoints[index].endpointID)
+            jsDispatcherContentWorldNames.removeValue(
+                forKey: endpoints[index].endpointID
+            )
             endpoints[index].diagnostics =
                 uniqueSortedContentScripts(
                     endpoints[index].diagnostics
@@ -2492,6 +2696,10 @@ final class ChromeMV3ContentScriptEndpointRegistry {
             endpoints[index].teardownReason = reason
             endpoints[index].messageListenerRegistered = false
             endpoints[index].connectListenerRegistered = false
+            jsDispatchers.removeValue(forKey: endpoints[index].endpointID)
+            jsDispatcherContentWorldNames.removeValue(
+                forKey: endpoints[index].endpointID
+            )
             appendLifecycle(
                 endpointID: endpoints[index].endpointID,
                 state: .detached,
@@ -2588,6 +2796,10 @@ final class ChromeMV3ContentScriptEndpointRegistry {
             endpoints[index].teardownReason = terminal.1
             endpoints[index].messageListenerRegistered = false
             endpoints[index].connectListenerRegistered = false
+            jsDispatchers.removeValue(forKey: endpoints[index].endpointID)
+            jsDispatcherContentWorldNames.removeValue(
+                forKey: endpoints[index].endpointID
+            )
             for transition in transitions {
                 appendLifecycle(
                     endpointID: endpoints[index].endpointID,
@@ -2606,6 +2818,10 @@ final class ChromeMV3ContentScriptEndpointRegistry {
             endpoints[index].endpointState = .navigationInvalidated
             endpoints[index].teardownReason =
                 "Duplicate endpoint registration invalidated stale endpoint."
+            jsDispatchers.removeValue(forKey: endpoints[index].endpointID)
+            jsDispatcherContentWorldNames.removeValue(
+                forKey: endpoints[index].endpointID
+            )
             disconnectPorts(
                 endpointID: endpoints[index].endpointID,
                 reason: "Duplicate endpoint registration invalidated stale endpoint."
@@ -2616,6 +2832,16 @@ final class ChromeMV3ContentScriptEndpointRegistry {
                 reason: "Duplicate endpoint registration invalidated stale endpoint."
             )
         }
+    }
+
+    private func updateEndpoint(
+        endpointID: String,
+        update: (inout ChromeMV3ContentScriptEndpointRecord) -> Void
+    ) {
+        guard let index = endpoints.firstIndex(where: {
+            $0.endpointID == endpointID
+        }) else { return }
+        update(&endpoints[index])
     }
 
     private func deliverPortMessage(
@@ -3182,6 +3408,192 @@ enum ChromeMV3ContentScriptTabsMessagingBridge {
         )
     }
 
+    @MainActor
+    static func sendMessageAsync(
+        registry: ChromeMV3ContentScriptEndpointRegistry,
+        request: ChromeMV3ContentScriptTabsSendMessageRequest
+    ) async -> ChromeMV3ContentScriptTabsSendMessageResult {
+        let selectedFrameID = request.frameID ?? 0
+        var diagnostics = [
+            "tabs.sendMessage sourceContext=\(request.sourceContext.rawValue) extensionID=\(request.extensionID) profileID=\(request.profileID).",
+            "tabs.sendMessage targetTabID=\(request.tabID) frameID=\(selectedFrameID) documentID=\(request.documentID ?? "any").",
+            "tabs.sendMessage payloadShape=\(valueShape(request.message)).",
+        ]
+        let offRecord = request.offRecordTabIDs.contains(request.tabID)
+        guard offRecord == false || request.allowOffRecordTabs else {
+            let error =
+                ChromeMV3RuntimeLastErrorContract.contract(
+                    for: .permissionDenied
+                )
+            diagnostics.append(
+                "tabs.sendMessage blocked private/off-record tab delivery by policy."
+            )
+            return ChromeMV3ContentScriptTabsSendMessageResult(
+                succeeded: false,
+                responsePayload: nil,
+                selectedLastError: error,
+                selectedEndpoint: nil,
+                listenerCount: 0,
+                dispatchResult: nil,
+                diagnostics:
+                    uniqueSortedContentScripts(diagnostics + error.diagnostics)
+            )
+        }
+
+        let lookup = registry.targetEndpointLookup(
+            extensionID: request.extensionID,
+            profileID: request.profileID,
+            tabID: request.tabID,
+            frameID: selectedFrameID,
+            documentID: request.documentID
+        )
+        diagnostics.append(contentsOf: lookup.diagnostics)
+        guard let endpoint = lookup.endpoint else {
+            let error =
+                ChromeMV3RuntimeLastErrorContract.contract(
+                    for: .noReceivingEnd
+                )
+            diagnostics.append(
+                "tabs.sendMessage found no current-space/current-profile endpoint for the target tab."
+            )
+            return ChromeMV3ContentScriptTabsSendMessageResult(
+                succeeded: false,
+                responsePayload: nil,
+                selectedLastError: error,
+                selectedEndpoint: nil,
+                listenerCount: 0,
+                dispatchResult: nil,
+                diagnostics:
+                    uniqueSortedContentScripts(diagnostics + error.diagnostics)
+            )
+        }
+        guard selectedFrameID == 0 else {
+            let error =
+                ChromeMV3RuntimeLastErrorContract.contract(
+                    for: .noReceivingEnd
+                )
+            diagnostics.append(
+                "tabs.sendMessage blocked non-top-frame targeting in this increment."
+            )
+            return ChromeMV3ContentScriptTabsSendMessageResult(
+                succeeded: false,
+                responsePayload: nil,
+                selectedLastError: error,
+                selectedEndpoint: endpoint,
+                listenerCount: endpoint.messageListenerRegistered ? 1 : 0,
+                dispatchResult: nil,
+                diagnostics:
+                    uniqueSortedContentScripts(diagnostics + error.diagnostics)
+            )
+        }
+        guard registry.hasJSDispatcher(endpointID: endpoint.endpointID) else {
+            return sendMessage(registry: registry, request: request)
+        }
+
+        let route = ChromeMV3RuntimeMessagingRoute.make(
+            kind: .tabsSendMessage,
+            extensionID: request.extensionID,
+            profileID: request.profileID,
+            tabID: endpoint.tabID,
+            frameID: endpoint.frameID,
+            documentID: endpoint.documentID,
+            sourceURL: request.extensionBaseURLString,
+            targetURL: endpoint.frameTarget.urlString,
+            privateProfile: offRecord
+        )
+        let permission = ChromeMV3RuntimeMessagingPermissionDecision
+            .evaluate(
+                route: route,
+                permissionBroker: request.permissionBroker,
+                userGestureAvailable: request.userGestureAvailable
+            )
+        diagnostics.append(contentsOf: permission.brokerDiagnostics)
+        diagnostics.append(
+            "tabs.sendMessage permission/gate result=\(permission.allowedForFutureDispatch ? "allowed" : "blocked") reason=\(permission.diagnosticReason)."
+        )
+        guard permission.allowedForFutureDispatch else {
+            let error =
+                ChromeMV3RuntimeLastErrorContract.contract(
+                    for: runtimeError(permission)
+                )
+            return ChromeMV3ContentScriptTabsSendMessageResult(
+                succeeded: false,
+                responsePayload: nil,
+                selectedLastError: error,
+                selectedEndpoint: endpoint,
+                listenerCount: endpoint.messageListenerRegistered ? 1 : 0,
+                dispatchResult: nil,
+                diagnostics:
+                    uniqueSortedContentScripts(diagnostics + error.diagnostics)
+            )
+        }
+
+        let jsRequest = ChromeMV3ContentScriptJSDispatchRequest(
+            bridgeCallID: request.bridgeCallID,
+            endpointID: endpoint.endpointID,
+            extensionID: request.extensionID,
+            profileID: request.profileID,
+            sourceContext: request.sourceContext,
+            message: request.message,
+            sender:
+                tabsMessageSenderPayload(
+                    request: request,
+                    endpoint: endpoint,
+                    offRecord: offRecord
+                ),
+            timeoutMilliseconds: 5000
+        )
+        guard let jsDispatch = await registry.dispatchTabsMessageToJS(jsRequest)
+        else {
+            diagnostics.append(
+                "tabs.sendMessage real content-world dispatcher disappeared before dispatch; falling back to modeled endpoint delivery."
+            )
+            return sendMessage(registry: registry, request: request)
+        }
+        diagnostics.append(contentsOf: jsDispatch.diagnostics)
+        diagnostics.append(
+            "tabs.sendMessage contentWorld=\(endpoint.contentWorldName ?? "unknown") listenerCount=\(jsDispatch.listenerCount) dispatchResult=\(jsDispatch.dispatchResult)."
+        )
+        diagnostics.append(
+            "tabs.sendMessage responseResult=\(jsDispatch.responseResult)."
+        )
+        diagnostics.append(
+            "tabs.sendMessage teardownResult=endpointRemainsActiveUntilNavigationProfileTabTeardown."
+        )
+        if jsDispatch.succeeded {
+            return ChromeMV3ContentScriptTabsSendMessageResult(
+                succeeded: true,
+                responsePayload: jsDispatch.responsePayload ?? .null,
+                selectedLastError: nil,
+                selectedEndpoint: endpoint,
+                listenerCount: jsDispatch.listenerCount,
+                dispatchResult: nil,
+                diagnostics: uniqueSortedContentScripts(diagnostics)
+            )
+        }
+
+        let errorCase =
+            ChromeMV3RuntimeLastErrorCase(
+                rawValue: jsDispatch.lastErrorCode ?? ""
+            ) ?? .noReceivingEnd
+        var error = ChromeMV3RuntimeLastErrorContract.contract(
+            for: errorCase
+        )
+        if let lastErrorMessage = jsDispatch.lastErrorMessage {
+            error.futureLastErrorMessage = lastErrorMessage
+        }
+        return ChromeMV3ContentScriptTabsSendMessageResult(
+            succeeded: false,
+            responsePayload: nil,
+            selectedLastError: error,
+            selectedEndpoint: endpoint,
+            listenerCount: jsDispatch.listenerCount,
+            dispatchResult: nil,
+            diagnostics:
+                uniqueSortedContentScripts(diagnostics + error.diagnostics)
+        )
+    }
+
     private static func redactionDecision(
         endpoint: ChromeMV3ContentScriptEndpointRecord,
         permissionBroker: ChromeMV3PermissionBroker
@@ -3253,6 +3665,31 @@ enum ChromeMV3ContentScriptTabsMessagingBridge {
                 )
                 ?? "Active tab"
             object["title"] = .string(title)
+        }
+        return .object(object)
+    }
+
+    private static func tabsMessageSenderPayload(
+        request: ChromeMV3ContentScriptTabsSendMessageRequest,
+        endpoint: ChromeMV3ContentScriptEndpointRecord,
+        offRecord: Bool
+    ) -> ChromeMV3StorageValue {
+        let baseURL =
+            request.extensionBaseURLString.isEmpty
+                ? "chrome-extension://\(request.extensionID)/"
+                : request.extensionBaseURLString
+        var object: [String: ChromeMV3StorageValue] = [
+            "id": .string(request.extensionID),
+            "url": .string(baseURL),
+            "origin": .string("chrome-extension://\(request.extensionID)"),
+            "incognito": .bool(offRecord),
+            "sourceContext": .string(request.sourceContext.rawValue),
+            "sumiTargetTabId": .number(Double(endpoint.tabID)),
+            "sumiTargetFrameId": .number(Double(endpoint.frameID)),
+            "sumiTargetDocumentId": .string(endpoint.documentID),
+        ]
+        if let contentWorldName = endpoint.contentWorldName {
+            object["sumiTargetContentWorld"] = .string(contentWorldName)
         }
         return .object(object)
     }
@@ -4304,6 +4741,12 @@ final class ChromeMV3ContentScriptWKAttachmentHandle {
 
     func tearDown(reason: String = "Content-script attachment handle teardown.") {
         guard tornDown == false else { return }
+        if let endpointID {
+            endpointRegistry.unregisterJSDispatcher(
+                endpointID: endpointID,
+                reason: reason
+            )
+        }
         if let configuration {
             if let messageHandlerName {
                 configuration.userContentController.removeScriptMessageHandler(
@@ -4330,6 +4773,35 @@ final class ChromeMV3ContentScriptWKAttachmentHandle {
         tornDown = true
     }
 
+    func bindWebViewForMessageDispatch(_ webView: WKWebView) {
+        guard tornDown == false,
+              let endpointID
+        else { return }
+        let contentWorld = contentWorld
+        let contentWorldName =
+            contentWorld.name ?? "unnamed WKContentWorld"
+        endpointRegistry.registerJSDispatcher(
+            endpointID: endpointID,
+            contentWorldName: contentWorldName
+        ) { [weak webView] request in
+            guard let webView else {
+                return ChromeMV3ContentScriptJSDispatchResult.blocked(
+                    code: .contextNotLoaded,
+                    dispatchResult: "webViewUnavailable",
+                    diagnostics: [
+                        "Content-world JavaScript dispatcher could not run because the WKWebView was released."
+                    ]
+                )
+            }
+            return await ChromeMV3ContentScriptWebKitJSDispatcher.dispatch(
+                request: request,
+                webView: webView,
+                contentWorld: contentWorld,
+                contentWorldName: contentWorldName
+            )
+        }
+    }
+
     private func removeInstalledUserScripts(
         _ scripts: [WKUserScript],
         from userContentController: WKUserContentController
@@ -4351,6 +4823,61 @@ final class ChromeMV3ContentScriptWKAttachmentHandle {
             }
         } else {
             userContentController.removeAllUserScripts()
+        }
+    }
+}
+
+@MainActor
+private enum ChromeMV3ContentScriptWebKitJSDispatcher {
+    static func dispatch(
+        request: ChromeMV3ContentScriptJSDispatchRequest,
+        webView: WKWebView,
+        contentWorld: WKContentWorld,
+        contentWorldName: String
+    ) async -> ChromeMV3ContentScriptJSDispatchResult {
+        let fallbackDiagnostics = [
+            "tabs.sendMessage evaluating real content-script runtime.onMessage listeners in WKContentWorld(\(contentWorldName)).",
+            "Dispatch is top-frame only and uses nil WKFrameInfo.",
+            "No MAIN-world injection, native messaging, or scripting.executeScript route was used.",
+        ]
+        do {
+            let result = try await webView.callAsyncJavaScript(
+                """
+                if (
+                  !globalThis.__sumiChromeMV3ContentScriptDispatchTabsMessage
+                  || typeof globalThis.__sumiChromeMV3ContentScriptDispatchTabsMessage !== "function"
+                ) {
+                  return {
+                    succeeded: false,
+                    resultPayload: null,
+                    lastErrorCode: "contextNotLoaded",
+                    lastErrorMessage: "Content-script runtime.onMessage dispatcher is not installed.",
+                    listenerCount: 0,
+                    dispatchResult: "dispatcherMissing",
+                    responseResult: "contextNotLoaded",
+                    diagnostics: ["Content-world dispatch function is missing."]
+                  };
+                }
+                return await globalThis.__sumiChromeMV3ContentScriptDispatchTabsMessage(request);
+                """,
+                arguments: ["request": request.foundationObject],
+                in: nil,
+                contentWorld: contentWorld
+            )
+            return ChromeMV3ContentScriptJSDispatchResult.parseWebKitValue(
+                result ?? NSNull(),
+                fallbackDiagnostics: fallbackDiagnostics
+            )
+        } catch {
+            return ChromeMV3ContentScriptJSDispatchResult.blocked(
+                code: .contextNotLoaded,
+                dispatchResult: "evaluateJavaScriptFailed",
+                diagnostics:
+                    fallbackDiagnostics
+                    + [
+                        "Content-world tabs.sendMessage dispatch evaluation failed: \(error.localizedDescription)"
+                    ]
+            )
         }
     }
 }
@@ -4477,7 +5004,12 @@ enum ChromeMV3ContentScriptWKAttachmentExecutor {
 
         let endpoint =
             preflight.canRegisterEndpointNow
-                ? endpointRegistry.registerEndpoint(preflight: preflight)
+                ? endpointRegistry.registerEndpoint(
+                    preflight: preflight,
+                    contentWorldName:
+                        contentWorld.name
+                        ?? "sumi.mv3.content.\(preflight.profileID).\(preflight.extensionID)"
+                )
                 : nil
         let handle = ChromeMV3ContentScriptWKAttachmentHandle(
             configuration: configuration,
@@ -4707,11 +5239,213 @@ enum ChromeMV3ContentScriptJSBridgeSource {
 
           function makeEvent(registerMethod) {
             const listeners = [];
+            function responseError(message, listenerCount, dispatchResult, diagnostics) {
+              return {
+                succeeded: false,
+                resultPayload: null,
+                lastErrorCode: message === "timeout" ? "timeout" : "noReceivingEnd",
+                lastErrorMessage: message === "timeout"
+                  ? "The message port closed before a response was received."
+                  : "Could not establish connection. Receiving end does not exist.",
+                listenerCount,
+                dispatchResult,
+                responseResult: message,
+                diagnostics: diagnostics || []
+              };
+            }
+            function responseSuccess(value, listenerCount, dispatchResult, diagnostics) {
+              return {
+                succeeded: true,
+                resultPayload: toJSONCompatible(value),
+                lastErrorCode: null,
+                lastErrorMessage: null,
+                listenerCount,
+                dispatchResult,
+                responseResult: value === undefined ? "null" : typeof value,
+                diagnostics: diagnostics || []
+              };
+            }
+            function serializable(value) {
+              try {
+                return { ok: true, value: toJSONCompatible(value) };
+              } catch (error) {
+                return {
+                  ok: false,
+                  message: error && error.message
+                    ? String(error.message)
+                    : "Could not serialize message."
+                };
+              }
+            }
+            function dispatchMessage(request) {
+              const snapshot = listeners.slice();
+              const listenerCount = snapshot.length;
+              const diagnostics = [
+                "Content-world runtime.onMessage dispatch started.",
+                "listenerCount=" + String(listenerCount),
+                "sourceContext=" + String(request && request.sourceContext || "unknown")
+              ];
+              if (listenerCount === 0) {
+                return Promise.resolve(responseError(
+                  "noReceivingEnd",
+                  0,
+                  "noListener",
+                  diagnostics.concat(["No runtime.onMessage listener is registered in the content world."])
+                ));
+              }
+              const message = request ? request.message : null;
+              const sender = request ? (request.sender || {}) : {};
+              const timeoutMilliseconds = Math.max(
+                1,
+                Math.min(30000, Number(request && request.timeoutMilliseconds) || 5000)
+              );
+              let settled = false;
+              let finalResult = { value: null };
+              let asyncWaiter = null;
+              let asyncWaiterResolve = null;
+              function settle(value, dispatchResult) {
+                if (settled) {
+                  return null;
+                }
+                const serialized = serializable(value);
+                settled = true;
+                if (!serialized.ok) {
+                  finalResult.value = {
+                    succeeded: false,
+                    resultPayload: null,
+                    lastErrorCode: "timeout",
+                    lastErrorMessage: "Error: Could not serialize message.",
+                    listenerCount,
+                    dispatchResult: "serializationFailed",
+                    responseResult: "serializationFailed",
+                    diagnostics: diagnostics.concat([
+                      "sendResponse payload was not JSON serializable.",
+                      serialized.message
+                    ])
+                  };
+                  return finalResult.value;
+                }
+                finalResult.value = responseSuccess(
+                  serialized.value,
+                  listenerCount,
+                  dispatchResult,
+                  diagnostics.concat(["runtime.onMessage sendResponse resolved."])
+                );
+                return finalResult.value;
+              }
+              function makeSendResponse() {
+                return function sendResponse(value) {
+                  const result = settle(
+                    arguments.length === 0 ? null : value,
+                    "sendResponse"
+                  );
+                  if (result && asyncWaiterResolve) {
+                    asyncWaiterResolve(result);
+                  }
+                };
+              }
+              for (const listener of snapshot) {
+                const sendResponse = makeSendResponse();
+                try {
+                  const listenerResult = listener.call(
+                    undefined,
+                    toJSONCompatible(message),
+                    toJSONCompatible(sender),
+                    sendResponse
+                  );
+                  if (settled) {
+                    break;
+                  }
+                  if (listenerResult === true) {
+                    asyncWaiter = new Promise((resolve) => {
+                      asyncWaiterResolve = resolve;
+                      setTimeout(() => {
+                        if (!settled) {
+                          settled = true;
+                          resolve(responseError(
+                            "timeout",
+                            listenerCount,
+                            "sendResponseTimeout",
+                            diagnostics.concat([
+                              "Listener returned literal true but did not call sendResponse before timeout."
+                            ])
+                          ));
+                        }
+                      }, timeoutMilliseconds);
+                    });
+                    break;
+                  }
+                  if (listenerResult && typeof listenerResult.then === "function") {
+                    asyncWaiter = Promise.resolve(listenerResult).then(
+                      (value) => {
+                        const settledResult = settle(value, "promiseResolved");
+                        return settledResult || responseError(
+                          "timeout",
+                          listenerCount,
+                          "alreadySettled",
+                          diagnostics
+                        );
+                      },
+                      (error) => {
+                        settled = true;
+                        const message = error && error.message
+                          ? String(error.message)
+                          : "Promise rejected.";
+                        return {
+                          succeeded: false,
+                          resultPayload: null,
+                          lastErrorCode: "timeout",
+                          lastErrorMessage: message,
+                          listenerCount,
+                          dispatchResult: "promiseRejected",
+                          responseResult: "promiseRejected",
+                          diagnostics: diagnostics.concat([message])
+                        };
+                      }
+                    );
+                    break;
+                  }
+                } catch (error) {
+                  if (!settled) {
+                    settled = true;
+                    const message = error && error.message
+                      ? String(error.message)
+                      : "runtime.onMessage listener threw.";
+                    return Promise.resolve({
+                      succeeded: false,
+                      resultPayload: null,
+                      lastErrorCode: "timeout",
+                      lastErrorMessage: message,
+                      listenerCount,
+                      dispatchResult: "listenerThrew",
+                      responseResult: "listenerThrew",
+                      diagnostics: diagnostics.concat([message])
+                    });
+                  }
+                }
+              }
+              if (asyncWaiter) {
+                return asyncWaiter;
+              }
+              if (settled) {
+                return Promise.resolve(finalResult.value);
+              }
+              return Promise.resolve(responseError(
+                "noReceivingEnd",
+                listenerCount,
+                "noResponse",
+                diagnostics.concat([
+                  "runtime.onMessage listener(s) returned without sendResponse."
+                ])
+              ));
+            }
             return Object.freeze({
               addListener(listener) {
                 if (typeof listener === "function" && !listeners.includes(listener)) {
                   listeners.push(listener);
-                  post("runtime", registerMethod, {});
+                  post("runtime", registerMethod, {
+                    listenerCount: listeners.length
+                  });
                 }
               },
               removeListener(listener) {
@@ -4725,9 +5459,23 @@ enum ChromeMV3ContentScriptJSBridgeSource {
               },
               hasListeners() {
                 return listeners.length > 0;
-              }
+              },
+              listenerCount() {
+                return listeners.length;
+              },
+              dispatchMessage
             });
           }
+
+          const onMessageEvent = makeEvent("registerOnMessage");
+          const onConnectEvent = makeEvent("registerOnConnect");
+
+          Object.defineProperty(globalThis, "__sumiChromeMV3ContentScriptDispatchTabsMessage", {
+            value(request) {
+              return onMessageEvent.dispatchMessage(request || {});
+            },
+            configurable: true
+          });
 
           function makePortEvent() {
             const listeners = [];
@@ -4887,11 +5635,11 @@ enum ChromeMV3ContentScriptJSBridgeSource {
             enumerable: true
           });
           Object.defineProperty(runtime, "onMessage", {
-            value: makeEvent("registerOnMessage"),
+            value: onMessageEvent,
             enumerable: true
           });
           Object.defineProperty(runtime, "onConnect", {
-            value: makeEvent("registerOnConnect"),
+            value: onConnectEvent,
             enumerable: true
           });
 

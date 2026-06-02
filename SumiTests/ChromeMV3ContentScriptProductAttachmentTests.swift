@@ -1649,6 +1649,241 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         XCTAssertEqual(registry.summary.activeEndpointCount, 0)
         XCTAssertTrue(session.runtimeOwner.snapshot.activeKeepaliveRecords.isEmpty)
     }
+
+    @MainActor
+    func testWKTabsSendMessageDispatchesSyncResponseToRealOnMessageListener()
+        async throws
+    {
+        let fixture = try makePreflightFixture(
+            contentScriptSource: """
+            chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+              if (message && message.type === "sync") {
+                sendResponse({
+                  ok: true,
+                  mode: "sync",
+                  echo: message.value,
+                  senderId: sender.id,
+                  sourceContext: sender.sourceContext,
+                  targetDocumentId: sender.sumiTargetDocumentId
+                });
+              }
+            });
+            """
+        )
+        let harness = try await makeTabsMessageHarness(fixture: fixture)
+
+        let response = await harness.handler.handleAsync(request(
+            namespace: "tabs",
+            methodName: "sendMessage",
+            arguments: [
+                .number(7),
+                .object([
+                    "type": .string("sync"),
+                    "value": .string("hello"),
+                ]),
+                .object([
+                    "frameId": .number(0),
+                    "documentId": .string("document-1"),
+                ]),
+            ]
+        ))
+        let payload = try XCTUnwrap(objectValue(response.resultPayload))
+
+        XCTAssertTrue(response.succeeded)
+        XCTAssertEqual(stringValue(payload["mode"]), "sync")
+        XCTAssertEqual(stringValue(payload["echo"]), "hello")
+        XCTAssertEqual(stringValue(payload["senderId"]), extensionID)
+        XCTAssertEqual(stringValue(payload["sourceContext"]), "actionPopup")
+        XCTAssertEqual(stringValue(payload["targetDocumentId"]), "document-1")
+        XCTAssertTrue(
+            response.diagnostics.joined(separator: "\n")
+                .contains("dispatchResult=sendResponse")
+        )
+        XCTAssertTrue(response.diagnostics.joined(separator: "\n")
+            .contains("No MAIN-world injection"))
+
+        harness.attachment.handle?.tearDown(reason: "sync dispatch teardown")
+    }
+
+    @MainActor
+    func testWKTabsSendMessageDispatchesAsyncSendResponseWhenListenerReturnsTrue()
+        async throws
+    {
+        let fixture = try makePreflightFixture(
+            contentScriptSource: """
+            chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+              if (message && message.type === "async") {
+                setTimeout(() => sendResponse({
+                  ok: true,
+                  mode: "async",
+                  value: message.value + "-done"
+                }), 10);
+                return true;
+              }
+            });
+            """
+        )
+        let harness = try await makeTabsMessageHarness(fixture: fixture)
+
+        let response = await harness.handler.handleAsync(request(
+            namespace: "tabs",
+            methodName: "sendMessage",
+            arguments: [
+                .number(7),
+                .object([
+                    "type": .string("async"),
+                    "value": .string("work"),
+                ]),
+                .object([
+                    "frameId": .number(0),
+                    "documentId": .string("document-1"),
+                ]),
+            ]
+        ))
+        let payload = try XCTUnwrap(objectValue(response.resultPayload))
+
+        XCTAssertTrue(response.succeeded)
+        XCTAssertEqual(stringValue(payload["mode"]), "async")
+        XCTAssertEqual(stringValue(payload["value"]), "work-done")
+        XCTAssertTrue(
+            response.diagnostics.joined(separator: "\n")
+                .contains("runtime.onMessage sendResponse resolved")
+        )
+
+        harness.attachment.handle?.tearDown(reason: "async dispatch teardown")
+    }
+
+    @MainActor
+    func testWKTabsSendMessageNoListenerAfterRemoveReportsNoReceivingEnd()
+        async throws
+    {
+        let fixture = try makePreflightFixture(
+            contentScriptSource: """
+            const removedListener = () => {};
+            chrome.runtime.onMessage.addListener(removedListener);
+            chrome.runtime.onMessage.removeListener(removedListener);
+            """
+        )
+        let harness = try await makeTabsMessageHarness(fixture: fixture)
+
+        let response = await harness.handler.handleAsync(request(
+            namespace: "tabs",
+            methodName: "sendMessage",
+            arguments: [
+                .number(7),
+                .object(["type": .string("missing")]),
+                .object(["frameId": .number(0)]),
+            ],
+            invocationMode: .callback
+        ))
+
+        XCTAssertFalse(response.succeeded)
+        XCTAssertEqual(response.lastErrorCode, "noReceivingEnd")
+        XCTAssertTrue(response.callbackWouldSetLastError)
+        XCTAssertTrue(
+            response.diagnostics.joined(separator: "\n")
+                .contains("listenerCount=0")
+        )
+
+        harness.attachment.handle?.tearDown(reason: "no listener teardown")
+    }
+
+    @MainActor
+    func testWKTabsSendMessageListenerThrowSurfacesLastError()
+        async throws
+    {
+        let fixture = try makePreflightFixture(
+            contentScriptSource: """
+            chrome.runtime.onMessage.addListener(() => {
+              throw new Error("content listener exploded");
+            });
+            """
+        )
+        let harness = try await makeTabsMessageHarness(fixture: fixture)
+
+        let response = await harness.handler.handleAsync(request(
+            namespace: "tabs",
+            methodName: "sendMessage",
+            arguments: [
+                .number(7),
+                .object(["type": .string("throw")]),
+                .object(["frameId": .number(0)]),
+            ]
+        ))
+
+        XCTAssertFalse(response.succeeded)
+        XCTAssertEqual(response.lastErrorCode, "timeout")
+        XCTAssertEqual(response.lastErrorMessage, "content listener exploded")
+        XCTAssertTrue(
+            response.diagnostics.joined(separator: "\n")
+                .contains("dispatchResult=listenerThrew")
+        )
+
+        harness.attachment.handle?.tearDown(reason: "throw teardown")
+    }
+
+    @MainActor
+    func testWKTabsSendMessageWrongDocumentBlocksBeforeContentWorldDispatch()
+        async throws
+    {
+        let fixture = try makePreflightFixture(
+            contentScriptSource: """
+            chrome.runtime.onMessage.addListener((_message, _sender, sendResponse) => {
+              sendResponse({ok: true});
+            });
+            """
+        )
+        let harness = try await makeTabsMessageHarness(fixture: fixture)
+
+        let response = await harness.handler.handleAsync(request(
+            namespace: "tabs",
+            methodName: "sendMessage",
+            arguments: [
+                .number(7),
+                .object(["type": .string("wrong-document")]),
+                .object([
+                    "frameId": .number(0),
+                    "documentId": .string("wrong-document"),
+                ]),
+            ]
+        ))
+
+        XCTAssertFalse(response.succeeded)
+        XCTAssertEqual(response.lastErrorCode, "noReceivingEnd")
+        XCTAssertTrue(
+            response.diagnostics.joined(separator: "\n")
+                .contains("Endpoint lookup classification: endpointMissing")
+        )
+        XCTAssertFalse(
+            response.diagnostics.joined(separator: "\n")
+                .contains("Content-world runtime.onMessage dispatch started")
+        )
+
+        harness.attachment.handle?.tearDown(reason: "wrong document teardown")
+    }
+
+    @MainActor
+    func testWKTabsSendMessageTeardownRemovesJSDispatcher()
+        async throws
+    {
+        let fixture = try makePreflightFixture(
+            contentScriptSource: """
+            chrome.runtime.onMessage.addListener((_message, _sender, sendResponse) => {
+              sendResponse({ok: true});
+            });
+            """
+        )
+        let harness = try await makeTabsMessageHarness(fixture: fixture)
+
+        XCTAssertEqual(harness.registry.summary.activeJSDispatcherCount, 1)
+        harness.attachment.handle?.tearDown(reason: "dispatcher teardown")
+
+        XCTAssertEqual(harness.registry.summary.activeEndpointCount, 0)
+        XCTAssertEqual(harness.registry.summary.activeJSDispatcherCount, 0)
+        XCTAssertTrue(
+            harness.registry.summary.lifecycleStates.contains(.teardownComplete)
+        )
+    }
     #endif
 
     private func makePreflightFixture(
@@ -2021,6 +2256,47 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         }
         let result = try await webView.evaluateJavaScript(script)
         return result as? [String: String] ?? [:]
+    }
+
+    @MainActor
+    private func makeTabsMessageHarness(
+        fixture: PreflightFixture
+    ) async throws -> (
+        registry: ChromeMV3ContentScriptEndpointRegistry,
+        attachment: (
+            result: ChromeMV3ContentScriptWKAttachmentResult,
+            handle: ChromeMV3ContentScriptWKAttachmentHandle?
+        ),
+        handler: ChromeMV3PopupOptionsJSBridgeHandler,
+        webView: WKWebView
+    ) {
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+        let configuration = WKWebViewConfiguration()
+        configuration.sumiIsNormalTabWebViewConfiguration = true
+        let attachment =
+            ChromeMV3ContentScriptWKAttachmentExecutor.attachIfAllowed(
+                configuration: configuration,
+                preflight: fixture.preflight,
+                permissionBroker:
+                    permissionBroker(hostPermissions: ["https://example.com/*"]),
+                endpointRegistry: registry
+            )
+        let webView = WKWebView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            configuration: configuration
+        )
+        attachment.handle?.bindWebViewForMessageDispatch(webView)
+        try await loadURL(
+            URL(string: "https://example.com/login")!,
+            html: contentScriptLoginHTML,
+            into: webView
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration:
+                popupConfiguration(hostPermissions: ["https://example.com/*"]),
+            contentScriptEndpointRegistry: registry
+        )
+        return (registry, attachment, handler, webView)
     }
     #endif
 

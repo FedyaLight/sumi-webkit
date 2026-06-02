@@ -2418,7 +2418,7 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertEqual(
             detectFill.reverseTabsSendMessageClassification
                 .irrelevantForThisSmoke,
-            true
+            false
         )
     }
 

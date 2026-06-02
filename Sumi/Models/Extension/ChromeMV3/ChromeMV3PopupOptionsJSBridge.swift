@@ -877,6 +877,55 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         }
     }
 
+    @MainActor
+    func handleAsync(
+        _ body: Any
+    ) async -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        switch ChromeMV3RuntimeJSBridgeHostRequest.parse(body) {
+        case .success(let request):
+            return await handleAsync(request)
+        case .failure(let error):
+            return response(
+                request: nil,
+                namespace: "unsupported",
+                methodName: "parse",
+                succeeded: false,
+                lastErrorMessage: error.message,
+                lastErrorCode:
+                    ChromeMV3JSBridgeErrorCode.invalidArguments.rawValue,
+                diagnostics: [error.message]
+            )
+        }
+    }
+
+    @MainActor
+    func handleAsync(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) async -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        guard configuration.moduleState == .enabled,
+              configuration.bridgeAvailable
+        else {
+            return response(
+                request: request,
+                succeeded: false,
+                lastErrorMessage:
+                    ChromeMV3JSBridgeErrorCode.extensionDisabled
+                    .lastErrorMessage,
+                lastErrorCode:
+                    ChromeMV3JSBridgeErrorCode.extensionDisabled.rawValue,
+                diagnostics: [
+                    "Popup/options JS bridge request blocked because the module, extension, or developer-preview bridge gate is disabled.",
+                ]
+            )
+        }
+        switch (request.namespace, request.methodName) {
+        case ("tabs", "sendMessage"):
+            return await tabsSendMessageAsync(request)
+        default:
+            return handle(request)
+        }
+    }
+
     func handle(
         _ request: ChromeMV3RuntimeJSBridgeHostRequest
     ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
@@ -1013,6 +1062,52 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             return tabsQuery(request, sourceContextOverride: .serviceWorker)
         case ("tabs", "sendMessage"):
             return tabsSendMessage(
+                request,
+                sourceContextOverride: .serviceWorker
+            )
+        default:
+            return response(
+                request: request,
+                succeeded: false,
+                lastErrorMessage:
+                    ChromeMV3JSBridgeErrorCode.methodUnsupported
+                    .lastErrorMessage,
+                lastErrorCode:
+                    ChromeMV3JSBridgeErrorCode.methodUnsupported.rawValue,
+                sourceContext: .serviceWorker,
+                diagnostics: [
+                    "Only tabs.query and tabs.sendMessage are exposed to the modeled service-worker tab/content-script bridge in this increment.",
+                ]
+            )
+        }
+    }
+
+    @MainActor
+    func handleServiceWorkerTabsRequestAsync(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) async -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        guard configuration.moduleState == .enabled,
+              configuration.bridgeAvailable
+        else {
+            return response(
+                request: request,
+                succeeded: false,
+                lastErrorMessage:
+                    ChromeMV3JSBridgeErrorCode.extensionDisabled
+                    .lastErrorMessage,
+                lastErrorCode:
+                    ChromeMV3JSBridgeErrorCode.extensionDisabled.rawValue,
+                sourceContext: .serviceWorker,
+                diagnostics: [
+                    "Service-worker tabs bridge request blocked because the module, extension, or developer-preview bridge gate is disabled.",
+                ]
+            )
+        }
+        switch (request.namespace, request.methodName) {
+        case ("tabs", "query"):
+            return tabsQuery(request, sourceContextOverride: .serviceWorker)
+        case ("tabs", "sendMessage"):
+            return await tabsSendMessageAsync(
                 request,
                 sourceContextOverride: .serviceWorker
             )
@@ -2509,6 +2604,99 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     bridgeCallID: request.bridgeCallID
                 )
         )
+        if let error = result.selectedLastError {
+            return runtimeLastErrorResponse(
+                request,
+                contract: error,
+                diagnostics: result.diagnostics
+            )
+        }
+        return response(
+            request: request,
+            succeeded: true,
+            payload: result.responsePayload ?? .null,
+            sourceContext: sourceContextOverride,
+            diagnostics:
+                result.diagnostics
+                    + [
+                        "tabs.sendMessage routed to a registered developer-preview content-script endpoint.",
+                        "No arbitrary scripting.executeScript path was used.",
+                    ]
+        )
+    }
+
+    @MainActor
+    private func tabsSendMessageAsync(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest,
+        sourceContextOverride: ChromeMV3JSBridgeSourceContext? = nil
+    ) async -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        guard request.arguments.count >= 2 else {
+            return invalidArguments(
+                request,
+                "tabs.sendMessage requires tabId and message arguments."
+            )
+        }
+        guard request.arguments.count <= 3 else {
+            return invalidArguments(
+                request,
+                "tabs.sendMessage accepts at most tabId, message, and options."
+            )
+        }
+        guard let tabID = request.arguments[0].intValue else {
+            return invalidArguments(
+                request,
+                "tabs.sendMessage tabId must be an integer."
+            )
+        }
+        let options = request.arguments.count == 3
+            ? request.arguments[2].objectValue
+            : [:]
+        if request.arguments.count == 3, options == nil {
+            return invalidArguments(
+                request,
+                "tabs.sendMessage options must be an object."
+            )
+        }
+        let frameID = options?["frameId"]?.intValue
+        let documentID = options?["documentId"]?.stringValue
+        guard let registry = contentScriptEndpointRegistry else {
+            return runtimeLastErrorResponse(
+                request,
+                error: .noReceivingEnd,
+                diagnostics: [
+                    "No content-script endpoint registry is available for tabs.sendMessage target tab/frame/document.",
+                    "Endpoint lookup classification: endpointMissing.",
+                ]
+            )
+        }
+        let result = await ChromeMV3ContentScriptTabsMessagingBridge
+            .sendMessageAsync(
+                registry: registry,
+                request:
+                    ChromeMV3ContentScriptTabsSendMessageRequest(
+                        extensionID: configuration.extensionID,
+                        profileID: configuration.profileID,
+                        sourceContext:
+                            sourceContextOverride
+                                ?? configuration.sourceContext,
+                        extensionBaseURLString:
+                            configuration.extensionBaseURLString,
+                        tabID: tabID,
+                        frameID: frameID,
+                        documentID: documentID,
+                        message: request.arguments[1],
+                        permissionBroker:
+                            permissionRuntimeOwner.permissionBroker,
+                        responseMode:
+                            request.invocationMode == .callback
+                                ? .callback
+                                : .promise,
+                        userGestureAvailable:
+                            (sourceContextOverride ?? configuration.sourceContext)
+                                == .actionPopup,
+                        bridgeCallID: request.bridgeCallID
+                    )
+            )
         if let error = result.selectedLastError {
             return runtimeLastErrorResponse(
                 request,
@@ -4358,7 +4546,7 @@ final class ChromeMV3PopupOptionsWKScriptMessageHandler:
         didReceive message: WKScriptMessage
     ) async -> (Any?, String?) {
         _ = userContentController
-        let response = handler.handle(message.body)
+        let response = await handler.handleAsync(message.body)
         return (response.foundationObject, nil)
     }
 }

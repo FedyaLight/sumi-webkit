@@ -66,7 +66,7 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(callback.succeeded)
         XCTAssertTrue(callback.callbackWouldSetLastError)
         XCTAssertFalse(callback.promiseWouldReject)
-        XCTAssertEqual(callback.lastErrorCode, "hostPermissionMissing")
+        XCTAssertEqual(callback.lastErrorCode, "noReceivingEnd")
         XCTAssertTrue(port.succeeded)
         XCTAssertEqual(handler.diagnosticsSnapshot.portCount, 1)
         XCTAssertFalse(port.runtimeLoadable)

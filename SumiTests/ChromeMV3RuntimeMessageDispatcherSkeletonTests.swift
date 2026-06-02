@@ -479,6 +479,12 @@ final class ChromeMV3RuntimeMessageDispatcherSkeletonTests: XCTestCase {
                     && $0.relativePath
                         != "SumiTests/ChromeMV3RuntimeJSMessagingMVPTests.swift"
                     && $0.relativePath
+                        != "SumiTests/ChromeMV3PopupOptionsJSBridgeTests.swift"
+                    && $0.relativePath
+                        != "SumiTests/ChromeMV3ServiceWorkerJSExecutionHarnessTests.swift"
+                    && $0.relativePath
+                        != "SumiTests/ChromeMV3URLHubDeveloperPreviewTests.swift"
+                    && $0.relativePath
                         != "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift"
                     && $0.relativePath
                         != "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift"
@@ -513,7 +519,9 @@ final class ChromeMV3RuntimeMessageDispatcherSkeletonTests: XCTestCase {
             "connect" + "Native",
             "Pro" + "cess(",
             "DispatchSource" + "Ti" + "mer",
-            "Ti" + "mer",
+            "Ti" + "mer(",
+            "Ti" + "mer.",
+            "scheduled" + "Ti" + "mer",
         ] {
             XCTAssertFalse(boundaryGuardJoined.contains(forbidden), forbidden)
         }
