@@ -79,6 +79,10 @@ struct URLBarHubPopover: View {
     @State private var navigationDirection: NavigationDirection = .forward
     @State private var containerWidth: CGFloat = Mode.controls.preferredWidth
     @State private var bookmarkErrorMessage: String?
+    @State private var runningMV3URLHubActionID: String?
+    @State private var lastMV3URLHubActionRowID: String?
+    @State private var lastMV3URLHubActionResult:
+        ChromeMV3ExtensionManagerActionResult?
     @State private var scheduledPermissionsReloadTask: Task<Void, Never>?
     @StateObject private var siteDataDetailsModel = URLBarSiteDataDetailsViewModel()
     @StateObject private var currentSitePermissionsModel = SumiCurrentSitePermissionsViewModel()
@@ -99,7 +103,33 @@ struct URLBarHubPopover: View {
 
     private var showsExtensionSection: Bool {
         let sumiScriptsEnabled = browserManager.userscriptsModule.isEnabled
-        return !extensionSurfaceStore.enabledExtensions.isEmpty || sumiScriptsEnabled
+        return !extensionSurfaceStore.enabledExtensions.isEmpty
+            || sumiScriptsEnabled
+            || chromeMV3URLHubSection?.rows.isEmpty == false
+    }
+
+    private var chromeMV3URLHubSection: ChromeMV3URLHubSectionViewModel? {
+        _ = refreshNonce
+        return browserManager.extensionsModule
+            .chromeMV3URLHubSectionViewModelIfEnabled(
+                currentPage: chromeMV3URLHubCurrentPageContext
+            )
+    }
+
+    private var chromeMV3URLHubCurrentPageContext:
+        ChromeMV3URLHubCurrentPageContext
+    {
+        ChromeMV3URLHubCurrentPageContext(
+            profileID: activeProfile?.id.uuidString,
+            tabID: currentTab?.id.uuidString ?? "urlhub-no-tab",
+            documentID:
+                currentTab?.currentPermissionPageId()
+                    ?? "urlhub-current-page",
+            urlString: currentTab?.url.absoluteString,
+            tabSurface:
+                currentTab?.chromeMV3NormalTabAttachmentSurface
+                    ?? .helperWebView
+        )
     }
 
     private var permissionDependencies: SumiCurrentSitePermissionsViewModel.LoadDependencies {
@@ -381,6 +411,18 @@ struct URLBarHubPopover: View {
             )
             .environmentObject(browserManager)
             .environment(windowState)
+
+            if let section = chromeMV3URLHubSection,
+               section.rows.isEmpty == false
+            {
+                URLHubMV3DeveloperPreviewSection(
+                    section: section,
+                    runningActionID: runningMV3URLHubActionID,
+                    lastActionRowID: lastMV3URLHubActionRowID,
+                    lastActionResult: lastMV3URLHubActionResult,
+                    onRunDiagnostic: runMV3URLHubDiagnostic
+                )
+            }
         }
     }
 
@@ -616,6 +658,28 @@ struct URLBarHubPopover: View {
                 dependencies: permissionDependencies
             )
             await reloadPermissionsImmediately()
+            refreshNonce += 1
+        }
+    }
+
+    private func runMV3URLHubDiagnostic(
+        _ row: ChromeMV3URLHubExtensionRow
+    ) {
+        guard runningMV3URLHubActionID == nil else { return }
+        runningMV3URLHubActionID = row.id
+        lastMV3URLHubActionRowID = nil
+        lastMV3URLHubActionResult = nil
+        let context = chromeMV3URLHubCurrentPageContext
+        Task { @MainActor in
+            let result = await browserManager.extensionsModule
+                .chromeMV3RunURLHubDiagnosticSmokeThroughURLHub(
+                    profileID: row.profileID,
+                    extensionID: row.extensionID,
+                    currentPage: context
+                )
+            lastMV3URLHubActionRowID = row.id
+            lastMV3URLHubActionResult = result
+            runningMV3URLHubActionID = nil
             refreshNonce += 1
         }
     }
@@ -1320,6 +1384,185 @@ private struct HubSectionHeader: View {
             }
         }
         .onHover { isHovering = $0 }
+    }
+}
+
+private struct URLHubMV3DeveloperPreviewSection: View {
+    let section: ChromeMV3URLHubSectionViewModel
+    let runningActionID: String?
+    let lastActionRowID: String?
+    let lastActionResult: ChromeMV3ExtensionManagerActionResult?
+    let onRunDiagnostic: (ChromeMV3URLHubExtensionRow) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Local MV3 Preview")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(URLBarHubNativeStyle.primaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(spacing: 8) {
+                ForEach(section.rows) { row in
+                    URLHubMV3DeveloperPreviewRow(
+                        row: row,
+                        isRunning: runningActionID == row.id,
+                        lastActionResult: result(for: row),
+                        onRunDiagnostic: {
+                            onRunDiagnostic(row)
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    private func result(
+        for row: ChromeMV3URLHubExtensionRow
+    ) -> ChromeMV3ExtensionManagerActionResult? {
+        guard let lastActionResult else { return nil }
+        if lastActionRowID == row.id {
+            return lastActionResult
+        }
+        if lastActionResult.manualSmokeArtifact?.profileID == row.profileID,
+           lastActionResult.manualSmokeArtifact?.extensionID == row.extensionID
+        {
+            return lastActionResult
+        }
+        return nil
+    }
+}
+
+private struct URLHubMV3DeveloperPreviewRow: View {
+    let row: ChromeMV3URLHubExtensionRow
+    let isRunning: Bool
+    let lastActionResult: ChromeMV3ExtensionManagerActionResult?
+    let onRunDiagnostic: () -> Void
+
+    @State private var isHovered = false
+
+    private var readinessStatus: String {
+        row.readiness.explicitDiagnosticActionCanRun
+            ? "Ready for local diagnostic"
+            : "Blocked: "
+                + row.readiness.blockers.map(\.rawValue)
+                .prefix(3)
+                .joined(separator: ", ")
+    }
+
+    private var actionStatus: String? {
+        if let lastActionResult {
+            return "Last action: \(lastActionResult.status.rawValue)"
+        }
+        if let status = row.diagnosticAction.lastRunStatus {
+            return "Last diagnostic: \(status.rawValue)"
+        }
+        return nil
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "puzzlepiece.extension")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(URLBarHubNativeStyle.secondaryText)
+                    .frame(width: 20, height: 20)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    URLBarFadingText(
+                        row.displayName,
+                        font: .system(size: 12.5, weight: .semibold),
+                        color: URLBarHubNativeStyle.primaryText
+                    )
+                    Text("\(row.developerPreviewLabel) - \(row.notProductSupportLabel)")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(URLBarHubNativeStyle.tertiaryText)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text(row.enabled ? "On" : "Off")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(
+                        row.enabled
+                            ? URLBarHubNativeStyle.primaryText
+                            : URLBarHubNativeStyle.tertiaryText
+                    )
+            }
+
+            Text(readinessStatus)
+                .font(.system(size: 11))
+                .foregroundStyle(
+                    row.readiness.explicitDiagnosticActionCanRun
+                        ? URLBarHubNativeStyle.secondaryText
+                        : URLBarHubNativeStyle.tertiaryText
+                )
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                Button(action: onRunDiagnostic) {
+                    HStack(spacing: 5) {
+                        if isRunning {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "waveform.path.ecg")
+                                .font(.system(size: 11.5, weight: .semibold))
+                        }
+                        Text("Run diagnostic")
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 28)
+                }
+                .buttonStyle(.plain)
+                .disabled(!row.diagnosticAction.available || isRunning)
+                .foregroundStyle(URLBarHubNativeStyle.primaryText)
+                .background(
+                    row.diagnosticAction.available && !isRunning
+                        ? URLBarHubNativeStyle.controlBackground
+                        : URLBarHubNativeStyle.controlBackground.opacity(0.55)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .help(
+                    row.diagnosticAction.disabledReason
+                        ?? row.diagnosticAction.notProductSupportLabel
+                )
+
+                if let actionStatus {
+                    Text(actionStatus)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(URLBarHubNativeStyle.tertiaryText)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
+            if let path = row.diagnosticAction.lastArtifactPath {
+                Text(path)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(URLBarHubNativeStyle.tertiaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(
+                    isHovered
+                        ? URLBarHubNativeStyle.hoveredControlBackground
+                        : URLBarHubNativeStyle.controlBackground
+                )
+        )
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.12)) {
+                isHovered = hovering
+            }
+        }
+        .accessibilityIdentifier("urlhub-mv3-row-\(row.extensionID)")
     }
 }
 
