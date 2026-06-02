@@ -1231,6 +1231,12 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
                 diagnostics.append(
                     "Reviewed bootstrap detect dispatch completed through its registered runtime listener."
                 )
+                diagnostics.append(
+                    contentsOf: traceDiagnostics(
+                        detectObject,
+                        prefix: "bitwardenDetectRoute"
+                    )
+                )
                 let fillResult: Any?
                 do {
                     fillResult =
@@ -1266,6 +1272,25 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
                             ?? "unknown fixed fill dispatch failure"
                     )
                 }
+                diagnostics.append(
+                    contentsOf: traceDiagnostics(
+                        fillObject,
+                        prefix: "bitwardenFillRoute"
+                    )
+                )
+                let boundaryProbeResult = try await eventDrivenDispatch(
+                    fixedBoundaryProbeDispatch,
+                    stage: "boundaryProbe",
+                    webView: activeWebView,
+                    contentWorld: contentWorld,
+                    observer: messageObserver
+                )
+                diagnostics.append(
+                    contentsOf: traceDiagnostics(
+                        boundaryProbeResult,
+                        prefix: "bitwardenRuntimeBoundary"
+                    )
+                )
                 fixedDetectFillDispatchCompleted = true
                 after = try await inspectDOM(
                     activeWebView,
@@ -1470,6 +1495,7 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
             "No manager readout, product BrowserManager path, WKWebExtension controller/context, native host, auth flow, network request, MAIN world, or multi-frame attachment is created.",
         ]
         var thrownErrors: [String] = []
+        var routeDiagnostics: [String] = []
         var reviewedScriptExecuted = false
         var fixedHarnessShimInstalled = false
         var fixedDetectFillDispatchCompleted = false
@@ -1548,6 +1574,12 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
                                 ?? "unknown fixed detect dispatch failure"
                         )
                     }
+                    routeDiagnostics.append(
+                        contentsOf: traceDiagnostics(
+                            detectResult,
+                            prefix: "bitwardenDetectRoute"
+                        )
+                    )
                     let fillResult = try await eventDrivenDispatch(
                         fixedFillDispatch,
                         stage: "fill",
@@ -1571,6 +1603,25 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
                                 ?? "unknown fixed fill dispatch failure"
                         )
                     }
+                    routeDiagnostics.append(
+                        contentsOf: traceDiagnostics(
+                            fillResult,
+                            prefix: "bitwardenFillRoute"
+                        )
+                    )
+                    let boundaryProbeResult = try await eventDrivenDispatch(
+                        fixedBoundaryProbeDispatch,
+                        stage: "boundaryProbe",
+                        webView: activeWebView,
+                        contentWorld: contentWorld,
+                        observer: messageObserver
+                    )
+                    routeDiagnostics.append(
+                        contentsOf: traceDiagnostics(
+                            boundaryProbeResult,
+                            prefix: "bitwardenRuntimeBoundary"
+                        )
+                    )
                     fixedDetectFillDispatchCompleted = true
                 case ChromeMV3LocalExperimentalProgrammaticInjectionResourceCatalog
                     .syntheticReviewedResourceMarkerFile:
@@ -1744,6 +1795,7 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
                 uniqueSortedWebKitProgrammaticInjection(
                     diagnostics
                         + manualTeardown.diagnostics
+                        + routeDiagnostics
                         + thrownErrors
                         + [
                             success ? successDiagnostic
@@ -2161,6 +2213,13 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
         return "\(nsError.localizedDescription) [\(userInfo)]"
     }
 
+    private static func traceDiagnostics(
+        _ object: [String: Any],
+        prefix: String
+    ) -> [String] {
+        (object["trace"] as? [String] ?? []).map { "\(prefix): \($0)" }
+    }
+
     private enum AdapterError: LocalizedError {
         case domObservationUnavailable
         case detectFillDispatchFailed(String)
@@ -2207,12 +2266,44 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
       const messageListeners = new Set();
       const disconnectListeners = new Set();
       const sentMessages = [];
+      const trace = {
+        apiCalls: [],
+        dispatches: [],
+        portConnectCount: 0,
+        portPostMessageCount: 0,
+        portDisconnectCount: 0,
+        portMessageListenerCount: 0,
+        listenerAddCount: 0,
+        listenerRemoveCount: 0
+      };
+      const messageShape = (message) => {
+        if (!message || typeof message !== "object") return typeof message;
+        return Object.keys(message).sort().join(",");
+      };
+      const valueShape = (value) => {
+        if (value === undefined) return "undefined";
+        if (value === null) return "null";
+        if (Array.isArray(value)) return `array:${value.length}`;
+        if (typeof value === "object") return `object:${Object.keys(value).sort().join(",")}`;
+        return typeof value;
+      };
       const port = {
         onDisconnect: {
           addListener(listener) { disconnectListeners.add(listener); },
           removeListener(listener) { disconnectListeners.delete(listener); }
         },
+        onMessage: {
+          addListener() { trace.portMessageListenerCount += 1; },
+          removeListener() {
+            trace.portMessageListenerCount = Math.max(0, trace.portMessageListenerCount - 1);
+          }
+        },
+        postMessage(message) {
+          trace.portPostMessageCount += 1;
+          trace.apiCalls.push(`port.postMessage:shape=${messageShape(message)}`);
+        },
         disconnect() {
+          trace.portDisconnectCount += 1;
           for (const listener of Array.from(disconnectListeners)) {
             listener(port);
           }
@@ -2222,10 +2313,17 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
       const runtime = {
         lastError: null,
         onMessage: {
-          addListener(listener) { messageListeners.add(listener); },
-          removeListener(listener) { messageListeners.delete(listener); }
+          addListener(listener) {
+            trace.listenerAddCount += 1;
+            messageListeners.add(listener);
+          },
+          removeListener(listener) {
+            trace.listenerRemoveCount += 1;
+            messageListeners.delete(listener);
+          }
         },
         sendMessage(message, callback) {
+          trace.apiCalls.push(`runtime.sendMessage:shape=${messageShape(message)}`);
           sentMessages.push(message);
           const response = message && message.command === "getUrlAutofillTargetingRules"
             ? { result: null }
@@ -2235,13 +2333,32 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
           }
           return Promise.resolve(response);
         },
-        connect() { return port; }
+        connect(connectInfo) {
+          trace.portConnectCount += 1;
+          const name = connectInfo && connectInfo.name ? connectInfo.name : "";
+          trace.apiCalls.push(`runtime.connect:name=${name}`);
+          return port;
+        }
       };
       globalThis.chrome = {
         runtime,
         i18n: { getMessage() { return ""; } }
       };
       globalThis.__sumiBitwardenSyntheticHarness = {
+        traceLines(stage) {
+          const last = trace.dispatches[trace.dispatches.length - 1] || {};
+          const listenerCount = last.listenerCount !== undefined ? last.listenerCount : messageListeners.size;
+          const resultKind = last.resultKind || "notDispatched";
+          const responseShape = last.responseShape || "none";
+          return [
+            "sourceContext=localExperimentalNormalTabAdapter;target=contentScript;world=ISOLATED;tabId=1;frameId=0;documentId=bitwarden-e2e-login-main-frame;url=https://sumi.local.test/login;origin=https://sumi.local.test;incognito=false",
+            `stage=${stage};listenerCount=${listenerCount};listenerInvoked=${!!last.listenerInvoked};sendResponseCalled=${!!last.sendResponseCalled};listenerReturnedTrue=${!!last.listenerReturnedTrue};listenerThrew=${!!last.listenerThrew};dispatchResult=${resultKind};responseShape=${responseShape}`,
+            `apiCalls=${trace.apiCalls.length ? trace.apiCalls.join("|") : "none"}`,
+            "storageCalls=none;tabsCalls=none;missingAPIs=none;permissionErrors=none;serviceWorkerLifecycleErrors=none",
+            `portTraffic=connect:${trace.portConnectCount};postMessage:${trace.portPostMessageCount};onMessageListeners:${trace.portMessageListenerCount};disconnect:${trace.portDisconnectCount}`,
+            `listenerLifecycle=add:${trace.listenerAddCount};remove:${trace.listenerRemoveCount};active:${messageListeners.size}`
+          ];
+        },
         dispatch(message) {
           return new Promise((resolve, reject) => {
             const listeners = Array.from(messageListeners);
@@ -2273,12 +2390,117 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
             }
           });
         },
+        strictDispatch(message) {
+          return new Promise((resolve, reject) => {
+            const listeners = Array.from(messageListeners);
+            const record = {
+              listenerCount: listeners.length,
+              listenerInvoked: false,
+              sendResponseCalled: false,
+              listenerReturnedTrue: false,
+              listenerThrew: false,
+              resultKind: "notDispatched",
+              responseShape: "none"
+            };
+            trace.dispatches.push(record);
+            if (!listeners.length) {
+              record.resultKind = "noReceivingEnd";
+              resolve({ ok: false, resultKind: record.resultKind });
+              return;
+            }
+            let settled = false;
+            const sendResponse = (response) => {
+              if (!settled) {
+                settled = true;
+                record.sendResponseCalled = true;
+                record.resultKind = "response";
+                record.responseShape = valueShape(response);
+                resolve({
+                  ok: true,
+                  resultKind: record.resultKind,
+                  responseShape: record.responseShape
+                });
+              }
+            };
+            try {
+              for (const listener of listeners) {
+                record.listenerInvoked = true;
+                const sender = {
+                  id: "password-manager-real-package-extension",
+                  url: globalThis.location.href,
+                  origin: globalThis.location.origin,
+                  frameId: 0,
+                  documentId: "bitwarden-e2e-login-main-frame",
+                  tab: {
+                    id: 1,
+                    url: globalThis.location.href,
+                    incognito: false
+                  }
+                };
+                const result = listener(message, sender, sendResponse);
+                if (result === true) {
+                  record.listenerReturnedTrue = true;
+                  if (!settled) {
+                    record.resultKind = "noResponse";
+                    resolve({ ok: false, resultKind: record.resultKind });
+                  }
+                  return;
+                }
+                if (result !== undefined && result !== null) {
+                  Promise.resolve(result).then(sendResponse, reject);
+                  return;
+                }
+              }
+              if (!settled) {
+                record.resultKind = "noResponse";
+                resolve({ ok: false, resultKind: record.resultKind });
+              }
+            } catch (error) {
+              record.listenerThrew = true;
+              record.resultKind = "listenerError";
+              record.responseShape = valueShape(error);
+              reject(error);
+            }
+          });
+        },
         destroy() {
           port.disconnect();
           messageListeners.clear();
           sentMessages.length = 0;
         }
       };
+      return true;
+    })();
+    """
+
+    private static let fixedBoundaryProbeDispatch = """
+    (() => {
+      const bridge = globalThis.webkit.messageHandlers.sumiBitwardenSyntheticCompletion;
+      void (async () => {
+        try {
+          const harness = globalThis.__sumiBitwardenSyntheticHarness;
+          if (!harness) {
+            throw new Error("missing synthetic Bitwarden harness");
+          }
+          const result = await harness.strictDispatch({
+            command: "sumiRuntimeBoundaryProbe",
+            sender: "sumiRuntimeBoundarySmoke",
+            tab: { id: 1, url: globalThis.location.href }
+          });
+          bridge.postMessage({
+            stage: "boundaryProbe",
+            ok: true,
+            dispatchResult: result && result.resultKind ? result.resultKind : "unknown",
+            trace: harness.traceLines("boundaryProbe")
+          });
+        } catch (error) {
+          bridge.postMessage({
+            stage: "boundaryProbe",
+            ok: false,
+            message: String(error && error.stack ? error.stack : error)
+          });
+        }
+      })();
       return true;
     })();
     """
@@ -2309,7 +2531,8 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
             stage: "detect",
             ok: true,
             usernameOpid: username.opid,
-            passwordOpid: password.opid
+            passwordOpid: password.opid,
+            trace: harness.traceLines("detect")
           });
         } catch (error) {
           bridge.postMessage({
@@ -2354,7 +2577,8 @@ enum ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapter {
             stage: "fill",
             ok: true,
             usernameValue: username.value,
-            passwordValue: password.value
+            passwordValue: password.value,
+            trace: harness.traceLines("fill")
           });
         } catch (error) {
           bridge.postMessage({

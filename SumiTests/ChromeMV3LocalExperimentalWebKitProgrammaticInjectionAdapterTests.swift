@@ -658,6 +658,33 @@ final class ChromeMV3LocalExperimentalWebKitProgrammaticInjectionAdapterTests:
         )
         XCTAssertTrue(productExperiment.reviewedScriptExecutedByWebKit)
         XCTAssertTrue(productExperiment.finalValuesMatchDummyFill)
+        XCTAssertTrue(
+            productExperiment.diagnostics.contains {
+                $0.contains("bitwardenRuntimeBoundary:")
+                    && $0.contains("listenerCount=1")
+                    && $0.contains("listenerInvoked=true")
+                    && $0.contains("sendResponseCalled=false")
+                    && $0.contains("dispatchResult=noResponse")
+            },
+            productExperiment.diagnostics.joined(separator: "\n")
+        )
+        XCTAssertTrue(
+            productExperiment.diagnostics.contains {
+                $0.contains("bitwardenRuntimeBoundary:")
+                    && $0.contains("runtime.connect:name=autofill-injected-script-port")
+            },
+            productExperiment.diagnostics.joined(separator: "\n")
+        )
+        XCTAssertTrue(
+            productExperiment.diagnostics.contains {
+                $0.contains("bitwardenRuntimeBoundary:")
+                    && $0.contains("storageCalls=none")
+                    && $0.contains("missingAPIs=none")
+                    && $0.contains("permissionErrors=none")
+                    && $0.contains("serviceWorkerLifecycleErrors=none")
+            },
+            productExperiment.diagnostics.joined(separator: "\n")
+        )
         XCTAssertEqual(
             productExperiment.runtimeCost.retainedObjectCountAfterTeardown,
             0
