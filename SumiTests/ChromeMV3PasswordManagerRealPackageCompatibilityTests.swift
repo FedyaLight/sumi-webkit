@@ -1910,10 +1910,7 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             "notModeled:no content-script runtime.onConnect listener"
         )
         XCTAssertEqual(routes[.popupTabsConnect]?.disconnectResult, "notOpened")
-        XCTAssertEqual(
-            smoke.nextBlockerClassification,
-            .serviceWorkerRuntimeOnMessageListenerMissing
-        )
+        XCTAssertNil(smoke.nextBlockerClassification)
         XCTAssertTrue(
             smoke.serviceWorkerCapturedListenerFamilies?
                 .contains(.runtimeOnConnect) == true
@@ -2203,18 +2200,18 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertEqual(
             detectFillRoutes["serviceWorkerTabsSendMessage"]?.status,
-            .notRequired
+            .partial
         )
         XCTAssertEqual(
             detectFillRoutes["serviceWorkerTabsSendMessage"]?
                 .messageClassification,
-            .reverseRouteIrrelevant
+            .modeledEndpointDeliveredOnly
         )
         XCTAssertFalse(
             detectFill.reverseTabsSendMessageClassification
                 .actuallyNeededForDetectFill
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             detectFill.reverseTabsSendMessageClassification
                 .irrelevantForThisSmoke
         )
@@ -2222,11 +2219,11 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             detectFill.reverseTabsSendMessageClassification
                 .contentScriptToServiceWorkerShouldUseRuntimeSendMessage
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             detectFill.reverseTabsSendMessageClassification
                 .unsupportedDirection
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             detectFill.reverseTabsSendMessageClassification
                 .routeShapeMismatch
         )
@@ -2304,7 +2301,7 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertEqual(
             detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?
                 .bitwardenE2ESmoke?.nextBlockerClassification,
-            .serviceWorkerRuntimeOnMessageListenerMissing
+            nil
         )
         XCTAssertNil(
             detail.serviceWorkerReadinessPanel.latestRealPackageTrialReport?

@@ -988,6 +988,51 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         }
     }
 
+    func handleServiceWorkerTabsRequest(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        guard configuration.moduleState == .enabled,
+              configuration.bridgeAvailable
+        else {
+            return response(
+                request: request,
+                succeeded: false,
+                lastErrorMessage:
+                    ChromeMV3JSBridgeErrorCode.extensionDisabled
+                    .lastErrorMessage,
+                lastErrorCode:
+                    ChromeMV3JSBridgeErrorCode.extensionDisabled.rawValue,
+                sourceContext: .serviceWorker,
+                diagnostics: [
+                    "Service-worker tabs bridge request blocked because the module, extension, or developer-preview bridge gate is disabled.",
+                ]
+            )
+        }
+        switch (request.namespace, request.methodName) {
+        case ("tabs", "query"):
+            return tabsQuery(request, sourceContextOverride: .serviceWorker)
+        case ("tabs", "sendMessage"):
+            return tabsSendMessage(
+                request,
+                sourceContextOverride: .serviceWorker
+            )
+        default:
+            return response(
+                request: request,
+                succeeded: false,
+                lastErrorMessage:
+                    ChromeMV3JSBridgeErrorCode.methodUnsupported
+                    .lastErrorMessage,
+                lastErrorCode:
+                    ChromeMV3JSBridgeErrorCode.methodUnsupported.rawValue,
+                sourceContext: .serviceWorker,
+                diagnostics: [
+                    "Only tabs.query and tabs.sendMessage are exposed to the modeled service-worker tab/content-script bridge in this increment.",
+                ]
+            )
+        }
+    }
+
     func tearDown() {
         localStorageBroker = ChromeMV3StorageBroker(
             namespace: localStorageBroker.namespace
@@ -2333,7 +2378,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     }
 
     private func tabsQuery(
-        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest,
+        sourceContextOverride: ChromeMV3JSBridgeSourceContext? = nil
     ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
         guard request.arguments.count <= 1 else {
             return invalidArguments(
@@ -2347,6 +2393,35 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             return invalidArguments(
                 request,
                 "tabs.query queryInfo must be an object."
+            )
+        }
+        if let registry = contentScriptEndpointRegistry {
+            let result = ChromeMV3ContentScriptTabsMessagingBridge.query(
+                registry: registry,
+                request:
+                    ChromeMV3ContentScriptTabsQueryRequest(
+                        extensionID: configuration.extensionID,
+                        profileID: configuration.profileID,
+                        sourceContext:
+                            sourceContextOverride
+                                ?? configuration.sourceContext,
+                        queryInfo: queryInfo,
+                        permissionBroker:
+                            permissionRuntimeOwner.permissionBroker,
+                        activeTabID: nil
+                    )
+            )
+            return response(
+                request: request,
+                succeeded: true,
+                payload: .array(result.tabs),
+                sourceContext: sourceContextOverride,
+                diagnostics:
+                    result.diagnostics
+                        + [
+                            "tabs.query used the captured content-script endpoint registry for the active eligible tab only.",
+                            "No broad product tab enumeration occurred.",
+                        ]
             )
         }
         let result = tabRegistry.query(
@@ -2366,7 +2441,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     }
 
     private func tabsSendMessage(
-        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest,
+        sourceContextOverride: ChromeMV3JSBridgeSourceContext? = nil
     ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
         guard request.arguments.count >= 2 else {
             return invalidArguments(
@@ -2397,13 +2473,6 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         }
         let frameID = options?["frameId"]?.intValue
         let documentID = options?["documentId"]?.stringValue
-        if let permissionFailure = tabPermissionFailure(
-            request: request,
-            tabID: tabID,
-            requestName: "tabs.sendMessage"
-        ) {
-            return permissionFailure
-        }
         guard let registry = contentScriptEndpointRegistry else {
             return runtimeLastErrorResponse(
                 request,
@@ -2414,86 +2483,46 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 ]
             )
         }
-        let lookup = registry.targetEndpointLookup(
-            extensionID: configuration.extensionID,
-            profileID: configuration.profileID,
-            tabID: tabID,
-            frameID: frameID,
-            documentID: documentID
+        let result = ChromeMV3ContentScriptTabsMessagingBridge.sendMessage(
+            registry: registry,
+            request:
+                ChromeMV3ContentScriptTabsSendMessageRequest(
+                    extensionID: configuration.extensionID,
+                    profileID: configuration.profileID,
+                    sourceContext:
+                        sourceContextOverride ?? configuration.sourceContext,
+                    extensionBaseURLString:
+                        configuration.extensionBaseURLString,
+                    tabID: tabID,
+                    frameID: frameID,
+                    documentID: documentID,
+                    message: request.arguments[1],
+                    permissionBroker:
+                        permissionRuntimeOwner.permissionBroker,
+                    responseMode:
+                        request.invocationMode == .callback
+                            ? .callback
+                            : .promise,
+                    userGestureAvailable:
+                        (sourceContextOverride ?? configuration.sourceContext)
+                            == .actionPopup,
+                    bridgeCallID: request.bridgeCallID
+                )
         )
-        guard let endpoint = lookup.endpoint else {
-            return runtimeLastErrorResponse(
-                request,
-                error: .noReceivingEnd,
-                diagnostics:
-                    lookup.diagnostics
-                    + [
-                        "No content-script endpoint exists for tabs.sendMessage target tab/frame/document."
-                    ]
-            )
-        }
-        guard endpoint.messageListenerRegistered else {
-            return runtimeLastErrorResponse(
-                request,
-                error: .noReceivingEnd,
-                diagnostics:
-                    lookup.diagnostics
-                    + [
-                        "Target content-script endpoint is present but has no runtime.onMessage listener.",
-                    ]
-            )
-        }
-        let route = ChromeMV3RuntimeMessagingRoute.make(
-            kind: .tabsSendMessage,
-            extensionID: configuration.extensionID,
-            profileID: configuration.profileID,
-            tabID: endpoint.tabID,
-            frameID: endpoint.frameID,
-            documentID: endpoint.documentID,
-            sourceURL: configuration.extensionBaseURLString,
-            targetURL: endpoint.frameTarget.urlString
-        )
-        let dispatch = ChromeMV3RuntimeMessageDispatcher.dispatch(
-            input: ChromeMV3RuntimeMessageDispatcherInput.make(
-                route: route,
-                listenerRegistrySnapshot:
-                    registry.listenerRegistrySnapshot(
-                        extensionID: configuration.extensionID,
-                        profileID: configuration.profileID
-                    ),
-                permissionBrokerSnapshot:
-                    permissionRuntimeOwner.permissionBroker,
-                serviceWorkerLifecycleSnapshot:
-                    .blocked(
-                        extensionID: configuration.extensionID,
-                        profileID: configuration.profileID
-                    ),
-                moduleState: configuration.moduleState,
-                dispatchMode: .modelOnly,
-                responseMode:
-                    request.invocationMode == .callback
-                        ? .callback
-                        : .promise,
-                expectsResponse: true,
-                userGestureAvailable:
-                    configuration.sourceContext == .actionPopup,
-                seed: request.bridgeCallID
-            )
-        )
-        if let error = dispatch.selectedLastError {
+        if let error = result.selectedLastError {
             return runtimeLastErrorResponse(
                 request,
                 contract: error,
-                diagnostics: lookup.diagnostics + dispatch.diagnostics
+                diagnostics: result.diagnostics
             )
         }
         return response(
             request: request,
             succeeded: true,
-            payload: dispatch.responsePayload ?? .null,
+            payload: result.responsePayload ?? .null,
+            sourceContext: sourceContextOverride,
             diagnostics:
-                lookup.diagnostics
-                    + dispatch.diagnostics
+                result.diagnostics
                     + [
                         "tabs.sendMessage routed to a registered developer-preview content-script endpoint.",
                         "No arbitrary scripting.executeScript path was used.",
@@ -3094,6 +3123,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         serviceWorkerLifecycleWakeResult:
             ChromeMV3ServiceWorkerInternalWakeResult? = nil,
         nativeHostLaunchAttempted: Bool = false,
+        sourceContext: ChromeMV3JSBridgeSourceContext? = nil,
         diagnostics: [String]
     ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
         let resolvedNamespace = request?.namespace ?? namespace ?? "unsupported"
@@ -3150,7 +3180,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 extensionID: configuration.extensionID,
                 profileID: configuration.profileID,
                 surface: configuration.surface,
-                sourceContext: configuration.sourceContext,
+                sourceContext: sourceContext ?? configuration.sourceContext,
                 namespace: resolvedNamespace,
                 methodName: resolvedMethod,
                 invocationMode: mode,

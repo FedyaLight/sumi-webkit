@@ -2101,6 +2101,28 @@ final class ChromeMV3ContentScriptEndpointRegistry {
         ).endpoint
     }
 
+    func activeTopFrameEndpoints(
+        extensionID: String,
+        profileID: String
+    ) -> [ChromeMV3ContentScriptEndpointRecord] {
+        endpoints
+            .filter {
+                $0.active
+                    && $0.extensionID == extensionID
+                    && $0.profileID == profileID
+                    && $0.frameID == 0
+            }
+            .sorted {
+                if $0.navigationSequence != $1.navigationSequence {
+                    return $0.navigationSequence > $1.navigationSequence
+                }
+                if $0.tabID != $1.tabID {
+                    return $0.tabID < $1.tabID
+                }
+                return $0.endpointID < $1.endpointID
+            }
+    }
+
     func openPortIfAvailable(
         extensionID: String,
         profileID: String,
@@ -2728,6 +2750,555 @@ final class ChromeMV3ContentScriptEndpointRegistry {
             )
         )
         nextSequence += 1
+    }
+}
+
+struct ChromeMV3ContentScriptTabsQueryRequest:
+    Equatable,
+    Sendable
+{
+    var extensionID: String
+    var profileID: String
+    var sourceContext: ChromeMV3JSBridgeSourceContext
+    var queryInfo: [String: ChromeMV3StorageValue]
+    var permissionBroker: ChromeMV3PermissionBroker
+    var activeTabID: Int?
+    var currentWindowID: Int
+    var currentSpaceID: String
+    var offRecordTabIDs: [Int]
+    var allowOffRecordTabs: Bool
+
+    init(
+        extensionID: String,
+        profileID: String,
+        sourceContext: ChromeMV3JSBridgeSourceContext,
+        queryInfo: [String: ChromeMV3StorageValue],
+        permissionBroker: ChromeMV3PermissionBroker,
+        activeTabID: Int? = nil,
+        currentWindowID: Int = 1,
+        currentSpaceID: String = "default",
+        offRecordTabIDs: [Int] = [],
+        allowOffRecordTabs: Bool = false
+    ) {
+        self.extensionID = extensionID
+        self.profileID = profileID
+        self.sourceContext = sourceContext
+        self.queryInfo = queryInfo
+        self.permissionBroker = permissionBroker
+        self.activeTabID = activeTabID
+        self.currentWindowID = currentWindowID
+        self.currentSpaceID = currentSpaceID.isEmpty
+            ? "default"
+            : currentSpaceID
+        self.offRecordTabIDs = Array(Set(offRecordTabIDs)).sorted()
+        self.allowOffRecordTabs = allowOffRecordTabs
+    }
+}
+
+struct ChromeMV3ContentScriptTabsQueryResult:
+    Equatable,
+    Sendable
+{
+    var tabs: [ChromeMV3StorageValue]
+    var selectedEndpoint: ChromeMV3ContentScriptEndpointRecord?
+    var listenerCount: Int
+    var redactionStatus: ChromeMV3SyntheticTabRedactionStatus?
+    var diagnostics: [String]
+}
+
+struct ChromeMV3ContentScriptTabsSendMessageRequest:
+    Equatable,
+    Sendable
+{
+    var extensionID: String
+    var profileID: String
+    var sourceContext: ChromeMV3JSBridgeSourceContext
+    var extensionBaseURLString: String
+    var tabID: Int
+    var frameID: Int?
+    var documentID: String?
+    var message: ChromeMV3StorageValue
+    var permissionBroker: ChromeMV3PermissionBroker
+    var responseMode: ChromeMV3RuntimeMessagingResponseMode
+    var userGestureAvailable: Bool
+    var bridgeCallID: String
+    var offRecordTabIDs: [Int]
+    var allowOffRecordTabs: Bool
+
+    init(
+        extensionID: String,
+        profileID: String,
+        sourceContext: ChromeMV3JSBridgeSourceContext,
+        extensionBaseURLString: String,
+        tabID: Int,
+        frameID: Int?,
+        documentID: String?,
+        message: ChromeMV3StorageValue,
+        permissionBroker: ChromeMV3PermissionBroker,
+        responseMode: ChromeMV3RuntimeMessagingResponseMode,
+        userGestureAvailable: Bool,
+        bridgeCallID: String,
+        offRecordTabIDs: [Int] = [],
+        allowOffRecordTabs: Bool = false
+    ) {
+        self.extensionID = extensionID
+        self.profileID = profileID
+        self.sourceContext = sourceContext
+        self.extensionBaseURLString = extensionBaseURLString
+        self.tabID = tabID
+        self.frameID = frameID
+        self.documentID = documentID
+        self.message = message
+        self.permissionBroker = permissionBroker
+        self.responseMode = responseMode
+        self.userGestureAvailable = userGestureAvailable
+        self.bridgeCallID = bridgeCallID
+        self.offRecordTabIDs = Array(Set(offRecordTabIDs)).sorted()
+        self.allowOffRecordTabs = allowOffRecordTabs
+    }
+}
+
+struct ChromeMV3ContentScriptTabsSendMessageResult:
+    Equatable,
+    Sendable
+{
+    var succeeded: Bool
+    var responsePayload: ChromeMV3StorageValue?
+    var selectedLastError: ChromeMV3RuntimeLastErrorContract?
+    var selectedEndpoint: ChromeMV3ContentScriptEndpointRecord?
+    var listenerCount: Int
+    var dispatchResult: ChromeMV3RuntimeMessageDispatcherResult?
+    var diagnostics: [String]
+}
+
+enum ChromeMV3ContentScriptTabsMessagingBridge {
+    static func query(
+        registry: ChromeMV3ContentScriptEndpointRegistry,
+        request: ChromeMV3ContentScriptTabsQueryRequest
+    ) -> ChromeMV3ContentScriptTabsQueryResult {
+        let querySummary = queryFilterSummary(request.queryInfo)
+        var diagnostics = [
+            "tabs.query sourceContext=\(request.sourceContext.rawValue) extensionID=\(request.extensionID) profileID=\(request.profileID).",
+            "tabs.query filter=\(querySummary).",
+            "tabs.query currentWindowID=\(request.currentWindowID) currentSpaceID=\(request.currentSpaceID).",
+        ]
+        guard case .bool(true)? = request.queryInfo["active"],
+              case .bool(true)? = request.queryInfo["currentWindow"]
+        else {
+            diagnostics.append(
+                "tabs.query rejected broad enumeration; only {active:true,currentWindow:true} is exposed in this local experimental path."
+            )
+            return ChromeMV3ContentScriptTabsQueryResult(
+                tabs: [],
+                selectedEndpoint: nil,
+                listenerCount: 0,
+                redactionStatus: nil,
+                diagnostics: uniqueSortedContentScripts(diagnostics)
+            )
+        }
+        if case .number(let rawWindowID)? = request.queryInfo["windowId"] {
+            let windowID = Int(rawWindowID)
+            guard windowID == request.currentWindowID else {
+                diagnostics.append(
+                    "tabs.query returned no tabs because queryInfo.windowId=\(windowID) is outside the current window."
+                )
+                return ChromeMV3ContentScriptTabsQueryResult(
+                    tabs: [],
+                    selectedEndpoint: nil,
+                    listenerCount: 0,
+                    redactionStatus: nil,
+                    diagnostics: uniqueSortedContentScripts(diagnostics)
+                )
+            }
+        }
+        if case .string(let rawWindowID)? = request.queryInfo["windowId"],
+           let windowID = Int(rawWindowID),
+           windowID != request.currentWindowID
+        {
+            diagnostics.append(
+                "tabs.query returned no tabs because queryInfo.windowId=\(windowID) is outside the current window."
+            )
+            return ChromeMV3ContentScriptTabsQueryResult(
+                tabs: [],
+                selectedEndpoint: nil,
+                listenerCount: 0,
+                redactionStatus: nil,
+                diagnostics: uniqueSortedContentScripts(diagnostics)
+            )
+        }
+
+        var candidates = registry.activeTopFrameEndpoints(
+            extensionID: request.extensionID,
+            profileID: request.profileID
+        )
+        if let activeTabID = request.activeTabID {
+            candidates = candidates.filter { $0.tabID == activeTabID }
+        }
+        guard let endpoint = candidates.first else {
+            diagnostics.append(
+                "tabs.query found no active top-frame content-script endpoint for the current profile/window/space."
+            )
+            return ChromeMV3ContentScriptTabsQueryResult(
+                tabs: [],
+                selectedEndpoint: nil,
+                listenerCount: 0,
+                redactionStatus: nil,
+                diagnostics: uniqueSortedContentScripts(diagnostics)
+            )
+        }
+        let offRecord = request.offRecordTabIDs.contains(endpoint.tabID)
+        guard offRecord == false || request.allowOffRecordTabs else {
+            diagnostics.append(
+                "tabs.query blocked private/off-record tab exposure by policy."
+            )
+            return ChromeMV3ContentScriptTabsQueryResult(
+                tabs: [],
+                selectedEndpoint: nil,
+                listenerCount: 0,
+                redactionStatus: nil,
+                diagnostics: uniqueSortedContentScripts(diagnostics)
+            )
+        }
+
+        let redaction = redactionDecision(
+            endpoint: endpoint,
+            permissionBroker: request.permissionBroker
+        )
+        diagnostics.append(contentsOf: redaction.diagnostics)
+        diagnostics.append(
+            "tabs.query selected active eligible tabID=\(endpoint.tabID) frameID=\(endpoint.frameID) listenerCount=\(endpoint.messageListenerRegistered ? 1 : 0)."
+        )
+        diagnostics.append(
+            "tabs.query permission/gate result=\(redaction.hostAccessDecision.status.rawValue) redaction=\(redaction.status.rawValue)."
+        )
+        return ChromeMV3ContentScriptTabsQueryResult(
+            tabs: [
+                tabPayload(
+                    endpoint: endpoint,
+                    currentWindowID: request.currentWindowID,
+                    offRecord: offRecord,
+                    redaction: redaction
+                ),
+            ],
+            selectedEndpoint: endpoint,
+            listenerCount: endpoint.messageListenerRegistered ? 1 : 0,
+            redactionStatus: redaction.status,
+            diagnostics: uniqueSortedContentScripts(diagnostics)
+        )
+    }
+
+    static func sendMessage(
+        registry: ChromeMV3ContentScriptEndpointRegistry,
+        request: ChromeMV3ContentScriptTabsSendMessageRequest
+    ) -> ChromeMV3ContentScriptTabsSendMessageResult {
+        let selectedFrameID = request.frameID ?? 0
+        var diagnostics = [
+            "tabs.sendMessage sourceContext=\(request.sourceContext.rawValue) extensionID=\(request.extensionID) profileID=\(request.profileID).",
+            "tabs.sendMessage targetTabID=\(request.tabID) frameID=\(selectedFrameID) documentID=\(request.documentID ?? "any").",
+            "tabs.sendMessage payloadShape=\(valueShape(request.message)).",
+        ]
+        let offRecord = request.offRecordTabIDs.contains(request.tabID)
+        guard offRecord == false || request.allowOffRecordTabs else {
+            let error =
+                ChromeMV3RuntimeLastErrorContract.contract(
+                    for: .permissionDenied
+                )
+            diagnostics.append(
+                "tabs.sendMessage blocked private/off-record tab delivery by policy."
+            )
+            return ChromeMV3ContentScriptTabsSendMessageResult(
+                succeeded: false,
+                responsePayload: nil,
+                selectedLastError: error,
+                selectedEndpoint: nil,
+                listenerCount: 0,
+                dispatchResult: nil,
+                diagnostics: uniqueSortedContentScripts(
+                    diagnostics + error.diagnostics
+                )
+            )
+        }
+
+        let lookup = registry.targetEndpointLookup(
+            extensionID: request.extensionID,
+            profileID: request.profileID,
+            tabID: request.tabID,
+            frameID: selectedFrameID,
+            documentID: request.documentID
+        )
+        diagnostics.append(contentsOf: lookup.diagnostics)
+        guard let endpoint = lookup.endpoint else {
+            let error =
+                ChromeMV3RuntimeLastErrorContract.contract(
+                    for: .noReceivingEnd
+                )
+            diagnostics.append(
+                "tabs.sendMessage found no current-space/current-profile endpoint for the target tab."
+            )
+            return ChromeMV3ContentScriptTabsSendMessageResult(
+                succeeded: false,
+                responsePayload: nil,
+                selectedLastError: error,
+                selectedEndpoint: nil,
+                listenerCount: 0,
+                dispatchResult: nil,
+                diagnostics: uniqueSortedContentScripts(
+                    diagnostics + error.diagnostics
+                )
+            )
+        }
+        guard selectedFrameID == 0 else {
+            let error =
+                ChromeMV3RuntimeLastErrorContract.contract(
+                    for: .noReceivingEnd
+                )
+            diagnostics.append(
+                "tabs.sendMessage blocked non-top-frame targeting in this increment."
+            )
+            return ChromeMV3ContentScriptTabsSendMessageResult(
+                succeeded: false,
+                responsePayload: nil,
+                selectedLastError: error,
+                selectedEndpoint: endpoint,
+                listenerCount: endpoint.messageListenerRegistered ? 1 : 0,
+                dispatchResult: nil,
+                diagnostics: uniqueSortedContentScripts(
+                    diagnostics + error.diagnostics
+                )
+            )
+        }
+        guard endpoint.messageListenerRegistered else {
+            let error =
+                ChromeMV3RuntimeLastErrorContract.contract(
+                    for: .noReceivingEnd
+                )
+            diagnostics.append(
+                "Target content-script endpoint is present but has no runtime.onMessage listener."
+            )
+            diagnostics.append("tabs.sendMessage listenerCount=0.")
+            return ChromeMV3ContentScriptTabsSendMessageResult(
+                succeeded: false,
+                responsePayload: nil,
+                selectedLastError: error,
+                selectedEndpoint: endpoint,
+                listenerCount: 0,
+                dispatchResult: nil,
+                diagnostics: uniqueSortedContentScripts(
+                    diagnostics + error.diagnostics
+                )
+            )
+        }
+
+        let route = ChromeMV3RuntimeMessagingRoute.make(
+            kind: .tabsSendMessage,
+            extensionID: request.extensionID,
+            profileID: request.profileID,
+            tabID: endpoint.tabID,
+            frameID: endpoint.frameID,
+            documentID: endpoint.documentID,
+            sourceURL: request.extensionBaseURLString,
+            targetURL: endpoint.frameTarget.urlString,
+            privateProfile: offRecord
+        )
+        let permission = ChromeMV3RuntimeMessagingPermissionDecision
+            .evaluate(
+                route: route,
+                permissionBroker: request.permissionBroker,
+                userGestureAvailable: request.userGestureAvailable
+            )
+        diagnostics.append(contentsOf: permission.brokerDiagnostics)
+        diagnostics.append(
+            "tabs.sendMessage permission/gate result=\(permission.allowedForFutureDispatch ? "allowed" : "blocked") reason=\(permission.diagnosticReason)."
+        )
+        guard permission.allowedForFutureDispatch else {
+            let error =
+                ChromeMV3RuntimeLastErrorContract.contract(
+                    for: runtimeError(permission)
+                )
+            return ChromeMV3ContentScriptTabsSendMessageResult(
+                succeeded: false,
+                responsePayload: nil,
+                selectedLastError: error,
+                selectedEndpoint: endpoint,
+                listenerCount: 1,
+                dispatchResult: nil,
+                diagnostics: uniqueSortedContentScripts(
+                    diagnostics + error.diagnostics
+                )
+            )
+        }
+
+        let dispatch = ChromeMV3RuntimeMessageDispatcher.dispatch(
+            input: ChromeMV3RuntimeMessageDispatcherInput.make(
+                route: route,
+                listenerRegistrySnapshot:
+                    registry.listenerRegistrySnapshot(
+                        extensionID: request.extensionID,
+                        profileID: request.profileID
+                    ),
+                permissionBrokerSnapshot: request.permissionBroker,
+                serviceWorkerLifecycleSnapshot:
+                    .blocked(
+                        extensionID: request.extensionID,
+                        profileID: request.profileID
+                    ),
+                moduleState: .enabled,
+                dispatchMode: .modelOnly,
+                responseMode: request.responseMode,
+                expectsResponse: true,
+                userGestureAvailable: request.userGestureAvailable,
+                seed: request.bridgeCallID
+            )
+        )
+        diagnostics.append(contentsOf: dispatch.diagnostics)
+        diagnostics.append(
+            "tabs.sendMessage listenerCount=1 dispatchResult=receivingEndpointFound:\(dispatch.receivingEndpointFound),modelHandlerInvoked:\(dispatch.modelHandlerInvoked)."
+        )
+        diagnostics.append(
+            "tabs.sendMessage responseResult=\(dispatch.selectedLastError?.error.rawValue ?? valueShape(dispatch.responsePayload ?? .null))."
+        )
+        diagnostics.append(
+            "tabs.sendMessage teardownResult=endpointRemainsActiveUntilNavigationProfileTabTeardown."
+        )
+        if let error = dispatch.selectedLastError {
+            return ChromeMV3ContentScriptTabsSendMessageResult(
+                succeeded: false,
+                responsePayload: nil,
+                selectedLastError: error,
+                selectedEndpoint: endpoint,
+                listenerCount: 1,
+                dispatchResult: dispatch,
+                diagnostics: uniqueSortedContentScripts(diagnostics)
+            )
+        }
+        return ChromeMV3ContentScriptTabsSendMessageResult(
+            succeeded: true,
+            responsePayload: dispatch.responsePayload,
+            selectedLastError: nil,
+            selectedEndpoint: endpoint,
+            listenerCount: 1,
+            dispatchResult: dispatch,
+            diagnostics: uniqueSortedContentScripts(diagnostics)
+        )
+    }
+
+    private static func redactionDecision(
+        endpoint: ChromeMV3ContentScriptEndpointRecord,
+        permissionBroker: ChromeMV3PermissionBroker
+    ) -> ChromeMV3SyntheticTabRedactionDecision {
+        let url = endpoint.senderMetadata.url
+            ?? endpoint.frameTarget.urlString
+        let hostDecision = permissionBroker.hostAccessDecision(
+            url: url,
+            tabID: endpoint.tabID
+        )
+        let tabsPermission = permissionBroker.hasAPIPermission("tabs")
+        let status: ChromeMV3SyntheticTabRedactionStatus
+        if tabsPermission {
+            status = .exposedByTabsPermission
+        } else if hostDecision.allowedByHostPermission
+            || hostDecision.allowedByOptionalHostPermission
+        {
+            status = .exposedByHostPermission
+        } else if hostDecision.allowedByActiveTab {
+            status = .exposedByActiveTab
+        } else {
+            status = .redactedNoPermission
+        }
+        let visible = status != .redactedNoPermission
+        return ChromeMV3SyntheticTabRedactionDecision(
+            tabID: endpoint.tabID,
+            status: status,
+            urlVisible: visible,
+            titleVisible: visible,
+            hostAccessDecision: hostDecision,
+            diagnostics:
+                uniqueSortedContentScripts(
+                    hostDecision.diagnostics
+                        + [
+                            visible
+                                ? "Active tab sensitive fields are visible by \(status.rawValue)."
+                                : "Active tab sensitive fields are permission-redacted.",
+                        ]
+                )
+        )
+    }
+
+    private static func tabPayload(
+        endpoint: ChromeMV3ContentScriptEndpointRecord,
+        currentWindowID: Int,
+        offRecord: Bool,
+        redaction: ChromeMV3SyntheticTabRedactionDecision
+    ) -> ChromeMV3StorageValue {
+        var object: [String: ChromeMV3StorageValue] = [
+            "active": .bool(true),
+            "highlighted": .bool(true),
+            "id": .number(Double(endpoint.tabID)),
+            "incognito": .bool(offRecord),
+            "index": .number(0),
+            "pinned": .bool(false),
+            "status": .string("complete"),
+            "windowId": .number(Double(currentWindowID)),
+        ]
+        if redaction.urlVisible,
+           let url = endpoint.senderMetadata.url
+            ?? Optional(endpoint.frameTarget.urlString)
+        {
+            object["url"] = .string(url)
+        }
+        if redaction.titleVisible {
+            let title = endpoint.senderMetadata.origin
+                ?? ChromeMV3RuntimeMessagingURL.origin(
+                    from: endpoint.frameTarget.urlString
+                )
+                ?? "Active tab"
+            object["title"] = .string(title)
+        }
+        return .object(object)
+    }
+
+    private static func runtimeError(
+        _ permission: ChromeMV3RuntimeMessagingPermissionDecision
+    ) -> ChromeMV3RuntimeLastErrorCase {
+        switch permission.missingGrantReason {
+        case .missingHostPermission:
+            return .hostPermissionMissing
+        case .missingActiveTabGrant, .activeTabGrantExpired,
+             .userGestureRequired:
+            return .activeTabMissing
+        case .missingTabPermission, .permissionDenied:
+            return .permissionDenied
+        case .nativeMessagingBlocked:
+            return .nativeMessagingBlocked
+        case .none:
+            return .permissionDenied
+        }
+    }
+
+    private static func queryFilterSummary(
+        _ queryInfo: [String: ChromeMV3StorageValue]
+    ) -> String {
+        if queryInfo.isEmpty { return "empty" }
+        return queryInfo.keys.sorted().map { key in
+            "\(key):\(valueShape(queryInfo[key] ?? .null))"
+        }.joined(separator: ",")
+    }
+
+    private static func valueShape(_ value: ChromeMV3StorageValue) -> String {
+        switch value {
+        case .array(let values):
+            return "array:\(values.count)"
+        case .bool:
+            return "bool"
+        case .null:
+            return "null"
+        case .number:
+            return "number"
+        case .object(let object):
+            return "object:" + object.keys.sorted().joined(separator: ",")
+        case .string:
+            return "string"
+        }
     }
 }
 

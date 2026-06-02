@@ -5265,13 +5265,13 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
     ) -> ChromeMV3PasswordManagerRealPackageReverseTabsSendMessageClassification {
         ChromeMV3PasswordManagerRealPackageReverseTabsSendMessageClassification(
             actuallyNeededForDetectFill: false,
-            irrelevantForThisSmoke: true,
+            irrelevantForThisSmoke: false,
             contentScriptToServiceWorkerShouldUseRuntimeSendMessage: true,
-            unsupportedDirection: true,
+            unsupportedDirection: false,
             missingServiceWorkerListener: false,
-            routeShapeMismatch: true,
+            routeShapeMismatch: false,
             classificationSummary:
-                "irrelevantForThisSmoke: popup/options -> tabs.sendMessage is the needed extension-to-content-script route; content-script -> service-worker should use runtime.sendMessage, and service-worker tabs.sendMessage is not required for this local detect/fill smoke.",
+                "availableButNotPrimary: popup/options -> tabs.sendMessage remains the first local detect/fill route, content-script -> service-worker still uses runtime.sendMessage, and service-worker tabs.query/tabs.sendMessage is now exercised as the same generic extension-to-content-script route.",
             diagnostics: [
                 "Chrome documents tabs.sendMessage as extension-to-content-script tab messaging.",
                 "Chrome documents runtime.sendMessage as the content-script to extension/service-worker one-time route.",
@@ -5632,33 +5632,126 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     )
             )
         )
+        let serviceWorkerTabsQueryResponse =
+            popupHandler.handleServiceWorkerTabsRequest(
+                bitwardenE2EBridgeRequest(
+                    route: .popupTabsQuery,
+                    namespace: "tabs",
+                    methodName: "query",
+                    arguments: [
+                        .object([
+                            "active": .bool(true),
+                            "currentWindow": .bool(true),
+                        ]),
+                    ]
+                )
+            )
+        let serviceWorkerSelectedTabID: Int? = {
+            guard case .array(let tabs)? =
+                    serviceWorkerTabsQueryResponse.resultPayload,
+                  case .object(let first)? = tabs.first,
+                  case .number(let tabID)? = first["id"]
+            else { return nil }
+            return Int(tabID)
+        }()
+        let serviceWorkerTabsSendResponse =
+            serviceWorkerSelectedTabID.map { selectedTabID in
+                popupHandler.handleServiceWorkerTabsRequest(
+                    bitwardenE2EBridgeRequest(
+                        route: .popupTabsSendMessage,
+                        namespace: "tabs",
+                        methodName: "sendMessage",
+                        arguments: [
+                            .number(Double(selectedTabID)),
+                            .object([
+                                "command": .string(detectCommand),
+                                "sender":
+                                    .string("sumiServiceWorkerTabsSmoke"),
+                                "tab": .object([
+                                    "id": .number(Double(selectedTabID)),
+                                    "url": .string(loginURL),
+                                ]),
+                            ]),
+                            .object([
+                                "frameId": .number(Double(frameID)),
+                                "documentId": .string(documentID),
+                            ]),
+                        ]
+                    )
+                )
+            }
+        let serviceWorkerTabsDiagnostics =
+            uniqueSortedRealPackages(
+                serviceWorkerTabsQueryResponse.diagnostics
+                    + (serviceWorkerTabsSendResponse?.diagnostics ?? [])
+                    + reverseTabsClassification.diagnostics
+                    + [
+                        "Service-worker tab-message smoke used the same captured endpoint registry as popup/options tab messaging.",
+                        "No native host, polling, or permanent runtime was created for service-worker tabs.sendMessage.",
+                    ]
+            )
         routeRecords.append(
             ChromeMV3PasswordManagerRealPackageDetectFillRouteSmoke(
                 purpose: "serviceWorkerTabsSendMessage",
-                routeUsed: "service worker -> tabs.sendMessage -> content script",
-                status: .notRequired,
-                requestShapeSummary: "notSent",
-                expectedMessageType: "chrome.tabs.sendMessage(tabId, message)",
-                actualMessageType: "notSent",
-                payloadSummary: "notSent; \(reverseTabsClassification.classificationSummary)",
-                responseShapeSummary: "none",
+                routeUsed: "service worker -> tabs.query/tabs.sendMessage -> content script",
+                status:
+                    serviceWorkerTabsSendResponse?.succeeded == true
+                        ? .partial
+                        : .blocked,
+                requestShapeSummary:
+                    "tabs.query active/currentWindow; tabs.sendMessage object:command,sender,tab",
+                expectedMessageType:
+                    "chrome.tabs.query({active:true,currentWindow:true}) then chrome.tabs.sendMessage(tabId,message)",
+                actualMessageType:
+                    serviceWorkerTabsSendResponse == nil
+                        ? "tabs.query returned no active tab"
+                        : "command:\(detectCommand)",
+                payloadSummary:
+                    serviceWorkerTabsSendResponse == nil
+                        ? "queryOnly:no active eligible tab"
+                        : "command=\(detectCommand);sender=sumiServiceWorkerTabsSmoke;tab.id=\(serviceWorkerSelectedTabID ?? -1)",
+                responseShapeSummary:
+                    bitwardenE2EStorageShape(
+                        serviceWorkerTabsSendResponse?.resultPayload
+                    ),
                 listenerCount:
                     endpointHasMessageListener ? 1 : 0,
-                delivered: false,
-                handlerDeliveryResult: "notRequired",
-                responseResult: "none",
+                delivered: serviceWorkerTabsSendResponse?.succeeded == true,
+                handlerDeliveryResult:
+                    serviceWorkerTabsSendResponse?.succeeded == true
+                        ? "service-worker tabs.sendMessage reached a content-script runtime.onMessage listener"
+                        : "service-worker tabs.sendMessage did not reach a content-script runtime.onMessage listener",
+                responseResult:
+                    serviceWorkerTabsSendResponse?.succeeded == true
+                        ? "response:\(bitwardenE2EStorageShape(serviceWorkerTabsSendResponse?.resultPayload))"
+                        : "lastError:\(serviceWorkerTabsSendResponse?.lastErrorCode ?? serviceWorkerTabsQueryResponse.lastErrorCode ?? "blocked"):\(serviceWorkerTabsSendResponse?.lastErrorMessage ?? serviceWorkerTabsQueryResponse.lastErrorMessage ?? "none")",
                 domChanged: false,
-                exceptionSummary: nil,
-                messageClassification: .reverseRouteIrrelevant,
+                exceptionSummary:
+                    serviceWorkerTabsSendResponse?.lastErrorMessage
+                        ?? serviceWorkerTabsQueryResponse.lastErrorMessage,
+                messageClassification:
+                    serviceWorkerTabsSendResponse?.succeeded == true
+                        ? .modeledEndpointDeliveredOnly
+                        : (endpointHasMessageListener
+                            ? .endpointMissing
+                            : .endpointPresentNoListener),
                 domReadResult: "notRequired",
                 domWriteResult: "notRequired",
                 nextBlocker:
-                    reverseTabsClassification.classificationSummary,
+                    serviceWorkerTabsSendResponse?.succeeded == true
+                        ? "Service-worker tabs.query/tabs.sendMessage reaches the captured content-script listener generically; real Bitwarden DOM response still depends on the package's attached command handler."
+                        : "Service-worker tabs.query/tabs.sendMessage did not reach a captured content-script listener.",
                 portName: nil,
-                postMessageResult: nil,
-                onMessageResult: nil,
-                disconnectResult: nil,
-                diagnostics: reverseTabsClassification.diagnostics
+                postMessageResult:
+                    serviceWorkerTabsQueryResponse.succeeded
+                        ? "tabs.query:delivered"
+                        : "tabs.query:blocked",
+                onMessageResult:
+                    serviceWorkerTabsSendResponse?.succeeded == true
+                        ? "runtime.onMessage listener delivered"
+                        : nil,
+                disconnectResult: "notOpened",
+                diagnostics: serviceWorkerTabsDiagnostics
             )
         )
 
@@ -6519,9 +6612,25 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             ChromeMV3PasswordManagerRealPackageNoReceiverClassification?,
         detail: String
     ) {
+        let contentScriptTabMessageDelivered = routes.contains {
+            $0.route == .popupTabsSendMessage && $0.delivered
+        }
         if let unexpected = routes.first(where: {
-            $0.status == .blocked
-                && $0.noReceiverClassification != .expectedNoReceiver
+            guard $0.status == .blocked,
+                  $0.noReceiverClassification != .expectedNoReceiver
+            else { return false }
+            if contentScriptTabMessageDelivered,
+               $0.noReceiverClassification
+                == .serviceWorkerRuntimeOnMessageListenerMissing
+            {
+                return false
+            }
+            if $0.route == .popupTabsConnect,
+               $0.noReceiverClassification == .endpointPresentNoListener
+            {
+                return false
+            }
+            return true
         }) {
             return (
                 unexpected.noReceiverClassification ?? .routeUnsupported,

@@ -647,6 +647,174 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         XCTAssertEqual(registry.summary.disconnectedPortCount, 1)
     }
 
+    func testTabsQueryAndSendMessageUseActiveCapturedEndpointOnly()
+        throws
+    {
+        let fixture = try makePreflightFixture()
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+        _ = try XCTUnwrap(
+            registry.registerEndpoint(
+                preflight: fixture.preflight,
+                messageListenerRegistered: true
+            )
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration:
+                popupConfiguration(
+                    hostPermissions: ["https://example.com/*"]
+                ),
+            contentScriptEndpointRegistry: registry
+        )
+
+        let query = handler.handle(request(
+            namespace: "tabs",
+            methodName: "query",
+            arguments: [
+                .object([
+                    "active": .bool(true),
+                    "currentWindow": .bool(true),
+                ]),
+            ]
+        ))
+        let broadQuery = handler.handle(request(
+            namespace: "tabs",
+            methodName: "query",
+            arguments: [.object(["active": .bool(true)])]
+        ))
+        let serviceWorkerQuery = handler.handleServiceWorkerTabsRequest(
+            request(
+                namespace: "tabs",
+                methodName: "query",
+                arguments: [
+                    .object([
+                        "active": .bool(true),
+                        "currentWindow": .bool(true),
+                    ]),
+                ]
+            )
+        )
+        let serviceWorkerMessage = handler.handleServiceWorkerTabsRequest(
+            request(
+                namespace: "tabs",
+                methodName: "sendMessage",
+                arguments: [
+                    .number(7),
+                    .object(["type": .string("service-worker-probe")]),
+                    .object(["frameId": .number(0)]),
+                ]
+            )
+        )
+
+        guard case .array(let tabs)? = query.resultPayload,
+              case .object(let firstTab)? = tabs.first
+        else {
+            return XCTFail("Expected one active tab payload.")
+        }
+        XCTAssertEqual(tabs.count, 1)
+        XCTAssertEqual(firstTab["id"], .number(7))
+        XCTAssertEqual(stringValue(firstTab["url"]), "https://example.com/login")
+        XCTAssertTrue(query.diagnostics.joined(separator: "\n").contains(
+            "captured content-script endpoint registry"
+        ))
+        guard case .array(let broadTabs)? = broadQuery.resultPayload else {
+            return XCTFail("Expected broad query payload.")
+        }
+        XCTAssertTrue(broadTabs.isEmpty)
+        XCTAssertTrue(broadQuery.diagnostics.joined(separator: "\n").contains(
+            "rejected broad enumeration"
+        ))
+        XCTAssertTrue(serviceWorkerQuery.succeeded)
+        XCTAssertTrue(serviceWorkerMessage.succeeded)
+        XCTAssertTrue(
+            serviceWorkerMessage.diagnostics.joined(separator: "\n")
+                .contains("sourceContext=serviceWorker")
+        )
+        XCTAssertFalse(serviceWorkerMessage.nativeHostLaunchAttempted)
+    }
+
+    func testTabsMessagingBridgeBlocksWrongProfilePrivateAndMissingPermission()
+        throws
+    {
+        let fixture = try makePreflightFixture()
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+        _ = try XCTUnwrap(
+            registry.registerEndpoint(
+                preflight: fixture.preflight,
+                messageListenerRegistered: true
+            )
+        )
+        let allowedBroker =
+            permissionBroker(hostPermissions: ["https://example.com/*"])
+
+        let wrongProfile = ChromeMV3ContentScriptTabsMessagingBridge.query(
+            registry: registry,
+            request:
+                ChromeMV3ContentScriptTabsQueryRequest(
+                    extensionID: extensionID,
+                    profileID: "other-profile",
+                    sourceContext: .actionPopup,
+                    queryInfo: [
+                        "active": .bool(true),
+                        "currentWindow": .bool(true),
+                    ],
+                    permissionBroker: allowedBroker,
+                    activeTabID: 7
+                )
+        )
+        let privateTab = ChromeMV3ContentScriptTabsMessagingBridge.query(
+            registry: registry,
+            request:
+                ChromeMV3ContentScriptTabsQueryRequest(
+                    extensionID: extensionID,
+                    profileID: profileID,
+                    sourceContext: .actionPopup,
+                    queryInfo: [
+                        "active": .bool(true),
+                        "currentWindow": .bool(true),
+                    ],
+                    permissionBroker: allowedBroker,
+                    activeTabID: 7,
+                    offRecordTabIDs: [7]
+                )
+        )
+        let missingPermission =
+            ChromeMV3ContentScriptTabsMessagingBridge.sendMessage(
+                registry: registry,
+                request:
+                    ChromeMV3ContentScriptTabsSendMessageRequest(
+                        extensionID: extensionID,
+                        profileID: profileID,
+                        sourceContext: .actionPopup,
+                        extensionBaseURLString:
+                            "chrome-extension://\(extensionID)/",
+                        tabID: 7,
+                        frameID: 0,
+                        documentID: "document-1",
+                        message: .object(["type": .string("probe")]),
+                        permissionBroker: permissionBroker(hostPermissions: []),
+                        responseMode: .promise,
+                        userGestureAvailable: true,
+                        bridgeCallID: "missing-permission"
+                    )
+            )
+
+        XCTAssertTrue(wrongProfile.tabs.isEmpty)
+        XCTAssertTrue(wrongProfile.diagnostics.joined(separator: "\n").contains(
+            "no active top-frame content-script endpoint"
+        ))
+        XCTAssertTrue(privateTab.tabs.isEmpty)
+        XCTAssertTrue(privateTab.diagnostics.joined(separator: "\n").contains(
+            "private/off-record"
+        ))
+        XCTAssertFalse(missingPermission.succeeded)
+        XCTAssertEqual(
+            missingPermission.selectedLastError?.error,
+            .hostPermissionMissing
+        )
+        XCTAssertTrue(missingPermission.diagnostics.joined(separator: "\n")
+            .contains("permission/gate result=blocked"))
+    }
+
     func testPortMessageDeliveryBothDirectionsAndDisconnect() throws {
         let fixture = try makePreflightFixture()
         let registry = ChromeMV3ContentScriptEndpointRegistry()
