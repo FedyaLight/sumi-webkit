@@ -263,6 +263,77 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
     }
 
     @MainActor
+    func testURLHubRestoresPersistedActionSurfaceOnColdStartWithoutReinstall()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        let source = try makeFixture(
+            named: "urlhub-cold-start-action-popup",
+            manifest: genericActionPopupManifest(
+                name: "Cold Start Popup MV3",
+                permissions: ["activeTab"]
+            ),
+            files: [
+                "popup.html": "<!doctype html><title>Cold Start Popup</title>",
+            ]
+        )
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore:
+                SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.setEnabled(true, for: .extensions)
+        let container = try ModelContainer(
+            for: Schema([ExtensionEntity.self]),
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        let installingModule = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: ModelContext(container)
+        )
+
+        let install = installingModule.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: source,
+            profileID: "profile-urlhub-cold-start-action",
+            enableInternal: true
+        )
+        let lifecycleRecord = try XCTUnwrap(
+            install.lifecycleOperationResult?.record
+        )
+        let installedAction = await waitForEnabledExtension(
+            in: installingModule,
+            extensionId: lifecycleRecord.extensionID
+        )
+        XCTAssertNotNil(installedAction)
+
+        let restartedModule = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: ModelContext(container)
+        )
+        XCTAssertTrue(restartedModule.surfaceStore.enabledExtensions.isEmpty)
+        XCTAssertFalse(restartedModule.hasLoadedRuntime)
+
+        XCTAssertTrue(
+            restartedModule.ensureActionSurfaceMetadataLoadedIfNeeded(
+                rootURL: root
+            )
+        )
+        let restoredActionCandidate = await waitForEnabledExtension(
+            in: restartedModule,
+            extensionId: lifecycleRecord.extensionID
+        )
+        let restoredAction = try XCTUnwrap(restoredActionCandidate)
+
+        XCTAssertEqual(restoredAction.id, lifecycleRecord.extensionID)
+        XCTAssertEqual(restoredAction.name, "Cold Start Popup MV3")
+        XCTAssertTrue(restoredAction.hasAction)
+        XCTAssertEqual(restoredAction.defaultPopupPath, "popup.html")
+        XCTAssertFalse(restartedModule.hasLoadedWebExtensionController)
+    }
+
+    @MainActor
     func testURLHubActionClickLoadsNewlySyncedRecordIntoReadyRuntime()
         async throws
     {

@@ -269,6 +269,38 @@ final class SumiExtensionsModule {
         return manager
     }
 
+    @discardableResult
+    func ensureActionSurfaceMetadataLoadedIfNeeded(
+        rootURL: URL = ChromeMV3ExtensionManagerStoreLocation.defaultRootURL()
+    ) -> Bool {
+        guard isEnabled, context != nil else { return false }
+
+        if let cachedManager {
+            syncChromeMV3ActionSurfaceFromLifecycleStore(
+                rootURL: rootURL,
+                manager: cachedManager
+            )
+            return true
+        }
+
+        guard hasEnabledPersistedExtensions()
+                || hasEnabledChromeMV3LifecycleActionSurfaceRecords(
+                    rootURL: rootURL
+                )
+        else {
+            return false
+        }
+
+        guard let manager = managerIfEnabled() else {
+            return false
+        }
+        syncChromeMV3ActionSurfaceFromLifecycleStore(
+            rootURL: rootURL,
+            manager: manager
+        )
+        return true
+    }
+
     func chromeMV3ProfileHostIfEnabled(
         candidateRewrittenVariants: [ChromeMV3RewrittenVariantCandidate] = []
     ) -> ChromeMV3ProfileHost? {
@@ -4866,6 +4898,55 @@ final class SumiExtensionsModule {
         } catch {
             return false
         }
+    }
+
+    private func hasEnabledChromeMV3LifecycleActionSurfaceRecords(
+        rootURL: URL
+    ) -> Bool {
+        ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
+            .listInstalledExtensionStates()
+            .contains {
+                $0.installed
+                    && $0.enabled
+                    && $0.generatedBundleState.generatedBundleAvailable
+            }
+    }
+
+    @discardableResult
+    private func syncChromeMV3ActionSurfaceFromLifecycleStore(
+        rootURL: URL,
+        manager: ExtensionManager
+    ) -> Int {
+        let registry = ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
+        var syncedCount = 0
+
+        for state in registry.listInstalledExtensionStates()
+            where state.installed
+                && state.generatedBundleState.generatedBundleAvailable
+        {
+            guard
+                let record = registry.loadLifecycleRecord(
+                    profileID: state.profileID,
+                    extensionID: state.extensionID
+                )
+            else {
+                continue
+            }
+
+            do {
+                if try manager
+                    .syncChromeMV3LifecycleRecordToActionSurface(record) != nil
+                {
+                    syncedCount += 1
+                }
+            } catch {
+                ExtensionManager.logger.error(
+                    "Failed to restore Chrome MV3 action surface for \(state.extensionID, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
+
+        return syncedCount
     }
 
     private func tearDownLoadedRuntime(reason: String) {
