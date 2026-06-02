@@ -161,6 +161,25 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         XCTAssertEqual(list.items.first?.extensionID, record.extensionID)
         XCTAssertEqual(list.items.first?.name, "Manager Blocker Heavy")
         XCTAssertEqual(list.items.first?.internalEnabled, false)
+        XCTAssertEqual(list.items.first?.sourceType, .localUnpacked)
+        XCTAssertEqual(
+            list.items.first?.stableLocalExtensionID,
+            record.extensionID
+        )
+        XCTAssertEqual(
+            list.items.first?.associatedProfileID,
+            record.profileID
+        )
+        XCTAssertTrue(list.items.first?.installed == true)
+        XCTAssertFalse(list.items.first?.productSupportClaim == true)
+        XCTAssertTrue(
+            list.items.first?.localExperimentalLabel
+                .contains("Local experimental") == true
+        )
+        XCTAssertNotNil(list.items.first?.generatedBundleRecordID)
+        XCTAssertNotNil(list.items.first?.generatedBundleHash)
+        XCTAssertNotNil(list.items.first?.manifestHash)
+        XCTAssertNotNil(list.items.first?.originalBundleContentHash)
         XCTAssertEqual(
             list.items.first?.generatedBundleSummary.runtimeLoadable,
             false
@@ -962,6 +981,119 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         XCTAssertFalse(disabledRecord.runtimeState.sharedLifecycleSessionActive)
         XCTAssertFalse(disabledRecord.runtimeState.nativeFixturePortOpen)
         assertNoRuntimeSideEffects(disable, module: module)
+
+        let freshReadout =
+            ChromeMV3ExtensionManagerViewModelBuilder.makeListViewModel(
+                rootURL: fixture.root,
+                gate: module.chromeMV3ExtensionManagerGate()
+            )
+        let persisted = try XCTUnwrap(freshReadout.items.first)
+        XCTAssertEqual(persisted.extensionID, fixture.record.extensionID)
+        XCTAssertEqual(persisted.lifecycleState, .disabledInternal)
+        XCTAssertFalse(persisted.internalEnabled)
+        XCTAssertEqual(persisted.sourceType, .localUnpacked)
+        XCTAssertFalse(persisted.productSupportClaim)
+        XCTAssertFalse(module.hasLoadedRuntime)
+    }
+
+    @MainActor
+    func testRealLocalBitwardenUsesGenericManagerAndURLHubFlow()
+        async
+        throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Named WKContentWorld execution requires macOS 15.5.")
+        }
+        let source = URL(
+            fileURLWithPath:
+                "/Users/fedaefimov/Downloads/Aura/mv3-test-extensions/bitwarden",
+            isDirectory: true
+        )
+        try XCTSkipUnless(
+            FileManager.default.fileExists(
+                atPath: source.appendingPathComponent("manifest.json").path
+            ),
+            "Bitwarden real package fixture is not available."
+        )
+        let root = try makeTemporaryDirectory()
+        let module = try makeModule(enabled: true)
+        let profileID = "profile-real-bitwarden-generic-ui"
+
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: source,
+            profileID: profileID,
+            enableInternal: false
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+        let disabledList = try XCTUnwrap(
+            module.chromeMV3ExtensionManagerListViewModelIfEnabled(
+                rootURL: root,
+                now: fixedDate
+            )
+        )
+        let disabledItem = try XCTUnwrap(disabledList.items.first)
+
+        XCTAssertTrue(install.succeeded, install.diagnostics.joined(separator: "\n"))
+        XCTAssertEqual(disabledItem.extensionID, record.extensionID)
+        XCTAssertEqual(disabledItem.sourceType, .localUnpacked)
+        XCTAssertFalse(disabledItem.internalEnabled)
+        XCTAssertFalse(disabledItem.productSupportClaim)
+        assertNoRuntimeSideEffects(install, module: module)
+
+        let enable = module.chromeMV3SetInternalExtensionEnabledThroughManager(
+            true,
+            rootURL: root,
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+        let artifactURL =
+            ChromeMV3ExtensionManagerManualSmokeArtifactWriter.reportURL(
+                rootURL: root,
+                profileID: record.profileID,
+                extensionID: record.extensionID
+            )
+        let currentPage = ChromeMV3URLHubCurrentPageContext(
+            profileID: record.profileID,
+            tabID: "real-bitwarden-urlhub-tab",
+            urlString:
+                ChromeMV3URLHubDeveloperPreviewModelBuilder
+                .syntheticDiagnosticURLString,
+            tabSurface: .normalTab
+        )
+        let section = try XCTUnwrap(
+            module.chromeMV3URLHubSectionViewModelIfEnabled(
+                rootURL: root,
+                currentPage: currentPage,
+                now: fixedDate
+            )
+        )
+        let row = try XCTUnwrap(section.rows.first)
+
+        XCTAssertTrue(enable.succeeded)
+        XCTAssertTrue(row.enabled)
+        XCTAssertFalse(row.productSupportClaim)
+        XCTAssertTrue(row.generatedBundleAvailable)
+        XCTAssertTrue(row.diagnosticAction.capabilityAvailable)
+        XCTAssertTrue(row.diagnosticAction.available)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: artifactURL.path))
+        assertNoRuntimeSideEffects(enable, module: module)
+
+        let diagnostic = await module
+            .chromeMV3RunURLHubDiagnosticSmokeThroughURLHub(
+                rootURL: root,
+                profileID: record.profileID,
+                extensionID: record.extensionID,
+                currentPage: currentPage,
+                now: { self.fixedDate }
+            )
+
+        XCTAssertTrue(
+            diagnostic.succeeded,
+            diagnostic.diagnostics.joined(separator: "\n")
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: artifactURL.path))
+        assertNoRuntimeSideEffects(diagnostic, module: module)
     }
 
     @MainActor
@@ -1455,6 +1587,13 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
         XCTAssertTrue(
             managerSource.contains("!listViewModel.gate.localArchiveImportAvailable")
         )
+        XCTAssertTrue(managerSource.contains("listInstalledExtensionStates()"))
+        XCTAssertTrue(managerSource.contains("Enabled in local experimental mode"))
+        XCTAssertTrue(managerSource.contains("Installed Local MV3"))
+        XCTAssertTrue(managerSource.contains("Import Unpacked"))
+        XCTAssertTrue(managerSource.contains("Import ZIP"))
+        XCTAssertTrue(managerSource.contains("productSupportClaim"))
+        XCTAssertFalse(managerSource.contains("Label(\"Web Store\""))
         XCTAssertFalse(
             managerAndSettings.contains(
                 "productRuntimeAvailable: " + positiveBoolean

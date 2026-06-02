@@ -229,7 +229,7 @@ struct SumiExtensionsSettingsPane: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "Load Unpacked"
+        panel.prompt = "Import Unpacked"
         guard panel.runModal() == .OK, let sourceURL = panel.url else { return }
 
         do {
@@ -255,7 +255,7 @@ struct SumiExtensionsSettingsPane: View {
             UTType.zip,
             UTType(filenameExtension: "crx"),
         ].compactMap { $0 }
-        panel.prompt = "Inspect"
+        panel.prompt = "Import ZIP"
         guard panel.runModal() == .OK, let sourceURL = panel.url else { return }
 
         let result = browserManager.extensionsModule

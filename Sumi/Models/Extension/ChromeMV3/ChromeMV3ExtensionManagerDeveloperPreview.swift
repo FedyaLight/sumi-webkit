@@ -1260,14 +1260,27 @@ struct ChromeMV3ExtensionManagerListItem:
     Equatable
 {
     var id: String { "\(profileID):\(extensionID)" }
+    var stableLocalExtensionID: String
     var profileID: String
+    var associatedProfileID: String
     var extensionID: String
     var name: String
     var version: String
+    var sourceType: ChromeMV3InstalledExtensionSourceType
     var lifecycleState: ChromeMV3LifecycleState
     var internalEnabled: Bool
     var sourceKind: ChromeMV3PackageSourceKind
     var sourcePath: String
+    var sourceDescriptor: String
+    var installed: Bool
+    var generatedBundleRecordID: String?
+    var generatedBundleHash: String?
+    var manifestHash: String?
+    var originalBundleContentHash: String?
+    var localExperimentalLabel: String
+    var productSupportClaim: Bool
+    var warningCount: Int
+    var deferredAPINames: [String]
     var generatedBundleSummary: ChromeMV3ExtensionManagerGeneratedBundleSummary
     var compatibilitySeveritySummary: [ChromeMV3ExtensionManagerSeverityCount]
     var productPreflightStatus:
@@ -2728,12 +2741,22 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
         now: Date = Date()
     ) -> ChromeMV3ExtensionManagerListViewModel {
         let registry = ChromeMV3ExtensionLifecycleRegistry(rootURL: rootURL)
-        let items = registry.listLifecycleRecords().map { record in
+        let items = registry.listInstalledExtensionStates().compactMap {
+            state -> ChromeMV3ExtensionManagerListItem? in
+            guard
+                let record = registry.loadLifecycleRecord(
+                    profileID: state.profileID,
+                    extensionID: state.extensionID
+                )
+            else {
+                return nil
+            }
             let report = registry.latestEndToEndDiagnosticsReport(
-                profileID: record.profileID,
-                extensionID: record.extensionID
+                profileID: state.profileID,
+                extensionID: state.extensionID
             )
             return makeListItem(
+                state: state,
                 record: record,
                 report: report,
                 gate: gate
@@ -2779,6 +2802,14 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
         else {
             return nil
         }
+        guard
+            let installedState = registry.installedExtensionState(
+                profileID: record.profileID,
+                extensionID: record.extensionID
+            )
+        else {
+            return nil
+        }
 
         let report = registry.latestEndToEndDiagnosticsReport(
             profileID: record.profileID,
@@ -2795,6 +2826,7 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
             lifecycleRecord: record
         )
         let listItem = makeListItem(
+            state: installedState,
             record: record,
             report: report,
             gate: gate
@@ -2893,6 +2925,7 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
     }
 
     private static func makeListItem(
+        state: ChromeMV3InstalledExtensionState,
         record: ChromeMV3ExtensionLifecycleRecord,
         report: ChromeMV3EndToEndInstallDiagnosticsReport?,
         gate: ChromeMV3ExtensionManagerGate
@@ -2903,14 +2936,32 @@ enum ChromeMV3ExtensionManagerViewModelBuilder {
         )
         let counts = severityCounts(report?.blockerTaxonomy ?? [])
         return ChromeMV3ExtensionManagerListItem(
-            profileID: record.profileID,
-            extensionID: record.extensionID,
-            name: record.displayName,
-            version: record.displayVersion,
-            lifecycleState: record.lifecycleState,
-            internalEnabled: record.runtimeState.internalRuntimeEnabled,
-            sourceKind: record.sourceKind,
-            sourcePath: record.sourcePath,
+            stableLocalExtensionID: state.stableLocalExtensionID,
+            profileID: state.profileID,
+            associatedProfileID: state.associatedProfileID,
+            extensionID: state.extensionID,
+            name: state.displayName,
+            version: state.displayVersion,
+            sourceType: state.sourceType,
+            lifecycleState: state.installIntakeStatus,
+            internalEnabled: state.enabled,
+            sourceKind: state.sourceKind,
+            sourcePath: state.sourcePath,
+            sourceDescriptor: state.sourceDescriptor,
+            installed: state.installed,
+            generatedBundleRecordID: state.generatedBundleRecordID,
+            generatedBundleHash: state.generatedBundleHash,
+            manifestHash: state.manifestHash,
+            originalBundleContentHash: state.originalBundleContentHash,
+            localExperimentalLabel: state.localExperimentalLabel,
+            productSupportClaim: state.productSupportClaim,
+            warningCount: report?.blockerTaxonomy.filter {
+                $0.severity == .warning
+            }.count ?? 0,
+            deferredAPINames:
+                report?.aggregateAPICompatibility.deferredAPIs
+                .map(\.rawValue)
+                .sorted() ?? [],
             generatedBundleSummary: generatedBundleSummary(record: record),
             compatibilitySeveritySummary: counts,
             productPreflightStatus: productStatus(
@@ -3828,10 +3879,10 @@ struct ChromeMV3ExtensionManagerView: View {
 
         private var gateSection: some View {
             SettingsSectionCard(
-                title: "MV3 Developer Preview",
+                title: "Local Experimental MV3",
                 subtitle: listViewModel.gate.managerAvailableInDeveloperPreview
-                    ? "Internal manager is available; product runtime remains off."
-                    : "Internal manager is blocked by the current gate."
+                    ? "Import and manage local packages. Product/default runtime remains off."
+                    : "Local experimental manager is blocked by the current gate."
             ) {
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 210), spacing: 10)],
@@ -3881,9 +3932,18 @@ struct ChromeMV3ExtensionManagerView: View {
                         alignment: .leading,
                         spacing: 8
                     ) {
+                        fact(
+                            "Result",
+                            report.lifecycleImportResult.stage.status.rawValue
+                        )
+                        fact(
+                            "Manifest",
+                            report.validationResult.manifestSummary.map {
+                                "\($0.name) \($0.version)"
+                            } ?? "unavailable"
+                        )
                         fact("ZIP", report.productFlags.zipImportAvailable ? "available" : "unavailable")
                         fact("CRX", report.trustResult.importAllowed ? "allowed" : "blocked")
-                        fact("Web Store", report.productFlags.chromeWebStoreInstallAvailable ? "available" : "deferred")
                         fact("Runtime", report.productFlags.runtimeLoadable ? "loadable" : "off")
                     }
                     if let blocker = report.blockers.first {
@@ -3898,14 +3958,14 @@ struct ChromeMV3ExtensionManagerView: View {
 
         private var actionsHeader: some View {
             SettingsSectionCard(
-                title: "Manager Actions",
-                subtitle: "Actions call the internal lifecycle registry and diagnostics writers only."
+                title: "Import Local MV3",
+                subtitle: "Local package intake creates metadata only. Import and enable do not execute extension code."
             ) {
                 HStack(spacing: 8) {
                     Button {
                         onLoadUnpacked?()
                     } label: {
-                        Label("Load Unpacked", systemImage: "folder.badge.plus")
+                        Label("Import Unpacked", systemImage: "folder.badge.plus")
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(
@@ -3916,7 +3976,7 @@ struct ChromeMV3ExtensionManagerView: View {
                     Button {
                         onImportArchive?()
                     } label: {
-                        Label("Import Archive", systemImage: "archivebox")
+                        Label("Import ZIP", systemImage: "archivebox")
                     }
                     .buttonStyle(.bordered)
                     .disabled(
@@ -3924,30 +3984,19 @@ struct ChromeMV3ExtensionManagerView: View {
                             || onImportArchive == nil
                     )
 
-                    Button {
-                        onRunAction?(
-                            .chromeWebStoreInstall,
-                            selectedDetail?.listItem.profileID ?? "",
-                            selectedDetail?.listItem.extensionID ?? ""
-                        )
-                    } label: {
-                        Label("Web Store", systemImage: "safari")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(onRunAction == nil)
                 }
             }
         }
 
         private var listSection: some View {
             SettingsSectionCard(
-                title: "Installed Internal MV3",
+                title: "Installed Local MV3",
                 subtitle: listViewModel.items.isEmpty
-                    ? "No internal MV3 lifecycle records."
-                    : "\(listViewModel.items.count) internal lifecycle record(s)."
+                    ? "No local experimental MV3 extensions."
+                    : "\(listViewModel.items.count) local experimental extension(s)."
             ) {
                 if listViewModel.items.isEmpty {
-                    Text("Load an unpacked Manifest V3 folder to create an internal record.")
+                    Text("Import an unpacked Manifest V3 folder or a safe local ZIP archive.")
                         .foregroundStyle(.secondary)
                 } else {
                     VStack(alignment: .leading, spacing: 10) {
@@ -3967,11 +4016,15 @@ struct ChromeMV3ExtensionManagerView: View {
                                             .font(.callout.weight(.semibold))
                                             .lineLimit(1)
                                         Text(
-                                            "\(item.version) - \(item.lifecycleState.rawValue) - \(item.productPreflightStatus.rawValue)"
+                                            "\(item.version) - \(item.sourceType.rawValue) - generated \(item.generatedBundleSummary.generatedBundleAvailable ? "ready" : "missing")"
                                         )
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
+                                        Text(item.extensionID)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
                                     }
                                     Spacer()
                                     Text(
@@ -3985,6 +4038,7 @@ struct ChromeMV3ExtensionManagerView: View {
                                             ? .green
                                             : .secondary
                                     )
+                                    .help(item.localExperimentalLabel)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }
@@ -4129,21 +4183,63 @@ struct ChromeMV3ExtensionManagerView: View {
         private func detailSummary(
             _ detail: ChromeMV3ExtensionManagerDetailViewModel
         ) -> some View {
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 170), spacing: 8)],
-                alignment: .leading,
-                spacing: 8
-            ) {
-                fact("Manifest", "\(detail.manifestSummary.manifestVersion ?? 0)")
-                fact("Lifecycle", detail.listItem.lifecycleState.rawValue)
-                fact(
-                    "Active Bundle",
-                    detail.generatedBundleState.activeVersionID ?? "none"
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle(
+                    "Enabled in local experimental mode",
+                    isOn: Binding(
+                        get: { detail.listItem.internalEnabled },
+                        set: { enabled in
+                            onRunAction?(
+                                enabled ? .enableInternal : .disableInternal,
+                                detail.listItem.profileID,
+                                detail.listItem.extensionID
+                            )
+                        }
+                    )
                 )
-                fact(
-                    "Blockers",
-                    "\(detail.exactCompatibilityBlockers.count)"
+                .disabled(onRunAction == nil)
+
+                Text(
+                    "\(detail.listItem.localExperimentalLabel) - "
+                        + (
+                            detail.listItem.productSupportClaim
+                                ? "product support claimed"
+                                : "not product support"
+                        )
                 )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 170), spacing: 8)],
+                    alignment: .leading,
+                    spacing: 8
+                ) {
+                    fact("Manifest", "\(detail.manifestSummary.name) \(detail.manifestSummary.version)")
+                    fact("Manifest Version", "\(detail.manifestSummary.manifestVersion ?? 0)")
+                    fact("Source", detail.listItem.sourceType.rawValue)
+                    fact("Install Status", detail.listItem.lifecycleState.rawValue)
+                    fact(
+                        "Generated Bundle",
+                        detail.generatedBundleState.activeVersionID ?? "none"
+                    )
+                    fact(
+                        "Generated State",
+                        detail.listItem.generatedBundleSummary.generatedBundleAvailable
+                            ? "available" : "missing"
+                    )
+                    fact("Warnings", "\(detail.listItem.warningCount)")
+                    fact(
+                        "Deferred APIs",
+                        detail.listItem.deferredAPINames.isEmpty
+                            ? "none"
+                            : detail.listItem.deferredAPINames.joined(separator: ", ")
+                    )
+                    fact(
+                        "Product Support",
+                        detail.listItem.productSupportClaim ? "claimed" : "false"
+                    )
+                }
             }
         }
 
@@ -5146,8 +5242,8 @@ struct ChromeMV3ExtensionManagerView: View {
         ) -> Bool {
             switch descriptor.action {
             case .installUnpacked, .importZipArchive, .importCRXArchive,
-                 .chromeWebStoreInstall, .openActionPopup, .openOptions,
-                 .closePopupOptions:
+                 .chromeWebStoreInstall, .enableInternal, .disableInternal,
+                 .openActionPopup, .openOptions, .closePopupOptions:
                 return false
             case .runBitwardenManualSmoke:
                 return detail.gate.managerAvailableInDeveloperPreview
