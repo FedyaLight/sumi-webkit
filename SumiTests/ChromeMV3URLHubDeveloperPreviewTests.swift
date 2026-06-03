@@ -514,6 +514,48 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         )
         let noCaptureReason = nativeBitwardenPopupNoCaptureReason(snapshot)
         let firstBlocker = nativeBitwardenPopupFirstBlocker(snapshot)
+        let prototypeMethodDescriptor =
+            "descriptor:data/owner:prototype/prototypeDepth:1/writable:false/configurable:true/enumerable:false/getter:false/setter:false/objectExtensible:true/descriptorOwnerExtensible:true/namespaceExtensible:true"
+        let ownMethodDescriptor =
+            "descriptor:data/owner:own/prototypeDepth:0/writable:false/configurable:true/enumerable:false/getter:false/setter:false/objectExtensible:true/descriptorOwnerExtensible:true/namespaceExtensible:true"
+        for apiName in [
+            "chrome.runtime.sendMessage",
+            "chrome.runtime.connect",
+            "chrome.tabs.query",
+            "chrome.tabs.sendMessage",
+            "browser.runtime.sendMessage",
+            "browser.runtime.connect",
+            "browser.tabs.query",
+            "browser.tabs.sendMessage",
+        ] {
+            XCTAssertTrue(snapshot.routeObservations.contains {
+                $0.apiName == apiName
+                    && $0.resultClassifier == "descriptorObserved"
+                    && $0.descriptorSummary == prototypeMethodDescriptor
+            }, apiName)
+            XCTAssertTrue(snapshot.routeObservations.contains {
+                $0.apiName == apiName
+                    && $0.resultClassifier == "notWritable"
+                    && $0.firstMissingAPIOrError == "methodNotWritable"
+            }, apiName)
+        }
+        for apiName in [
+            "chrome.runtime.connectNative",
+            "chrome.runtime.sendNativeMessage",
+            "browser.runtime.connectNative",
+            "browser.runtime.sendNativeMessage",
+        ] {
+            XCTAssertTrue(snapshot.routeObservations.contains {
+                $0.apiName == apiName
+                    && $0.resultClassifier == "descriptorObserved"
+                    && $0.descriptorSummary == ownMethodDescriptor
+            }, apiName)
+            XCTAssertTrue(snapshot.routeObservations.contains {
+                $0.apiName == apiName
+                    && $0.resultClassifier == "notWritable"
+                    && $0.firstMissingAPIOrError == "methodNotWritable"
+            }, apiName)
+        }
 
         XCTAssertTrue(
             snapshot.nativePopupPreludeConfiguredBeforePopupCreation,
@@ -1312,6 +1354,8 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertTrue(nativePreludeSource.contains("safeTopLevelFieldNames"))
         XCTAssertTrue(nativePreludeSource.contains("keyCount"))
         XCTAssertTrue(nativePreludeSource.contains("portName"))
+        XCTAssertTrue(nativePreludeSource.contains("descriptorSummary"))
+        XCTAssertTrue(nativePreludeSource.contains("descriptorObserved"))
         XCTAssertTrue(nativePreludeSource.contains("Reflect.apply"))
         XCTAssertTrue(
             nativePreludeSource.contains("runtime.sendMessage")

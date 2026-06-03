@@ -152,6 +152,10 @@ extension ExtensionManager {
         let sanitizedURLShape = Self.sanitizedNativeActionPopupPreludeURLShape(
             frameInfo.request.url
         )
+        let descriptorSummary = sanitizedPreludeString(
+            raw["descriptorSummary"],
+            maxLength: 240
+        )
 
         if apiName == "nativeActionPopupPrelude" {
             nativeActionPopupBoundaryRecorders[extensionID]?
@@ -175,6 +179,7 @@ extension ExtensionManager {
             listenerRouteResult: listenerRouteResult,
             firstMissingAPIOrError: firstMissingAPIOrError,
             sanitizedURLShape: sanitizedURLShape,
+            descriptorSummary: descriptorSummary,
             notes: [
                 "DEBUG-only prelude record; raw message bodies and URL values are not accepted.",
             ]
@@ -320,6 +325,7 @@ extension ExtensionManager {
             "preludeInstalledAtDocumentStart",
             "preludeNoChromeNamespaceAtDocumentStart",
             "preludeNoObservableNamespaceAtDocumentStart",
+            "descriptorObserved",
         ]
 
     private nonisolated static let allowedNativeActionPopupPreludeListenerResults:
@@ -631,6 +637,71 @@ extension ExtensionManager {
             return true;
           }
 
+          function descriptorFlag(value) {
+            if (value === true) {
+              return "true";
+            }
+            if (value === false) {
+              return "false";
+            }
+            return "na";
+          }
+
+          function objectExtensibleFlag(value) {
+            try {
+              if (!value || (typeof value !== "object" && typeof value !== "function")) {
+                return "na";
+              }
+              return descriptorFlag(Object.isExtensible(value));
+            } catch (_) {
+              return "na";
+            }
+          }
+
+          function descriptorSummary(namespaceObject, owner, methodName) {
+            const namespaceExtensible = objectExtensibleFlag(namespaceObject);
+            const objectExtensible = objectExtensibleFlag(owner);
+            let cursor = owner;
+            let depth = 0;
+            let foundDescriptor = null;
+            let foundOwner = null;
+            while (cursor) {
+              const descriptor = Object.getOwnPropertyDescriptor(cursor, methodName);
+              if (descriptor) {
+                foundDescriptor = descriptor;
+                foundOwner = cursor;
+                break;
+              }
+              cursor = Object.getPrototypeOf(cursor);
+              depth += 1;
+            }
+            if (!foundDescriptor) {
+              return [
+                "descriptor:missing",
+                "owner:missing",
+                "prototypeDepth:missing",
+                "objectExtensible:" + objectExtensible,
+                "namespaceExtensible:" + namespaceExtensible
+              ].join("/");
+            }
+
+            const isData = Object.prototype.hasOwnProperty.call(foundDescriptor, "value")
+              || Object.prototype.hasOwnProperty.call(foundDescriptor, "writable");
+            return [
+              "descriptor:" + (isData ? "data" : "accessor"),
+              "owner:" + (depth === 0 ? "own" : "prototype"),
+              "prototypeDepth:" + String(depth),
+              "writable:" + (isData ? descriptorFlag(foundDescriptor.writable) : "na"),
+              "configurable:" + descriptorFlag(foundDescriptor.configurable),
+              "enumerable:" + descriptorFlag(foundDescriptor.enumerable),
+              "getter:" + descriptorFlag(typeof foundDescriptor.get === "function"),
+              "setter:" + descriptorFlag(typeof foundDescriptor.set === "function"),
+              "objectExtensible:" + objectExtensible,
+              "descriptorOwnerExtensible:" + objectExtensibleFlag(foundOwner),
+              "namespaceExtensible:" + namespaceExtensible
+            ].join("/");
+          }
+
           function wrapPort(namespaceName, namespaceObject, port) {
             if (!port || typeof port !== "object") {
               return port;
@@ -672,6 +743,17 @@ extension ExtensionManager {
                   });
                   return;
                 }
+                postRoute(namespaceObject, {
+                  apiName,
+                  targetContext: "runtimePort",
+                  resultClassifier: "descriptorObserved",
+                  listenerRouteResult: "notObservable",
+                  descriptorSummary: descriptorSummary(
+                    namespaceObject,
+                    port,
+                    methodName
+                  )
+                });
                 if (!descriptorAllowsWrap(port, methodName)) {
                   postRoute(namespaceObject, {
                     apiName,
@@ -751,6 +833,17 @@ extension ExtensionManager {
               return;
             }
             const original = owner[methodName];
+            postRoute(namespaceObject, {
+              apiName,
+              targetContext: targetContextFor(apiName, []),
+              resultClassifier: "descriptorObserved",
+              listenerRouteResult: "notObservable",
+              descriptorSummary: descriptorSummary(
+                namespaceObject,
+                owner,
+                methodName
+              )
+            });
             if (typeof original !== "function") {
               postRoute(namespaceObject, {
                 apiName,

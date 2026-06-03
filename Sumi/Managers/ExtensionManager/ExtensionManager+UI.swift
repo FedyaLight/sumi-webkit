@@ -199,6 +199,7 @@ final class ChromeMV3NativeActionPopupBoundaryRecorder {
         listenerRouteResult: String? = nil,
         firstMissingAPIOrError: String? = nil,
         sanitizedURLShape: String? = nil,
+        descriptorSummary: String? = nil,
         notes: [String] = []
     ) {
         guard snapshot.routeObservations.count < 80 else { return }
@@ -217,6 +218,7 @@ final class ChromeMV3NativeActionPopupBoundaryRecorder {
                 listenerRouteResult: listenerRouteResult,
                 firstMissingAPIOrError: firstMissingAPIOrError,
                 sanitizedURLShape: sanitizedURLShape,
+                descriptorSummary: descriptorSummary,
                 notes: notes
             )
         )

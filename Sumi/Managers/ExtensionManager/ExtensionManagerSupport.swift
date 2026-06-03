@@ -111,6 +111,7 @@ struct ChromeMV3NativeActionPopupRouteObservation:
     var listenerRouteResult: String?
     var firstMissingAPIOrError: String?
     var sanitizedURLShape: String?
+    var descriptorSummary: String? = nil
     var notes: [String]
 }
 
@@ -166,6 +167,7 @@ struct ChromeMV3NativeActionPopupBoundarySnapshot:
                 route.listenerRouteResult.map { "listenerResult=\($0)" },
                 route.firstMissingAPIOrError.map { "missingOrError=\($0)" },
                 route.sanitizedURLShape.map { "urlShape=\($0)" },
+                route.descriptorSummary.map { "descriptor=\($0)" },
                 route.resultClassifier.map { "result=\($0)" },
             ]
                 .compactMap { $0 }

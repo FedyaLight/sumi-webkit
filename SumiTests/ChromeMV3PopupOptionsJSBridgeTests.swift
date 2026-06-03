@@ -1,6 +1,10 @@
 import Foundation
 import XCTest
 
+#if canImport(AppKit)
+import AppKit
+#endif
+
 @testable import Sumi
 
 final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
@@ -951,6 +955,162 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
 
     #if canImport(WebKit)
     @MainActor
+    func testControlledPopupHostLoadsRealBitwardenDefaultPopupWithExistingBridge()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("WKWebView extension-page bridge POC requires macOS 15.5.")
+        }
+
+        let packageRoot = URL(
+            fileURLWithPath:
+                "/Users/fedaefimov/Downloads/Aura/mv3-test-extensions/bitwarden",
+            isDirectory: true
+        )
+        try XCTSkipUnless(
+            FileManager.default.fileExists(
+                atPath: packageRoot.appendingPathComponent("manifest.json").path
+            ),
+            "Bitwarden real package fixture is not available."
+        )
+        #if canImport(AppKit)
+        let nativeHostWasRunning =
+            bitwardenNativeHostRunningApplicationIdentifiers()
+        #endif
+
+        let storeRoot = try makeTemporaryDirectory()
+        let stage = try ChromeMV3OriginalBundleStore(
+            rootURL: storeRoot,
+            now: { Date(timeIntervalSince1970: 601) }
+        ).stageUnpackedDirectory(at: packageRoot)
+        let generated = try ChromeMV3GeneratedBundleWriter(rootURL: storeRoot)
+            .writeGeneratedBundle(
+                originalBundleRecord: stage.originalBundleRecord,
+                manifestSnapshot: stage.manifestSnapshot,
+                planningRecord: stage.generatedBundlePlan
+            )
+        let popupURL = generated.generatedBundleRootURL
+            .appendingPathComponent("popup/index.html")
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: popupURL.path),
+            "Bitwarden generated action.default_popup was not preserved."
+        )
+        let popupHTML = try String(contentsOf: popupURL, encoding: .utf8)
+        XCTAssertTrue(popupHTML.contains("<title>Bitwarden</title>"))
+        XCTAssertTrue(popupHTML.contains("<app-root>"))
+        XCTAssertTrue(popupHTML.contains("id=\"loading\""))
+
+        for path in [
+            "_locales/en/messages.json",
+            "popup/index.html",
+            "popup/main.css",
+            "popup/main.js",
+            "popup/polyfills.js",
+            "popup/vendor-angular.js",
+            "popup/vendor.js",
+        ] {
+            XCTAssertTrue(generated.record.copiedResourcePaths.contains(path), path)
+            XCTAssertTrue(
+                FileManager.default.fileExists(
+                    atPath: generated.generatedBundleRootURL
+                        .appendingPathComponent(path)
+                        .path
+                ),
+                path
+            )
+        }
+
+        let manifest = stage.manifestSnapshot.normalizedManifest
+        let config = configuration(
+            extensionID: "bitwarden-real-local",
+            profileID: "profile-controlled-bitwarden-popup-poc",
+            manifestPermissions: manifest.permissions,
+            manifestOptionalPermissions: manifest.optionalPermissions,
+            manifestHostPermissions: manifest.hostPermissions,
+            manifestOptionalHostPermissions: manifest.optionalHostPermissions
+        )
+        let installation = ChromeMV3PopupOptionsJSBridgeInstallation(
+            configuration: config,
+            allowlist: config.allowlist,
+            bridgeAvailable: true,
+            scriptSource: ChromeMV3PopupOptionsJSShimSource.source(
+                configuration: config
+            ),
+            messageHandlerName:
+                ChromeMV3PopupOptionsJSShimSource.bridgeMessageHandlerName,
+            diagnostics: config.diagnostics
+        )
+        let handle = ChromeMV3ProductPopupOptionsWKWebViewHandle(
+            loadFileURL: popupURL,
+            readAccessURL: generated.generatedBundleRootURL,
+            bridgeInstallation: installation,
+            permissionPromptPresenter: nil,
+            permissionEventDispatcher: nil
+        )
+        defer { handle.tearDown() }
+
+        try await handle.waitForLoadForTesting()
+        let raw = try await handle.callAsyncJavaScriptForTesting(
+            """
+            return {
+              title: document.title,
+              hasAppRoot: !!document.querySelector("app-root"),
+              hasLoadingShell: !!document.querySelector("#loading"),
+              scriptSrcs: Array.from(document.scripts)
+                .map((script) => script.getAttribute("src") || ""),
+              stylesheetHrefs: Array.from(
+                  document.querySelectorAll('link[rel="stylesheet"]')
+                )
+                .map((link) => link.getAttribute("href") || ""),
+              hasChromeRuntime:
+                !!globalThis.chrome
+                && !!chrome.runtime
+                && typeof chrome.runtime.sendMessage === "function",
+              hasBrowserRuntime:
+                !!globalThis.browser
+                && !!browser.runtime
+                && typeof browser.runtime.connect === "function",
+              hasChromeTabs:
+                !!globalThis.chrome
+                && !!chrome.tabs
+                && typeof chrome.tabs.query === "function"
+            };
+            """
+        )
+        let object = try XCTUnwrap(raw as? [String: Any])
+        let scriptSrcs = try XCTUnwrap(object["scriptSrcs"] as? [String])
+        let stylesheetHrefs = try XCTUnwrap(
+            object["stylesheetHrefs"] as? [String]
+        )
+
+        XCTAssertEqual(object["title"] as? String, "Bitwarden")
+        XCTAssertEqual(object["hasAppRoot"] as? Bool, true)
+        XCTAssertTrue(scriptSrcs.contains("../popup/polyfills.js"))
+        XCTAssertTrue(scriptSrcs.contains("../popup/vendor.js"))
+        XCTAssertTrue(scriptSrcs.contains("../popup/vendor-angular.js"))
+        XCTAssertTrue(scriptSrcs.contains("../popup/main.js"))
+        XCTAssertTrue(stylesheetHrefs.contains("../popup/main.css"))
+        XCTAssertEqual(object["hasChromeRuntime"] as? Bool, true)
+        XCTAssertEqual(object["hasBrowserRuntime"] as? Bool, true)
+        XCTAssertEqual(object["hasChromeTabs"] as? Bool, true)
+        XCTAssertEqual(handle.installedUserScriptCount, 1)
+        XCTAssertEqual(handle.installedScriptMessageHandlerCount, 1)
+        let snapshot = try XCTUnwrap(
+            handle.popupOptionsBridgeDiagnosticsSnapshot
+        )
+        XCTAssertTrue(snapshot.callRecords.allSatisfy {
+            $0.nativeHostLaunchAttempted == false
+        })
+        #if canImport(AppKit)
+        XCTAssertEqual(
+            bitwardenNativeHostRunningApplicationIdentifiers(),
+            nativeHostWasRunning,
+            "The controlled popup-host POC must not launch com.bitwarden.desktop."
+        )
+        #endif
+    }
+
+    @MainActor
     func testRealPopupOptionsWKWebViewInstallsBridgeAndRunsJS()
         async throws
     {
@@ -1149,6 +1309,15 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(snapshot.observedMethods.contains(
             "runtime.connect" + "Native"
         ))
+    }
+    #endif
+
+    #if canImport(AppKit)
+    private func bitwardenNativeHostRunningApplicationIdentifiers() -> [String] {
+        NSWorkspace.shared.runningApplications
+            .compactMap(\.bundleIdentifier)
+            .filter { $0 == "com.bitwarden.desktop" }
+            .sorted()
     }
     #endif
 
