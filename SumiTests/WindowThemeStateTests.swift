@@ -78,6 +78,39 @@ final class WindowThemeStateTests: XCTestCase {
         XCTAssertTrue(secondResolvedTheme.visuallyEquals(targetTheme))
     }
 
+    @MainActor
+    func testInteractiveThemeCoordinatorCoalescesTinyProgressUpdatesButPreservesTerminalValues() {
+        let sourceSpace = Space(
+            name: "Source",
+            workspaceTheme: WorkspaceTheme(gradientTheme: .default)
+        )
+        let destinationSpace = Space(
+            name: "Destination",
+            workspaceTheme: WorkspaceTheme(gradientTheme: .incognito)
+        )
+        let windowState = BrowserWindowState()
+        let coordinator = WorkspaceThemeCoordinator()
+
+        coordinator.beginInteractiveTransition(
+            from: sourceSpace,
+            to: destinationSpace,
+            initialProgress: 0.4,
+            in: windowState
+        )
+        coordinator.updateInteractiveTransition(progress: 0.401, in: windowState)
+
+        XCTAssertEqual(windowState.themeTransitionProgress, 0.4, accuracy: 0.0001)
+
+        coordinator.updateInteractiveTransition(progress: 0.403, in: windowState)
+        XCTAssertEqual(windowState.themeTransitionProgress, 0.403, accuracy: 0.0001)
+
+        coordinator.updateInteractiveTransition(progress: 1.0, in: windowState)
+        XCTAssertEqual(windowState.themeTransitionProgress, 1.0, accuracy: 0.0001)
+
+        coordinator.updateInteractiveTransition(progress: 0.0, in: windowState)
+        XCTAssertEqual(windowState.themeTransitionProgress, 0.0, accuracy: 0.0001)
+    }
+
     func testResolvedGradientInterpolationPreservesEndpointsAndBlendsMidpoint() {
         let sourceGradient = WorkspaceResolvedGradient.default
         let targetGradient = WorkspaceResolvedGradient.incognito

@@ -1,5 +1,10 @@
 import SwiftUI
 
+private enum WorkspaceThemeTransitionUpdatePolicy {
+    /// Keeps sub-pixel trackpad noise from invalidating the whole themed chrome tree.
+    static let interactiveProgressEpsilon = 0.0025
+}
+
 @MainActor
 final class WorkspaceThemeCoordinator {
     func restore(
@@ -59,7 +64,10 @@ final class WorkspaceThemeCoordinator {
         if windowState.spaceTransitionSourceSpaceId == sourceSpace.id,
            windowState.spaceTransitionDestinationSpaceId == destinationSpace.id,
            windowState.isInteractiveSpaceTransition {
-            windowState.windowThemeState.updateProgress(initialProgress)
+            updateInteractiveTransition(
+                progress: initialProgress,
+                in: windowState
+            )
             return
         }
 
@@ -77,7 +85,16 @@ final class WorkspaceThemeCoordinator {
         in windowState: BrowserWindowState
     ) {
         guard windowState.isInteractiveSpaceTransition else { return }
-        windowState.windowThemeState.updateProgress(progress)
+        let clampedProgress = min(max(progress, 0.0), 1.0)
+        guard clampedProgress == 0.0
+            || clampedProgress == 1.0
+            || abs(windowState.themeTransitionProgress - clampedProgress)
+                >= WorkspaceThemeTransitionUpdatePolicy.interactiveProgressEpsilon
+        else {
+            return
+        }
+
+        windowState.windowThemeState.updateProgress(clampedProgress)
     }
 
     func cancelInteractiveTransition(in windowState: BrowserWindowState) {

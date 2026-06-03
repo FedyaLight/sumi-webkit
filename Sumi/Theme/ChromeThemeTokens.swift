@@ -49,8 +49,34 @@ private struct ChromeThemeTokenRecipeKey: Equatable {
 
 @MainActor
 private enum ChromeThemeTokenMemo {
-    static var lastKey: ChromeThemeTokenRecipeKey?
-    static var lastTokens: ChromeThemeTokens?
+    private struct Entry {
+        var key: ChromeThemeTokenRecipeKey
+        var tokens: ChromeThemeTokens
+    }
+
+    private static let capacity = 8
+    private static var entries: [Entry] = []
+
+    static func tokens(for key: ChromeThemeTokenRecipeKey) -> ChromeThemeTokens? {
+        guard let index = entries.firstIndex(where: { $0.key == key }) else {
+            return nil
+        }
+
+        let entry = entries.remove(at: index)
+        entries.insert(entry, at: 0)
+        return entry.tokens
+    }
+
+    static func store(_ tokens: ChromeThemeTokens, for key: ChromeThemeTokenRecipeKey) {
+        if let index = entries.firstIndex(where: { $0.key == key }) {
+            entries.remove(at: index)
+        }
+
+        entries.insert(Entry(key: key, tokens: tokens), at: 0)
+        if entries.count > capacity {
+            entries.removeLast(entries.count - capacity)
+        }
+    }
 }
 
 @MainActor
@@ -60,9 +86,7 @@ extension ResolvedThemeContext {
             context: self,
             settingsFingerprint: settings.chromeTokenRecipeFingerprint
         )
-        if ChromeThemeTokenMemo.lastKey == key,
-           let tokens = ChromeThemeTokenMemo.lastTokens
-        {
+        if let tokens = ChromeThemeTokenMemo.tokens(for: key) {
             return tokens
         }
 
@@ -70,8 +94,7 @@ extension ResolvedThemeContext {
             context: self,
             settings: settings
         )
-        ChromeThemeTokenMemo.lastKey = key
-        ChromeThemeTokenMemo.lastTokens = tokens
+        ChromeThemeTokenMemo.store(tokens, for: key)
         return tokens
     }
 
