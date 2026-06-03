@@ -10,6 +10,10 @@
 
 import Foundation
 
+#if canImport(AppKit)
+import AppKit
+#endif
+
 #if canImport(WebKit)
 import WebKit
 #endif
@@ -302,7 +306,8 @@ struct ChromeMV3ProductPopupOptionsUIGateRecord:
     static func evaluate(
         moduleEnabled: Bool,
         managerGate: ChromeMV3ExtensionManagerGate? = nil,
-        lifecycleRecord: ChromeMV3ExtensionLifecycleRecord? = nil
+        lifecycleRecord: ChromeMV3ExtensionLifecycleRecord? = nil,
+        extensionEnabledOverride: Bool? = nil
     ) -> ChromeMV3ProductPopupOptionsUIGateRecord {
         #if DEBUG
             let developerPreviewGate =
@@ -316,7 +321,9 @@ struct ChromeMV3ProductPopupOptionsUIGateRecord:
         #endif
         let installed = lifecycleRecord?.lifecycleState != .uninstalled
         let enabled =
-            lifecycleRecord?.runtimeState.internalRuntimeEnabled ?? false
+            lifecycleRecord?.runtimeState.internalRuntimeEnabled
+                ?? extensionEnabledOverride
+                ?? false
         let developerPreviewAvailable =
             developerPreviewGate && (lifecycleRecord == nil || installed)
         let runtimeAllowed = developerPreviewAvailable && enabled
@@ -337,7 +344,9 @@ struct ChromeMV3ProductPopupOptionsUIGateRecord:
                 "The lifecycle record is uninstalled; popup/options UI cannot open."
             )
         }
-        if lifecycleRecord != nil && enabled == false {
+        if (lifecycleRecord != nil || extensionEnabledOverride != nil)
+            && enabled == false
+        {
             diagnostics.append(
                 "The lifecycle record is disabled; popup/options UI cannot open."
             )
@@ -403,7 +412,8 @@ struct ChromeMV3PopupOptionsAPISurfaceAvailability:
     static func make(
         report: ChromeMV3EndToEndInstallDiagnosticsReport?,
         gateRecord: ChromeMV3ProductPopupOptionsUIGateRecord,
-        pageReferencesExtensionAPI: Bool
+        pageReferencesExtensionAPI: Bool,
+        policy: ChromeMV3PopupOptionsAPIMethodPolicy = .defaultPolicy
     ) -> ChromeMV3PopupOptionsAPISurfaceAvailability {
         let reportNames = Set(
             report?.internalSyntheticReadinessSummary
@@ -422,8 +432,6 @@ struct ChromeMV3PopupOptionsAPISurfaceAvailability:
         if reportNames.contains("chrome.tabs/chrome.scripting") {
             implemented.append(contentsOf: ["tabs", "scripting"])
         }
-
-        let policy = ChromeMV3PopupOptionsAPIMethodPolicy.defaultPolicy
         let exposed = gateRecord.popupOptionsBridgeAllowed
             ? policy.exposedNamespaces
             : []
@@ -507,6 +515,7 @@ struct ChromeMV3ProductPopupOptionsLaunchRecord:
     var lifecycleEvents: [ChromeMV3PopupOptionsLifecycleEvent]
     var gateRecord: ChromeMV3ProductPopupOptionsUIGateRecord
     var resourceResolution: ChromeMV3ExtensionPageResourceResolution?
+    var apiMethodPolicy: ChromeMV3PopupOptionsAPIMethodPolicy
     var apiSurface: ChromeMV3PopupOptionsAPISurfaceAvailability
     var blockers: [ChromeMV3PopupOptionsBlocker]
     var blockingReasons: [String]
@@ -782,6 +791,134 @@ enum ChromeMV3ProductPopupOptionsLaunchPlanner {
         )
     }
 
+    static func controlledActionPopupLaunchRecord(
+        rootURL: URL,
+        profileID: String,
+        installedExtension: InstalledExtension,
+        managerGate: ChromeMV3ExtensionManagerGate,
+        moduleEnabled: Bool,
+        fileManager: FileManager = .default
+    ) -> ChromeMV3ProductPopupOptionsLaunchRecord {
+        let policy = ChromeMV3PopupOptionsAPIMethodPolicy
+            .controlledActionPopupPolicy
+        let gate = ChromeMV3ProductPopupOptionsUIGateRecord.evaluate(
+            moduleEnabled: moduleEnabled,
+            managerGate: managerGate,
+            lifecycleRecord: nil,
+            extensionEnabledOverride: installedExtension.isEnabled
+        )
+        var blockers: [ChromeMV3PopupOptionsBlocker] = []
+        var diagnostics = gate.diagnostics + [
+            "Controlled URL-hub action popup host is selected only by the explicit local experimental developer-preview gate.",
+            "The host resolves action.default_popup from the installed generated package and does not synthesize popup UI.",
+            "Package-local popup JavaScript, CSS, image, locale, frame, and asset resources are preserved through file-backed read access to the generated package root.",
+            "Remote, missing, unsafe-path, and inline-script popup resources remain blocked in the controlled action popup host.",
+            "CSP is preserved only to the extent WebKit enforces it for the loaded file-backed HTML; chrome-extension:// origin semantics are approximated by bridge metadata and chrome.runtime.getURL, not by a custom extension URL scheme.",
+            "Native messaging, storage, scripting, permissions, DNR, webRequest, offscreen, contextMenus, and Web Store APIs remain outside this controlled action popup policy.",
+        ]
+        var declaration: ChromeMV3ExtensionPageDeclaration?
+        var resolution: ChromeMV3ExtensionPageResourceResolution?
+        var validation: ChromeMV3PopupOptionsResourceValidationState =
+            .notEvaluated
+        var manifestFacts = ChromeMV3PopupOptionsManifestFacts.empty
+        let generatedRootPath = installedExtension.packagePath
+
+        if installedExtension.isEnabled == false {
+            blockers.append(.extensionDisabled)
+        }
+        if gate.popupOptionsRuntimeAllowed == false {
+            blockers.append(.productGateBlocked)
+        }
+        if directoryExists(
+            URL(fileURLWithPath: generatedRootPath, isDirectory: true),
+            fileManager: fileManager
+        ) {
+            let model = ChromeMV3ExtensionPageDeclarationReader.read(
+                generatedRewrittenRootPath: generatedRootPath,
+                fileManager: fileManager
+            )
+            manifestFacts = manifestFactsFromManifest(model.manifestPath)
+            declaration = model.declarations.first {
+                $0.kind == ChromeMV3ProductPopupOptionsSurface.actionPopup
+                    .pageKind
+            }
+            if let declaration {
+                resolution = ChromeMV3ExtensionPageResourceResolver
+                    .resolve(declaration: declaration)
+                validation = controlledActionPopupValidationState(
+                    declaration: declaration,
+                    resolution: resolution
+                )
+            } else {
+                validation = .missingDeclaration
+            }
+        } else {
+            blockers.append(.generatedRewrittenBundleMissing)
+            validation = .generatedBundleMissing
+        }
+
+        appendDeclarationBlockers(
+            surface: .actionPopup,
+            manifestFacts: manifestFacts,
+            declaration: declaration,
+            validation: validation,
+            blockers: &blockers
+        )
+        let pageReferencesAPI = pageReferencesExtensionAPI(
+            resolution: resolution
+        )
+        let apiSurface = ChromeMV3PopupOptionsAPISurfaceAvailability.make(
+            report: nil,
+            gateRecord: gate,
+            pageReferencesExtensionAPI: pageReferencesAPI,
+            policy: policy
+        )
+        if pageReferencesAPI && gate.popupOptionsBridgeAllowed == false {
+            blockers.append(.bridgeUnavailableForPageAPI)
+        }
+        if manifestFacts.permissions.contains("nativeMessaging") {
+            diagnostics.append(
+                ChromeMV3PopupOptionsBlocker.nativeMessagingBlocked.reason
+            )
+        }
+        if manifestFacts.backgroundServiceWorkerPath != nil {
+            diagnostics.append(
+                "A manifest service worker exists; popup messages are routed through the generic bridge without launching a native host."
+            )
+        }
+        blockers = uniqueBlockers(blockers)
+        let productGate: ChromeMV3PopupOptionsProductGateState
+        if blockers.contains(.extensionDisabled) {
+            productGate = .extensionDisabled
+        } else if gate.popupOptionsRuntimeAllowed
+            && blockers.contains(.productGateBlocked) == false
+            && blockers.contains(.developerPreviewGateBlocked) == false
+        {
+            productGate = .developerPreviewAllowed
+        } else {
+            productGate = .blocked
+        }
+
+        return record(
+            rootURL: rootURL,
+            profileID: profileID,
+            extensionID: installedExtension.id,
+            surface: .actionPopup,
+            gateRecord: gate,
+            validation: validation,
+            productGate: productGate,
+            blockers: blockers,
+            diagnostics: diagnostics,
+            manifestFacts: manifestFacts,
+            activeVersion: nil,
+            generatedRootPath: generatedRootPath,
+            declaration: declaration,
+            resolution: resolution,
+            apiSurface: apiSurface,
+            apiMethodPolicy: policy
+        )
+    }
+
     private static func record(
         rootURL: URL,
         profileID: String,
@@ -797,7 +934,8 @@ enum ChromeMV3ProductPopupOptionsLaunchPlanner {
         generatedRootPath: String?,
         declaration: ChromeMV3ExtensionPageDeclaration?,
         resolution: ChromeMV3ExtensionPageResourceResolution?,
-        apiSurface: ChromeMV3PopupOptionsAPISurfaceAvailability
+        apiSurface: ChromeMV3PopupOptionsAPISurfaceAvailability,
+        apiMethodPolicy: ChromeMV3PopupOptionsAPIMethodPolicy = .defaultPolicy
     ) -> ChromeMV3ProductPopupOptionsLaunchRecord {
         let unique = uniqueBlockers(blockers)
         let bridgeState: ChromeMV3PopupOptionsBridgeAvailabilityState
@@ -824,7 +962,8 @@ enum ChromeMV3ProductPopupOptionsLaunchPlanner {
             normalizedPath: declaration?.normalizedPath,
             generatedBundleVersionID: activeVersion?.id,
             managerStoreRootPath: rootURL.path,
-            generatedBundleRootPath: activeVersion?.generatedBundleRootPath,
+            generatedBundleRootPath:
+                activeVersion?.generatedBundleRootPath ?? generatedRootPath,
             generatedRewrittenBundlePath: generatedRootPath,
             generatedResourcePath: declaration?.generatedResourcePath,
             manifestPermissions: manifestFacts.permissions,
@@ -841,6 +980,7 @@ enum ChromeMV3ProductPopupOptionsLaunchPlanner {
             lifecycleEvents: [],
             gateRecord: gateRecord,
             resourceResolution: resolution,
+            apiMethodPolicy: apiMethodPolicy,
             apiSurface: apiSurface,
             blockers: unique,
             blockingReasons: unique.map(\.reason).sorted(),
@@ -903,6 +1043,39 @@ enum ChromeMV3ProductPopupOptionsLaunchPlanner {
             return .missingResource
         }
         return .unsafeHTML
+    }
+
+    private static func controlledActionPopupValidationState(
+        declaration: ChromeMV3ExtensionPageDeclaration,
+        resolution: ChromeMV3ExtensionPageResourceResolution?
+    ) -> ChromeMV3PopupOptionsResourceValidationState {
+        switch declaration.pathSafety {
+        case .unsafe:
+            return .unsafePath
+        case .missing:
+            return .missingResource
+        case .safe:
+            break
+        }
+        guard let resolution else { return .notEvaluated }
+        if resolution.htmlPageExists == false {
+            return .missingResource
+        }
+        if resolution.missingResourcePaths.isEmpty == false {
+            return .missingResource
+        }
+        if resolution.unsafeResourcePaths.isEmpty == false {
+            return .unsafeHTML
+        }
+        if resolution.remoteResourceReferences.isEmpty == false {
+            return .unsafeHTML
+        }
+        if resolution.linkedResources.contains(where: {
+            $0.kind == .inlineScript
+        }) {
+            return .unsafeHTML
+        }
+        return .valid
     }
 
     private static func activeGeneratedVersion(
@@ -1114,6 +1287,34 @@ struct ChromeMV3ProductPopupOptionsRunResult:
     }
 }
 
+#if canImport(AppKit)
+@MainActor
+final class ChromeMV3PopupOptionsPresentationContext {
+    weak var anchorView: NSView?
+    let preferredEdge: NSRectEdge
+    let preferredContentSize: NSSize
+    let anchorKind: String
+    let onClosed: @MainActor () -> Void
+
+    init(
+        anchorView: NSView?,
+        preferredEdge: NSRectEdge = .maxY,
+        preferredContentSize: NSSize = NSSize(width: 380, height: 600),
+        anchorKind: String = "urlHubActionTile",
+        onClosed: @escaping @MainActor () -> Void = {}
+    ) {
+        self.anchorView = anchorView
+        self.preferredEdge = preferredEdge
+        self.preferredContentSize = preferredContentSize
+        self.anchorKind = anchorKind
+        self.onClosed = onClosed
+    }
+}
+#else
+@MainActor
+final class ChromeMV3PopupOptionsPresentationContext {}
+#endif
+
 @MainActor
 protocol ChromeMV3PopupOptionsWebViewHandle: AnyObject {
     var popupOptionsBridgeDiagnosticsSnapshot:
@@ -1155,6 +1356,10 @@ protocol ChromeMV3PopupOptionsWebViewFactory: AnyObject {
             ChromeMV3PopupOptionsJSBridgeInstallation,
         contentScriptEndpointRegistry:
             ChromeMV3ContentScriptEndpointRegistry?,
+        sharedLifecycleSession:
+            ChromeMV3ServiceWorkerSharedLifecycleSession?,
+        presentationContext:
+            ChromeMV3PopupOptionsPresentationContext?,
         permissionPromptPresenter:
             ChromeMV3PermissionPromptPresenting?,
         permissionEventDispatcher:
@@ -1190,12 +1395,18 @@ extension ChromeMV3PopupOptionsWebViewFactory {
             ChromeMV3PopupOptionsJSBridgeInstallation,
         contentScriptEndpointRegistry:
             ChromeMV3ContentScriptEndpointRegistry?,
+        sharedLifecycleSession:
+            ChromeMV3ServiceWorkerSharedLifecycleSession? = nil,
+        presentationContext:
+            ChromeMV3PopupOptionsPresentationContext? = nil,
         permissionPromptPresenter:
             ChromeMV3PermissionPromptPresenting? = nil,
         permissionEventDispatcher:
             ChromeMV3PermissionEventDispatching? = nil
     ) throws -> ChromeMV3PopupOptionsWebViewHandle {
         _ = contentScriptEndpointRegistry
+        _ = sharedLifecycleSession
+        _ = presentationContext
         return try createWebView(
             loadFileURL: loadFileURL,
             allowingReadAccessTo: readAccessURL,
@@ -1220,6 +1431,9 @@ final class ChromeMV3ProductPopupOptionsHostController {
         ChromeMV3PermissionEventDispatching?
     private let contentScriptEndpointRegistryProvider:
         @MainActor () -> ChromeMV3ContentScriptEndpointRegistry?
+    private let sharedLifecycleSessionProvider:
+        @MainActor (ChromeMV3ProductPopupOptionsLaunchRecord)
+            -> ChromeMV3ServiceWorkerSharedLifecycleSession?
     private var sessions: [String: ActiveSession] = [:]
 
     init(
@@ -1230,13 +1444,17 @@ final class ChromeMV3ProductPopupOptionsHostController {
             ChromeMV3PermissionEventDispatching? = nil,
         contentScriptEndpointRegistryProvider:
             @escaping @MainActor ()
-                -> ChromeMV3ContentScriptEndpointRegistry? = { nil }
+                -> ChromeMV3ContentScriptEndpointRegistry? = { nil },
+        sharedLifecycleSessionProvider:
+            @escaping @MainActor (ChromeMV3ProductPopupOptionsLaunchRecord)
+                -> ChromeMV3ServiceWorkerSharedLifecycleSession? = { _ in nil }
     ) {
         self.factory = factory
         self.permissionPromptPresenter = permissionPromptPresenter
         self.permissionEventDispatcher = permissionEventDispatcher
         self.contentScriptEndpointRegistryProvider =
             contentScriptEndpointRegistryProvider
+        self.sharedLifecycleSessionProvider = sharedLifecycleSessionProvider
     }
 
     var activeSessionCount: Int {
@@ -1259,7 +1477,9 @@ final class ChromeMV3ProductPopupOptionsHostController {
     }
 
     func open(
-        _ launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord
+        _ launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord,
+        presentationContext:
+            ChromeMV3PopupOptionsPresentationContext? = nil
     ) -> ChromeMV3ProductPopupOptionsRunResult {
         guard launchRecord.canOpen else {
             return .blocked(
@@ -1309,6 +1529,9 @@ final class ChromeMV3ProductPopupOptionsHostController {
                 bridgeInstallation: bridgeInstallation,
                 contentScriptEndpointRegistry:
                     contentScriptEndpointRegistryProvider(),
+                sharedLifecycleSession:
+                    sharedLifecycleSessionProvider(launchRecord),
+                presentationContext: presentationContext,
                 permissionPromptPresenter: permissionPromptPresenter,
                 permissionEventDispatcher: permissionEventDispatcher
             )
@@ -1622,12 +1845,43 @@ final class ChromeMV3ProductPopupOptionsWKWebViewFactory:
         permissionEventDispatcher:
             ChromeMV3PermissionEventDispatching?
     ) throws -> ChromeMV3PopupOptionsWebViewHandle {
+        try createWebView(
+            loadFileURL: loadFileURL,
+            allowingReadAccessTo: readAccessURL,
+            bridgeInstallation: bridgeInstallation,
+            contentScriptEndpointRegistry:
+                contentScriptEndpointRegistry,
+            sharedLifecycleSession: nil,
+            presentationContext: nil,
+            permissionPromptPresenter: permissionPromptPresenter,
+            permissionEventDispatcher: permissionEventDispatcher
+        )
+    }
+
+    func createWebView(
+        loadFileURL: URL,
+        allowingReadAccessTo readAccessURL: URL,
+        bridgeInstallation:
+            ChromeMV3PopupOptionsJSBridgeInstallation,
+        contentScriptEndpointRegistry:
+            ChromeMV3ContentScriptEndpointRegistry?,
+        sharedLifecycleSession:
+            ChromeMV3ServiceWorkerSharedLifecycleSession?,
+        presentationContext:
+            ChromeMV3PopupOptionsPresentationContext?,
+        permissionPromptPresenter:
+            ChromeMV3PermissionPromptPresenting?,
+        permissionEventDispatcher:
+            ChromeMV3PermissionEventDispatching?
+    ) throws -> ChromeMV3PopupOptionsWebViewHandle {
         ChromeMV3ProductPopupOptionsWKWebViewHandle(
             loadFileURL: loadFileURL,
             readAccessURL: readAccessURL,
             bridgeInstallation: bridgeInstallation,
             contentScriptEndpointRegistry:
                 contentScriptEndpointRegistry,
+            sharedLifecycleSession: sharedLifecycleSession,
+            presentationContext: presentationContext,
             permissionPromptPresenter: permissionPromptPresenter,
             permissionEventDispatcher: permissionEventDispatcher
         )
@@ -1646,6 +1900,13 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
     private var bridgeHandler: ChromeMV3PopupOptionsJSBridgeHandler?
     private(set) var installedUserScriptCount = 0
     private(set) var installedScriptMessageHandlerCount = 0
+    #if canImport(AppKit)
+    private var popover: NSPopover?
+    private var popoverDelegate:
+        ChromeMV3ProductPopupOptionsPopoverDelegate?
+    private var popoverContentViewController: NSViewController?
+    private var isTearingDown = false
+    #endif
 
     init(loadFileURL: URL, readAccessURL: URL) {
         self.messageHandlerName = nil
@@ -1666,6 +1927,10 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
             ChromeMV3PopupOptionsJSBridgeInstallation,
         contentScriptEndpointRegistry:
             ChromeMV3ContentScriptEndpointRegistry? = nil,
+        sharedLifecycleSession:
+            ChromeMV3ServiceWorkerSharedLifecycleSession? = nil,
+        presentationContext:
+            ChromeMV3PopupOptionsPresentationContext? = nil,
         permissionPromptPresenter:
             ChromeMV3PermissionPromptPresenting?,
         permissionEventDispatcher:
@@ -1683,7 +1948,8 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
                 contentScriptEndpointRegistry:
                     contentScriptEndpointRegistry,
                 permissionPromptPresenter: permissionPromptPresenter,
-                permissionEventDispatcher: permissionEventDispatcher
+                permissionEventDispatcher: permissionEventDispatcher,
+                sharedLifecycleSession: sharedLifecycleSession
             )
             let scriptHandler =
                 ChromeMV3PopupOptionsWKScriptMessageHandler(
@@ -1719,6 +1985,9 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
             allowingReadAccessTo: readAccessURL
         )
         self.webView = webView
+        #if canImport(AppKit)
+        presentIfNeeded(webView: webView, context: presentationContext)
+        #endif
         if bridgeInstallation.bridgeAvailable {
             permissionEventDispatcher?
                 .registerChromeMV3PermissionEventPage(
@@ -1756,7 +2025,61 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         bridgeHandler?.diagnosticsSnapshot
     }
 
+    #if canImport(AppKit)
+    private func presentIfNeeded(
+        webView: WKWebView,
+        context: ChromeMV3PopupOptionsPresentationContext?
+    ) {
+        guard let context,
+              let anchorView = context.anchorView,
+              anchorView.window != nil
+        else { return }
+
+        let contentViewController = NSViewController()
+        webView.frame = NSRect(
+            origin: .zero,
+            size: context.preferredContentSize
+        )
+        webView.autoresizingMask = [.width, .height]
+        contentViewController.view = webView
+
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = false
+        popover.contentSize = context.preferredContentSize
+        popover.contentViewController = contentViewController
+
+        let delegate = ChromeMV3ProductPopupOptionsPopoverDelegate {
+            [weak self, context] in
+            guard let self, self.isTearingDown == false else { return }
+            context.onClosed()
+            self.tearDown()
+        }
+        popover.delegate = delegate
+        self.popover = popover
+        self.popoverDelegate = delegate
+        self.popoverContentViewController = contentViewController
+        popover.show(
+            relativeTo: anchorView.bounds,
+            of: anchorView,
+            preferredEdge: context.preferredEdge
+        )
+    }
+    #endif
+
     func tearDown() {
+        #if canImport(AppKit)
+        if isTearingDown { return }
+        isTearingDown = true
+        if let popover, popover.isShown {
+            popover.close()
+        }
+        popover?.delegate = nil
+        popover?.contentViewController = nil
+        popover = nil
+        popoverDelegate = nil
+        popoverContentViewController = nil
+        #endif
         webView?.stopLoading()
         webView?.navigationDelegate = nil
         webView?.uiDelegate = nil
@@ -1807,6 +2130,26 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
     }
     #endif
 }
+
+#if canImport(AppKit)
+@MainActor
+private final class ChromeMV3ProductPopupOptionsPopoverDelegate:
+    NSObject,
+    NSPopoverDelegate
+{
+    private let onClose: @MainActor () -> Void
+
+    init(onClose: @escaping @MainActor () -> Void) {
+        self.onClose = onClose
+        super.init()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        _ = notification
+        onClose()
+    }
+}
+#endif
 
 #if DEBUG
 @MainActor

@@ -335,6 +335,133 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
     }
 
     @MainActor
+    func testControlledCompatibilityPopupGateOpensGeneratedActionPopupWithoutNativeRuntime()
+        async throws
+    {
+        UserDefaults.standard.removeObject(
+            forKey: ExtensionManager
+                .controlledCompatibilityActionPopupDefaultsKey
+        )
+        XCTAssertFalse(
+            RuntimeDiagnostics.debugDefaultBool(
+                forKey: ExtensionManager
+                    .controlledCompatibilityActionPopupDefaultsKey
+            )
+        )
+        UserDefaults.standard.set(
+            true,
+            forKey: ExtensionManager
+                .controlledCompatibilityActionPopupDefaultsKey
+        )
+        defer {
+            UserDefaults.standard.removeObject(
+                forKey: ExtensionManager
+                    .controlledCompatibilityActionPopupDefaultsKey
+            )
+        }
+
+        let root = try makeTemporaryDirectory()
+        let source = try makeFixture(
+            named: "urlhub-controlled-action-popup",
+            manifest: genericActionPopupManifest(
+                name: "Controlled URLHub Popup",
+                permissions: ["activeTab"]
+            ),
+            files: [
+                "popup.html": """
+                    <!doctype html>
+                    <html>
+                    <head><meta charset="utf-8"><title>Controlled Popup</title></head>
+                    <body data-api="chrome.runtime.sendMessage">
+                    <script src="popup.js"></script>
+                    </body>
+                    </html>
+                    """,
+                "popup.js": "chrome.runtime.getURL('popup.html');",
+            ]
+        )
+        let fakeFactory = FakeURLHubPopupOptionsWebViewFactory()
+        let profileID = UUID()
+        let module = try makeModule(
+            enabled: true,
+            includesModelContext: true,
+            popupOptionsWebViewFactory: { fakeFactory }
+        )
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: source,
+            profileID: profileID.uuidString,
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: record.extensionID
+        )
+        let activeGeneratedVersionID = try XCTUnwrap(
+            record.activeGeneratedVersionID
+        )
+        let activeGeneratedVersion = try XCTUnwrap(
+            record.generatedBundleVersions.first {
+                $0.id == activeGeneratedVersionID
+            }
+        )
+
+        let currentTab = Tab(url: URL(string: "https://example.com/login")!)
+        currentTab.profileId = profileID
+        let result = await module.openActionPopupFromURLHub(
+            extensionId: record.extensionID,
+            currentTab: currentTab
+        )
+
+        XCTAssertTrue(result.opened)
+        XCTAssertNil(result.blocker)
+        XCTAssertNil(result.nativePopupBoundarySnapshot)
+        XCTAssertEqual(
+            result.message,
+            "Extension action popup opened through Sumi's controlled MV3 compatibility host."
+        )
+        XCTAssertEqual(fakeFactory.createCount, 1)
+        XCTAssertEqual(
+            fakeFactory.loadedFileURLs.first?.lastPathComponent,
+            "popup.html"
+        )
+        XCTAssertEqual(
+            fakeFactory.readAccessURLs.first?.path,
+            activeGeneratedVersion.generatedBundleRootPath
+        )
+        XCTAssertEqual(
+            fakeFactory.lastBridgeInstallation?.allowlist,
+            .controlledActionPopupPolicy
+        )
+        XCTAssertEqual(
+            module.chromeMV3PopupOptionsActiveSessionCountForTesting,
+            1
+        )
+        XCTAssertFalse(module.hasLoadedWebExtensionController)
+        XCTAssertTrue(result.sanitizedBridgeSnapshotDiagnostics.contains {
+            $0.contains("controlled file-backed compatibility popup host")
+        })
+
+        let close = module.chromeMV3ClosePopupOptionsThroughManager(
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+
+        XCTAssertEqual(close.status, .succeeded)
+        XCTAssertEqual(fakeFactory.teardownCount, 1)
+        XCTAssertEqual(
+            module.chromeMV3PopupOptionsActiveSessionCountForTesting,
+            0
+        )
+        XCTAssertFalse(module.hasLoadedWebExtensionController)
+        XCTAssertEqual(
+            close.popupOptionsRunResult?.nativeHostLaunchAttempted,
+            false
+        )
+    }
+
+    @MainActor
     func testURLHubActionClickLoadsNewlySyncedRecordIntoReadyRuntime()
         async throws
     {
@@ -1282,6 +1409,12 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         let moduleSource = try source(
             "Sumi/Managers/ExtensionManager/SumiExtensionsModule.swift"
         )
+        let popupOptionsSource = try source(
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift"
+        )
+        let popupOptionsBridgeSource = try source(
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3PopupOptionsJSBridge.swift"
+        )
         let combined = modelSource + "\n" + hubSource + "\n" + actionViewSource
         let nativePopupBoundarySources =
             managerUISource + "\n" + controllerDelegateSource + "\n"
@@ -1324,6 +1457,51 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertFalse(hubSource.contains(manualSmokeRunnerCall))
         XCTAssertFalse(hubSource.contains(artifactWriterCall))
         XCTAssertTrue(actionViewSource.contains("openActionPopupFromURLHub"))
+        XCTAssertTrue(
+            moduleSource.contains(
+                "controlledCompatibilityActionPopupDefaultsKey"
+            )
+        )
+        XCTAssertTrue(
+            moduleSource.contains(
+                "openControlledCompatibilityActionPopupFromURLHub"
+            )
+        )
+        XCTAssertTrue(
+            moduleSource.contains("manager.openActionPopupFromURLHub")
+        )
+        XCTAssertTrue(
+            popupOptionsSource.contains(
+                "controlledActionPopupLaunchRecord"
+            )
+        )
+        XCTAssertTrue(
+            popupOptionsSource.contains(
+                "Package-local popup JavaScript, CSS, image, locale, frame, and asset resources are preserved"
+            )
+        )
+        XCTAssertTrue(
+            popupOptionsSource.contains(
+                "chrome-extension:// origin semantics are approximated"
+            )
+        )
+        XCTAssertTrue(
+            popupOptionsBridgeSource.contains("controlledActionPopupPolicy")
+        )
+        XCTAssertTrue(
+            popupOptionsBridgeSource.contains("\"runtime.sendMessage\"")
+        )
+        XCTAssertTrue(
+            popupOptionsBridgeSource.contains("\"runtime.connect\"")
+        )
+        XCTAssertTrue(
+            popupOptionsBridgeSource.contains("\"tabs.sendMessage\"")
+        )
+        XCTAssertFalse(
+            popupOptionsBridgeSource.contains(
+                "controlledActionPopupPolicy" + ".allowedMethods.append"
+            )
+        )
         XCTAssertTrue(managerUISource.contains("performAction(for: adapter)"))
         XCTAssertTrue(managerUISource.contains("nativePopupBoundarySnapshot"))
         XCTAssertTrue(
@@ -1441,7 +1619,9 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
     @MainActor
     private func makeModule(
         enabled: Bool,
-        includesModelContext: Bool = false
+        includesModelContext: Bool = false,
+        popupOptionsWebViewFactory:
+            (@MainActor () -> ChromeMV3PopupOptionsWebViewFactory)? = nil
     ) throws -> SumiExtensionsModule {
         let harness = TestDefaultsHarness()
         let registry = SumiModuleRegistry(
@@ -1450,7 +1630,12 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         )
         registry.setEnabled(enabled, for: .extensions)
         guard includesModelContext else {
-            return SumiExtensionsModule(moduleRegistry: registry)
+            return SumiExtensionsModule(
+                moduleRegistry: registry,
+                chromeMV3PopupOptionsWebViewFactory:
+                    popupOptionsWebViewFactory
+                    ?? { ChromeMV3ProductPopupOptionsWKWebViewFactory() }
+            )
         }
         let container = try ModelContainer(
             for: Schema([ExtensionEntity.self]),
@@ -1458,7 +1643,10 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         )
         return SumiExtensionsModule(
             moduleRegistry: registry,
-            context: ModelContext(container)
+            context: ModelContext(container),
+            chromeMV3PopupOptionsWebViewFactory:
+                popupOptionsWebViewFactory
+                ?? { ChromeMV3ProductPopupOptionsWKWebViewFactory() }
         )
     }
 
@@ -1881,4 +2069,65 @@ private struct InstalledURLHubFixture {
     var root: URL
     var module: SumiExtensionsModule
     var record: ChromeMV3ExtensionLifecycleRecord
+}
+
+@MainActor
+private final class FakeURLHubPopupOptionsWebViewFactory:
+    ChromeMV3PopupOptionsWebViewFactory
+{
+    var createCount = 0
+    var teardownCount = 0
+    var loadedFileURLs: [URL] = []
+    var readAccessURLs: [URL] = []
+    var lastBridgeInstallation:
+        ChromeMV3PopupOptionsJSBridgeInstallation?
+
+    func createWebView(
+        loadFileURL: URL,
+        allowingReadAccessTo readAccessURL: URL
+    ) throws -> ChromeMV3PopupOptionsWebViewHandle {
+        createCount += 1
+        loadedFileURLs.append(loadFileURL)
+        readAccessURLs.append(readAccessURL)
+        return FakeURLHubPopupOptionsWebViewHandle { [weak self] in
+            self?.teardownCount += 1
+        }
+    }
+
+    func createWebView(
+        loadFileURL: URL,
+        allowingReadAccessTo readAccessURL: URL,
+        bridgeInstallation:
+            ChromeMV3PopupOptionsJSBridgeInstallation,
+        permissionPromptPresenter:
+            ChromeMV3PermissionPromptPresenting?,
+        permissionEventDispatcher:
+            ChromeMV3PermissionEventDispatching?
+    ) throws -> ChromeMV3PopupOptionsWebViewHandle {
+        lastBridgeInstallation = bridgeInstallation
+        _ = permissionPromptPresenter
+        _ = permissionEventDispatcher
+        return try createWebView(
+            loadFileURL: loadFileURL,
+            allowingReadAccessTo: readAccessURL
+        )
+    }
+}
+
+@MainActor
+private final class FakeURLHubPopupOptionsWebViewHandle:
+    ChromeMV3PopupOptionsWebViewHandle
+{
+    private let onTearDown: () -> Void
+    private var didTearDown = false
+
+    init(onTearDown: @escaping () -> Void) {
+        self.onTearDown = onTearDown
+    }
+
+    func tearDown() {
+        guard didTearDown == false else { return }
+        didTearDown = true
+        onTearDown()
+    }
 }

@@ -4688,11 +4688,111 @@ final class SumiExtensionsModule {
             )
         }
         transferPendingActionAnchors(to: manager)
+        #if DEBUG
+            if RuntimeDiagnostics.debugDefaultBool(
+                forKey: ExtensionManager
+                    .controlledCompatibilityActionPopupDefaultsKey
+            ) {
+                return openControlledCompatibilityActionPopupFromURLHub(
+                    extensionId: extensionId,
+                    currentTab: currentTab,
+                    manager: manager
+                )
+            }
+        #endif
         return await manager.openActionPopupFromURLHub(
             extensionId: extensionId,
             currentTab: currentTab
         )
     }
+
+    #if DEBUG
+    private func openControlledCompatibilityActionPopupFromURLHub(
+        extensionId: String,
+        currentTab: Tab?,
+        manager: ExtensionManager
+    ) -> BrowserExtensionActionPopupRequestResult {
+        let rootURL = ChromeMV3ExtensionManagerStoreLocation.defaultRootURL()
+        let preflight =
+            manager
+            .controlledCompatibilityActionPopupLaunchRecordFromURLHub(
+                extensionId: extensionId,
+                currentTab: currentTab,
+                managerStoreRootURL: rootURL,
+                managerGate: chromeMV3ExtensionManagerGate(),
+                moduleEnabled: isEnabled
+            )
+        if let blocked = preflight.blockedResult {
+            return blocked
+        }
+        guard let launchRecord = preflight.launchRecord else {
+            return .blocked(
+                .contextUnavailable,
+                message:
+                    "The controlled compatibility action popup launch record was unavailable."
+            )
+        }
+        let anchorView = controlledActionPopupAnchorView(
+            extensionId: extensionId,
+            manager: manager
+        )
+        let presentationContext = ChromeMV3PopupOptionsPresentationContext(
+            anchorView: anchorView,
+            anchorKind: anchorView == nil
+                ? "urlHubActionTileUnavailable"
+                : "urlHubActionTile",
+            onClosed: { [weak self] in
+                guard let self else { return }
+                if let result =
+                    self.cachedChromeMV3PopupOptionsHostController?.close(
+                        profileID: launchRecord.profileID,
+                        extensionID: launchRecord.extensionID,
+                        surface: launchRecord.surface,
+                        reason: .userClosed
+                    )
+                {
+                    self.lastChromeMV3PopupOptionsRunResult = result
+                }
+            }
+        )
+        let result = chromeMV3PopupOptionsHostController().open(
+            launchRecord,
+            presentationContext: presentationContext
+        )
+        lastChromeMV3PopupOptionsRunResult = result
+        guard result.status == .succeeded else {
+            return .blocked(
+                .contextUnavailable,
+                message:
+                    "The controlled compatibility action popup host did not open: \(result.diagnostics.joined(separator: " "))"
+            )
+        }
+        return .openedPopup(
+            message:
+                "Extension action popup opened through Sumi's controlled MV3 compatibility host.",
+            nativePopupBoundarySnapshot: nil,
+            sanitizedBridgeSnapshot: nil,
+            diagnostics: result.diagnostics + [
+                "URL-hub opened the extension action.default_popup through the controlled file-backed compatibility popup host.",
+                anchorView == nil
+                    ? "No live URL-hub action tile anchor was available; the WebView was created without presenting an NSPopover."
+                    : "Controlled compatibility popup was anchored to the URL-hub action tile.",
+                "WebKit native action.popupWebView remains the default path when the controlled compatibility popup gate is off.",
+            ]
+        )
+    }
+
+    private func controlledActionPopupAnchorView(
+        extensionId: String,
+        manager: ExtensionManager
+    ) -> NSView? {
+        let managerAnchors = manager.actionAnchors[extensionId] ?? []
+        let pendingAnchors = pendingActionAnchors[extensionId] ?? []
+        return (managerAnchors + pendingAnchors)
+            .compactMap(\.view)
+            .last { $0.window != nil }
+    }
+    #endif
 
     func stableAdapter(for tab: Tab) -> ExtensionTabAdapter? {
         managerIfLoadedAndEnabled()?.stableAdapter(for: tab)

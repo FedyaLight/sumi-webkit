@@ -83,6 +83,7 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
             "tabs.port.postMessage",
             "tabs.query",
             "tabs.sendMessage",
+            "permissions.__sumiPermissionEventListenerCount",
         ],
         blockedDiagnostics: [
             blocked(
@@ -192,6 +193,129 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
         }
     )
 
+    static let controlledActionPopupPolicy =
+        ChromeMV3PopupOptionsAPIMethodPolicy(
+            exposedNamespaces: [
+                "runtime",
+                "tabs",
+            ],
+            blockedNamespaces: [
+                "contextMenus",
+                "declarativeNetRequest",
+                "identity",
+                "nativeMessaging",
+                "offscreen",
+                "permissions",
+                "sidePanel",
+                "scripting",
+                "storage.local",
+                "storage.session",
+                "webRequest",
+            ],
+            allowedMethods: [
+                "runtime.connect",
+                "runtime.getURL",
+                "runtime.lastError",
+                "runtime.port.disconnect",
+                "runtime.port.postMessage",
+                "runtime.sendMessage",
+                "tabs.query",
+                "tabs.sendMessage",
+            ],
+            blockedDiagnostics: (
+                [
+                    blocked(
+                        namespace: "runtime",
+                        methodName: "sendNativeMessage",
+                        reason:
+                            "Native messaging is not exposed by the controlled action popup host.",
+                        remediation:
+                            "Keep native messaging unavailable until a separate trusted-host product policy exists.",
+                        roadmapOwner: "Native messaging product policy"
+                    ),
+                    blocked(
+                        namespace: "runtime",
+                        methodName: "connect" + "Native",
+                        reason:
+                            "Native messaging Ports are not exposed by the controlled action popup host.",
+                        remediation:
+                            "Keep native messaging unavailable until a separate trusted-host product policy exists.",
+                        roadmapOwner: "Native messaging product policy"
+                    ),
+                    blocked(
+                        namespace: "storage",
+                        methodName: "local.*",
+                        reason:
+                            "storage.local is outside this controlled action popup increment.",
+                        remediation:
+                            "Add storage.local through a separate reviewed implementation prompt.",
+                        roadmapOwner: "Storage product prompt"
+                    ),
+                    blocked(
+                        namespace: "storage",
+                        methodName: "session.*",
+                        reason:
+                            "storage.session is outside this controlled action popup increment.",
+                        remediation:
+                            "Add storage.session through a separate reviewed implementation prompt.",
+                        roadmapOwner: "Storage product prompt"
+                    ),
+                    blocked(
+                        namespace: "permissions",
+                        methodName: "*",
+                        reason:
+                            "permissions.* is not exposed by the controlled action popup host.",
+                        remediation:
+                            "Add permissions UI/runtime support through a separate reviewed implementation prompt.",
+                        roadmapOwner: "Permissions product prompt"
+                    ),
+                    blocked(
+                        namespace: "scripting",
+                        methodName: "*",
+                        reason:
+                            "scripting.* is not exposed by the controlled action popup host.",
+                        remediation:
+                            "Add scripting only after a safe target policy exists.",
+                        roadmapOwner: "Future scripting product prompt"
+                    ),
+                    blocked(
+                        namespace: "contextMenus",
+                        methodName: "*",
+                        reason:
+                            "contextMenus is outside this controlled action popup increment.",
+                        remediation:
+                            "Add contextMenus through a separate reviewed implementation prompt.",
+                        roadmapOwner: "MV3 bridge owner"
+                    ),
+                    blocked(
+                        namespace: "unsupported",
+                        methodName: "*",
+                        reason:
+                            "The requested Chrome extension API is not in the controlled action popup allowlist.",
+                        remediation:
+                            "Add an explicit API contract before exposing another namespace or method.",
+                        roadmapOwner: "MV3 bridge owner",
+                        code: .unsupportedAPI
+                    ),
+                ]
+                + defaultPolicy.blockedDiagnostics.filter {
+                    [
+                        "declarativeNetRequest",
+                        "identity",
+                        "nativeMessaging",
+                        "offscreen",
+                        "sidePanel",
+                        "webRequest",
+                    ].contains($0.namespace)
+                }
+            ).sorted {
+                if $0.namespace != $1.namespace {
+                    return $0.namespace < $1.namespace
+                }
+                return $0.methodName < $1.methodName
+            }
+        )
+
     static var defaultBlockedAPIIDs: [String] {
         defaultPolicy.blockedDiagnostics.map {
             "\($0.namespace).\($0.methodName)"
@@ -223,6 +347,12 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
     ) -> ChromeMV3PopupOptionsBlockedAPIDiagnostic {
         blockedDiagnostics.first {
             $0.namespace == namespace && $0.methodName == methodName
+        } ?? blockedDiagnostics.first {
+            $0.namespace == namespace
+                && $0.methodName.hasSuffix(".*")
+                && methodName.hasPrefix(
+                    String($0.methodName.dropLast(2)) + "."
+                )
         } ?? blockedDiagnostics.first {
             $0.namespace == namespace && $0.methodName == "*"
         } ?? blockedDiagnostics.first {
@@ -346,7 +476,7 @@ struct ChromeMV3PopupOptionsJSBridgeConfiguration:
                     launchRecord: launchRecord,
                     bridgeAvailable: bridgeAvailable
                 ),
-            allowlist: .defaultPolicy,
+            allowlist: launchRecord.apiMethodPolicy,
             diagnostics:
                 uniqueSortedPopupOptionsBridge([
                     bridgeAvailable
@@ -948,6 +1078,9 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 ]
             )
         }
+        guard methodAllowedByPolicy(request) else {
+            return blockedByAllowlist(request)
+        }
         switch (request.namespace, request.methodName) {
         case ("tabs", "sendMessage"):
             return await tabsSendMessageAsync(request)
@@ -974,6 +1107,9 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     "Popup/options JS bridge request blocked because the module, extension, or developer-preview bridge gate is disabled.",
                 ]
             )
+        }
+        guard methodAllowedByPolicy(request) else {
+            return blockedByAllowlist(request)
         }
 
         switch (request.namespace, request.methodName) {
@@ -1065,6 +1201,35 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 ]
             )
         }
+    }
+
+    private func methodAllowedByPolicy(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> Bool {
+        let identifier = "\(request.namespace).\(request.methodName)"
+        return configuration.allowlist.allowedMethods.contains(identifier)
+    }
+
+    private func blockedByAllowlist(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        let diagnostic = configuration.allowlist.blockedDiagnostic(
+            namespace: request.namespace,
+            methodName: request.methodName
+        )
+        return response(
+            request: request,
+            succeeded: false,
+            lastErrorMessage: diagnostic.lastErrorMessage,
+            lastErrorCode: diagnostic.lastErrorCode,
+            blockedAPIDiagnostic: diagnostic,
+            diagnostics: [
+                diagnostic.reason,
+                diagnostic.remediation,
+                "Popup/options bridge host policy blocked \(request.namespace).\(request.methodName).",
+                "Roadmap owner: \(diagnostic.roadmapOwner).",
+            ]
+        )
     }
 
     func handleServiceWorkerTabsRequest(

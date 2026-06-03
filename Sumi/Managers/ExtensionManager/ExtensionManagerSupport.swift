@@ -64,6 +64,7 @@ struct BrowserExtensionActionPopupRequestResult:
     }
 
     static func openedPopup(
+        message: String = "Extension action popup requested through WebKit.",
         nativePopupBoundarySnapshot:
             ChromeMV3NativeActionPopupBoundarySnapshot? = nil,
         sanitizedBridgeSnapshot:
@@ -73,7 +74,7 @@ struct BrowserExtensionActionPopupRequestResult:
         BrowserExtensionActionPopupRequestResult(
             opened: true,
             blocker: nil,
-            message: "Extension action popup requested through WebKit.",
+            message: message,
             nativePopupBoundarySnapshot: nativePopupBoundarySnapshot,
             sanitizedBridgeSnapshot: sanitizedBridgeSnapshot,
             sanitizedBridgeSnapshotDiagnostics: diagnostics

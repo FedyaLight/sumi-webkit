@@ -134,6 +134,136 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         XCTAssertFalse(fixture.module.hasLoadedRuntime)
     }
 
+    func testControlledActionPopupLaunchRecordLoadsRealPackageResourcesAndUsesNarrowPolicy()
+        throws
+    {
+        let manifest: [String: Any] = [
+            "manifest_version": 3,
+            "name": "Controlled Popup Fixture",
+            "version": "1.0.0",
+            "action": ["default_popup": "popup/index.html"],
+            "permissions": ["activeTab", "nativeMessaging"],
+            "background": ["service_worker": "background.js"],
+        ]
+        let fixture = try installFixture(
+            named: "controlled-real-popup",
+            manifest: manifest,
+            files: [
+                "background.js": "",
+                "popup/index.html": """
+                    <!doctype html>
+                    <html>
+                    <head>
+                    <meta charset="utf-8">
+                    <link rel="stylesheet" href="main.css">
+                    <title>Controlled Popup</title>
+                    </head>
+                    <body data-api="chrome.runtime.sendMessage">
+                    <main data-sumi-extension-page-fixture-marker="safe">Popup</main>
+                    <script src="polyfills.js"></script>
+                    <script src="vendor.js"></script>
+                    <script src="vendor-angular.js"></script>
+                    <script src="main.js"></script>
+                    </body>
+                    </html>
+                    """,
+                "popup/main.css": "body { margin: 0; }",
+                "popup/polyfills.js": "globalThis.__fixturePolyfills = true;",
+                "popup/vendor.js": "globalThis.__fixtureVendor = true;",
+                "popup/vendor-angular.js":
+                    "globalThis.__fixtureAngular = true;",
+                "popup/main.js": "chrome.runtime.getURL('popup/main.css');",
+                "_locales/en/messages.json": #"{"appName":{"message":"Fixture"}}"#,
+            ],
+            enableInternal: true
+        )
+        let generatedRoot = try activeGeneratedRoot(for: fixture.record)
+        let installedExtension = installedExtensionFixture(
+            record: fixture.record,
+            packageRoot: generatedRoot,
+            manifest: manifest
+        )
+
+        let launchRecord =
+            ChromeMV3ProductPopupOptionsLaunchPlanner
+            .controlledActionPopupLaunchRecord(
+                rootURL: fixture.root,
+                profileID: fixture.record.profileID,
+                installedExtension: installedExtension,
+                managerGate: .evaluate(moduleEnabled: true),
+                moduleEnabled: true
+            )
+
+        XCTAssertTrue(
+            launchRecord.canOpen,
+            popupOptionsDebugSummary(launchRecord)
+        )
+        XCTAssertEqual(launchRecord.resourceValidationState, .valid)
+        XCTAssertEqual(launchRecord.declaredPath, "popup/index.html")
+        XCTAssertEqual(
+            launchRecord.generatedResourcePath,
+            generatedRoot.appendingPathComponent("popup/index.html").path
+        )
+        XCTAssertEqual(
+            launchRecord.generatedRewrittenBundlePath,
+            generatedRoot.path
+        )
+        XCTAssertEqual(
+            launchRecord.apiMethodPolicy,
+            .controlledActionPopupPolicy
+        )
+        XCTAssertTrue(launchRecord.apiSurface.runtimeAvailable)
+        XCTAssertTrue(launchRecord.apiSurface.tabsAvailable)
+        XCTAssertFalse(launchRecord.apiSurface.storageLocalAvailable)
+        XCTAssertFalse(launchRecord.apiSurface.permissionsAvailable)
+        XCTAssertFalse(launchRecord.apiSurface.scriptingAvailable)
+        XCTAssertFalse(launchRecord.apiSurface.nativeMessagingAvailable)
+        XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
+            "runtime.sendMessage"
+        ))
+        XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
+            "runtime.connect"
+        ))
+        XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
+            "tabs.sendMessage"
+        ))
+        XCTAssertFalse(launchRecord.apiSurface.allowedMethods.contains(
+            "storage.local.get"
+        ))
+        XCTAssertTrue(launchRecord.apiSurface.blockedMethods.contains {
+            $0.namespace == "storage" && $0.methodName == "local.*"
+        })
+        XCTAssertTrue(launchRecord.resourceResolution?.linkedResources
+            .contains { $0.kind == .localScript } == true)
+        XCTAssertTrue(launchRecord.resourceResolution?.executableLocalScriptPaths
+            .contains { $0.hasSuffix("popup/main.js") } == true)
+
+        let factory = FakePopupOptionsWebViewFactory()
+        let controller = ChromeMV3ProductPopupOptionsHostController(
+            factory: factory
+        )
+        let open = controller.open(launchRecord)
+        let close = controller.close(
+            profileID: launchRecord.profileID,
+            extensionID: launchRecord.extensionID,
+            surface: launchRecord.surface,
+            reason: .userClosed
+        )
+
+        XCTAssertEqual(open.status, .succeeded)
+        XCTAssertEqual(
+            factory.loadedFileURLs.first?.path,
+            launchRecord.generatedResourcePath
+        )
+        XCTAssertEqual(factory.readAccessURLs.first?.path, generatedRoot.path)
+        XCTAssertEqual(
+            factory.lastBridgeInstallation?.allowlist,
+            .controlledActionPopupPolicy
+        )
+        XCTAssertEqual(open.nativeHostLaunchAttempted, false)
+        XCTAssertEqual(close.nativeHostLaunchAttempted, false)
+    }
+
     func testDisabledExtensionBlocksPopupOpenWithoutWebView() throws {
         let fixture = try installFixture(
             named: "disabled-extension-popup",
@@ -616,6 +746,61 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         return URL(
             fileURLWithPath: version.generatedBundleRootPath,
             isDirectory: true
+        )
+    }
+
+    private func installedExtensionFixture(
+        record: ChromeMV3ExtensionLifecycleRecord,
+        packageRoot: URL,
+        manifest: [String: Any]
+    ) -> InstalledExtension {
+        let action = manifest["action"] as? [String: Any]
+        let optionsUI = manifest["options_ui"] as? [String: Any]
+        let hasBackground = manifest["background"] != nil
+        let hasAction = action != nil
+        let optionsPagePath = manifest["options_page"] as? String
+        let optionsUIPagePath = optionsUI?["page"] as? String
+        let contentScripts = manifest["content_scripts"] as? [[String: Any]]
+        return InstalledExtensionRecord(
+            id: record.extensionID,
+            name: record.displayName,
+            version: record.displayVersion,
+            manifestVersion: manifest["manifest_version"] as? Int ?? 3,
+            description: nil,
+            isEnabled: record.runtimeState.internalRuntimeEnabled,
+            installDate: record.installedAt,
+            lastUpdateDate: record.updatedAt,
+            packagePath: packageRoot.path,
+            iconPath: nil,
+            sourceKind: .directory,
+            backgroundModel: hasBackground ? .serviceWorker : .none,
+            incognitoMode: .spanning,
+            sourcePathFingerprint: record.originalBundleRecordID,
+            manifestRootFingerprint: record.installID,
+            sourceBundlePath: record.originalBundleRootPath,
+            optionsPagePath: optionsPagePath ?? optionsUIPagePath,
+            defaultPopupPath: action?["default_popup"] as? String,
+            hasBackground: hasBackground,
+            hasAction: hasAction,
+            hasOptionsPage:
+                optionsPagePath != nil || optionsUIPagePath != nil,
+            hasContentScripts: (contentScripts ?? []).isEmpty == false,
+            hasExtensionPages: hasAction
+                || optionsPagePath != nil
+                || optionsUIPagePath != nil,
+            activationSummary:
+                ExtensionActivationSummary(
+                    matchPatternStrings: [],
+                    broadScope: false,
+                    hasContentScripts: (contentScripts ?? []).isEmpty == false,
+                    hasAction: hasAction,
+                    hasOptionsPage:
+                        optionsPagePath != nil || optionsUIPagePath != nil,
+                    hasExtensionPages: hasAction
+                        || optionsPagePath != nil
+                        || optionsUIPagePath != nil
+                ),
+            manifest: manifest
         )
     }
 

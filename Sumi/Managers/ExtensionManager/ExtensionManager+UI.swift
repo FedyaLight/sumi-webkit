@@ -812,6 +812,126 @@ extension ExtensionManager: NSPopoverDelegate {
         #endif
     }
 
+    func controlledCompatibilityActionPopupLaunchRecordFromURLHub(
+        extensionId: String,
+        currentTab: Tab?,
+        managerStoreRootURL: URL,
+        managerGate: ChromeMV3ExtensionManagerGate,
+        moduleEnabled: Bool
+    ) -> (
+        launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord?,
+        blockedResult: BrowserExtensionActionPopupRequestResult?
+    ) {
+        guard let installedExtension = installedExtensions.first(where: {
+            $0.id == extensionId
+        }) else {
+            return (
+                nil,
+                .blocked(
+                    .extensionNotInstalled,
+                    message: "The extension is not installed in Sumi's local MV3 action surface."
+                )
+            )
+        }
+        extensionRuntimeTrace(
+            "controlledURLHubAction click extensionId=\(extensionId) manifestHash=\(installedExtension.manifestRootFingerprint) generatedBundlePath=\(installedExtension.packagePath) extensionEnabled=\(installedExtension.isEnabled) runtimeState=\(runtimeState.rawValue) contextLoaded=\(getExtensionContext(for: extensionId) != nil) currentProfile=\(currentProfileId?.uuidString ?? "nil") tabProfile=\(currentTab?.profileId?.uuidString ?? "nil") tabOffRecord=\(currentTab?.isEphemeral ?? false) currentURLShape=\(sanitizedURLHubTraceURL(currentTab?.url))"
+        )
+        guard installedExtension.isEnabled else {
+            return (
+                nil,
+                .blocked(
+                    .extensionDisabled,
+                    message: "\(installedExtension.name) is disabled."
+                )
+            )
+        }
+        guard installedExtension.hasAction else {
+            return (
+                nil,
+                .blocked(
+                    .actionMissing,
+                    message: "\(installedExtension.name) does not declare a Chrome action."
+                )
+            )
+        }
+        guard installedExtension.defaultPopupPath != nil else {
+            return (
+                nil,
+                .blocked(
+                    .noActionPopup,
+                    message: "\(installedExtension.name) does not declare action.default_popup; action-click dispatch is deferred."
+                )
+            )
+        }
+        guard let currentTab else {
+            return (
+                nil,
+                .blocked(
+                    .noEligibleTab,
+                    message: "No active eligible tab is available for the extension action."
+                )
+            )
+        }
+        guard currentTab.isEphemeral == false else {
+            return (
+                nil,
+                .blocked(
+                    .noEligibleTab,
+                    message: "Private tabs are not eligible for local MV3 action popups."
+                )
+            )
+        }
+        guard hasActionCurrentPagePermission(
+            installedExtension,
+            currentURL: currentTab.url
+        ) else {
+            return (
+                nil,
+                .blocked(
+                    .currentPagePermissionMissing,
+                    message: "\(installedExtension.name) does not have host permission or activeTab for the current page."
+                )
+            )
+        }
+        guard isModuleWorkerUnsupported(installedExtension) == false else {
+            return (
+                nil,
+                .blocked(
+                    .moduleWorkerUnsupported,
+                    message: "\(installedExtension.name) declares a module service worker, which remains unsupported in this popup path."
+                )
+            )
+        }
+
+        let profileID =
+            currentProfileId?.uuidString
+                ?? currentTab.profileId?.uuidString
+                ?? "local-action-popup-profile"
+        let launchRecord =
+            ChromeMV3ProductPopupOptionsLaunchPlanner
+            .controlledActionPopupLaunchRecord(
+                rootURL: managerStoreRootURL,
+                profileID: profileID,
+                installedExtension: installedExtension,
+                managerGate: managerGate,
+                moduleEnabled: moduleEnabled
+            )
+        guard launchRecord.canOpen else {
+            return (
+                nil,
+                .blocked(
+                    .contextUnavailable,
+                    message:
+                        "The controlled compatibility popup host could not open \(installedExtension.name): \(launchRecord.blockingReasons.joined(separator: " "))"
+                )
+            )
+        }
+        extensionRuntimeTrace(
+            "controlledURLHubAction preflight passed extensionId=\(extensionId) popupPath=\(launchRecord.declaredPath ?? "nil") generatedResourcePath=\(launchRecord.generatedResourcePath ?? "nil") bridgePolicy=controlledActionPopup nativeRuntimeRequested=false"
+        )
+        return (launchRecord, nil)
+    }
+
     private func loadActionPopupContextIfNeeded(
         for installedExtension: InstalledExtension
     ) async throws -> WKWebExtensionContext? {

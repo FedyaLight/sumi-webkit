@@ -145,6 +145,80 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(encoded.contains("token\":\"must-not-appear"))
     }
 
+    func testControlledActionPopupPolicyRoutesRuntimeAndBlocksForbiddenAPIs()
+        throws
+    {
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                allowlist: .controlledActionPopupPolicy
+            )
+        )
+
+        let runtime = handler.handle(request(
+            namespace: "runtime",
+            methodName: "sendMessage",
+            arguments: [
+                .object([
+                    "command": .string("popup-opened"),
+                    "token": .string("must-not-appear"),
+                ]),
+            ]
+        ))
+        let storage = handler.handle(request(
+            namespace: "storage",
+            methodName: "local.get",
+            arguments: [.string("authToken")]
+        ))
+        let native = handler.handle(request(
+            namespace: "runtime",
+            methodName: "sendNativeMessage",
+            arguments: [
+                .string("com.bitwarden.desktop"),
+                .object(["token": .string("must-not-appear")]),
+            ]
+        ))
+
+        XCTAssertFalse(runtime.succeeded)
+        XCTAssertEqual(runtime.lastErrorCode, "noReceivingEnd")
+        XCTAssertFalse(runtime.nativeHostLaunchAttempted)
+        XCTAssertFalse(storage.succeeded)
+        XCTAssertEqual(storage.blockedAPIDiagnostic?.namespace, "storage")
+        XCTAssertEqual(storage.blockedAPIDiagnostic?.methodName, "local.*")
+        XCTAssertFalse(storage.nativeHostLaunchAttempted)
+        XCTAssertFalse(native.succeeded)
+        XCTAssertEqual(native.blockedAPIDiagnostic?.namespace, "runtime")
+        XCTAssertEqual(
+            native.blockedAPIDiagnostic?.methodName,
+            "sendNativeMessage"
+        )
+        XCTAssertFalse(native.nativeHostLaunchAttempted)
+
+        let snapshot = handler.diagnosticsSnapshot
+        XCTAssertTrue(snapshot.observedMethods.contains("runtime.sendMessage"))
+        XCTAssertTrue(snapshot.observedMethods.contains("storage.local.get"))
+        XCTAssertTrue(
+            snapshot.observedMethods.contains("runtime.sendNativeMessage")
+        )
+        XCTAssertTrue(snapshot.sanitizedBridgeRouteRecords.contains {
+            $0.apiName == "runtime.sendMessage"
+                && $0.safeCommandTypeActionFieldNames == ["command"]
+        })
+        XCTAssertTrue(snapshot.blockedAPIs.contains {
+            $0.namespace == "storage" && $0.methodName == "local.*"
+        })
+        XCTAssertTrue(snapshot.blockedAPIs.contains {
+            $0.namespace == "runtime"
+                && $0.methodName == "sendNativeMessage"
+        })
+        let encoded = String(
+            data: try JSONEncoder().encode(snapshot),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertFalse(encoded.contains("must-not-appear"))
+        XCTAssertFalse(encoded.contains("authToken"))
+        XCTAssertFalse(encoded.contains("com.bitwarden.desktop"))
+    }
+
     @MainActor
     func testNativeActionPopupBoundaryPayloadShapeSanitizesSensitiveBodies()
         throws
@@ -1331,7 +1405,8 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         manifestOptionalPermissions: [String] = [],
         manifestHostPermissions: [String] = [],
         manifestOptionalHostPermissions: [String] = [],
-        activeTabGrants: [ChromeMV3ActiveTabGrant] = []
+        activeTabGrants: [ChromeMV3ActiveTabGrant] = [],
+        allowlist: ChromeMV3PopupOptionsAPIMethodPolicy = .defaultPolicy
     ) -> ChromeMV3PopupOptionsJSBridgeConfiguration {
         ChromeMV3PopupOptionsJSBridgeConfiguration(
             extensionID: extensionID,
@@ -1353,7 +1428,7 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             manifestHostPermissions: manifestHostPermissions,
             manifestOptionalHostPermissions: manifestOptionalHostPermissions,
             activeTabGrants: activeTabGrants,
-            allowlist: .defaultPolicy,
+            allowlist: allowlist,
             diagnostics: [
                 ChromeMV3PopupOptionsJSBridgeConfiguration
                     .productNormalTabBridgeInstallationGuard,

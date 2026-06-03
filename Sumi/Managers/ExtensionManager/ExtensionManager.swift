@@ -37,6 +37,8 @@ final class ExtensionManager: NSObject, ObservableObject {
     #if DEBUG
         nonisolated static let nativeActionPopupBoundaryObservationDefaultsKey =
             "debug.extensions.nativeActionPopupBoundaryObservation.enabled"
+        nonisolated static let controlledCompatibilityActionPopupDefaultsKey =
+            "debug.extensions.controlledCompatibilityActionPopup.enabled"
         nonisolated static let nativeActionPopupPreludeMessageHandlerName =
             "sumiNativeActionPopupRouteObserver"
     #endif
