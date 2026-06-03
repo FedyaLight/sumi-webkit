@@ -105,6 +105,12 @@ struct ChromeMV3NativeActionPopupRouteObservation:
     var metadataAvailable: Bool
     var payloadShape: String?
     var resultClassifier: String?
+    var keyCount: Int?
+    var safeTopLevelFieldNames: [String]
+    var portName: String?
+    var listenerRouteResult: String?
+    var firstMissingAPIOrError: String?
+    var sanitizedURLShape: String?
     var notes: [String]
 }
 
@@ -122,6 +128,9 @@ struct ChromeMV3NativeActionPopupBoundarySnapshot:
     var popupWebViewAvailableAtPresentation: Bool
     var popupPopoverAvailableAtPresentation: Bool
     var nativePopupBridgeInstalled: Bool
+    var nativePopupPreludeConfiguredBeforePopupCreation: Bool
+    var nativePopupPreludeAttachedAtDocumentStart: Bool
+    var nativePopupPreludeFirstMissingAPIOrError: String?
     var lifecycleEvents: [ChromeMV3NativeActionPopupLifecycleEvent]
     var routeObservations: [ChromeMV3NativeActionPopupRouteObservation]
     var observerLimitations: [String]
@@ -149,6 +158,14 @@ struct ChromeMV3NativeActionPopupBoundarySnapshot:
                 "boundary=\(route.nativeBoundary)",
                 "metadataAvailable=\(route.metadataAvailable)",
                 route.payloadShape.map { "payloadShape=\($0)" },
+                route.keyCount.map { "keyCount=\($0)" },
+                route.safeTopLevelFieldNames.isEmpty
+                    ? nil
+                    : "safeFields=\(route.safeTopLevelFieldNames.joined(separator: ","))",
+                route.portName.map { "portName=\($0)" },
+                route.listenerRouteResult.map { "listenerResult=\($0)" },
+                route.firstMissingAPIOrError.map { "missingOrError=\($0)" },
+                route.sanitizedURLShape.map { "urlShape=\($0)" },
                 route.resultClassifier.map { "result=\($0)" },
             ]
                 .compactMap { $0 }

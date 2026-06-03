@@ -795,6 +795,7 @@ final class ChromeMV3RuntimeJSMessagingMVPTests: XCTestCase {
                 "SumiTests/ChromeMV3PasswordManagerRealPackageCompatibilityTests.swift",
                 "SumiTests/ChromeMV3ServiceWorkerJSExecutionHarnessTests.swift",
                 "SumiTests/ChromeMV3URLHubDeveloperPreviewTests.swift",
+                "Sumi/Managers/ExtensionManager/ExtensionManager+NativeActionPopupPrelude.swift",
             ])
         let runtimeBridgeJoined = sources
             .filter { runtimeBridgeFiles.contains($0.relativePath) }

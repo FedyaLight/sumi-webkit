@@ -37,6 +37,8 @@ final class ExtensionManager: NSObject, ObservableObject {
     #if DEBUG
         nonisolated static let nativeActionPopupBoundaryObservationDefaultsKey =
             "debug.extensions.nativeActionPopupBoundaryObservation.enabled"
+        nonisolated static let nativeActionPopupPreludeMessageHandlerName =
+            "sumiNativeActionPopupRouteObserver"
     #endif
     nonisolated static let manifestPatchCacheStorageKey =
         "\(SumiAppIdentity.bundleIdentifier).extensions.webkitManifestPatchCache.v1"
@@ -159,6 +161,7 @@ final class ExtensionManager: NSObject, ObservableObject {
             [String: ChromeMV3NativeActionPopupBoundaryRecorder] = [:]
         var lastNativeActionPopupBoundarySnapshots:
             [String: ChromeMV3NativeActionPopupBoundarySnapshot] = [:]
+        var nativeActionPopupPreludeInstalledInControllerConfiguration = false
     #endif
     let ecRegistry = ExternallyConnectablePortRegistry()
     var extensionLoadGeneration: UInt64 = 0

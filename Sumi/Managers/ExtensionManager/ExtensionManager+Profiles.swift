@@ -674,6 +674,9 @@ extension ExtensionManager {
             }
             extensionController?.delegate = nil
             extensionController = nil
+            #if DEBUG
+                nativeActionPopupPreludeInstalledInControllerConfiguration = false
+            #endif
             profileExtensionStores.removeAll()
             profileExtensionStoreOrder.removeAll()
             runtimeState = isExtensionSupportAvailable ? .idle : .unavailable
@@ -762,7 +765,11 @@ extension ExtensionManager {
             identifier: stableControllerIdentifier()
         )
         let runtimeWebConfiguration = browserConfiguration.webViewConfiguration
-        configuration.webViewConfiguration = runtimeWebConfiguration
+        let extensionPageConfiguration =
+            makeExtensionPageBaseWebViewConfiguration(
+                from: runtimeWebConfiguration
+            )
+        configuration.webViewConfiguration = extensionPageConfiguration
         configuration.defaultWebsiteDataStore = defaultDataStore
 
         let controller = WKWebExtensionController(configuration: configuration)
@@ -772,6 +779,25 @@ extension ExtensionManager {
         runtimeWebConfiguration.defaultWebpagePreferences.allowsContentJavaScript = true
 
         return controller
+    }
+
+    private func makeExtensionPageBaseWebViewConfiguration(
+        from source: WKWebViewConfiguration
+    ) -> WKWebViewConfiguration {
+        let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
+            from: source,
+            surface: .extensionOptions
+        )
+        configuration.sumiIsNormalTabWebViewConfiguration = false
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        #if DEBUG
+            nativeActionPopupPreludeInstalledInControllerConfiguration =
+                installNativeActionPopupPreludeIfEnabled(
+                    into: configuration,
+                    reason: "ExtensionManager.makeExtensionController"
+                )
+        #endif
+        return configuration
     }
 
     private func scheduleControllerDelegateRebind(

@@ -358,6 +358,17 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 "popup.html": "<!doctype html><title>Second Popup</title>",
             ]
         )
+        UserDefaults.standard.set(
+            true,
+            forKey: ExtensionManager
+                .nativeActionPopupBoundaryObservationDefaultsKey
+        )
+        defer {
+            UserDefaults.standard.removeObject(
+                forKey: ExtensionManager
+                    .nativeActionPopupBoundaryObservationDefaultsKey
+            )
+        }
         let module = try makeModule(enabled: true, includesModelContext: true)
         let firstInstall = module.chromeMV3InstallUnpackedThroughManager(
             rootURL: root,
@@ -398,17 +409,6 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertNil(manager.getExtensionContext(for: secondRecord.extensionID))
         XCTAssertEqual(manager.runtimeState, .ready)
 
-        UserDefaults.standard.set(
-            true,
-            forKey: ExtensionManager
-                .nativeActionPopupBoundaryObservationDefaultsKey
-        )
-        defer {
-            UserDefaults.standard.removeObject(
-                forKey: ExtensionManager
-                    .nativeActionPopupBoundaryObservationDefaultsKey
-            )
-        }
         let result = await module.openActionPopupFromURLHub(
             extensionId: secondRecord.extensionID,
             currentTab: Tab(url: URL(string: "https://example.com/login")!)
@@ -420,6 +420,9 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertEqual(nativeSnapshot.extensionID, secondRecord.extensionID)
         XCTAssertFalse(nativeSnapshot.popupWebViewAccessedBeforePerformAction)
         XCTAssertFalse(nativeSnapshot.nativePopupBridgeInstalled)
+        XCTAssertTrue(
+            nativeSnapshot.nativePopupPreludeConfiguredBeforePopupCreation
+        )
         XCTAssertTrue(nativeSnapshot.lifecycleEvents.contains {
             $0.milestone == "performAction.aboutToRun"
         })
@@ -1119,6 +1122,12 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         let controllerDelegateSource = try source(
             "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"
         )
+        let managerProfilesSource = try source(
+            "Sumi/Managers/ExtensionManager/ExtensionManager+Profiles.swift"
+        )
+        let nativePreludeSource = try source(
+            "Sumi/Managers/ExtensionManager/ExtensionManager+NativeActionPopupPrelude.swift"
+        )
         let extensionBridgeSource = try source(
             "Sumi/Managers/ExtensionManager/ExtensionBridge.swift"
         )
@@ -1189,6 +1198,31 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             controllerDelegateSource.contains("runtime.connectNative")
         )
         XCTAssertTrue(extensionBridgeSource.contains("metadataAvailable: false"))
+        XCTAssertTrue(
+            managerProfilesSource.contains(
+                "makeExtensionPageBaseWebViewConfiguration"
+            )
+        )
+        XCTAssertTrue(nativePreludeSource.contains("#if DEBUG"))
+        XCTAssertTrue(nativePreludeSource.contains("WKUserScript("))
+        XCTAssertTrue(nativePreludeSource.contains("in: .page"))
+        XCTAssertTrue(nativePreludeSource.contains("safeTopLevelFieldNames"))
+        XCTAssertTrue(nativePreludeSource.contains("keyCount"))
+        XCTAssertTrue(nativePreludeSource.contains("portName"))
+        XCTAssertTrue(nativePreludeSource.contains("Reflect.apply"))
+        XCTAssertTrue(
+            nativePreludeSource.contains("runtime.sendMessage")
+        )
+        XCTAssertTrue(nativePreludeSource.contains("tabs.sendMessage"))
+        XCTAssertTrue(nativePreludeSource.contains("connectNative"))
+        XCTAssertFalse(
+            nativePreludeSource.contains(
+                "ChromeMV3PopupOptionsJSBridgeHandler("
+            )
+        )
+        XCTAssertFalse(nativePreludeSource.contains("Process" + "("))
+        XCTAssertFalse(nativePreludeSource.contains("DispatchSource" + "Timer"))
+        XCTAssertFalse(nativePreludeSource.contains("sumiIsNormalTabWebViewConfiguration = true"))
         XCTAssertFalse(nativePopupBoundarySources.contains("addUser" + "Script"))
         XCTAssertFalse(
             nativePopupBoundarySources.contains("addScript" + "MessageHandler")

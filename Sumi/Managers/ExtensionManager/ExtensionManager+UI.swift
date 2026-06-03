@@ -56,7 +56,8 @@ final class ChromeMV3NativeActionPopupBoundaryRecorder {
     init(
         extensionID: String,
         extensionContext: WKWebExtensionContext,
-        action: WKWebExtension.Action
+        action: WKWebExtension.Action,
+        preludeConfiguredBeforePopupCreation: Bool
     ) {
         snapshot = ChromeMV3NativeActionPopupBoundarySnapshot(
             extensionID: extensionID,
@@ -69,6 +70,10 @@ final class ChromeMV3NativeActionPopupBoundaryRecorder {
             popupWebViewAvailableAtPresentation: false,
             popupPopoverAvailableAtPresentation: false,
             nativePopupBridgeInstalled: false,
+            nativePopupPreludeConfiguredBeforePopupCreation:
+                preludeConfiguredBeforePopupCreation,
+            nativePopupPreludeAttachedAtDocumentStart: false,
+            nativePopupPreludeFirstMissingAPIOrError: nil,
             lifecycleEvents: [],
             routeObservations: [],
             observerLimitations: [
@@ -76,6 +81,9 @@ final class ChromeMV3NativeActionPopupBoundaryRecorder {
                 "The current SDK exposes native-application messaging delegate callbacks, but does not expose ordinary runtime.sendMessage/runtime.connect payload callbacks to the embedding app.",
                 "Tab/window adapter callbacks can show WebKit querying Sumi's tab boundary, but they do not carry the originating Chrome API name or message body.",
                 "No ChromeMV3PopupOptionsJSBridgeHandler is installed on WebKit's native action popup web view.",
+                preludeConfiguredBeforePopupCreation
+                    ? "A DEBUG-only native action popup prelude was configured on the WebKit extension-page base configuration before controller creation."
+                    : "No DEBUG native action popup prelude was configured before this WebKit controller was created; public WebKit APIs do not provide a later proven hook before popup JS executes.",
             ]
         )
         recordLifecycle(
@@ -185,6 +193,12 @@ final class ChromeMV3NativeActionPopupBoundaryRecorder {
         metadataAvailable: Bool,
         payloadShape: String? = nil,
         resultClassifier: String? = nil,
+        keyCount: Int? = nil,
+        safeTopLevelFieldNames: [String] = [],
+        portName: String? = nil,
+        listenerRouteResult: String? = nil,
+        firstMissingAPIOrError: String? = nil,
+        sanitizedURLShape: String? = nil,
         notes: [String] = []
     ) {
         guard snapshot.routeObservations.count < 80 else { return }
@@ -197,9 +211,28 @@ final class ChromeMV3NativeActionPopupBoundaryRecorder {
                 metadataAvailable: metadataAvailable,
                 payloadShape: payloadShape,
                 resultClassifier: resultClassifier,
+                keyCount: keyCount,
+                safeTopLevelFieldNames: safeTopLevelFieldNames,
+                portName: portName,
+                listenerRouteResult: listenerRouteResult,
+                firstMissingAPIOrError: firstMissingAPIOrError,
+                sanitizedURLShape: sanitizedURLShape,
                 notes: notes
             )
         )
+    }
+
+    func recordPreludeAttachment(
+        resultClassifier: String?,
+        firstMissingAPIOrError: String?
+    ) {
+        if resultClassifier == "preludeInstalledAtDocumentStart" {
+            snapshot.nativePopupPreludeAttachedAtDocumentStart = true
+        }
+        if snapshot.nativePopupPreludeFirstMissingAPIOrError == nil {
+            snapshot.nativePopupPreludeFirstMissingAPIOrError =
+                firstMissingAPIOrError
+        }
     }
 
     static func sanitizedPayloadShape(_ value: Any?) -> String {
@@ -417,7 +450,9 @@ extension ExtensionManager: NSPopoverDelegate {
             let recorder = ChromeMV3NativeActionPopupBoundaryRecorder(
                 extensionID: extensionID,
                 extensionContext: extensionContext,
-                action: action
+                action: action,
+                preludeConfiguredBeforePopupCreation:
+                    nativeActionPopupPreludeInstalledInControllerConfiguration
             )
             nativeActionPopupBoundaryRecorders[extensionID] = recorder
             lastNativeActionPopupBoundarySnapshots.removeValue(forKey: extensionID)
@@ -531,9 +566,16 @@ extension ExtensionManager: NSPopoverDelegate {
             var diagnostics = [
                 "Native WebKit action popup boundary snapshot captured.",
                 "Native popup bridge installed: \(snapshot.nativePopupBridgeInstalled).",
+                "Native popup prelude configured before popup creation: \(snapshot.nativePopupPreludeConfiguredBeforePopupCreation).",
+                "Native popup prelude attached at document-start: \(snapshot.nativePopupPreludeAttachedAtDocumentStart).",
                 "Popup webView available at presentation: \(snapshot.popupWebViewAvailableAtPresentation).",
                 "Popup popover available at presentation: \(snapshot.popupPopoverAvailableAtPresentation).",
             ]
+            if let firstMissing = snapshot.nativePopupPreludeFirstMissingAPIOrError {
+                diagnostics.append(
+                    "Native popup prelude first missing API or error: \(firstMissing)."
+                )
+            }
             diagnostics.append(contentsOf: snapshot.sanitizedLogLines)
             diagnostics.append(contentsOf: snapshot.observerLimitations)
             diagnostics.append(
@@ -760,7 +802,7 @@ extension ExtensionManager: NSPopoverDelegate {
             sanitizedBridgeSnapshot: nil,
             diagnostics: nativePopupDiagnostics + [
                 "URL-hub opened the real WebKit action popup through WKWebExtensionContext.performAction.",
-                "No ChromeMV3PopupOptionsJSBridgeHandler is installed on WebKit's native action.popupWebView, so no Sumi popup bridge route records were available immediately after popup open.",
+                "No ChromeMV3PopupOptionsJSBridgeHandler is installed on WebKit's native action.popupWebView; DEBUG route records, when present, come only from the passive native action popup prelude.",
             ]
         )
         #else
