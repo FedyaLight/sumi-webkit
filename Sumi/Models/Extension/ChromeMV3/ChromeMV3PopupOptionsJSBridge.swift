@@ -437,6 +437,7 @@ struct ChromeMV3PopupOptionsJSBridgeCallRecord:
     var namespace: String
     var methodName: String
     var invocationMode: ChromeMV3JSBridgeInvocationMode
+    var argumentShapeSummary: String
     var succeeded: Bool
     var lastErrorCode: String?
     var lastErrorMessage: String?
@@ -3372,6 +3373,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 namespace: resolvedNamespace,
                 methodName: resolvedMethod,
                 invocationMode: mode,
+                argumentShapeSummary:
+                    argumentShapeSummary(for: request),
                 succeeded: succeeded,
                 lastErrorCode: response.lastErrorCode,
                 lastErrorMessage: response.lastErrorMessage,
@@ -3385,6 +3388,37 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             )
         )
         return response
+    }
+
+    private func argumentShapeSummary(
+        for request: ChromeMV3RuntimeJSBridgeHostRequest?
+    ) -> String {
+        guard let arguments = request?.arguments else {
+            return "arguments:none"
+        }
+        guard arguments.isEmpty == false else {
+            return "arguments:0"
+        }
+        return arguments.enumerated().map { index, value in
+            "arg\(index)=\(storageValueShape(value))"
+        }.joined(separator: ";")
+    }
+
+    private func storageValueShape(_ value: ChromeMV3StorageValue) -> String {
+        switch value {
+        case .array(let values):
+            return "array:length=\(values.count)"
+        case .bool:
+            return "bool"
+        case .null:
+            return "null"
+        case .number:
+            return "number"
+        case .object(let object):
+            return "object:keyCount=\(object.keys.count);keys=\(object.keys.sorted().joined(separator: ","))"
+        case .string(let string):
+            return "string:length=\(string.count)"
+        }
     }
 
     private func bridgeAttemptDiagnostic(

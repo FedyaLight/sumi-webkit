@@ -1662,6 +1662,66 @@ struct ChromeMV3ContentScriptJSDispatchRequest:
     }
 }
 
+enum ChromeMV3TabsSendMessageResultClassifier:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case noReceivingEnd
+    case listenerPresentButNoResponse
+    case listenerThrew
+    case listenerRespondedSync
+    case listenerRespondedAsync
+    case listenerPendingTimedOut
+    case wrongMessageContract
+
+    static func < (
+        lhs: ChromeMV3TabsSendMessageResultClassifier,
+        rhs: ChromeMV3TabsSendMessageResultClassifier
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+
+    static func classify(
+        listenerCount: Int,
+        dispatchResult: String,
+        responseResult: String,
+        message: ChromeMV3StorageValue?
+    ) -> ChromeMV3TabsSendMessageResultClassifier {
+        switch dispatchResult {
+        case "noListener", "dispatcherMissing", "webViewUnavailable",
+             "evaluateJavaScriptFailed", "invalidWebKitResult":
+            return .noReceivingEnd
+        case "listenerThrew", "promiseRejected":
+            return .listenerThrew
+        case "sendResponseSync":
+            return .listenerRespondedSync
+        case "sendResponse", "sendResponseAsync", "promiseResolved":
+            return .listenerRespondedAsync
+        case "sendResponseTimeout":
+            return .listenerPendingTimedOut
+        case "noResponse":
+            if message?.contentScriptDispatchLooksSyntheticProbe == true {
+                return .wrongMessageContract
+            }
+            return listenerCount > 0
+                ? .listenerPresentButNoResponse
+                : .noReceivingEnd
+        default:
+            if responseResult == ChromeMV3RuntimeLastErrorCase
+                .noReceivingEnd.rawValue
+            {
+                return .noReceivingEnd
+            }
+            return listenerCount > 0
+                ? .listenerPresentButNoResponse
+                : .noReceivingEnd
+        }
+    }
+}
+
 struct ChromeMV3ContentScriptJSDispatchResult:
     Equatable,
     Sendable
@@ -1673,6 +1733,11 @@ struct ChromeMV3ContentScriptJSDispatchResult:
     var listenerCount: Int
     var dispatchResult: String
     var responseResult: String
+    var resultClassifier: ChromeMV3TabsSendMessageResultClassifier
+    var listenerInvoked: Bool
+    var sendResponseCalled: Bool
+    var listenerReturnedTrue: Bool
+    var listenerThrew: Bool
     var diagnostics: [String]
 
     static func blocked(
@@ -1682,6 +1747,7 @@ struct ChromeMV3ContentScriptJSDispatchResult:
         diagnostics: [String]
     ) -> ChromeMV3ContentScriptJSDispatchResult {
         let contract = ChromeMV3RuntimeLastErrorContract.contract(for: code)
+        let responseResult = code.rawValue
         return ChromeMV3ContentScriptJSDispatchResult(
             succeeded: false,
             responsePayload: nil,
@@ -1689,7 +1755,18 @@ struct ChromeMV3ContentScriptJSDispatchResult:
             lastErrorMessage: contract.futureLastErrorMessage,
             listenerCount: listenerCount,
             dispatchResult: dispatchResult,
-            responseResult: code.rawValue,
+            responseResult: responseResult,
+            resultClassifier:
+                ChromeMV3TabsSendMessageResultClassifier.classify(
+                    listenerCount: listenerCount,
+                    dispatchResult: dispatchResult,
+                    responseResult: responseResult,
+                    message: nil
+                ),
+            listenerInvoked: false,
+            sendResponseCalled: false,
+            listenerReturnedTrue: false,
+            listenerThrew: false,
             diagnostics:
                 uniqueSortedContentScripts(diagnostics + contract.diagnostics)
         )
@@ -1697,6 +1774,7 @@ struct ChromeMV3ContentScriptJSDispatchResult:
 
     static func parseWebKitValue(
         _ value: Any?,
+        message: ChromeMV3StorageValue?,
         fallbackDiagnostics: [String]
     ) -> ChromeMV3ContentScriptJSDispatchResult {
         guard let object = value as? [String: Any] else {
@@ -1726,6 +1804,16 @@ struct ChromeMV3ContentScriptJSDispatchResult:
             ?? payload.map(valueShape)
             ?? (object["lastErrorCode"] as? String)
             ?? "none"
+        let classifier =
+            (object["resultClassifier"] as? String).flatMap {
+                ChromeMV3TabsSendMessageResultClassifier(rawValue: $0)
+            }
+            ?? ChromeMV3TabsSendMessageResultClassifier.classify(
+                listenerCount: listenerCount,
+                dispatchResult: dispatchResult,
+                responseResult: responseResult,
+                message: message
+            )
         let diagnostics =
             (object["diagnostics"] as? [String] ?? [])
             + fallbackDiagnostics
@@ -1737,6 +1825,13 @@ struct ChromeMV3ContentScriptJSDispatchResult:
             listenerCount: listenerCount,
             dispatchResult: dispatchResult,
             responseResult: responseResult,
+            resultClassifier: classifier,
+            listenerInvoked: object["listenerInvoked"] as? Bool ?? false,
+            sendResponseCalled:
+                object["sendResponseCalled"] as? Bool ?? false,
+            listenerReturnedTrue:
+                object["listenerReturnedTrue"] as? Bool ?? false,
+            listenerThrew: object["listenerThrew"] as? Bool ?? false,
             diagnostics: uniqueSortedContentScripts(diagnostics)
         )
     }
@@ -1756,6 +1851,18 @@ struct ChromeMV3ContentScriptJSDispatchResult:
         case .string:
             return "string"
         }
+    }
+}
+
+private extension ChromeMV3StorageValue {
+    var contentScriptDispatchLooksSyntheticProbe: Bool {
+        guard case .object(let object) = self else { return false }
+        return object.values.contains(where: { value in
+            guard case .string(let string) = value else { return false }
+            return string.hasPrefix("sumi")
+                || string.hasPrefix("sumi-")
+                || string.localizedCaseInsensitiveContains("sumi")
+        })
     }
 }
 
@@ -3164,6 +3271,7 @@ struct ChromeMV3ContentScriptTabsSendMessageResult:
     var selectedLastError: ChromeMV3RuntimeLastErrorContract?
     var selectedEndpoint: ChromeMV3ContentScriptEndpointRecord?
     var listenerCount: Int
+    var resultClassifier: ChromeMV3TabsSendMessageResultClassifier
     var dispatchResult: ChromeMV3RuntimeMessageDispatcherResult?
     var diagnostics: [String]
 }
@@ -3309,6 +3417,7 @@ enum ChromeMV3ContentScriptTabsMessagingBridge {
                 selectedLastError: error,
                 selectedEndpoint: nil,
                 listenerCount: 0,
+                resultClassifier: .noReceivingEnd,
                 dispatchResult: nil,
                 diagnostics: uniqueSortedContentScripts(
                     diagnostics + error.diagnostics
@@ -3338,6 +3447,7 @@ enum ChromeMV3ContentScriptTabsMessagingBridge {
                 selectedLastError: error,
                 selectedEndpoint: nil,
                 listenerCount: 0,
+                resultClassifier: .noReceivingEnd,
                 dispatchResult: nil,
                 diagnostics: uniqueSortedContentScripts(
                     diagnostics + error.diagnostics
@@ -3358,6 +3468,7 @@ enum ChromeMV3ContentScriptTabsMessagingBridge {
                 selectedLastError: error,
                 selectedEndpoint: endpoint,
                 listenerCount: endpoint.messageListenerRegistered ? 1 : 0,
+                resultClassifier: .noReceivingEnd,
                 dispatchResult: nil,
                 diagnostics: uniqueSortedContentScripts(
                     diagnostics + error.diagnostics
@@ -3379,6 +3490,7 @@ enum ChromeMV3ContentScriptTabsMessagingBridge {
                 selectedLastError: error,
                 selectedEndpoint: endpoint,
                 listenerCount: 0,
+                resultClassifier: .noReceivingEnd,
                 dispatchResult: nil,
                 diagnostics: uniqueSortedContentScripts(
                     diagnostics + error.diagnostics
@@ -3418,6 +3530,7 @@ enum ChromeMV3ContentScriptTabsMessagingBridge {
                 selectedLastError: error,
                 selectedEndpoint: endpoint,
                 listenerCount: 1,
+                resultClassifier: .noReceivingEnd,
                 dispatchResult: nil,
                 diagnostics: uniqueSortedContentScripts(
                     diagnostics + error.diagnostics
@@ -3464,6 +3577,7 @@ enum ChromeMV3ContentScriptTabsMessagingBridge {
                 selectedLastError: error,
                 selectedEndpoint: endpoint,
                 listenerCount: 1,
+                resultClassifier: .noReceivingEnd,
                 dispatchResult: dispatch,
                 diagnostics: uniqueSortedContentScripts(diagnostics)
             )
@@ -3474,6 +3588,7 @@ enum ChromeMV3ContentScriptTabsMessagingBridge {
             selectedLastError: nil,
             selectedEndpoint: endpoint,
             listenerCount: 1,
+            resultClassifier: .listenerRespondedSync,
             dispatchResult: dispatch,
             diagnostics: uniqueSortedContentScripts(diagnostics)
         )
@@ -3505,6 +3620,7 @@ enum ChromeMV3ContentScriptTabsMessagingBridge {
                 selectedLastError: error,
                 selectedEndpoint: nil,
                 listenerCount: 0,
+                resultClassifier: .noReceivingEnd,
                 dispatchResult: nil,
                 diagnostics:
                     uniqueSortedContentScripts(diagnostics + error.diagnostics)
@@ -3533,6 +3649,7 @@ enum ChromeMV3ContentScriptTabsMessagingBridge {
                 selectedLastError: error,
                 selectedEndpoint: nil,
                 listenerCount: 0,
+                resultClassifier: .noReceivingEnd,
                 dispatchResult: nil,
                 diagnostics:
                     uniqueSortedContentScripts(diagnostics + error.diagnostics)
@@ -3552,6 +3669,7 @@ enum ChromeMV3ContentScriptTabsMessagingBridge {
                 selectedLastError: error,
                 selectedEndpoint: endpoint,
                 listenerCount: endpoint.messageListenerRegistered ? 1 : 0,
+                resultClassifier: .noReceivingEnd,
                 dispatchResult: nil,
                 diagnostics:
                     uniqueSortedContentScripts(diagnostics + error.diagnostics)
@@ -3593,6 +3711,7 @@ enum ChromeMV3ContentScriptTabsMessagingBridge {
                 selectedLastError: error,
                 selectedEndpoint: endpoint,
                 listenerCount: endpoint.messageListenerRegistered ? 1 : 0,
+                resultClassifier: .noReceivingEnd,
                 dispatchResult: nil,
                 diagnostics:
                     uniqueSortedContentScripts(diagnostics + error.diagnostics)
@@ -3629,6 +3748,15 @@ enum ChromeMV3ContentScriptTabsMessagingBridge {
             "tabs.sendMessage responseResult=\(jsDispatch.responseResult)."
         )
         diagnostics.append(
+            "tabs.sendMessage resultClassifier=\(jsDispatch.resultClassifier.rawValue)."
+        )
+        diagnostics.append(
+            "tabs.sendMessage listenerInvoked=\(jsDispatch.listenerInvoked) sendResponseCalled=\(jsDispatch.sendResponseCalled) listenerReturnedTrue=\(jsDispatch.listenerReturnedTrue) listenerThrew=\(jsDispatch.listenerThrew)."
+        )
+        diagnostics.append(
+            "tabs.sendMessage senderMetadata=id,sourceContext,targetTabId,targetFrameId,targetDocumentId,targetContentWorld;url=extensionOriginOnly."
+        )
+        diagnostics.append(
             "tabs.sendMessage teardownResult=endpointRemainsActiveUntilNavigationProfileTabTeardown."
         )
         if jsDispatch.succeeded {
@@ -3638,6 +3766,7 @@ enum ChromeMV3ContentScriptTabsMessagingBridge {
                 selectedLastError: nil,
                 selectedEndpoint: endpoint,
                 listenerCount: jsDispatch.listenerCount,
+                resultClassifier: jsDispatch.resultClassifier,
                 dispatchResult: nil,
                 diagnostics: uniqueSortedContentScripts(diagnostics)
             )
@@ -3659,6 +3788,7 @@ enum ChromeMV3ContentScriptTabsMessagingBridge {
             selectedLastError: error,
             selectedEndpoint: endpoint,
             listenerCount: jsDispatch.listenerCount,
+            resultClassifier: jsDispatch.resultClassifier,
             dispatchResult: nil,
             diagnostics:
                 uniqueSortedContentScripts(diagnostics + error.diagnostics)
@@ -5059,6 +5189,11 @@ private enum ChromeMV3ContentScriptWebKitJSDispatcher {
                     listenerCount: 0,
                     dispatchResult: "dispatcherMissing",
                     responseResult: "contextNotLoaded",
+                    resultClassifier: "noReceivingEnd",
+                    listenerInvoked: false,
+                    sendResponseCalled: false,
+                    listenerReturnedTrue: false,
+                    listenerThrew: false,
                     diagnostics: ["Content-world dispatch function is missing."]
                   };
                 }
@@ -5070,6 +5205,7 @@ private enum ChromeMV3ContentScriptWebKitJSDispatcher {
             )
             return ChromeMV3ContentScriptJSDispatchResult.parseWebKitValue(
                 result ?? NSNull(),
+                message: request.message,
                 fallbackDiagnostics: fallbackDiagnostics
             )
         } catch {
@@ -5452,7 +5588,56 @@ enum ChromeMV3ContentScriptJSBridgeSource {
 
           function makeEvent(registerMethod, unregisterMethod) {
             const listeners = [];
-            function responseError(message, listenerCount, dispatchResult, diagnostics) {
+            function looksLikeSyntheticProbe(value) {
+              if (!value || typeof value !== "object" || Array.isArray(value)) {
+                return false;
+              }
+              try {
+                return Object.keys(value).some((key) => {
+                  const item = value[key];
+                  return typeof item === "string"
+                    && (item.indexOf("sumi") === 0 || item.indexOf("sumi-") === 0 || item.toLowerCase().indexOf("sumi") >= 0);
+                });
+              } catch (_) {
+                return false;
+              }
+            }
+            function resultClassifier(dispatchResult, listenerCount, responseResult, message) {
+              if (dispatchResult === "noListener"
+                  || dispatchResult === "dispatcherMissing"
+                  || dispatchResult === "webViewUnavailable"
+                  || dispatchResult === "evaluateJavaScriptFailed"
+                  || dispatchResult === "invalidWebKitResult") {
+                return "noReceivingEnd";
+              }
+              if (dispatchResult === "listenerThrew"
+                  || dispatchResult === "promiseRejected") {
+                return "listenerThrew";
+              }
+              if (dispatchResult === "sendResponseSync") {
+                return "listenerRespondedSync";
+              }
+              if (dispatchResult === "sendResponse"
+                  || dispatchResult === "sendResponseAsync"
+                  || dispatchResult === "promiseResolved") {
+                return "listenerRespondedAsync";
+              }
+              if (dispatchResult === "sendResponseTimeout") {
+                return "listenerPendingTimedOut";
+              }
+              if (dispatchResult === "noResponse") {
+                return looksLikeSyntheticProbe(message)
+                  ? "wrongMessageContract"
+                  : (listenerCount > 0 ? "listenerPresentButNoResponse" : "noReceivingEnd");
+              }
+              if (responseResult === "noReceivingEnd") {
+                return "noReceivingEnd";
+              }
+              return listenerCount > 0 ? "listenerPresentButNoResponse" : "noReceivingEnd";
+            }
+            function responseError(message, listenerCount, dispatchResult, diagnostics, state, originalMessage) {
+              const safeState = state || {};
+              const responseResult = message;
               return {
                 succeeded: false,
                 resultPayload: null,
@@ -5462,11 +5647,23 @@ enum ChromeMV3ContentScriptJSBridgeSource {
                   : "Could not establish connection. Receiving end does not exist.",
                 listenerCount,
                 dispatchResult,
-                responseResult: message,
+                responseResult,
+                resultClassifier: resultClassifier(
+                  dispatchResult,
+                  listenerCount,
+                  responseResult,
+                  originalMessage
+                ),
+                listenerInvoked: !!safeState.listenerInvoked,
+                sendResponseCalled: !!safeState.sendResponseCalled,
+                listenerReturnedTrue: !!safeState.listenerReturnedTrue,
+                listenerThrew: !!safeState.listenerThrew,
                 diagnostics: diagnostics || []
               };
             }
-            function responseSuccess(value, listenerCount, dispatchResult, diagnostics) {
+            function responseSuccess(value, listenerCount, dispatchResult, diagnostics, state, originalMessage) {
+              const safeState = state || {};
+              const responseResult = value === undefined ? "null" : typeof value;
               return {
                 succeeded: true,
                 resultPayload: toJSONCompatible(value),
@@ -5474,7 +5671,17 @@ enum ChromeMV3ContentScriptJSBridgeSource {
                 lastErrorMessage: null,
                 listenerCount,
                 dispatchResult,
-                responseResult: value === undefined ? "null" : typeof value,
+                responseResult,
+                resultClassifier: resultClassifier(
+                  dispatchResult,
+                  listenerCount,
+                  responseResult,
+                  originalMessage
+                ),
+                listenerInvoked: !!safeState.listenerInvoked,
+                sendResponseCalled: !!safeState.sendResponseCalled,
+                listenerReturnedTrue: !!safeState.listenerReturnedTrue,
+                listenerThrew: !!safeState.listenerThrew,
                 diagnostics: diagnostics || []
               };
             }
@@ -5516,6 +5723,19 @@ enum ChromeMV3ContentScriptJSBridgeSource {
               let finalResult = { value: null };
               let asyncWaiter = null;
               let asyncWaiterResolve = null;
+              let listenerInvoked = false;
+              let listenerExecuting = false;
+              let sendResponseCalled = false;
+              let listenerReturnedTrue = false;
+              let listenerThrew = false;
+              function listenerState() {
+                return {
+                  listenerInvoked,
+                  sendResponseCalled,
+                  listenerReturnedTrue,
+                  listenerThrew
+                };
+              }
               function settle(value, dispatchResult) {
                 if (settled) {
                   return null;
@@ -5531,6 +5751,11 @@ enum ChromeMV3ContentScriptJSBridgeSource {
                     listenerCount,
                     dispatchResult: "serializationFailed",
                     responseResult: "serializationFailed",
+                    resultClassifier: "listenerThrew",
+                    listenerInvoked,
+                    sendResponseCalled,
+                    listenerReturnedTrue,
+                    listenerThrew,
                     diagnostics: diagnostics.concat([
                       "sendResponse payload was not JSON serializable.",
                       serialized.message
@@ -5542,15 +5767,18 @@ enum ChromeMV3ContentScriptJSBridgeSource {
                   serialized.value,
                   listenerCount,
                   dispatchResult,
-                  diagnostics.concat(["runtime.onMessage sendResponse resolved."])
+                  diagnostics.concat(["runtime.onMessage sendResponse resolved."]),
+                  listenerState(),
+                  message
                 );
                 return finalResult.value;
               }
               function makeSendResponse() {
                 return function sendResponse(value) {
+                  sendResponseCalled = true;
                   const result = settle(
                     arguments.length === 0 ? null : value,
-                    "sendResponse"
+                    listenerExecuting ? "sendResponseSync" : "sendResponseAsync"
                   );
                   if (result && asyncWaiterResolve) {
                     asyncWaiterResolve(result);
@@ -5560,16 +5788,20 @@ enum ChromeMV3ContentScriptJSBridgeSource {
               for (const listener of snapshot) {
                 const sendResponse = makeSendResponse();
                 try {
+                  listenerInvoked = true;
+                  listenerExecuting = true;
                   const listenerResult = listener.call(
                     undefined,
                     toJSONCompatible(message),
                     toJSONCompatible(sender),
                     sendResponse
                   );
+                  listenerExecuting = false;
                   if (settled) {
                     break;
                   }
                   if (listenerResult === true) {
+                    listenerReturnedTrue = true;
                     asyncWaiter = new Promise((resolve) => {
                       asyncWaiterResolve = resolve;
                       setTimeout(() => {
@@ -5581,7 +5813,9 @@ enum ChromeMV3ContentScriptJSBridgeSource {
                             "sendResponseTimeout",
                             diagnostics.concat([
                               "Listener returned literal true but did not call sendResponse before timeout."
-                            ])
+                            ]),
+                            listenerState(),
+                            message
                           ));
                         }
                       }, timeoutMilliseconds);
@@ -5596,7 +5830,9 @@ enum ChromeMV3ContentScriptJSBridgeSource {
                           "timeout",
                           listenerCount,
                           "alreadySettled",
-                          diagnostics
+                          diagnostics,
+                          listenerState(),
+                          message
                         );
                       },
                       (error) => {
@@ -5612,6 +5848,11 @@ enum ChromeMV3ContentScriptJSBridgeSource {
                           listenerCount,
                           dispatchResult: "promiseRejected",
                           responseResult: "promiseRejected",
+                          resultClassifier: "listenerThrew",
+                          listenerInvoked,
+                          sendResponseCalled,
+                          listenerReturnedTrue,
+                          listenerThrew,
                           diagnostics: diagnostics.concat([message])
                         };
                       }
@@ -5619,8 +5860,10 @@ enum ChromeMV3ContentScriptJSBridgeSource {
                     break;
                   }
                 } catch (error) {
+                  listenerExecuting = false;
                   if (!settled) {
                     settled = true;
+                    listenerThrew = true;
                     const message = error && error.message
                       ? String(error.message)
                       : "runtime.onMessage listener threw.";
@@ -5632,6 +5875,11 @@ enum ChromeMV3ContentScriptJSBridgeSource {
                       listenerCount,
                       dispatchResult: "listenerThrew",
                       responseResult: "listenerThrew",
+                      resultClassifier: "listenerThrew",
+                      listenerInvoked,
+                      sendResponseCalled,
+                      listenerReturnedTrue,
+                      listenerThrew,
                       diagnostics: diagnostics.concat([message])
                     });
                   }
@@ -5649,7 +5897,9 @@ enum ChromeMV3ContentScriptJSBridgeSource {
                 "noResponse",
                 diagnostics.concat([
                   "runtime.onMessage listener(s) returned without sendResponse."
-                ])
+                ]),
+                listenerState(),
+                message
               ));
             }
             return Object.freeze({

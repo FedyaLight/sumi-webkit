@@ -2005,6 +2005,51 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
     }
 
     @MainActor
+    func testWKTabsSendMessageListenerPresentWithoutResponseIsClassified()
+        async throws
+    {
+        let fixture = try makePreflightFixture(
+            contentScriptSource: """
+            chrome.runtime.onMessage.addListener(() => {
+              // Intentionally ignore the message without responding.
+            });
+            """
+        )
+        let harness = try await makeTabsMessageHarness(fixture: fixture)
+
+        let response = await harness.handler.handleAsync(request(
+            namespace: "tabs",
+            methodName: "sendMessage",
+            arguments: [
+                .number(7),
+                .object(["type": .string("unhandled")]),
+                .object(["frameId": .number(0)]),
+            ]
+        ))
+
+        XCTAssertFalse(response.succeeded)
+        XCTAssertEqual(response.lastErrorCode, "noReceivingEnd")
+        let diagnostics = response.diagnostics.joined(separator: "\n")
+        XCTAssertTrue(diagnostics.contains("listenerCount=1"), diagnostics)
+        XCTAssertTrue(
+            diagnostics.contains("listenerInvoked=true"),
+            diagnostics
+        )
+        XCTAssertTrue(
+            diagnostics.contains("sendResponseCalled=false"),
+            diagnostics
+        )
+        XCTAssertTrue(
+            diagnostics.contains(
+                "resultClassifier=listenerPresentButNoResponse"
+            ),
+            diagnostics
+        )
+
+        harness.attachment.handle?.tearDown(reason: "no response teardown")
+    }
+
+    @MainActor
     func testWKTabsSendMessageListenerThrowSurfacesLastError()
         async throws
     {
@@ -2373,6 +2418,10 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         )
         XCTAssertTrue(
             diagnostics.contains("dispatchResult=noResponse"),
+            diagnostics
+        )
+        XCTAssertTrue(
+            diagnostics.contains("resultClassifier=wrongMessageContract"),
             diagnostics
         )
         XCTAssertTrue(
