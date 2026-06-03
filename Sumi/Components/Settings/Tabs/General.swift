@@ -78,9 +78,11 @@ struct SettingsGeneralTab: View {
                 title: "Search Engines",
                 subtitle: "The list order controls Tab-search priority in the floating bar."
             ) {
+                let displayedSearchEngines = filteredSearchEngines
+
                 searchEnginesToolbar
 
-                if filteredSearchEngines.isEmpty {
+                if displayedSearchEngines.isEmpty {
                     SettingsEmptyState(
                         systemImage: "magnifyingglass",
                         title: searchEngineFilter.isEmpty ? "No Search Engines" : "No Matching Search Engines",
@@ -91,7 +93,7 @@ struct SettingsGeneralTab: View {
                 } else {
                     VStack(alignment: .leading, spacing: 0) {
                         searchEngineListHeader
-                        searchEngineRowsList
+                        searchEngineRowsList(displayedSearchEngines)
                     }
                 }
 
@@ -222,13 +224,13 @@ struct SettingsGeneralTab: View {
         .padding(.bottom, 5)
     }
 
-    private var searchEngineRowsList: some View {
+    private func searchEngineRowsList(_ engines: [SumiSearchEngine]) -> some View {
         ZStack(alignment: .topLeading) {
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(filteredSearchEngines.enumerated()), id: \.element.id) { index, engine in
+                ForEach(Array(engines.enumerated()), id: \.element.id) { index, engine in
                     searchEngineRow(engine, index: index)
 
-                    if index < filteredSearchEngines.count - 1 {
+                    if index < engines.count - 1 {
                         SettingsDivider()
                     }
                 }
@@ -247,16 +249,15 @@ struct SettingsGeneralTab: View {
     private func searchEngineRow(_ engine: SumiSearchEngine, index: Int) -> some View {
         let isDraggedSource = searchEngineDrag?.id == engine.id
 
-        return searchEngineRowBody(engine, index: index, allowsDrag: true)
+        return searchEngineRowBody(engine, index: index, allowsDrag: true, isInteractive: true)
         .frame(height: SearchEngineReorderMetrics.rowHeight)
         .opacity(isDraggedSource ? 0.001 : 1)
         .allowsHitTesting(!isDraggedSource)
         .offset(y: searchEngineRowOffset(for: engine, index: index))
-        .animation(SearchEngineReorderMetrics.reorderAnimation, value: searchEngineDrag?.projectedIndex)
     }
 
     private func searchEngineFloatingRow(_ engine: SumiSearchEngine, drag: SearchEngineReorderState) -> some View {
-        searchEngineRowBody(engine, index: drag.sourceIndex, allowsDrag: false)
+        searchEngineRowBody(engine, index: drag.sourceIndex, allowsDrag: false, isInteractive: false)
             .frame(height: SearchEngineReorderMetrics.rowHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
@@ -276,7 +277,8 @@ struct SettingsGeneralTab: View {
     private func searchEngineRowBody(
         _ engine: SumiSearchEngine,
         index: Int,
-        allowsDrag: Bool
+        allowsDrag: Bool,
+        isInteractive: Bool
     ) -> some View {
         HStack(alignment: .center, spacing: 12) {
             if allowsDrag {
@@ -310,38 +312,56 @@ struct SettingsGeneralTab: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Toggle("", isOn: tabSearchBinding(for: engine))
-                .toggleStyle(SearchEngineCircularCheckboxStyle())
-                .labelsHidden()
-                .frame(width: 86, alignment: .center)
-                .help(engine.tabSearchEnabled ? "Hide from Tab search" : "Show in Tab search")
-
-            HStack(spacing: 6) {
-                Button {
-                    editingSearchEngine = SearchEngineEditorDraft(engine: engine)
-                } label: {
-                    Image(systemName: "pencil")
-                }
-                .buttonStyle(.plain)
-                .frame(width: 26, height: 26)
-                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .help("Edit search engine")
-
-                Button(role: .destructive) {
-                    if canDeleteSearchEngine(engine) {
-                        searchEnginePendingRemoval = engine
-                    }
-                } label: {
-                    Image(systemName: "trash")
-                }
-                .buttonStyle(.plain)
-                .frame(width: 26, height: 26)
-                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .disabled(!canDeleteSearchEngine(engine))
-                .help(canDeleteSearchEngine(engine) ? "Delete search engine" : "At least one search engine is required")
+            if isInteractive {
+                Toggle("", isOn: tabSearchBinding(for: engine))
+                    .toggleStyle(SearchEngineCircularCheckboxStyle())
+                    .labelsHidden()
+                    .frame(width: 86, alignment: .center)
+                    .help(engine.tabSearchEnabled ? "Hide from Tab search" : "Show in Tab search")
+            } else {
+                SearchEngineCircularCheckboxMark(isOn: engine.tabSearchEnabled)
+                    .frame(width: 86, alignment: .center)
+                    .accessibilityHidden(true)
             }
-            .foregroundStyle(.secondary)
-            .frame(width: 64, alignment: .trailing)
+
+            if isInteractive {
+                HStack(spacing: 6) {
+                    Button {
+                        editingSearchEngine = SearchEngineEditorDraft(engine: engine)
+                    } label: {
+                        Image(systemName: "pencil")
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 26, height: 26)
+                    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .help("Edit search engine")
+
+                    Button(role: .destructive) {
+                        if canDeleteSearchEngine(engine) {
+                            searchEnginePendingRemoval = engine
+                        }
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 26, height: 26)
+                    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .disabled(!canDeleteSearchEngine(engine))
+                    .help(canDeleteSearchEngine(engine) ? "Delete search engine" : "At least one search engine is required")
+                }
+                .foregroundStyle(.secondary)
+                .frame(width: 64, alignment: .trailing)
+            } else {
+                HStack(spacing: 6) {
+                    Image(systemName: "pencil")
+                        .frame(width: 26, height: 26)
+                    Image(systemName: "trash")
+                        .frame(width: 26, height: 26)
+                }
+                .foregroundStyle(.secondary)
+                .frame(width: 64, alignment: .trailing)
+                .accessibilityHidden(true)
+            }
         }
     }
 
@@ -547,30 +567,38 @@ private struct SearchEngineDragHandle: View {
     }
 }
 
+private struct SearchEngineCircularCheckboxMark: View {
+    let isOn: Bool
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .strokeBorder(
+                    isOn ? Color.accentColor : Color.secondary.opacity(0.55),
+                    lineWidth: isOn ? 0 : 1.5
+                )
+                .background(
+                    Circle()
+                        .fill(isOn ? Color.accentColor : Color.clear)
+                )
+
+            if isOn {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 8.5, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+        }
+        .frame(width: 16, height: 16)
+        .contentShape(Circle())
+    }
+}
+
 private struct SearchEngineCircularCheckboxStyle: ToggleStyle {
     func makeBody(configuration: Configuration) -> some View {
         Button {
             configuration.isOn.toggle()
         } label: {
-            ZStack {
-                Circle()
-                    .strokeBorder(
-                        configuration.isOn ? Color.accentColor : Color.secondary.opacity(0.55),
-                        lineWidth: configuration.isOn ? 0 : 1.5
-                    )
-                    .background(
-                        Circle()
-                            .fill(configuration.isOn ? Color.accentColor : Color.clear)
-                    )
-
-                if configuration.isOn {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 8.5, weight: .bold))
-                        .foregroundStyle(.white)
-                }
-            }
-            .frame(width: 16, height: 16)
-            .contentShape(Circle())
+            SearchEngineCircularCheckboxMark(isOn: configuration.isOn)
         }
         .buttonStyle(.plain)
         .accessibilityValue(configuration.isOn ? "On" : "Off")
