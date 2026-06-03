@@ -29,6 +29,89 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(reloaded.resolvedStartupPageURL.absoluteString, "https://example.com")
     }
 
+    func testUnifiedSearchEnginesDefaultOrderAndTabSearchPriority() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+
+        XCTAssertEqual(settings.searchEngineId, SearchProvider.google.rawValue)
+        XCTAssertTrue(settings.searchEngines.contains { $0.id == SearchProvider.google.rawValue })
+        XCTAssertEqual(
+            Array(settings.searchEngines.prefix(SearchProvider.allCases.count)).map(\.id),
+            SearchProvider.allCases.map(\.rawValue)
+        )
+        XCTAssertEqual(settings.searchEngines[SearchProvider.allCases.count].name, "YouTube")
+
+        let youtubeMatch = SumiSearchEngine.match(for: "y", in: settings.searchEngines)
+        XCTAssertEqual(youtubeMatch?.name, "YouTube")
+
+        let githubMatch = SumiSearchEngine.match(for: "g", in: settings.searchEngines)
+        XCTAssertEqual(githubMatch?.name, "GitHub")
+    }
+
+    func testUnifiedSearchEngineDefaultCanUseSiteSearchEngine() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        let youtube = settings.searchEngines.first { $0.name == "YouTube" }
+
+        settings.searchEngineId = try! XCTUnwrap(youtube?.id)
+
+        XCTAssertEqual(settings.resolvedSearchEngineDisplayName, "YouTube")
+        XCTAssertEqual(
+            normalizeURL("sumi browser", queryTemplate: settings.resolvedSearchEngineTemplate),
+            "https://www.youtube.com/results?search_query=sumi%20browser"
+        )
+    }
+
+    func testUnifiedSearchEnginesPersistCustomEntries() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let custom = SumiSearchEngine(
+            id: "startpage",
+            name: "Startpage",
+            domain: "www.startpage.com",
+            searchURLTemplate: "https://www.startpage.com/sp/search?query={query}",
+            colorHex: "#666666",
+            tabSearchEnabled: true
+        )
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        settings.searchEngines.append(custom)
+        settings.searchEngineId = custom.id
+
+        let reloaded = SumiSettingsService(userDefaults: harness.defaults)
+
+        XCTAssertTrue(reloaded.searchEngines.contains { $0.id == custom.id })
+        XCTAssertEqual(reloaded.resolvedSearchEngineDisplayName, "Startpage")
+        XCTAssertEqual(
+            normalizeURL("privacy", queryTemplate: reloaded.resolvedSearchEngineTemplate),
+            "https://www.startpage.com/sp/search?query=privacy"
+        )
+    }
+
+    func testTabSearchMatchUsesFirstMatchingEnabledEngineInListOrder() {
+        let github = SumiSearchEngine(
+            id: "github",
+            name: "GitHub",
+            domain: "github.com",
+            searchURLTemplate: "https://github.com/search?q={query}",
+            tabSearchEnabled: true
+        )
+        let google = SumiSearchEngine(
+            id: "google",
+            name: "Google",
+            domain: "google.com",
+            searchURLTemplate: "https://www.google.com/search?q={query}",
+            tabSearchEnabled: true
+        )
+
+        XCTAssertEqual(SumiSearchEngine.match(for: "g", in: [github, google])?.id, "github")
+        XCTAssertEqual(SumiSearchEngine.match(for: "g", in: [google, github])?.id, "google")
+    }
+
     func testStartupPageURLNormalizationAndValidation() {
         XCTAssertEqual(
             SumiStartupPageURL.normalizedURLString(from: "example.com"),

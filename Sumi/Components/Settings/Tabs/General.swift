@@ -3,13 +3,15 @@
 //  Sumi
 //
 
-import AppKit
 import SwiftUI
 
 struct SettingsGeneralTab: View {
     @Environment(\.sumiSettings) var sumiSettings
-    @State private var showingAddSite = false
-    @State private var sitePendingRemoval: SiteSearchEntry?
+    @State private var searchEngineFilter = ""
+    @State private var editingSearchEngine: SearchEngineEditorDraft?
+    @State private var searchEnginePendingRemoval: SumiSearchEngine?
+    @State private var showingRestoreDefaultsConfirmation = false
+    @State private var searchEngineDrag: SearchEngineReorderState?
 
     var body: some View {
         @Bindable var settings = sumiSettings
@@ -40,23 +42,8 @@ struct SettingsGeneralTab: View {
 
             SettingsSection(
                 title: "Search",
-                subtitle: "Sumi routes searches through the canonical URL bar in the sidebar header."
+                subtitle: "Choose the default web search and how the floating bar behaves before typing."
             ) {
-                SettingsRow(
-                    title: "Default search engine",
-                    subtitle: "Used for plain text typed into the URL bar."
-                ) {
-                    SearchEnginePopUpButton(
-                        selection: $settings.searchEngineId,
-                        customEngines: sumiSettings.customSearchEngines,
-                        onAdd: addCustomSearchEngine,
-                        onRemoveSelected: removeCustomSearchEngine
-                    )
-                    .settingsTrailingControl(width: 210)
-                }
-
-                SettingsDivider()
-
                 SettingsRow(
                     title: "Floating bar empty state",
                     subtitle: "Choose what appears before you start typing."
@@ -69,479 +56,701 @@ struct SettingsGeneralTab: View {
                     .labelsHidden()
                     .settingsTrailingControl(width: 160)
                 }
+
+                SettingsDivider()
+
+                SettingsRow(
+                    title: "Default search engine",
+                    subtitle: "Used for plain text typed into the URL bar."
+                ) {
+                    Picker("", selection: $settings.searchEngineId) {
+                        ForEach(settings.searchEngines) { engine in
+                            Text(engine.name).tag(engine.id)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .settingsTrailingControl(width: 210)
+                }
             }
 
             SettingsSection(
-                title: "Site Search",
-                subtitle: "Type a site prefix in the floating bar, then press Tab to search that site."
+                title: "Search Engines",
+                subtitle: "The list order controls Tab-search priority in the floating bar."
             ) {
-                if sumiSettings.siteSearchEntries.isEmpty {
+                searchEnginesToolbar
+
+                if filteredSearchEngines.isEmpty {
                     SettingsEmptyState(
-                        systemImage: "globe.badge.chevron.backward",
-                        title: "No Site Searches",
-                        detail: "Add a site search to jump directly into a website search field."
+                        systemImage: "magnifyingglass",
+                        title: searchEngineFilter.isEmpty ? "No Search Engines" : "No Matching Search Engines",
+                        detail: searchEngineFilter.isEmpty
+                            ? "Add a search engine to use it as a default or Tab search target."
+                            : "Clear the filter to show every configured search engine."
                     )
                 } else {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(sumiSettings.siteSearchEntries) { entry in
-                            siteSearchRow(entry)
-                        }
+                    VStack(alignment: .leading, spacing: 0) {
+                        searchEngineListHeader
+                        searchEngineRowsList
                     }
                 }
 
                 SettingsDivider()
 
-                HStack(spacing: 8) {
-                    Spacer(minLength: 0)
+                HStack(spacing: 10) {
+                    Text(tabSearchSummary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                    Button {
-                        showingAddSite = true
-                    } label: {
-                        Label("Add Site", systemImage: "plus")
-                    }
-                    .buttonStyle(.borderedProminent)
+                    Spacer(minLength: 12)
 
-                    Button("Reset to Defaults") {
-                        sumiSettings.siteSearchEntries = SiteSearchEntry.defaultSites
+                    Button("Restore Defaults") {
+                        showingRestoreDefaultsConfirmation = true
                     }
                     .buttonStyle(.bordered)
                 }
-                .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
-        .sheet(isPresented: $showingAddSite) {
-            SiteSearchEntryEditor(entry: nil) { newEntry in
-                sumiSettings.siteSearchEntries.append(newEntry)
+        .sheet(item: $editingSearchEngine) { draft in
+            SearchEngineEditor(draft: draft) { result in
+                saveSearchEngine(result)
             }
         }
         .confirmationDialog(
-            "Remove Site Search?",
-            isPresented: siteRemovalBinding
+            "Remove Search Engine?",
+            isPresented: searchEngineRemovalBinding
         ) {
             Button("Remove", role: .destructive) {
-                removePendingSiteSearch()
+                removePendingSearchEngine()
             }
             Button("Cancel", role: .cancel) {
-                sitePendingRemoval = nil
+                searchEnginePendingRemoval = nil
             }
         } message: {
-            Text(sitePendingRemoval?.name ?? "")
+            Text(searchEnginePendingRemoval?.name ?? "")
+        }
+        .confirmationDialog(
+            "Restore Default Search Engines?",
+            isPresented: $showingRestoreDefaultsConfirmation
+        ) {
+            Button("Restore Defaults", role: .destructive) {
+                restoreDefaultSearchEngines()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your current list will be replaced with Sumi's default search engines.")
         }
     }
 
-    private var siteRemovalBinding: Binding<Bool> {
-        Binding(
-            get: { sitePendingRemoval != nil },
-            set: { isPresented in
-                if !isPresented { sitePendingRemoval = nil }
-            }
-        )
+    private var filteredSearchEngines: [SumiSearchEngine] {
+        sumiSettings.searchEngines.filter { $0.matchesFilter(searchEngineFilter) }
     }
 
-    private func siteSearchRow(_ entry: SiteSearchEntry) -> some View {
-        SettingsRow(
-            title: entry.name,
-            systemImage: nil
-        ) {
-            HStack(spacing: 8) {
-                Text(entry.domain)
+    private var isFilteringSearchEngines: Bool {
+        !searchEngineFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var tabSearchSummary: String {
+        let count = sumiSettings.searchEngines.filter(\.tabSearchEnabled).count
+        switch count {
+        case 0:
+            return "No engines appear as Tab-search suggestions."
+        case 1:
+            return "1 engine appears as a Tab-search suggestion."
+        default:
+            return "\(count) engines appear as Tab-search suggestions."
+        }
+    }
+
+    private var searchEnginesToolbar: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 7) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+
+                TextField("Filter search engines", text: $searchEngineFilter)
+                    .textFieldStyle(.plain)
+
+                if !searchEngineFilter.isEmpty {
+                    Button {
+                        searchEngineFilter = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("Clear filter")
+                }
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: SettingsSurfaceStyle.compactCornerRadius, style: .continuous)
+                    .fill(SettingsSurfaceStyle.fieldBackground)
+            )
+
+            Button {
+                editingSearchEngine = SearchEngineEditorDraft()
+            } label: {
+                Label("Add", systemImage: "plus")
+            }
+            .buttonStyle(.borderedProminent)
+        }
+    }
+
+    private var searchEngineListHeader: some View {
+        HStack(spacing: 12) {
+            Color.clear
+                .frame(width: 18)
+
+            Color.clear
+                .frame(width: 12)
+
+            Text("Search engine")
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text("Tab Search")
+                .frame(width: 86, alignment: .center)
+
+            Text("Actions")
+                .frame(width: 64, alignment: .trailing)
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .padding(.top, 4)
+        .padding(.bottom, 5)
+    }
+
+    private var searchEngineRowsList: some View {
+        ZStack(alignment: .topLeading) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(filteredSearchEngines.enumerated()), id: \.element.id) { index, engine in
+                    searchEngineRow(engine, index: index)
+
+                    if index < filteredSearchEngines.count - 1 {
+                        SettingsDivider()
+                    }
+                }
+            }
+            .animation(SearchEngineReorderMetrics.reorderAnimation, value: searchEngineDrag?.projectedIndex)
+
+            if let drag = searchEngineDrag,
+               !isFilteringSearchEngines,
+               let engine = sumiSettings.searchEngines.first(where: { $0.id == drag.id }) {
+                searchEngineFloatingRow(engine, drag: drag)
+            }
+        }
+        .coordinateSpace(name: SearchEngineReorderMetrics.coordinateSpaceName)
+    }
+
+    private func searchEngineRow(_ engine: SumiSearchEngine, index: Int) -> some View {
+        let isDraggedSource = searchEngineDrag?.id == engine.id
+
+        return searchEngineRowBody(engine, index: index, allowsDrag: true)
+        .frame(height: SearchEngineReorderMetrics.rowHeight)
+        .opacity(isDraggedSource ? 0.001 : 1)
+        .allowsHitTesting(!isDraggedSource)
+        .offset(y: searchEngineRowOffset(for: engine, index: index))
+        .animation(SearchEngineReorderMetrics.reorderAnimation, value: searchEngineDrag?.projectedIndex)
+    }
+
+    private func searchEngineFloatingRow(_ engine: SumiSearchEngine, drag: SearchEngineReorderState) -> some View {
+        searchEngineRowBody(engine, index: drag.sourceIndex, allowsDrag: false)
+            .frame(height: SearchEngineReorderMetrics.rowHeight)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: SettingsSurfaceStyle.compactCornerRadius, style: .continuous)
+                    .fill(SettingsSurfaceStyle.fieldBackground)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: SettingsSurfaceStyle.compactCornerRadius, style: .continuous))
+            .shadow(color: Color.black.opacity(0.16), radius: 10, y: 4)
+            .offset(y: drag.floatingTopY)
+            .transaction { transaction in
+                transaction.animation = nil
+            }
+            .allowsHitTesting(false)
+            .zIndex(10)
+    }
+
+    private func searchEngineRowBody(
+        _ engine: SumiSearchEngine,
+        index: Int,
+        allowsDrag: Bool
+    ) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            if allowsDrag {
+                SearchEngineDragHandle(isEnabled: !isFilteringSearchEngines)
+                    .frame(width: 18)
+                    .gesture(searchEngineDragGesture(for: engine, index: index))
+                    .help(isFilteringSearchEngines ? "Clear the filter to reorder" : "Drag to reorder")
+            } else {
+                SearchEngineDragHandle(isEnabled: true)
+                    .frame(width: 18)
+            }
+
+            Circle()
+                .fill(engine.color)
+                .frame(width: 12, height: 12)
+                .overlay(
+                    Circle()
+                        .strokeBorder(SettingsSurfaceStyle.stroke, lineWidth: 1)
+                )
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(engine.name)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Text(engine.domain)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-                Circle()
-                    .fill(entry.color)
-                    .frame(width: 10, height: 10)
+            Toggle("", isOn: tabSearchBinding(for: engine))
+                .toggleStyle(SearchEngineCircularCheckboxStyle())
+                .labelsHidden()
+                .frame(width: 86, alignment: .center)
+                .help(engine.tabSearchEnabled ? "Hide from Tab search" : "Show in Tab search")
 
-                Button(role: .destructive) {
-                    sitePendingRemoval = entry
+            HStack(spacing: 6) {
+                Button {
+                    editingSearchEngine = SearchEngineEditorDraft(engine: engine)
                 } label: {
-                    Image(systemName: "minus.circle")
+                    Image(systemName: "pencil")
                 }
                 .buttonStyle(.plain)
-                .help("Remove site search")
+                .frame(width: 26, height: 26)
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .help("Edit search engine")
+
+                Button(role: .destructive) {
+                    if canDeleteSearchEngine(engine) {
+                        searchEnginePendingRemoval = engine
+                    }
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.plain)
+                .frame(width: 26, height: 26)
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .disabled(!canDeleteSearchEngine(engine))
+                .help(canDeleteSearchEngine(engine) ? "Delete search engine" : "At least one search engine is required")
             }
+            .foregroundStyle(.secondary)
+            .frame(width: 64, alignment: .trailing)
         }
     }
 
-    private func addCustomSearchEngine(_ newEngine: CustomSearchEngine) {
-        sumiSettings.customSearchEngines.append(newEngine)
-        sumiSettings.searchEngineId = newEngine.id.uuidString
-    }
-
-    private func removeCustomSearchEngine(id: UUID) {
-        sumiSettings.customSearchEngines.removeAll { $0.id == id }
-        if sumiSettings.searchEngineId == id.uuidString {
-            sumiSettings.searchEngineId = SearchProvider.google.rawValue
-        }
-    }
-
-    private func removePendingSiteSearch() {
-        guard let entry = sitePendingRemoval else { return }
-        sumiSettings.siteSearchEntries.removeAll { $0.id == entry.id }
-        sitePendingRemoval = nil
-    }
-}
-
-@MainActor
-private struct SearchEnginePopUpButton: NSViewRepresentable {
-    @Binding var selection: String
-    let customEngines: [CustomSearchEngine]
-    let onAdd: (CustomSearchEngine) -> Void
-    let onRemoveSelected: (UUID) -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-
-    func makeNSView(context: Context) -> NSPopUpButton {
-        let button = NSPopUpButton(frame: .zero, pullsDown: false)
-        button.controlSize = .regular
-        button.bezelStyle = .rounded
-        button.setContentHuggingPriority(.required, for: .horizontal)
-        button.setContentCompressionResistancePriority(.required, for: .horizontal)
-        context.coordinator.rebuild(button)
-        return button
-    }
-
-    func updateNSView(_ button: NSPopUpButton, context: Context) {
-        context.coordinator.parent = self
-        context.coordinator.rebuild(button)
-    }
-
-    @MainActor
-    final class Coordinator: NSObject {
-        var parent: SearchEnginePopUpButton
-        weak var button: NSPopUpButton?
-
-        init(_ parent: SearchEnginePopUpButton) {
-            self.parent = parent
-        }
-
-        func rebuild(_ button: NSPopUpButton) {
-            self.button = button
-            button.removeAllItems()
-
-            for provider in SearchProvider.allCases {
-                addItem(
-                    to: button,
-                    title: provider.displayName,
-                    representedObject: provider.rawValue,
-                    state: parent.selection == provider.rawValue ? .on : .off,
-                    action: #selector(selectSearchEngine(_:))
-                )
+    private var searchEngineRemovalBinding: Binding<Bool> {
+        Binding(
+            get: { searchEnginePendingRemoval != nil },
+            set: { isPresented in
+                if !isPresented { searchEnginePendingRemoval = nil }
             }
+        )
+    }
 
-            if !parent.customEngines.isEmpty {
-                button.menu?.addItem(.separator())
+    private func searchEngineDragGesture(for engine: SumiSearchEngine, index: Int) -> some Gesture {
+        DragGesture(
+            minimumDistance: SearchEngineReorderMetrics.dragThreshold,
+            coordinateSpace: .named(SearchEngineReorderMetrics.coordinateSpaceName)
+        )
+            .onChanged { value in
+                guard !isFilteringSearchEngines else { return }
 
-                for engine in parent.customEngines {
-                    addItem(
-                        to: button,
-                        title: engine.name,
-                        representedObject: engine.id.uuidString,
-                        state: parent.selection == engine.id.uuidString ? .on : .off,
-                        action: #selector(selectSearchEngine(_:))
+                var drag = searchEngineDrag
+                if drag?.id != engine.id {
+                    let rowTopY = SearchEngineReorderMetrics.rowTopY(for: index)
+                    drag = SearchEngineReorderState(
+                        id: engine.id,
+                        sourceIndex: index,
+                        projectedIndex: index,
+                        pointerOffsetY: min(
+                            max(value.startLocation.y - rowTopY, 0),
+                            SearchEngineReorderMetrics.rowHeight
+                        ),
+                        currentLocationY: value.location.y
                     )
                 }
+
+                drag?.currentLocationY = value.location.y
+                if let currentLocationY = drag?.currentLocationY {
+                    drag?.projectedIndex = projectedSearchEngineIndex(locationY: currentLocationY)
+                }
+                searchEngineDrag = drag
             }
+            .onEnded { _ in
+                guard let drag = searchEngineDrag, drag.id == engine.id else {
+                    runWithoutSearchEngineReorderAnimations {
+                        searchEngineDrag = nil
+                    }
+                    return
+                }
 
-            button.menu?.addItem(.separator())
-
-            addItem(
-                to: button,
-                title: "Add Search Engine...",
-                representedObject: nil,
-                state: .off,
-                action: #selector(addSearchEngine(_:))
-            )
-
-            let selectedCustomEngine = selectedCustomEngine
-            let removeTitle = selectedCustomEngine.map { "Remove \"\($0.name)\"..." } ?? "Remove Custom Search Engine"
-            let removeItem = addItem(
-                to: button,
-                title: removeTitle,
-                representedObject: selectedCustomEngine?.id.uuidString,
-                state: .off,
-                action: #selector(removeSelectedSearchEngine(_:))
-            )
-            removeItem.isEnabled = selectedCustomEngine != nil
-
-            if let selectedItem = button.itemArray.first(where: { ($0.representedObject as? String) == parent.selection }) {
-                button.select(selectedItem)
+                runWithoutSearchEngineReorderAnimations {
+                    commitSearchEngineDrag(drag)
+                    searchEngineDrag = nil
+                }
             }
+    }
+
+    private func runWithoutSearchEngineReorderAnimations(_ operation: () -> Void) {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction, operation)
+    }
+
+    private func projectedSearchEngineIndex(locationY: CGFloat) -> Int {
+        let count = sumiSettings.searchEngines.count
+        guard count > 0 else { return 0 }
+
+        let projected = Int(floor(locationY / SearchEngineReorderMetrics.rowStep))
+        return min(max(projected, 0), count - 1)
+    }
+
+    private func searchEngineRowOffset(for engine: SumiSearchEngine, index: Int) -> CGFloat {
+        guard !isFilteringSearchEngines,
+              let drag = searchEngineDrag
+        else { return 0 }
+
+        if drag.id == engine.id {
+            return 0
         }
 
-        @discardableResult
-        private func addItem(
-            to button: NSPopUpButton,
-            title: String,
-            representedObject: String?,
-            state: NSControl.StateValue,
-            action: Selector
-        ) -> NSMenuItem {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-            item.target = self
-            item.representedObject = representedObject
-            item.state = state
-            button.menu?.addItem(item)
-            return item
+        if drag.sourceIndex < drag.projectedIndex,
+           index > drag.sourceIndex,
+           index <= drag.projectedIndex {
+            return -SearchEngineReorderMetrics.rowStep
         }
 
-        private var selectedCustomEngine: CustomSearchEngine? {
-            parent.customEngines.first { $0.id.uuidString == parent.selection }
+        if drag.projectedIndex < drag.sourceIndex,
+           index >= drag.projectedIndex,
+           index < drag.sourceIndex {
+            return SearchEngineReorderMetrics.rowStep
         }
 
-        @objc private func selectSearchEngine(_ sender: NSMenuItem) {
-            guard let id = sender.representedObject as? String else { return }
-            parent.selection = id
+        return 0
+    }
+
+    private func tabSearchBinding(for engine: SumiSearchEngine) -> Binding<Bool> {
+        Binding(
+            get: {
+                sumiSettings.searchEngines.first(where: { $0.id == engine.id })?.tabSearchEnabled ?? false
+            },
+            set: { isEnabled in
+                guard let index = sumiSettings.searchEngines.firstIndex(where: { $0.id == engine.id }) else { return }
+                var engines = sumiSettings.searchEngines
+                engines[index].tabSearchEnabled = isEnabled
+                sumiSettings.searchEngines = engines
+            }
+        )
+    }
+
+    private func commitSearchEngineDrag(_ drag: SearchEngineReorderState) {
+        guard drag.sourceIndex != drag.projectedIndex,
+              sumiSettings.searchEngines.indices.contains(drag.sourceIndex)
+        else { return }
+
+        var engines = sumiSettings.searchEngines
+        let movedEngine = engines.remove(at: drag.sourceIndex)
+        let targetIndex = min(max(drag.projectedIndex, 0), engines.count)
+        engines.insert(movedEngine, at: targetIndex)
+        sumiSettings.searchEngines = engines
+    }
+
+    private func canDeleteSearchEngine(_ engine: SumiSearchEngine) -> Bool {
+        sumiSettings.searchEngines.contains { $0.id == engine.id } && sumiSettings.searchEngines.count > 1
+    }
+
+    private func saveSearchEngine(_ result: SearchEngineEditorResult) {
+        var engines = sumiSettings.searchEngines
+        if let index = engines.firstIndex(where: { $0.id == result.engine.id }) {
+            engines[index] = result.engine
+        } else {
+            engines.append(result.engine)
         }
 
-        @objc private func addSearchEngine(_ sender: NSMenuItem) {
-            resetVisibleSelection()
-            NativeCustomSearchEngineAlert.present(from: button?.window ?? NSApp.keyWindow) { [weak self] engine in
-                self?.parent.onAdd(engine)
-            }
+        sumiSettings.searchEngines = engines
+    }
+
+    private func removePendingSearchEngine() {
+        guard let engine = searchEnginePendingRemoval,
+              canDeleteSearchEngine(engine)
+        else {
+            searchEnginePendingRemoval = nil
+            return
         }
 
-        @objc private func removeSelectedSearchEngine(_ sender: NSMenuItem) {
-            resetVisibleSelection()
-            guard
-                let idString = sender.representedObject as? String,
-                let id = UUID(uuidString: idString),
-                let engine = parent.customEngines.first(where: { $0.id == id })
-            else {
-                return
-            }
+        sumiSettings.searchEngines.removeAll { $0.id == engine.id }
+        searchEnginePendingRemoval = nil
+    }
 
-            let alert = NSAlert()
-            alert.messageText = "Remove Search Engine?"
-            alert.informativeText = "\"\(engine.name)\" will be removed from the default search engine menu."
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "Remove")
-            alert.addButton(withTitle: "Cancel")
-
-            let completion: (NSApplication.ModalResponse) -> Void = { [weak self] response in
-                guard response == .alertFirstButtonReturn else { return }
-                self?.parent.onRemoveSelected(id)
-            }
-
-            if let window = button?.window ?? NSApp.keyWindow {
-                alert.beginSheetModal(for: window, completionHandler: completion)
-            } else {
-                completion(alert.runModal())
-            }
-        }
-
-        private func resetVisibleSelection() {
-            guard
-                let button,
-                let selectedItem = button.itemArray.first(where: { ($0.representedObject as? String) == parent.selection })
-            else {
-                return
-            }
-            button.select(selectedItem)
+    private func restoreDefaultSearchEngines() {
+        let engines = SumiSearchEngine.defaultEngines()
+        sumiSettings.searchEngines = engines
+        if !engines.contains(where: { $0.id == sumiSettings.searchEngineId }) {
+            sumiSettings.searchEngineId = SumiSearchEngine.defaultSearchEngineID(in: engines)
         }
     }
 }
 
-@MainActor
-private enum NativeCustomSearchEngineAlert {
-    static func present(from window: NSWindow?, completion: @escaping (CustomSearchEngine) -> Void) {
-        let alert = NSAlert()
-        alert.messageText = "Add Search Engine"
-        alert.alertStyle = .informational
+private enum SearchEngineReorderMetrics {
+    static let coordinateSpaceName = "SearchEngineRows"
+    static let dragThreshold: CGFloat = 2
+    static let rowHeight: CGFloat = 48
+    static let separatorHeight: CGFloat = 1
+    static let rowStep = rowHeight + separatorHeight
+    static let reorderAnimation: Animation = .easeInOut(duration: 0.16)
 
-        let nameField = VerticallyCenteredTextField(string: "")
-        nameField.placeholderString = "Startpage"
-        nameField.controlSize = .regular
-        nameField.font = .preferredFont(forTextStyle: .body)
-        nameField.translatesAutoresizingMaskIntoConstraints = false
+    static func rowTopY(for index: Int) -> CGFloat {
+        CGFloat(index) * rowStep
+    }
+}
 
-        let templateField = VerticallyCenteredTextField(string: "")
-        templateField.placeholderString = "https://www.example.com/search?q=%@"
-        templateField.controlSize = .regular
-        templateField.font = .preferredFont(forTextStyle: .body)
-        templateField.translatesAutoresizingMaskIntoConstraints = false
+private struct SearchEngineReorderState: Equatable {
+    let id: String
+    let sourceIndex: Int
+    var projectedIndex: Int
+    let pointerOffsetY: CGFloat
+    var currentLocationY: CGFloat
 
-        let descriptionLabel = NSTextField(
-            wrappingLabelWithString: "Enter a name and a search URL that uses %@ where the query should appear."
-        )
-        descriptionLabel.font = .preferredFont(forTextStyle: .body)
-        descriptionLabel.textColor = .secondaryLabelColor
-        descriptionLabel.translatesAutoresizingMaskIntoConstraints = false
+    var floatingTopY: CGFloat {
+        currentLocationY - pointerOffsetY
+    }
+}
 
-        let messageLabel = NSTextField(labelWithString: "")
-        messageLabel.font = .preferredFont(forTextStyle: .footnote)
-        messageLabel.textColor = .secondaryLabelColor
-        messageLabel.lineBreakMode = .byWordWrapping
-        messageLabel.translatesAutoresizingMaskIntoConstraints = false
+private struct SearchEngineDragHandle: View {
+    let isEnabled: Bool
 
-        let nameLabel = NSTextField(labelWithString: "Name:")
-        nameLabel.alignment = .right
-        nameLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        let templateLabel = NSTextField(labelWithString: "URL:")
-        templateLabel.alignment = .right
-        templateLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        let grid = NSGridView(views: [
-            [nameLabel, nameField],
-            [templateLabel, templateField]
-        ])
-        grid.column(at: 0).xPlacement = .trailing
-        grid.column(at: 1).xPlacement = .fill
-        grid.column(at: 0).width = 64
-        grid.column(at: 1).width = 340
-        grid.rowSpacing = 8
-        grid.columnSpacing = 10
-        grid.translatesAutoresizingMaskIntoConstraints = false
-
-        let accessoryView = NSStackView(views: [descriptionLabel, grid, messageLabel])
-        accessoryView.orientation = .vertical
-        accessoryView.alignment = .leading
-        accessoryView.spacing = 12
-        accessoryView.translatesAutoresizingMaskIntoConstraints = false
-
-        NSLayoutConstraint.activate([
-            descriptionLabel.widthAnchor.constraint(equalToConstant: 420),
-            grid.widthAnchor.constraint(equalToConstant: 420),
-            messageLabel.widthAnchor.constraint(equalToConstant: 420),
-            nameField.heightAnchor.constraint(equalToConstant: 30),
-            templateField.heightAnchor.constraint(equalToConstant: 30),
-            nameField.heightAnchor.constraint(equalTo: templateField.heightAnchor)
-        ])
-        accessoryView.layoutSubtreeIfNeeded()
-        accessoryView.setFrameSize(NSSize(width: 420, height: accessoryView.fittingSize.height))
-
-        alert.accessoryView = accessoryView
-        alert.window.initialFirstResponder = nameField
-
-        let addButton = alert.addButton(withTitle: "Add")
-        alert.addButton(withTitle: "Cancel")
-        addButton.isEnabled = false
-
-        func validationMessage() -> String? {
-            validateCustomSearchEngine(
-                name: nameField.stringValue,
-                urlTemplate: templateField.stringValue
-            )
+    var body: some View {
+        VStack(spacing: 3) {
+            dotRow
+            dotRow
         }
-
-        func updateValidationState() {
-            let message = validationMessage()
-            addButton.isEnabled = message == nil
-            messageLabel.stringValue = message ?? "Example: https://www.example.com/search?q=%@"
-            messageLabel.textColor = message == nil ? .secondaryLabelColor : .systemRed
-        }
-
-        let fieldDelegate = SearchEngineAlertFieldDelegate {
-            updateValidationState()
-        }
-        nameField.delegate = fieldDelegate
-        templateField.delegate = fieldDelegate
-        updateValidationState()
-
-        let responseHandler: (NSApplication.ModalResponse) -> Void = { response in
-            _ = fieldDelegate
-
-            guard response == .alertFirstButtonReturn, validationMessage() == nil else { return }
-            completion(
-                CustomSearchEngine(
-                    name: trimmed(nameField.stringValue),
-                    urlTemplate: trimmed(templateField.stringValue)
-                )
-            )
-        }
-
-        if let window {
-            alert.beginSheetModal(for: window, completionHandler: responseHandler)
-        } else {
-            responseHandler(alert.runModal())
-        }
+        .frame(width: 18, height: 18)
+        .foregroundStyle(isEnabled ? .secondary : .tertiary)
+        .contentShape(Rectangle())
+        .opacity(isEnabled ? 1 : 0.55)
     }
 
-    private static func validateCustomSearchEngine(name: String, urlTemplate: String) -> String? {
-        let trimmedName = trimmed(name)
-        let trimmedURLTemplate = trimmed(urlTemplate)
+    private var dotRow: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<3, id: \.self) { _ in
+                Circle()
+                    .frame(width: 2.5, height: 2.5)
+            }
+        }
+    }
+}
+
+private struct SearchEngineCircularCheckboxStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            configuration.isOn.toggle()
+        } label: {
+            ZStack {
+                Circle()
+                    .strokeBorder(
+                        configuration.isOn ? Color.accentColor : Color.secondary.opacity(0.55),
+                        lineWidth: configuration.isOn ? 0 : 1.5
+                    )
+                    .background(
+                        Circle()
+                            .fill(configuration.isOn ? Color.accentColor : Color.clear)
+                    )
+
+                if configuration.isOn {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 8.5, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+            }
+            .frame(width: 16, height: 16)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(configuration.isOn ? "On" : "Off")
+    }
+}
+
+private struct SearchEngineEditorDraft: Identifiable, Equatable {
+    let id = UUID()
+    var engineID: String?
+    var name = ""
+    var domain = ""
+    var searchURLTemplate = ""
+    var colorHex = "#666666"
+    var tabSearchEnabled = false
+
+    init() {}
+
+    init(engine: SumiSearchEngine) {
+        self.engineID = engine.id
+        self.name = engine.name
+        self.domain = engine.domain
+        self.searchURLTemplate = engine.searchURLTemplate
+        self.colorHex = engine.colorHex
+        self.tabSearchEnabled = engine.tabSearchEnabled
+    }
+}
+
+private struct SearchEngineEditorResult {
+    let engine: SumiSearchEngine
+}
+
+private struct SearchEngineEditor: View {
+    let draft: SearchEngineEditorDraft
+    let onSave: (SearchEngineEditorResult) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var name: String
+    @State private var domain: String
+    @State private var searchURLTemplate: String
+    @State private var color: Color
+
+    init(
+        draft: SearchEngineEditorDraft,
+        onSave: @escaping (SearchEngineEditorResult) -> Void
+    ) {
+        self.draft = draft
+        self.onSave = onSave
+        _name = State(initialValue: draft.name)
+        _domain = State(initialValue: draft.domain)
+        _searchURLTemplate = State(initialValue: draft.searchURLTemplate)
+        _color = State(initialValue: Color(hex: draft.colorHex))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(draft.engineID == nil ? "Add Search Engine" : "Edit Search Engine")
+                .font(.headline)
+
+            Form {
+                TextField("Name", text: $name)
+                TextField("Domain", text: $domain)
+                    .help("Optional. If empty, Sumi uses the host from the search URL.")
+                TextField("Search URL", text: $searchURLTemplate)
+                    .help("Use {query} where the typed search text should go.")
+                ColorPicker("Color", selection: $color, supportsOpacity: false)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Preview")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    Text(previewURLString ?? "Enter a valid search URL to preview the result.")
+                        .font(.caption)
+                        .foregroundStyle(previewURLString == nil ? .secondary : .primary)
+                        .lineLimit(2)
+                        .textSelection(.enabled)
+                }
+
+                if let validationMessage {
+                    Text(validationMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
+            .formStyle(.grouped)
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(.bordered)
+                Button("Save") {
+                    save()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(validationMessage != nil)
+            }
+        }
+        .padding(20)
+        .frame(width: 480)
+    }
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var trimmedDomain: String {
+        domain.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var normalizedTemplate: String {
+        SumiSearchEngine.normalizedTemplate(searchURLTemplate)
+    }
+
+    private var normalizedColorHex: String {
+        color.toHexString() ?? draft.colorHex
+    }
+
+    private var sampleURL: URL? {
+        let sampleTemplate = normalizedURLTemplate(normalizedTemplate)
+        let sampleString = sampleTemplate.replacingOccurrences(of: SumiSearchEngine.queryToken, with: "sumi")
+        return URL(string: sampleString)
+    }
+
+    private var resolvedDomain: String {
+        if !trimmedDomain.isEmpty {
+            return trimmedDomain
+        }
+        return sampleURL?.host ?? ""
+    }
+
+    private var previewURLString: String? {
+        guard validationMessage == nil else { return nil }
+        return SumiSearchEngine(
+            id: draft.engineID ?? UUID().uuidString,
+            name: trimmedName,
+            domain: resolvedDomain,
+            searchURLTemplate: normalizedTemplate,
+            colorHex: normalizedColorHex,
+            tabSearchEnabled: draft.tabSearchEnabled
+        )
+        .searchURL(for: "sumi browser")?
+        .absoluteString
+    }
+
+    private var validationMessage: String? {
         guard !trimmedName.isEmpty else { return "Name is required." }
-        guard trimmedURLTemplate.contains("%@") else {
-            return "URL template must contain %@ where the query should go."
+        guard normalizedTemplate.contains(SumiSearchEngine.queryToken) else {
+            return "Search URL must contain {query} where the query should go."
         }
-        let sample = trimmedURLTemplate.replacingOccurrences(of: "%@", with: "sumi")
-        guard let url = URL(string: sample),
-              let scheme = url.scheme?.lowercased(),
+        guard let sampleURL,
+              let scheme = sampleURL.scheme?.lowercased(),
               ["http", "https"].contains(scheme),
-              url.host?.isEmpty == false
+              sampleURL.host?.isEmpty == false
         else {
-            return "Enter a valid http or https URL template."
+            return "Enter a valid http or https search URL."
         }
+        guard !resolvedDomain.isEmpty else { return "Domain is required." }
         return nil
     }
 
-    private static func trimmed(_ value: String) -> String {
-        value.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-}
+    private func save() {
+        guard validationMessage == nil else { return }
 
-@MainActor
-private final class SearchEngineAlertFieldDelegate: NSObject, NSTextFieldDelegate {
-    private let onChange: () -> Void
-
-    init(onChange: @escaping () -> Void) {
-        self.onChange = onChange
-    }
-
-    func controlTextDidChange(_ notification: Notification) {
-        onChange()
-    }
-}
-
-private final class VerticallyCenteredTextField: NSTextField {
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        configureCell()
+        let engine = SumiSearchEngine(
+            id: draft.engineID ?? UUID().uuidString,
+            name: trimmedName,
+            domain: resolvedDomain,
+            searchURLTemplate: normalizedTemplate,
+            colorHex: normalizedColorHex,
+            tabSearchEnabled: draft.tabSearchEnabled
+        )
+        onSave(SearchEngineEditorResult(engine: engine))
+        dismiss()
     }
 
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        configureCell()
+    private func normalizedURLTemplate(_ template: String) -> String {
+        if template.hasPrefix("http://") || template.hasPrefix("https://") {
+            return template
+        }
+        return "https://\(template)"
     }
 
-    private func configureCell() {
-        let centeredCell = VerticallyCenteredTextFieldCell(textCell: stringValue)
-        centeredCell.isEditable = isEditable
-        centeredCell.isSelectable = isSelectable
-        centeredCell.isBordered = isBordered
-        centeredCell.isBezeled = isBezeled
-        centeredCell.bezelStyle = .roundedBezel
-        centeredCell.usesSingleLineMode = true
-        centeredCell.lineBreakMode = .byTruncatingTail
-        cell = centeredCell
-    }
-}
-
-private final class VerticallyCenteredTextFieldCell: NSTextFieldCell {
-    override func drawingRect(forBounds rect: NSRect) -> NSRect {
-        centeredRect(forBounds: super.drawingRect(forBounds: rect))
-    }
-
-    override func titleRect(forBounds rect: NSRect) -> NSRect {
-        centeredRect(forBounds: super.titleRect(forBounds: rect))
-    }
-
-    override func edit(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, event: NSEvent?) {
-        super.edit(withFrame: centeredRect(forBounds: rect), in: controlView, editor: textObj, delegate: delegate, event: event)
-    }
-
-    override func select(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, start selStart: Int, length selLength: Int) {
-        super.select(withFrame: centeredRect(forBounds: rect), in: controlView, editor: textObj, delegate: delegate, start: selStart, length: selLength)
-    }
-
-    private func centeredRect(forBounds rect: NSRect) -> NSRect {
-        guard let font else { return rect }
-        let textHeight = ceil(font.ascender - font.descender)
-        let offset = max(0, floor((rect.height - textHeight) / 2) - 1)
-        return rect.insetBy(dx: 0, dy: offset)
-    }
 }

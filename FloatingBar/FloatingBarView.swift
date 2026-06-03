@@ -20,7 +20,7 @@ struct FloatingBarView: View {
     @State private var text: String = ""
     @State private var selectedSuggestionIndex: Int = -1
     @State private var hoveredSuggestionIndex: Int? = nil
-    @State private var activeSiteSearch: SiteSearchEntry? = nil
+    @State private var activeSiteSearch: SumiSearchEngine? = nil
     @State private var searchModeConfirmation: FloatingBarSearchModeConfirmation?
     @State private var searchModeConfirmationProgress: CGFloat = 1
     @State private var floatingBarCardView: NSView?
@@ -34,9 +34,9 @@ struct FloatingBarView: View {
     @State private var searchFocusRequestID = 0
     @State private var searchFocusSelectAll = false
 
-    private var siteSearchMatch: SiteSearchEntry? {
+    private var siteSearchMatch: SumiSearchEngine? {
         guard activeSiteSearch == nil else { return nil }
-        return SiteSearchEntry.match(for: text, in: sumiSettings.siteSearchEntries)
+        return SumiSearchEngine.match(for: text, in: sumiSettings.searchEngines)
     }
 
     private var visibleSuggestions: [SearchManager.SearchSuggestion] {
@@ -513,7 +513,7 @@ struct FloatingBarView: View {
         searchFocusRequestID &+= 1
     }
 
-    private func enterSiteSearch(_ site: SiteSearchEntry) {
+    private func enterSiteSearch(_ site: SumiSearchEngine) {
         updateWithMotion(chromeContentAnimation) {
             activeSiteSearch = site
             text = ""
@@ -658,7 +658,7 @@ struct FloatingBarView: View {
         }
     }
 
-    private func resolvedSiteSearchURL(site: SiteSearchEntry, query: String) -> URL {
+    private func resolvedSiteSearchURL(site: SumiSearchEngine, query: String) -> URL {
         if let url = site.searchURL(for: query) {
             return url
         }

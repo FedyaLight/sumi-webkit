@@ -720,13 +720,7 @@ private struct SumiWebPageMenuComposer {
         guard let settings = webView.owningTab?.sumiSettings else {
             return SearchProvider.duckDuckGo.displayName
         }
-        if let provider = SearchProvider(rawValue: settings.searchEngineId) {
-            return provider.displayName
-        }
-        if let custom = settings.customSearchEngines.first(where: { $0.id.uuidString == settings.searchEngineId }) {
-            return custom.name
-        }
-        return SearchProvider.duckDuckGo.displayName
+        return settings.resolvedSearchEngineDisplayName
     }
 
     private func decorateWebKitItems(in menu: NSMenu) {

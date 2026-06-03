@@ -27,10 +27,9 @@ class SumiSettingsService {
     private let tabListNewTabButtonPositionKey = "settings.tabListNewTabButtonPosition"
     private let showLinkStatusBarKey = "settings.showLinkStatusBar"
     private let showBrowserToastsKey = "settings.showBrowserToasts"
-    private let siteSearchEntriesKey = "settings.siteSearchEntries"
+    private let searchEnginesKey = "settings.searchEngines"
     private let floatingBarEmptyStateModeKey = "settings.floatingBar.emptyStateMode"
     private let didFinishOnboardingKey = "settings.didFinishOnboarding"
-    private let customSearchEnginesKey = "settings.customSearchEngines"
     private let memoryModeKey = "settings.memoryMode"
     private let memorySaverCustomDeactivationDelayKey = "settings.memorySaver.customDeactivationDelay"
     private let energySaverModeKey = "settings.energySaver.mode"
@@ -84,24 +83,37 @@ class SumiSettingsService {
         }
     }
 
-    var customSearchEngines: [CustomSearchEngine] {
+    var searchEngines: [SumiSearchEngine] {
         didSet {
-            if let data = try? JSONEncoder().encode(customSearchEngines) {
-                userDefaults.set(data, forKey: customSearchEnginesKey)
+            let normalized = SumiSearchEngine.normalized(searchEngines)
+            if normalized != searchEngines {
+                searchEngines = normalized
+                return
+            }
+
+            if let data = try? JSONEncoder().encode(searchEngines) {
+                userDefaults.set(data, forKey: searchEnginesKey)
+            }
+
+            if !searchEngines.contains(where: { $0.id == searchEngineId }) {
+                searchEngineId = SumiSearchEngine.defaultSearchEngineID(in: searchEngines)
             }
         }
     }
 
     /// Resolves the current `searchEngineId` to a query template string.
-    /// Checks built-in `SearchProvider` cases first, then custom engines.
     var resolvedSearchEngineTemplate: String {
-        if let provider = SearchProvider(rawValue: searchEngineId) {
-            return provider.queryTemplate
-        }
-        if let custom = customSearchEngines.first(where: { $0.id.uuidString == searchEngineId }) {
-            return custom.urlTemplate
+        if let engine = searchEngines.first(where: { $0.id == searchEngineId }) {
+            return engine.queryTemplate
         }
         return SearchProvider.google.queryTemplate
+    }
+
+    var resolvedSearchEngineDisplayName: String {
+        if let engine = searchEngines.first(where: { $0.id == searchEngineId }) {
+            return engine.name
+        }
+        return SearchProvider.google.displayName
     }
     
     var tabUnloadTimeout: TimeInterval {
@@ -163,14 +175,6 @@ class SumiSettingsService {
     var showBrowserToasts: Bool {
         didSet {
             userDefaults.set(showBrowserToasts, forKey: showBrowserToastsKey)
-        }
-    }
-
-    var siteSearchEntries: [SiteSearchEntry] {
-        didSet {
-            if let data = try? JSONEncoder().encode(siteSearchEntries) {
-                userDefaults.set(data, forKey: siteSearchEntriesKey)
-            }
         }
     }
 
@@ -342,15 +346,8 @@ class SumiSettingsService {
             rawValue: userDefaults.string(forKey: darkThemeStyleKey) ?? DarkThemeStyle.default.rawValue
         ) ?? .default
 
-        // searchEngineId: backward compatible — existing "google" string still works
-        self.searchEngineId = userDefaults.string(forKey: searchEngineKey) ?? SearchProvider.google.rawValue
-
-        if let ceData = userDefaults.data(forKey: customSearchEnginesKey),
-           let decoded = try? JSONDecoder().decode([CustomSearchEngine].self, from: ceData) {
-            self.customSearchEngines = decoded
-        } else {
-            self.customSearchEngines = []
-        }
+        let storedSearchEngineID = userDefaults.string(forKey: searchEngineKey) ?? SearchProvider.google.rawValue
+        self.searchEngineId = storedSearchEngineID
         
         // Initialize tab unload timeout
         self.tabUnloadTimeout = userDefaults.double(forKey: tabUnloadTimeoutKey)
@@ -439,12 +436,20 @@ class SumiSettingsService {
             )
         }
 
-        if let data = userDefaults.data(forKey: siteSearchEntriesKey),
-           let decoded = try? JSONDecoder().decode([SiteSearchEntry].self, from: data) {
-            self.siteSearchEntries = decoded
+        let loadedSearchEngines: [SumiSearchEngine]
+        if let data = userDefaults.data(forKey: searchEnginesKey),
+           let decoded = try? JSONDecoder().decode([SumiSearchEngine].self, from: data),
+           decoded.isEmpty == false {
+            loadedSearchEngines = SumiSearchEngine.normalized(decoded)
         } else {
-            self.siteSearchEntries = SiteSearchEntry.defaultSites
+            loadedSearchEngines = SumiSearchEngine.defaultEngines()
         }
+        self.searchEngines = loadedSearchEngines
+
+        if !loadedSearchEngines.contains(where: { $0.id == storedSearchEngineID }) {
+            self.searchEngineId = SumiSearchEngine.defaultSearchEngineID(in: loadedSearchEngines)
+        }
+
         self.floatingBarEmptyStateMode = FloatingBarEmptyStateMode(
             rawValue: userDefaults.string(forKey: floatingBarEmptyStateModeKey) ?? FloatingBarEmptyStateMode.compact.rawValue
         ) ?? .compact
