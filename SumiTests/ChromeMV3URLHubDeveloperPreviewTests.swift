@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftData
 import XCTest
@@ -440,6 +441,108 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 atPath: root.appendingPathComponent(".diagnostics").path
             )
         )
+    }
+
+    @MainActor
+    func testDebugNativeBitwardenURLHubActionPopupPreludeCaptureHarness()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("WKWebExtension native popup boundary requires macOS 15.5.")
+        }
+
+        let bitwardenRoot = URL(
+            fileURLWithPath:
+                "/Users/fedaefimov/Downloads/Aura/mv3-test-extensions/bitwarden",
+            isDirectory: true
+        )
+        try XCTSkipUnless(
+            FileManager.default.fileExists(
+                atPath: bitwardenRoot.appendingPathComponent("manifest.json").path
+            ),
+            "Local Bitwarden package is not available."
+        )
+
+        let nativeHostWasRunning =
+            bitwardenNativeHostRunningApplicationIdentifiers()
+        UserDefaults.standard.set(
+            true,
+            forKey: ExtensionManager
+                .nativeActionPopupBoundaryObservationDefaultsKey
+        )
+        defer {
+            UserDefaults.standard.removeObject(
+                forKey: ExtensionManager
+                    .nativeActionPopupBoundaryObservationDefaultsKey
+            )
+        }
+        XCTAssertTrue(
+            ExtensionManager.isNativeActionPopupBoundaryObservationEnabled
+        )
+
+        let root = try makeTemporaryDirectory()
+        let module = try makeModule(enabled: true, includesModelContext: true)
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: bitwardenRoot,
+            profileID: "profile-urlhub-real-bitwarden-native-popup",
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+        XCTAssertTrue(install.succeeded)
+
+        let syncedAction = await waitForEnabledExtension(
+            in: module,
+            extensionId: record.extensionID
+        )
+        XCTAssertNotNil(syncedAction)
+        let manager = try XCTUnwrap(module.managerIfEnabled())
+        XCTAssertNil(manager.extensionController)
+
+        let result = await module.openActionPopupFromURLHub(
+            extensionId: record.extensionID,
+            currentTab: Tab(url: URL(string: "https://example.com/login")!)
+        )
+
+        XCTAssertTrue(result.opened, result.message)
+        XCTAssertNil(result.blocker)
+
+        let snapshot = try await waitForNativeBitwardenPopupPreludeSnapshot(
+            manager: manager,
+            extensionID: record.extensionID,
+            initialSnapshot: result.nativePopupBoundarySnapshot
+        )
+        let noCaptureReason = nativeBitwardenPopupNoCaptureReason(snapshot)
+        let firstBlocker = nativeBitwardenPopupFirstBlocker(snapshot)
+
+        XCTAssertTrue(
+            snapshot.nativePopupPreludeConfiguredBeforePopupCreation,
+            "Prelude was not configured before WebKit controller creation."
+        )
+        XCTAssertNotEqual(noCaptureReason, "preludeDidNotInstallBeforeExtensionManagerCreation")
+
+        let encodedSnapshot = String(
+            data: try JSONEncoder().encode(snapshot),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertFalse(encodedSnapshot.contains("https://example.com/login"))
+        XCTAssertFalse(encodedSnapshot.localizedCaseInsensitiveContains("password"))
+        XCTAssertFalse(encodedSnapshot.localizedCaseInsensitiveContains("token"))
+        XCTAssertFalse(encodedSnapshot.localizedCaseInsensitiveContains("vault"))
+        XCTAssertEqual(
+            bitwardenNativeHostRunningApplicationIdentifiers(),
+            nativeHostWasRunning,
+            "The DEBUG native popup capture harness must not launch com.bitwarden.desktop."
+        )
+
+        print("SumiNativeBitwardenPopupCapture preludeConfiguredBeforePopupCreation=\(snapshot.nativePopupPreludeConfiguredBeforePopupCreation)")
+        print("SumiNativeBitwardenPopupCapture preludeAttachedAtDocumentStart=\(snapshot.nativePopupPreludeAttachedAtDocumentStart)")
+        print("SumiNativeBitwardenPopupCapture routeRecords=\(snapshot.routeObservations.count)")
+        print("SumiNativeBitwardenPopupCapture noCaptureReason=\(noCaptureReason)")
+        print("SumiNativeBitwardenPopupCapture firstBlocker=\(firstBlocker)")
+        for line in snapshot.sanitizedLogLines {
+            print("SumiNativeBitwardenPopupCapture \(line)")
+        }
     }
 
     @MainActor
@@ -1564,6 +1667,120 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         return module.surfaceStore.enabledExtensions.first {
             $0.id == extensionId
         }
+    }
+
+    @available(macOS 15.5, *)
+    @MainActor
+    private func waitForNativeBitwardenPopupPreludeSnapshot(
+        manager: ExtensionManager,
+        extensionID: String,
+        initialSnapshot: ChromeMV3NativeActionPopupBoundarySnapshot?
+    ) async throws -> ChromeMV3NativeActionPopupBoundarySnapshot {
+        var latest = try XCTUnwrap(initialSnapshot)
+        for _ in 0..<80 {
+            if let current = manager.nativeActionPopupBoundarySnapshot(
+                for: extensionID
+            ) {
+                latest = current
+            }
+            if latest.routeObservations.contains(where: {
+                $0.nativeBoundary == "WKUserScript.pageWorld"
+                    && $0.apiName != "nativeActionPopupPrelude"
+            }) {
+                return latest
+            }
+            if latest.nativePopupPreludeAttachedAtDocumentStart,
+               latest.routeObservations.contains(where: {
+                   $0.apiName == "nativeActionPopupPrelude"
+               })
+            {
+                return latest
+            }
+            try? await Task.sleep(nanoseconds: 25_000_000)
+        }
+        return latest
+    }
+
+    @available(macOS 15.5, *)
+    private func nativeBitwardenPopupNoCaptureReason(
+        _ snapshot: ChromeMV3NativeActionPopupBoundarySnapshot
+    ) -> String {
+        if snapshot.nativePopupPreludeConfiguredBeforePopupCreation == false {
+            return "preludeDidNotInstallBeforeExtensionManagerCreation"
+        }
+        if snapshot.routeObservations.contains(where: {
+            $0.nativeBoundary == "WKUserScript.pageWorld"
+                && $0.apiName != "nativeActionPopupPrelude"
+        }) {
+            return "captured"
+        }
+        if snapshot.nativePopupPreludeAttachedAtDocumentStart == false {
+            if let firstMissing =
+                snapshot.nativePopupPreludeFirstMissingAPIOrError
+            {
+                switch firstMissing {
+                case "chromeMissing":
+                    return "webkitPageWorldDidNotExposeChromeObjectToPrelude"
+                case "browserMissing":
+                    return "webkitPageWorldDidNotExposeBrowserObjectToPrelude"
+                case "runtimeMissing":
+                    return "webkitPageWorldDidNotExposeRuntimeOrTabsToPrelude"
+                default:
+                    return "preludeInstalledButReported\(firstMissing)"
+                }
+            }
+            return "preludeDidNotAttachBeforePopupJSExecution"
+        }
+        if snapshot.popupWebViewAvailableAtPresentation == false {
+            return "realWebKitNativePopupWebViewUnavailableAtPresentation"
+        }
+        return "bitwardenPopupEmittedNoObservablePreludeAPICalls"
+    }
+
+    @available(macOS 15.5, *)
+    private func nativeBitwardenPopupFirstBlocker(
+        _ snapshot: ChromeMV3NativeActionPopupBoundarySnapshot
+    ) -> String {
+        if let route = snapshot.routeObservations.first(where: {
+            $0.resultClassifier == "threw"
+                || $0.resultClassifier == "apiMissing"
+                || $0.resultClassifier == "ownerMissing"
+                || $0.resultClassifier == "namespaceMissing"
+                || $0.resultClassifier == "notFunction"
+                || $0.firstMissingAPIOrError != nil
+        }) {
+            if let missingOrError = route.firstMissingAPIOrError {
+                return "\(route.apiName):\(missingOrError)"
+            }
+            if let result = route.resultClassifier {
+                return "\(route.apiName):\(result)"
+            }
+            return route.apiName
+        }
+        if snapshot.routeObservations.contains(where: {
+            $0.apiName == "chrome.tabs.query"
+                || $0.apiName == "browser.tabs.query"
+                || $0.apiName == "chrome.tabs.sendMessage"
+                || $0.apiName == "browser.tabs.sendMessage"
+        }) {
+            return "tabsMessagingOrTabMetadata"
+        }
+        if snapshot.routeObservations.contains(where: {
+            $0.apiName == "chrome.runtime.connect"
+                || $0.apiName == "browser.runtime.connect"
+                || $0.apiName == "chrome.Port.postMessage"
+                || $0.apiName == "browser.Port.postMessage"
+        }) {
+            return "PortSemantics"
+        }
+        return nativeBitwardenPopupNoCaptureReason(snapshot)
+    }
+
+    private func bitwardenNativeHostRunningApplicationIdentifiers() -> [String] {
+        NSWorkspace.shared.runningApplications
+            .compactMap(\.bundleIdentifier)
+            .filter { $0 == "com.bitwarden.desktop" }
+            .sorted()
     }
 
     @MainActor
