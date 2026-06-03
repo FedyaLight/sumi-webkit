@@ -54,6 +54,7 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
         let duplicate = Tab(url: firstURL, name: "Duplicate", browserManager: harness.browserManager)
         let fresh = Tab(url: secondURL, name: "Second", browserManager: harness.browserManager)
         let unsupported = Tab(url: SumiSurface.emptyTabURL, name: "Empty", browserManager: harness.browserManager)
+        let revisionBeforeBatch = harness.browserManager.bookmarkManager.revision
 
         let result = try harness.browserManager.bookmarkTabs(
             [duplicate, fresh, unsupported],
@@ -67,6 +68,7 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
         XCTAssertEqual(result.folderTitle, "Saved Tabs")
         XCTAssertEqual(harness.browserManager.bookmarkManager.bookmark(for: secondURL)?.title, "Second")
         XCTAssertEqual(harness.browserManager.bookmarkManager.snapshot().root.childBookmarkCount, 2)
+        XCTAssertEqual(harness.browserManager.bookmarkManager.revision, revisionBeforeBatch + 1)
     }
 
     private func makeHarness() throws -> (

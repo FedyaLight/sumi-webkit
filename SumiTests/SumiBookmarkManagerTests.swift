@@ -170,6 +170,30 @@ final class SumiBookmarkManagerTests: XCTestCase {
         }
     }
 
+    func testCreateFolderWithBookmarksBatchesReloadAndSkipsURLVariantDuplicates() throws {
+        let manager = makeManager()
+        let firstURL = try XCTUnwrap(URL(string: "https://batch.example"))
+        let variantURL = try XCTUnwrap(URL(string: "http://batch.example/"))
+        let secondURL = try XCTUnwrap(URL(string: "https://second-batch.example"))
+        let revisionBeforeBatch = manager.revision
+
+        let result = try manager.createFolderWithBookmarks(
+            title: "Batch",
+            bookmarks: [
+                SumiBookmarkCreateRequest(url: firstURL, title: "First"),
+                SumiBookmarkCreateRequest(url: variantURL, title: "Variant"),
+                SumiBookmarkCreateRequest(url: secondURL, title: "Second"),
+            ]
+        )
+
+        XCTAssertEqual(result.bookmarks.map(\.title), ["First", "Second"])
+        XCTAssertEqual(result.duplicates, 1)
+        XCTAssertEqual(result.folder.title, "Batch")
+        XCTAssertEqual(manager.revision, revisionBeforeBatch + 1)
+        XCTAssertEqual(manager.snapshot().entitiesByID[result.folder.id]?.childBookmarkCount, 2)
+        XCTAssertEqual(manager.bookmark(for: variantURL)?.title, "First")
+    }
+
     func testPersistentStoreReopenPreservesBootstrapStructureIDsAndManualOrdering() throws {
         let directory = try temporaryDirectory(named: "SumiBookmarkPersistenceParity")
         let firstFolderID: String

@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 #if canImport(AppKit)
 import AppKit
@@ -194,10 +195,108 @@ struct WorkspaceResolvedGradient: Hashable, Sendable {
         }
     }
 
+    func interpolated(to other: WorkspaceResolvedGradient, progress: Double) -> WorkspaceResolvedGradient {
+        let clamped = min(max(progress, 0), 1)
+        guard clamped > 0 else { return self }
+        guard clamped < 1 else { return other }
+
+        let leftStops = sortedStops
+        let rightStops = other.sortedStops
+        let stopCount = max(leftStops.count, rightStops.count, 1)
+        let blendedStops = (0..<stopCount).map { index in
+            let left = Self.stop(at: index, in: leftStops)
+            let right = Self.stop(at: index, in: rightStops)
+            let fallbackID = left?.id ?? right?.id ?? UUID()
+            return WorkspaceGradientStop(
+                id: fallbackID,
+                hex: Self.blendedHex(
+                    left?.hex ?? right?.hex ?? Self.defaultPrimaryHex,
+                    right?.hex ?? left?.hex ?? Self.defaultPrimaryHex,
+                    amount: clamped
+                ),
+                location: Self.interpolate(
+                    left?.location ?? right?.location ?? 0,
+                    right?.location ?? left?.location ?? 0,
+                    amount: clamped
+                ),
+                position: WorkspaceThemePosition(
+                    x: Self.interpolate(
+                        left?.position.x ?? right?.position.x ?? WorkspaceThemePosition.monochrome.x,
+                        right?.position.x ?? left?.position.x ?? WorkspaceThemePosition.monochrome.x,
+                        amount: clamped
+                    ),
+                    y: Self.interpolate(
+                        left?.position.y ?? right?.position.y ?? WorkspaceThemePosition.monochrome.y,
+                        right?.position.y ?? left?.position.y ?? WorkspaceThemePosition.monochrome.y,
+                        amount: clamped
+                    )
+                )
+            )
+        }
+
+        return WorkspaceResolvedGradient(
+            angle: Self.interpolateAngle(angle, other.angle, amount: clamped),
+            stops: blendedStops,
+            texture: Self.interpolate(texture, other.texture, amount: clamped),
+            opacity: Self.interpolate(opacity, other.opacity, amount: clamped)
+        )
+    }
+
     private static func normalizedAngle(_ value: Double) -> Double {
         var normalized = value.truncatingRemainder(dividingBy: 360)
         if normalized < 0 { normalized += 360 }
         return normalized
+    }
+
+    private static func stop(
+        at index: Int,
+        in stops: [WorkspaceGradientStop]
+    ) -> WorkspaceGradientStop? {
+        guard !stops.isEmpty else { return nil }
+        return stops[min(index, stops.count - 1)]
+    }
+
+    private static func interpolate(_ first: Double, _ second: Double, amount: Double) -> Double {
+        first + (second - first) * amount
+    }
+
+    private static func interpolateAngle(_ first: Double, _ second: Double, amount: Double) -> Double {
+        var delta = (second - first).truncatingRemainder(dividingBy: 360)
+        if delta > 180 {
+            delta -= 360
+        } else if delta < -180 {
+            delta += 360
+        }
+        return normalizedAngle(first + delta * amount)
+    }
+
+    private static func blendedHex(_ first: String, _ second: String, amount: Double) -> String {
+        guard let left = rgbComponents(for: first),
+              let right = rgbComponents(for: second)
+        else {
+            return amount < 0.5 ? first.normalizedThemeHex() : second.normalizedThemeHex()
+        }
+
+        let red = Int(round(interpolate(Double(left.red), Double(right.red), amount: amount)))
+        let green = Int(round(interpolate(Double(left.green), Double(right.green), amount: amount)))
+        let blue = Int(round(interpolate(Double(left.blue), Double(right.blue), amount: amount)))
+        return String(format: "#%02X%02X%02X", red, green, blue)
+    }
+
+    private static func rgbComponents(for hex: String) -> (red: Int, green: Int, blue: Int)? {
+        let trimmed = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawValue = trimmed.hasPrefix("#") ? String(trimmed.dropFirst()) : trimmed
+        guard rawValue.count == 6,
+              let value = Int(rawValue, radix: 16)
+        else {
+            return nil
+        }
+
+        return (
+            red: (value >> 16) & 0xFF,
+            green: (value >> 8) & 0xFF,
+            blue: value & 0xFF
+        )
     }
 }
 

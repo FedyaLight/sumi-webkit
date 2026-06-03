@@ -167,6 +167,74 @@ final class SumiDDGBookmarkRepository: SumiBookmarkRepository, @unchecked Sendab
     }
 
     @discardableResult
+    func createFolderWithBookmarks(
+        title: String,
+        parentID: String?,
+        bookmarks: [SumiBookmarkCreateRequest]
+    ) throws -> SumiBookmarkFolderCreateResult {
+        guard let parent = folderEntity(for: parentID) ?? rootFolder() else {
+            throw SumiBookmarkError.missingRootFolder
+        }
+
+        let folder = BookmarkEntity.makeFolder(
+            title: title,
+            parent: parent,
+            context: context
+        )
+        var bookmarkEntities: [BookmarkEntity] = []
+        bookmarkEntities.reserveCapacity(bookmarks.count)
+
+        for bookmark in bookmarks {
+            let entity = BookmarkEntity.makeBookmark(
+                title: bookmark.title,
+                url: bookmark.url.absoluteString,
+                parent: folder,
+                context: context
+            )
+            bookmarkEntities.append(entity)
+        }
+
+        try save()
+
+        guard let folderID = folder.uuid else {
+            throw SumiBookmarkError.missingFolder
+        }
+        let createdBookmarks = try bookmarkEntities.map { entity in
+            guard let bookmark = bookmark(from: entity) else {
+                throw SumiBookmarkError.missingBookmark
+            }
+            return bookmark
+        }
+        let folderTitle = displayTitle(forFolder: folder) ?? sanitizedFolderTitle(folder.title ?? "")
+        let folderNode = SumiBookmarkEntity(
+            id: folderID,
+            kind: .folder,
+            title: folderTitle,
+            url: nil,
+            parentID: parent.uuid,
+            parentTitle: displayTitle(forFolder: parent),
+            children: createdBookmarks.map { bookmark in
+                SumiBookmarkEntity(
+                    id: bookmark.id,
+                    kind: .bookmark,
+                    title: bookmark.title,
+                    url: bookmark.url,
+                    parentID: folderID,
+                    parentTitle: folderTitle,
+                    children: [],
+                    childBookmarkCount: 0
+                )
+            },
+            childBookmarkCount: createdBookmarks.count
+        )
+
+        return SumiBookmarkFolderCreateResult(
+            folder: folderNode,
+            bookmarks: createdBookmarks
+        )
+    }
+
+    @discardableResult
     func updateFolder(id: String, title: String, parentID: String?) throws -> SumiBookmarkEntity {
         guard id != BookmarkEntity.Constants.rootFolderID else {
             throw SumiBookmarkError.cannotDeleteRootFolder

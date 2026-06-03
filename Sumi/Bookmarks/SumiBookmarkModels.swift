@@ -13,6 +13,11 @@ struct SumiBookmarkFolder: Equatable, Identifiable, Sendable {
     var depth: Int
 }
 
+struct SumiBookmarkCreateRequest: Equatable, Sendable {
+    var url: URL
+    var title: String
+}
+
 enum SumiBookmarkEntityKind: String, Equatable, Sendable {
     case bookmark
     case folder
@@ -88,6 +93,17 @@ struct SumiBookmarkAllTabsResult: Equatable, Sendable {
     var duplicates: Int
     var skipped: Int
     var folderTitle: String
+}
+
+struct SumiBookmarkFolderCreateResult: Equatable, Sendable {
+    var folder: SumiBookmarkEntity
+    var bookmarks: [SumiBookmark]
+}
+
+struct SumiBookmarkFolderBatchCreateResult: Equatable, Sendable {
+    var folder: SumiBookmarkEntity
+    var bookmarks: [SumiBookmark]
+    var duplicates: Int
 }
 
 enum SumiBookmarkEditorMode: Equatable, Sendable {

@@ -9,6 +9,11 @@ protocol SumiBookmarkRepository: AnyObject, Sendable {
     func createBookmark(url: URL, title: String, folderID: String?) throws -> SumiBookmark
     func updateBookmark(id: String, title: String, url: URL, folderID: String?) throws -> SumiBookmark
     func createFolder(title: String, parentID: String?) throws -> SumiBookmarkEntity
+    func createFolderWithBookmarks(
+        title: String,
+        parentID: String?,
+        bookmarks: [SumiBookmarkCreateRequest]
+    ) throws -> SumiBookmarkFolderCreateResult
     func updateFolder(id: String, title: String, parentID: String?) throws -> SumiBookmarkEntity
     func removeEntities(ids: [String]) throws
     func moveEntities(ids: [String], toParentID parentID: String?, atIndex index: Int?) throws

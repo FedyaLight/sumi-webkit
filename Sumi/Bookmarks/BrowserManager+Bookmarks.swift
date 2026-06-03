@@ -131,9 +131,8 @@ extension BrowserManager {
         folderTitle: String,
         parentID: String?
     ) throws -> SumiBookmarkAllTabsResult {
-        let folder = try bookmarkManager.createFolder(title: folderTitle, parentID: parentID)
-        var created = 0
-        var duplicates = 0
+        var bookmarkRequests: [SumiBookmarkCreateRequest] = []
+        bookmarkRequests.reserveCapacity(tabs.count)
         var skipped = 0
 
         for tab in tabs {
@@ -141,23 +140,25 @@ extension BrowserManager {
                 skipped += 1
                 continue
             }
-            if bookmarkManager.isBookmarked(tab.url) {
-                duplicates += 1
-                continue
-            }
-            _ = try bookmarkManager.createBookmark(
-                url: tab.url,
-                title: tab.name,
-                folderID: folder.id
+            bookmarkRequests.append(
+                SumiBookmarkCreateRequest(
+                    url: tab.url,
+                    title: tab.name
+                )
             )
-            created += 1
         }
 
+        let result = try bookmarkManager.createFolderWithBookmarks(
+            title: folderTitle,
+            parentID: parentID,
+            bookmarks: bookmarkRequests
+        )
+
         return SumiBookmarkAllTabsResult(
-            created: created,
-            duplicates: duplicates,
+            created: result.bookmarks.count,
+            duplicates: result.duplicates,
             skipped: skipped,
-            folderTitle: folder.title
+            folderTitle: result.folder.title
         )
     }
 

@@ -34,6 +34,11 @@ struct SpaceGradientViewport: Equatable {
     }
 }
 
+private struct SpaceGradientRenderPlan: Equatable {
+    var gradient: WorkspaceResolvedGradient
+    var intensity: Double
+}
+
 // Renders the current space's gradient as a bottom background layer.
 // Zen reference: `ZenGradientGenerator.getGradient` resolves workspace colors and opacity separately from `color-scheme`.
 struct SpaceGradientBackgroundView: View {
@@ -67,7 +72,7 @@ struct SpaceGradientBackgroundView: View {
         min(max(themeContext.transitionProgress, 0), 1)
     }
 
-    private var usesResolvedTransitionLayers: Bool {
+    private var hasThemeTransitionContext: Bool {
         themeContext.isInteractiveTransition
             || !themeContext.sourceWorkspaceTheme.visuallyEquals(themeContext.targetWorkspaceTheme)
     }
@@ -85,30 +90,14 @@ struct SpaceGradientBackgroundView: View {
                 width: fieldSize.width * clampedViewport.origin.x,
                 height: fieldSize.height * clampedViewport.origin.y
             )
+            let renderPlan = gradientRenderPlan()
             ZStack {
                 nativeBaseLayer
 
-                if shouldRenderCustomTheme && usesResolvedTransitionLayers {
+                if let renderPlan {
                     themedLayer(
-                        for: gradient(from: sourceResolution),
-                        intensity: themeContext.sourceCustomChromeThemeIntensity,
-                        localSize: proxy.size,
-                        fieldSize: fieldSize,
-                        fieldOffset: fieldOffset
-                    )
-                        .opacity(1 - transitionProgress)
-                    themedLayer(
-                        for: gradient(from: targetResolution),
-                        intensity: themeContext.targetCustomChromeThemeIntensity,
-                        localSize: proxy.size,
-                        fieldSize: fieldSize,
-                        fieldOffset: fieldOffset
-                    )
-                        .opacity(transitionProgress)
-                } else if shouldRenderCustomTheme {
-                    themedLayer(
-                        for: gradient(from: activeResolution),
-                        intensity: themeContext.activeCustomChromeThemeIntensity,
+                        for: renderPlan.gradient,
+                        intensity: renderPlan.intensity,
                         localSize: proxy.size,
                         fieldSize: fieldSize,
                         fieldOffset: fieldOffset
@@ -134,7 +123,7 @@ struct SpaceGradientBackgroundView: View {
                 if accessibilityReduceTransparency {
                     chromeTokens.windowBackground
                 } else if shouldRenderNativeMaterialBase {
-                    if usesResolvedTransitionLayers && themeContext.sourceChromeColorScheme != themeContext.targetChromeColorScheme {
+                    if hasThemeTransitionContext && themeContext.sourceChromeColorScheme != themeContext.targetChromeColorScheme {
                         ZStack {
                             NativeChromeMaterialBackground(role: nativeMaterialRole)
                             
@@ -170,6 +159,50 @@ struct SpaceGradientBackgroundView: View {
 
     private var shouldRenderNativeMaterialBase: Bool {
         !themeContext.rendersOpaqueCustomChromeTheme
+    }
+
+    private func gradientRenderPlan() -> SpaceGradientRenderPlan? {
+        guard shouldRenderCustomTheme else { return nil }
+
+        if hasThemeTransitionContext {
+            let sourceGradient = gradient(from: sourceResolution)
+            let targetGradient = gradient(from: targetResolution)
+            if shouldInterpolateGradientTheme(
+                sourceGradient: sourceGradient,
+                targetGradient: targetGradient
+            ) {
+                return SpaceGradientRenderPlan(
+                    gradient: sourceGradient.interpolated(
+                        to: targetGradient,
+                        progress: transitionProgress
+                    ),
+                    intensity: interpolatedIntensity(
+                        from: themeContext.sourceCustomChromeThemeIntensity,
+                        to: themeContext.targetCustomChromeThemeIntensity
+                    )
+                )
+            }
+        }
+
+        return SpaceGradientRenderPlan(
+            gradient: gradient(from: activeResolution),
+            intensity: themeContext.activeCustomChromeThemeIntensity
+        )
+    }
+
+    private func shouldInterpolateGradientTheme(
+        sourceGradient: WorkspaceResolvedGradient,
+        targetGradient: WorkspaceResolvedGradient
+    ) -> Bool {
+        !sourceGradient.visuallyEquals(targetGradient)
+            || abs(
+                themeContext.sourceCustomChromeThemeIntensity
+                    - themeContext.targetCustomChromeThemeIntensity
+            ) > 0.001
+    }
+
+    private func interpolatedIntensity(from source: Double, to target: Double) -> Double {
+        source + (target - source) * transitionProgress
     }
 
     private func themedLayer(

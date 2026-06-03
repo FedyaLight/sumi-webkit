@@ -78,6 +78,22 @@ final class WindowThemeStateTests: XCTestCase {
         XCTAssertTrue(secondResolvedTheme.visuallyEquals(targetTheme))
     }
 
+    func testResolvedGradientInterpolationPreservesEndpointsAndBlendsMidpoint() {
+        let sourceGradient = WorkspaceResolvedGradient.default
+        let targetGradient = WorkspaceResolvedGradient.incognito
+
+        XCTAssertTrue(sourceGradient.interpolated(to: targetGradient, progress: 0).visuallyEquals(sourceGradient))
+        XCTAssertTrue(sourceGradient.interpolated(to: targetGradient, progress: 1).visuallyEquals(targetGradient))
+
+        let midpoint = sourceGradient.interpolated(to: targetGradient, progress: 0.5)
+
+        XCTAssertEqual(midpoint.stops.count, 2)
+        XCTAssertFalse(midpoint.visuallyEquals(sourceGradient))
+        XCTAssertFalse(midpoint.visuallyEquals(targetGradient))
+        XCTAssertEqual(midpoint.opacity, (sourceGradient.opacity + targetGradient.opacity) / 2, accuracy: 0.0001)
+        XCTAssertEqual(midpoint.texture, (sourceGradient.texture + targetGradient.texture) / 2, accuracy: 0.0001)
+    }
+
     func testResolvedThemeContextOnlySkipsNativeMaterialWhenChromeIsFullyCovered() {
         let opaqueTheme = makeTheme(opacity: 0.98)
         let translucentTheme = makeTheme(opacity: 0.72)

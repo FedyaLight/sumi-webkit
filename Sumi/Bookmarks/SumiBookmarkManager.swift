@@ -193,6 +193,26 @@ final class SumiBookmarkManager: ObservableObject {
     }
 
     @discardableResult
+    func createFolderWithBookmarks(
+        title: String,
+        parentID: String? = nil,
+        bookmarks: [SumiBookmarkCreateRequest]
+    ) throws -> SumiBookmarkFolderBatchCreateResult {
+        let prepared = try prepareUniqueBookmarkRequests(bookmarks)
+        let result = try repository.createFolderWithBookmarks(
+            title: sanitizedFolderTitle(title),
+            parentID: parentID,
+            bookmarks: prepared.requests
+        )
+        reload()
+        return SumiBookmarkFolderBatchCreateResult(
+            folder: result.folder,
+            bookmarks: result.bookmarks,
+            duplicates: prepared.duplicates
+        )
+    }
+
+    @discardableResult
     func updateFolder(id: String, title: String, parentID: String?) throws -> SumiBookmarkEntity {
         let folder = try repository.updateFolder(
             id: id,
@@ -302,6 +322,37 @@ final class SumiBookmarkManager: ObservableObject {
 
     private func sanitizedFolderTitle(_ title: String) -> String {
         title.nilIfTrimmedEmpty ?? "Folder"
+    }
+
+    private func prepareUniqueBookmarkRequests(
+        _ requests: [SumiBookmarkCreateRequest]
+    ) throws -> (requests: [SumiBookmarkCreateRequest], duplicates: Int) {
+        var seenURLKeys = Set(bookmarkIDByURLKey.keys)
+        var preparedRequests: [SumiBookmarkCreateRequest] = []
+        preparedRequests.reserveCapacity(requests.count)
+        var duplicates = 0
+
+        for request in requests {
+            guard Self.canBookmark(request.url) else {
+                throw SumiBookmarkError.unsupportedURL
+            }
+
+            let urlKeys = Set(request.url.sumiBookmarkButtonURLVariants().map(Self.urlKey))
+            if urlKeys.contains(where: { seenURLKeys.contains($0) }) {
+                duplicates += 1
+                continue
+            }
+
+            seenURLKeys.formUnion(urlKeys)
+            preparedRequests.append(
+                SumiBookmarkCreateRequest(
+                    url: request.url,
+                    title: sanitizedTitle(request.title, fallbackURL: request.url)
+                )
+            )
+        }
+
+        return (preparedRequests, duplicates)
     }
 
     private static func urlKey(_ url: URL) -> String {
