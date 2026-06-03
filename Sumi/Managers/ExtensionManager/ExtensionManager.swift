@@ -34,6 +34,10 @@ final class ExtensionManager: NSObject, ObservableObject {
         "sumiExternallyConnectableRuntime"
     nonisolated static let externallyConnectableBridgeDebugLoggingKey =
         "debug.extensions.externallyConnectable.bridge.logging.enabled"
+    #if DEBUG
+        nonisolated static let nativeActionPopupBoundaryObservationDefaultsKey =
+            "debug.extensions.nativeActionPopupBoundaryObservation.enabled"
+    #endif
     nonisolated static let manifestPatchCacheStorageKey =
         "\(SumiAppIdentity.bundleIdentifier).extensions.webkitManifestPatchCache.v1"
     nonisolated static let orphanedExtensionCleanupDefaultsKey =
@@ -151,6 +155,10 @@ final class ExtensionManager: NSObject, ObservableObject {
     #if DEBUG
         var chromeMV3LivePreparedContentScriptRuntime:
             ChromeMV3LivePreparedContentScriptRuntime?
+        var nativeActionPopupBoundaryRecorders:
+            [String: ChromeMV3NativeActionPopupBoundaryRecorder] = [:]
+        var lastNativeActionPopupBoundarySnapshots:
+            [String: ChromeMV3NativeActionPopupBoundarySnapshot] = [:]
     #endif
     let ecRegistry = ExternallyConnectablePortRegistry()
     var extensionLoadGeneration: UInt64 = 0
@@ -370,6 +378,17 @@ final class ExtensionManager: NSObject, ObservableObject {
 
     nonisolated static var shouldObserveExtensionErrors: Bool {
         RuntimeDiagnostics.isVerboseEnabled
+    }
+
+    nonisolated static var isNativeActionPopupBoundaryObservationEnabled: Bool {
+        #if DEBUG
+            RuntimeDiagnostics.isVerboseEnabled
+                || RuntimeDiagnostics.debugDefaultBool(
+                    forKey: nativeActionPopupBoundaryObservationDefaultsKey
+                )
+        #else
+            false
+        #endif
     }
 
     nonisolated static func isExtensionOwnedURL(_ url: URL?) -> Bool {

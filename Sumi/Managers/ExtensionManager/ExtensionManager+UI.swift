@@ -43,9 +43,541 @@ final class ExtensionOptionsWindowDelegate: NSObject, NSWindowDelegate, WKUIDele
     }
 }
 
+#if DEBUG
+@available(macOS 15.5, *)
+@MainActor
+final class ChromeMV3NativeActionPopupBoundaryRecorder {
+    private let startedAt = Date()
+    private(set) var snapshot: ChromeMV3NativeActionPopupBoundarySnapshot
+    private weak var popupWebView: WKWebView?
+    private weak var popupPopover: NSPopover?
+    private var observations: [NSKeyValueObservation] = []
+
+    init(
+        extensionID: String,
+        extensionContext: WKWebExtensionContext,
+        action: WKWebExtension.Action
+    ) {
+        snapshot = ChromeMV3NativeActionPopupBoundarySnapshot(
+            extensionID: extensionID,
+            contextUniqueIdentifier: extensionContext.uniqueIdentifier,
+            contextLoaded: extensionContext.isLoaded,
+            actionEnabled: action.isEnabled,
+            actionPresentsPopup: action.presentsPopup,
+            associatedTabKnown: action.associatedTab != nil,
+            popupWebViewAccessedBeforePerformAction: false,
+            popupWebViewAvailableAtPresentation: false,
+            popupPopoverAvailableAtPresentation: false,
+            nativePopupBridgeInstalled: false,
+            lifecycleEvents: [],
+            routeObservations: [],
+            observerLimitations: [
+                "WKWebExtension.Action.popupWebView is not accessed before performAction, because first access may preload WebKit's popup page.",
+                "The current SDK exposes native-application messaging delegate callbacks, but does not expose ordinary runtime.sendMessage/runtime.connect payload callbacks to the embedding app.",
+                "Tab/window adapter callbacks can show WebKit querying Sumi's tab boundary, but they do not carry the originating Chrome API name or message body.",
+                "No ChromeMV3PopupOptionsJSBridgeHandler is installed on WebKit's native action popup web view.",
+            ]
+        )
+        recordLifecycle(
+            "observerStarted",
+            popupWebViewAvailable: false,
+            note: "passive DEBUG/local-experimental observer armed"
+        )
+    }
+
+    func recordPerformActionAboutToRun(action: WKWebExtension.Action) {
+        snapshot.actionEnabled = action.isEnabled
+        snapshot.actionPresentsPopup = action.presentsPopup
+        snapshot.associatedTabKnown = action.associatedTab != nil
+        recordLifecycle(
+            "performAction.aboutToRun",
+            popupWebViewAvailable: false,
+            note: "popupWebView intentionally not touched before performAction"
+        )
+    }
+
+    func recordPerformActionReturned() {
+        recordLifecycle(
+            "performAction.returned",
+            popupWebViewAvailable: popupWebView != nil
+        )
+    }
+
+    func attachPresentationBoundary(
+        action: WKWebExtension.Action,
+        popover: NSPopover?,
+        webView: WKWebView?
+    ) {
+        popupPopover = popover
+        snapshot.actionEnabled = action.isEnabled
+        snapshot.actionPresentsPopup = action.presentsPopup
+        snapshot.associatedTabKnown = action.associatedTab != nil
+        snapshot.popupPopoverAvailableAtPresentation = popover != nil
+        snapshot.popupWebViewAvailableAtPresentation = webView != nil
+
+        if let webView {
+            attachPopupWebView(webView)
+            recordPopupWebViewState(
+                webView,
+                milestone: "presentActionPopup.popupWebViewAvailable"
+            )
+        } else {
+            recordLifecycle(
+                "presentActionPopup.popupWebViewUnavailable",
+                popupWebViewAvailable: false
+            )
+        }
+    }
+
+    func recordPopoverPresented(anchorKind: String) {
+        recordLifecycle(
+            "popupPopover.presented",
+            popupWebViewAvailable: popupWebView != nil,
+            sanitizedURLShape: Self.sanitizedURLShape(popupWebView?.url),
+            isLoading: popupWebView?.isLoading,
+            estimatedProgressBucket:
+                Self.progressBucket(popupWebView?.estimatedProgress),
+            note: anchorKind
+        )
+    }
+
+    func recordPresentationFailed(reason: String) {
+        recordLifecycle(
+            "popupPopover.presentationFailed",
+            popupWebViewAvailable: popupWebView != nil,
+            sanitizedURLShape: Self.sanitizedURLShape(popupWebView?.url),
+            isLoading: popupWebView?.isLoading,
+            estimatedProgressBucket:
+                Self.progressBucket(popupWebView?.estimatedProgress),
+            note: reason
+        )
+    }
+
+    func recordPopoverClosed() {
+        recordLifecycle(
+            "popupPopover.closed",
+            popupWebViewAvailable: popupWebView != nil,
+            sanitizedURLShape: Self.sanitizedURLShape(popupWebView?.url),
+            isLoading: popupWebView?.isLoading,
+            estimatedProgressBucket:
+                Self.progressBucket(popupWebView?.estimatedProgress)
+        )
+    }
+
+    func recordObserverDetached() {
+        recordLifecycle(
+            "observerDetached",
+            popupWebViewAvailable: popupWebView != nil
+        )
+        observations.removeAll()
+    }
+
+    func observes(popover: NSPopover?) -> Bool {
+        guard let popover else { return popupPopover == nil }
+        return popupPopover === popover
+    }
+
+    func recordRoute(
+        apiName: String,
+        sourceContext: String,
+        targetContext: String,
+        nativeBoundary: String,
+        metadataAvailable: Bool,
+        payloadShape: String? = nil,
+        resultClassifier: String? = nil,
+        notes: [String] = []
+    ) {
+        guard snapshot.routeObservations.count < 80 else { return }
+        snapshot.routeObservations.append(
+            ChromeMV3NativeActionPopupRouteObservation(
+                apiName: apiName,
+                sourceContext: sourceContext,
+                targetContext: targetContext,
+                nativeBoundary: nativeBoundary,
+                metadataAvailable: metadataAvailable,
+                payloadShape: payloadShape,
+                resultClassifier: resultClassifier,
+                notes: notes
+            )
+        )
+    }
+
+    static func sanitizedPayloadShape(_ value: Any?) -> String {
+        guard let value else { return "none" }
+
+        if let dictionary = value as? [String: Any] {
+            return sanitizedDictionaryShape(dictionary)
+        }
+        if let dictionary = value as? NSDictionary {
+            var bridged: [String: Any] = [:]
+            for (key, value) in dictionary {
+                if let key = key as? String {
+                    bridged[key] = value
+                }
+            }
+            return sanitizedDictionaryShape(bridged)
+        }
+        if let array = value as? [Any] {
+            return "array(count:\(array.count))"
+        }
+        if let array = value as? NSArray {
+            return "array(count:\(array.count))"
+        }
+        if let string = value as? String {
+            return "string(length:\(string.count))"
+        }
+        if let number = value as? NSNumber {
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                return "boolean"
+            }
+            return "number"
+        }
+        if value is NSNull {
+            return "null"
+        }
+        return "jsonValue(type:\(String(describing: type(of: value))))"
+    }
+
+    private func attachPopupWebView(_ webView: WKWebView) {
+        guard popupWebView !== webView else { return }
+        observations.removeAll()
+        popupWebView = webView
+
+        observations.append(
+            webView.observe(\.url, options: [.initial, .new]) {
+                [weak self, weak webView] _, _ in
+                Task { @MainActor in
+                    self?.recordPopupWebViewState(
+                        webView,
+                        milestone: "popupWebView.urlObserved"
+                    )
+                }
+            }
+        )
+        observations.append(
+            webView.observe(\.isLoading, options: [.initial, .new]) {
+                [weak self, weak webView] _, _ in
+                Task { @MainActor in
+                    self?.recordPopupWebViewState(
+                        webView,
+                        milestone: "popupWebView.loadingObserved"
+                    )
+                }
+            }
+        )
+        observations.append(
+            webView.observe(\.estimatedProgress, options: [.initial, .new]) {
+                [weak self, weak webView] _, _ in
+                Task { @MainActor in
+                    self?.recordPopupWebViewState(
+                        webView,
+                        milestone: "popupWebView.progressObserved"
+                    )
+                }
+            }
+        )
+        observations.append(
+            webView.observe(\.title, options: [.new]) {
+                [weak self, weak webView] _, _ in
+                Task { @MainActor in
+                    self?.recordPopupWebViewState(
+                        webView,
+                        milestone: "popupWebView.titleObserved"
+                    )
+                }
+            }
+        )
+    }
+
+    private func recordPopupWebViewState(
+        _ webView: WKWebView?,
+        milestone: String
+    ) {
+        recordLifecycle(
+            milestone,
+            popupWebViewAvailable: webView != nil,
+            sanitizedURLShape: Self.sanitizedURLShape(webView?.url),
+            isLoading: webView?.isLoading,
+            estimatedProgressBucket:
+                Self.progressBucket(webView?.estimatedProgress)
+        )
+    }
+
+    private func recordLifecycle(
+        _ milestone: String,
+        popupWebViewAvailable: Bool,
+        sanitizedURLShape: String? = nil,
+        isLoading: Bool? = nil,
+        estimatedProgressBucket: String? = nil,
+        note: String? = nil
+    ) {
+        guard snapshot.lifecycleEvents.count < 120 else { return }
+        let elapsed = max(0, Int(Date().timeIntervalSince(startedAt) * 1000))
+        snapshot.lifecycleEvents.append(
+            ChromeMV3NativeActionPopupLifecycleEvent(
+                milestone: milestone,
+                elapsedMilliseconds: elapsed,
+                popupWebViewAvailable: popupWebViewAvailable,
+                sanitizedURLShape: sanitizedURLShape,
+                isLoading: isLoading,
+                estimatedProgressBucket: estimatedProgressBucket,
+                note: note
+            )
+        )
+    }
+
+    private static func sanitizedDictionaryShape(
+        _ dictionary: [String: Any]
+    ) -> String {
+        let safeFieldNames = dictionary.keys
+            .filter { safeCommandTypeActionFieldNames.contains($0) }
+            .sorted()
+        let sensitiveKeyPresent = dictionary.keys.contains { key in
+            sensitiveFieldNameFragments.contains { fragment in
+                key.localizedCaseInsensitiveContains(fragment)
+            }
+        }
+        return [
+            "object(keyCount:\(dictionary.count)",
+            "safeFieldNames:\(safeFieldNames)",
+            "sensitiveKeyPresent:\(sensitiveKeyPresent))",
+        ].joined(separator: ",")
+    }
+
+    private static func sanitizedURLShape(_ url: URL?) -> String? {
+        guard let url, let scheme = url.scheme?.lowercased() else {
+            return nil
+        }
+
+        if ExtensionManager.extensionSchemes.contains(scheme) {
+            let lastPathComponent = url.lastPathComponent.isEmpty
+                ? "<extension-resource>"
+                : url.lastPathComponent
+            return "\(scheme)://<extension>/\(lastPathComponent)"
+        }
+
+        if scheme == "http" || scheme == "https" {
+            return "\(scheme)://<host>/<redacted-path>"
+        }
+
+        return "\(scheme)://<redacted>"
+    }
+
+    private static func progressBucket(_ progress: Double?) -> String? {
+        guard let progress else { return nil }
+        switch progress {
+        case ..<0.01:
+            return "0"
+        case ..<0.5:
+            return "0-49"
+        case ..<1:
+            return "50-99"
+        default:
+            return "100"
+        }
+    }
+
+    private static let safeCommandTypeActionFieldNames: Set<String> = [
+        "action",
+        "command",
+        "kind",
+        "method",
+        "name",
+        "operation",
+        "type",
+    ]
+
+    private static let sensitiveFieldNameFragments: Set<String> = [
+        "auth",
+        "cookie",
+        "credential",
+        "password",
+        "secret",
+        "session",
+        "token",
+        "vault",
+    ]
+}
+#endif
+
 @available(macOS 15.5, *)
 @MainActor
 extension ExtensionManager: NSPopoverDelegate {
+    #if DEBUG
+        @discardableResult
+        func beginNativeActionPopupBoundaryObservation(
+            extensionID: String,
+            extensionContext: WKWebExtensionContext,
+            action: WKWebExtension.Action
+        ) -> Bool {
+            guard Self.isNativeActionPopupBoundaryObservationEnabled else {
+                return false
+            }
+
+            let recorder = ChromeMV3NativeActionPopupBoundaryRecorder(
+                extensionID: extensionID,
+                extensionContext: extensionContext,
+                action: action
+            )
+            nativeActionPopupBoundaryRecorders[extensionID] = recorder
+            lastNativeActionPopupBoundarySnapshots.removeValue(forKey: extensionID)
+            return true
+        }
+
+        func recordNativeActionPopupBoundaryPerformActionAboutToRun(
+            extensionID: String,
+            action: WKWebExtension.Action
+        ) {
+            guard Self.isNativeActionPopupBoundaryObservationEnabled else {
+                return
+            }
+            nativeActionPopupBoundaryRecorders[extensionID]?
+                .recordPerformActionAboutToRun(action: action)
+        }
+
+        func recordNativeActionPopupBoundaryPerformActionReturned(
+            extensionID: String
+        ) {
+            guard Self.isNativeActionPopupBoundaryObservationEnabled else {
+                return
+            }
+            nativeActionPopupBoundaryRecorders[extensionID]?
+                .recordPerformActionReturned()
+        }
+
+        func recordNativeActionPopupPresentationBoundary(
+            action: WKWebExtension.Action,
+            extensionContext: WKWebExtensionContext,
+            popover: NSPopover?,
+            webView: WKWebView?
+        ) {
+            guard Self.isNativeActionPopupBoundaryObservationEnabled,
+                  let extensionID = extensionID(for: extensionContext)
+            else {
+                return
+            }
+
+            nativeActionPopupBoundaryRecorders[extensionID]?
+                .attachPresentationBoundary(
+                    action: action,
+                    popover: popover,
+                    webView: webView
+                )
+        }
+
+        func recordNativeActionPopupPopoverPresented(
+            extensionID: String,
+            anchorKind: String
+        ) {
+            guard Self.isNativeActionPopupBoundaryObservationEnabled else {
+                return
+            }
+            nativeActionPopupBoundaryRecorders[extensionID]?
+                .recordPopoverPresented(anchorKind: anchorKind)
+        }
+
+        func recordNativeActionPopupPresentationFailed(
+            extensionID: String?,
+            reason: String
+        ) {
+            guard Self.isNativeActionPopupBoundaryObservationEnabled else {
+                return
+            }
+            let recorder: ChromeMV3NativeActionPopupBoundaryRecorder?
+            if let extensionID {
+                recorder = nativeActionPopupBoundaryRecorders[extensionID]
+            } else {
+                recorder = nativeActionPopupBoundaryRecorders.values.first
+            }
+            recorder?.recordPresentationFailed(reason: reason)
+        }
+
+        func finishNativeActionPopupBoundaryObservation(
+            popover: NSPopover?
+        ) {
+            guard Self.isNativeActionPopupBoundaryObservationEnabled else {
+                return
+            }
+
+            let matches = nativeActionPopupBoundaryRecorders.filter {
+                $0.value.observes(popover: popover)
+            }
+            for (extensionID, recorder) in matches {
+                recorder.recordPopoverClosed()
+                recorder.recordObserverDetached()
+                lastNativeActionPopupBoundarySnapshots[extensionID] =
+                    recorder.snapshot
+                nativeActionPopupBoundaryRecorders.removeValue(forKey: extensionID)
+            }
+        }
+
+        func nativeActionPopupBoundarySnapshot(
+            for extensionID: String
+        ) -> ChromeMV3NativeActionPopupBoundarySnapshot? {
+            nativeActionPopupBoundaryRecorders[extensionID]?.snapshot
+                ?? lastNativeActionPopupBoundarySnapshots[extensionID]
+        }
+
+        func nativeActionPopupBoundaryDiagnostics(
+            for snapshot: ChromeMV3NativeActionPopupBoundarySnapshot?
+        ) -> [String] {
+            guard let snapshot else {
+                return [
+                    "Native action popup boundary observer was disabled or did not receive a WebKit popup callback.",
+                    "Snapshot retrieval is passive and did not create a popup, runtime, service-worker, content-script endpoint, native host, timer, or bridge by itself.",
+                ]
+            }
+
+            var diagnostics = [
+                "Native WebKit action popup boundary snapshot captured.",
+                "Native popup bridge installed: \(snapshot.nativePopupBridgeInstalled).",
+                "Popup webView available at presentation: \(snapshot.popupWebViewAvailableAtPresentation).",
+                "Popup popover available at presentation: \(snapshot.popupPopoverAvailableAtPresentation).",
+            ]
+            diagnostics.append(contentsOf: snapshot.sanitizedLogLines)
+            diagnostics.append(contentsOf: snapshot.observerLimitations)
+            diagnostics.append(
+                "Snapshot retrieval is passive and did not create a popup, runtime, service-worker, content-script endpoint, native host, timer, or bridge by itself."
+            )
+            return diagnostics
+        }
+
+        func recordNativeActionPopupRouteObservation(
+            for extensionContext: WKWebExtensionContext,
+            apiName: String,
+            sourceContext: String,
+            targetContext: String,
+            nativeBoundary: String,
+            metadataAvailable: Bool,
+            payloadShape: String? = nil,
+            resultClassifier: String? = nil,
+            notes: [String] = []
+        ) {
+            guard Self.isNativeActionPopupBoundaryObservationEnabled,
+                  let extensionID = extensionID(for: extensionContext),
+                  let recorder = nativeActionPopupBoundaryRecorders[extensionID]
+            else {
+                return
+            }
+
+            recorder.recordRoute(
+                apiName: apiName,
+                sourceContext: sourceContext,
+                targetContext: targetContext,
+                nativeBoundary: nativeBoundary,
+                metadataAvailable: metadataAvailable,
+                payloadShape: payloadShape,
+                resultClassifier: resultClassifier,
+                notes: notes
+            )
+        }
+
+        func sanitizedNativeActionPopupPayloadShape(_ value: Any?) -> String {
+            ChromeMV3NativeActionPopupBoundaryRecorder
+                .sanitizedPayloadShape(value)
+        }
+    #endif
+
     func updateActionSurfaceState(
         for action: WKWebExtension.Action,
         extensionContext: WKWebExtensionContext
@@ -83,7 +615,7 @@ extension ExtensionManager: NSPopoverDelegate {
             )
         }
         extensionRuntimeTrace(
-            "urlHubAction click extensionId=\(extensionId) manifestHash=\(installedExtension.manifestRootFingerprint) generatedBundlePath=\(installedExtension.packagePath) originalPackagePath=\(installedExtension.sourceBundlePath) extensionEnabled=\(installedExtension.isEnabled) runtimeState=\(runtimeState.rawValue) contextLoaded=\(getExtensionContext(for: extensionId) != nil) currentProfile=\(currentProfileId?.uuidString ?? "nil") tabProfile=\(currentTab?.profileId?.uuidString ?? "nil") tabOffRecord=\(currentTab?.isEphemeral ?? false) currentURL=\(currentTab?.url.absoluteString ?? "nil")"
+            "urlHubAction click extensionId=\(extensionId) manifestHash=\(installedExtension.manifestRootFingerprint) generatedBundlePath=\(installedExtension.packagePath) originalPackagePath=\(installedExtension.sourceBundlePath) extensionEnabled=\(installedExtension.isEnabled) runtimeState=\(runtimeState.rawValue) contextLoaded=\(getExtensionContext(for: extensionId) != nil) currentProfile=\(currentProfileId?.uuidString ?? "nil") tabProfile=\(currentTab?.profileId?.uuidString ?? "nil") tabOffRecord=\(currentTab?.isEphemeral ?? false) currentURLShape=\(sanitizedURLHubTraceURL(currentTab?.url))"
         )
         guard installedExtension.isEnabled else {
             return .blocked(
@@ -194,18 +726,41 @@ extension ExtensionManager: NSPopoverDelegate {
         extensionRuntimeTrace(
             "urlHubAction performAction extensionId=\(extensionId) actionLabel=\(action.label) actionEnabled=\(action.isEnabled) presentsPopup=\(action.presentsPopup)"
         )
+        #if DEBUG
+            _ = beginNativeActionPopupBoundaryObservation(
+                extensionID: extensionId,
+                extensionContext: extensionContext,
+                action: action
+            )
+            recordNativeActionPopupBoundaryPerformActionAboutToRun(
+                extensionID: extensionId,
+                action: action
+            )
+        #endif
         extensionContext.performAction(for: adapter)
+        #if DEBUG
+            recordNativeActionPopupBoundaryPerformActionReturned(
+                extensionID: extensionId
+            )
+        #endif
         recordRuntimeMetric(for: extensionId) { metrics in
             metrics.lastBackgroundWakeReason = .actionPopup
             metrics.backgroundWakeCount += 1
         }
         #if DEBUG
+        await Task.yield()
+        await Task.yield()
+        let nativePopupSnapshot = nativeActionPopupBoundarySnapshot(
+            for: extensionId
+        )
+        let nativePopupDiagnostics =
+            nativeActionPopupBoundaryDiagnostics(for: nativePopupSnapshot)
         return .openedPopup(
+            nativePopupBoundarySnapshot: nativePopupSnapshot,
             sanitizedBridgeSnapshot: nil,
-            diagnostics: [
+            diagnostics: nativePopupDiagnostics + [
                 "URL-hub opened the real WebKit action popup through WKWebExtensionContext.performAction.",
                 "No ChromeMV3PopupOptionsJSBridgeHandler is installed on WebKit's native action.popupWebView, so no Sumi popup bridge route records were available immediately after popup open.",
-                "Snapshot retrieval is passive and did not create a popup, runtime, service-worker, content-script endpoint, native host, timer, or bridge by itself.",
             ]
         )
         #else
@@ -234,6 +789,19 @@ extension ExtensionManager: NSPopoverDelegate {
             expectedLoadGeneration: extensionLoadGeneration
         )
         return getExtensionContext(for: installedExtension.id)
+    }
+
+    private func sanitizedURLHubTraceURL(_ url: URL?) -> String {
+        guard let url, let scheme = url.scheme?.lowercased() else {
+            return "nil"
+        }
+        if Self.extensionSchemes.contains(scheme) {
+            return "\(scheme)://<extension>/\(url.lastPathComponent.isEmpty ? "<resource>" : url.lastPathComponent)"
+        }
+        if scheme == "http" || scheme == "https" {
+            return "\(scheme)://<host>/<redacted-path>"
+        }
+        return "\(scheme)://<redacted>"
     }
 
     private func isModuleWorkerUnsupported(
@@ -637,6 +1205,11 @@ extension ExtensionManager: NSPopoverDelegate {
     }
 
     func popoverDidClose(_ notification: Notification) {
+        #if DEBUG
+            finishNativeActionPopupBoundaryObservation(
+                popover: notification.object as? NSPopover
+            )
+        #endif
         isPopupActive = false
     }
 

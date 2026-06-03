@@ -141,6 +141,32 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(encoded.contains("token\":\"must-not-appear"))
     }
 
+    @MainActor
+    func testNativeActionPopupBoundaryPayloadShapeSanitizesSensitiveBodies()
+        throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("WKWebExtension native popup boundary requires macOS 15.5.")
+        }
+
+        let shape = ChromeMV3NativeActionPopupBoundaryRecorder
+            .sanitizedPayloadShape([
+                "command": "sensitive-command-value",
+                "token": "must-not-appear",
+                "password": "must-not-appear",
+                "nested": ["cookie": "must-not-appear"],
+            ])
+
+        XCTAssertTrue(shape.contains("object(keyCount:4"))
+        XCTAssertTrue(shape.contains("safeFieldNames:[\"command\"]"))
+        XCTAssertTrue(shape.contains("sensitiveKeyPresent:true"))
+        XCTAssertFalse(shape.contains("sensitive-command-value"))
+        XCTAssertFalse(shape.contains("must-not-appear"))
+        XCTAssertFalse(shape.contains("cookie"))
+        XCTAssertFalse(shape.contains("token\":\""))
+        XCTAssertFalse(shape.contains("password\":\""))
+    }
+
     func testRuntimeSendMessageRoutesThroughSharedLifecycleWhenProvided()
         throws
     {

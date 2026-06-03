@@ -398,6 +398,17 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertNil(manager.getExtensionContext(for: secondRecord.extensionID))
         XCTAssertEqual(manager.runtimeState, .ready)
 
+        UserDefaults.standard.set(
+            true,
+            forKey: ExtensionManager
+                .nativeActionPopupBoundaryObservationDefaultsKey
+        )
+        defer {
+            UserDefaults.standard.removeObject(
+                forKey: ExtensionManager
+                    .nativeActionPopupBoundaryObservationDefaultsKey
+            )
+        }
         let result = await module.openActionPopupFromURLHub(
             extensionId: secondRecord.extensionID,
             currentTab: Tab(url: URL(string: "https://example.com/login")!)
@@ -405,6 +416,20 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
 
         XCTAssertTrue(result.opened)
         XCTAssertNil(result.blocker)
+        let nativeSnapshot = try XCTUnwrap(result.nativePopupBoundarySnapshot)
+        XCTAssertEqual(nativeSnapshot.extensionID, secondRecord.extensionID)
+        XCTAssertFalse(nativeSnapshot.popupWebViewAccessedBeforePerformAction)
+        XCTAssertFalse(nativeSnapshot.nativePopupBridgeInstalled)
+        XCTAssertTrue(nativeSnapshot.lifecycleEvents.contains {
+            $0.milestone == "performAction.aboutToRun"
+        })
+        let encodedNativeSnapshot = String(
+            data: try JSONEncoder().encode(nativeSnapshot),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertFalse(encodedNativeSnapshot.contains("https://example.com/login"))
+        XCTAssertFalse(encodedNativeSnapshot.contains("password"))
+        XCTAssertFalse(encodedNativeSnapshot.contains("token"))
         XCTAssertNotNil(manager.getExtensionContext(for: secondRecord.extensionID))
         XCTAssertEqual(manager.extensionController?.extensionContexts.count, 2)
         XCTAssertFalse(
@@ -1091,6 +1116,12 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         let managerUISource = try source(
             "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift"
         )
+        let controllerDelegateSource = try source(
+            "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"
+        )
+        let extensionBridgeSource = try source(
+            "Sumi/Managers/ExtensionManager/ExtensionBridge.swift"
+        )
         let sidebarHeaderSource = try source(
             "Navigation/Sidebar/SidebarHeader.swift"
         )
@@ -1098,6 +1129,9 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             "Sumi/Managers/ExtensionManager/SumiExtensionsModule.swift"
         )
         let combined = modelSource + "\n" + hubSource + "\n" + actionViewSource
+        let nativePopupBoundarySources =
+            managerUISource + "\n" + controllerDelegateSource + "\n"
+            + extensionBridgeSource
         let manualSmokeRunnerCall =
             ".run" + "Manual" + "Normal" + "Tab" + "Smoke(request)"
         let artifactWriterCall =
@@ -1137,6 +1171,35 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertFalse(hubSource.contains(artifactWriterCall))
         XCTAssertTrue(actionViewSource.contains("openActionPopupFromURLHub"))
         XCTAssertTrue(managerUISource.contains("performAction(for: adapter)"))
+        XCTAssertTrue(managerUISource.contains("nativePopupBoundarySnapshot"))
+        XCTAssertTrue(
+            managerUISource.contains(
+                "popupWebView intentionally not touched before performAction"
+            )
+        )
+        XCTAssertTrue(
+            controllerDelegateSource.contains(
+                "recordNativeActionPopupPresentationBoundary"
+            )
+        )
+        XCTAssertTrue(
+            controllerDelegateSource.contains("runtime.sendNativeMessage")
+        )
+        XCTAssertTrue(
+            controllerDelegateSource.contains("runtime.connectNative")
+        )
+        XCTAssertTrue(extensionBridgeSource.contains("metadataAvailable: false"))
+        XCTAssertFalse(nativePopupBoundarySources.contains("addUser" + "Script"))
+        XCTAssertFalse(
+            nativePopupBoundarySources.contains("addScript" + "MessageHandler")
+        )
+        XCTAssertFalse(nativePopupBoundarySources.contains("Process" + "("))
+        XCTAssertFalse(nativePopupBoundarySources.contains("navigationDelegate ="))
+        XCTAssertFalse(
+            nativePopupBoundarySources.contains(
+                "ChromeMV3PopupOptionsJSBridgeHandler("
+            )
+        )
         XCTAssertTrue(managerUISource.contains("extensionContext.action(for: adapter)"))
         XCTAssertTrue(managerUISource.contains("presentsPopup"))
         XCTAssertTrue(managerUISource.contains("guard action.isEnabled"))

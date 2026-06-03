@@ -34,6 +34,8 @@ struct BrowserExtensionActionPopupRequestResult:
     var opened: Bool
     var blocker: BrowserExtensionActionPopupBlocker?
     var message: String
+    var nativePopupBoundarySnapshot:
+        ChromeMV3NativeActionPopupBoundarySnapshot?
     var sanitizedBridgeSnapshot:
         ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?
     var sanitizedBridgeSnapshotDiagnostics: [String] = []
@@ -42,6 +44,7 @@ struct BrowserExtensionActionPopupRequestResult:
         opened: true,
         blocker: nil,
         message: "Extension action popup requested through WebKit.",
+        nativePopupBoundarySnapshot: nil,
         sanitizedBridgeSnapshot: nil,
         sanitizedBridgeSnapshotDiagnostics: []
     )
@@ -54,12 +57,15 @@ struct BrowserExtensionActionPopupRequestResult:
             opened: false,
             blocker: blocker,
             message: message,
+            nativePopupBoundarySnapshot: nil,
             sanitizedBridgeSnapshot: nil,
             sanitizedBridgeSnapshotDiagnostics: []
         )
     }
 
     static func openedPopup(
+        nativePopupBoundarySnapshot:
+            ChromeMV3NativeActionPopupBoundarySnapshot? = nil,
         sanitizedBridgeSnapshot:
             ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?,
         diagnostics: [String]
@@ -68,9 +74,88 @@ struct BrowserExtensionActionPopupRequestResult:
             opened: true,
             blocker: nil,
             message: "Extension action popup requested through WebKit.",
+            nativePopupBoundarySnapshot: nativePopupBoundarySnapshot,
             sanitizedBridgeSnapshot: sanitizedBridgeSnapshot,
             sanitizedBridgeSnapshotDiagnostics: diagnostics
         )
+    }
+}
+
+struct ChromeMV3NativeActionPopupLifecycleEvent:
+    Codable,
+    Equatable
+{
+    var milestone: String
+    var elapsedMilliseconds: Int
+    var popupWebViewAvailable: Bool
+    var sanitizedURLShape: String?
+    var isLoading: Bool?
+    var estimatedProgressBucket: String?
+    var note: String?
+}
+
+struct ChromeMV3NativeActionPopupRouteObservation:
+    Codable,
+    Equatable
+{
+    var apiName: String
+    var sourceContext: String
+    var targetContext: String
+    var nativeBoundary: String
+    var metadataAvailable: Bool
+    var payloadShape: String?
+    var resultClassifier: String?
+    var notes: [String]
+}
+
+struct ChromeMV3NativeActionPopupBoundarySnapshot:
+    Codable,
+    Equatable
+{
+    var extensionID: String
+    var contextUniqueIdentifier: String
+    var contextLoaded: Bool
+    var actionEnabled: Bool
+    var actionPresentsPopup: Bool
+    var associatedTabKnown: Bool
+    var popupWebViewAccessedBeforePerformAction: Bool
+    var popupWebViewAvailableAtPresentation: Bool
+    var popupPopoverAvailableAtPresentation: Bool
+    var nativePopupBridgeInstalled: Bool
+    var lifecycleEvents: [ChromeMV3NativeActionPopupLifecycleEvent]
+    var routeObservations: [ChromeMV3NativeActionPopupRouteObservation]
+    var observerLimitations: [String]
+
+    var sanitizedLogLines: [String] {
+        var lines = lifecycleEvents.map { event in
+            [
+                "popupLifecycle milestone=\(event.milestone)",
+                "elapsedMs=\(event.elapsedMilliseconds)",
+                "webViewAvailable=\(event.popupWebViewAvailable)",
+                event.sanitizedURLShape.map { "urlShape=\($0)" },
+                event.isLoading.map { "isLoading=\($0)" },
+                event.estimatedProgressBucket.map { "progress=\($0)" },
+                event.note.map { "note=\($0)" },
+            ]
+                .compactMap { $0 }
+                .joined(separator: " ")
+        }
+
+        lines.append(contentsOf: routeObservations.map { route in
+            [
+                "popupRoute api=\(route.apiName)",
+                "source=\(route.sourceContext)",
+                "target=\(route.targetContext)",
+                "boundary=\(route.nativeBoundary)",
+                "metadataAvailable=\(route.metadataAvailable)",
+                route.payloadShape.map { "payloadShape=\($0)" },
+                route.resultClassifier.map { "result=\($0)" },
+            ]
+                .compactMap { $0 }
+                .joined(separator: " ")
+        })
+
+        return lines
     }
 }
 
