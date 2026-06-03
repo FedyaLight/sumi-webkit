@@ -16,7 +16,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let settings = SumiSettingsService(userDefaults: harness.defaults)
 
         XCTAssertEqual(settings.memoryMode, .balanced)
-        XCTAssertEqual(settings.memorySaverCustomDeactivationDelay, 4 * 60 * 60)
+        XCTAssertEqual(settings.memorySaverCustomDeactivationDelay, 2 * 60 * 60)
         for moduleID in SumiModuleID.allCases {
             XCTAssertFalse(registry.isEnabled(moduleID), "\(moduleID.rawValue) should default to disabled")
             XCTAssertNil(harness.defaults.object(forKey: store.key(for: moduleID)))
@@ -64,8 +64,9 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             TabSuspensionPolicy(memoryMode: .custom, customDeactivationDelay: 20 * 60).proactiveDeactivationDelay,
             20 * 60
         )
-        XCTAssertEqual(SumiMemorySaverCustomDelay.clamped(5 * 60), 15 * 60)
-        XCTAssertEqual(SumiMemorySaverCustomDelay.clamped(48 * 60 * 60), 24 * 60 * 60)
+        XCTAssertEqual(SumiMemorySaverCustomDelay.clamped(30), 60)
+        XCTAssertEqual(SumiMemorySaverCustomDelay.clamped(5 * 60), 5 * 60)
+        XCTAssertEqual(SumiMemorySaverCustomDelay.clamped(48 * 60 * 60), 2 * 60 * 60)
 
         let settingsSource = try Self.source(named: "Sumi/Components/Settings/Tabs/Performance.swift")
         XCTAssertTrue(settingsSource.contains("title: \"Memory Saver\""))

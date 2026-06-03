@@ -199,9 +199,11 @@ class SumiSettingsService {
 
     var memorySaverCustomDeactivationDelay: TimeInterval {
         didSet {
-            let clamped = SumiMemorySaverCustomDelay.clamped(memorySaverCustomDeactivationDelay)
-            if clamped != memorySaverCustomDeactivationDelay {
-                memorySaverCustomDeactivationDelay = clamped
+            let normalized = SumiMemorySaverCustomDelay.nearestPreset(
+                to: memorySaverCustomDeactivationDelay
+            )
+            if normalized != memorySaverCustomDeactivationDelay {
+                memorySaverCustomDeactivationDelay = normalized
                 return
             }
             userDefaults.set(memorySaverCustomDeactivationDelay, forKey: memorySaverCustomDeactivationDelayKey)
@@ -722,9 +724,17 @@ enum SumiMemoryMode: String, CaseIterable, Codable, Hashable, Identifiable, Send
 }
 
 enum SumiMemorySaverCustomDelay {
-    static let minimum: TimeInterval = 15 * 60
-    static let maximum: TimeInterval = 24 * 60 * 60
-    static let defaultDelay: TimeInterval = 4 * 60 * 60
+    static let minimum: TimeInterval = 60
+    static let maximum: TimeInterval = 2 * 60 * 60
+    static let defaultDelay: TimeInterval = 2 * 60 * 60
+    static let presetOptions: [TimeInterval] = [
+        2 * 60 * 60,
+        60 * 60,
+        30 * 60,
+        15 * 60,
+        5 * 60,
+        60,
+    ]
 
     static func clamped(_ delay: TimeInterval) -> TimeInterval {
         guard delay.isFinite, delay > 0 else { return defaultDelay }
@@ -733,7 +743,19 @@ enum SumiMemorySaverCustomDelay {
 
     static func validatedOrDefault(_ delay: TimeInterval?) -> TimeInterval {
         guard let delay, delay.isFinite, delay > 0 else { return defaultDelay }
-        return clamped(delay)
+        return nearestPreset(to: delay)
+    }
+
+    static func nearestPreset(to delay: TimeInterval) -> TimeInterval {
+        let clampedDelay = clamped(delay)
+        return presetOptions.min { lhs, rhs in
+            let lhsDistance = abs(lhs - clampedDelay)
+            let rhsDistance = abs(rhs - clampedDelay)
+            if lhsDistance == rhsDistance {
+                return lhs > rhs
+            }
+            return lhsDistance < rhsDistance
+        } ?? defaultDelay
     }
 }
 

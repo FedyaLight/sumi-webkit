@@ -57,6 +57,10 @@ final class SumiEnergySaverPolicyTests: XCTestCase {
         XCTAssertEqual(SumiEnergySaverPolicy.clampedBatteryThreshold(105), 90)
     }
 
+    func testSettingsOrderKeepsManualChoicesBeforeAutomatic() {
+        XCTAssertEqual(SumiEnergySaverMode.settingsOrder, [.off, .on, .automatic])
+    }
+
     func testSettingsPersistFeatureSelectionAndReactToMonitorUpdates() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }

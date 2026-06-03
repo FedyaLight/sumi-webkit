@@ -8,6 +8,8 @@ enum SumiEnergySaverMode: String, CaseIterable, Codable, Hashable, Identifiable,
 
     var id: String { rawValue }
 
+    static let settingsOrder: [SumiEnergySaverMode] = [.off, .on, .automatic]
+
     var title: String {
         switch self {
         case .automatic:

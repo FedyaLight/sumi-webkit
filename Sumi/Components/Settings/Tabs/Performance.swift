@@ -12,6 +12,15 @@ struct SumiMemoryModeSettingsDescriptor: Identifiable, Equatable {
 
     var id: SumiMemoryMode { mode }
 
+    var segmentedTitle: String {
+        switch mode {
+        case .custom:
+            return "Custom"
+        default:
+            return title
+        }
+    }
+
     static let moderate = SumiMemoryModeSettingsDescriptor(
         mode: .moderate,
         title: "Moderate",
@@ -27,7 +36,7 @@ struct SumiMemoryModeSettingsDescriptor: Identifiable, Equatable {
     static let maximum = SumiMemoryModeSettingsDescriptor(
         mode: .maximum,
         title: "Maximum",
-        detail: "Deactivates inactive tabs sooner. Frees memory faster, but tabs may reload more often."
+        detail: "Deactivates inactive tabs sooner."
     )
 
     static let custom = SumiMemoryModeSettingsDescriptor(
@@ -42,9 +51,6 @@ struct SumiMemoryModeSettingsDescriptor: Identifiable, Equatable {
         .maximum,
         .custom,
     ]
-
-    static let launcherPreservationCopy =
-        "Deactivated tabs remain visible. Pinned tabs and Essentials remain launchers; Memory Saver can deactivate their hidden live runtime without removing launcher identity."
 }
 
 struct SettingsPerformanceTab: View {
@@ -58,30 +64,24 @@ struct SettingsPerformanceTab: View {
                 title: "Memory Saver",
                 subtitle: "Choose one inactive-tab policy. Pinned tabs and Essentials keep their launcher identity."
             ) {
-                Picker("Mode", selection: $settings.memoryMode) {
-                    ForEach(SumiMemoryModeSettingsDescriptor.all) { descriptor in
-                        Text(descriptor.title).tag(descriptor.mode)
+                SettingsRow(
+                    title: "Mode",
+                    subtitle: selectedDescriptor?.detail
+                ) {
+                    Picker("Mode", selection: $settings.memoryMode) {
+                        ForEach(SumiMemoryModeSettingsDescriptor.all) { descriptor in
+                            Text(descriptor.segmentedTitle).tag(descriptor.mode)
+                        }
                     }
-                }
-                .pickerStyle(.radioGroup)
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-                if let selectedDescriptor {
-                    Text(selectedDescriptor.detail)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .settingsTrailingControl(width: 340)
                 }
 
                 if settings.memoryMode == .custom {
                     SettingsDivider()
                     customDelayControl(settings: settings)
                 }
-
-                Text(SumiMemoryModeSettingsDescriptor.launcherPreservationCopy)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
             SettingsSection(
@@ -93,7 +93,7 @@ struct SettingsPerformanceTab: View {
                     subtitle: energySaverStatusText
                 ) {
                     Picker("Mode", selection: $settings.energySaverMode) {
-                        ForEach(SumiEnergySaverMode.allCases) { mode in
+                        ForEach(SumiEnergySaverMode.settingsOrder) { mode in
                             Text(mode.title).tag(mode)
                         }
                     }
@@ -160,12 +160,12 @@ struct SettingsPerformanceTab: View {
     }
 
     private func customDelayControl(settings: SumiSettingsService) -> some View {
-        let delayHours = Binding<Double>(
+        let delaySelection = Binding<TimeInterval>(
             get: {
-                settings.memorySaverCustomDeactivationDelay / 3600
+                SumiMemorySaverCustomDelay.nearestPreset(to: settings.memorySaverCustomDeactivationDelay)
             },
             set: { newValue in
-                settings.memorySaverCustomDeactivationDelay = newValue * 3600
+                settings.memorySaverCustomDeactivationDelay = newValue
             }
         )
 
@@ -173,23 +173,27 @@ struct SettingsPerformanceTab: View {
             title: "Deactivate inactive tabs after:",
             subtitle: nil
         ) {
-            Stepper(value: delayHours, in: 0.25...24, step: 0.25) {
-                Text(formattedDelay(settings.memorySaverCustomDeactivationDelay))
-                    .monospacedDigit()
+            Picker("Deactivate inactive tabs after", selection: delaySelection) {
+                ForEach(SumiMemorySaverCustomDelay.presetOptions, id: \.self) { delay in
+                    Text(formattedDelay(delay)).tag(delay)
+                }
             }
-            .frame(maxWidth: 180)
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .settingsTrailingControl(width: 140)
         }
     }
 
     private func formattedDelay(_ delay: TimeInterval) -> String {
         let minutes = Int((SumiMemorySaverCustomDelay.clamped(delay) / 60).rounded())
         if minutes < 60 {
-            return "\(minutes) minutes"
+            return minutes == 1 ? "1 minute" : "\(minutes) minutes"
         }
 
         let hours = Double(minutes) / 60
         if hours.rounded() == hours {
-            return "\(Int(hours)) hours"
+            let wholeHours = Int(hours)
+            return wholeHours == 1 ? "1 hour" : "\(wholeHours) hours"
         }
         return "\(hours.formatted(.number.precision(.fractionLength(2)))) hours"
     }
