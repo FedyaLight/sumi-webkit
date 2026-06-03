@@ -199,7 +199,18 @@ extension ExtensionManager: NSPopoverDelegate {
             metrics.lastBackgroundWakeReason = .actionPopup
             metrics.backgroundWakeCount += 1
         }
+        #if DEBUG
+        return .openedPopup(
+            sanitizedBridgeSnapshot: nil,
+            diagnostics: [
+                "URL-hub opened the real WebKit action popup through WKWebExtensionContext.performAction.",
+                "No ChromeMV3PopupOptionsJSBridgeHandler is installed on WebKit's native action.popupWebView, so no Sumi popup bridge route records were available immediately after popup open.",
+                "Snapshot retrieval is passive and did not create a popup, runtime, service-worker, content-script endpoint, native host, timer, or bridge by itself.",
+            ]
+        )
+        #else
         return .openedPopup
+        #endif
     }
 
     private func loadActionPopupContextIfNeeded(

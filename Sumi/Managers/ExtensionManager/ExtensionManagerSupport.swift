@@ -34,11 +34,16 @@ struct BrowserExtensionActionPopupRequestResult:
     var opened: Bool
     var blocker: BrowserExtensionActionPopupBlocker?
     var message: String
+    var sanitizedBridgeSnapshot:
+        ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?
+    var sanitizedBridgeSnapshotDiagnostics: [String] = []
 
     static let openedPopup = BrowserExtensionActionPopupRequestResult(
         opened: true,
         blocker: nil,
-        message: "Extension action popup requested through WebKit."
+        message: "Extension action popup requested through WebKit.",
+        sanitizedBridgeSnapshot: nil,
+        sanitizedBridgeSnapshotDiagnostics: []
     )
 
     static func blocked(
@@ -48,7 +53,23 @@ struct BrowserExtensionActionPopupRequestResult:
         BrowserExtensionActionPopupRequestResult(
             opened: false,
             blocker: blocker,
-            message: message
+            message: message,
+            sanitizedBridgeSnapshot: nil,
+            sanitizedBridgeSnapshotDiagnostics: []
+        )
+    }
+
+    static func openedPopup(
+        sanitizedBridgeSnapshot:
+            ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?,
+        diagnostics: [String]
+    ) -> BrowserExtensionActionPopupRequestResult {
+        BrowserExtensionActionPopupRequestResult(
+            opened: true,
+            blocker: nil,
+            message: "Extension action popup requested through WebKit.",
+            sanitizedBridgeSnapshot: sanitizedBridgeSnapshot,
+            sanitizedBridgeSnapshotDiagnostics: diagnostics
         )
     }
 }

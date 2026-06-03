@@ -450,6 +450,30 @@ struct ChromeMV3PopupOptionsJSBridgeCallRecord:
     var diagnostics: [String]
 }
 
+struct ChromeMV3PopupOptionsSanitizedBridgeRouteRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var extensionIDHash: String
+    var profileID: String
+    var sourceContext: String
+    var targetContext: String
+    var apiName: String
+    var safeMessageShapeClassification: String
+    var safeCommandTypeActionFieldNames: [String]
+    var listenerCount: Int
+    var listenerInvoked: Bool
+    var sendResponseCalled: Bool
+    var listenerReturnedTrue: Bool
+    var listenerThrew: Bool
+    var portName: String?
+    var portMessageCount: Int
+    var resultClassifier: String
+    var firstMissingAPIOrPermissionOrLifecycleError: String?
+    var diagnostics: [String]
+}
+
 struct ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot:
     Codable,
     Equatable,
@@ -460,6 +484,8 @@ struct ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot:
     var blockedRequestCount: Int
     var observedMethods: [String]
     var callRecords: [ChromeMV3PopupOptionsJSBridgeCallRecord]
+    var sanitizedBridgeRouteRecords:
+        [ChromeMV3PopupOptionsSanitizedBridgeRouteRecord]
     var blockedAPIs: [ChromeMV3PopupOptionsBlockedAPIDiagnostic]
     var lastAPIErrorSummary: String?
     var storageOnChangedPayloadCount: Int
@@ -600,6 +626,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         [ChromeMV3PermissionEventDispatchRecord] = []
     private var permissionPersistenceDiagnostics: [String] = []
     private var callRecords: [ChromeMV3PopupOptionsJSBridgeCallRecord] = []
+    private var sanitizedBridgeRouteRecords:
+        [ChromeMV3PopupOptionsSanitizedBridgeRouteRecord] = []
     private var onChangedPayloads: [ChromeMV3StorageOnChangedEventPayload] = []
     private var syntheticPortIDs: Set<String> = []
     private var serviceWorkerLifecyclePortIDs: Set<String> = []
@@ -766,6 +794,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     callRecords.map { "\($0.namespace).\($0.methodName)" }
                 ),
             callRecords: callRecords,
+            sanitizedBridgeRouteRecords: sanitizedBridgeRouteRecords,
             blockedAPIs:
                 uniqueBlockedDiagnostics(
                     blocked.map {
@@ -3387,8 +3416,393 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 diagnostics: response.diagnostics
             )
         )
+        #if DEBUG
+            recordSanitizedBridgeRoute(
+                request: request,
+                response: response,
+                sourceContext: sourceContext ?? configuration.sourceContext
+            )
+        #endif
         return response
     }
+
+    #if DEBUG
+    private func recordSanitizedBridgeRoute(
+        request: ChromeMV3RuntimeJSBridgeHostRequest?,
+        response: ChromeMV3PopupOptionsJSBridgeHostResponse,
+        sourceContext: ChromeMV3JSBridgeSourceContext
+    ) {
+        let apiName = "\(response.namespace).\(response.methodName)"
+        guard isDebugSnapshotRoute(apiName) else { return }
+        let diagnostics = response.diagnostics
+        sanitizedBridgeRouteRecords.append(
+            ChromeMV3PopupOptionsSanitizedBridgeRouteRecord(
+                extensionIDHash:
+                    stableIDPopupOptionsBridge(
+                        prefix: "extension",
+                        parts: [configuration.extensionID]
+                    ),
+                profileID: configuration.profileID,
+                sourceContext: sourceContext.rawValue,
+                targetContext:
+                    sanitizedTargetContext(
+                        namespace: response.namespace,
+                        methodName: response.methodName,
+                        sourceContext: sourceContext
+                    ),
+                apiName: apiName,
+                safeMessageShapeClassification:
+                    safeMessageShapeClassification(
+                        request: request,
+                        response: response
+                    ),
+                safeCommandTypeActionFieldNames:
+                    safeCommandTypeActionFieldNames(request: request),
+                listenerCount:
+                    diagnosticIntValue(
+                        diagnostics,
+                        keys: ["listenerCount", "onMessageListenerCount"]
+                    ) ?? 0,
+                listenerInvoked:
+                    diagnosticBoolValue(diagnostics, key: "listenerInvoked")
+                        ?? diagnostics.contains {
+                            $0.contains("listener accepted")
+                                || $0.contains("reached a content-script runtime.onMessage listener")
+                                || $0.contains("dispatched to a captured service-worker")
+                        },
+                sendResponseCalled:
+                    diagnosticBoolValue(diagnostics, key: "sendResponseCalled")
+                        ?? false,
+                listenerReturnedTrue:
+                    diagnosticBoolValue(
+                        diagnostics,
+                        key: "listenerReturnedTrue"
+                    ) ?? false,
+                listenerThrew:
+                    diagnosticBoolValue(diagnostics, key: "listenerThrew")
+                        ?? diagnostics.contains {
+                            $0.localizedCaseInsensitiveContains("listener threw")
+                        },
+                portName: safePortName(request: request),
+                portMessageCount: sanitizedPortMessageCount(
+                    request: request,
+                    response: response
+                ),
+                resultClassifier:
+                    resultClassifier(
+                        response: response,
+                        diagnostics: diagnostics
+                    ),
+                firstMissingAPIOrPermissionOrLifecycleError:
+                    firstMissingAPIOrPermissionOrLifecycleError(
+                        response: response,
+                        diagnostics: diagnostics
+                    ),
+                diagnostics:
+                    uniqueSortedPopupOptionsBridge(
+                        diagnostics.filter(sanitizedRouteDiagnostic)
+                    )
+            )
+        )
+    }
+
+    private func isDebugSnapshotRoute(_ apiName: String) -> Bool {
+        [
+            "runtime.sendMessage",
+            "runtime.connect",
+            "runtime.port.postMessage",
+            "runtime.port.disconnect",
+            "tabs.query",
+            "tabs.sendMessage",
+            "tabs.connect",
+            "tabs.port.postMessage",
+            "tabs.port.disconnect",
+        ].contains(apiName)
+    }
+
+    private func sanitizedTargetContext(
+        namespace: String,
+        methodName: String,
+        sourceContext: ChromeMV3JSBridgeSourceContext
+    ) -> String {
+        if sourceContext == .serviceWorker {
+            switch (namespace, methodName) {
+            case ("tabs", "query"):
+                return "tabs"
+            case ("tabs", "sendMessage"):
+                return "contentScript"
+            default:
+                return "unknown"
+            }
+        }
+        switch (namespace, methodName) {
+        case ("runtime", "sendMessage"), ("runtime", "connect"),
+             ("runtime", "port.postMessage"), ("runtime", "port.disconnect"):
+            return "serviceWorker"
+        case ("tabs", "query"):
+            return "tabs"
+        case ("tabs", "sendMessage"), ("tabs", "connect"),
+             ("tabs", "port.postMessage"), ("tabs", "port.disconnect"):
+            return "contentScript"
+        default:
+            return "unknown"
+        }
+    }
+
+    private func safeMessageShapeClassification(
+        request: ChromeMV3RuntimeJSBridgeHostRequest?,
+        response: ChromeMV3PopupOptionsJSBridgeHostResponse
+    ) -> String {
+        let requestShape = sanitizedArgumentShapeSummary(for: request)
+        let responseShape = storageValueShape(response.resultPayload)
+        return "request=\(requestShape);response=\(responseShape)"
+    }
+
+    private func sanitizedArgumentShapeSummary(
+        for request: ChromeMV3RuntimeJSBridgeHostRequest?
+    ) -> String {
+        guard let arguments = request?.arguments else {
+            return "arguments:none"
+        }
+        guard arguments.isEmpty == false else {
+            return "arguments:0"
+        }
+        return arguments.enumerated().map { index, value in
+            "arg\(index)=\(sanitizedStorageValueShape(value))"
+        }.joined(separator: ";")
+    }
+
+    private func sanitizedStorageValueShape(
+        _ value: ChromeMV3StorageValue
+    ) -> String {
+        switch value {
+        case .array(let values):
+            return "array:length=\(values.count)"
+        case .bool:
+            return "bool"
+        case .null:
+            return "null"
+        case .number:
+            return "number"
+        case .object(let object):
+            let safeFields = safeCommandTypeActionFieldNames(
+                request:
+                    ChromeMV3RuntimeJSBridgeHostRequest(
+                        bridgeCallID: "shape-only",
+                        namespace: "shape",
+                        methodName: "shape",
+                        invocationMode: .promise,
+                        arguments: [.object(object)],
+                        listenerID: nil,
+                        eventName: nil,
+                        portID: nil,
+                        diagnostics: []
+                    )
+            )
+            let suffix = safeFields.isEmpty
+                ? ""
+                : ";safeFields=\(safeFields.joined(separator: ","))"
+            return "object:keyCount=\(object.keys.count)\(suffix)"
+        case .string(let string):
+            return "string:length=\(string.count)"
+        }
+    }
+
+    private func storageValueShape(_ value: ChromeMV3StorageValue?) -> String {
+        guard let value else { return "none" }
+        return storageValueShape(value)
+    }
+
+    private func safeCommandTypeActionFieldNames(
+        request: ChromeMV3RuntimeJSBridgeHostRequest?
+    ) -> [String] {
+        let safeNames = Set([
+            "action",
+            "command",
+            "kind",
+            "messageType",
+            "name",
+            "operation",
+            "requestType",
+            "type",
+        ])
+        let names = request?.arguments.flatMap {
+            safeFieldNames(in: $0, safeNames: safeNames)
+        } ?? []
+        return uniqueSortedPopupOptionsBridge(names)
+    }
+
+    private func safeFieldNames(
+        in value: ChromeMV3StorageValue,
+        safeNames: Set<String>
+    ) -> [String] {
+        switch value {
+        case .object(let object):
+            return object.keys.filter { safeNames.contains($0) }
+        case .array(let values):
+            return values.flatMap {
+                safeFieldNames(in: $0, safeNames: safeNames)
+            }
+        case .bool, .null, .number, .string:
+            return []
+        }
+    }
+
+    private func safePortName(
+        request: ChromeMV3RuntimeJSBridgeHostRequest?
+    ) -> String? {
+        guard let request else { return nil }
+        let candidate: String?
+        if request.namespace == "tabs",
+           request.methodName == "connect",
+           request.arguments.count > 1
+        {
+            candidate = request.arguments[1].objectValue?["name"]?
+                .stringValue
+        } else if request.methodName == "connect" {
+            candidate = request.arguments.first?.objectValue?["name"]?
+                .stringValue
+        } else {
+            candidate = nil
+        }
+        guard let candidate, candidate.count <= 80,
+              candidate.range(
+                of: #"(?i)(token|secret|password|credential|cookie|auth)"#,
+                options: .regularExpression
+              ) == nil
+        else { return nil }
+        return candidate
+    }
+
+    private func sanitizedPortMessageCount(
+        request: ChromeMV3RuntimeJSBridgeHostRequest?,
+        response: ChromeMV3PopupOptionsJSBridgeHostResponse
+    ) -> Int {
+        guard let request else { return 0 }
+        if request.methodName.contains("port.postMessage") {
+            return response.succeeded ? 1 : 0
+        }
+        if request.methodName == "connect" {
+            return 0
+        }
+        return 0
+    }
+
+    private func resultClassifier(
+        response: ChromeMV3PopupOptionsJSBridgeHostResponse,
+        diagnostics: [String]
+    ) -> String {
+        if let explicit = diagnosticStringValue(
+            diagnostics,
+            key: "resultClassifier"
+        ) {
+            return explicit
+        }
+        if response.succeeded {
+            return "listenerRespondedSync"
+        }
+        if diagnostics.contains(where: {
+            $0.localizedCaseInsensitiveContains("listener threw")
+        }) {
+            return "listenerThrew"
+        }
+        if diagnostics.contains(where: {
+            $0.contains("listener(s) returned without sendResponse")
+                || $0.contains("listener returned no response")
+        }) {
+            return "listenerPresentButNoResponse"
+        }
+        if response.lastErrorCode == ChromeMV3RuntimeLastErrorCase
+            .noReceivingEnd.rawValue
+        {
+            return "noReceivingEnd"
+        }
+        return response.lastErrorCode ?? "blocked"
+    }
+
+    private func firstMissingAPIOrPermissionOrLifecycleError(
+        response: ChromeMV3PopupOptionsJSBridgeHostResponse,
+        diagnostics: [String]
+    ) -> String? {
+        if let lastError = response.lastErrorMessage {
+            return lastError
+        }
+        let needles = [
+            "missing",
+            "permission",
+            "blocked",
+            "unavailable",
+            "unsupported",
+            "lifecycle",
+            "no receiving end",
+            "no receiver",
+            "no listener",
+        ]
+        return diagnostics.first { diagnostic in
+            let lower = diagnostic.lowercased()
+            return needles.contains { lower.contains($0) }
+        }
+    }
+
+    private func diagnosticBoolValue(
+        _ diagnostics: [String],
+        key: String
+    ) -> Bool? {
+        guard let raw = diagnosticStringValue(diagnostics, key: key) else {
+            return nil
+        }
+        if raw == "true" { return true }
+        if raw == "false" { return false }
+        return nil
+    }
+
+    private func diagnosticIntValue(
+        _ diagnostics: [String],
+        keys: [String]
+    ) -> Int? {
+        for key in keys {
+            if let raw = diagnosticStringValue(diagnostics, key: key),
+               let value = Int(raw)
+            {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private func diagnosticStringValue(
+        _ diagnostics: [String],
+        key: String
+    ) -> String? {
+        let pattern = "\(key)="
+        for diagnostic in diagnostics {
+            guard let range = diagnostic.range(of: pattern) else {
+                continue
+            }
+            let suffix = diagnostic[range.upperBound...]
+            return String(
+                suffix.prefix {
+                    $0 != " " && $0 != ";" && $0 != "," && $0 != "."
+                }
+            )
+        }
+        return nil
+    }
+
+    private func sanitizedRouteDiagnostic(_ diagnostic: String) -> Bool {
+        let lower = diagnostic.lowercased()
+        let blocked = [
+            "password",
+            "credential",
+            "cookie",
+            "token",
+            "vault",
+            "auth payload",
+            "form value",
+        ]
+        return blocked.contains { lower.contains($0) } == false
+    }
+    #endif
 
     private func argumentShapeSummary(
         for request: ChromeMV3RuntimeJSBridgeHostRequest?

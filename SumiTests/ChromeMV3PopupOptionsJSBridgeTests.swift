@@ -72,6 +72,75 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(port.runtimeLoadable)
     }
 
+    func testSanitizedBridgeSnapshotRecordsRoutesWithoutMessageBodies()
+        throws
+    {
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration()
+        )
+
+        _ = handler.handle(request(
+            namespace: "runtime",
+            methodName: "sendMessage",
+            arguments: [
+                .object([
+                    "command": .string("sensitive-command-value"),
+                    "token": .string("must-not-appear"),
+                ]),
+            ]
+        ))
+        _ = handler.handle(request(
+            namespace: "runtime",
+            methodName: "connect",
+            arguments: [
+                .object(["name": .string("popup-safe-port")]),
+            ],
+            invocationMode: .fireAndForget
+        ))
+        _ = handler.handle(request(
+            namespace: "tabs",
+            methodName: "sendMessage",
+            arguments: [
+                .number(1),
+                .object([
+                    "type": .string("sensitive-type-value"),
+                    "cookie": .string("must-not-appear"),
+                ]),
+            ]
+        ))
+
+        let snapshot = handler.diagnosticsSnapshot
+        let routes = snapshot.sanitizedBridgeRouteRecords
+        XCTAssertEqual(routes.count, 3)
+        XCTAssertTrue(routes.contains {
+            $0.sourceContext == "actionPopup"
+                && $0.targetContext == "serviceWorker"
+                && $0.apiName == "runtime.sendMessage"
+                && $0.safeCommandTypeActionFieldNames == ["command"]
+                && $0.resultClassifier == "noReceivingEnd"
+        })
+        XCTAssertTrue(routes.contains {
+            $0.apiName == "runtime.connect"
+                && $0.portName == "popup-safe-port"
+                && $0.safeCommandTypeActionFieldNames == ["name"]
+        })
+        XCTAssertTrue(routes.contains {
+            $0.apiName == "tabs.sendMessage"
+                && $0.targetContext == "contentScript"
+                && $0.safeCommandTypeActionFieldNames == ["type"]
+                && $0.resultClassifier == "noReceivingEnd"
+        })
+        let encoded = String(
+            data: try JSONEncoder().encode(snapshot),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertFalse(encoded.contains("sensitive-command-value"))
+        XCTAssertFalse(encoded.contains("sensitive-type-value"))
+        XCTAssertFalse(encoded.contains("must-not-appear"))
+        XCTAssertFalse(encoded.contains("cookie\":\"must-not-appear"))
+        XCTAssertFalse(encoded.contains("token\":\"must-not-appear"))
+    }
+
     func testRuntimeSendMessageRoutesThroughSharedLifecycleWhenProvided()
         throws
     {
