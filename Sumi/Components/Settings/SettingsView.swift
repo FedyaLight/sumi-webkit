@@ -77,12 +77,12 @@ struct SumiDataRecoverySettingsPane: View {
                     .disabled(isWorking)
 
                     SettingsActionRow(
-                        title: "Import Browser Export",
-                        subtitle: "Open a .sumiexport or browser2zen-compatible JSON file.",
+                        title: "Import from File",
+                        subtitle: "Open a .sumibackup, .sumiexport, or browser2zen-compatible JSON file.",
                         systemImage: "doc.badge.arrow.up",
                         buttonTitle: "Open"
                     ) {
-                        importBrowserExportFromFile()
+                        importFromFile()
                     }
                     .disabled(isWorking)
                 }
@@ -110,16 +110,6 @@ struct SumiDataRecoverySettingsPane: View {
                         buttonTitle: "Backup"
                     ) {
                         backupSumi()
-                    }
-                    .disabled(isWorking)
-
-                    SettingsActionRow(
-                        title: "Restore Sumi",
-                        subtitle: "Open a .sumibackup and choose Merge or Replace before applying it.",
-                        systemImage: "arrow.clockwise.icloud",
-                        buttonTitle: "Restore"
-                    ) {
-                        restoreSumi()
                     }
                     .disabled(isWorking)
 
@@ -206,12 +196,12 @@ struct SumiDataRecoverySettingsPane: View {
         loadPreview { try importService.previewZenImport(profileURL: url) }
     }
 
-    private func importBrowserExportFromFile() {
+    private func importFromFile() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.sumiTransfer, .json]
+        panel.allowedContentTypes = [.sumiBackup, .sumiTransfer, .json]
         panel.prompt = "Open"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         loadPreview {
@@ -219,22 +209,6 @@ struct SumiDataRecoverySettingsPane: View {
                 try importService.previewFileImport(fileURL: url)
             }
         }
-    }
-
-    private func restoreSumi() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.sumiBackup]
-        panel.prompt = "Restore"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        loadPreview {
-            try withSecurityScoped(url) {
-                try importService.previewFileImport(fileURL: url)
-            }
-        }
-        applyMode = .replace
     }
 
     private func exportBrowser2Zen() {
