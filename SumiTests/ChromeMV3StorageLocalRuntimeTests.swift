@@ -503,10 +503,15 @@ final class ChromeMV3StorageLocalRuntimeTests: XCTestCase {
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3PopupOptionsJSBridge.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift",
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3ContentScriptProductAttachment.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ServiceWorkerJSExecutionHarness.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionManagerDeveloperPreview.swift",
             "SumiTests/ChromeMV3RuntimeJSMessagingMVPTests.swift",
             "SumiTests/ChromeMV3TabsScriptingJSMVPTests.swift",
             "SumiTests/ChromeMV3StorageLocalRuntimeTests.swift",
             "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift",
+            "SumiTests/ChromeMV3PopupOptionsJSBridgeTests.swift",
+            "SumiTests/ChromeMV3URLHubDeveloperPreviewTests.swift",
+            "SumiTests/ChromeMV3ServiceWorkerJSExecutionHarnessTests.swift",
             "SumiTests/ChromeMV3PasswordManagerRealPackageCompatibilityTests.swift",
         ]
         let otherChromeMV3Joined = sources

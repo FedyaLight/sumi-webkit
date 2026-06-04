@@ -1949,6 +1949,23 @@ struct ChromeMV3StorageAPIOperationHandlerState:
             ]
         )
 
+    static let enabledDeveloperPreviewPopupOptionsBridge =
+        ChromeMV3StorageAPIOperationHandlerState(
+            extensionsModuleEnabled: true,
+            storagePermissionDetected: true,
+            modelContextAllowsBrokerExecution: true,
+            requestedJSRuntimeExecution: false,
+            storageBackendAvailable: true,
+            sessionContentScriptAccessAllowed: false,
+            runtimeMessagingStillBlocked: true,
+            nativeMessagingStillBlocked: true,
+            diagnostics: [
+                "Developer-preview controlled popup bridge may execute storage.local broker operations.",
+                "storage.local is scoped to this extension ID and profile ID.",
+                "Normal-tab runtime storage, default product storage exposure, native messaging, storage.session, storage.sync, and managed storage remain blocked.",
+            ]
+        )
+
     static let disabledModule =
         ChromeMV3StorageAPIOperationHandlerState(
             extensionsModuleEnabled: false,

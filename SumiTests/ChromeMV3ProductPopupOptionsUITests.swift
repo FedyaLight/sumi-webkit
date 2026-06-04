@@ -214,7 +214,7 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         )
         XCTAssertTrue(launchRecord.apiSurface.runtimeAvailable)
         XCTAssertTrue(launchRecord.apiSurface.tabsAvailable)
-        XCTAssertFalse(launchRecord.apiSurface.storageLocalAvailable)
+        XCTAssertTrue(launchRecord.apiSurface.storageLocalAvailable)
         XCTAssertFalse(launchRecord.apiSurface.permissionsAvailable)
         XCTAssertFalse(launchRecord.apiSurface.scriptingAvailable)
         XCTAssertFalse(launchRecord.apiSurface.nativeMessagingAvailable)
@@ -227,11 +227,23 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
             "tabs.sendMessage"
         ))
-        XCTAssertFalse(launchRecord.apiSurface.allowedMethods.contains(
+        XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
             "storage.local.get"
         ))
-        XCTAssertTrue(launchRecord.apiSurface.blockedMethods.contains {
+        XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
+            "storage.local.set"
+        ))
+        XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
+            "storage.local.remove"
+        ))
+        XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
+            "storage.local.clear"
+        ))
+        XCTAssertFalse(launchRecord.apiSurface.blockedMethods.contains {
             $0.namespace == "storage" && $0.methodName == "local.*"
+        })
+        XCTAssertTrue(launchRecord.apiSurface.blockedMethods.contains {
+            $0.namespace == "storage" && $0.methodName == "session.*"
         })
         XCTAssertTrue(launchRecord.resourceResolution?.linkedResources
             .contains { $0.kind == .localScript } == true)

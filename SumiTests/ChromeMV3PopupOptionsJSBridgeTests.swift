@@ -164,6 +164,15 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
                 ]),
             ]
         ))
+        let storageSet = handler.handle(request(
+            namespace: "storage",
+            methodName: "local.set",
+            arguments: [
+                .object([
+                    "authToken": .string("must-not-appear"),
+                ]),
+            ]
+        ))
         let storage = handler.handle(request(
             namespace: "storage",
             methodName: "local.get",
@@ -181,9 +190,15 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(runtime.succeeded)
         XCTAssertEqual(runtime.lastErrorCode, "noReceivingEnd")
         XCTAssertFalse(runtime.nativeHostLaunchAttempted)
-        XCTAssertFalse(storage.succeeded)
-        XCTAssertEqual(storage.blockedAPIDiagnostic?.namespace, "storage")
-        XCTAssertEqual(storage.blockedAPIDiagnostic?.methodName, "local.*")
+        XCTAssertTrue(storageSet.succeeded)
+        XCTAssertEqual(storageSet.resultPayload, .null)
+        XCTAssertFalse(storageSet.nativeHostLaunchAttempted)
+        XCTAssertTrue(storage.succeeded)
+        XCTAssertEqual(
+            storage.resultPayload,
+            .object(["authToken": .string("must-not-appear")])
+        )
+        XCTAssertNil(storage.blockedAPIDiagnostic)
         XCTAssertFalse(storage.nativeHostLaunchAttempted)
         XCTAssertFalse(native.succeeded)
         XCTAssertEqual(native.blockedAPIDiagnostic?.namespace, "runtime")
@@ -195,6 +210,7 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
 
         let snapshot = handler.diagnosticsSnapshot
         XCTAssertTrue(snapshot.observedMethods.contains("runtime.sendMessage"))
+        XCTAssertTrue(snapshot.observedMethods.contains("storage.local.set"))
         XCTAssertTrue(snapshot.observedMethods.contains("storage.local.get"))
         XCTAssertTrue(
             snapshot.observedMethods.contains("runtime.sendNativeMessage")
@@ -203,8 +219,22 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             $0.apiName == "runtime.sendMessage"
                 && $0.safeCommandTypeActionFieldNames == ["command"]
         })
-        XCTAssertTrue(snapshot.blockedAPIs.contains {
+        XCTAssertFalse(snapshot.blockedAPIs.contains {
             $0.namespace == "storage" && $0.methodName == "local.*"
+        })
+        XCTAssertTrue(snapshot.sanitizedBridgeRouteRecords.contains {
+            $0.apiName == "storage.local.set"
+                && $0.targetContext == "storage.local"
+                && $0.resultClassifier == "storageLocalBrokerSucceeded"
+                && $0.safeMessageShapeClassification.contains("keyCount=1")
+        })
+        XCTAssertTrue(snapshot.sanitizedBridgeRouteRecords.contains {
+            $0.apiName == "storage.local.get"
+                && $0.targetContext == "storage.local"
+                && $0.resultClassifier == "storageLocalBrokerSucceeded"
+                && $0.safeMessageShapeClassification.contains(
+                    "keyShape=singleString"
+                )
         })
         XCTAssertTrue(snapshot.blockedAPIs.contains {
             $0.namespace == "runtime"
@@ -584,6 +614,89 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(clear.succeeded)
         XCTAssertEqual(handler.diagnosticsSnapshot.storageOnChangedPayloadCount, 2)
         XCTAssertFalse(set.serviceWorkerWakeAttempted)
+    }
+
+    func testControlledStorageLocalPersistsByProfileAndExtensionWithoutRawDiagnostics()
+        throws
+    {
+        let root = try makeTemporaryDirectory()
+        let storageRoot = root.appendingPathComponent(
+            "StorageLocal",
+            isDirectory: true
+        ).path
+        let first = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                extensionID: "generic-extension-a",
+                profileID: "profile-a",
+                allowlist: .controlledActionPopupPolicy,
+                storageLocalRootPath: storageRoot
+            )
+        )
+        let set = first.handle(request(
+            namespace: "storage",
+            methodName: "local.set",
+            arguments: [
+                .object([
+                    "sensitiveStorageKey": .object([
+                        "nestedSecret": .string("must-not-appear"),
+                    ]),
+                ]),
+            ]
+        ))
+
+        XCTAssertTrue(set.succeeded)
+        XCTAssertFalse(set.nativeHostLaunchAttempted)
+
+        let second = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                extensionID: "generic-extension-a",
+                profileID: "profile-a",
+                allowlist: .controlledActionPopupPolicy,
+                storageLocalRootPath: storageRoot
+            )
+        )
+        let get = second.handle(request(
+            namespace: "storage",
+            methodName: "local.get",
+            arguments: [.string("sensitiveStorageKey")]
+        ))
+        let expectedPayload: ChromeMV3StorageValue = .object([
+            "sensitiveStorageKey": .object([
+                "nestedSecret": .string("must-not-appear"),
+            ]),
+        ])
+        XCTAssertEqual(
+            get.resultPayload,
+            expectedPayload
+        )
+        XCTAssertFalse(get.nativeHostLaunchAttempted)
+
+        let isolated = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                extensionID: "generic-extension-b",
+                profileID: "profile-a",
+                allowlist: .controlledActionPopupPolicy,
+                storageLocalRootPath: storageRoot
+            )
+        )
+        let isolatedGet = isolated.handle(request(
+            namespace: "storage",
+            methodName: "local.get",
+            arguments: [.string("sensitiveStorageKey")]
+        ))
+        let expectedMissingPayload: ChromeMV3StorageValue = .object([:])
+        XCTAssertEqual(isolatedGet.resultPayload, expectedMissingPayload)
+
+        let encoded = String(
+            data: try JSONEncoder().encode(second.diagnosticsSnapshot),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertTrue(encoded.contains("storageLocalBrokerSucceeded"))
+        XCTAssertTrue(encoded.contains("keyShape=singleString"))
+        XCTAssertTrue(encoded.contains("keyCount=1"))
+        XCTAssertFalse(encoded.contains("sensitiveStorageKey"))
+        XCTAssertFalse(encoded.contains("nestedSecret"))
+        XCTAssertFalse(encoded.contains("must-not-appear"))
     }
 
     func testPermissionsPromptPopupOptionsFlow() throws {
@@ -1406,7 +1519,8 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         manifestHostPermissions: [String] = [],
         manifestOptionalHostPermissions: [String] = [],
         activeTabGrants: [ChromeMV3ActiveTabGrant] = [],
-        allowlist: ChromeMV3PopupOptionsAPIMethodPolicy = .defaultPolicy
+        allowlist: ChromeMV3PopupOptionsAPIMethodPolicy = .defaultPolicy,
+        storageLocalRootPath: String? = nil
     ) -> ChromeMV3PopupOptionsJSBridgeConfiguration {
         ChromeMV3PopupOptionsJSBridgeConfiguration(
             extensionID: extensionID,
@@ -1415,6 +1529,7 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             surface: surface,
             extensionBaseURLString: "chrome-extension://\(extensionID)/",
             permissionStateRootPath: nil,
+            storageLocalRootPath: storageLocalRootPath,
             moduleState: moduleState,
             bridgeAvailable: bridgeAvailable,
             popupOptionsJSBridgeAvailableInDeveloperPreview:

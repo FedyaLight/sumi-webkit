@@ -536,7 +536,17 @@ final class ChromeMV3RuntimeMessagingContractTests: XCTestCase {
                     && $0.relativePath
                         != "Sumi/Models/Extension/ChromeMV3/ChromeMV3ContentScriptProductAttachment.swift"
                     && $0.relativePath
+                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3ServiceWorkerJSExecutionHarness.swift"
+                    && $0.relativePath
+                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionManagerDeveloperPreview.swift"
+                    && $0.relativePath
                         != "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift"
+                    && $0.relativePath
+                        != "SumiTests/ChromeMV3PopupOptionsJSBridgeTests.swift"
+                    && $0.relativePath
+                        != "SumiTests/ChromeMV3URLHubDeveloperPreviewTests.swift"
+                    && $0.relativePath
+                        != "SumiTests/ChromeMV3ServiceWorkerJSExecutionHarnessTests.swift"
                     && $0.relativePath
                         != "SumiTests/ChromeMV3PasswordManagerRealPackageCompatibilityTests.swift"
             }

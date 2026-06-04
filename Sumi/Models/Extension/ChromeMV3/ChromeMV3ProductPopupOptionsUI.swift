@@ -814,7 +814,8 @@ enum ChromeMV3ProductPopupOptionsLaunchPlanner {
             "Package-local popup JavaScript, CSS, image, locale, frame, and asset resources are preserved through file-backed read access to the generated package root.",
             "Remote, missing, unsafe-path, and inline-script popup resources remain blocked in the controlled action popup host.",
             "CSP is preserved only to the extent WebKit enforces it for the loaded file-backed HTML; chrome-extension:// origin semantics are approximated by bridge metadata and chrome.runtime.getURL, not by a custom extension URL scheme.",
-            "Native messaging, storage, scripting, permissions, DNR, webRequest, offscreen, contextMenus, and Web Store APIs remain outside this controlled action popup policy.",
+            "storage.local get/set/remove/clear are routed through the developer-preview broker when the controlled bridge is installed.",
+            "Native messaging, storage.session, storage.sync, managed storage, scripting, permissions, DNR, webRequest, offscreen, contextMenus, and Web Store APIs remain outside this controlled action popup policy.",
         ]
         var declaration: ChromeMV3ExtensionPageDeclaration?
         var resolution: ChromeMV3ExtensionPageResourceResolution?

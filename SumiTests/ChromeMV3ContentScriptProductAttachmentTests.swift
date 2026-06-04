@@ -2562,6 +2562,7 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
             surface: .actionPopup,
             extensionBaseURLString: "chrome-extension://\(extensionID)/",
             permissionStateRootPath: nil,
+            storageLocalRootPath: nil,
             moduleState: .enabled,
             bridgeAvailable: true,
             popupOptionsJSBridgeAvailableInDeveloperPreview: true,

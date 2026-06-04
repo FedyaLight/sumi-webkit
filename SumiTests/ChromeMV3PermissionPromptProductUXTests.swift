@@ -607,6 +607,7 @@ final class ChromeMV3PermissionPromptProductUXTests: XCTestCase {
             surface: .actionPopup,
             extensionBaseURLString: "chrome-extension://\(extensionID)/",
             permissionStateRootPath: permissionStateRootPath,
+            storageLocalRootPath: nil,
             moduleState: .enabled,
             bridgeAvailable: true,
             popupOptionsJSBridgeAvailableInDeveloperPreview: true,

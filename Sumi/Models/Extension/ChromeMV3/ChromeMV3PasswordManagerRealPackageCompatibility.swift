@@ -6084,6 +6084,7 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             surface: .actionPopup,
             extensionBaseURLString: "chrome-extension://\(extensionID)/",
             permissionStateRootPath: nil,
+            storageLocalRootPath: nil,
             moduleState: moduleState,
             bridgeAvailable: moduleState == .enabled,
             popupOptionsJSBridgeAvailableInDeveloperPreview:

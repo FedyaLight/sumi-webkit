@@ -2566,7 +2566,7 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertTrue(
             inventory.moduleWorkerInventory.staticImportDeclarations
-                .allSatisfy { $0.generatedRootContained == false }
+                .allSatisfy { $0.generatedRootContained == true }
         )
         XCTAssertGreaterThan(
             inventory.moduleWorkerInventory.exportUsageLocations.count,

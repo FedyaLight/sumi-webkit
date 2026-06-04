@@ -2345,6 +2345,7 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
             extensionBaseURLString:
                 "chrome-extension://\(fixture.record.extensionID)/",
             permissionStateRootPath: fixture.root.path,
+            storageLocalRootPath: nil,
             moduleState: .enabled,
             bridgeAvailable: true,
             popupOptionsJSBridgeAvailableInDeveloperPreview: true,
