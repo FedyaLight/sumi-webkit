@@ -607,22 +607,30 @@ class TabManager: ObservableObject {
     enum FolderChildVisualItem: Hashable {
         case folder(UUID)
         case shortcut(UUID)
+        case splitGroup(UUID)
 
         var id: UUID {
             switch self {
-            case .folder(let id), .shortcut(let id):
+            case .folder(let id), .shortcut(let id), .splitGroup(let id):
                 return id
             }
         }
     }
 
     func folderChildVisualItems(for folderId: UUID, in spaceId: UUID) -> [FolderChildVisualItem] {
+        let allShortcutHostedGroups = shortcutHostedSplitGroups(for: spaceId)
+        let folderShortcutHostedGroups = allShortcutHostedGroups
+            .filter { shortcutHostedSplitGroupFolderId($0, in: spaceId) == folderId }
+        let hiddenPinIds = Set(allShortcutHostedGroups.flatMap { $0.shortcutPinIds })
         let folders = childFolders(of: folderId, in: spaceId)
             .map { ($0.index, 0, FolderChildVisualItem.folder($0.id)) }
         let pins = folderPinnedPins(for: folderId, in: spaceId)
+            .filter { !hiddenPinIds.contains($0.id) }
             .map { ($0.index, 1, FolderChildVisualItem.shortcut($0.id)) }
+        let splitGroups = folderShortcutHostedGroups
+            .map { (shortcutHostedSplitGroupVisualIndex($0, in: spaceId), 0, FolderChildVisualItem.splitGroup($0.id)) }
 
-        return (folders + pins)
+        return (folders + pins + splitGroups)
             .sorted { lhs, rhs in
                 if lhs.0 != rhs.0 { return lhs.0 < rhs.0 }
                 if lhs.1 != rhs.1 { return lhs.1 < rhs.1 }

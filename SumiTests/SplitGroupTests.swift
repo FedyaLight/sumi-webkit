@@ -102,6 +102,168 @@ final class SplitGroupTests: XCTestCase {
         )
     }
 
+    func testShortcutHostedSplitGroupForFolderPinStaysInsideFolderVisualItems() throws {
+        let harness = try makeHarness()
+        let space = harness.tabManager.createSpace(name: "Work")
+        let folder = harness.tabManager.createFolder(for: space.id, name: "Docs")
+        let visiblePin = makeSpacePin(spaceId: space.id, index: 0, title: "Visible")
+        let groupedPin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: space.id,
+            index: 0,
+            folderId: folder.id,
+            launchURL: URL(string: "https://grouped.example")!,
+            title: "Grouped"
+        )
+        harness.tabManager.setSpacePinnedShortcuts([visiblePin, groupedPin], for: space.id)
+
+        let otherId = UUID()
+        let group = try XCTUnwrap(SplitGroup.make(
+            tabIds: [groupedPin.id, otherId],
+            layoutKind: .vertical,
+            host: .shortcutPinned(spaceId: space.id, profileId: nil, index: 0),
+            members: [
+                SplitGroupMember(
+                    tabId: groupedPin.id,
+                    pinId: groupedPin.id,
+                    origin: .spacePinned(spaceId: space.id, folderId: folder.id, index: 0)
+                ),
+                SplitGroupMember(
+                    tabId: otherId,
+                    pinId: nil,
+                    origin: .regular(spaceId: space.id, index: nil)
+                )
+            ]
+        ))
+
+        harness.tabManager.upsertSplitGroup(group)
+
+        XCTAssertEqual(
+            harness.tabManager.topLevelSpacePinnedVisualItems(for: space.id),
+            [.folder(folder.id), .shortcut(visiblePin.id)]
+        )
+        XCTAssertEqual(
+            harness.tabManager.folderChildVisualItems(for: folder.id, in: space.id),
+            [.splitGroup(group.id)]
+        )
+    }
+
+    func testShortcutHostedSplitGroupWithFolderAndTopLevelPinsHidesTopLevelMemberUntilRestore() throws {
+        let harness = try makeHarness()
+        let space = harness.tabManager.createSpace(name: "Work")
+        harness.windowState.currentSpaceId = space.id
+        let folder = harness.tabManager.createFolder(for: space.id, name: "Docs")
+        let folderPin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: space.id,
+            index: 0,
+            folderId: folder.id,
+            launchURL: URL(string: "https://folder.example")!,
+            title: "Folder"
+        )
+        let groupedTopLevelPin = makeSpacePin(spaceId: space.id, index: 1, title: "GroupedTop")
+        let visibleTopLevelPin = makeSpacePin(spaceId: space.id, index: 2, title: "VisibleTop")
+        harness.tabManager.setSpacePinnedShortcuts(
+            [folderPin, groupedTopLevelPin, visibleTopLevelPin],
+            for: space.id
+        )
+
+        let group = try XCTUnwrap(SplitGroup.make(
+            tabIds: [folderPin.id, groupedTopLevelPin.id],
+            layoutKind: .vertical,
+            host: .shortcutPinned(spaceId: space.id, profileId: nil, index: 0),
+            members: [
+                SplitGroupMember(
+                    tabId: folderPin.id,
+                    pinId: folderPin.id,
+                    origin: .spacePinned(spaceId: space.id, folderId: folder.id, index: 0)
+                ),
+                SplitGroupMember(
+                    tabId: groupedTopLevelPin.id,
+                    pinId: groupedTopLevelPin.id,
+                    origin: .spacePinned(spaceId: space.id, folderId: nil, index: 1)
+                )
+            ]
+        ))
+        harness.tabManager.upsertSplitGroup(group)
+
+        XCTAssertEqual(
+            harness.tabManager.topLevelSpacePinnedVisualItems(for: space.id),
+            [.folder(folder.id), .shortcut(visibleTopLevelPin.id)]
+        )
+        XCTAssertEqual(
+            harness.tabManager.folderChildVisualItems(for: folder.id, in: space.id),
+            [.splitGroup(group.id)]
+        )
+
+        harness.browserManager.restoreShortcutSplitMember(
+            groupedTopLevelPin.id,
+            from: group,
+            in: harness.windowState
+        )
+
+        XCTAssertEqual(
+            harness.tabManager.topLevelSpacePinnedVisualItems(for: space.id),
+            [.folder(folder.id), .shortcut(groupedTopLevelPin.id), .shortcut(visibleTopLevelPin.id)]
+        )
+        XCTAssertEqual(
+            harness.tabManager.folderChildVisualItems(for: folder.id, in: space.id),
+            [.shortcut(folderPin.id)]
+        )
+    }
+
+    func testShortcutHostedSplitGroupWithTopLevelHostAndFolderPinStaysTopLevel() throws {
+        let harness = try makeHarness()
+        let space = harness.tabManager.createSpace(name: "Work")
+        harness.windowState.currentSpaceId = space.id
+        let folder = harness.tabManager.createFolder(for: space.id, name: "Docs")
+        let folderPin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: space.id,
+            index: 0,
+            folderId: folder.id,
+            launchURL: URL(string: "https://folder.example")!,
+            title: "Folder"
+        )
+        let topLevelHostPin = makeSpacePin(spaceId: space.id, index: 1, title: "TopHost")
+        let visibleTopLevelPin = makeSpacePin(spaceId: space.id, index: 2, title: "VisibleTop")
+        harness.tabManager.setSpacePinnedShortcuts(
+            [folderPin, topLevelHostPin, visibleTopLevelPin],
+            for: space.id
+        )
+
+        let group = try XCTUnwrap(SplitGroup.make(
+            tabIds: [folderPin.id, topLevelHostPin.id],
+            layoutKind: .vertical,
+            host: .shortcutPinned(spaceId: space.id, profileId: nil, index: topLevelHostPin.index),
+            members: [
+                SplitGroupMember(
+                    tabId: folderPin.id,
+                    pinId: folderPin.id,
+                    origin: .spacePinned(spaceId: space.id, folderId: folder.id, index: folderPin.index)
+                ),
+                SplitGroupMember(
+                    tabId: topLevelHostPin.id,
+                    pinId: topLevelHostPin.id,
+                    origin: .spacePinned(spaceId: space.id, folderId: nil, index: topLevelHostPin.index)
+                )
+            ]
+        ))
+        harness.tabManager.upsertSplitGroup(group)
+
+        XCTAssertEqual(
+            harness.tabManager.topLevelSpacePinnedVisualItems(for: space.id),
+            [.folder(folder.id), .splitGroup(group.id), .shortcut(visibleTopLevelPin.id)]
+        )
+        XCTAssertEqual(
+            harness.tabManager.folderChildVisualItems(for: folder.id, in: space.id),
+            []
+        )
+    }
+
     func testEssentialOnlyShortcutHostedSplitStartsBeforePinnedRows() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.createSpace(name: "Work")

@@ -226,6 +226,11 @@ extension SpaceView {
                             contextMenuEntries: regularTabContextMenuEntries,
                             onActivate: onActivateTab,
                             onActivateGroup: { browserManager.focusSplitGroup(group, in: windowState) },
+                            onSegmentActionAnimationStart: { item in
+                                if splitSegmentAction(for: item, in: group) == .restore {
+                                    prepareShortcutRestoreGap(for: item, in: group)
+                                }
+                            },
                             onSegmentAction: { item in
                                 performSplitSegmentAction(for: item, in: group)
                             }
@@ -295,12 +300,26 @@ extension SpaceView {
         in group: SplitGroup
     ) {
         if splitMember(for: item, in: group)?.isShortcutBacked == true {
-            browserManager.restoreShortcutSplitMember(item.id, from: group, in: windowState)
+            performShortcutRestoreWithPreparedGap(for: item, in: group) {
+                performRegularSplitModelMutation {
+                    browserManager.restoreShortcutSplitMember(item.id, from: group, in: windowState)
+                }
+            }
             return
         }
 
         guard let tab = item.tab else { return }
-        closeRegularTab(tab)
+        performRegularSplitModelMutation {
+            regularSplitSegmentRemovalIds.insert(tab.id)
+            onCloseTab(tab)
+        }
+    }
+
+    private func performRegularSplitModelMutation(_ update: () -> Void) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        transaction.animation = nil
+        withTransaction(transaction, update)
     }
 
     private func splitMember(
@@ -552,6 +571,10 @@ extension SpaceView {
 
         if let removedId = oldIds.first(where: { !newIds.contains($0) }),
            let removalIndex = oldIds.firstIndex(of: removedId) {
+            if regularSplitSegmentRemovalIds.remove(removedId) != nil {
+                syncRegularRenderedTabsWithoutAnimation(to: newIds)
+                return
+            }
             if let gapId = regularDeferredRemovalGapIdsByTabId[removedId] {
                 completeDeferredRegularRemoval(removedId: removedId, gapId: gapId, newIds: newIds)
                 return

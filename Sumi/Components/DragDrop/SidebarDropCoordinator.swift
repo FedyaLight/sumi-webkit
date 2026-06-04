@@ -230,6 +230,8 @@ enum SidebarDropCoordinator {
                         return childFolderId == sourceItemId || payload.matchesFolderId(childFolderId)
                     case .shortcut(let pinId):
                         return pinId == sourceItemId || payload.matchesShortcutPinId(pinId)
+                    case .splitGroup(let groupId):
+                        return groupId == sourceItemId || payload.matchesSplitGroupId(groupId)
                     }
                 }
 

@@ -8,8 +8,14 @@ import SwiftUI
 
 private typealias SpacePinnedListItem = TabManager.SpacePinnedVisualItem
 
+private enum SpacePinnedRenderedItem: Hashable {
+    case item(SpacePinnedListItem)
+    case dragPlaceholder
+    case restoreGap(UUID)
+}
+
 private struct SpacePinnedDisplayEntry: Identifiable {
-    let item: ProjectedItem<SpacePinnedListItem>
+    let item: SpacePinnedRenderedItem
     let dropIndex: Int
     let id: String
 }
@@ -36,6 +42,7 @@ extension SpaceView {
 
     private var hasSpacePinnedContent: Bool {
         !spacePinnedItems.isEmpty
+            || shortcutRestoreGaps.contains { $0.container == .spacePinned(space.id) }
     }
 
     private var showsEmptyPinnedDropPlaceholder: Bool {
@@ -71,31 +78,65 @@ extension SpaceView {
 
     private var projectedSpacePinnedDisplayEntries: [SpacePinnedDisplayEntry] {
         var itemCount = 0
-        return projectedSpacePinnedItems.map { item in
+        return renderedSpacePinnedItems.map { item in
             let entry = SpacePinnedDisplayEntry(
                 item: item,
                 dropIndex: itemCount,
                 id: projectedSpacePinnedDisplayID(for: item, placeholderIndex: itemCount)
             )
-            if case .item = item {
+            switch item {
+            case .item:
                 itemCount += 1
+            case .dragPlaceholder, .restoreGap:
+                break
             }
             return entry
         }
     }
 
+    private var renderedSpacePinnedItems: [SpacePinnedRenderedItem] {
+        var rendered = projectedSpacePinnedItems.map { item -> SpacePinnedRenderedItem in
+            switch item {
+            case .item(let listItem):
+                return .item(listItem)
+            case .placeholder:
+                return .dragPlaceholder
+            }
+        }
+
+        let gaps = shortcutRestoreGaps.filter { gap in
+            gap.container == .spacePinned(space.id)
+        }
+        for gap in gaps.sorted(by: { $0.index < $1.index }) {
+            rendered.removeAll { item in
+                if case .item(.shortcut(let pinId)) = item {
+                    return pinId == gap.pinId
+                }
+                return false
+            }
+            rendered.insert(.restoreGap(gap.id), at: max(0, min(gap.index, rendered.count)))
+        }
+
+        return rendered
+    }
+
     private func projectedSpacePinnedDisplayID(
-        for item: ProjectedItem<SpacePinnedListItem>,
+        for item: SpacePinnedRenderedItem,
         placeholderIndex: Int
     ) -> String {
         switch item {
         case .item(let listItem):
             return "item-\(listItem.id.uuidString)"
-        case .placeholder:
+        case .dragPlaceholder:
             if let projectionDragItemId = dragState.projectionDragItemId {
                 return "item-\(projectionDragItemId.uuidString)"
             }
             return "placeholder-\(placeholderIndex)"
+        case .restoreGap(let gapId):
+            if let gap = shortcutRestoreGaps.first(where: { $0.id == gapId }) {
+                return "item-\(gap.pinId.uuidString)"
+            }
+            return "restore-gap-\(gapId.uuidString)"
         }
     }
 
@@ -207,12 +248,25 @@ extension SpaceView {
         in group: SplitGroup
     ) {
         if shortcutHostedSplitMember(for: item, in: group)?.isShortcutBacked == true {
-            browserManager.restoreShortcutSplitMember(item.id, from: group, in: windowState)
+            performShortcutRestoreWithPreparedGap(for: item, in: group) {
+                performPinnedSplitModelMutation {
+                    browserManager.restoreShortcutSplitMember(item.id, from: group, in: windowState)
+                }
+            }
             return
         }
 
         guard let tab = item.tab else { return }
-        browserManager.closeTab(tab, in: windowState)
+        performPinnedSplitModelMutation {
+            browserManager.closeTab(tab, in: windowState)
+        }
+    }
+
+    private func performPinnedSplitModelMutation(_ update: () -> Void) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        transaction.animation = nil
+        withTransaction(transaction, update)
     }
 
     private func shortcutHostedSplitMember(
@@ -253,6 +307,11 @@ extension SpaceView {
                 onActivateGroup: {
                     browserManager.focusSplitGroup(group, in: windowState)
                 },
+                onSegmentActionAnimationStart: { item in
+                    if shortcutHostedSegmentAction(for: item, in: group) == .restore {
+                        prepareShortcutRestoreGap(for: item, in: group)
+                    }
+                },
                 onSegmentAction: { item in
                     performShortcutHostedSegmentAction(for: item, in: group)
                 }
@@ -267,7 +326,6 @@ extension SpaceView {
                 generation: dragState.sidebarGeometryGeneration,
                 isActive: isInteractive
             )
-            .sidebarZenRowLifecycleTransition(isEnabled: isInteractive)
         }
     }
 
@@ -361,8 +419,10 @@ extension SpaceView {
                         if let group = browserManager.tabManager.splitGroup(with: groupId) {
                             shortcutHostedSplitGroupView(group, topLevelPinnedIndex: entry.dropIndex)
                         }
-                    case .placeholder:
+                    case .dragPlaceholder:
                         pinnedDropGap
+                    case .restoreGap(let gapId):
+                        shortcutRestoreGap(gapId)
                     }
                 }
             }
@@ -373,6 +433,8 @@ extension SpaceView {
             value: projectedSpacePinnedItems
         )
         .animation(sidebarContentMutationAnimation, value: spacePinnedItems)
+        .animation(sidebarContentMutationAnimation, value: shortcutRestoreGaps)
+        .animation(sidebarContentMutationAnimation, value: shortcutRestoreGapHeights.map { "\($0.key.uuidString):\($0.value)" }.sorted())
         .padding(.bottom, 8) // Add padding to act as drag tail for spacePinned
     }
 
@@ -383,6 +445,23 @@ extension SpaceView {
             .allowsHitTesting(false)
             .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .center)))
             .accessibilityHidden(true)
+    }
+
+    private func shortcutRestoreGap(_ gapId: UUID) -> some View {
+        let height = shortcutRestoreGapHeights[gapId] ?? 0
+        return ZStack(alignment: .topLeading) {
+            if let gap = shortcutRestoreGaps.first(where: { $0.id == gapId }),
+               let pin = browserManager.tabManager.shortcutPin(by: gap.pinId) {
+                pinnedShortcutView(pin, topLevelPinnedIndex: gap.index)
+                    .frame(height: SidebarRowLayout.rowHeight, alignment: .top)
+            }
+        }
+        .frame(height: height, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .clipped()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .animation(sidebarContentMutationAnimation, value: height)
     }
 
     private var pinnedRevealStrip: some View {
@@ -411,6 +490,8 @@ extension SpaceView {
             childFolders: launcherProjection?.childFolders[folder.id] ?? [],
             childFoldersByParentId: launcherProjection?.childFolders ?? [:],
             folderPinsByFolderId: launcherProjection?.folderPins ?? [:],
+            shortcutRestoreGaps: $shortcutRestoreGaps,
+            shortcutRestoreGapHeights: $shortcutRestoreGapHeights,
             renderMode: renderMode,
             parentFolderId: nil,
             containerIndex: topLevelPinnedIndex,

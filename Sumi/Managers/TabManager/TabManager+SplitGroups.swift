@@ -109,9 +109,83 @@ extension TabManager {
         return memberIndexes.min() ?? 0
     }
 
+    func shortcutHostedSplitGroupFolderId(_ group: SplitGroup, in spaceId: UUID) -> UUID? {
+        guard group.isShortcutHosted, group.hostSpaceId == spaceId else { return nil }
+
+        if let hostIndex = group.shortcutPinnedIndex {
+            let hostTopLevelMemberExists = group.members.contains { member in
+                if let pinId = member.pinId,
+                   let pin = shortcutPin(by: pinId),
+                   pin.role == .spacePinned,
+                   pin.spaceId == spaceId,
+                   pin.folderId == nil,
+                   pin.index == hostIndex {
+                    return true
+                }
+
+                switch member.origin {
+                case .spacePinned(let originSpaceId, nil, let index):
+                    return originSpaceId == spaceId && index == hostIndex
+                default:
+                    return false
+                }
+            }
+            if hostTopLevelMemberExists {
+                return nil
+            }
+
+            let hostFolderMembers = group.members.compactMap { member -> UUID? in
+                if let pinId = member.pinId,
+                   let pin = shortcutPin(by: pinId),
+                   pin.role == .spacePinned,
+                   pin.spaceId == spaceId,
+                   let folderId = pin.folderId,
+                   pin.index == hostIndex {
+                    return folderId
+                }
+
+                switch member.origin {
+                case .spacePinned(let originSpaceId, let folderId, let index) where originSpaceId == spaceId && index == hostIndex:
+                    return folderId
+                default:
+                    return nil
+                }
+            }
+            if let folderId = hostFolderMembers.sorted(by: { $0.uuidString < $1.uuidString }).first {
+                return folderId
+            }
+        }
+
+        let memberFolders = group.members.compactMap { member -> (Int, UUID)? in
+            if let pinId = member.pinId,
+               let pin = shortcutPin(by: pinId),
+               pin.role == .spacePinned,
+               pin.spaceId == spaceId,
+               let folderId = pin.folderId {
+                return (pin.index, folderId)
+            }
+
+            switch member.origin {
+            case .spacePinned(let originSpaceId, let folderId, let index) where originSpaceId == spaceId:
+                return folderId.map { (index, $0) }
+            default:
+                return nil
+            }
+        }
+
+        return memberFolders
+            .sorted { lhs, rhs in
+                if lhs.0 != rhs.0 { return lhs.0 < rhs.0 }
+                return lhs.1.uuidString < rhs.1.uuidString
+            }
+            .first?.1
+    }
+
     func topLevelSpacePinnedVisualItems(for spaceId: UUID) -> [SpacePinnedVisualItem] {
-        let shortcutHostedGroups = shortcutHostedSplitGroups(for: spaceId)
-        let hiddenPinIds = Set(shortcutHostedGroups.flatMap { $0.shortcutPinIds })
+        let allShortcutHostedGroups = shortcutHostedSplitGroups(for: spaceId)
+        let topLevelShortcutHostedGroups = allShortcutHostedGroups
+            .filter { shortcutHostedSplitGroupFolderId($0, in: spaceId) == nil }
+        let hiddenPinIds = Set(allShortcutHostedGroups.flatMap { $0.shortcutPinIds })
         let folderItems = (foldersBySpace[spaceId] ?? [])
             .filter { $0.parentFolderId == nil }
             .map { folder in
@@ -122,7 +196,7 @@ extension TabManager {
             .map { pin in
                 (pin.index, 2, SpacePinnedVisualItem.shortcut(pin.id))
             }
-        let splitItems = shortcutHostedGroups.map { group in
+        let splitItems = topLevelShortcutHostedGroups.map { group in
             (shortcutHostedSplitGroupVisualIndex(group, in: spaceId), 0, SpacePinnedVisualItem.splitGroup(group.id))
         }
 
@@ -177,6 +251,7 @@ extension TabManager {
             var orderedFolders: [TabFolder] = []
             var orderedVisiblePins: [ShortcutPin] = []
             var orderedVisiblePinIds = Set<UUID>()
+            var hiddenSplitPinIds = Set<UUID>()
             var updatedGroupsById: [UUID: SplitGroup] = [:]
 
             for (index, item) in items.enumerated() {
@@ -203,6 +278,7 @@ extension TabManager {
                           group.hostSpaceId == spaceId else {
                         continue
                     }
+                    hiddenSplitPinIds.formUnion(group.shortcutPinIds)
                     updatedGroupsById[group.id] = group.settingHost(
                         group.host.settingShortcutPinnedIndex(index)
                     )
@@ -219,10 +295,15 @@ extension TabManager {
 
             let folderPins = pins.filter { $0.folderId != nil }
             let hiddenOrUnorderedTopLevelPins = pins.filter { pin in
-                pin.folderId == nil && !orderedVisiblePinIds.contains(pin.id)
+                pin.folderId == nil
+                    && !orderedVisiblePinIds.contains(pin.id)
+                    && !hiddenSplitPinIds.contains(pin.id)
             }
+            let hiddenSplitPins = pins
+                .filter { pin in pin.folderId == nil && hiddenSplitPinIds.contains(pin.id) }
+                .map { pin in pin.refreshed(index: Int.max) }
             let finalPins = normalizedSpacePinnedShortcuts(
-                folderPins + hiddenOrUnorderedTopLevelPins + orderedVisiblePins
+                folderPins + hiddenOrUnorderedTopLevelPins + orderedVisiblePins + hiddenSplitPins
             )
             setSpacePinnedShortcuts(finalPins, for: spaceId)
 

@@ -76,40 +76,69 @@ struct SplitGroupSidebarRow: View {
     let contextMenuEntries: (Tab) -> [SidebarContextMenuEntry]
     let onActivate: (Tab) -> Void
     let onActivateGroup: () -> Void
+    var onSegmentActionAnimationStart: (SplitGroupSidebarItem) -> Void = { _ in }
     let onSegmentAction: (SplitGroupSidebarItem) -> Void
 
     @EnvironmentObject private var browserManager: BrowserManager
     @EnvironmentObject private var splitManager: SplitViewManager
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isRowHovered = false
+    @State private var displayedItems: [SplitGroupSidebarItem] = []
+    @State private var departingItemIds = Set<UUID>()
+    @State private var isCollapsingRow = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                SplitGroupSegment(
-                    item: item,
-                    spaceId: spaceId,
-                    isActive: isActive(item),
-                    segmentAction: segmentAction(item),
-                    isAppKitInteractionEnabled: isAppKitInteractionEnabled,
-                    dragSourceConfiguration: dragSource(item),
-                    contextMenuEntries: {
-                        item.tab.map(splitContextMenuEntries) ?? []
-                    },
-                    onActivate: { activate(item) },
-                    onSegmentAction: { onSegmentAction(item) }
-                )
-                if index < items.count - 1 {
-                    Rectangle()
-                        .fill(tokens.separator.opacity(0.7))
-                        .frame(width: 1, height: 22)
-                        .padding(.vertical, 6)
+        GeometryReader { geometry in
+            let rowItems = resolvedDisplayItems
+            let activeCount = max(rowItems.filter { !isDeparting($0) }.count, 1)
+            let separatorCount = max(activeCount - 1, 0)
+            let segmentWidth = max(
+                0,
+                (geometry.size.width - CGFloat(separatorCount)) / CGFloat(activeCount)
+            )
+
+            HStack(spacing: 0) {
+                ForEach(Array(rowItems.enumerated()), id: \.element.id) { index, item in
+                    SplitGroupSegment(
+                        item: item,
+                        spaceId: spaceId,
+                        isActive: isActive(item),
+                        isDeparting: isDeparting(item),
+                        segmentAction: segmentAction(item),
+                        isAppKitInteractionEnabled: isAppKitInteractionEnabled && !isDeparting(item),
+                        dragSourceConfiguration: dragSource(item),
+                        contextMenuEntries: {
+                            item.tab.map(splitContextMenuEntries) ?? []
+                        },
+                        onActivate: { activate(item) },
+                        onSegmentAction: { performSegmentMutation(for: item, in: rowItems) }
+                    )
+                    .frame(width: isDeparting(item) ? 0 : segmentWidth)
+                    .clipped()
+
+                    if shouldShowSeparator(after: index, in: rowItems) {
+                        Rectangle()
+                            .fill(tokens.separator.opacity(0.7))
+                            .frame(width: 1, height: 22)
+                            .padding(.vertical, 6)
+                    }
                 }
             }
+            .animation(
+                shouldAnimateProjectedLayout ? SidebarDropMotion.contentLayout : nil,
+                value: displayedItems.map(\.id)
+            )
+            .animation(
+                shouldAnimateProjectedLayout ? SidebarDropMotion.contentLayout : nil,
+                value: departingItemIds.map(\.uuidString).sorted()
+            )
         }
-        .frame(height: SidebarRowLayout.rowHeight)
+        .frame(height: isCollapsingRow ? 0 : SidebarRowLayout.rowHeight, alignment: .top)
+        .opacity(isCollapsingRow ? 0 : 1)
+        .clipped()
         .padding(.horizontal, 2)
         .frame(minWidth: 0, maxWidth: .infinity)
         .background(
@@ -119,6 +148,14 @@ struct SplitGroupSidebarRow: View {
         .clipShape(RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(8), style: .continuous))
         .sidebarDDGHover($isRowHovered, isEnabled: isRowHoverTrackingEnabled)
         .accessibilityIdentifier("space-split-group-\(group.id.uuidString)")
+        .onAppear {
+            if displayedItems.isEmpty {
+                displayedItems = items
+            }
+        }
+        .onChange(of: items.map(\.id)) { _, _ in
+            reconcileDisplayedItems(with: items)
+        }
     }
 
     private func activate(_ item: SplitGroupSidebarItem) {
@@ -214,12 +251,146 @@ struct SplitGroupSidebarRow: View {
                 ]
             ),
             .action(.init(title: "Unsplit", systemImage: "rectangle", onAction: {
-                splitManager.unsplitActiveGroup(for: windowState.id)
+                performSplitSidebarMutation {
+                    splitManager.unsplitActiveGroup(for: windowState.id)
+                }
             }))
         ]
         entries.append(.separator)
         entries.append(contentsOf: splitEntries)
         return entries
+    }
+
+    private func performSplitSidebarMutation(_ update: () -> Void) {
+        guard !reduceMotion && !sumiSettings.shouldReduceChromeMotion else {
+            update()
+            return
+        }
+        withAnimation(SidebarDropMotion.contentLayout, update)
+    }
+
+    private var shouldAnimateProjectedLayout: Bool {
+        !reduceMotion && !sumiSettings.shouldReduceChromeMotion
+    }
+
+    private var resolvedDisplayItems: [SplitGroupSidebarItem] {
+        displayedItems.isEmpty ? items : displayedItems
+    }
+
+    private func isDeparting(_ item: SplitGroupSidebarItem) -> Bool {
+        departingItemIds.contains(item.id)
+    }
+
+    private func shouldShowSeparator(after index: Int, in rowItems: [SplitGroupSidebarItem]) -> Bool {
+        guard index < rowItems.count - 1 else { return false }
+        guard !isDeparting(rowItems[index]) else { return false }
+        return rowItems[(index + 1)...].contains { !isDeparting($0) }
+    }
+
+    private func performSegmentMutation(for item: SplitGroupSidebarItem, in rowItems: [SplitGroupSidebarItem]) {
+        guard !reduceMotion && !sumiSettings.shouldReduceChromeMotion else {
+            onSegmentAction(item)
+            return
+        }
+
+        onSegmentActionAnimationStart(item)
+        withAnimation(SidebarDropMotion.contentLayout) {
+            _ = departingItemIds.insert(item.id)
+            if shouldCollapseRowAfterRemoving(item, from: rowItems) {
+                isCollapsingRow = true
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + segmentActionCompletionDelay(for: item)) {
+            onSegmentAction(item)
+        }
+    }
+
+    private func segmentActionCompletionDelay(for item: SplitGroupSidebarItem) -> Double {
+        segmentAction(item) == .restore
+            ? SidebarDropMotion.shortcutRestoreActionDelay
+            : SidebarDropMotion.contentLayoutDuration
+    }
+
+    private func shouldCollapseRowAfterRemoving(
+        _ item: SplitGroupSidebarItem,
+        from rowItems: [SplitGroupSidebarItem]
+    ) -> Bool {
+        guard !group.isShortcutHosted,
+              segmentAction(item) == .close
+        else {
+            return false
+        }
+
+        let activeItems = rowItems.filter { !isDeparting($0) }
+        guard activeItems.count <= SplitGroup.minimumTabs else {
+            return false
+        }
+
+        let remainingItems = activeItems.filter { $0.id != item.id }
+        return remainingItems.count == 1 && isShortcutBacked(remainingItems[0])
+    }
+
+    private func isShortcutBacked(_ item: SplitGroupSidebarItem) -> Bool {
+        switch item {
+        case .pin(let pin):
+            return group.member(forPinId: pin.id)?.isShortcutBacked == true
+                || group.member(for: pin.id)?.isShortcutBacked == true
+        case .tab(let tab):
+            if let pinId = tab.shortcutPinId,
+               group.member(forPinId: pinId)?.isShortcutBacked == true {
+                return true
+            }
+            return group.member(for: tab.id)?.isShortcutBacked == true
+        }
+    }
+
+    private func reconcileDisplayedItems(with newItems: [SplitGroupSidebarItem]) {
+        guard !reduceMotion && !sumiSettings.shouldReduceChromeMotion else {
+            displayedItems = newItems
+            departingItemIds.removeAll()
+            return
+        }
+
+        let oldItems = displayedItems.isEmpty ? items : displayedItems
+        let newItemsById = Dictionary(uniqueKeysWithValues: newItems.map { ($0.id, $0) })
+        let newIds = Set(newItems.map(\.id))
+        let removedIds = Set(oldItems.map(\.id)).subtracting(newIds)
+
+        guard !removedIds.isEmpty else {
+            withAnimation(SidebarDropMotion.contentLayout) {
+                displayedItems = newItems
+                departingItemIds.formIntersection(newIds)
+            }
+            return
+        }
+
+        if removedIds.isSubset(of: departingItemIds) {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            transaction.animation = nil
+            withTransaction(transaction) {
+                displayedItems = newItems
+                departingItemIds.subtract(removedIds)
+            }
+            return
+        }
+
+        var seenIds = Set<UUID>()
+        var projectedItems: [SplitGroupSidebarItem] = oldItems.map { oldItem in
+            seenIds.insert(oldItem.id)
+            return newItemsById[oldItem.id] ?? oldItem
+        }
+        projectedItems.append(contentsOf: newItems.filter { seenIds.insert($0.id).inserted })
+
+        withAnimation(SidebarDropMotion.contentLayout) {
+            displayedItems = projectedItems
+            departingItemIds.formUnion(removedIds)
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + SidebarDropMotion.contentLayoutDuration) {
+            displayedItems = newItems
+            departingItemIds.subtract(removedIds)
+        }
     }
 
     private var tokens: ChromeThemeTokens {
@@ -231,6 +402,7 @@ private struct SplitGroupSegment: View {
     let item: SplitGroupSidebarItem
     let spaceId: UUID
     let isActive: Bool
+    let isDeparting: Bool
     let segmentAction: SplitGroupSidebarSegmentAction?
     let isAppKitInteractionEnabled: Bool
     let dragSourceConfiguration: SidebarDragSourceConfiguration?
@@ -281,6 +453,7 @@ private struct SplitGroupSegment: View {
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .opacity(isDeparting ? 0 : 1)
         .task(id: item.tab?.url) {
             await item.tab?.fetchFaviconForVisiblePresentation()
         }
@@ -344,7 +517,7 @@ private struct SplitGroupSegment: View {
     }
 
     private func segmentActionButton(_ action: SplitGroupSidebarSegmentAction) -> some View {
-        Button(action: onSegmentAction) {
+        Button(action: performSegmentAction) {
             Image(systemName: action.systemImageName)
                 .font(.system(size: 10, weight: .bold))
                 .foregroundColor(tokens.primaryText)
@@ -366,8 +539,13 @@ private struct SplitGroupSegment: View {
         .sidebarAppKitPrimaryAction(
             isEnabled: showsActionControls && !windowState.sidebarInteractionState.freezesSidebarHoverState,
             isInteractionEnabled: isAppKitInteractionEnabled,
-            action: onSegmentAction
+            action: performSegmentAction
         )
+    }
+
+    private func performSegmentAction() {
+        guard !isDeparting else { return }
+        onSegmentAction()
     }
 
     private var tokens: ChromeThemeTokens {
