@@ -108,6 +108,7 @@ private final class SidebarTabListScrollRegistrationView: NSView {
     private weak var registeredScrollView: NSScrollView?
     private weak var observedScrollView: NSScrollView?
     private var boundsObserver: NSObjectProtocol?
+    private var scrollBoundsCoalesceTask: Task<Void, Never>?
     private var lastReportedVerticalScrollOffset: CGFloat?
 
     override var isOpaque: Bool { false }
@@ -180,18 +181,29 @@ private final class SidebarTabListScrollRegistrationView: NSView {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.reportCurrentVerticalScrollOffset()
+                self?.scheduleVerticalScrollOffsetReport()
             }
         }
         reportCurrentVerticalScrollOffset()
     }
 
     private func stopObservingScrollBounds() {
+        scrollBoundsCoalesceTask?.cancel()
+        scrollBoundsCoalesceTask = nil
         if let boundsObserver {
             NotificationCenter.default.removeObserver(boundsObserver)
             self.boundsObserver = nil
         }
         observedScrollView = nil
+    }
+
+    private func scheduleVerticalScrollOffsetReport() {
+        scrollBoundsCoalesceTask?.cancel()
+        scrollBoundsCoalesceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 32_000_000)
+            guard !Task.isCancelled else { return }
+            self?.reportCurrentVerticalScrollOffset()
+        }
     }
 
     private func reportCurrentVerticalScrollOffset() {

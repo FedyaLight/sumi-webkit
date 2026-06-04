@@ -18,7 +18,6 @@ private struct URLBarHubPopoverContentSizePreferenceKey: PreferenceKey {
         value = nextValue()
     }
 }
-
 private struct URLBarHubNativeBackground: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -75,6 +74,7 @@ struct URLBarHubPopover: View {
     )
 
     @State private var refreshNonce = 0
+    @State private var coalescedRefreshTask: Task<Void, Never>?
     @State private var mode: Mode = .controls
     @State private var navigationDirection: NavigationDirection = .forward
     @State private var containerWidth: CGFloat = Mode.controls.preferredWidth
@@ -200,17 +200,17 @@ struct URLBarHubPopover: View {
         }
         .onChange(of: currentTab?.id) { _, _ in
             resetToControls()
-            refreshNonce += 1
+            scheduleCoalescedRefresh()
             schedulePermissionsReloadAfterStoreChange()
         }
         .onReceive(NotificationCenter.default.publisher(for: .sumiTabNavigationStateDidChange)) { notification in
             handleNavigationStateDidChange(notification)
         }
         .onReceive(browserManager.protectionCoordinator.settings.changesPublisher) {
-            _ in refreshNonce += 1
+            _ in scheduleCoalescedRefresh()
         }
         .onReceive(browserManager.protectionCoordinator.sitePolicyChangesPublisher()) {
-            _ in refreshNonce += 1
+            _ in scheduleCoalescedRefresh()
         }
         .onReceive(browserManager.blockedPopupStore.objectWillChange) { _ in
             schedulePermissionsReloadAfterStoreChange()
@@ -251,7 +251,7 @@ struct URLBarHubPopover: View {
                 },
                 onClose: onClose,
                 onDidMutate: {
-                    refreshNonce += 1
+                    scheduleCoalescedRefresh()
                 }
             )
         case .bookmark(let state):
@@ -263,7 +263,7 @@ struct URLBarHubPopover: View {
                     setMode(.controls, direction: .backward)
                 },
                 onDidMutate: {
-                    refreshNonce += 1
+                    scheduleCoalescedRefresh()
                 }
             )
             .id(state.id)
@@ -550,7 +550,7 @@ struct URLBarHubPopover: View {
             try? await Task.sleep(nanoseconds: 50_000_000)
             guard !Task.isCancelled else { return }
             await reloadPermissions()
-            refreshNonce += 1
+            scheduleCoalescedRefresh()
             scheduledPermissionsReloadTask = nil
         }
     }
@@ -585,7 +585,7 @@ struct URLBarHubPopover: View {
                 }
             )
             await reloadPermissionsImmediately()
-            refreshNonce += 1
+            scheduleCoalescedRefresh()
         }
     }
 
@@ -660,7 +660,7 @@ struct URLBarHubPopover: View {
                 dependencies: permissionDependencies
             )
             await reloadPermissionsImmediately()
-            refreshNonce += 1
+            scheduleCoalescedRefresh()
         }
     }
 
@@ -682,7 +682,7 @@ struct URLBarHubPopover: View {
             lastMV3URLHubActionRowID = row.id
             lastMV3URLHubActionResult = result
             runningMV3URLHubActionID = nil
-            refreshNonce += 1
+            scheduleCoalescedRefresh()
         }
     }
 
@@ -715,7 +715,7 @@ struct URLBarHubPopover: View {
         currentTab.markProtectionReloadRequiredIfNeeded(
             afterChangingPolicyFor: currentTab.url
         )
-        refreshNonce += 1
+        scheduleCoalescedRefresh()
     }
 
     private func shareCurrentPage() {
@@ -749,7 +749,7 @@ struct URLBarHubPopover: View {
             let savePanel = NSSavePanel()
             savePanel.title = "Save Page Capture"
             savePanel.message = "Choose where to save the page snapshot"
-            savePanel.nameFieldStringValue = suggestedSnapshotFilename(
+            savePanel.nameFieldStringValue = URLBarHubSnapshotActions.suggestedFilename(
                 for: currentTab
             )
             savePanel.allowedContentTypes = [.png]
@@ -766,7 +766,7 @@ struct URLBarHubPopover: View {
         do {
             let editorState = try bookmarkManager.editorState(for: currentTab)
             bookmarkErrorMessage = nil
-            refreshNonce += 1
+            scheduleCoalescedRefresh()
             setMode(.bookmark(editorState), direction: .forward)
         } catch {
             bookmarkErrorMessage = error.localizedDescription
@@ -790,7 +790,7 @@ struct URLBarHubPopover: View {
             return
         }
 
-        refreshNonce += 1
+        scheduleCoalescedRefresh()
         schedulePermissionsReloadAfterStoreChange()
         if case .bookmark(let state) = mode,
            state.tabID == tab.id,
@@ -804,564 +804,13 @@ struct URLBarHubPopover: View {
         // Sumi does not expose a reader-mode pipeline yet.
     }
 
-    private func suggestedSnapshotFilename(for tab: Tab) -> String {
-        let rawTitle = tab.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let base = rawTitle.isEmpty ? "Sumi Capture" : rawTitle
-        let invalidCharacters = CharacterSet(charactersIn: "/:\\?%*|\"<>")
-        let sanitized = base.components(separatedBy: invalidCharacters)
-            .joined(separator: "-")
-        return "\(sanitized).png"
-    }
-}
-
-private struct URLBarSiteDataDetailsView: View {
-    @ObservedObject var model: URLBarSiteDataDetailsViewModel
-
-    let currentTab: Tab?
-    let profile: Profile?
-    let onBack: () -> Void
-    let onClose: () -> Void
-    let onDidMutate: () -> Void
-
-    @State private var pendingDeletionEntry: SumiSiteDataEntry?
-
-    private var displayHost: String {
-        let host = currentTab?.url.host ?? currentTab?.url.absoluteString ?? "This site"
-        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
-    }
-
-    private var loadKey: String {
-        [
-            profile?.id.uuidString ?? "none",
-            currentTab?.id.uuidString ?? "none",
-            currentTab?.url.host ?? currentTab?.url.absoluteString ?? "none"
-        ].joined(separator: "|")
-    }
-
-    var body: some View {
-        ZStack {
-            content
-
-            if let entry = pendingDeletionEntry {
-                URLBarSiteDataDeleteConfirmationView(
-                    domain: entry.domain,
-                    onCancel: {
-                        pendingDeletionEntry = nil
-                    },
-                    onDelete: {
-                        delete(entry)
-                    }
-                )
-                .transition(
-                    .scale(scale: 0.98, anchor: .center)
-                        .combined(with: .opacity)
-                )
-                .zIndex(1)
-            }
+    private func scheduleCoalescedRefresh() {
+        coalescedRefreshTask?.cancel()
+        coalescedRefreshTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 16_000_000)
+            guard !Task.isCancelled else { return }
+            refreshNonce += 1
         }
-        .animation(.easeInOut(duration: 0.16), value: pendingDeletionEntry?.id)
-        .task(id: loadKey) {
-            await model.load(url: currentTab?.url, profile: profile)
-        }
-        .onReceive(SumiSiteDataPolicyStore.shared.changesPublisher) { _ in
-            Task {
-                await model.load(url: currentTab?.url, profile: profile)
-            }
-        }
-    }
-
-    private var content: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-                .padding(.horizontal, 10)
-                .padding(.top, 10)
-                .padding(.bottom, 10)
-
-            Divider()
-                .padding(.horizontal, 8)
-
-            VStack(alignment: .leading, spacing: 18) {
-                intro
-                entriesSection
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 16)
-
-            Divider()
-                .padding(.horizontal, 8)
-
-            HStack {
-                Spacer(minLength: 0)
-                Button("Done", action: onClose)
-                    .buttonStyle(URLBarZoomPopoverButtonStyle(minWidth: 76))
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-        }
-    }
-
-    private var header: some View {
-        HStack(spacing: 10) {
-            URLBarSiteDataIconButton(
-                systemName: "chevron.left",
-                help: "Back",
-                action: onBack
-            )
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Cookies & Site Data")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(URLBarHubNativeStyle.primaryText)
-                    .lineLimit(1)
-                URLBarFadingText(
-                    displayHost,
-                    font: .system(size: 12, weight: .medium),
-                    color: URLBarHubNativeStyle.secondaryText
-                )
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            URLBarSiteDataIconButton(
-                systemName: "xmark",
-                help: "Close",
-                action: onClose
-            )
-        }
-    }
-
-    private var intro: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Site data stored on this device")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(URLBarHubNativeStyle.primaryText)
-            Text("Sites can store preferences, session data, and cached files on your device. This data is available to the site and its subdomains.")
-                .font(.system(size: 13))
-                .foregroundStyle(URLBarHubNativeStyle.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    @ViewBuilder
-    private var entriesSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Data from this site")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(URLBarHubNativeStyle.primaryText)
-
-            if model.isLoading && model.entries.isEmpty {
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Loading site data...")
-                        .font(.system(size: 12))
-                        .foregroundStyle(URLBarHubNativeStyle.secondaryText)
-                }
-                .frame(maxWidth: .infinity, minHeight: 64, alignment: .center)
-            } else if model.entries.isEmpty {
-                Text("No site data is stored for \(displayHost).")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(URLBarHubNativeStyle.secondaryText)
-                    .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(model.entries) { entry in
-                        URLBarSiteDataEntryRow(
-                            entry: entry,
-                            summary: model.summary(for: entry),
-                            policyState: model.policyState(for: entry),
-                            isDeleting: model.deletingHosts.contains(entry.domain),
-                            onDelete: {
-                                pendingDeletionEntry = entry
-                            },
-                            onToggleBlockStorage: {
-                                let state = model.policyState(for: entry)
-                                Task {
-                                    await model.setBlockStorage(
-                                        !state.blockStorage,
-                                        for: entry,
-                                        url: currentTab?.url,
-                                        profile: profile
-                                    )
-                                    onDidMutate()
-                                }
-                            },
-                            onToggleDeleteOnClose: {
-                                let state = model.policyState(for: entry)
-                                Task {
-                                    await model.setDeleteWhenAllWindowsClosed(
-                                        !state.deleteWhenAllWindowsClosed,
-                                        for: entry,
-                                        url: currentTab?.url,
-                                        profile: profile
-                                    )
-                                    onDidMutate()
-                                }
-                            }
-                        )
-
-                        if entry.id != model.entries.last?.id {
-                            Divider()
-                                .padding(.leading, 38)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func delete(_ entry: SumiSiteDataEntry) {
-        pendingDeletionEntry = nil
-        Task {
-            await model.delete(
-                entry: entry,
-                url: currentTab?.url,
-                profile: profile
-            )
-            onDidMutate()
-        }
-    }
-}
-
-private struct URLBarSiteDataDeleteConfirmationView: View {
-    let domain: String
-    let onCancel: () -> Void
-    let onDelete: () -> Void
-
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        ZStack {
-            Color.black
-                .opacity(colorScheme == .dark ? 0.28 : 0.12)
-                .contentShape(Rectangle())
-                .onTapGesture(perform: onCancel)
-
-            VStack(spacing: 14) {
-                Image(systemName: "trash.fill")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 48, height: 48)
-                    .background(destructiveColor)
-                    .clipShape(Circle())
-
-                VStack(spacing: 6) {
-                    Text("Delete cookies and site data?")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(URLBarHubNativeStyle.primaryText)
-                        .multilineTextAlignment(.center)
-                    Text("This will delete cookies and site data for \(domain).")
-                        .font(.system(size: 12.5))
-                        .foregroundStyle(URLBarHubNativeStyle.secondaryText)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                HStack(spacing: 10) {
-                    Button("Cancel", action: onCancel)
-                        .buttonStyle(URLBarSiteDataConfirmationButtonStyle(role: .secondary))
-
-                    Button("Delete", action: onDelete)
-                        .buttonStyle(URLBarSiteDataConfirmationButtonStyle(role: .destructive))
-                }
-            }
-            .padding(18)
-            .frame(maxWidth: 330)
-            .background(URLBarHubNativeStyle.backgroundFallback)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(URLBarHubNativeStyle.separator, lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0.45 : 0.18), radius: 18, x: 0, y: 8)
-            .padding(16)
-        }
-    }
-
-    private var destructiveColor: Color {
-        URLBarHubNativeStyle.destructiveBackground
-    }
-}
-
-private struct URLBarSiteDataConfirmationButtonStyle: ButtonStyle {
-    enum Role {
-        case secondary
-        case destructive
-    }
-
-    @Environment(\.isEnabled) private var isEnabled
-    @State private var isHovering = false
-
-    let role: Role
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13.5, weight: .semibold))
-            .foregroundStyle(foregroundColor)
-            .frame(maxWidth: .infinity)
-            .frame(height: 36)
-            .background(backgroundColor(isPressed: configuration.isPressed))
-            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .opacity(isEnabled ? 1 : 0.5)
-            .scaleEffect(configuration.isPressed && isEnabled ? 0.98 : 1)
-            .onHover { hovering in
-                isHovering = hovering
-            }
-    }
-
-    private var foregroundColor: Color {
-        switch role {
-        case .secondary:
-            return URLBarHubNativeStyle.primaryText
-        case .destructive:
-            return .white
-        }
-    }
-
-    private func backgroundColor(isPressed: Bool) -> Color {
-        switch role {
-        case .secondary:
-            return isPressed || isHovering
-                ? URLBarHubNativeStyle.hoveredControlBackground
-                : URLBarHubNativeStyle.controlBackground
-        case .destructive:
-            let base = URLBarHubNativeStyle.destructiveBackground
-            return isPressed || isHovering ? base.opacity(0.88) : base
-        }
-    }
-}
-
-private struct URLBarSiteDataEntryRow: View {
-    let entry: SumiSiteDataEntry
-    let summary: String
-    let policyState: SumiSiteDataPolicyState
-    let isDeleting: Bool
-    let onDelete: () -> Void
-    let onToggleBlockStorage: () -> Void
-    let onToggleDeleteOnClose: () -> Void
-
-    @State private var isTitleHovered = false
-    @State private var isDeleteHovered = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                titleArea
-
-                Button(action: onDelete) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(isDeleteHovered ? URLBarHubNativeStyle.hoveredControlBackground : Color.clear)
-
-                        if isDeleting {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: "trash")
-                                .font(.system(size: 13, weight: .semibold))
-                        }
-                    }
-                    .frame(width: 32, height: 32)
-                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(URLBarHubNativeStyle.secondaryText)
-                .disabled(isDeleting)
-                .help("Delete data for \(entry.domain)")
-                .onHover { hovering in
-                    withAnimation(.easeInOut(duration: 0.12)) {
-                        isDeleteHovered = hovering
-                    }
-                }
-            }
-
-            VStack(spacing: 6) {
-                URLBarSiteDataActionButton(
-                    title: policyState.blockStorage
-                        ? "Allow saving data"
-                        : "Block saving data",
-                    systemName: policyState.blockStorage ? "checkmark.circle" : "nosign",
-                    action: onToggleBlockStorage
-                )
-                URLBarSiteDataActionButton(
-                    title: policyState.deleteWhenAllWindowsClosed
-                        ? "Keep after all windows close"
-                        : "Delete when all windows close",
-                    systemName: policyState.deleteWhenAllWindowsClosed ? "checkmark.circle" : "clock.arrow.circlepath",
-                    action: onToggleDeleteOnClose
-                )
-            }
-            .disabled(isDeleting)
-        }
-        .padding(.vertical, 9)
-    }
-
-    private var titleArea: some View {
-        HStack(spacing: 10) {
-            URLBarSiteDataFavicon(domain: entry.domain)
-
-            VStack(alignment: .leading, spacing: 2) {
-                URLBarFadingText(
-                    entry.domain,
-                    font: .system(size: 13, weight: .medium),
-                    color: URLBarHubNativeStyle.primaryText
-                )
-                URLBarFadingText(
-                    summary,
-                    font: .system(size: 11.5),
-                    color: URLBarHubNativeStyle.secondaryText
-                )
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
-        .padding(.vertical, 4)
-        .padding(.horizontal, 6)
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isTitleHovered ? URLBarHubNativeStyle.hoveredControlBackground : Color.clear)
-        )
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.12)) {
-                isTitleHovered = hovering
-            }
-        }
-    }
-}
-
-private struct URLBarSiteDataActionButton: View {
-    let title: String
-    let systemName: String
-    let action: () -> Void
-
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: systemName)
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .frame(width: 14, height: 14)
-                Text(title)
-                    .font(.system(size: 11.5, weight: .medium))
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(URLBarHubNativeStyle.primaryText)
-            .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
-            .padding(.horizontal, 8)
-            .background(isHovered ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubNativeStyle.controlBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.12)) {
-                isHovered = hovering
-            }
-        }
-    }
-}
-
-private struct URLBarSiteDataFavicon: View {
-    let domain: String
-
-    var body: some View {
-        Group {
-            if let image = cachedFavicon {
-                image
-                    .resizable()
-                    .scaledToFit()
-            } else {
-                Image(systemName: "globe")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(URLBarHubNativeStyle.secondaryText)
-            }
-        }
-        .frame(width: 22, height: 22)
-        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-    }
-
-    @MainActor
-    private var cachedFavicon: Image? {
-        let normalizedDomain = domain.normalizedWebsiteDataDomain
-        guard !normalizedDomain.isEmpty else { return nil }
-
-        if let url = URL(string: "https://\(normalizedDomain)"),
-           let key = SumiFaviconResolver.cacheKey(for: url),
-           let image = Tab.getCachedFavicon(for: key) {
-            return image
-        }
-
-        let manager = SumiFaviconSystem.shared.manager
-        if let favicon = manager.getCachedFavicon(
-            for: normalizedDomain,
-            sizeCategory: .small,
-            fallBackToSmaller: true
-        ), let image = favicon.image {
-            return Image(nsImage: image)
-        }
-
-        return nil
-    }
-}
-
-private struct URLBarSiteDataIconButton: View {
-    let systemName: String
-    let help: String
-    let action: () -> Void
-
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(URLBarHubNativeStyle.primaryText)
-                .frame(width: 34, height: 34)
-                .background(isHovered ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubNativeStyle.controlBackground)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .help(help)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.12)) {
-                isHovered = hovering
-            }
-        }
-    }
-}
-
-private struct URLBarFadingText: View {
-    let text: String
-    let font: Font
-    let color: Color
-
-    init(_ text: String, font: Font, color: Color) {
-        self.text = text
-        self.font = font
-        self.color = color
-    }
-
-    var body: some View {
-        Text(text)
-            .font(font)
-            .foregroundStyle(color)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .mask(
-                HStack(spacing: 0) {
-                    Rectangle()
-                    LinearGradient(
-                        colors: [.black, .clear],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                    .frame(width: 18)
-                }
-            )
     }
 }
 
@@ -1644,407 +1093,5 @@ private struct SumiHubHeaderButton: View {
             return 1.03
         }
         return 1
-    }
-}
-
-private struct SumiFooterSecurityStatus: View {
-    let securityState: SiteControlsSnapshot.SecurityState
-
-    var body: some View {
-        HStack(spacing: 8) {
-            SumiZenChromeIcon(
-                iconName: securityState.chromeIconName,
-                fallbackSystemName: securityState.fallbackSystemName,
-                size: 16,
-                tint: labelColor
-            )
-            Text(securityState.footerTitle)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(labelColor)
-                .lineLimit(1)
-                .minimumScaleFactor(0.86)
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
-        .background(URLBarHubNativeStyle.controlBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-
-    private var labelColor: Color {
-        securityState == .notSecure ? URLBarHubNativeStyle.destructiveText : URLBarHubNativeStyle.primaryText
-    }
-}
-
-private struct SumiFooterSiteSettingsButton: View {
-    let siteSettingsAction: () -> Void
-    let clearSiteDataAction: () -> Void
-    let resetPermissionsAction: () -> Void
-
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: siteSettingsAction) {
-            Image(systemName: "gearshape")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(URLBarHubNativeStyle.primaryText)
-                .frame(maxWidth: .infinity)
-                .frame(height: 34)
-                .background(isHovered ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubNativeStyle.controlBackground)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .help("Site Settings")
-        .accessibilityLabel("Site Settings")
-        .accessibilityIdentifier("urlhub-site-settings-button")
-        .contextMenu {
-            Button("Site Settings", action: siteSettingsAction)
-            Button("Clear Site Data", action: clearSiteDataAction)
-            Divider()
-            Button("Reset Permissions to Default", action: resetPermissionsAction)
-        }
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.12)) {
-                isHovered = hovering
-            }
-        }
-    }
-}
-
-private struct URLHubPermissionInlineRow: View {
-    private enum IconState {
-        case neutral
-        case on
-        case off
-    }
-
-    private struct IconVisual {
-        let iconName: String?
-        let fallbackSystemName: String
-        let showsSlash: Bool
-    }
-
-    let row: SumiCurrentSitePermissionRow
-    let onCycle: () -> Void
-    let onSelect: (SumiCurrentSitePermissionOption) -> Void
-    let onOpenSystemSettings: () -> Void
-
-    @State private var isHovered = false
-
-    private var canCycle: Bool {
-        row.isEditable && row.disabledReason == nil && !row.availableOptions.isEmpty
-    }
-
-    private var iconState: IconState {
-        switch row.currentOption {
-        case .allow, .allowAll:
-            return .on
-        case .block, .blockAudible, .blockAll:
-            return .off
-        case .ask, .default, nil:
-            return .neutral
-        }
-    }
-
-    var body: some View {
-        Group {
-            if canCycle {
-                Button(action: onCycle) {
-                    rowContent
-                }
-                .buttonStyle(.plain)
-            } else {
-                rowContent
-            }
-        }
-        .opacity(row.disabledReason == nil ? 1 : 0.55)
-        .contextMenu {
-            if !row.availableOptions.isEmpty {
-                ForEach(row.availableOptions, id: \.self) { option in
-                    Button {
-                        onSelect(option)
-                    } label: {
-                        Label(
-                            option.title,
-                            systemImage: option == row.currentOption ? "checkmark" : "circle"
-                        )
-                    }
-                }
-            }
-            if row.showsSystemSettingsAction {
-                Divider()
-                Button("Open System Settings", action: onOpenSystemSettings)
-            }
-        }
-        .onHover { hovering in
-            guard canCycle else {
-                isHovered = false
-                return
-            }
-            withAnimation(.easeInOut(duration: 0.12)) {
-                isHovered = hovering
-            }
-        }
-        .accessibilityLabel(row.accessibilityLabel)
-        .accessibilityIdentifier("urlhub-permission-row-\(row.id)")
-    }
-
-    private var rowContent: some View {
-        HStack(spacing: 8) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(iconCapsuleFill)
-                    .scaleEffect(isHovered ? 1.05 : 1)
-
-                ZStack {
-                    SumiZenChromeIcon(
-                        iconName: iconVisual.iconName,
-                        fallbackSystemName: iconVisual.fallbackSystemName,
-                        size: 16,
-                        tint: URLBarHubNativeStyle.primaryText
-                    )
-
-                    if iconVisual.showsSlash {
-                        RoundedRectangle(cornerRadius: 1, style: .continuous)
-                            .fill(URLBarHubNativeStyle.primaryText)
-                            .frame(width: 2, height: 23)
-                            .rotationEffect(.degrees(-42))
-                            .shadow(color: URLBarHubNativeStyle.controlBackground, radius: 0, x: 1, y: 0)
-                    }
-                }
-            }
-            .frame(width: 34, height: 34)
-
-            VStack(alignment: .leading, spacing: 2) {
-                URLBarFadingText(
-                    row.title,
-                    font: .system(size: 13, weight: .medium),
-                    color: URLBarHubNativeStyle.primaryText
-                )
-                if let status = row.statusLines.first {
-                    URLBarFadingText(
-                        status,
-                        font: .system(size: 11.5),
-                        color: URLBarHubNativeStyle.secondaryText
-                    )
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
-        .contentShape(Rectangle())
-    }
-
-    private var iconCapsuleFill: Color {
-        if isHovered {
-            return URLBarHubNativeStyle.hoveredControlBackground
-        }
-        switch iconState {
-        case .on:
-            return URLBarHubNativeStyle.hoveredControlBackground
-        case .neutral, .off:
-            return URLBarHubNativeStyle.controlBackground
-        }
-    }
-
-    private var iconVisual: IconVisual {
-        switch iconState {
-        case .neutral:
-            return IconVisual(
-                iconName: row.iconName,
-                fallbackSystemName: row.fallbackSystemName,
-                showsSlash: false
-            )
-        case .on:
-            return filledIconVisual
-        case .off:
-            return blockedIconVisual
-        }
-    }
-
-    private var filledIconVisual: IconVisual {
-        switch row.kind {
-        case .sitePermission(let permissionType):
-            return filledIconVisual(for: permissionType)
-        case .popups:
-            return IconVisual(iconName: "popup-fill", fallbackSystemName: "rectangle.on.rectangle.fill", showsSlash: false)
-        case .externalScheme:
-            return IconVisual(iconName: nil, fallbackSystemName: "arrow.up.forward.square.fill", showsSlash: false)
-        case .autoplay:
-            return IconVisual(iconName: "autoplay-media-fill", fallbackSystemName: "play.rectangle.fill", showsSlash: false)
-        case .externalApps:
-            return IconVisual(iconName: nil, fallbackSystemName: "arrow.up.forward.square.fill", showsSlash: false)
-        case .filePicker:
-            return IconVisual(iconName: nil, fallbackSystemName: "doc.badge.plus.fill", showsSlash: false)
-        }
-    }
-
-    private func filledIconVisual(
-        for permissionType: SumiPermissionType
-    ) -> IconVisual {
-        switch permissionType {
-        case .camera:
-            return IconVisual(iconName: "camera-fill", fallbackSystemName: "camera.fill", showsSlash: false)
-        case .microphone:
-            return IconVisual(iconName: "microphone-fill", fallbackSystemName: "mic.fill", showsSlash: false)
-        case .cameraAndMicrophone:
-            return IconVisual(iconName: "permissions-fill", fallbackSystemName: "video.fill", showsSlash: false)
-        case .geolocation:
-            return IconVisual(iconName: "location", fallbackSystemName: "location.fill", showsSlash: false)
-        case .notifications:
-            return IconVisual(iconName: nil, fallbackSystemName: "bell.fill", showsSlash: false)
-        case .screenCapture:
-            return IconVisual(iconName: "screen", fallbackSystemName: "display", showsSlash: false)
-        case .popups:
-            return IconVisual(iconName: "popup-fill", fallbackSystemName: "rectangle.on.rectangle.fill", showsSlash: false)
-        case .externalScheme:
-            return IconVisual(iconName: nil, fallbackSystemName: "arrow.up.forward.square.fill", showsSlash: false)
-        case .autoplay:
-            return IconVisual(iconName: "autoplay-media-fill", fallbackSystemName: "play.rectangle.fill", showsSlash: false)
-        case .storageAccess:
-            return IconVisual(iconName: "cookies-fill", fallbackSystemName: "externaldrive.fill", showsSlash: false)
-        case .filePicker:
-            return IconVisual(iconName: nil, fallbackSystemName: "doc.badge.plus.fill", showsSlash: false)
-        }
-    }
-
-    private var blockedIconVisual: IconVisual {
-        switch row.kind {
-        case .sitePermission(let permissionType):
-            return blockedIconVisual(for: permissionType)
-        case .popups:
-            return IconVisual(iconName: "popup", fallbackSystemName: "rectangle.on.rectangle", showsSlash: true)
-        case .externalScheme:
-            return IconVisual(iconName: "open", fallbackSystemName: "arrow.up.forward.square", showsSlash: true)
-        case .autoplay:
-            return IconVisual(iconName: "autoplay-media", fallbackSystemName: "play.rectangle", showsSlash: true)
-        case .externalApps:
-            return IconVisual(iconName: "open", fallbackSystemName: "arrow.up.forward.square", showsSlash: true)
-        case .filePicker:
-            return IconVisual(iconName: nil, fallbackSystemName: "doc.badge.plus", showsSlash: true)
-        }
-    }
-
-    private func blockedIconVisual(
-        for permissionType: SumiPermissionType
-    ) -> IconVisual {
-        switch permissionType {
-        case .geolocation:
-            return IconVisual(iconName: "location", fallbackSystemName: "location.fill", showsSlash: true)
-        case .notifications:
-            return IconVisual(iconName: "desktop-notification-blocked", fallbackSystemName: "bell.slash", showsSlash: false)
-        case .screenCapture:
-            return IconVisual(iconName: "screen-blocked", fallbackSystemName: "display", showsSlash: false)
-        case .autoplay:
-            return IconVisual(iconName: "autoplay-media", fallbackSystemName: "play.rectangle", showsSlash: true)
-        case .storageAccess:
-            return IconVisual(iconName: "cookies-fill", fallbackSystemName: "externaldrive", showsSlash: true)
-        default:
-            return IconVisual(iconName: row.iconName, fallbackSystemName: row.fallbackSystemName, showsSlash: true)
-        }
-    }
-}
-
-private struct HubSettingRow: View {
-    let model: SiteControlsSettingRowModel
-    let resetAction: (() -> Void)?
-    let action: () -> Void
-
-    @State private var isHovered = false
-
-    init(
-        model: SiteControlsSettingRowModel,
-        resetAction: (() -> Void)? = nil,
-        action: @escaping () -> Void
-    ) {
-        self.model = model
-        self.resetAction = resetAction
-        self.action = action
-    }
-
-    var body: some View {
-        Group {
-            if model.isInteractive && !model.isDisabled {
-                Button(action: action) {
-                    rowContent
-                }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                rowContent
-            }
-        }
-        .opacity(model.isDisabled ? 0.55 : 1)
-        .contextMenu {
-            if let resetAction {
-                Button("Use Default", action: resetAction)
-            }
-        }
-        .onHover { hovering in
-            guard model.isInteractive && !model.isDisabled else {
-                isHovered = false
-                return
-            }
-            withAnimation(.easeInOut(duration: 0.12)) {
-                isHovered = hovering
-            }
-        }
-        .accessibilityIdentifier("urlhub-setting-row-\(model.id)")
-    }
-
-    private var rowContent: some View {
-        HStack(spacing: 8) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(capsuleFill)
-                    .scaleEffect(capsuleScale)
-
-                SumiZenChromeIcon(
-                    iconName: model.chromeIconName,
-                    fallbackSystemName: model.fallbackSystemName,
-                    size: 16,
-                    tint: iconTint
-                )
-            }
-            .frame(width: 34, height: 34)
-
-            VStack(alignment: .leading, spacing: 2) {
-                URLBarFadingText(
-                    model.title,
-                    font: .system(size: 13, weight: .medium),
-                    color: URLBarHubNativeStyle.primaryText
-                )
-                if let subtitle = model.subtitle {
-                    URLBarFadingText(
-                        subtitle,
-                        font: .system(size: 11.5),
-                        color: URLBarHubNativeStyle.secondaryText
-                    )
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            if model.showsDisclosure {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(URLBarHubNativeStyle.secondaryText)
-                    .frame(width: 14, height: 22)
-            }
-        }
-        .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
-        .contentShape(Rectangle())
-    }
-
-    private var capsuleFill: Color {
-        isHovered ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubNativeStyle.controlBackground
-    }
-
-    private var iconTint: Color {
-        URLBarHubNativeStyle.primaryText
-    }
-
-    private var capsuleScale: CGFloat {
-        isHovered ? 1.05 : 1
     }
 }

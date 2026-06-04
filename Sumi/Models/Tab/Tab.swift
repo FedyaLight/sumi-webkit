@@ -22,10 +22,15 @@ struct SumiGlanceOriginSnapshot {
 }
 
 enum SumiWebViewShutdown {
+    enum Scope {
+        case normal(tabId: UUID)
+        case auxiliary(reason: String)
+    }
+
     @MainActor
     static func perform(
         on webView: WKWebView,
-        tabId: UUID,
+        scope: Scope,
         browserManager: BrowserManager?,
         additionalTabCleanup: (() -> Void)? = nil
     ) {
@@ -34,12 +39,15 @@ enum SumiWebViewShutdown {
 
         browserManager?.extensionsModule.releaseExternallyConnectableRuntimeIfLoaded(
             for: webView,
-            reason: "WebView cleanup"
+            reason: auxiliaryReleaseReason(for: scope)
         )
-        browserManager?.userscriptsModule.cleanupWebViewIfLoaded(
-            controller: webView.configuration.userContentController,
-            webViewId: tabId
-        )
+
+        if case .normal(let tabId) = scope {
+            browserManager?.userscriptsModule.cleanupWebViewIfLoaded(
+                controller: webView.configuration.userContentController,
+                webViewId: tabId
+            )
+        }
 
         if let controller = webView.configuration.userContentController.sumiNormalTabUserContentController {
             controller.cleanUpBeforeClosing()
@@ -50,7 +58,35 @@ enum SumiWebViewShutdown {
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
         webView.removeFromSuperview()
-        browserManager?.webViewCoordinator?.removeWebViewFromContainers(webView)
+
+        if case .normal = scope {
+            browserManager?.webViewCoordinator?.removeWebViewFromContainers(webView)
+        }
+    }
+
+    @MainActor
+    static func perform(
+        on webView: WKWebView,
+        tabId: UUID,
+        browserManager: BrowserManager?,
+        additionalTabCleanup: (() -> Void)? = nil
+    ) {
+        perform(
+            on: webView,
+            scope: .normal(tabId: tabId),
+            browserManager: browserManager,
+            additionalTabCleanup: additionalTabCleanup
+        )
+    }
+
+    @MainActor
+    private static func auxiliaryReleaseReason(for scope: Scope) -> String {
+        switch scope {
+        case .normal:
+            return "WebView cleanup"
+        case .auxiliary(let reason):
+            return reason
+        }
     }
 
     @MainActor
@@ -73,33 +109,11 @@ enum SumiAuxiliaryWebViewShutdown {
         browserManager: BrowserManager?,
         reason: String
     ) {
-        webView.stopLoading()
-        stopNativeMedia(on: webView)
-
-        browserManager?.extensionsModule.releaseExternallyConnectableRuntimeIfLoaded(
-            for: webView,
-            reason: reason
+        SumiWebViewShutdown.perform(
+            on: webView,
+            scope: .auxiliary(reason: reason),
+            browserManager: browserManager
         )
-
-        if let controller = webView.configuration.userContentController.sumiNormalTabUserContentController {
-            controller.cleanUpBeforeClosing()
-        }
-
-        webView.navigationDelegate = nil
-        webView.uiDelegate = nil
-        webView.removeFromSuperview()
-    }
-
-    @MainActor
-    private static func stopNativeMedia(on webView: WKWebView) {
-        webView.pauseAllMediaPlayback(completionHandler: nil)
-
-        if webView.cameraCaptureState != .none {
-            webView.setCameraCaptureState(.none, completionHandler: nil)
-        }
-        if webView.microphoneCaptureState != .none {
-            webView.setMicrophoneCaptureState(.none, completionHandler: nil)
-        }
     }
 }
 

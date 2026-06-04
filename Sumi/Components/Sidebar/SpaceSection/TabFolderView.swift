@@ -527,14 +527,6 @@ struct TabFolderView: View {
         .frame(width: SidebarRowLayout.folderTitleLeading, alignment: .leading)
     }
 
-    private func folderContent(reportsGeometry: Bool = true) -> some View {
-        folderBodyContent(
-            items: folderItems,
-            reportsGeometry: reportsGeometry,
-            reportsFolderChildGeometry: reportsGeometry && folder.isOpen
-        )
-    }
-
     private func folderBodyContent(
         items: [FolderListItem],
         reportsGeometry: Bool,

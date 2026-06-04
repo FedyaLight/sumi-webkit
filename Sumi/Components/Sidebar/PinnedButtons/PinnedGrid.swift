@@ -1081,7 +1081,8 @@ private struct PinnedSplitPlaceholderTile: View {
         .task(id: storedFaviconLoadKey) {
             await loadStoredFavicon()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { notification in
+            guard shouldReloadPinnedTileFavicon(for: notification, launchURL: pin.launchURL) else { return }
             loadedStoredFaviconURL = nil
             loadedStoredFavicon = nil
             faviconCacheRefreshID = UUID()
@@ -1238,7 +1239,8 @@ private struct LivePinnedTileContent: View {
             supportsMiddleClickUnload: true,
             contextMenuEntries: { contextMenuActions.entries() },
             action: onActivate,
-            onUnload: onUnload
+            onUnload: onUnload,
+            accentSourceURL: pin.launchURL
         )
     }
 
@@ -1311,12 +1313,14 @@ private struct StoredPinnedTileContent: View {
             supportsMiddleClickUnload: true,
             contextMenuEntries: { contextMenuActions.entries() },
             action: onActivate,
-            onUnload: onUnload
+            onUnload: onUnload,
+            accentSourceURL: pin.launchURL
         )
         .task(id: storedFaviconLoadKey) {
             await loadStoredFavicon()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { notification in
+            guard shouldReloadPinnedTileFavicon(for: notification, launchURL: pin.launchURL) else { return }
             loadedStoredFaviconURL = nil
             loadedStoredFavicon = nil
             faviconCacheRefreshID = UUID()
@@ -1344,6 +1348,17 @@ private struct StoredPinnedTileContent: View {
         loadedStoredFaviconURL = launchURL
         loadedStoredFavicon = Image(nsImage: image)
     }
+}
+
+private func shouldReloadPinnedTileFavicon(
+    for notification: Notification,
+    launchURL: URL
+) -> Bool {
+    guard let updatedDomain = notification.userInfo?[NSNotification.Name.faviconCacheUpdatedDomainKey] as? String else {
+        return true
+    }
+    guard let host = launchURL.host?.lowercased() else { return false }
+    return host == updatedDomain.lowercased()
 }
 
 @MainActor

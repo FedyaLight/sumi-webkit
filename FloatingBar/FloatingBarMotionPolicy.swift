@@ -7,13 +7,13 @@
 import SwiftUI
 
 enum FloatingBarMotionPolicy {
-    enum Mode: Equatable {
-        case standard
-        case reducedMotion
-    }
+    typealias Mode = SumiChromeMotionPolicy.Mode
 
-    static func mode(reduceMotion: Bool) -> Mode {
-        reduceMotion ? .reducedMotion : .standard
+    static func mode(reduceMotion: Bool, energySaverReducesMotion: Bool = false) -> Mode {
+        SumiChromeMotionPolicy.currentMode(
+            reduceMotion: reduceMotion,
+            energySaverReducesMotion: energySaverReducesMotion
+        )
     }
 
     static func chromeElementTransition(for mode: Mode) -> AnyTransition {

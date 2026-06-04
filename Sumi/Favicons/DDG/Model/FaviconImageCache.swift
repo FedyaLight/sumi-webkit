@@ -103,6 +103,7 @@ final class FaviconImageCache: FaviconImageCaching {
 
         for favicon in favicons {
             cache(favicon)
+            storeAccentColorIfNeeded(for: favicon)
         }
 
         let storing = storing
@@ -160,6 +161,7 @@ final class FaviconImageCache: FaviconImageCaching {
                 let favicons = try await storing.loadFavicons(with: urlsToLoad)
                 for favicon in favicons {
                     cache(favicon)
+                    storeAccentColorIfNeeded(for: favicon)
                 }
             } catch {
                 Logger.favicons.error("Loading cached favicons by URL failed: \(error.localizedDescription)")
@@ -254,6 +256,16 @@ final class FaviconImageCache: FaviconImageCaching {
         totalEntryCost += cost
         markAccessed(favicon.url)
         trimInMemoryEntriesIfNeeded()
+    }
+
+    @MainActor
+    private func storeAccentColorIfNeeded(for favicon: Favicon) {
+        guard let host = favicon.documentUrl.host?.lowercased(),
+              let image = favicon.image
+        else { return }
+        let key = SumiFaviconAccentCache.cacheKey(domain: host, faviconIdentity: favicon.url.absoluteString)
+        SumiFaviconAccentCache.storeOffMain(image: image, forKey: key)
+        SumiFaviconAccentCache.storeOffMain(image: image, forKey: host)
     }
 
     @MainActor

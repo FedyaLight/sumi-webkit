@@ -775,10 +775,7 @@ private struct SearchEngineEditor: View {
     }
 
     private func normalizedURLTemplate(_ template: String) -> String {
-        if template.hasPrefix("http://") || template.hasPrefix("https://") {
-            return template
-        }
-        return "https://\(template)"
+        SumiURLNormalization.normalizedSearchEngineTemplate(template)
     }
 
 }

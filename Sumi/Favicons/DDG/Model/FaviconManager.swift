@@ -641,7 +641,16 @@ extension FaviconManager: SumiFaviconStoring {
                               dateCreated: Date())
 
         await cacheFavicons([favicon], faviconURLs: [faviconURL], for: documentURL)
-        NotificationCenter.default.post(name: .faviconCacheUpdated, object: nil)
+        var userInfo: [String: String] = [:]
+        if let domain = documentURL.host?.lowercased() {
+            userInfo[NSNotification.Name.faviconCacheUpdatedDomainKey] = domain
+            SumiFaviconAccentCache.shared.invalidate(domain: domain)
+        }
+        NotificationCenter.default.post(
+            name: .faviconCacheUpdated,
+            object: nil,
+            userInfo: userInfo.isEmpty ? nil : userInfo
+        )
     }
 }
 

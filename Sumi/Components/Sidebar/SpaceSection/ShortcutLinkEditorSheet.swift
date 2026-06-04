@@ -36,7 +36,7 @@ final class ShortcutLinkEditorSession: ObservableObject, Identifiable {
     }
 
     var normalizedURL: URL? {
-        Self.normalizedLaunchURL(from: urlText)
+        SumiURLNormalization.normalizedShortcutURL(from: urlText)
     }
 
     var urlValidationMessage: String? {
@@ -61,12 +61,7 @@ final class ShortcutLinkEditorSession: ObservableObject, Identifiable {
     }
 
     private static func normalizedLaunchURL(from rawValue: String) -> URL? {
-        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        if let direct = URL(string: trimmed), direct.scheme != nil {
-            return direct
-        }
-        return URL(string: "https://\(trimmed)")
+        SumiURLNormalization.normalizedShortcutURL(from: rawValue)
     }
 }
 

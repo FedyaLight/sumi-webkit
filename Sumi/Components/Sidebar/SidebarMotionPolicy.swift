@@ -4,10 +4,7 @@ import SwiftUI
 /// Shared motion language for the sidebar shell and its local interactions.
 /// Keep product-specific motion here so SwiftUI and AppKit edges agree on timing.
 enum SidebarMotionPolicy {
-    enum Mode: Equatable {
-        case standard
-        case reducedMotion
-    }
+    typealias Mode = SumiChromeMotionPolicy.Mode
 
     static let rowPressedScale: CGFloat = 0.98
 
@@ -15,15 +12,15 @@ enum SidebarMotionPolicy {
         reduceMotion: Bool,
         energySaverReducesMotion: Bool = false
     ) -> Mode {
-        reduceMotion || energySaverReducesMotion ? .reducedMotion : .standard
+        SumiChromeMotionPolicy.currentMode(
+            reduceMotion: reduceMotion,
+            energySaverReducesMotion: energySaverReducesMotion
+        )
     }
 
     @MainActor
     static func appKitCurrentMode(settings: SumiSettingsService?) -> Mode {
-        currentMode(
-            reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
-            energySaverReducesMotion: settings?.shouldReduceChromeMotion ?? false
-        )
+        SumiChromeMotionPolicy.appKitCurrentMode(settings: settings)
     }
 
     static func dockedLayoutAnimation(for mode: Mode, isShowing: Bool) -> Animation? {

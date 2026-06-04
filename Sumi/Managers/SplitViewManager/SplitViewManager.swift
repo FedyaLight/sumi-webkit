@@ -1902,18 +1902,13 @@ final class SplitViewManager: ObservableObject {
 
     private func applyPendingLegacySnapshotIfPossible(for windowId: UUID) {
         guard let snapshot = pendingLegacySnapshotsByWindow[windowId],
-              let leftTab = browserManager?.tabManager.tab(for: snapshot.leftTabId),
-              let rightTab = browserManager?.tabManager.tab(for: snapshot.rightTabId),
-              let group = SplitGroup.make(
-                tabIds: [leftTab.id, rightTab.id],
-                layoutKind: snapshot.orientation == .vertical ? .horizontal : .vertical,
-                activeTabId: snapshot.activeSideRawValue == "left" ? leftTab.id : rightTab.id
-              )
+              let tabManager = browserManager?.tabManager,
+              let group = LegacySplitSessionMigrator.makeSplitGroup(from: snapshot, tabManager: tabManager)
         else {
             return
         }
         pendingLegacySnapshotsByWindow.removeValue(forKey: windowId)
-        browserManager?.tabManager.upsertSplitGroup(group)
+        tabManager.upsertSplitGroup(group)
         notifyChanged(for: windowId)
     }
 

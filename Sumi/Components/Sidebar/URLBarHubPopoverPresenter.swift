@@ -410,33 +410,13 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         let popover = session.popover
         guard contentSize(popover.contentSize, differsFrom: targetSize) else { return }
 
-        session.resizeAnimationTask?.cancel()
-
-        let startSize = popover.contentSize
-        session.resizeAnimationTask = Task { @MainActor [weak session, weak popover] in
-            let startTime = CACurrentMediaTime()
-            let duration = Metrics.resizeAnimationDuration
-
-            while !Task.isCancelled {
-                guard let session, let popover else { return }
-
-                let elapsed = CACurrentMediaTime() - startTime
-                let rawProgress = min(max(elapsed / duration, 0), 1)
-                let easedProgress = rawProgress * rawProgress * (3 - 2 * rawProgress)
-                popover.contentSize = NSSize(
-                    width: startSize.width + (targetSize.width - startSize.width) * easedProgress,
-                    height: startSize.height + (targetSize.height - startSize.height) * easedProgress
-                )
-
-                guard rawProgress < 1 else {
-                    popover.contentSize = targetSize
-                    session.resizeAnimationTask = nil
-                    return
-                }
-
-                try? await Task.sleep(nanoseconds: 16_000_000)
-            }
-        }
+        PopoverPresenterChromeSupport.animateContentSize(
+            popover: popover,
+            from: popover.contentSize,
+            to: targetSize,
+            duration: Metrics.resizeAnimationDuration,
+            animationTask: &session.resizeAnimationTask
+        )
     }
 
     private func popoverAppearance(for registration: AnchorRegistration) -> NSAppearance {
@@ -462,16 +442,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         for registration: AnchorRegistration,
         colorScheme: ColorScheme
     ) -> ResolvedThemeContext {
-        var context = registration.themeContext
-        context.globalColorScheme = colorScheme
-        context.chromeColorScheme = colorScheme
-        context.sourceChromeColorScheme = colorScheme
-        context.targetChromeColorScheme = colorScheme
-        context.sourceWorkspaceTheme = context.workspaceTheme
-        context.targetWorkspaceTheme = context.workspaceTheme
-        context.isInteractiveTransition = false
-        context.transitionProgress = 1.0
-        return context
+        PopoverPresenterChromeSupport.themeContext(registration.themeContext, colorScheme: colorScheme)
     }
 
     private func beginPendingTransientSessionIfNeeded(in windowState: BrowserWindowState) {

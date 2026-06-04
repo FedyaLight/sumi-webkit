@@ -65,6 +65,25 @@ struct LegacySplitSessionSnapshot: Codable, Equatable, Hashable {
     var orientation: LegacySplitOrientation
 }
 
+enum LegacySplitSessionMigrator {
+    @MainActor
+    static func makeSplitGroup(
+        from snapshot: LegacySplitSessionSnapshot,
+        tabManager: TabManager
+    ) -> SplitGroup? {
+        guard let leftTab = tabManager.tab(for: snapshot.leftTabId),
+              let rightTab = tabManager.tab(for: snapshot.rightTabId)
+        else {
+            return nil
+        }
+        return SplitGroup.make(
+            tabIds: [leftTab.id, rightTab.id],
+            layoutKind: snapshot.orientation == .vertical ? .horizontal : .vertical,
+            activeTabId: snapshot.activeSideRawValue == "left" ? leftTab.id : rightTab.id
+        )
+    }
+}
+
 struct WindowSessionSnapshot: Codable, Equatable, Hashable {
     var currentTabId: UUID?
     var currentSpaceId: UUID?

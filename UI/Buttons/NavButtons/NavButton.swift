@@ -33,7 +33,6 @@ struct NavButtonStyle: ButtonStyle {
 
             configuration.label
                 .foregroundStyle(tokens.primaryText)
-//                .font(.system(size: iconSize))
         }
         .opacity(isEnabled ? 1.0 : 0.3)
         
@@ -61,17 +60,6 @@ struct NavButtonStyle: ButtonStyle {
         @unknown default: 32
         }
     }
-    
-//    private var iconSize: CGFloat {
-//        switch controlSize {
-//        case .mini: 12
-//        case .small: 14
-//        case .regular: 16
-//        case .large: 18
-//        case .extraLarge: 20
-//        @unknown default: 16
-//        }
-//    }
     
     private var cornerRadius: CGFloat {
         8

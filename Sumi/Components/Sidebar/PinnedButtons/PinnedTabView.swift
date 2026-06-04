@@ -33,6 +33,7 @@ struct PinnedTabView: View {
     var contextMenuEntries: () -> [SidebarContextMenuEntry] = { [] }
     var action: () -> Void
     var onUnload: () -> Void
+    var accentSourceURL: URL? = nil
 
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
@@ -53,7 +54,8 @@ struct PinnedTabView: View {
                 isHovered: displayIsHovered,
                 isLoading: liveTab?.isLoading ?? false,
                 showsSplitGroupOutline: showsSplitGroupOutline,
-                configuration: pinnedTabsConfiguration
+                configuration: pinnedTabsConfiguration,
+                accentSourceURL: accentSourceURL ?? liveTab?.url
             )
 
             if supportsActionButton {
@@ -227,13 +229,20 @@ struct PinnedTileVisual: View {
     var showsSplitGroupOutline: Bool = false
     var faviconOpacity: Double = 1
     var configuration: PinnedTabsConfiguration? = nil
+    var accentSourceURL: URL? = nil
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private let faviconScale: CGFloat = 6.0
-    private let faviconBlur: CGFloat = 30.0
+    private var selectionAccentColor: Color {
+        PinnedTileAccentResolver.resolve(
+            launchURL: accentSourceURL,
+            glyphText: glyphText,
+            chromeTemplateSystemImageName: chromeTemplateSystemImageName,
+            tokens: tokens
+        )
+    }
 
     var body: some View {
         let pinnedTabsConfiguration = configuration ?? .large
@@ -244,9 +253,8 @@ struct PinnedTileVisual: View {
                 .fill(backgroundColor)
                 .overlay {
                     if presentationState.isSelected {
-                        resolvedFaviconSymbol(height: pinnedTabsConfiguration.faviconHeight)
-                            .blur(radius: 30)
-                            .opacity(0.5 * faviconOpacity)
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(selectionAccentColor.opacity(0.35 * faviconOpacity))
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -264,11 +272,10 @@ struct PinnedTileVisual: View {
             }
 
             if showsSplitGroupOutline {
-                splitGroupOutlineOverlay(
+                PinnedTileSplitGroupOutlineMask(
                     corner: cornerRadius,
                     thickness: max(1.25, pinnedTabsConfiguration.strokeWidth * 0.7),
-                    scale: faviconScale,
-                    blur: faviconBlur
+                    strokeColor: selectionAccentColor
                 )
                 .conditionally(
                     if: isLoading && !reduceMotion
@@ -276,15 +283,15 @@ struct PinnedTileVisual: View {
                 ) { view in
                     view.mask {
                         PinnedTileLoadingAlphaWaveLayerMask()
+                            .padding(-pinnedTabsConfiguration.outlineMaskBleed)
                     }
                 }
                 .allowsHitTesting(false)
             } else if presentationState.isSelected {
-                faviconStrokeOverlay(
+                accentSelectionRingOverlay(
                     corner: cornerRadius,
                     thickness: pinnedTabsConfiguration.strokeWidth,
-                    scale: faviconScale,
-                    blur: faviconBlur
+                    color: selectionAccentColor
                 )
                 .conditionally(
                     if: isLoading && !reduceMotion
@@ -292,6 +299,7 @@ struct PinnedTileVisual: View {
                 ) { view in
                     view.mask {
                         PinnedTileLoadingAlphaWaveLayerMask()
+                            .padding(-pinnedTabsConfiguration.outlineMaskBleed)
                     }
                 }
                 .allowsHitTesting(false)
@@ -357,97 +365,22 @@ struct PinnedTileVisual: View {
         )
     }
 
-    @ViewBuilder
-    private func strokeFaviconSymbol() -> some View {
-        if let systemName = chromeTemplateSystemImageName {
-            Image(systemName: systemName)
-                .resizable()
-                .scaledToFit()
-                .symbolRenderingMode(.monochrome)
-                .foregroundStyle(tokens.primaryText)
-        } else {
-            tabIcon
-                .resizable()
-                .interpolation(.high)
-                .antialiased(true)
-                .scaledToFit()
-        }
-    }
-
-    @ViewBuilder
-    private func strokeFaviconSource(
-        size: CGSize,
-        scale: CGFloat,
-        blur: CGFloat,
-        ringMask: some View
+    private func accentSelectionRingOverlay(
+        corner: CGFloat,
+        thickness: CGFloat,
+        color: Color
     ) -> some View {
-        let dim = min(size.width, size.height) * scale
-        strokeFaviconSymbol()
-        .frame(width: dim, height: dim)
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: PinnedTileFaviconLayout.cornerRadius * scale,
+        GeometryReader { proxy in
+            let size = proxy.size
+            let strokeInset = thickness / 2
+            let rect = RoundedRectangle(
+                cornerRadius: max(0, corner - strokeInset),
                 style: .continuous
             )
-        )
-        .blur(radius: blur)
-        .frame(width: size.width, height: size.height)
-        .mask(ringMask.frame(width: size.width, height: size.height))
-    }
+            .inset(by: strokeInset)
 
-    private func faviconStrokeOverlay(
-        corner: CGFloat,
-        thickness: CGFloat,
-        scale: CGFloat,
-        blur: CGFloat
-    ) -> some View {
-        GeometryReader { proxy in
-            let size = proxy.size
-            let outerRect = RoundedRectangle(cornerRadius: corner - thickness, style: .continuous)
-            let innerRect = RoundedRectangle(cornerRadius: max(0, corner - thickness), style: .continuous)
-
-            ZStack {
-                let ringMask = ZStack {
-                    outerRect
-                        .fill(Color.white)
-                        .shadow(color: .clear, radius: 0)
-
-                    innerRect
-                        .inset(by: thickness)
-                        .fill(Color.black)
-                        .compositingGroup()
-                        .blendMode(.destinationOut)
-                }
-
-                strokeFaviconSource(
-                    size: size,
-                    scale: scale,
-                    blur: blur,
-                    ringMask: ringMask
-                )
-            }
-        }
-    }
-
-    private func splitGroupOutlineOverlay(
-        corner: CGFloat,
-        thickness: CGFloat,
-        scale: CGFloat,
-        blur: CGFloat
-    ) -> some View {
-        GeometryReader { proxy in
-            let size = proxy.size
-            let outlineMask = PinnedTileSplitGroupOutlineMask(
-                corner: corner,
-                thickness: thickness
-            )
-
-            strokeFaviconSource(
-                size: size,
-                scale: scale,
-                blur: blur,
-                ringMask: outlineMask
-            )
+            rect.stroke(color, lineWidth: thickness)
+            .frame(width: size.width, height: size.height)
         }
     }
 }
@@ -455,6 +388,7 @@ struct PinnedTileVisual: View {
 struct PinnedTileSplitGroupOutlineMask: View {
     let corner: CGFloat
     let thickness: CGFloat
+    var strokeColor: Color = .white
 
     var body: some View {
         GeometryReader { proxy in
@@ -471,9 +405,9 @@ struct PinnedTileSplitGroupOutlineMask: View {
             let verticalBottom = min(size.height * 0.76, size.height - thickness * 4)
 
             ZStack {
-                RoundedRectangle(cornerRadius: max(0, corner - thickness / 2), style: .continuous)
-                    .inset(by: thickness / 2)
-                    .stroke(Color.white, style: strokeStyle)
+                RoundedRectangle(cornerRadius: max(0, corner - thickness), style: .continuous)
+                    .inset(by: thickness)
+                    .stroke(strokeColor, style: strokeStyle)
 
                 verticalRule(
                     x: size.width * 0.3,
@@ -502,7 +436,7 @@ struct PinnedTileSplitGroupOutlineMask: View {
             path.move(to: CGPoint(x: x, y: top))
             path.addLine(to: CGPoint(x: x, y: bottom))
         }
-        .stroke(Color.white, style: style)
+        .stroke(strokeColor, style: style)
     }
 }
 
@@ -571,7 +505,10 @@ private final class PinnedTileLoadingAlphaWaveMaskView: NSView {
     func updateAnimation() {
         guard bounds.width > 1,
               bounds.height > 1,
-              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+              LoadingWaveController.shared.shouldStartAnimation(
+                reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+                energySaverDisablesDecorativeEffects: false
+              )
         else {
             stopAnimation()
             return
@@ -583,12 +520,19 @@ private final class PinnedTileLoadingAlphaWaveMaskView: NSView {
             return
         }
 
+        if gradientLayer.animation(forKey: SumiTabTitleAnimation.loadingAlphaWaveKey) == nil {
+            LoadingWaveController.shared.beginAnimation()
+        }
+
         lastConfiguredSize = bounds.size
         configureGradientLayer()
         gradientLayer.add(buildAnimation(), forKey: SumiTabTitleAnimation.loadingAlphaWaveKey)
     }
 
     private func stopAnimation() {
+        if gradientLayer.animation(forKey: SumiTabTitleAnimation.loadingAlphaWaveKey) != nil {
+            LoadingWaveController.shared.endAnimation()
+        }
         gradientLayer.removeAnimation(forKey: SumiTabTitleAnimation.loadingAlphaWaveKey)
         lastConfiguredSize = .zero
     }

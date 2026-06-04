@@ -94,7 +94,7 @@ struct SpaceGradientBackgroundView: View {
             ZStack {
                 nativeBaseLayer
 
-                if let renderPlan {
+                if let renderPlan, !sumiSettings.shouldUseOpaqueChromeSurfaces {
                     themedLayer(
                         for: renderPlan.gradient,
                         intensity: renderPlan.intensity,

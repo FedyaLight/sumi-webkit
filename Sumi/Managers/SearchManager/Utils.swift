@@ -91,38 +91,6 @@ private func decodeSearchSuggestionEntity(_ entity: String) -> Character? {
   }
 }
 
-func normalizeURL(_ input: String, queryTemplate: String) -> String {
-  let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
-
-  if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") ||
-    trimmed.hasPrefix("file://") || trimmed.hasPrefix("about:")
-  {
-    return trimmed
-  }
-
-  if trimmed.lowercased().hasPrefix("sumi:") {
-    return trimmed
-  }
-
-  let lowered = trimmed.lowercased()
-  if lowered.hasPrefix("webkit-extension:") || lowered.hasPrefix("safari-web-extension:") {
-    return trimmed
-  }
-
-  if let decision = try? Classifier.classify(input: trimmed),
-     case .navigate(let url) = decision {
-    return url.absoluteString
-  }
-
-  if trimmed.contains(".") && !trimmed.contains(" ") {
-    return "https://\(trimmed)"
-  }
-
-  let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? trimmed
-  let urlString = String(format: queryTemplate, encoded)
-  return urlString
-}
-
 func isLikelyURL(_ text: String) -> Bool {
   let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
   if let decision = try? Classifier.classify(input: trimmed),
