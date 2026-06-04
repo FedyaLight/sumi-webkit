@@ -6,13 +6,23 @@ Sumi Browser is a developer-preview project. This roadmap is a planning snapshot
 
 - Sumi builds and runs locally as a working native macOS browser shell.
 - It is not recommended as a primary browser yet.
-- The first public preview is planned after MV3 password-manager compatibility, backup/restore user data, and update mechanism/notification.
+- The first public preview is planned after MV3 password-manager compatibility and update mechanism/notification.
 
 ## Current Milestone
 
 Chrome MV3 password-manager extension compatibility.
 
 The near-term target is that a user can install an unpacked or zipped password-manager extension and use it from the browser UI. Sumi does not currently claim that Bitwarden, Proton Pass, or 1Password already work.
+
+## Completed Milestone: Arc/Zen Import And Backup/Restore
+
+Sumi now has first-class Arc/Zen migration and Sumi backup/restore surfaces in Settings > Data & Recovery.
+
+- Arc and Zen imports preserve Sumi's own model: essentials remain profile-scoped launchers, pinned items remain space launchers, regular tabs remain regular tabs, and sidebar folders are flattened to Sumi's one-level launcher folders.
+- Browser export writes a browser2zen-compatible JSON shape with `source: "sumi"` plus a Sumi extension block for exact future round-trips.
+- Sumi backup/restore uses `.sumibackup` logical JSON archives. Backup v1 excludes history, cookies, passwords, WebKit website data, caches, downloads, and extension payloads.
+- Restore supports explicit Merge and Replace modes. Replace writes an automatic pre-restore backup and prunes old automatic pre-restore files so the feature does not accumulate unbounded app-support data.
+- Chrome, Safari, and Firefox are supported through the existing bookmarks importer; deeper browser organization import requires Arc/Zen data or a portable browser2zen/Sumi transfer file.
 
 ## Done In Developer Preview
 
@@ -34,6 +44,7 @@ The near-term target is that a user can install an unpacked or zipped password-m
 - Extension manager UI.
 - MV3 compatibility report UI.
 - Real password-manager package trials.
+- Data & Recovery import/export/backup/restore.
 
 ## Experimental Or In Validation
 
@@ -61,26 +72,12 @@ Additional details:
 ## Public Preview Blockers
 
 - MV3 password-manager compatibility.
-- File/archive-based backup and restore for user data.
 - Update mechanism or update notification.
-
-Backup and restore is a blocker because Sumi's target users may build complex tab, space, profile, pinned item, essential, folder, and theme organization.
 
 ## Near-Term
 
 - MV3 password-manager support.
-- File/archive-based backup and restore for:
-  - tabs
-  - spaces
-  - profiles
-  - bookmarks
-  - pinned items and essentials
-  - folders
-  - themes
-  - extension settings
-  - tracking/adblock settings
 - Update mechanism or update notification.
-- Import from Arc and Zen.
 
 ## Later
 
@@ -91,4 +88,4 @@ Backup and restore is a blocker because Sumi's target users may build complex ta
 - Fully encrypted sync without data collection.
 - Multi-window workflows.
 - Improved profile isolation redesign.
-- Safari and Chrome import.
+- Deeper direct Safari and Chrome import beyond bookmarks and portable transfer files.

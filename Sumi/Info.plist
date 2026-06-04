@@ -18,6 +18,40 @@
 			<key>LSHandlerRank</key>
 			<string>Owner</string>
 		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>sumibackup</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>Sumi Backup</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.sumi.browser.backup</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>sumiexport</string>
+				<string>json</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>Sumi Browser Transfer</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.sumi.browser.transfer</string>
+				<string>public.json</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
@@ -86,6 +120,40 @@
 			<string>Sumi Tab Drag Item</string>
 			<key>UTTypeIdentifier</key>
 			<string>com.sumi.tab-drag-item</string>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Sumi Backup</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.sumi.browser.backup</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>sumibackup</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Sumi Browser Transfer</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.sumi.browser.transfer</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>sumiexport</string>
+				</array>
+			</dict>
 		</dict>
 	</array>
 </dict>

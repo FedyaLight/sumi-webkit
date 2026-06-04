@@ -20,11 +20,14 @@
 
 Sumi is in alpha. The browser shell builds and runs locally, but it is not recommended as a primary browser yet.
 
-The first public preview is planned after three user-safety pieces are in place:
+The first public preview is planned after the remaining user-safety pieces are in place:
 
 - MV3 password-manager extension compatibility.
-- File/archive-based backup and restore for user data.
 - An update mechanism or update notification path.
+
+Completed user-safety pieces:
+
+- [x] Arc/Zen import and Sumi backup/restore through Settings > Data & Recovery.
 
 See [docs/roadmap.md](docs/roadmap.md) for the current milestone, developer-preview status, public-preview blockers, and planned work.
 
@@ -59,6 +62,7 @@ Current developer-preview builds include:
 - Floating bar search/address field with suggestions, site search, history suggestions, bookmark suggestions, compact/top links behavior, and split-aware actions.
 - Bookmarks, history, and search inside bookmarks, history, and settings.
 - Custom themes.
+- Data & Recovery settings for Arc and Zen import, browser2zen-compatible `.sumiexport` transfer files, bookmarks import from Chrome/Safari/Firefox, and logical Sumi `.sumibackup` backup/restore.
 - Session restore setting for restoring the previous session or starting clean.
 - Mini Player at the bottom of the sidebar for jumping to playing media, pausing media, and muting media.
 - Memory modes and inactive tab unloading that preserve visible organization after a live WebView/runtime instance is unloaded.
@@ -101,9 +105,7 @@ The high-level architecture notes live in [docs/architecture.md](docs/architectu
 Near-term work:
 
 - MV3 password-manager extension compatibility.
-- Backup and restore for tabs, spaces, profiles, bookmarks, pinned items, essentials, folders, themes, extension settings, and tracking/adblock settings.
 - Update mechanism or update notification.
-- Import from Arc and Zen.
 
 Later work under consideration:
 
@@ -113,7 +115,7 @@ Later work under consideration:
 - Fully encrypted sync without data collection.
 - Multi-window workflows.
 - Improved profile isolation.
-- Safari and Chrome import.
+- Deeper direct Safari and Chrome import beyond bookmarks and portable transfer files.
 
 ## Project Structure
 
@@ -156,5 +158,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 Sumi is licensed under the GNU General Public License v3.0. See [LICENSE](LICENSE).
 
 The project is independent, but it was not written entirely from scratch. The codebase started from the open-source Nook browser and has been heavily reworked toward Sumi's goals. Sumi also includes vendored or adapted open-source components from DuckDuckGo's Apple browser projects, including BrowserServicesKit and URLPredictor, under their applicable licenses.
+
+The Arc/Zen migration work is compatible with [browser2zen](https://github.com/tarikbc/browser2zen) export data and was informed by that project's public MIT-licensed behavior and schema shape. Sumi does not vendor browser2zen or arc2zen code and does not add a Python/runtime dependency on them.
 
 See [NOTICE.md](NOTICE.md) for attribution and affiliation details.

@@ -26,10 +26,24 @@ or DuckDuckGo Tracker Data Set releases in the external protection-bundle
 generation pipeline. Those data sources carry their own license terms and
 attribution requirements.
 
+## Browser Migration Compatibility
+
+Sumi's Data & Recovery import/export services are compatible with public
+browser2zen transfer data shapes and were informed by browser2zen's documented
+Arc/Zen migration behavior. browser2zen is licensed under the MIT License and
+its upstream license notice identifies browser2zen contributors, with arc2zen
+by Rafael Cabezas also noted as MIT-licensed upstream work.
+
+Sumi does not vendor browser2zen or arc2zen source code, does not ship their
+assets, and does not add a runtime dependency on browser2zen or Python. If a
+future change copies or closely adapts substantial upstream browser2zen or
+arc2zen code, the relevant MIT copyright and permission notices must be
+preserved in the affected source or distribution notices.
+
 ## Affiliation
 
 Sumi Browser is not affiliated with Apple, DuckDuckGo, Arc, Zen, Bitwarden,
-Proton, or 1Password.
+Proton, 1Password, browser2zen, or arc2zen.
 
 Product names and trademarks belong to their respective owners and are used in
 documentation only to describe compatibility goals, technical context, or user
