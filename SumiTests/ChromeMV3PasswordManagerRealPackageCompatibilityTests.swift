@@ -1198,6 +1198,12 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertFalse(source.contains("arbitraryHostLaunchAllowed = " + positive))
         XCTAssertFalse(source.contains("productRuntimeAvailable: " + positive))
         XCTAssertFalse(source.contains("productRuntimeExposed: " + positive))
+        XCTAssertFalse(source.contains("rawPayload"))
+        XCTAssertFalse(source.contains("rawStorageValue"))
+        XCTAssertTrue(source.contains("serviceWorkerLoadedNoOnMessageListener"))
+        XCTAssertTrue(source.contains("listenerCapturedInDifferentSession"))
+        XCTAssertTrue(source.contains("listenerRespondedSync"))
+        XCTAssertTrue(source.contains("listenerRespondedAsync"))
         XCTAssertFalse(harness.contains("networkImportsAllowed: " + positive))
         XCTAssertFalse(harness.contains("filesystemAbsoluteImportsAllowed: " + positive))
         XCTAssertFalse(harness.contains("dynamicImportAvailable: " + positive))
@@ -1816,7 +1822,12 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertEqual(routes[.popupRuntimeSendMessage]?.status, .blocked)
         XCTAssertEqual(
             routes[.popupRuntimeSendMessage]?.noReceiverClassification,
-            .serviceWorkerRuntimeOnMessageListenerMissing
+            .serviceWorkerLoadedNoOnMessageListener
+        )
+        XCTAssertEqual(
+            routes[.popupRuntimeSendMessage]?
+                .serviceWorkerResultClassification,
+            .serviceWorkerLoadedNoOnMessageListener
         )
         XCTAssertEqual(
             routes[.popupRuntimeSendMessage]?
@@ -1828,10 +1839,40 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
             0
         )
         XCTAssertEqual(
+            routes[.popupRuntimeSendMessage]?
+                .serviceWorkerRuntimeOnMessageListenerCount,
+            0
+        )
+        XCTAssertEqual(
+            routes[.popupRuntimeSendMessage]?
+                .serviceWorkerRuntimeOnConnectListenerCount,
+            1
+        )
+        XCTAssertEqual(
+            routes[.popupRuntimeSendMessage]?
+                .serviceWorkerSelectedJSDispatcherCount,
+            0
+        )
+        XCTAssertEqual(
+            routes[.popupRuntimeSendMessage]?
+                .serviceWorkerExecutionStatus,
+            .running
+        )
+        XCTAssertEqual(
+            routes[.popupRuntimeSendMessage]?.serviceWorkerResourceLoaded,
+            true
+        )
+        XCTAssertEqual(
+            routes[.popupRuntimeSendMessage]?
+                .serviceWorkerLifecycleSessionID,
+            "bitwarden-e2e-smoke"
+        )
+        XCTAssertEqual(
             routes[.popupRuntimeSendMessage]?.serviceWorkerRouteReason,
-            "no runtime.onMessage listener captured for popupRuntimeSendMessage"
+            "service-worker loaded but no runtime.onMessage listener was captured for popupRuntimeSendMessage"
         )
         XCTAssertEqual(routes[.popupRuntimeConnect]?.status, .partial)
+        XCTAssertNil(routes[.popupRuntimeConnect]?.serviceWorkerResultClassification)
         XCTAssertEqual(
             routes[.popupRuntimeConnect]?.selectedServiceWorkerListenerFamily,
             .runtimeOnConnect
@@ -1864,7 +1905,12 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertEqual(
             routes[.contentScriptRuntimeSendMessage]?
                 .noReceiverClassification,
-            .serviceWorkerRuntimeOnMessageListenerMissing
+            .serviceWorkerLoadedNoOnMessageListener
+        )
+        XCTAssertEqual(
+            routes[.contentScriptRuntimeSendMessage]?
+                .serviceWorkerResultClassification,
+            .serviceWorkerLoadedNoOnMessageListener
         )
         XCTAssertEqual(
             routes[.contentScriptRuntimeSendMessage]?
@@ -1877,8 +1923,33 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         )
         XCTAssertEqual(
             routes[.contentScriptRuntimeSendMessage]?
+                .serviceWorkerRuntimeOnMessageListenerCount,
+            0
+        )
+        XCTAssertEqual(
+            routes[.contentScriptRuntimeSendMessage]?
+                .serviceWorkerRuntimeOnConnectListenerCount,
+            1
+        )
+        XCTAssertEqual(
+            routes[.contentScriptRuntimeSendMessage]?
+                .serviceWorkerSelectedJSDispatcherCount,
+            0
+        )
+        XCTAssertEqual(
+            routes[.contentScriptRuntimeSendMessage]?
+                .serviceWorkerExecutionStatus,
+            .running
+        )
+        XCTAssertEqual(
+            routes[.contentScriptRuntimeSendMessage]?
+                .serviceWorkerResourceLoaded,
+            true
+        )
+        XCTAssertEqual(
+            routes[.contentScriptRuntimeSendMessage]?
                 .serviceWorkerRouteReason,
-            "no runtime.onMessage listener captured for contentScriptRuntimeSendMessage"
+            "service-worker loaded but no runtime.onMessage listener was captured for contentScriptRuntimeSendMessage"
         )
         XCTAssertEqual(routes[.contentScriptRuntimeConnect]?.status, .partial)
         XCTAssertEqual(

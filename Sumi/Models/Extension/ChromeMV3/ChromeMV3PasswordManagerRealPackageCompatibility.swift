@@ -1015,6 +1015,12 @@ enum ChromeMV3PasswordManagerRealPackageNoReceiverClassification:
     case serviceWorkerRouteLookupWrong
     case serviceWorkerLifecycleSessionUnavailable
     case serviceWorkerBlockedByGate
+    case serviceWorkerNotLoaded
+    case serviceWorkerLoadedNoOnMessageListener
+    case listenerCapturedInDifferentSession
+    case listenerPresentButNoResponse
+    case workerTeardownBeforeDispatch
+    case senderMetadataMismatch
     case serviceWorkerNoResponseExpected
     case serviceWorkerUnknown
     case routeUnsupported
@@ -1031,6 +1037,33 @@ enum ChromeMV3PasswordManagerRealPackageNoReceiverClassification:
             ChromeMV3PasswordManagerRealPackageNoReceiverClassification,
         rhs:
             ChromeMV3PasswordManagerRealPackageNoReceiverClassification
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3PasswordManagerRealPackageServiceWorkerResultClassification:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case serviceWorkerNotLoaded
+    case serviceWorkerLoadedNoOnMessageListener
+    case listenerCapturedInDifferentSession
+    case listenerPresentButNoResponse
+    case listenerThrew
+    case listenerRespondedSync
+    case listenerRespondedAsync
+    case workerTeardownBeforeDispatch
+    case senderMetadataMismatch
+
+    static func < (
+        lhs:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerResultClassification,
+        rhs:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerResultClassification
     ) -> Bool {
         lhs.rawValue < rhs.rawValue
     }
@@ -1064,6 +1097,16 @@ struct ChromeMV3PasswordManagerRealPackageE2ERouteResult:
         [ChromeMV3ServiceWorkerSyntheticListenerEvent]? = nil
     var selectedServiceWorkerListenerFamily:
         ChromeMV3ServiceWorkerSyntheticListenerEvent? = nil
+    var serviceWorkerResultClassification:
+        ChromeMV3PasswordManagerRealPackageServiceWorkerResultClassification?
+            = nil
+    var serviceWorkerLifecycleSessionID: String? = nil
+    var serviceWorkerExecutionStatus:
+        ChromeMV3ServiceWorkerJSExecutionStartStatus? = nil
+    var serviceWorkerResourceLoaded: Bool? = nil
+    var serviceWorkerRuntimeOnMessageListenerCount: Int = 0
+    var serviceWorkerRuntimeOnConnectListenerCount: Int = 0
+    var serviceWorkerSelectedJSDispatcherCount: Int = 0
     var serviceWorkerRouteResult: String? = nil
     var serviceWorkerRouteReason: String? = nil
     var responseShape: String = "none"
@@ -4043,6 +4086,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     listenerProbe.connectListenerRegistered,
                 serviceWorkerCapturedFamilies:
                     serviceWorkerReadiness.capturedListenerFamilies,
+                serviceWorkerReadiness: serviceWorkerReadiness,
+                sharedSession: sharedSession,
                 payloadSummary: "popup runtime.getURL popup/index.html"
             )
         )
@@ -4072,6 +4117,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     listenerProbe.connectListenerRegistered,
                 serviceWorkerCapturedFamilies:
                     serviceWorkerReadiness.capturedListenerFamilies,
+                serviceWorkerReadiness: serviceWorkerReadiness,
+                sharedSession: sharedSession,
                 payloadSummary: "popup storage.local.set deterministic key"
             )
         )
@@ -4098,6 +4145,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     listenerProbe.connectListenerRegistered,
                 serviceWorkerCapturedFamilies:
                     serviceWorkerReadiness.capturedListenerFamilies,
+                serviceWorkerReadiness: serviceWorkerReadiness,
+                sharedSession: sharedSession,
                 payloadSummary: "popup storage.local.get deterministic key"
             )
         )
@@ -4122,6 +4171,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     listenerProbe.connectListenerRegistered,
                 serviceWorkerCapturedFamilies:
                     serviceWorkerReadiness.capturedListenerFamilies,
+                serviceWorkerReadiness: serviceWorkerReadiness,
+                sharedSession: sharedSession,
                 payloadSummary: "popup runtime.sendMessage service-worker route",
                 messageShapeSummary: "object:kind,value",
                 senderMetadataSummary:
@@ -4156,6 +4207,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     listenerProbe.connectListenerRegistered,
                 serviceWorkerCapturedFamilies:
                     serviceWorkerReadiness.capturedListenerFamilies,
+                serviceWorkerReadiness: serviceWorkerReadiness,
+                sharedSession: sharedSession,
                 payloadSummary: "popup runtime.connect service-worker route",
                 messageShapeSummary: "connectInfo:name",
                 senderMetadataSummary:
@@ -4191,6 +4244,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     listenerProbe.connectListenerRegistered,
                 serviceWorkerCapturedFamilies:
                     serviceWorkerReadiness.capturedListenerFamilies,
+                serviceWorkerReadiness: serviceWorkerReadiness,
+                sharedSession: sharedSession,
                 payloadSummary: "popup tabs.query active currentWindow"
             )
         )
@@ -4222,6 +4277,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     listenerProbe.connectListenerRegistered,
                 serviceWorkerCapturedFamilies:
                     serviceWorkerReadiness.capturedListenerFamilies,
+                serviceWorkerReadiness: serviceWorkerReadiness,
+                sharedSession: sharedSession,
                 payloadSummary: "popup tabs.sendMessage content-script route",
                 selectedTabID: tabID,
                 targetFrameID: frameID,
@@ -4303,6 +4360,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     listenerProbe.connectListenerRegistered,
                 serviceWorkerCapturedFamilies:
                     serviceWorkerReadiness.capturedListenerFamilies,
+                serviceWorkerReadiness: serviceWorkerReadiness,
+                sharedSession: sharedSession,
                 payloadSummary: "popup tabs.connect content-script route",
                 selectedTabID: tabID,
                 targetFrameID: frameID,
@@ -4336,6 +4395,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     ]),
                 serviceWorkerCapturedFamilies:
                     serviceWorkerReadiness.capturedListenerFamilies,
+                serviceWorkerReadiness: serviceWorkerReadiness,
+                sharedSession: sharedSession,
                 payloadSummary:
                     "content-script runtime.sendMessage service-worker route",
                 selectedTabID: tabID,
@@ -4367,6 +4428,8 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     ]),
                 serviceWorkerCapturedFamilies:
                     serviceWorkerReadiness.capturedListenerFamilies,
+                serviceWorkerReadiness: serviceWorkerReadiness,
+                sharedSession: sharedSession,
                 payloadSummary:
                     "content-script runtime.connect service-worker route",
                 selectedTabID: tabID,
@@ -6193,6 +6256,127 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         return capturedFamilies.contains(family) ? 1 : 0
     }
 
+    private static func bitwardenE2EServiceWorkerRegistryListenerCount(
+        session: ChromeMV3ServiceWorkerSharedLifecycleSession?,
+        event: ChromeMV3ServiceWorkerSyntheticListenerEvent
+    ) -> Int {
+        session?.summary.listenerRegistrySummary
+            .listenerCountsByEvent[event.rawValue] ?? 0
+    }
+
+    private static func bitwardenE2EServiceWorkerLoaded(
+        readiness:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness
+    ) -> Bool {
+        guard readiness.resourceLoadResult?.canExecuteClassicWorkerNow == true
+        else { return false }
+        switch readiness.executionStartResult?.status {
+        case .running, .failed:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func bitwardenE2EServiceWorkerResultClassification(
+        route: ChromeMV3PasswordManagerRealPackageE2ERoute,
+        succeeded: Bool,
+        lastErrorMessage: String?,
+        serviceWorkerReadiness:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness,
+        sharedSession: ChromeMV3ServiceWorkerSharedLifecycleSession?,
+        responseDiagnostics: [String]
+    )
+        -> ChromeMV3PasswordManagerRealPackageServiceWorkerResultClassification?
+    {
+        guard let family = bitwardenE2EServiceWorkerListenerFamily(for: route)
+        else { return nil }
+        let joinedDiagnostics = responseDiagnostics.joined(separator: "\n")
+        if succeeded {
+            guard family == .runtimeOnMessage else { return nil }
+            if joinedDiagnostics.contains("Asynchronous sendResponse result captured") {
+                return .listenerRespondedAsync
+            }
+            if joinedDiagnostics.contains("Synchronous sendResponse result captured")
+                || joinedDiagnostics.contains(
+                    "Synchronous return value captured"
+                )
+            {
+                return .listenerRespondedSync
+            }
+            return nil
+        }
+        if joinedDiagnostics.contains(
+            "harness or target lifecycle session was released"
+        )
+            || joinedDiagnostics.contains("explicitly released")
+            || joinedDiagnostics.localizedCaseInsensitiveContains("teardown")
+        {
+            return .workerTeardownBeforeDispatch
+        }
+        if joinedDiagnostics.localizedCaseInsensitiveContains("sender")
+            && joinedDiagnostics.localizedCaseInsensitiveContains("metadata")
+        {
+            return .senderMetadataMismatch
+        }
+        if joinedDiagnostics.contains("Listener threw")
+            || joinedDiagnostics.localizedCaseInsensitiveContains("promiseRejected")
+            || lastErrorMessage?
+                .localizedCaseInsensitiveContains("throw") == true
+        {
+            return .listenerThrew
+        }
+        if joinedDiagnostics.localizedCaseInsensitiveContains("no response")
+            || joinedDiagnostics.contains("without a captured sendResponse")
+            || lastErrorMessage?
+                .localizedCaseInsensitiveContains("timeout") == true
+        {
+            return .listenerPresentButNoResponse
+        }
+        if serviceWorkerReadiness.capturedListenerFamilies.contains(family) {
+            let registryCount =
+                bitwardenE2EServiceWorkerRegistryListenerCount(
+                    session: sharedSession,
+                    event: family
+                )
+            let dispatcherCount =
+                sharedSession?.jsListenerDispatcherCount(for: family) ?? 0
+            return registryCount == 0 && dispatcherCount == 0
+                ? .listenerCapturedInDifferentSession
+                : .listenerPresentButNoResponse
+        }
+        if family == .runtimeOnMessage,
+           bitwardenE2EServiceWorkerLoaded(readiness: serviceWorkerReadiness)
+        {
+            return .serviceWorkerLoadedNoOnMessageListener
+        }
+        return .serviceWorkerNotLoaded
+    }
+
+    private static func bitwardenE2ENoReceiverClassification(
+        for result:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerResultClassification?
+    ) -> ChromeMV3PasswordManagerRealPackageNoReceiverClassification? {
+        switch result {
+        case .serviceWorkerNotLoaded:
+            return .serviceWorkerNotLoaded
+        case .serviceWorkerLoadedNoOnMessageListener:
+            return .serviceWorkerLoadedNoOnMessageListener
+        case .listenerCapturedInDifferentSession:
+            return .listenerCapturedInDifferentSession
+        case .listenerPresentButNoResponse:
+            return .listenerPresentButNoResponse
+        case .listenerThrew:
+            return .listenerThrew
+        case .workerTeardownBeforeDispatch:
+            return .workerTeardownBeforeDispatch
+        case .senderMetadataMismatch:
+            return .senderMetadataMismatch
+        case .listenerRespondedSync, .listenerRespondedAsync, .none:
+            return nil
+        }
+    }
+
     private static func bitwardenE2EServiceWorkerRouteResult(
         wakeResult: ChromeMV3ServiceWorkerInternalWakeResult?
     ) -> String? {
@@ -6225,14 +6409,26 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
             return "worker lifecycle/session unavailable for \(route.rawValue)"
         case .some(.serviceWorkerBlockedByGate):
             return "service-worker route blocked by local experimental gate"
+        case .some(.serviceWorkerNotLoaded):
+            return "service-worker was not loaded before \(route.rawValue)"
+        case .some(.serviceWorkerLoadedNoOnMessageListener):
+            return "service-worker loaded but no runtime.onMessage listener was captured for \(route.rawValue)"
+        case .some(.listenerCapturedInDifferentSession):
+            return "captured \(family.rawValue) listener is not registered in the route lifecycle session"
         case .some(.serviceWorkerRouteLookupWrong):
             return "captured \(family.rawValue) exists but route lookup did not dispatch"
+        case .some(.senderMetadataMismatch):
+            return "captured \(family.rawValue) exists but sender metadata did not match the route"
         case .some(.serviceWorkerSenderMetadataMissing):
             return "captured \(family.rawValue) exists but sender metadata was missing"
         case .some(.serviceWorkerMessageShapeMismatch):
             return "captured \(family.rawValue) exists but message shape was not accepted"
         case .some(.listenerThrew):
             return "captured \(family.rawValue) listener threw"
+        case .some(.listenerPresentButNoResponse):
+            return "captured \(family.rawValue) listener was present but did not produce a response"
+        case .some(.workerTeardownBeforeDispatch):
+            return "captured \(family.rawValue) listener was unavailable because worker teardown happened before dispatch"
         case .some(.serviceWorkerNoResponseExpected):
             return "captured \(family.rawValue) listener returned no response"
         case .some(.serviceWorkerUnknown):
@@ -6285,6 +6481,9 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         endpointConnectListenerRegistered: Bool,
         serviceWorkerCapturedFamilies:
             [ChromeMV3ServiceWorkerSyntheticListenerEvent],
+        serviceWorkerReadiness:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness,
+        sharedSession: ChromeMV3ServiceWorkerSharedLifecycleSession?,
         payloadSummary: String,
         selectedTabID: Int? = nil,
         targetFrameID: Int? = nil,
@@ -6297,6 +6496,17 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         postMessageResult: String? = nil,
         disconnectResult: String? = nil
     ) -> ChromeMV3PasswordManagerRealPackageE2ERouteResult {
+        let selectedServiceWorkerListener =
+            bitwardenE2EServiceWorkerListenerFamily(for: route)
+        let serviceWorkerResultClassification =
+            bitwardenE2EServiceWorkerResultClassification(
+                route: route,
+                succeeded: response.succeeded,
+                lastErrorMessage: response.lastErrorMessage,
+                serviceWorkerReadiness: serviceWorkerReadiness,
+                sharedSession: sharedSession,
+                responseDiagnostics: response.diagnostics
+            )
         let classification =
             bitwardenE2ENoReceiverClassification(
                 route: route,
@@ -6310,19 +6520,32 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                     endpointConnectListenerRegistered,
                 serviceWorkerCapturedFamilies: serviceWorkerCapturedFamilies,
                 blockedDiagnostic: response.blockedAPIDiagnostic,
-                responseDiagnostics: response.diagnostics
+                responseDiagnostics: response.diagnostics,
+                serviceWorkerResultClassification:
+                    serviceWorkerResultClassification
             )
         let deliveryStatus = bitwardenE2EDeliveryStatus(
             succeeded: response.succeeded,
             classification: classification
         )
-        let selectedServiceWorkerListener =
-            bitwardenE2EServiceWorkerListenerFamily(for: route)
         let serviceWorkerListenerCount =
             bitwardenE2EServiceWorkerListenerCount(
                 route: route,
                 capturedFamilies: serviceWorkerCapturedFamilies
             )
+        let onMessageRegistryCount =
+            bitwardenE2EServiceWorkerRegistryListenerCount(
+                session: sharedSession,
+                event: .runtimeOnMessage
+            )
+        let onConnectRegistryCount =
+            bitwardenE2EServiceWorkerRegistryListenerCount(
+                session: sharedSession,
+                event: .runtimeOnConnect
+            )
+        let selectedJSDispatcherCount = selectedServiceWorkerListener.map {
+            sharedSession?.jsListenerDispatcherCount(for: $0) ?? 0
+        } ?? 0
         let serviceWorkerRouteReason =
             bitwardenE2EServiceWorkerRouteReason(
                 route: route,
@@ -6359,6 +6582,21 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 selectedServiceWorkerListener == nil
                     ? nil : serviceWorkerCapturedFamilies,
             selectedServiceWorkerListenerFamily: selectedServiceWorkerListener,
+            serviceWorkerResultClassification:
+                serviceWorkerResultClassification,
+            serviceWorkerLifecycleSessionID:
+                sharedSession?.key.lifecycleSessionID,
+            serviceWorkerExecutionStatus:
+                serviceWorkerReadiness.executionStartResult?.status,
+            serviceWorkerResourceLoaded:
+                serviceWorkerReadiness.resourceLoadResult?
+                    .canExecuteClassicWorkerNow,
+            serviceWorkerRuntimeOnMessageListenerCount:
+                onMessageRegistryCount,
+            serviceWorkerRuntimeOnConnectListenerCount:
+                onConnectRegistryCount,
+            serviceWorkerSelectedJSDispatcherCount:
+                selectedJSDispatcherCount,
             serviceWorkerRouteResult:
                 bitwardenE2EServiceWorkerRouteResult(
                     wakeResult: response.serviceWorkerLifecycleWakeResult
@@ -6385,12 +6623,26 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         response: ChromeMV3ContentScriptBridgeResponse,
         serviceWorkerCapturedFamilies:
             [ChromeMV3ServiceWorkerSyntheticListenerEvent],
+        serviceWorkerReadiness:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerEventReadiness,
+        sharedSession: ChromeMV3ServiceWorkerSharedLifecycleSession?,
         payloadSummary: String,
         selectedTabID: Int? = nil,
         targetFrameID: Int? = nil,
         targetDocumentID: String? = nil,
         senderMetadataSummary: String? = nil
     ) -> ChromeMV3PasswordManagerRealPackageE2ERouteResult {
+        let selectedServiceWorkerListener =
+            bitwardenE2EServiceWorkerListenerFamily(for: route)
+        let serviceWorkerResultClassification =
+            bitwardenE2EServiceWorkerResultClassification(
+                route: route,
+                succeeded: response.succeeded,
+                lastErrorMessage: response.lastErrorMessage,
+                serviceWorkerReadiness: serviceWorkerReadiness,
+                sharedSession: sharedSession,
+                responseDiagnostics: response.diagnostics
+            )
         let classification =
             bitwardenE2ENoReceiverClassification(
                 route: route,
@@ -6402,19 +6654,32 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 endpointConnectListenerRegistered: true,
                 serviceWorkerCapturedFamilies: serviceWorkerCapturedFamilies,
                 blockedDiagnostic: nil,
-                responseDiagnostics: response.diagnostics
+                responseDiagnostics: response.diagnostics,
+                serviceWorkerResultClassification:
+                    serviceWorkerResultClassification
             )
         let deliveryStatus = bitwardenE2EDeliveryStatus(
             succeeded: response.succeeded,
             classification: classification
         )
-        let selectedServiceWorkerListener =
-            bitwardenE2EServiceWorkerListenerFamily(for: route)
         let serviceWorkerListenerCount =
             bitwardenE2EServiceWorkerListenerCount(
                 route: route,
                 capturedFamilies: serviceWorkerCapturedFamilies
             )
+        let onMessageRegistryCount =
+            bitwardenE2EServiceWorkerRegistryListenerCount(
+                session: sharedSession,
+                event: .runtimeOnMessage
+            )
+        let onConnectRegistryCount =
+            bitwardenE2EServiceWorkerRegistryListenerCount(
+                session: sharedSession,
+                event: .runtimeOnConnect
+            )
+        let selectedJSDispatcherCount = selectedServiceWorkerListener.map {
+            sharedSession?.jsListenerDispatcherCount(for: $0) ?? 0
+        } ?? 0
         let serviceWorkerRouteReason =
             bitwardenE2EServiceWorkerRouteReason(
                 route: route,
@@ -6450,6 +6715,21 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                 selectedServiceWorkerListener == nil
                     ? nil : serviceWorkerCapturedFamilies,
             selectedServiceWorkerListenerFamily: selectedServiceWorkerListener,
+            serviceWorkerResultClassification:
+                serviceWorkerResultClassification,
+            serviceWorkerLifecycleSessionID:
+                sharedSession?.key.lifecycleSessionID,
+            serviceWorkerExecutionStatus:
+                serviceWorkerReadiness.executionStartResult?.status,
+            serviceWorkerResourceLoaded:
+                serviceWorkerReadiness.resourceLoadResult?
+                    .canExecuteClassicWorkerNow,
+            serviceWorkerRuntimeOnMessageListenerCount:
+                onMessageRegistryCount,
+            serviceWorkerRuntimeOnConnectListenerCount:
+                onConnectRegistryCount,
+            serviceWorkerSelectedJSDispatcherCount:
+                selectedJSDispatcherCount,
             serviceWorkerRouteResult:
                 bitwardenE2EServiceWorkerRouteResult(
                     wakeResult: response.serviceWorkerLifecycleWakeResult
@@ -6478,9 +6758,16 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
         serviceWorkerCapturedFamilies:
             [ChromeMV3ServiceWorkerSyntheticListenerEvent],
         blockedDiagnostic: ChromeMV3PopupOptionsBlockedAPIDiagnostic?,
-        responseDiagnostics: [String]
+        responseDiagnostics: [String],
+        serviceWorkerResultClassification:
+            ChromeMV3PasswordManagerRealPackageServiceWorkerResultClassification?
     ) -> ChromeMV3PasswordManagerRealPackageNoReceiverClassification? {
         guard succeeded == false else { return nil }
+        if let precise = bitwardenE2ENoReceiverClassification(
+            for: serviceWorkerResultClassification
+        ) {
+            return precise
+        }
         if blockedDiagnostic != nil
             || lastErrorCode == ChromeMV3JSBridgeErrorCode.unsupportedAPI.rawValue
         {
@@ -6621,8 +6908,11 @@ enum ChromeMV3PasswordManagerRealPackageTrialRunner {
                   $0.noReceiverClassification != .expectedNoReceiver
             else { return false }
             if contentScriptTabMessageDelivered,
-               $0.noReceiverClassification
-                == .serviceWorkerRuntimeOnMessageListenerMissing
+               let classification = $0.noReceiverClassification,
+               [
+                .serviceWorkerRuntimeOnMessageListenerMissing,
+                .serviceWorkerLoadedNoOnMessageListener,
+               ].contains(classification)
             {
                 return false
             }
