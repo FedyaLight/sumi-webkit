@@ -41,6 +41,8 @@ struct TabFolderView: View {
     let nestingDepth: Int
     let onUngroup: () -> Void
     let onDelete: () -> Void
+    let onPrepareShortcutRestoreGap: (SplitGroupSidebarItem, SplitGroup) -> Void
+    let onPerformShortcutRestoreWithPreparedGap: (SplitGroupSidebarItem, SplitGroup, @escaping () -> Void) -> Void
 
     @State private var displayedCollapsedProjectionIDs: [UUID] = []
     @State private var isFolderHeaderHovered = false
@@ -86,10 +88,11 @@ struct TabFolderView: View {
     }
 
     private func sortedFolderItems(childFolders: [TabFolder], shortcutPins: [ShortcutPin]) -> [FolderListItem] {
-        let allShortcutHostedGroups = browserManager.tabManager.shortcutHostedSplitGroups(for: space.id)
-        let shortcutHostedGroups = allShortcutHostedGroups
-            .filter { browserManager.tabManager.shortcutHostedSplitGroupFolderId($0, in: space.id) == folder.id }
-        let hiddenPinIds = Set(allShortcutHostedGroups.flatMap { $0.shortcutPinIds })
+        let shortcutHostedGroups = browserManager.tabManager.shortcutHostedSplitGroups(
+            for: space.id,
+            inFolder: folder.id
+        )
+        let hiddenPinIds = browserManager.tabManager.shortcutHostedSplitHiddenPinIds(for: space.id)
         let folders = childFolders.map { ($0.index, 0, FolderListItem.folder($0.id)) }
         let pins = shortcutPins
             .filter { !hiddenPinIds.contains($0.id) }
@@ -636,7 +639,9 @@ struct TabFolderView: View {
             },
             onDelete: {
                 deleteNestedFolder(childFolder)
-            }
+            },
+            onPrepareShortcutRestoreGap: onPrepareShortcutRestoreGap,
+            onPerformShortcutRestoreWithPreparedGap: onPerformShortcutRestoreWithPreparedGap
         )
         .environmentObject(browserManager)
         .environmentObject(splitManager)
@@ -723,38 +728,12 @@ struct TabFolderView: View {
         .animation(folderLayoutAnimation, value: height)
     }
 
-    private func shortcutHostedSplitGroupItems(_ group: SplitGroup) -> [SplitGroupSidebarItem] {
-        group.tabIds.compactMap { id in
-            if let tab = browserManager.tabManager.tab(for: id) {
-                return .tab(tab)
-            }
-            if let pinId = group.member(for: id)?.pinId,
-               let pin = browserManager.tabManager.shortcutPin(by: pinId) {
-                return .pin(pin)
-            }
-            if let pin = browserManager.tabManager.shortcutPin(by: id) {
-                return .pin(pin)
-            }
-            return nil
-        }
-    }
-
-    private func shortcutHostedSegmentAction(
-        for item: SplitGroupSidebarItem,
-        in group: SplitGroup
-    ) -> SplitGroupSidebarSegmentAction? {
-        if shortcutHostedSplitMember(for: item, in: group)?.isShortcutBacked == true {
-            return .restore
-        }
-        return item.tab == nil ? nil : .close
-    }
-
     private func performShortcutHostedSegmentAction(
         for item: SplitGroupSidebarItem,
         in group: SplitGroup
     ) {
-        if shortcutHostedSplitMember(for: item, in: group)?.isShortcutBacked == true {
-            performShortcutRestoreWithPreparedGap(for: item, in: group) {
+        if SplitGroupSidebarModel.member(for: item, in: group)?.isShortcutBacked == true {
+            onPerformShortcutRestoreWithPreparedGap(item, group) {
                 performFolderSplitModelMutation {
                     browserManager.restoreShortcutSplitMember(item.id, from: group, in: windowState)
                 }
@@ -775,122 +754,9 @@ struct TabFolderView: View {
         withTransaction(transaction, update)
     }
 
-    private func prepareShortcutRestoreGap(
-        for item: SplitGroupSidebarItem,
-        in group: SplitGroup
-    ) {
-        guard isInteractive,
-              !reduceMotion,
-              !sumiSettings.shouldReduceChromeMotion,
-              let gap = shortcutRestoreGap(for: item, in: group),
-              shortcutRestoreGaps.firstIndex(where: { $0.pinId == gap.pinId && $0.container == gap.container }) == nil
-        else {
-            return
-        }
-
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        transaction.animation = nil
-        withTransaction(transaction) {
-            shortcutRestoreGaps.append(gap)
-            shortcutRestoreGapHeights[gap.id] = 0
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + SidebarDropMotion.shortcutRestoreRevealStartDelay) {
-            guard shortcutRestoreGaps.contains(where: { $0.id == gap.id }) else { return }
-            withAnimation(SidebarDropMotion.contentLayout) {
-                shortcutRestoreGapHeights[gap.id] = SidebarRowLayout.rowHeight
-            }
-        }
-    }
-
-    private func performShortcutRestoreWithPreparedGap(
-        for item: SplitGroupSidebarItem,
-        in group: SplitGroup,
-        update: @escaping () -> Void
-    ) {
-        guard let gap = shortcutRestoreGap(for: item, in: group),
-              let existingGap = shortcutRestoreGaps.first(where: { $0.pinId == gap.pinId && $0.container == gap.container })
-        else {
-            update()
-            return
-        }
-
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        transaction.animation = nil
-        withTransaction(transaction) {
-            update()
-            shortcutRestoreGaps.removeAll { $0.id == existingGap.id }
-            shortcutRestoreGapHeights.removeValue(forKey: existingGap.id)
-        }
-    }
-
-    private func shortcutRestoreGap(
-        for item: SplitGroupSidebarItem,
-        in group: SplitGroup
-    ) -> ShortcutRestoreGap? {
-        guard let member = shortcutHostedSplitMember(for: item, in: group),
-              member.isShortcutBacked,
-              let pinId = member.pinId,
-              browserManager.tabManager.shortcutPin(by: pinId) != nil
-        else {
-            return nil
-        }
-
-        switch member.origin {
-        case .spacePinned(let spaceId, let folderId, let index):
-            guard spaceId == space.id else { return nil }
-            if let folderId {
-                guard browserManager.tabManager.folderSpaceId(for: folderId) == spaceId,
-                      browserManager.tabManager.folder(by: folderId)?.isOpen == true
-                else {
-                    return nil
-                }
-                return ShortcutRestoreGap(
-                    pinId: pinId,
-                    container: .folder(folderId),
-                    index: index
-                )
-            }
-            return ShortcutRestoreGap(
-                pinId: pinId,
-                container: .spacePinned(spaceId),
-                index: index
-            )
-
-        case .generatedSpacePinnedFromRegular(let spaceId, _):
-            guard spaceId == space.id else { return nil }
-            return ShortcutRestoreGap(
-                pinId: pinId,
-                container: .spacePinned(spaceId),
-                index: browserManager.tabManager.topLevelSpacePinnedItems(for: spaceId).count
-            )
-
-        case .essential, .regular:
-            return nil
-        }
-    }
-
-    private func shortcutHostedSplitMember(
-        for item: SplitGroupSidebarItem,
-        in group: SplitGroup
-    ) -> SplitGroupMember? {
-        if let pin = item.pin {
-            return group.member(forPinId: pin.id) ?? group.member(for: pin.id)
-        }
-        if let tab = item.tab {
-            if let pinId = tab.shortcutPinId {
-                return group.member(forPinId: pinId) ?? group.member(for: tab.id)
-            }
-            return group.member(for: tab.id)
-        }
-        return nil
-    }
-
     @ViewBuilder
     private func shortcutHostedSplitGroupView(_ group: SplitGroup) -> some View {
-        let items = shortcutHostedSplitGroupItems(group)
+        let items = SplitGroupSidebarModel.items(for: group, tabManager: browserManager.tabManager)
         if !items.isEmpty {
             SplitGroupSidebarRow(
                 group: group,
@@ -898,7 +764,7 @@ struct TabFolderView: View {
                 spaceId: space.id,
                 isAppKitInteractionEnabled: isInteractive,
                 segmentAction: { item in
-                    shortcutHostedSegmentAction(for: item, in: group)
+                    SplitGroupSidebarModel.segmentAction(for: item, in: group)
                 },
                 dragSource: { item in
                     shortcutHostedSplitSegmentDragSource(for: item, in: group)
@@ -911,8 +777,8 @@ struct TabFolderView: View {
                     browserManager.focusSplitGroup(group, in: windowState)
                 },
                 onSegmentActionAnimationStart: { item in
-                    if shortcutHostedSegmentAction(for: item, in: group) == .restore {
-                        prepareShortcutRestoreGap(for: item, in: group)
+                    if SplitGroupSidebarModel.segmentAction(for: item, in: group) == .restore {
+                        onPrepareShortcutRestoreGap(item, group)
                     }
                 },
                 onSegmentAction: { item in
@@ -929,8 +795,12 @@ struct TabFolderView: View {
         for item: SplitGroupSidebarItem,
         in group: SplitGroup
     ) -> SidebarDragSourceConfiguration? {
-        let member = shortcutHostedSplitMember(for: item, in: group)
-        if let pin = shortcutHostedSegmentShortcutPin(for: item, member: member) {
+        let member = SplitGroupSidebarModel.member(for: item, in: group)
+        if let pin = SplitGroupSidebarModel.shortcutPin(
+            for: item,
+            member: member,
+            tabManager: browserManager.tabManager
+        ) {
             let dragItemId = item.tab?.id ?? pin.id
             return SidebarDragSourceConfiguration(
                 item: SumiDragItem(
@@ -938,7 +808,7 @@ struct TabFolderView: View {
                     title: item.title,
                     urlString: item.tab?.url.absoluteString ?? pin.launchURL.absoluteString
                 ),
-                sourceZone: shortcutHostedSegmentSourceZone(for: pin),
+                sourceZone: SplitGroupSidebarModel.sourceZone(for: pin, fallbackSpaceId: space.id),
                 previewKind: .row,
                 previewIcon: item.tab?.favicon ?? pin.storedFavicon,
                 exclusionZones: [.trailingStrip(32)],
@@ -965,31 +835,6 @@ struct TabFolderView: View {
             },
             isEnabled: isInteractive
         )
-    }
-
-    private func shortcutHostedSegmentShortcutPin(
-        for item: SplitGroupSidebarItem,
-        member: SplitGroupMember?
-    ) -> ShortcutPin? {
-        if let pin = item.pin {
-            return pin
-        }
-        if let pinId = item.tab?.shortcutPinId ?? member?.pinId {
-            return browserManager.tabManager.shortcutPin(by: pinId)
-        }
-        return nil
-    }
-
-    private func shortcutHostedSegmentSourceZone(for pin: ShortcutPin) -> DropZoneID {
-        switch pin.role {
-        case .essential:
-            return .essentials
-        case .spacePinned:
-            if let folderId = pin.folderId {
-                return .folder(folderId)
-            }
-            return .spacePinned(pin.spaceId ?? space.id)
-        }
     }
 
     @ViewBuilder

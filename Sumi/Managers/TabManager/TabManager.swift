@@ -618,10 +618,8 @@ class TabManager: ObservableObject {
     }
 
     func folderChildVisualItems(for folderId: UUID, in spaceId: UUID) -> [FolderChildVisualItem] {
-        let allShortcutHostedGroups = shortcutHostedSplitGroups(for: spaceId)
-        let folderShortcutHostedGroups = allShortcutHostedGroups
-            .filter { shortcutHostedSplitGroupFolderId($0, in: spaceId) == folderId }
-        let hiddenPinIds = Set(allShortcutHostedGroups.flatMap { $0.shortcutPinIds })
+        let folderShortcutHostedGroups = shortcutHostedSplitGroups(for: spaceId, inFolder: folderId)
+        let hiddenPinIds = shortcutHostedSplitHiddenPinIds(for: spaceId)
         let folders = childFolders(of: folderId, in: spaceId)
             .map { ($0.index, 0, FolderChildVisualItem.folder($0.id)) }
         let pins = folderPinnedPins(for: folderId, in: spaceId)

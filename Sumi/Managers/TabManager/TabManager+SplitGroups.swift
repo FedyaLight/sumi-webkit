@@ -75,10 +75,6 @@ extension TabManager {
         }
     }
 
-    func isShortcutPinHiddenByShortcutHostedSplit(_ pin: ShortcutPin, in spaceId: UUID) -> Bool {
-        shortcutHostedSplitGroup(containingPinId: pin.id, in: spaceId) != nil
-    }
-
     func regularHostedSplitPlaceholderGroup(for pin: ShortcutPin) -> SplitGroup? {
         regularHostedSplitGroup(containingPinId: pin.id)
     }
@@ -181,11 +177,18 @@ extension TabManager {
             .first?.1
     }
 
+    func shortcutHostedSplitGroups(for spaceId: UUID, inFolder folderId: UUID?) -> [SplitGroup] {
+        shortcutHostedSplitGroups(for: spaceId)
+            .filter { shortcutHostedSplitGroupFolderId($0, in: spaceId) == folderId }
+    }
+
+    func shortcutHostedSplitHiddenPinIds(for spaceId: UUID) -> Set<UUID> {
+        Set(shortcutHostedSplitGroups(for: spaceId).flatMap(\.shortcutPinIds))
+    }
+
     func topLevelSpacePinnedVisualItems(for spaceId: UUID) -> [SpacePinnedVisualItem] {
-        let allShortcutHostedGroups = shortcutHostedSplitGroups(for: spaceId)
-        let topLevelShortcutHostedGroups = allShortcutHostedGroups
-            .filter { shortcutHostedSplitGroupFolderId($0, in: spaceId) == nil }
-        let hiddenPinIds = Set(allShortcutHostedGroups.flatMap { $0.shortcutPinIds })
+        let topLevelShortcutHostedGroups = shortcutHostedSplitGroups(for: spaceId, inFolder: nil)
+        let hiddenPinIds = shortcutHostedSplitHiddenPinIds(for: spaceId)
         let folderItems = (foldersBySpace[spaceId] ?? [])
             .filter { $0.parentFolderId == nil }
             .map { folder in

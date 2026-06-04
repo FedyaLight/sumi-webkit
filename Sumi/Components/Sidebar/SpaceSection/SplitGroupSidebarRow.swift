@@ -66,6 +66,80 @@ enum SplitGroupSidebarSegmentAction {
     }
 }
 
+enum SplitGroupSidebarModel {
+    @MainActor
+    static func items(for group: SplitGroup, tabManager: TabManager) -> [SplitGroupSidebarItem] {
+        group.tabIds.compactMap { id in
+            if let tab = tabManager.tab(for: id) {
+                return .tab(tab)
+            }
+            if let pinId = group.member(for: id)?.pinId,
+               let pin = tabManager.shortcutPin(by: pinId) {
+                return .pin(pin)
+            }
+            if let pin = tabManager.shortcutPin(by: id) {
+                return .pin(pin)
+            }
+            return nil
+        }
+    }
+
+    @MainActor
+    static func member(
+        for item: SplitGroupSidebarItem,
+        in group: SplitGroup
+    ) -> SplitGroupMember? {
+        if let pin = item.pin {
+            return group.member(forPinId: pin.id) ?? group.member(for: pin.id)
+        }
+        if let tab = item.tab {
+            if let pinId = tab.shortcutPinId {
+                return group.member(forPinId: pinId) ?? group.member(for: tab.id)
+            }
+            return group.member(for: tab.id)
+        }
+        return nil
+    }
+
+    @MainActor
+    static func segmentAction(
+        for item: SplitGroupSidebarItem,
+        in group: SplitGroup
+    ) -> SplitGroupSidebarSegmentAction? {
+        if member(for: item, in: group)?.isShortcutBacked == true {
+            return .restore
+        }
+        return item.tab == nil ? nil : .close
+    }
+
+    @MainActor
+    static func shortcutPin(
+        for item: SplitGroupSidebarItem,
+        member: SplitGroupMember?,
+        tabManager: TabManager
+    ) -> ShortcutPin? {
+        if let pin = item.pin {
+            return pin
+        }
+        if let pinId = item.tab?.shortcutPinId ?? member?.pinId {
+            return tabManager.shortcutPin(by: pinId)
+        }
+        return nil
+    }
+
+    static func sourceZone(for pin: ShortcutPin, fallbackSpaceId: UUID) -> DropZoneID {
+        switch pin.role {
+        case .essential:
+            return .essentials
+        case .spacePinned:
+            if let folderId = pin.folderId {
+                return .folder(folderId)
+            }
+            return .spacePinned(pin.spaceId ?? fallbackSpaceId)
+        }
+    }
+}
+
 struct SplitGroupSidebarRow: View {
     let group: SplitGroup
     let items: [SplitGroupSidebarItem]
