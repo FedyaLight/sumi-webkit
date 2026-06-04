@@ -199,6 +199,31 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertNil(windowState.window)
     }
 
+    func testBrowserWindowBridgeCoordinatorUnregistersWindowOnWillCloseNotification() {
+        let window = WindowChromeTestSupport.makePlainWindow()
+        let windowState = BrowserWindowState()
+        let windowRegistry = WindowRegistry()
+        var closedWindowIds: [UUID] = []
+        let coordinator = BrowserWindowBridge.Coordinator(
+            windowState: windowState,
+            windowRegistry: windowRegistry
+        )
+
+        windowRegistry.onWindowClose = { closedWindowIds.append($0) }
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+        coordinator.attach(to: window)
+        WindowChromeTestSupport.retain(window)
+
+        NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: window)
+        NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: window)
+
+        XCTAssertEqual(closedWindowIds, [windowState.id])
+        XCTAssertNil(windowRegistry.windows[windowState.id])
+        XCTAssertNil(windowRegistry.activeWindowId)
+        XCTAssertNil(windowState.window)
+    }
+
     func testPromoteToSumiBrowserWindowIfNeededAppliesBrowserChromeConfiguration() {
         let window = WindowChromeTestSupport.makePlainWindow()
 
@@ -224,11 +249,49 @@ final class BrowserWindowChromeTests: XCTestCase {
         window.configureNativeStandardWindowButtonsForMiniWindowChrome()
         assertMiniWindowNativeControlsVisible(window)
 
-        window.hideNativeStandardWindowButtonsForBrowserChrome()
+        window.setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible(false)
         assertNativeBrowserControlsHidden(window)
+    }
 
-        window.miniaturizeFromCustomBrowserChrome()
+    func testBrowserChromePerformCloseWorksWhileNativeControlsAreHidden() {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        let willClose = expectation(description: "Browser chrome close posts will-close notification.")
+        let observer = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { _ in
+            willClose.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
         assertNativeBrowserControlsHidden(window)
+        window.performCloseFromBrowserChrome(nil)
+
+        wait(for: [willClose], timeout: 0.2)
+    }
+
+    func testBrowserChromePerformCloseRespectsWindowShouldCloseWhileNativeControlsAreHidden() {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        let delegate = WindowShouldCloseDelegate(shouldClose: false)
+        let willClose = expectation(description: "Browser chrome close should not post will-close notification.")
+        willClose.isInverted = true
+        let observer = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { _ in
+            willClose.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        window.delegate = delegate
+
+        assertNativeBrowserControlsHidden(window)
+        window.performCloseFromBrowserChrome(nil)
+
+        XCTAssertEqual(delegate.windowShouldCloseCount, 1)
+        wait(for: [willClose], timeout: 0.1)
     }
 
     func testMiniWindowNativeControlConfigurationRemainsVisibleAndIdentified() {
@@ -258,8 +321,10 @@ final class BrowserWindowChromeTests: XCTestCase {
 
             XCTAssertTrue(button.isHidden, file: file, line: line)
             XCTAssertEqual(button.alphaValue, 0, file: file, line: line)
+            XCTAssertFalse(button.isTransparent, file: file, line: line)
             XCTAssertFalse(button.isEnabled, file: file, line: line)
             XCTAssertFalse(button.isAccessibilityElement(), file: file, line: line)
+            XCTAssertTrue(button.isAccessibilityHidden(), file: file, line: line)
             XCTAssertTrue(button.identifier?.rawValue.isEmpty ?? true, file: file, line: line)
             XCTAssertTrue(button.accessibilityIdentifier().isEmpty, file: file, line: line)
         }
@@ -278,8 +343,10 @@ final class BrowserWindowChromeTests: XCTestCase {
 
             XCTAssertFalse(button.isHidden, file: file, line: line)
             XCTAssertEqual(button.alphaValue, 1, file: file, line: line)
+            XCTAssertFalse(button.isTransparent, file: file, line: line)
             XCTAssertTrue(button.isEnabled, file: file, line: line)
             XCTAssertTrue(button.isAccessibilityElement(), file: file, line: line)
+            XCTAssertFalse(button.isAccessibilityHidden(), file: file, line: line)
             XCTAssertEqual(
                 button.identifier?.rawValue,
                 BrowserWindowControlsAccessibilityIdentifiers.identifier(for: type),
@@ -306,5 +373,20 @@ final class BrowserWindowChromeTests: XCTestCase {
             contentsOf: repoRoot.appendingPathComponent(relativePath),
             encoding: .utf8
         )
+    }
+}
+
+@MainActor
+private final class WindowShouldCloseDelegate: NSObject, NSWindowDelegate {
+    private let shouldClose: Bool
+    private(set) var windowShouldCloseCount = 0
+
+    init(shouldClose: Bool) {
+        self.shouldClose = shouldClose
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        windowShouldCloseCount += 1
+        return shouldClose
     }
 }

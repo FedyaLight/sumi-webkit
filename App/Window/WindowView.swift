@@ -139,7 +139,6 @@ struct WindowView: View {
         }
         // Lifecycle management
         .onAppear {
-            windowState.window?.hideNativeStandardWindowButtonsForBrowserChrome()
             syncDockedSidebarLayout(isVisible: windowState.isSidebarVisible, animated: false)
             hoverSidebarManager.sidebarPosition = sumiSettings.sidebarPosition
             hoverSidebarManager.attach(browserManager: browserManager, windowState: windowState)
@@ -151,7 +150,6 @@ struct WindowView: View {
             syncDockedSidebarLayout(isVisible: isVisible, animated: true)
             Task { @MainActor in
                 await Task.yield()
-                windowState.window?.hideNativeStandardWindowButtonsForBrowserChrome()
                 hoverSidebarManager.refreshMonitoring()
                 revealCollapsedSidebarForPinnedTransientIfNeeded()
             }

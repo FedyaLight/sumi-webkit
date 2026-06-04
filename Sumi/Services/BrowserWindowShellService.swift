@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor
 final class BrowserWindowShellService {
     typealias ContentViewFactory = @MainActor (WindowRegistry, WebViewCoordinator, BrowserWindowState?) -> NSView
-    typealias NewTabCreator = @MainActor (BrowserWindowState, String) -> Void
+    typealias EmptyStatePresenter = @MainActor (BrowserWindowState) -> Void
 
     struct Context {
         let windowRegistry: WindowRegistry?
@@ -13,7 +13,7 @@ final class BrowserWindowShellService {
         let profileManager: ProfileManager
         let tabManager: TabManager
         let makeContentView: ContentViewFactory
-        let createNewTab: NewTabCreator
+        let showEmptyState: EmptyStatePresenter
     }
 
     private var incognitoWindowIds: Set<UUID> = []
@@ -80,7 +80,7 @@ final class BrowserWindowShellService {
 
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
-        context.createNewTab(windowState, SumiSurface.emptyTabURL.absoluteString)
+        context.showEmptyState(windowState)
 
         newWindow.makeKeyAndOrderFront(nil)
 
@@ -94,6 +94,13 @@ final class BrowserWindowShellService {
         using context: Context
     ) async {
         guard windowState.isIncognito else { return }
+        guard incognitoWindowIds.contains(windowState.id)
+            || windowState.ephemeralProfile != nil
+            || windowState.ephemeralTabs.isEmpty == false
+            || windowState.ephemeralSpaces.isEmpty == false
+        else {
+            return
+        }
 
         RuntimeDiagnostics.emit(
             "🔒 [WindowShellService] Closing incognito window: \(windowState.id)"
@@ -143,7 +150,7 @@ final class BrowserWindowShellService {
     }
 
     func closeActiveWindow(in windowRegistry: WindowRegistry?) {
-        windowRegistry?.activeWindow?.window?.close()
+        windowRegistry?.activeWindow?.window?.performCloseFromBrowserChrome(nil)
     }
 
     func toggleFullScreenForActiveWindow(in windowRegistry: WindowRegistry?) {

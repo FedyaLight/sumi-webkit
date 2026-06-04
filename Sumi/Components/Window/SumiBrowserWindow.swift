@@ -100,15 +100,6 @@ extension NSWindow {
         }
     }
 
-    @MainActor
-    func miniaturizeFromCustomBrowserChrome() {
-        guard styleMask.contains(.miniaturizable), isMiniaturized == false else {
-            return
-        }
-
-        miniaturize(nil)
-    }
-
 }
 
 final class SumiBrowserWindow: NSWindow {
@@ -163,30 +154,22 @@ extension NSWindow {
     func hideNativeStandardWindowButtonsForBrowserChrome(
         buttonTypes: [NSWindow.ButtonType] = SumiBrowserChromeConfiguration.buttonTypes
     ) {
-        for type in buttonTypes {
-            guard let button = standardWindowButton(type) else { continue }
-            button.identifier = nil
-            button.setAccessibilityIdentifier(nil)
-            applyNativeStandardWindowButtonState(button, isVisible: false)
-        }
+        applyNativeStandardWindowButtons(
+            buttonTypes: buttonTypes,
+            isVisible: false,
+            exposesAccessibilityIdentifiers: false
+        )
     }
 
-    @MainActor
     func setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible(
         _ isVisible: Bool,
         buttonTypes: [NSWindow.ButtonType] = SumiBrowserChromeConfiguration.buttonTypes
     ) {
-        for type in buttonTypes {
-            guard let button = standardWindowButton(type) else { continue }
-            if isVisible, let identifier = BrowserWindowControlsAccessibilityIdentifiers.identifier(for: type) {
-                button.identifier = NSUserInterfaceItemIdentifier(identifier)
-                button.setAccessibilityIdentifier(identifier)
-            } else {
-                button.identifier = nil
-                button.setAccessibilityIdentifier(nil)
-            }
-            applyNativeStandardWindowButtonState(button, isVisible: isVisible)
-        }
+        applyNativeStandardWindowButtons(
+            buttonTypes: buttonTypes,
+            isVisible: isVisible,
+            exposesAccessibilityIdentifiers: isVisible
+        )
     }
 
     /// MiniWindow intentionally remains on AppKit's native titlebar-button path.
@@ -195,41 +178,80 @@ extension NSWindow {
     func configureNativeStandardWindowButtonsForMiniWindowChrome(
         buttonTypes: [NSWindow.ButtonType] = SumiBrowserChromeConfiguration.buttonTypes
     ) {
+        applyNativeStandardWindowButtons(
+            buttonTypes: buttonTypes,
+            isVisible: true,
+            exposesAccessibilityIdentifiers: true
+        )
+    }
+
+    private func applyNativeStandardWindowButtons(
+        buttonTypes: [NSWindow.ButtonType],
+        isVisible: Bool,
+        exposesAccessibilityIdentifiers: Bool
+    ) {
         for type in buttonTypes {
-            guard let button = standardWindowButton(type) else { continue }
-            if let identifier = BrowserWindowControlsAccessibilityIdentifiers.identifier(for: type) {
-                button.identifier = NSUserInterfaceItemIdentifier(identifier)
-                button.setAccessibilityIdentifier(identifier)
-            }
-            applyNativeStandardWindowButtonState(button, isVisible: true)
+            guard let button = nativeTitlebarStandardWindowButton(type) else { continue }
+            applyNativeStandardWindowButton(
+                button,
+                type: type,
+                isVisible: isVisible,
+                exposesAccessibilityIdentifiers: isVisible && exposesAccessibilityIdentifiers
+            )
         }
     }
 
-    private func applyNativeStandardWindowButtonState(_ button: NSButton, isVisible: Bool) {
-        button.wantsLayer = true
-        button.layer?.removeAllAnimations()
-        button.superview?.layer?.removeAllAnimations()
+    private func nativeTitlebarStandardWindowButton(_ type: NSWindow.ButtonType) -> NSButton? {
+        guard let button = standardWindowButton(type) else { return nil }
 
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0
-            context.allowsImplicitAnimation = false
-            button.layer?.opacity = isVisible ? 1 : 0
-            button.isTransparent = !isVisible
-            button.alphaValue = isVisible ? 1 : 0
-            button.isHidden = !isVisible
-            button.isEnabled = isVisible
-            button.setAccessibilityElement(isVisible)
+        // Custom browser controls are standard AppKit buttons hosted inside contentView.
+        // Titlebar visibility code must not hide or disable that separate cluster.
+        if let contentView, button.isDescendant(of: contentView) {
+            return nil
         }
 
-        button.updateTrackingAreas()
-        button.needsDisplay = true
-        if let superview = button.superview {
-            superview.updateTrackingAreas()
-            superview.needsDisplay = true
-            if isVisible {
-                superview.needsLayout = true
-            }
-            invalidateCursorRects(for: superview)
+        return button
+    }
+
+    private func applyNativeStandardWindowButton(
+        _ button: NSButton,
+        type: NSWindow.ButtonType,
+        isVisible: Bool,
+        exposesAccessibilityIdentifiers: Bool
+    ) {
+        applyNativeStandardWindowButtonIdentity(
+            button,
+            type: type,
+            exposesAccessibilityIdentifiers: exposesAccessibilityIdentifiers
+        )
+        button.isTransparent = false
+        button.alphaValue = isVisible ? 1 : 0
+        button.isHidden = !isVisible
+        button.isEnabled = isVisible
+        button.setAccessibilityElement(isVisible)
+        button.setAccessibilityHidden(!isVisible)
+    }
+
+    @objc func performCloseFromBrowserChrome(_ sender: Any?) {
+        guard styleMask.contains(.closable) else { return }
+        guard delegate?.windowShouldClose?(self) != false else { return }
+        close()
+    }
+
+    private func applyNativeStandardWindowButtonIdentity(
+        _ button: NSButton,
+        type: NSWindow.ButtonType,
+        exposesAccessibilityIdentifiers: Bool
+    ) {
+        guard exposesAccessibilityIdentifiers,
+              let identifier = BrowserWindowControlsAccessibilityIdentifiers.identifier(for: type)
+        else {
+            button.identifier = nil
+            button.setAccessibilityIdentifier(nil)
+            return
         }
+
+        button.identifier = NSUserInterfaceItemIdentifier(identifier)
+        button.setAccessibilityIdentifier(identifier)
     }
 }

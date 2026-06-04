@@ -1324,12 +1324,13 @@ class TabManager: ObservableObject {
         in windowState: BrowserWindowState,
         profile: Profile
     ) -> Tab {
+        let nextIndex = windowState.ephemeralTabs.map(\.index).max().map { $0 + 1 } ?? 0
         let newTab = Tab(
             url: url,
             name: url.host ?? "New Tab",
             favicon: "globe",
             spaceId: nil,
-            index: 0,
+            index: nextIndex,
             browserManager: browserManager
         )
         newTab.profileId = profile.id

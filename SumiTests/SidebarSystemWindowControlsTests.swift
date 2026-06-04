@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import XCTest
 
 @testable import Sumi
@@ -129,6 +130,11 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
             BrowserWindowTrafficLightMetrics.sidebarReservedWidth,
             BrowserWindowTrafficLightMetrics.clusterWidth + BrowserWindowTrafficLightMetrics.clusterTrailingInset
         )
+        XCTAssertEqual(
+            BrowserWindowTrafficLightMetrics.sidebarReservedWidth(isVisible: true),
+            BrowserWindowTrafficLightMetrics.sidebarReservedWidth
+        )
+        XCTAssertEqual(BrowserWindowTrafficLightMetrics.sidebarReservedWidth(isVisible: false), 0)
         XCTAssertEqual(SidebarChromeMetrics.topControlInset, 0)
         XCTAssertEqual(SidebarChromeMetrics.horizontalPadding, 18)
         XCTAssertEqual(SidebarChromeMetrics.controlStripHeight, 38)
@@ -147,37 +153,41 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertTrue(controlsSource.contains("struct BrowserWindowTrafficLights: View"))
         XCTAssertTrue(controlsSource.contains("NSViewRepresentable"))
         XCTAssertTrue(controlsSource.contains("NSWindow.standardWindowButton("))
+        XCTAssertTrue(controlsSource.contains("addSubview(button)"))
+        XCTAssertTrue(controlsSource.contains("width: BrowserWindowTrafficLightMetrics.sidebarReservedWidth(isVisible: isVisible)"))
         XCTAssertTrue(controlsSource.contains("struct BrowserWindowTrafficLightActionProvider"))
         XCTAssertTrue(controlsSource.contains("enum BrowserWindowTrafficLightAction"))
-        XCTAssertTrue(controlsSource.contains("parentWindow") == false)
-        XCTAssertTrue(controlsSource.contains("targetWindow?.performClose(sender)"))
-        XCTAssertTrue(controlsSource.contains("targetWindow?.miniaturize(sender)"))
-        XCTAssertTrue(controlsSource.contains("targetWindow?.toggleFullScreen(sender)"))
+        XCTAssertTrue(controlsSource.contains("BrowserWindowTrafficLightRolloverGlyphOverlayView"))
+        XCTAssertTrue(controlsSource.contains("button.target = targetWindow"))
+        XCTAssertTrue(controlsSource.contains("button.action = action.selector"))
+        XCTAssertTrue(controlsSource.contains("#selector(NSWindow.performCloseFromBrowserChrome(_:))"))
+        XCTAssertTrue(controlsSource.contains("#selector(NSWindow.miniaturize(_:))"))
+        XCTAssertTrue(controlsSource.contains("#selector(NSWindow.toggleFullScreen(_:))"))
+        XCTAssertTrue(controlsSource.contains(".mouseMoved"))
+        XCTAssertTrue(controlsSource.contains("enabledActions.remove(pressedAction)"))
+        XCTAssertTrue(controlsSource.contains("glyphOverlayView.isHidden = !shouldShowGlyphs"))
         XCTAssertTrue(controlsSource.contains(BrowserWindowControlsAccessibilityIdentifiers.closeButton))
         XCTAssertTrue(controlsSource.contains(BrowserWindowControlsAccessibilityIdentifiers.minimizeButton))
         XCTAssertTrue(controlsSource.contains(BrowserWindowControlsAccessibilityIdentifiers.zoomButton))
         XCTAssertTrue(sidebarHeaderSource.contains("BrowserWindowTrafficLights("))
         XCTAssertTrue(sidebarHeaderSource.contains("isBrowserWindowFullScreen == false"))
-        XCTAssertFalse(sidebarHeaderSource.contains("sidebarPresentationContext.mode != .collapsedHidden"))
-        XCTAssertFalse(sidebarHeaderSource.contains("sumiSettings.sidebarPosition.shellEdge.isLeft"))
+        XCTAssertTrue(sidebarHeaderSource.contains("case .collapsedVisible:"))
+        XCTAssertTrue(sidebarHeaderSource.contains("case .collapsedHidden:"))
+        XCTAssertTrue(sidebarHeaderSource.contains(".onChange(of: browserWindowIdentity)"))
+        XCTAssertTrue(sidebarHeaderSource.contains("windowState.window.map { ObjectIdentifier($0) }"))
         XCTAssertFalse(windowViewSource.contains("shouldRenderParentBrowserTrafficLights"))
         XCTAssertFalse(windowViewSource.contains("BrowserWindowTrafficLights("))
         XCTAssertTrue(windowSource.contains("hideNativeStandardWindowButtonsForBrowserChrome()"))
         XCTAssertTrue(collapsedOverlaySource.contains("CollapsedSidebarOverlayHost"))
         XCTAssertFalse(collapsedOverlaySource.contains("NSPanel"))
 
-        XCTAssertFalse(controlsSource.contains("BrowserWindowTrafficLightProxyCluster"))
-        XCTAssertFalse(controlsSource.contains("BrowserWindowTrafficLightProxyAction"))
-        XCTAssertFalse(controlsSource.contains("BrowserWindowTrafficLightPlaceholderCluster"))
-        XCTAssertFalse(controlsSource.contains("BrowserWindowNativeTrafficLightVisibilityBridge"))
-        XCTAssertFalse(controlsSource.contains("BrowserWindowTrafficLightPalette"))
-        XCTAssertFalse(controlsSource.contains("BrowserWindowTrafficLightButtonStyle"))
-        XCTAssertFalse(controlsSource.contains("BrowserWindowTrafficLightActionHitTarget"))
-        XCTAssertFalse(controlsSource.contains("BrowserWindowTrafficLightMirroredZoomGlyph"))
-        XCTAssertFalse(windowViewSource.contains("BrowserWindowNativeTrafficLightVisibilityBridge"))
-        XCTAssertFalse(windowViewSource.contains("trafficLightRenderState"))
-        XCTAssertFalse(sidebarHeaderSource.contains("BrowserWindowTrafficLightProxyCluster"))
-        XCTAssertFalse(sidebarHeaderSource.contains("BrowserWindowTrafficLightPlaceholderCluster"))
+        XCTAssertFalse(controlsSource.contains("#selector(NSWindow.performZoom(_:))"))
+        XCTAssertFalse(controlsSource.contains("targetWindow.performZoom"))
+        XCTAssertFalse(controlsSource.contains("targetWindow.performClose"))
+        XCTAssertFalse(controlsSource.contains("targetWindow.performMiniaturize"))
+        XCTAssertFalse(controlsSource.contains("targetWindow.toggleFullScreen"))
+        XCTAssertFalse(controlsSource.contains("button.sendAction("))
+        XCTAssertFalse(controlsSource.contains("image.draw(in: frame"))
         XCTAssertFalse(sidebarHeaderSource.contains("standardWindowButton"))
         XCTAssertFalse(collapsedOverlaySource.contains("standardWindowButton"))
 
@@ -216,6 +226,50 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertFalse(provider.isEnabled(.zoom))
     }
 
+    func testBrowserTrafficLightsRetargetToHostingWindowAfterAttach() {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        let host = NSHostingView(
+            rootView: BrowserWindowTrafficLights(
+                actionProvider: .browserWindow(nil),
+                isVisible: true
+            )
+        )
+        host.frame = NSRect(
+            origin: .zero,
+            size: NSSize(
+                width: BrowserWindowTrafficLightMetrics.sidebarReservedWidth,
+                height: BrowserWindowTrafficLightMetrics.clusterHeight
+            )
+        )
+
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+
+        let minimizeButton = Self.button(
+            in: host,
+            accessibilityIdentifier: BrowserWindowControlsAccessibilityIdentifiers.minimizeButton
+        )
+        XCTAssertNotNil(minimizeButton)
+        XCTAssertTrue(minimizeButton?.target as AnyObject === window)
+        XCTAssertEqual(minimizeButton?.action.map(NSStringFromSelector), "miniaturize:")
+        XCTAssertTrue(minimizeButton?.isEnabled ?? false)
+
+        window.hideNativeStandardWindowButtonsForBrowserChrome()
+        host.layoutSubtreeIfNeeded()
+
+        for identifier in [
+            BrowserWindowControlsAccessibilityIdentifiers.closeButton,
+            BrowserWindowControlsAccessibilityIdentifiers.minimizeButton,
+            BrowserWindowControlsAccessibilityIdentifiers.zoomButton,
+        ] {
+            let button = Self.button(in: host, accessibilityIdentifier: identifier)
+            XCTAssertNotNil(button, identifier)
+            XCTAssertFalse(button?.isHidden ?? true, identifier)
+            XCTAssertEqual(button?.alphaValue, 1, identifier)
+            XCTAssertTrue(button?.isEnabled ?? false, identifier)
+        }
+    }
+
     func testNativeBrowserButtonsAreHiddenWhileMiniWindowNativePathIsIsolated() throws {
         let windowSource = try Self.source(named: "Sumi/Components/Window/SumiBrowserWindow.swift")
         let bridgeSource = try Self.source(named: "App/BrowserWindowBridge.swift")
@@ -228,15 +282,9 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         )
 
         XCTAssertTrue(windowSource.contains("func hideNativeStandardWindowButtonsForBrowserChrome("))
-        XCTAssertTrue(windowSource.contains("button.setAccessibilityElement(isVisible)"))
-        XCTAssertTrue(windowSource.contains("button.setAccessibilityIdentifier(nil)"))
-        XCTAssertTrue(windowSource.contains("button.identifier = nil"))
-        XCTAssertFalse(windowSource.contains("parkedNativeStandardWindowButtonFrame"))
-        XCTAssertFalse(windowSource.contains("prepareNativeStandardWindowButtonForSystemMiniaturize"))
-        XCTAssertTrue(bridgeSource.contains("window.hideNativeStandardWindowButtonsForBrowserChrome()"))
-        XCTAssertFalse(windowSource.contains("syncNativeStandardWindowButtonsForBrowserChrome"))
         XCTAssertTrue(windowSource.contains("setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible"))
-        XCTAssertFalse(windowSource.contains("alignNativeStandardWindowButtonsForBrowserChrome"))
+        XCTAssertTrue(windowSource.contains("performCloseFromBrowserChrome"))
+        XCTAssertFalse(bridgeSource.contains("window.hideNativeStandardWindowButtonsForBrowserChrome()"))
         XCTAssertFalse(bridgeSource.contains("setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible"))
 
         XCTAssertTrue(miniWindowToolbarSource.contains("BrowserWindowNativeTrafficLightSpacer()"))
@@ -245,23 +293,6 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertFalse(miniWindowToolbarSource.contains("BrowserWindowTrafficLights"))
         XCTAssertFalse(miniWindowToolbarSource.contains("standardWindowButton"))
         XCTAssertFalse(miniWindowViewSource.contains("window: window"))
-    }
-
-    func testNativeWindowControlsHostingFilesAndAssetsAreRemoved() {
-        let removedFiles = [
-            "Sumi/Components/Window/NativeWindowControlsSupport.swift",
-            "Sumi/Components/Window/NativeWindowControlsVisualShield.swift",
-            "Sumi/Components/MiniWindow/MiniWindowTrafficLights.swift",
-            "SumiTests/MiniWindowTrafficLightsTests.swift",
-            "Sumi/Assets.xcassets/WindowControls",
-        ]
-
-        for file in removedFiles {
-            XCTAssertFalse(
-                FileManager.default.fileExists(atPath: Self.repoRoot.appendingPathComponent(file).path),
-                "\(file) should not return with legacy browser traffic-light files."
-            )
-        }
     }
 
     func testCollapsedOverlayUsesSameSidebarHostedTrafficLightsAndWindowLocalGeometry() throws {
@@ -313,13 +344,30 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         )
     }
 
+    private static func button(
+        in view: NSView,
+        accessibilityIdentifier: String
+    ) -> NSButton? {
+        if let button = view as? NSButton,
+           button.accessibilityIdentifier() == accessibilityIdentifier {
+            return button
+        }
+
+        for subview in view.subviews {
+            if let button = button(in: subview, accessibilityIdentifier: accessibilityIdentifier) {
+                return button
+            }
+        }
+
+        return nil
+    }
+
     private static func assertNoNativeTrafficLightReparenting(
         in source: String,
         file: String,
         line: UInt = #line
     ) {
         let forbiddenPatterns = [
-            #"\.addSubview\(\s*(button|closeButton|minimizeButton|miniaturizeButton|zoomButton)"#,
             #"(button|closeButton|minimizeButton|miniaturizeButton|zoomButton)\.removeFromSuperview\("#,
             #"standardWindowButton\([^)]+\)\?\.removeFromSuperview\("#,
             #"standardWindowButton\([^)]+\)\.removeFromSuperview\("#,

@@ -94,8 +94,8 @@ extension BrowserManager {
 
                 return NSHostingView(rootView: contentView)
             },
-            createNewTab: { [weak self] windowState, url in
-                self?.createNewTab(in: windowState, url: url)
+            showEmptyState: { [weak self] windowState in
+                self?.showEmptyState(in: windowState)
             }
         )
     }

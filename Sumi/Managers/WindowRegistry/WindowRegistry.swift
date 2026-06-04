@@ -79,6 +79,13 @@ class WindowRegistry {
 
     /// Unregister a window when it closes
     func unregister(_ id: UUID) {
+        guard windows[id] != nil else {
+            RuntimeDiagnostics.emit {
+                "🪟 [WindowRegistry] Ignored duplicate unregister for window: \(id)"
+            }
+            return
+        }
+
         // Call cleanup callback if set
         onWindowClose?(id)
 

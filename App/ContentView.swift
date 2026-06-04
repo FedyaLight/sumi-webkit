@@ -46,8 +46,11 @@ struct ContentView: View {
                 windowRegistry.register(windowState)
             }
             .onDisappear {
+                guard windowRegistry.windows[windowState.id] != nil else {
+                    return
+                }
                 browserManager.persistWindowSession(for: windowState)
-                // Unregister this window state when the window closes
+                // Fallback for lifecycle paths that disappear without a close notification.
                 windowRegistry.unregister(windowState.id)
             }
     }

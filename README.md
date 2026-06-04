@@ -59,6 +59,7 @@ Current developer-preview builds include:
 - Pinned and essential items that keep their visible sidebar identity while the live WebView/runtime instance is unloaded to reduce memory use.
 - Glance, which opens over the current tab or from pinned, essential, and launcher-style items, closes quickly, can expand into a normal tab, and can move into split view.
 - Split view with up to four views.
+- Incognito windows backed by an ephemeral profile and ephemeral tabs.
 - Floating bar search/address field with suggestions, site search, history suggestions, bookmark suggestions, compact/top links behavior, and split-aware actions.
 - Bookmarks, history, and search inside bookmarks, history, and settings.
 - Custom themes.
@@ -111,7 +112,6 @@ Later work under consideration:
 
 - Live folders.
 - Site customization/boosts.
-- Private or ephemeral profile mode.
 - Fully encrypted sync without data collection.
 - Multi-window workflows.
 - Improved profile isolation.

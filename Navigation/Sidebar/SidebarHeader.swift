@@ -49,6 +49,7 @@ struct SidebarWindowControlsView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
     @State private var isBrowserWindowFullScreen = false
 
     var body: some View {
@@ -68,6 +69,9 @@ struct SidebarWindowControlsView: View {
             }
         }
         .onAppear(perform: syncFullScreenWindowControls)
+        .onChange(of: browserWindowIdentity) { _, _ in
+            syncFullScreenWindowControls()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) {
             handleFullScreenNotification($0)
         }
@@ -84,15 +88,29 @@ struct SidebarWindowControlsView: View {
 
     @ViewBuilder
     private var trafficLightCluster: some View {
-        if shouldRenderTrafficLightsInSidebarHeader {
-            BrowserWindowTrafficLights(
-                actionProvider: .browserWindow(windowState.window)
-            )
-        }
+        BrowserWindowTrafficLights(
+            actionProvider: .browserWindow(windowState.window),
+            isVisible: shouldRenderTrafficLightsInSidebarHeader
+        )
     }
 
     private var shouldRenderTrafficLightsInSidebarHeader: Bool {
-        isBrowserWindowFullScreen == false
+        isBrowserWindowFullScreen == false && sidebarPresentationShowsTrafficLights
+    }
+
+    private var sidebarPresentationShowsTrafficLights: Bool {
+        switch sidebarPresentationContext.mode {
+        case .docked:
+            return windowState.isSidebarVisible
+        case .collapsedVisible:
+            return true
+        case .collapsedHidden:
+            return false
+        }
+    }
+
+    private var browserWindowIdentity: ObjectIdentifier? {
+        windowState.window.map { ObjectIdentifier($0) }
     }
 
     private func toggleSidebar() {

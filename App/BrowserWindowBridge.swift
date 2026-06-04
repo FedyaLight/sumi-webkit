@@ -31,7 +31,8 @@ struct BrowserWindowBridge: NSViewRepresentable {
         let windowRegistry: WindowRegistry
 
         private weak var window: NSWindow?
-        private var keyObserver: Any?
+        private var keyObserver: NSObjectProtocol?
+        private var willCloseObserver: NSObjectProtocol?
 
         init(windowState: BrowserWindowState, windowRegistry: WindowRegistry) {
             self.windowState = windowState
@@ -48,7 +49,6 @@ struct BrowserWindowBridge: NSViewRepresentable {
             guard let window else { return }
 
             promoteToSumiBrowserWindowIfNeeded(window)
-            window.hideNativeStandardWindowButtonsForBrowserChrome()
             window.applyBrowserWindowShellConfiguration(shouldApplyInitialSize: true)
 
             keyObserver = NotificationCenter.default.addObserver(
@@ -62,19 +62,45 @@ struct BrowserWindowBridge: NSViewRepresentable {
                 }
             }
 
+            willCloseObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                guard let self else { return }
+                MainActor.assumeIsolated {
+                    self.handleWindowWillClose()
+                }
+            }
+
             if window.isKeyWindow {
                 windowRegistry.setActive(windowState)
             }
         }
 
         func detach() {
+            removeObservers()
+            windowState.window = nil
+            window = nil
+        }
+
+        private func handleWindowWillClose() {
+            windowRegistry.unregister(windowState.id)
+            removeObservers()
+            windowState.window = nil
+            window = nil
+        }
+
+        private func removeObservers() {
             if let keyObserver {
                 NotificationCenter.default.removeObserver(keyObserver)
                 self.keyObserver = nil
             }
 
-            windowState.window = nil
-            window = nil
+            if let willCloseObserver {
+                NotificationCenter.default.removeObserver(willCloseObserver)
+                self.willCloseObserver = nil
+            }
         }
     }
 }

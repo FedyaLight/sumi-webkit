@@ -34,4 +34,24 @@ final class WindowRegistryTests: XCTestCase {
 
         XCTAssertEqual(awaitedWindow?.id, secondWindow.id)
     }
+
+    func testUnregisterRunsCloseCallbackOnlyOnceForDuplicateCloseSignals() {
+        let registry = WindowRegistry()
+        let window = BrowserWindowState()
+        var closedWindowIds: [UUID] = []
+        var allWindowsClosedCount = 0
+
+        registry.onWindowClose = { closedWindowIds.append($0) }
+        registry.onAllWindowsClosed = { allWindowsClosedCount += 1 }
+        registry.register(window)
+        registry.setActive(window)
+
+        registry.unregister(window.id)
+        registry.unregister(window.id)
+
+        XCTAssertEqual(closedWindowIds, [window.id])
+        XCTAssertEqual(allWindowsClosedCount, 1)
+        XCTAssertNil(registry.activeWindowId)
+        XCTAssertTrue(registry.windows.isEmpty)
+    }
 }

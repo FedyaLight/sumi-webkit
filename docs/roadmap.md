@@ -30,6 +30,7 @@ Sumi now has first-class Arc/Zen migration and Sumi backup/restore surfaces in S
 - Tabs, sidebar, spaces, and profiles.
 - Glance.
 - Split view up to four views.
+- Incognito windows backed by an ephemeral profile and ephemeral tabs.
 - Floating bar.
 - Bookmarks and history.
 - Sidebar drag-and-drop organization.
@@ -83,7 +84,6 @@ Additional details:
 
 - Live folders.
 - Site customization/boosts.
-- Private or ephemeral profile/incognito mode.
 - Fully encrypted sync without data collection.
 - Multi-window workflows.
 - Improved profile isolation redesign.
