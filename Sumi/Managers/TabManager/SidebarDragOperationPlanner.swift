@@ -90,7 +90,11 @@ enum SidebarDragOperationPlanner {
     ) -> SidebarDragOperationKind {
         switch (operation.fromContainer, operation.toContainer) {
         case (.spacePinned(let fromSpaceId), .spacePinned(let toSpaceId)) where fromSpaceId == toSpaceId:
-            return .folderHeaderReorder(folder: folder, spaceId: toSpaceId)
+            return .folderHeaderReorder(folder: folder, spaceId: operation.scope.spaceId)
+        case (.spacePinned, .folder),
+             (.folder, .spacePinned),
+             (.folder, .folder):
+            return .folderHeaderReorder(folder: folder, spaceId: operation.scope.spaceId)
         default:
             return .folderHeaderUnsupported(folder: folder)
         }

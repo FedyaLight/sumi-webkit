@@ -40,6 +40,7 @@ private enum SidebarDragStateDeferredGeometry {
         isActive: Bool,
         folderId: UUID,
         spaceId: UUID,
+        parentFolderId: UUID?,
         topLevelIndex: Int,
         childCount: Int,
         isOpen: Bool,
@@ -50,6 +51,7 @@ private enum SidebarDragStateDeferredGeometry {
         SidebarDragState.shared.scheduleFolderDropTarget(
             folderId: folderId,
             spaceId: spaceId,
+            parentFolderId: parentFolderId,
             topLevelIndex: topLevelIndex,
             childCount: childCount,
             isOpen: isOpen,
@@ -64,6 +66,7 @@ private enum SidebarDragStateDeferredGeometry {
         SidebarDragState.shared.scheduleFolderDropTarget(
             folderId: folderId,
             spaceId: UUID(),
+            parentFolderId: nil,
             topLevelIndex: 0,
             childCount: 0,
             isOpen: false,
@@ -373,6 +376,7 @@ extension View {
     func sidebarFolderDropGeometry(
         folderId: UUID,
         spaceId: UUID,
+        parentFolderId: UUID?,
         topLevelIndex: Int,
         childCount: Int,
         isOpen: Bool,
@@ -384,6 +388,7 @@ extension View {
             SidebarFolderDropGeometryReporter(
                 folderId: folderId,
                 spaceId: spaceId,
+                parentFolderId: parentFolderId,
                 topLevelIndex: topLevelIndex,
                 childCount: childCount,
                 isOpen: isOpen,
@@ -492,6 +497,7 @@ extension View {
 struct SidebarFolderDropGeometryReporter: ViewModifier {
     let folderId: UUID
     let spaceId: UUID
+    let parentFolderId: UUID?
     let topLevelIndex: Int
     let childCount: Int
     let isOpen: Bool
@@ -512,6 +518,9 @@ struct SidebarFolderDropGeometryReporter: ViewModifier {
                                 update(frame: newFrame)
                             }
                             .onChange(of: topLevelIndex) { _, _ in
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onChange(of: parentFolderId) { _, _ in
                                 update(frame: geo.frame(in: .global))
                             }
                             .onChange(of: childCount) { _, _ in
@@ -551,6 +560,7 @@ struct SidebarFolderDropGeometryReporter: ViewModifier {
             isActive: isActive,
             folderId: folderId,
             spaceId: spaceId,
+            parentFolderId: parentFolderId,
             topLevelIndex: topLevelIndex,
             childCount: childCount,
             isOpen: isOpen,

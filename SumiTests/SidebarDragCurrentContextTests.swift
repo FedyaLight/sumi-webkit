@@ -654,6 +654,133 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertEqual(tabManager.folders(for: space.id).map(\.index), [0, 1])
     }
 
+    func testFolderDropIntoFolderCreatesNestedFolder() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let target = tabManager.createFolder(for: space.id, name: "Target")
+        let moving = tabManager.createFolder(for: space.id, name: "Moving")
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileId,
+            sourceZone: .spacePinned(space.id),
+            item: dragItem(moving)
+        )
+
+        let didMove = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .folder(moving),
+                scope: scope,
+                fromContainer: .spacePinned(space.id),
+                toContainer: .folder(target.id),
+                toIndex: 0
+            )
+        )
+
+        XCTAssertTrue(didMove)
+        XCTAssertEqual(moving.parentFolderId, target.id)
+        XCTAssertEqual(topLevelPinnedItemIDs(tabManager, in: space.id), [target.id])
+        XCTAssertEqual(tabManager.folderChildVisualItems(for: target.id, in: space.id), [.folder(moving.id)])
+    }
+
+    func testFolderDropIntoDescendantIsRejected() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let parent = tabManager.createFolder(for: space.id, name: "Parent")
+        let child = try XCTUnwrap(tabManager.createFolder(for: space.id, parentFolderId: parent.id, name: "Child"))
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileId,
+            sourceZone: .spacePinned(space.id),
+            item: dragItem(parent)
+        )
+
+        let didMove = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .folder(parent),
+                scope: scope,
+                fromContainer: .spacePinned(space.id),
+                toContainer: .folder(child.id),
+                toIndex: 0
+            )
+        )
+
+        XCTAssertFalse(didMove)
+        XCTAssertNil(parent.parentFolderId)
+        XCTAssertEqual(child.parentFolderId, parent.id)
+    }
+
+    func testUngroupFolderLiftsDirectChildrenOneLevel() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let root = tabManager.createFolder(for: space.id, name: "Root")
+        let nested = try XCTUnwrap(tabManager.createFolder(for: space.id, parentFolderId: root.id, name: "Nested"))
+        let childFolder = try XCTUnwrap(tabManager.createFolder(for: space.id, parentFolderId: nested.id, name: "Child"))
+        let pin = try makeFolderPin(
+            tabManager,
+            in: space,
+            folderId: nested.id,
+            url: "https://example.com/nested",
+            index: 1
+        )
+        let liveTab = tabManager.createNewTab(url: "https://example.com/live-nested", in: space)
+        liveTab.isSpacePinned = true
+        liveTab.folderId = nested.id
+
+        tabManager.ungroupFolder(nested.id)
+
+        XCTAssertNil(tabManager.folder(by: nested.id))
+        XCTAssertEqual(childFolder.parentFolderId, root.id)
+        let movedPin = try XCTUnwrap(tabManager.shortcutPin(by: pin.id))
+        XCTAssertEqual(movedPin.folderId, root.id)
+        XCTAssertEqual(liveTab.folderId, root.id)
+        XCTAssertTrue(liveTab.isSpacePinned)
+        XCTAssertEqual(tabManager.folderChildVisualItems(for: root.id, in: space.id), [
+            .folder(childFolder.id),
+            .shortcut(pin.id),
+        ])
+    }
+
+    func testDeleteFolderRemovesDescendantChildren() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let root = tabManager.createFolder(for: space.id, name: "Root")
+        let nested = try XCTUnwrap(tabManager.createFolder(for: space.id, parentFolderId: root.id, name: "Nested"))
+        let childFolder = try XCTUnwrap(tabManager.createFolder(for: space.id, parentFolderId: nested.id, name: "Child"))
+        let nestedPin = try makeFolderPin(
+            tabManager,
+            in: space,
+            folderId: nested.id,
+            url: "https://example.com/nested",
+            index: 1
+        )
+        let childPin = try makeFolderPin(
+            tabManager,
+            in: space,
+            folderId: childFolder.id,
+            url: "https://example.com/child",
+            index: 0
+        )
+        let liveTab = tabManager.createNewTab(url: "https://example.com/live-child", in: space)
+        liveTab.isSpacePinned = true
+        liveTab.folderId = childFolder.id
+
+        XCTAssertEqual(tabManager.folderRecursiveChildCount(for: nested.id, in: space.id), 3)
+
+        tabManager.deleteFolder(nested.id)
+
+        XCTAssertNotNil(tabManager.folder(by: root.id))
+        XCTAssertNil(tabManager.folder(by: nested.id))
+        XCTAssertNil(tabManager.folder(by: childFolder.id))
+        XCTAssertNil(tabManager.shortcutPin(by: nestedPin.id))
+        XCTAssertNil(tabManager.shortcutPin(by: childPin.id))
+        XCTAssertNil(tabManager.tab(for: liveTab.id))
+        XCTAssertEqual(tabManager.folderChildVisualItems(for: root.id, in: space.id), [])
+    }
+
     func testSpacePinnedDropIntoFolderPreservesLauncherAndMovesOwnership() throws {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()

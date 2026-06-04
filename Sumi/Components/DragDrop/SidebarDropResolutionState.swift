@@ -280,6 +280,9 @@ enum SidebarDropResolver {
         let targets = state.folderDropTargets.values
             .filter { $0.spaceId == hoveredPage.spaceId }
             .sorted { lhs, rhs in
+            let leftArea = containingArea(for: lhs, at: location)
+            let rightArea = containingArea(for: rhs, at: location)
+            if leftArea != rightArea { return leftArea < rightArea }
             let leftY = lhs.headerFrame?.minY ?? lhs.bodyFrame?.minY ?? lhs.afterFrame?.minY ?? .greatestFiniteMagnitude
             let rightY = rhs.headerFrame?.minY ?? rhs.bodyFrame?.minY ?? rhs.afterFrame?.minY ?? .greatestFiniteMagnitude
             if leftY != rightY { return leftY < rightY }
@@ -318,6 +321,17 @@ enum SidebarDropResolver {
         return nil
     }
 
+    private static func containingArea(
+        for target: SidebarFolderDropTargetMetrics,
+        at location: CGPoint
+    ) -> CGFloat {
+        [target.headerFrame, target.bodyFrame, target.afterFrame]
+            .compactMap { $0 }
+            .filter { $0.contains(location) }
+            .map { max($0.width * $0.height, 0) }
+            .min() ?? .greatestFiniteMagnitude
+    }
+
     private static func resolveFolderHeader(
         _ target: SidebarFolderDropTargetMetrics,
         frame: CGRect,
@@ -329,17 +343,8 @@ enum SidebarDropResolver {
             return emptyResolution
         }
 
-        if draggedItem?.kind == .folder {
-            return topLevelPinnedReorderResolution(
-                for: target,
-                location: location,
-                state: state,
-                fallbackFrame: frame
-            )
-        }
-
         if location.y < frame.minY + min(folderHeaderTopLevelBeforeBandHeight, frame.height / 3) {
-            return topLevelPinnedResolution(for: target, slot: target.topLevelIndex)
+            return parentContainerResolution(for: target, slot: target.topLevelIndex)
         }
 
         if target.isOpen {
@@ -358,15 +363,6 @@ enum SidebarDropResolver {
     ) -> SidebarDropResolution {
         if draggedItem?.kind == .folder, draggedItem?.tabId == target.folderId {
             return emptyResolution
-        }
-
-        if draggedItem?.kind == .folder {
-            return topLevelPinnedReorderResolution(
-                for: target,
-                location: location,
-                state: state,
-                fallbackFrame: frame
-            )
         }
 
         guard target.isOpen else {
@@ -446,7 +442,7 @@ enum SidebarDropResolver {
             return emptyResolution
         }
 
-        return topLevelPinnedResolution(for: target, slot: target.topLevelIndex + 1)
+        return parentContainerResolution(for: target, slot: target.topLevelIndex + 1)
     }
 
     private static func containResolution(
@@ -471,31 +467,23 @@ enum SidebarDropResolver {
         )
     }
 
-    private static func topLevelPinnedResolution(
+    private static func parentContainerResolution(
         for target: SidebarFolderDropTargetMetrics,
         slot: Int
     ) -> SidebarDropResolution {
-        SidebarDropResolution(
+        if let parentFolderId = target.parentFolderId {
+            return SidebarDropResolution(
+                slot: .folder(folderId: parentFolderId, slot: max(0, slot)),
+                folderIntent: .insertIntoFolder(folderId: parentFolderId, index: max(0, slot)),
+                activeHoveredFolderId: nil
+            )
+        }
+
+        return SidebarDropResolution(
             slot: .spacePinned(spaceId: target.spaceId, slot: max(0, slot)),
             folderIntent: .none,
             activeHoveredFolderId: nil
         )
-    }
-
-    private static func topLevelPinnedReorderResolution(
-        for target: SidebarFolderDropTargetMetrics,
-        location: CGPoint,
-        state: SidebarDragState,
-        fallbackFrame: CGRect
-    ) -> SidebarDropResolution {
-        let reportedFrame = state.topLevelPinnedItemTargets[target.folderId].flatMap { metrics in
-            metrics.spaceId == target.spaceId ? metrics.frame : nil
-        }
-        let itemFrame = reportedFrame ?? fallbackFrame
-        let slot = location.y < itemFrame.midY
-            ? target.topLevelIndex
-            : target.topLevelIndex + 1
-        return topLevelPinnedResolution(for: target, slot: slot)
     }
 
     private static var emptyResolution: SidebarDropResolution {

@@ -182,6 +182,7 @@ struct SumiPortableFolder: Codable, Equatable, Identifiable, Sendable {
     var icon: String
     var colorHex: String
     var spaceId: String
+    var parentFolderId: String?
     var isOpen: Bool
     var index: Int
     var sourcePath: [String]

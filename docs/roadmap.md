@@ -18,7 +18,7 @@ The near-term target is that a user can install an unpacked or zipped password-m
 
 Sumi now has first-class Arc/Zen migration and Sumi backup/restore surfaces in Settings > Data & Recovery.
 
-- Arc and Zen imports preserve Sumi's own model: essentials remain profile-scoped launchers, pinned items remain space launchers, regular tabs remain regular tabs, and sidebar folders are flattened to Sumi's one-level launcher folders.
+- Arc and Zen imports preserve Sumi's own model: essentials remain profile-scoped launchers, pinned items remain space launchers, regular tabs remain regular tabs, and nested sidebar folder hierarchy is preserved instead of flattened.
 - Browser export writes a browser2zen-compatible JSON shape with `source: "sumi"` plus a Sumi extension block for exact future round-trips.
 - Sumi backup/restore uses `.sumibackup` logical JSON archives. Backup v1 excludes history, cookies, passwords, WebKit website data, caches, downloads, and extension payloads.
 - Restore supports explicit Merge and Replace modes. Replace writes an automatic pre-restore backup and prunes old automatic pre-restore files so the feature does not accumulate unbounded app-support data.
@@ -33,7 +33,7 @@ Sumi now has first-class Arc/Zen migration and Sumi backup/restore surfaces in S
 - Floating bar.
 - Bookmarks and history.
 - Sidebar drag-and-drop organization.
-- Pinned items, essentials, and folders.
+- Pinned items, essentials, nested folders, and folder ungroup/delete actions.
 - Custom themes.
 - Session restore setting.
 - Mini Player jump-to-media / pause / mute.
@@ -81,7 +81,6 @@ Additional details:
 
 ## Later
 
-- Nested folders.
 - Live folders.
 - Site customization/boosts.
 - Private or ephemeral profile/incognito mode.

@@ -140,6 +140,15 @@ class TabManager: ObservableObject {
             .sorted { $0.index < $1.index }
     }
 
+    func childFolders(of parentFolderId: UUID?, in spaceId: UUID) -> [TabFolder] {
+        (foldersBySpace[spaceId] ?? [])
+            .filter { $0.parentFolderId == parentFolderId }
+            .sorted { lhs, rhs in
+                if lhs.index != rhs.index { return lhs.index < rhs.index }
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
+    }
+
     func shortcutPin(by id: UUID) -> ShortcutPin? {
         for pins in pinnedByProfile.values {
             if let match = pins.first(where: { $0.id == id }) { return match }
@@ -155,6 +164,13 @@ class TabManager: ObservableObject {
             if let match = folders.first(where: { $0.id == id }) { return match }
         }
         return nil
+    }
+
+    func parentContainer(for folder: TabFolder) -> TabDragManager.DragContainer {
+        if let parentFolderId = folder.parentFolderId {
+            return .folder(parentFolderId)
+        }
+        return .spacePinned(folder.spaceId)
     }
 
     func resolveDragTab(for id: UUID) -> Tab? {
@@ -523,36 +539,57 @@ class TabManager: ObservableObject {
         transientTabLookupIDs = updatedIDs
     }
     func normalizedSpacePinnedShortcuts(_ items: [ShortcutPin]) -> [ShortcutPin] {
-        var groupedByFolder = Dictionary(grouping: items) { $0.folderId }
+        struct ContainerKey: Hashable {
+            let spaceId: UUID?
+            let folderId: UUID?
+        }
 
-        func normalizedGroup(_ pins: [ShortcutPin]) -> [ShortcutPin] {
-            pins
+        func reservedFolderIndexes(for key: ContainerKey) -> Set<Int> {
+            guard let spaceId = key.spaceId else { return [] }
+            return Set(
+                (foldersBySpace[spaceId] ?? [])
+                    .filter { $0.parentFolderId == key.folderId }
+                    .map(\.index)
+            )
+        }
+
+        func normalizedGroup(_ pins: [ShortcutPin], reservedIndexes: Set<Int>) -> [ShortcutPin] {
+            var nextIndex = 0
+            func nextAvailableIndex() -> Int {
+                while reservedIndexes.contains(nextIndex) {
+                    nextIndex += 1
+                }
+                defer { nextIndex += 1 }
+                return nextIndex
+            }
+
+            return pins
                 .sorted { lhs, rhs in
                     if lhs.index != rhs.index { return lhs.index < rhs.index }
                     return lhs.id.uuidString < rhs.id.uuidString
                 }
-                .enumerated()
-                .map { index, pin in pin.refreshed(index: index) }
+                .map { pin in pin.refreshed(index: nextAvailableIndex()) }
         }
 
-        var normalized: [ShortcutPin] = []
-
-        let remainingFolderIds = groupedByFolder.keys
-            .compactMap { $0 }
-            .sorted { $0.uuidString < $1.uuidString }
-
-        for folderId in remainingFolderIds {
-            let pins = groupedByFolder.removeValue(forKey: folderId) ?? []
-            normalized.append(contentsOf: normalizedGroup(pins))
+        let groupedByContainer = Dictionary(grouping: items) {
+            ContainerKey(spaceId: $0.spaceId, folderId: $0.folderId)
         }
 
-        let topLevelPins = groupedByFolder.removeValue(forKey: nil) ?? []
-        normalized.append(contentsOf: topLevelPins.sorted { lhs, rhs in
-            if lhs.index != rhs.index { return lhs.index < rhs.index }
-            return lhs.id.uuidString < rhs.id.uuidString
-        })
-
-        return normalized
+        return groupedByContainer.keys
+            .sorted { lhs, rhs in
+                let leftSpace = lhs.spaceId?.uuidString ?? ""
+                let rightSpace = rhs.spaceId?.uuidString ?? ""
+                if leftSpace != rightSpace { return leftSpace < rightSpace }
+                let leftFolder = lhs.folderId?.uuidString ?? ""
+                let rightFolder = rhs.folderId?.uuidString ?? ""
+                return leftFolder < rightFolder
+            }
+            .flatMap { key in
+                normalizedGroup(
+                    groupedByContainer[key] ?? [],
+                    reservedIndexes: reservedFolderIndexes(for: key)
+                )
+            }
     }
 
     enum SpacePinnedTopLevelItem {
@@ -567,8 +604,58 @@ class TabManager: ObservableObject {
         }
     }
 
+    enum FolderChildVisualItem: Hashable {
+        case folder(UUID)
+        case shortcut(UUID)
+
+        var id: UUID {
+            switch self {
+            case .folder(let id), .shortcut(let id):
+                return id
+            }
+        }
+    }
+
+    func folderChildVisualItems(for folderId: UUID, in spaceId: UUID) -> [FolderChildVisualItem] {
+        let folders = childFolders(of: folderId, in: spaceId)
+            .map { ($0.index, 0, FolderChildVisualItem.folder($0.id)) }
+        let pins = folderPinnedPins(for: folderId, in: spaceId)
+            .map { ($0.index, 1, FolderChildVisualItem.shortcut($0.id)) }
+
+        return (folders + pins)
+            .sorted { lhs, rhs in
+                if lhs.0 != rhs.0 { return lhs.0 < rhs.0 }
+                if lhs.1 != rhs.1 { return lhs.1 < rhs.1 }
+                return lhs.2.id.uuidString < rhs.2.id.uuidString
+            }
+            .map(\.2)
+    }
+
+    func folderDirectChildCount(for folderId: UUID, in spaceId: UUID) -> Int {
+        folderChildVisualItems(for: folderId, in: spaceId).count
+    }
+
+    func folderRecursiveChildCount(for folderId: UUID, in spaceId: UUID) -> Int {
+        func countChildren(of parentId: UUID, visited: Set<UUID>) -> Int {
+            guard visited.contains(parentId) == false else { return 0 }
+            var nextVisited = visited
+            nextVisited.insert(parentId)
+
+            let childFolders = childFolders(of: parentId, in: spaceId)
+            let directPinsCount = folderPinnedPins(for: parentId, in: spaceId).count
+            let nestedCount = childFolders.reduce(0) { total, childFolder in
+                total + 1 + countChildren(of: childFolder.id, visited: nextVisited)
+            }
+            return directPinsCount + nestedCount
+        }
+
+        return countChildren(of: folderId, visited: [])
+    }
+
     func topLevelSpacePinnedItems(for spaceId: UUID) -> [SpacePinnedTopLevelItem] {
-        let folders = (foldersBySpace[spaceId] ?? []).map { ($0.index, SpacePinnedTopLevelItem.folder($0)) }
+        let folders = (foldersBySpace[spaceId] ?? [])
+            .filter { $0.parentFolderId == nil }
+            .map { ($0.index, SpacePinnedTopLevelItem.folder($0)) }
         let pins = spacePinnedPins(for: spaceId)
             .filter { $0.folderId == nil }
             .map { ($0.index, SpacePinnedTopLevelItem.shortcut($0)) }
@@ -595,6 +682,7 @@ class TabManager: ObservableObject {
                     let target = folderMap[folder.id] ?? folder
                     target.index = index
                     target.spaceId = spaceId
+                    target.parentFolderId = nil
                     orderedFolders.append(target)
                 case .shortcut(let pin):
                     orderedTopLevelPins.append(pin.refreshed(index: index).moved(toFolderId: nil))
@@ -851,6 +939,15 @@ class TabManager: ObservableObject {
         folderService.createFolder(for: spaceId, name: name)
     }
 
+    @discardableResult
+    func createFolder(
+        for spaceId: UUID,
+        parentFolderId: UUID?,
+        name: String = "New Folder"
+    ) -> TabFolder? {
+        folderService.createFolder(for: spaceId, parentFolderId: parentFolderId, name: name)
+    }
+
     func renameFolder(_ folderId: UUID, newName: String) {
         folderService.renameFolder(folderId, newName: newName)
     }
@@ -869,6 +966,10 @@ class TabManager: ObservableObject {
 
     func deleteFolder(_ folderId: UUID) {
         folderService.deleteFolder(folderId)
+    }
+
+    func ungroupFolder(_ folderId: UUID) {
+        folderService.ungroupFolder(folderId)
     }
 
     func folders(for spaceId: UUID) -> [TabFolder] {

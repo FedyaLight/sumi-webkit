@@ -92,11 +92,20 @@ enum SidebarDragOperationContextValidator {
                 && group.hostSpaceId == spaceId
 
         case .folder(let folder):
-            guard case .spacePinned(let spaceId) = operation.fromContainer else {
+            switch operation.fromContainer {
+            case .spacePinned(let spaceId):
+                return folder.spaceId == operation.scope.spaceId
+                    && folder.spaceId == spaceId
+                    && folder.parentFolderId == nil
+
+            case .folder(let parentFolderId):
+                return folder.spaceId == operation.scope.spaceId
+                    && folder.parentFolderId == parentFolderId
+                    && folderSpaceId(parentFolderId) == operation.scope.spaceId
+
+            default:
                 return false
             }
-            return folder.spaceId == operation.scope.spaceId
-                && folder.spaceId == spaceId
 
         case .pin(let pin):
             return shortcutPinMatchesSource(pin, operation: operation, folderSpaceId: folderSpaceId)

@@ -9,6 +9,7 @@ struct SidebarFolderHeaderMenuActions {
     let edit: () -> Void
     let alphabetize: () -> Void
     let unloadActiveTabs: (() -> Void)?
+    let ungroup: () -> Void
     let delete: () -> Void
 }
 
@@ -114,10 +115,28 @@ func makeSidebarContextMenuFolderChoices(
     folders: [TabFolder],
     selectedFolderId: UUID? = nil
 ) -> [SidebarContextMenuChoice] {
-    folders.map { folder in
+    let foldersById = Dictionary(uniqueKeysWithValues: folders.map { ($0.id, $0) })
+
+    func displayTitle(for folder: TabFolder) -> String {
+        var names: [String] = [folder.name]
+        var parentId = folder.parentFolderId
+        var visited: Set<UUID> = [folder.id]
+
+        while let id = parentId,
+              !visited.contains(id),
+              let parent = foldersById[id] {
+            visited.insert(id)
+            names.insert(parent.name, at: 0)
+            parentId = parent.parentFolderId
+        }
+
+        return names.joined(separator: " / ")
+    }
+
+    return folders.map { folder in
         SidebarContextMenuChoice(
             id: folder.id,
-            title: folder.name,
+            title: displayTitle(for: folder),
             icon: .folderIcon(folder.icon),
             isSelected: folder.id == selectedFolderId
         )
@@ -462,6 +481,14 @@ func makeFolderHeaderContextMenuEntries(actions: SidebarFolderHeaderMenuActions)
             iconSection,
             contentsSection,
             [
+                .action(
+                    .init(
+                        title: "Ungroup Folder",
+                        systemImage: "folder.badge.minus",
+                        classification: .structuralMutation,
+                        onAction: actions.ungroup
+                    )
+                ),
                 .action(
                     .init(
                         title: "Delete Folder",

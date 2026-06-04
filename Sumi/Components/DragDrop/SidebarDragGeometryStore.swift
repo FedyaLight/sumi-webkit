@@ -17,6 +17,7 @@ struct SidebarTopLevelPinnedItemMetrics: Equatable {
 struct SidebarFolderDropTargetMetrics: Equatable {
     let folderId: UUID
     var spaceId: UUID
+    var parentFolderId: UUID?
     var topLevelIndex: Int
     var childCount: Int
     var isOpen: Bool

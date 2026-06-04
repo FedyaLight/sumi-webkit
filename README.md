@@ -53,7 +53,7 @@ Current developer-preview builds include:
 
 - Native macOS browser shell using WebKit and SwiftUI.
 - Tabs, sidebar, profiles, and spaces.
-- Essentials, pinned items, folders, and drag-and-drop sidebar organization.
+- Essentials, pinned items, nested folders, and drag-and-drop sidebar organization.
 - Essentials shared across spaces that belong to the same profile.
 - Pinned items that live in a single space and appear like normal tabs.
 - Pinned and essential items that keep their visible sidebar identity while the live WebView/runtime instance is unloaded to reduce memory use.
@@ -62,7 +62,7 @@ Current developer-preview builds include:
 - Floating bar search/address field with suggestions, site search, history suggestions, bookmark suggestions, compact/top links behavior, and split-aware actions.
 - Bookmarks, history, and search inside bookmarks, history, and settings.
 - Custom themes.
-- Data & Recovery settings for Arc and Zen import, browser2zen-compatible `.sumiexport` transfer files, bookmarks import from Chrome/Safari/Firefox, and logical Sumi `.sumibackup` backup/restore.
+- Data & Recovery settings for Arc and Zen import with nested folder hierarchy, browser2zen-compatible `.sumiexport` transfer files, bookmarks import from Chrome/Safari/Firefox, and logical Sumi `.sumibackup` backup/restore.
 - Session restore setting for restoring the previous session or starting clean.
 - Mini Player at the bottom of the sidebar for jumping to playing media, pausing media, and muting media.
 - Memory modes and inactive tab unloading that preserve visible organization after a live WebView/runtime instance is unloaded.
@@ -109,7 +109,7 @@ Near-term work:
 
 Later work under consideration:
 
-- Nested folders and live folders.
+- Live folders.
 - Site customization/boosts.
 - Private or ephemeral profile mode.
 - Fully encrypted sync without data collection.

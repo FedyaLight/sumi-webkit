@@ -112,9 +112,11 @@ extension TabManager {
     func topLevelSpacePinnedVisualItems(for spaceId: UUID) -> [SpacePinnedVisualItem] {
         let shortcutHostedGroups = shortcutHostedSplitGroups(for: spaceId)
         let hiddenPinIds = Set(shortcutHostedGroups.flatMap { $0.shortcutPinIds })
-        let folderItems = (foldersBySpace[spaceId] ?? []).map { folder in
-            (folder.index, 1, SpacePinnedVisualItem.folder(folder.id))
-        }
+        let folderItems = (foldersBySpace[spaceId] ?? [])
+            .filter { $0.parentFolderId == nil }
+            .map { folder in
+                (folder.index, 1, SpacePinnedVisualItem.folder(folder.id))
+            }
         let shortcutItems = spacePinnedPins(for: spaceId)
             .filter { $0.folderId == nil && !hiddenPinIds.contains($0.id) }
             .map { pin in
@@ -183,6 +185,7 @@ extension TabManager {
                     guard let folder = folderMap[folderId] else { continue }
                     folder.index = index
                     folder.spaceId = spaceId
+                    folder.parentFolderId = nil
                     orderedFolders.append(folder)
 
                 case .shortcut(let pinId):

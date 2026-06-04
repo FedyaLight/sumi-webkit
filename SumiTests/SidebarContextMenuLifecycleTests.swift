@@ -395,6 +395,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
                 edit: Self.noop,
                 alphabetize: Self.noop,
                 unloadActiveTabs: Self.noop,
+                ungroup: Self.noop,
                 delete: Self.noop
             )
         )
@@ -406,6 +407,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
                 "Sort by Name",
                 "Unload Active Tabs in Folder",
                 "---",
+                "Ungroup Folder",
                 "Delete Folder [destructive]",
             ]
         )

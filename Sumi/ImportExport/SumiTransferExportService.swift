@@ -219,25 +219,36 @@ final class SumiTransferExportService {
 
             let spaceFolders = (foldersBySpace[space.id] ?? []).sorted { $0.index < $1.index }
             let folderLookup = Dictionary(uniqueKeysWithValues: spaceFolders.map { ($0.id, $0) })
+            let folderPathById = Self.folderPaths(for: spaceFolders)
+            let childFolderIdsByParent = spaceFolders.reduce(into: [String: [String]]()) { result, folder in
+                guard let parentId = folder.parentFolderId,
+                      folderLookup[parentId] != nil else { return }
+                result[parentId, default: []].append(folder.id)
+            }
+            let spacePinned = (pinnedBySpace[space.id] ?? []).sorted { $0.index < $1.index }
+            let pinnedIdsByFolder = spacePinned.reduce(into: [String: [String]]()) { result, pin in
+                guard let folderId = pin.folderId,
+                      folderLookup[folderId] != nil else { return }
+                result[folderId, default: []].append(pin.id)
+            }
             let legacyFolders = spaceFolders.map { folder in
                 SumiBrowser2ZenFolder(
                     folderId: folder.id,
                     title: folder.name,
-                    parentId: nil,
+                    parentId: folder.parentFolderId.flatMap { folderLookup[$0] == nil ? nil : $0 },
                     spaceId: space.id,
-                    childrenIds: [],
+                    childrenIds: (childFolderIdsByParent[folder.id] ?? []) + (pinnedIdsByFolder[folder.id] ?? []),
                     index: folder.index
                 )
             }
 
-            let spacePinned = (pinnedBySpace[space.id] ?? []).sorted { $0.index < $1.index }
             pinnedTabs.append(contentsOf: spacePinned.enumerated().map { idx, pin in
                 SumiBrowser2ZenTab(
                     url: pin.urlString,
                     title: pin.title,
                     spaceId: space.id,
                     spaceName: space.name,
-                    folderPath: pin.folderId.flatMap { folderLookup[$0]?.sourcePath } ?? [],
+                    folderPath: pin.folderId.flatMap { folderPathById[$0] } ?? [],
                     tabId: pin.id,
                     parentId: pin.folderId,
                     index: idx,
@@ -295,6 +306,33 @@ final class SumiTransferExportService {
             sumi: SumiBrowser2ZenExtension(formatVersion: 1, data: data)
         )
     }
+
+    private static func folderPaths(for folders: [SumiPortableFolder]) -> [String: [String]] {
+        let foldersById = Dictionary(
+            folders.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var cache: [String: [String]] = [:]
+
+        func path(for folderId: String, visited: Set<String> = []) -> [String] {
+            if let cached = cache[folderId] { return cached }
+            guard let folder = foldersById[folderId] else { return [] }
+            guard visited.contains(folderId) == false else { return [folder.name] }
+
+            var nextVisited = visited
+            nextVisited.insert(folderId)
+            let parentPath = folder.parentFolderId
+                .flatMap { foldersById[$0] == nil ? nil : path(for: $0, visited: nextVisited) } ?? []
+            let resolved = parentPath + [folder.name]
+            cache[folderId] = resolved
+            return resolved
+        }
+
+        return Dictionary(
+            folders.map { ($0.id, path(for: $0.id)) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
 }
 
 enum SumiBrowser2ZenNormalizer {
@@ -326,9 +364,12 @@ enum SumiBrowser2ZenNormalizer {
                 )
             )
 
-            let flattenedFolders = flattenedFolderRecords(from: legacySpace.folders, spaceId: spaceId)
-            folders.append(contentsOf: flattenedFolders)
-            let foldersById = Dictionary(uniqueKeysWithValues: flattenedFolders.map { ($0.id, $0) })
+            let folderRecords = folderRecords(from: legacySpace.folders, spaceId: spaceId)
+            folders.append(contentsOf: folderRecords)
+            let foldersById = Dictionary(
+                folderRecords.map { ($0.id, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
 
             for (idx, tab) in legacySpace.pinnedTabs.enumerated() {
                 guard tab.url.isEmpty == false else { continue }
@@ -379,48 +420,60 @@ enum SumiBrowser2ZenNormalizer {
         )
     }
 
-    private static func flattenedFolderRecords(
+    private static func folderRecords(
         from legacyFolders: [SumiBrowser2ZenFolder],
         spaceId: String
     ) -> [SumiPortableFolder] {
-        let folderById = Dictionary(uniqueKeysWithValues: legacyFolders.map { ($0.folderId, $0) })
+        let sourceIds = Set(legacyFolders.map(\.folderId))
+        let outputIds = Dictionary(
+            legacyFolders.map { folder in
+                (folder.folderId, folder.folderId.nilIfEmpty ?? UUID().uuidString)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let folderById = Dictionary(
+            legacyFolders.map { ($0.folderId, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         var pathCache: [String: [String]] = [:]
 
-        func path(for folder: SumiBrowser2ZenFolder) -> [String] {
+        func path(for folder: SumiBrowser2ZenFolder, visited: Set<String> = []) -> [String] {
             if let cached = pathCache[folder.folderId] { return cached }
+            guard visited.contains(folder.folderId) == false else {
+                return [folder.title]
+            }
+            var nextVisited = visited
+            nextVisited.insert(folder.folderId)
             let parentPath = folder.parentId
                 .flatMap { folderById[$0] }
-                .map(path(for:)) ?? []
+                .map { path(for: $0, visited: nextVisited) } ?? []
             let resolved = parentPath + [folder.title]
             pathCache[folder.folderId] = resolved
             return resolved
         }
 
-        let groupedByLeaf = Dictionary(grouping: legacyFolders, by: { $0.title })
-        var usedNames: [String: Int] = [:]
-
-        return legacyFolders.sorted { ($0.index ?? 0) < ($1.index ?? 0) }.enumerated().map { idx, folder in
+        let records = legacyFolders.sorted { ($0.index ?? 0) < ($1.index ?? 0) }.enumerated().map { idx, folder in
             let folderPath = path(for: folder)
-            var displayName = folder.title
-            if (groupedByLeaf[folder.title]?.count ?? 0) > 1, folderPath.count > 1 {
-                displayName = folderPath.joined(separator: " / ")
-            }
-            let count = usedNames[displayName, default: 0]
-            usedNames[displayName] = count + 1
-            if count > 0 {
-                displayName = "\(displayName) (\(count + 1))"
-            }
+            let outputId = outputIds[folder.folderId] ?? UUID().uuidString
+            let parentFolderId = folder.parentId
+                .flatMap { parentId -> String? in
+                    guard parentId != folder.folderId,
+                          sourceIds.contains(parentId) else { return nil }
+                    return outputIds[parentId]
+                }
             return SumiPortableFolder(
-                id: folder.folderId.isEmpty ? UUID().uuidString : folder.folderId,
-                name: displayName,
+                id: outputId,
+                name: folder.title.nilIfEmpty ?? "Untitled Folder",
                 icon: SumiZenFolderIconCatalog.normalizedFolderIconValue(nil),
                 colorHex: "#000000",
                 spaceId: folder.spaceId?.nilIfEmpty ?? spaceId,
+                parentFolderId: parentFolderId,
                 isOpen: true,
                 index: folder.index ?? idx,
                 sourcePath: folderPath
             )
         }
+        return SumiPortableFolderHierarchyRepair.repaired(records)
     }
 
     private static func resolvedFolderId(
@@ -429,6 +482,10 @@ enum SumiBrowser2ZenNormalizer {
     ) -> String? {
         if let parentId = tab.parentId?.nilIfEmpty, foldersById[parentId] != nil {
             return parentId
+        }
+        if tab.folderPath.isEmpty == false,
+           let exact = foldersById.values.first(where: { $0.sourcePath == tab.folderPath }) {
+            return exact.id
         }
         guard let last = tab.folderPath.last else { return nil }
         return foldersById.values.first { $0.sourcePath.last == last }?.id

@@ -38,6 +38,7 @@ enum SumiImportExportSnapshot {
                         icon: folder.icon,
                         colorHex: folder.color.toHexString() ?? "#000000",
                         spaceId: space.id.uuidString,
+                        parentFolderId: folder.parentFolderId?.uuidString,
                         isOpen: folder.isOpen,
                         index: folder.index,
                         sourcePath: [folder.name]

@@ -49,7 +49,7 @@ enum SidebarSavedItemDeletionConfirmationPresenter {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Delete Folder?"
-        alert.informativeText = "\(folderName)\n\n\(pinnedTabsText(childCount)) will stay saved outside the folder."
+        alert.informativeText = "\(folderName)\n\n\(folderItemsText(childCount)) inside this folder will be deleted."
         if let icon = NSImage(systemSymbolName: "trash", accessibilityDescription: "Delete Folder") {
             alert.icon = icon
         }
@@ -80,7 +80,7 @@ enum SidebarSavedItemDeletionConfirmationPresenter {
         }
     }
 
-    private static func pinnedTabsText(_ count: Int) -> String {
-        count == 1 ? "1 pinned tab" : "\(count) pinned tabs"
+    private static func folderItemsText(_ count: Int) -> String {
+        count == 1 ? "1 item" : "\(count) items"
     }
 }

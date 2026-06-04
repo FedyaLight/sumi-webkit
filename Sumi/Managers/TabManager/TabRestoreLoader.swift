@@ -106,6 +106,7 @@ actor TabRestoreLoader {
         let icon: String
         let color: String
         let spaceId: UUID
+        let parentFolderId: UUID?
         let isOpen: Bool
         let index: Int
     }
@@ -157,6 +158,7 @@ actor TabRestoreLoader {
                 icon: entity.icon,
                 color: entity.color,
                 spaceId: entity.spaceId,
+                parentFolderId: entity.parentFolderId,
                 isOpen: entity.isOpen,
                 index: entity.index
             )
@@ -319,6 +321,7 @@ actor TabRestoreLoader {
                     icon: normalizedIcon,
                     color: raw.color,
                     spaceId: raw.spaceId,
+                    parentFolderId: raw.parentFolderId,
                     isOpen: raw.isOpen,
                     index: raw.index
                 )
@@ -326,9 +329,49 @@ actor TabRestoreLoader {
         }
 
         for spaceId in foldersBySpace.keys {
-            foldersBySpace[spaceId] = foldersBySpace[spaceId]?.sorted(by: sortSnapshotFolders)
+            foldersBySpace[spaceId] = repairedFolderHierarchy(
+                foldersBySpace[spaceId] ?? [],
+                repairReasons: &repairReasons
+            ).sorted(by: sortSnapshotFolders)
         }
         return foldersBySpace
+    }
+
+    private func repairedFolderHierarchy(
+        _ folders: [TabSnapshotRepository.SnapshotFolder],
+        repairReasons: inout Set<String>
+    ) -> [TabSnapshotRepository.SnapshotFolder] {
+        let foldersById = Dictionary(uniqueKeysWithValues: folders.map { ($0.id, $0) })
+
+        func hasCycle(from folder: TabSnapshotRepository.SnapshotFolder) -> Bool {
+            var seen: Set<UUID> = [folder.id]
+            var parentId = folder.parentFolderId
+            while let id = parentId {
+                guard seen.insert(id).inserted else { return true }
+                parentId = foldersById[id]?.parentFolderId
+            }
+            return false
+        }
+
+        return folders.map { folder in
+            guard let parentId = folder.parentFolderId else { return folder }
+            guard let parent = foldersById[parentId],
+                  parent.spaceId == folder.spaceId,
+                  !hasCycle(from: folder) else {
+                repairReasons.insert("moved folder out of invalid parent")
+                return TabSnapshotRepository.SnapshotFolder(
+                    id: folder.id,
+                    name: folder.name,
+                    icon: folder.icon,
+                    color: folder.color,
+                    spaceId: folder.spaceId,
+                    parentFolderId: nil,
+                    isOpen: folder.isOpen,
+                    index: folder.index
+                )
+            }
+            return folder
+        }
     }
 
     private struct CategorizedTabs {
@@ -585,6 +628,7 @@ actor TabRestoreLoader {
                     icon: folder.icon,
                     color: folder.color,
                     spaceId: folder.spaceId,
+                    parentFolderId: folder.parentFolderId,
                     isOpen: folder.isOpen,
                     index: folder.index
                 )

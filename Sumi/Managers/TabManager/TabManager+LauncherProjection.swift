@@ -6,6 +6,7 @@ extension TabManager {
         let regularTabs: [Tab]
         let topLevelFolders: [TabFolder]
         let topLevelPins: [ShortcutPin]
+        let childFolders: [UUID: [TabFolder]]
         let folderPins: [UUID: [ShortcutPin]]
         let liveTabsByPinId: [UUID: Tab]
 
@@ -34,6 +35,16 @@ extension TabManager {
         let topLevelFolders = (foldersBySpace[spaceId] ?? []).sorted { lhs, rhs in
             if lhs.index != rhs.index { return lhs.index < rhs.index }
             return lhs.id.uuidString < rhs.id.uuidString
+        }
+        .filter { $0.parentFolderId == nil }
+        let childFolders = Dictionary(
+            grouping: (foldersBySpace[spaceId] ?? []).filter { $0.parentFolderId != nil },
+            by: { $0.parentFolderId! }
+        ).mapValues { folders in
+            folders.sorted { lhs, rhs in
+                if lhs.index != rhs.index { return lhs.index < rhs.index }
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
         }
         let topLevelPins = visiblePersistedPins
             .filter { $0.folderId == nil }
@@ -71,6 +82,7 @@ extension TabManager {
             regularTabs: regularTabs,
             topLevelFolders: topLevelFolders,
             topLevelPins: topLevelPins,
+            childFolders: childFolders,
             folderPins: folderPins,
             liveTabsByPinId: liveTabsByPinId
         )

@@ -49,8 +49,41 @@ actor TabSnapshotRepository {
         let icon: String
         let color: String
         let spaceId: UUID
+        let parentFolderId: UUID?
         let isOpen: Bool
         let index: Int
+
+        init(
+            id: UUID,
+            name: String,
+            icon: String,
+            color: String,
+            spaceId: UUID,
+            parentFolderId: UUID? = nil,
+            isOpen: Bool,
+            index: Int
+        ) {
+            self.id = id
+            self.name = name
+            self.icon = icon
+            self.color = color
+            self.spaceId = spaceId
+            self.parentFolderId = parentFolderId
+            self.isOpen = isOpen
+            self.index = index
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(UUID.self, forKey: .id)
+            name = try container.decode(String.self, forKey: .name)
+            icon = try container.decode(String.self, forKey: .icon)
+            color = try container.decode(String.self, forKey: .color)
+            spaceId = try container.decode(UUID.self, forKey: .spaceId)
+            parentFolderId = try container.decodeIfPresent(UUID.self, forKey: .parentFolderId)
+            isOpen = try container.decode(Bool.self, forKey: .isOpen)
+            index = try container.decode(Int.self, forKey: .index)
+        }
     }
 
     struct SnapshotSpace: Codable, Sendable {
@@ -470,6 +503,7 @@ actor TabSnapshotRepository {
             existing.icon = normalizedIcon
             existing.color = folder.color
             existing.spaceId = folder.spaceId
+            existing.parentFolderId = folder.parentFolderId
             existing.isOpen = folder.isOpen
             existing.index = folder.index
         } else {
@@ -479,6 +513,7 @@ actor TabSnapshotRepository {
                 icon: normalizedIcon,
                 color: folder.color,
                 spaceId: folder.spaceId,
+                parentFolderId: folder.parentFolderId,
                 isOpen: folder.isOpen,
                 index: folder.index
             )
@@ -687,6 +722,7 @@ actor TabSnapshotRepository {
         for folder in delta.folders where delta.deletedSpaceIds.contains(folder.spaceId) {
             throw PersistenceError.invalidModelState
         }
+        try validateFolderHierarchy(delta.folders, requiresCompleteParentSet: false)
     }
 
     private func validateInput(_ snapshot: Snapshot) throws {
@@ -699,6 +735,10 @@ actor TabSnapshotRepository {
         }
         let spaceIDs = Set(snapshot.spaces.map { $0.id })
         if spaceIDs.count != snapshot.spaces.count {
+            throw PersistenceError.invalidModelState
+        }
+        let folderIDs = Set(snapshot.folders.map(\.id))
+        if folderIDs.count != snapshot.folders.count {
             throw PersistenceError.invalidModelState
         }
 
@@ -717,6 +757,11 @@ actor TabSnapshotRepository {
             }
         }
 
+        for folder in snapshot.folders where !spaceIDs.contains(folder.spaceId) {
+            throw PersistenceError.invalidModelState
+        }
+        try validateFolderHierarchy(snapshot.folders, requiresCompleteParentSet: true)
+
         try validateSplitGroups(snapshot.splitGroups)
 
         for space in snapshot.spaces where space.profileId == nil {
@@ -728,6 +773,39 @@ actor TabSnapshotRepository {
         let sanitized = SplitGroup.sanitized(splitGroups)
         guard sanitized.count == splitGroups.count else {
             throw PersistenceError.invalidModelState
+        }
+    }
+
+    private func validateFolderHierarchy(
+        _ folders: [SnapshotFolder],
+        requiresCompleteParentSet: Bool
+    ) throws {
+        let foldersById = Dictionary(uniqueKeysWithValues: folders.map { ($0.id, $0) })
+
+        for folder in folders {
+            guard let parentFolderId = folder.parentFolderId else { continue }
+            if parentFolderId == folder.id {
+                throw PersistenceError.invalidModelState
+            }
+            if let parent = foldersById[parentFolderId] {
+                if parent.spaceId != folder.spaceId {
+                    throw PersistenceError.invalidModelState
+                }
+            } else if requiresCompleteParentSet {
+                throw PersistenceError.invalidModelState
+            }
+        }
+
+        for folder in folders {
+            var visited: Set<UUID> = [folder.id]
+            var parentId = folder.parentFolderId
+            while let id = parentId,
+                  let parent = foldersById[id] {
+                guard visited.insert(id).inserted else {
+                    throw PersistenceError.invalidModelState
+                }
+                parentId = parent.parentFolderId
+            }
         }
     }
 

@@ -74,6 +74,7 @@ final class FolderEntity {
     var icon: String
     var color: String
     var spaceId: UUID
+    var parentFolderId: UUID?
     var isOpen: Bool
     var index: Int
 
@@ -83,6 +84,7 @@ final class FolderEntity {
         icon: String,
         color: String,
         spaceId: UUID,
+        parentFolderId: UUID? = nil,
         isOpen: Bool,
         index: Int
     ) {
@@ -91,6 +93,7 @@ final class FolderEntity {
         self.icon = icon
         self.color = color
         self.spaceId = spaceId
+        self.parentFolderId = parentFolderId
         self.isOpen = isOpen
         self.index = index
     }

@@ -89,14 +89,11 @@ final class SumiBrowserImportService {
         if overflow > 0 {
             warnings.append("\(overflow) \(source) essentials exceed Sumi's 12-item profile limit and will become space-pinned launchers.")
         }
-        if data.folders.contains(where: { $0.sourcePath.count > 1 }) {
-            warnings.append("Nested sidebar folders will be flattened into one-level Sumi folders.")
-        }
         return warnings
     }
 }
 
-private struct SumiArcImportParser {
+struct SumiArcImportParser {
     func parse(sidebarURL: URL) throws -> SumiPortableData {
         guard FileManager.default.fileExists(atPath: sidebarURL.path) else {
             throw SumiImportExportError.unsupportedFile("Arc StorableSidebar.json was not found.")
@@ -156,6 +153,7 @@ private struct SumiArcImportParser {
                 itemLookup: itemLookup,
                 spaceId: spaceId,
                 profileId: profileId,
+                parentFolderId: nil,
                 folderPath: [],
                 folders: &folders,
                 pinned: &pinned,
@@ -191,7 +189,7 @@ private struct SumiArcImportParser {
             profileRecordsByName: profileRecordsByName
         )
 
-        folders = flattenedFolders(folders)
+        folders = SumiPortableFolderHierarchyRepair.repaired(folders)
         let bookmarks = parseArcBookmarks()
 
         return SumiPortableData(
@@ -241,6 +239,7 @@ private struct SumiArcImportParser {
         itemLookup: [String: [String: Any]],
         spaceId: String,
         profileId: String,
+        parentFolderId: String?,
         folderPath: [String],
         folders: inout [SumiPortableFolder],
         pinned: inout [SumiPortableLauncher],
@@ -262,7 +261,7 @@ private struct SumiArcImportParser {
                         profileId: nil,
                         executionProfileId: profileId,
                         spaceId: spaceId,
-                        folderId: item["parentID"] as? String,
+                        folderId: (item["parentID"] as? String)?.nilIfBlank ?? parentFolderId,
                         iconAsset: nil,
                         sourceSpaceId: spaceId
                     )
@@ -278,6 +277,7 @@ private struct SumiArcImportParser {
                         icon: SumiZenFolderIconCatalog.normalizedFolderIconValue(nil),
                         colorHex: "#000000",
                         spaceId: spaceId,
+                        parentFolderId: parentFolderId,
                         isOpen: true,
                         index: nextIndex,
                         sourcePath: path
@@ -289,6 +289,7 @@ private struct SumiArcImportParser {
                     itemLookup: itemLookup,
                     spaceId: spaceId,
                     profileId: profileId,
+                    parentFolderId: itemId,
                     folderPath: path,
                     folders: &folders,
                     pinned: &pinned,
@@ -395,29 +396,6 @@ private struct SumiArcImportParser {
         }
     }
 
-    private func flattenedFolders(_ folders: [SumiPortableFolder]) -> [SumiPortableFolder] {
-        let grouped = Dictionary(grouping: folders, by: { "\($0.spaceId)|\($0.name)" })
-        var usedBySpace: [String: Set<String>] = [:]
-        return folders.map { folder in
-            var copy = folder
-            if (grouped["\(folder.spaceId)|\(folder.name)"]?.count ?? 0) > 1, folder.sourcePath.count > 1 {
-                copy.name = folder.sourcePath.joined(separator: " / ")
-            }
-            var used = usedBySpace[copy.spaceId, default: []]
-            let root = copy.name
-            var candidate = root
-            var suffix = 2
-            while used.contains(candidate) {
-                candidate = "\(root) (\(suffix))"
-                suffix += 1
-            }
-            copy.name = candidate
-            used.insert(candidate)
-            usedBySpace[copy.spaceId] = used
-            return copy
-        }
-    }
-
     private func localSidebar(_ root: [String: Any]) -> [String: Any] {
         let containers = (root["sidebar"] as? [String: Any])?["containers"] as? [[String: Any]] ?? []
         guard containers.count > 1 else { return [:] }
@@ -477,7 +455,7 @@ private struct ArcSpaceInfo {
     var color: SumiPortableRGBColor?
 }
 
-private struct SumiZenImportParser {
+struct SumiZenImportParser {
     func parse(profileURL: URL) throws -> SumiPortableData {
         let sessionsURL = profileURL.appendingPathComponent("zen-sessions.jsonlz4")
         guard FileManager.default.fileExists(atPath: sessionsURL.path) else {
@@ -528,10 +506,10 @@ private struct SumiZenImportParser {
             )
         }
 
-        let folderRecords = flattenZenFolders(zenFolders)
-        let foldersById = Dictionary(uniqueKeysWithValues: folderRecords.map { ($0.id, $0) })
+        let folderIds = Set(zenFolders.compactMap { $0["id"] as? String })
         var essentials: [SumiPortableLauncher] = []
         var pinned: [SumiPortableLauncher] = []
+        var pinnedSiblingIndexes: [String: Int] = [:]
         var regularTabs: [SumiPortableRegularTab] = []
 
         for (idx, tab) in zenTabs.enumerated() {
@@ -563,21 +541,23 @@ private struct SumiZenImportParser {
                     )
                 )
             } else if isPinned {
-                let folderId = (tab["groupId"] as? String).flatMap { foldersById[$0]?.id }
-                pinned.append(
-                    SumiPortableLauncher(
-                        id: syncId,
-                        title: title,
-                        urlString: url,
-                        index: idx,
-                        profileId: nil,
-                        executionProfileId: profileId,
-                        spaceId: workspaceId,
-                        folderId: folderId,
-                        iconAsset: nil,
-                        sourceSpaceId: workspaceId
-                    )
+                let folderId = (tab["groupId"] as? String).flatMap { folderIds.contains($0) ? $0 : nil }
+                let launcher = SumiPortableLauncher(
+                    id: syncId,
+                    title: title,
+                    urlString: url,
+                    index: idx,
+                    profileId: nil,
+                    executionProfileId: profileId,
+                    spaceId: workspaceId,
+                    folderId: folderId,
+                    iconAsset: nil,
+                    sourceSpaceId: workspaceId
                 )
+                pinned.append(launcher)
+                for siblingId in zenTabSiblingIdentifiers(from: tab, fallbackId: syncId) {
+                    pinnedSiblingIndexes[siblingId] = idx
+                }
             } else {
                 regularTabs.append(
                     SumiPortableRegularTab(
@@ -601,6 +581,7 @@ private struct SumiZenImportParser {
         )
         let bookmarks = (try? bookmarkSource.readBookmarks())
             .map(SumiBookmarkPortableBridge.portableNodes(from:)) ?? []
+        let folderRecords = flattenZenFolders(zenFolders, pinnedSiblingIndexes: pinnedSiblingIndexes)
 
         return SumiPortableData(
             profiles: Array(profilesByContainer.values).sorted { $0.index < $1.index },
@@ -630,7 +611,10 @@ private struct SumiZenImportParser {
         return output
     }
 
-    private func flattenZenFolders(_ folders: [[String: Any]]) -> [SumiPortableFolder] {
+    func flattenZenFolders(
+        _ folders: [[String: Any]],
+        pinnedSiblingIndexes: [String: Int] = [:]
+    ) -> [SumiPortableFolder] {
         var rawById: [String: [String: Any]] = [:]
         for folder in folders {
             if let id = folder["id"] as? String {
@@ -639,17 +623,28 @@ private struct SumiZenImportParser {
         }
 
         var pathCache: [String: [String]] = [:]
-        func path(for id: String) -> [String] {
+        func path(for id: String, visited: Set<String> = []) -> [String] {
             if let cached = pathCache[id] { return cached }
             guard let folder = rawById[id] else { return [] }
-            let parent = (folder["parentId"] as? String).flatMap(path(for:)) ?? []
+            guard visited.contains(id) == false else {
+                return [folder["name"] as? String ?? "Untitled Folder"]
+            }
+            var nextVisited = visited
+            nextVisited.insert(id)
+            let parent = (folder["parentId"] as? String)
+                .flatMap { rawById[$0] == nil ? nil : path(for: $0, visited: nextVisited) } ?? []
             let resolved = parent + [folder["name"] as? String ?? "Untitled Folder"]
             pathCache[id] = resolved
             return resolved
         }
 
-        let records = folders.enumerated().compactMap { idx, folder -> SumiPortableFolder? in
+        var previousSiblingInfoById: [String: (type: String, id: String?)] = [:]
+        var records = folders.enumerated().compactMap { idx, folder -> SumiPortableFolder? in
             guard let id = folder["id"] as? String else { return nil }
+            if let info = folder["prevSiblingInfo"] as? [String: Any],
+               let type = info["type"] as? String {
+                previousSiblingInfoById[id] = (type: type, id: (info["id"] as? String)?.nilIfBlank)
+            }
             let folderPath = path(for: id)
             return SumiPortableFolder(
                 id: id,
@@ -657,12 +652,89 @@ private struct SumiZenImportParser {
                 icon: SumiZenFolderIconCatalog.normalizedFolderIconValue(folder["userIcon"] as? String),
                 colorHex: "#000000",
                 spaceId: folder["workspaceId"] as? String ?? "",
+                parentFolderId: (folder["parentId"] as? String)?.nilIfBlank,
                 isOpen: !(folder["collapsed"] as? Bool ?? false),
                 index: idx,
                 sourcePath: folderPath
             )
         }
-        return SumiArcImportParser().flattenedFoldersForZen(records)
+        applyZenPreviousSiblingOrder(
+            to: &records,
+            previousSiblingInfoById: previousSiblingInfoById,
+            pinnedSiblingIndexes: pinnedSiblingIndexes
+        )
+        return SumiPortableFolderHierarchyRepair.repaired(records)
+    }
+
+    private func applyZenPreviousSiblingOrder(
+        to records: inout [SumiPortableFolder],
+        previousSiblingInfoById: [String: (type: String, id: String?)],
+        pinnedSiblingIndexes: [String: Int]
+    ) {
+        var folderIndexById = Dictionary(
+            records.map { ($0.id, $0.index) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let folderContainerById = Dictionary(
+            records.map { ($0.id, "\($0.spaceId)|\($0.parentFolderId ?? "")") },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        func previousIndex(for folder: SumiPortableFolder) -> Int? {
+            guard let info = previousSiblingInfoById[folder.id] else { return nil }
+            switch info.type {
+            case "start":
+                return -1
+            case "group":
+                guard let previousFolderId = info.id,
+                      folderContainerById[previousFolderId] == folderContainerById[folder.id],
+                      let index = folderIndexById[previousFolderId] else {
+                    return nil
+                }
+                return index
+            case "tab":
+                guard let previousTabId = info.id,
+                      let index = pinnedSiblingIndexes[previousTabId] else {
+                    return nil
+                }
+                return index
+            default:
+                return nil
+            }
+        }
+
+        for _ in 0..<max(records.count, 1) {
+            var changed = false
+            for idx in records.indices {
+                guard let index = previousIndex(for: records[idx]).map({ $0 + 1 }),
+                      records[idx].index != index else {
+                    continue
+                }
+                records[idx].index = index
+                folderIndexById[records[idx].id] = index
+                changed = true
+            }
+            if changed == false { break }
+        }
+    }
+
+    private func zenTabSiblingIdentifiers(from tab: [String: Any], fallbackId: String) -> [String] {
+        var ids: [String] = [fallbackId]
+        for key in ["id", "zenSyncId", "tabId"] {
+            if let id = (tab[key] as? String)?.nilIfBlank {
+                ids.append(id)
+            }
+        }
+        if let attributes = tab["attributes"] as? [String: Any] {
+            for key in ["id", "zenSyncId", "tabId"] {
+                if let id = (attributes[key] as? String)?.nilIfBlank {
+                    ids.append(id)
+                }
+            }
+        }
+
+        var seen: Set<String> = []
+        return ids.filter { seen.insert($0).inserted }
     }
 
     private func zenColor(from space: [String: Any]) -> SumiPortableRGBColor? {
@@ -719,27 +791,39 @@ private extension String {
     }
 }
 
-private extension SumiArcImportParser {
-    func flattenedFoldersForZen(_ folders: [SumiPortableFolder]) -> [SumiPortableFolder] {
-        let grouped = Dictionary(grouping: folders, by: { "\($0.spaceId)|\($0.name)" })
-        var usedBySpace: [String: Set<String>] = [:]
+enum SumiPortableFolderHierarchyRepair {
+    static func repaired(_ folders: [SumiPortableFolder]) -> [SumiPortableFolder] {
+        let folderById = Dictionary(
+            folders.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         return folders.map { folder in
             var copy = folder
-            if (grouped["\(folder.spaceId)|\(folder.name)"]?.count ?? 0) > 1, folder.sourcePath.count > 1 {
-                copy.name = folder.sourcePath.joined(separator: " / ")
+            guard let parentId = folder.parentFolderId else {
+                return copy
             }
-            var used = usedBySpace[copy.spaceId, default: []]
-            let root = copy.name
-            var candidate = root
-            var suffix = 2
-            while used.contains(candidate) {
-                candidate = "\(root) (\(suffix))"
-                suffix += 1
+            guard parentId != folder.id,
+                  let parent = folderById[parentId],
+                  parent.spaceId == folder.spaceId,
+                  createsCycle(folderId: folder.id, parentId: parentId, folderById: folderById) == false else {
+                copy.parentFolderId = nil
+                return copy
             }
-            copy.name = candidate
-            used.insert(candidate)
-            usedBySpace[copy.spaceId] = used
             return copy
         }
+    }
+
+    private static func createsCycle(
+        folderId: String,
+        parentId: String,
+        folderById: [String: SumiPortableFolder]
+    ) -> Bool {
+        var visited: Set<String> = [folderId]
+        var cursor: String? = parentId
+        while let current = cursor {
+            guard visited.insert(current).inserted else { return true }
+            cursor = folderById[current]?.parentFolderId
+        }
+        return false
     }
 }

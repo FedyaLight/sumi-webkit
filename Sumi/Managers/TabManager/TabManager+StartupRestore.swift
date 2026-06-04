@@ -123,6 +123,7 @@ extension TabManager {
                     existingFolders[index].name = snapshotFolder.name
                     existingFolders[index].icon = snapshotFolder.icon
                     existingFolders[index].color = NSColor(hex: snapshotFolder.color) ?? .controlAccentColor
+                    existingFolders[index].parentFolderId = snapshotFolder.parentFolderId
                     existingFolders[index].isOpen = snapshotFolder.isOpen
                     existingFolders[index].index = snapshotFolder.index
                 } else {
@@ -130,6 +131,7 @@ extension TabManager {
                         id: snapshotFolder.id,
                         name: snapshotFolder.name,
                         spaceId: snapshotFolder.spaceId,
+                        parentFolderId: snapshotFolder.parentFolderId,
                         icon: snapshotFolder.icon,
                         color: NSColor(hex: snapshotFolder.color) ?? .controlAccentColor,
                         index: snapshotFolder.index

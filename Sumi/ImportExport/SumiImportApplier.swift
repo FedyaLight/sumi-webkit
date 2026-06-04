@@ -146,12 +146,19 @@ final class SumiImportApplier {
             output.folders.append(contentsOf: incoming.folders.enumerated().compactMap { offset, folder in
                 let mappedSpaceId = idMap.spaceId(folder.spaceId)
                 guard output.spaces.contains(where: { $0.id == mappedSpaceId }) else { return nil }
+                let mappedParentFolderId = folder.parentFolderId.map(idMap.folderId(_:))
                 return SumiPortableFolder(
                     id: idMap.folderId(folder.id),
-                    name: uniqueFolderName(folder.name, spaceId: mappedSpaceId, existing: output.folders),
+                    name: uniqueFolderName(
+                        folder.name,
+                        spaceId: mappedSpaceId,
+                        parentFolderId: mappedParentFolderId,
+                        existing: output.folders
+                    ),
                     icon: folder.icon,
                     colorHex: folder.colorHex,
                     spaceId: mappedSpaceId,
+                    parentFolderId: mappedParentFolderId,
                     isOpen: folder.isOpen,
                     index: folder.index + offset,
                     sourcePath: folder.sourcePath
@@ -204,6 +211,7 @@ final class SumiImportApplier {
             output.bookmarks.append(contentsOf: incoming.bookmarks)
         }
 
+        repairFolderParentRelationships(in: &output)
         deduplicateRuntimeBuckets(in: &output)
         normalizeIndices(in: &output)
         return output
@@ -318,6 +326,7 @@ final class SumiImportApplier {
                         id: UUID(uuidString: record.id) ?? UUID(),
                         name: record.name,
                         spaceId: space.id,
+                        parentFolderId: record.parentFolderId.flatMap(UUID.init(uuidString:)),
                         icon: record.icon,
                         color: NSColor(hex: record.colorHex) ?? .controlAccentColor,
                         index: record.index
@@ -326,7 +335,13 @@ final class SumiImportApplier {
                     return folder
                 }
         }
-        let validFolderIds = Set(foldersBySpace.values.flatMap { $0.map(\.id) })
+        repairTabFolderParentRelationships(in: &foldersBySpace)
+        let folderSpaceById = Dictionary(
+            foldersBySpace.flatMap { spaceId, folders in
+                folders.map { ($0.id, spaceId) }
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
 
         var tabsBySpace: [UUID: [Tab]] = [:]
         let tabRecordsBySpace = Dictionary(grouping: data.regularTabs, by: \.spaceId)
@@ -350,7 +365,7 @@ final class SumiImportApplier {
                     )
                     tab.profileId = record.profileId.flatMap(UUID.init(uuidString:))
                     if let folderId = record.folderId.flatMap(UUID.init(uuidString:)),
-                       validFolderIds.contains(folderId) {
+                       folderSpaceById[folderId] == space.id {
                         tab.folderId = folderId
                     }
                     return tab
@@ -391,7 +406,7 @@ final class SumiImportApplier {
                         return nil
                     }
                     let folderId = record.folderId.flatMap(UUID.init(uuidString:)).flatMap {
-                        validFolderIds.contains($0) ? $0 : nil
+                        folderSpaceById[$0] == space.id ? $0 : nil
                     }
                     return ShortcutPin(
                         id: UUID(uuidString: record.id) ?? UUID(),
@@ -481,6 +496,64 @@ final class SumiImportApplier {
         }
     }
 
+    private func repairFolderParentRelationships(in data: inout SumiPortableData) {
+        data.folders = SumiPortableFolderHierarchyRepair.repaired(data.folders)
+        let folderSpaceById = Dictionary(
+            data.folders.map { ($0.id, $0.spaceId) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        data.pinnedLaunchers = data.pinnedLaunchers.map { launcher in
+            var copy = launcher
+            if let folderId = launcher.folderId,
+               folderSpaceById[folderId] != launcher.spaceId {
+                copy.folderId = nil
+            }
+            return copy
+        }
+        data.regularTabs = data.regularTabs.map { tab in
+            var copy = tab
+            if let folderId = tab.folderId,
+               folderSpaceById[folderId] != tab.spaceId {
+                copy.folderId = nil
+            }
+            return copy
+        }
+    }
+
+    private func repairTabFolderParentRelationships(in foldersBySpace: inout [UUID: [TabFolder]]) {
+        for (spaceId, folders) in foldersBySpace {
+            let folderById = Dictionary(
+                folders.map { ($0.id, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            for folder in folders {
+                guard let parentId = folder.parentFolderId else { continue }
+                guard parentId != folder.id,
+                      let parent = folderById[parentId],
+                      parent.spaceId == spaceId,
+                      createsTabFolderCycle(folderId: folder.id, parentId: parentId, folderById: folderById) == false else {
+                    folder.parentFolderId = nil
+                    continue
+                }
+            }
+            foldersBySpace[spaceId] = folders
+        }
+    }
+
+    private func createsTabFolderCycle(
+        folderId: UUID,
+        parentId: UUID,
+        folderById: [UUID: TabFolder]
+    ) -> Bool {
+        var visited: Set<UUID> = [folderId]
+        var cursor: UUID? = parentId
+        while let current = cursor {
+            guard visited.insert(current).inserted else { return true }
+            cursor = folderById[current]?.parentFolderId
+        }
+        return false
+    }
+
     private func normalizeIndices(in data: inout SumiPortableData) {
         data.profiles = data.profiles.sorted { $0.index < $1.index }.enumerated().map { idx, item in
             var copy = item
@@ -492,10 +565,82 @@ final class SumiImportApplier {
             copy.index = idx
             return copy
         }
-        data.folders = normalizeByBucket(data.folders, bucket: \.spaceId)
+        (data.folders, data.pinnedLaunchers) = Self.normalizedSidebarContainerIndices(
+            folders: data.folders,
+            pinnedLaunchers: data.pinnedLaunchers
+        )
         data.essentials = normalizeLaunchers(data.essentials, bucket: { $0.profileId ?? "" })
-        data.pinnedLaunchers = normalizeLaunchers(data.pinnedLaunchers, bucket: { $0.spaceId ?? "" })
         data.regularTabs = normalizeByBucket(data.regularTabs, bucket: \.spaceId)
+    }
+
+    static func normalizedSidebarContainerIndices(
+        folders: [SumiPortableFolder],
+        pinnedLaunchers: [SumiPortableLauncher]
+    ) -> (folders: [SumiPortableFolder], pinnedLaunchers: [SumiPortableLauncher]) {
+        struct ContainerKey: Hashable {
+            let spaceId: String
+            let folderId: String?
+        }
+
+        enum SidebarEntry {
+            case folder(arrayIndex: Int, sourceIndex: Int, id: String)
+            case pinnedLauncher(arrayIndex: Int, sourceIndex: Int, id: String)
+
+            var sourceIndex: Int {
+                switch self {
+                case .folder(_, let sourceIndex, _),
+                     .pinnedLauncher(_, let sourceIndex, _):
+                    return sourceIndex
+                }
+            }
+
+            var sortRank: Int {
+                switch self {
+                case .folder: return 0
+                case .pinnedLauncher: return 1
+                }
+            }
+
+            var stableId: String {
+                switch self {
+                case .folder(_, _, let id),
+                     .pinnedLauncher(_, _, let id):
+                    return id
+                }
+            }
+        }
+
+        var grouped: [ContainerKey: [SidebarEntry]] = [:]
+        for (idx, folder) in folders.enumerated() {
+            let key = ContainerKey(spaceId: folder.spaceId, folderId: folder.parentFolderId)
+            grouped[key, default: []].append(.folder(arrayIndex: idx, sourceIndex: folder.index, id: folder.id))
+        }
+        for (idx, launcher) in pinnedLaunchers.enumerated() {
+            let key = ContainerKey(spaceId: launcher.spaceId ?? "", folderId: launcher.folderId)
+            grouped[key, default: []].append(.pinnedLauncher(arrayIndex: idx, sourceIndex: launcher.index, id: launcher.id))
+        }
+
+        var normalizedFolders = folders
+        var normalizedPinnedLaunchers = pinnedLaunchers
+        for key in grouped.keys.sorted(by: { lhs, rhs in
+            if lhs.spaceId != rhs.spaceId { return lhs.spaceId < rhs.spaceId }
+            return (lhs.folderId ?? "") < (rhs.folderId ?? "")
+        }) {
+            let entries = (grouped[key] ?? []).sorted { lhs, rhs in
+                if lhs.sourceIndex != rhs.sourceIndex { return lhs.sourceIndex < rhs.sourceIndex }
+                if lhs.sortRank != rhs.sortRank { return lhs.sortRank < rhs.sortRank }
+                return lhs.stableId < rhs.stableId
+            }
+            for (idx, entry) in entries.enumerated() {
+                switch entry {
+                case .folder(let arrayIndex, _, _):
+                    normalizedFolders[arrayIndex].index = idx
+                case .pinnedLauncher(let arrayIndex, _, _):
+                    normalizedPinnedLaunchers[arrayIndex].index = idx
+                }
+            }
+        }
+        return (normalizedFolders, normalizedPinnedLaunchers)
     }
 
     private func normalizeLaunchers(
@@ -567,9 +712,15 @@ final class SumiImportApplier {
     private func uniqueFolderName(
         _ base: String,
         spaceId: String,
+        parentFolderId: String?,
         existing: [SumiPortableFolder]
     ) -> String {
-        uniqueName(base, existing: existing.filter { $0.spaceId == spaceId }.map(\.name))
+        uniqueName(
+            base,
+            existing: existing
+                .filter { $0.spaceId == spaceId && $0.parentFolderId == parentFolderId }
+                .map(\.name)
+        )
     }
 }
 

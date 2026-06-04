@@ -62,7 +62,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         XCTAssertTrue(storedPin.isSpacePinned)
         XCTAssertEqual(storedPin.folderId, folder.id)
 
-        tabManager.deleteFolder(folder.id)
+        tabManager.ungroupFolder(folder.id)
         try await waitForStore(in: container) { context in
             guard let storedPin = try fetchTab(pin.id, in: context) else { return false }
             return try fetchFolder(folder.id, in: context) == nil
@@ -75,6 +75,44 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         storedPin = try XCTUnwrap(fetchTab(pin.id, in: context))
         XCTAssertNil(storedPin.folderId)
         XCTAssertTrue(storedPin.isSpacePinned)
+    }
+
+    func testDeleteFolderRemovesFolderChildrenPersistence() async throws {
+        let container = try makeInMemoryContainer()
+        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let space = tabManager.createSpace(name: "Pinned", profileId: UUID())
+        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let nested = try XCTUnwrap(tabManager.createFolder(for: space.id, parentFolderId: folder.id, name: "Nested"))
+        let tab = tabManager.createNewTab(url: "https://example.com/docs", in: space, activate: true)
+        let nestedTab = tabManager.createNewTab(url: "https://example.com/nested", in: space, activate: false)
+
+        tabManager.moveTabToFolder(tab: tab, folderId: folder.id)
+        tabManager.moveTabToFolder(tab: nestedTab, folderId: nested.id)
+        let pins = tabManager.spacePinnedPins(for: space.id)
+        let pinIds = Set(pins.map(\.id))
+        XCTAssertEqual(pins.count, 2)
+
+        try await waitForStore(in: container) { context in
+            try fetchFolder(folder.id, in: context) != nil
+                && fetchFolder(nested.id, in: context) != nil
+                && pins.allSatisfy { pin in
+                    (try? fetchTab(pin.id, in: context)) != nil
+                }
+        }
+
+        tabManager.deleteFolder(folder.id)
+        try await waitForStore(in: container) { context in
+            guard try fetchFolder(folder.id, in: context) == nil,
+                  try fetchFolder(nested.id, in: context) == nil else {
+                return false
+            }
+            for pinId in pinIds {
+                if try fetchTab(pinId, in: context) != nil {
+                    return false
+                }
+            }
+            return true
+        }
     }
 
     func testFolderOpenStatePersistence() async throws {

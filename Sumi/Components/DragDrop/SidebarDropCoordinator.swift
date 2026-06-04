@@ -182,7 +182,7 @@ enum SidebarDropCoordinator {
             guard let spaceId = tabManager.folderSpaceId(for: folderId) else {
                 return nil
             }
-            return tabManager.folderPinnedPins(for: folderId, in: spaceId).count
+            return tabManager.folderChildVisualItems(for: folderId, in: spaceId).count
 
         case .none:
             return nil
@@ -223,8 +223,15 @@ enum SidebarDropCoordinator {
             guard let spaceId = tabManager.folderSpaceId(for: folderId) else {
                 return nil
             }
-            return tabManager.folderPinnedPins(for: folderId, in: spaceId)
-                .firstIndex { $0.id == sourceItemId || payload.matchesShortcutPinId($0.id) }
+            return tabManager.folderChildVisualItems(for: folderId, in: spaceId)
+                .firstIndex { item in
+                    switch item {
+                    case .folder(let childFolderId):
+                        return childFolderId == sourceItemId || payload.matchesFolderId(childFolderId)
+                    case .shortcut(let pinId):
+                        return pinId == sourceItemId || payload.matchesShortcutPinId(pinId)
+                    }
+                }
 
         case .none:
             return nil
@@ -249,5 +256,10 @@ private extension DragOperation.Payload {
     func matchesSplitGroupId(_ groupId: UUID) -> Bool {
         guard case .splitGroup(let group) = self else { return false }
         return group.id == groupId
+    }
+
+    func matchesFolderId(_ folderId: UUID) -> Bool {
+        guard case .folder(let folder) = self else { return false }
+        return folder.id == folderId
     }
 }

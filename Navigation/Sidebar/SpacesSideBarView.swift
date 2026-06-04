@@ -163,10 +163,10 @@ struct SpaceFolderSnapshot: Identifiable {
     let iconValue: String
     let isOpen: Bool
     let hasActiveSelection: Bool
-    let bodyChildren: [SpaceShortcutSnapshot]
+    let bodyChildren: [SpacePinnedItemSnapshot]
 }
 
-enum SpacePinnedItemSnapshot: Identifiable {
+indirect enum SpacePinnedItemSnapshot: Identifiable {
     case folder(SpaceFolderSnapshot)
     case shortcut(SpaceShortcutSnapshot)
 
@@ -176,6 +176,19 @@ enum SpacePinnedItemSnapshot: Identifiable {
             return folder.id
         case .shortcut(let shortcut):
             return shortcut.id
+        }
+    }
+}
+
+private extension Array where Element == SpacePinnedItemSnapshot {
+    var containsActiveSelection: Bool {
+        contains { item in
+            switch item {
+            case .folder(let folder):
+                return folder.hasActiveSelection || folder.bodyChildren.containsActiveSelection
+            case .shortcut(let shortcut):
+                return shortcut.presentationState.isSelected
+            }
         }
     }
 }
@@ -363,11 +376,13 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                     SpacePinnedItemSnapshot.folder(
                         folderSnapshot(
                             for: folder,
-                            children: projection.folderPins[folder.id] ?? [],
+                            childFoldersByParentId: projection.childFolders,
+                            folderPinsByFolderId: projection.folderPins,
                             liveTabsByPinId: projection.liveTabsByPinId,
                             browserManager: browserManager,
                             windowState: windowState,
-                            splitManager: splitManager
+                            splitManager: splitManager,
+                            visitedFolderIds: []
                         )
                     )
                 )
@@ -405,25 +420,37 @@ enum SpaceSidebarTransitionSnapshotBuilder {
 
     private static func folderSnapshot(
         for folder: TabFolder,
-        children: [ShortcutPin],
+        childFoldersByParentId: [UUID: [TabFolder]],
+        folderPinsByFolderId: [UUID: [ShortcutPin]],
         liveTabsByPinId: [UUID: Tab],
         browserManager: BrowserManager,
         windowState: BrowserWindowState,
-        splitManager: SplitViewManager
+        splitManager: SplitViewManager,
+        visitedFolderIds: Set<UUID>
     ) -> SpaceFolderSnapshot {
-        let childSnapshots = children.map {
-            shortcutSnapshot(
-                for: $0,
-                liveTab: liveTabsByPinId[$0.id],
-                browserManager: browserManager,
-                windowState: windowState,
-                splitManager: splitManager
-            )
-        }
-        let childSnapshotsById = Dictionary(uniqueKeysWithValues: childSnapshots.map { ($0.id, $0) })
+        var nextVisited = visitedFolderIds
+        nextVisited.insert(folder.id)
+        let directChildFolders = (childFoldersByParentId[folder.id] ?? [])
+            .filter { nextVisited.contains($0.id) == false }
+        let directShortcutPins = folderPinsByFolderId[folder.id] ?? []
+        let childSnapshots = folderBodyChildSnapshots(
+            childFolders: directChildFolders,
+            shortcutPins: directShortcutPins,
+            childFoldersByParentId: childFoldersByParentId,
+            folderPinsByFolderId: folderPinsByFolderId,
+            liveTabsByPinId: liveTabsByPinId,
+            browserManager: browserManager,
+            windowState: windowState,
+            splitManager: splitManager,
+            visitedFolderIds: nextVisited
+        )
+        let childSnapshotsById = Dictionary(
+            childSnapshots.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         let projectionState = windowState.sidebarFolderProjection(for: folder.id)
         let collapsedProjectedChildSnapshots = collapsedProjectedShortcutPins(
-            children,
+            directShortcutPins,
             liveTabsByPinId: liveTabsByPinId,
             projectionState: projectionState
         ).compactMap { childSnapshotsById[$0.id] }
@@ -435,10 +462,64 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             iconValue: folder.icon,
             isOpen: folder.isOpen,
             hasActiveSelection: projectionState.hasActiveProjection
-                || childSnapshots.contains { $0.presentationState.isSelected }
+                || childSnapshots.containsActiveSelection
                 || (!folder.isOpen && !bodyChildren.isEmpty),
             bodyChildren: bodyChildren
         )
+    }
+
+    private static func folderBodyChildSnapshots(
+        childFolders: [TabFolder],
+        shortcutPins: [ShortcutPin],
+        childFoldersByParentId: [UUID: [TabFolder]],
+        folderPinsByFolderId: [UUID: [ShortcutPin]],
+        liveTabsByPinId: [UUID: Tab],
+        browserManager: BrowserManager,
+        windowState: BrowserWindowState,
+        splitManager: SplitViewManager,
+        visitedFolderIds: Set<UUID>
+    ) -> [SpacePinnedItemSnapshot] {
+        (
+            childFolders.map { childFolder in
+                (
+                    childFolder.index,
+                    0,
+                    SpacePinnedItemSnapshot.folder(
+                        folderSnapshot(
+                            for: childFolder,
+                            childFoldersByParentId: childFoldersByParentId,
+                            folderPinsByFolderId: folderPinsByFolderId,
+                            liveTabsByPinId: liveTabsByPinId,
+                            browserManager: browserManager,
+                            windowState: windowState,
+                            splitManager: splitManager,
+                            visitedFolderIds: visitedFolderIds
+                        )
+                    )
+                )
+            }
+            + shortcutPins.map { pin in
+                (
+                    pin.index,
+                    1,
+                    SpacePinnedItemSnapshot.shortcut(
+                        shortcutSnapshot(
+                            for: pin,
+                            liveTab: liveTabsByPinId[pin.id],
+                            browserManager: browserManager,
+                            windowState: windowState,
+                            splitManager: splitManager
+                        )
+                    )
+                )
+            }
+        )
+        .sorted { lhs, rhs in
+            if lhs.0 != rhs.0 { return lhs.0 < rhs.0 }
+            if lhs.1 != rhs.1 { return lhs.1 < rhs.1 }
+            return lhs.2.id.uuidString < rhs.2.id.uuidString
+        }
+        .map(\.2)
     }
 
     private static func collapsedProjectedShortcutPins(
@@ -453,7 +534,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         }
 
         let projectedOrder = Dictionary(
-            uniqueKeysWithValues: projectionState.projectedChildIDs.enumerated().map { ($1, $0) }
+            projectionState.projectedChildIDs.enumerated().map { ($1, $0) },
+            uniquingKeysWith: { first, _ in first }
         )
         return livePins.sorted { lhs, rhs in
             let leftOrder = projectedOrder[lhs.id] ?? lhs.index
@@ -842,26 +924,42 @@ private struct SpaceSnapshotPinnedSectionView: View {
                         .frame(height: SidebarInsertionGuide.visualCenterY)
 
                     ForEach(items) { item in
-                        switch item {
-                        case .folder(let folder):
-                            SpaceSnapshotFolderView(
-                                folder: folder,
-                                rowCornerRadius: rowCornerRadius,
-                                tokens: tokens,
-                                themeContext: themeContext
-                            )
-                        case .shortcut(let shortcut):
-                            SpaceSnapshotShortcutRowView(
-                                shortcut: shortcut,
-                                rowCornerRadius: rowCornerRadius,
-                                tokens: tokens
-                            )
-                        }
+                        SpaceSnapshotPinnedItemView(
+                            item: item,
+                            rowCornerRadius: rowCornerRadius,
+                            tokens: tokens,
+                            themeContext: themeContext
+                        )
                     }
                 }
                 .padding(.bottom, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+    }
+}
+
+private struct SpaceSnapshotPinnedItemView: View {
+    let item: SpacePinnedItemSnapshot
+    let rowCornerRadius: CGFloat
+    let tokens: ChromeThemeTokens
+    let themeContext: ResolvedThemeContext
+
+    var body: some View {
+        switch item {
+        case .folder(let folder):
+            SpaceSnapshotFolderView(
+                folder: folder,
+                rowCornerRadius: rowCornerRadius,
+                tokens: tokens,
+                themeContext: themeContext
+            )
+        case .shortcut(let shortcut):
+            SpaceSnapshotShortcutRowView(
+                shortcut: shortcut,
+                rowCornerRadius: rowCornerRadius,
+                tokens: tokens
+            )
         }
     }
 }
@@ -916,26 +1014,25 @@ private struct SpaceSnapshotFolderView: View {
             if showsBody {
                 VStack(spacing: 0) {
                     ForEach(folder.bodyChildren) { child in
-                        SpaceSnapshotShortcutRowView(
-                            shortcut: child,
+                        SpaceSnapshotPinnedItemView(
+                            item: child,
                             rowCornerRadius: rowCornerRadius,
-                            tokens: tokens
+                            tokens: tokens,
+                            themeContext: themeContext
                         )
                     }
                 }
                 .padding(.leading, SpaceSidebarSnapshotFolderLayout.contentLeadingPadding)
                 .padding(.vertical, SpaceSidebarSnapshotFolderLayout.contentVerticalPadding)
-                .frame(
-                    height: SpaceSidebarSnapshotFolderLayout.bodyHeight(
-                        childCount: folder.bodyChildren.count
-                    ),
-                    alignment: .top
-                )
-                .clipped()
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.clear)
-                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(alignment: .leading) {
+                    Rectangle()
+                        .fill(tokens.separator.opacity(0.55))
+                        .frame(width: 1)
+                        .padding(.vertical, 6)
+                        .offset(x: 6)
+                        .accessibilityHidden(true)
+                }
             }
         }
     }

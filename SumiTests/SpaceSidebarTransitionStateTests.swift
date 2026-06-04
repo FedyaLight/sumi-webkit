@@ -411,6 +411,47 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertTrue(folderSnapshot.hasActiveSelection)
     }
 
+    func testSnapshotBuilderPreservesOpenNestedFolderTreeForSpaceTransition() throws {
+        let browserManager = BrowserManager()
+        let windowState = BrowserWindowState()
+        let settings = makeIsolatedSettings()
+        let profileId = UUID()
+        let source = Space(name: "Source", profileId: profileId)
+        let destination = Space(name: "Destination", profileId: profileId)
+        let parent = TabFolder(name: "Parent", spaceId: source.id, index: 0)
+        let child = TabFolder(name: "Child", spaceId: source.id, parentFolderId: parent.id, index: 0)
+        parent.isOpen = true
+        child.isOpen = true
+        let nestedPin = makeSpacePinnedPin(spaceId: source.id, folderId: child.id, index: 0, title: "Nested")
+
+        browserManager.tabManager.spaces = [source, destination]
+        browserManager.tabManager.setFolders([parent, child], for: source.id)
+        browserManager.tabManager.setSpacePinnedShortcuts([nestedPin], for: source.id)
+        windowState.currentProfileId = profileId
+        windowState.currentSpaceId = source.id
+
+        let snapshot = SpaceSidebarTransitionSnapshotBuilder.make(
+            sourceSpace: source,
+            destinationSpace: destination,
+            browserManager: browserManager,
+            windowState: windowState,
+            splitManager: browserManager.splitManager,
+            settings: settings
+        )
+
+        guard case .folder(let parentSnapshot) = snapshot.source.pinnedItems.first else {
+            return XCTFail("Expected parent folder snapshot")
+        }
+        guard case .folder(let childSnapshot) = parentSnapshot.bodyChildren.first else {
+            return XCTFail("Expected child folder snapshot")
+        }
+
+        XCTAssertTrue(parentSnapshot.isOpen)
+        XCTAssertEqual(parentSnapshot.bodyChildren.map(\.id), [child.id])
+        XCTAssertTrue(childSnapshot.isOpen)
+        XCTAssertEqual(childSnapshot.bodyChildren.map(\.id), [nestedPin.id])
+    }
+
     func testSwipeGestureBeginCreatesInteractiveSessionWithoutDestination() {
         let ids = [UUID(), UUID(), UUID()]
         var state = SpaceSidebarTransitionState()

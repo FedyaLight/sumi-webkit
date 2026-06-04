@@ -254,6 +254,7 @@ struct TabManagerSnapshotCache {
                     icon: SumiZenFolderIconCatalog.normalizedFolderIconValue(folder.icon),
                     color: folder.color.toHexString() ?? "#000000",
                     spaceId: spaceId,
+                    parentFolderId: folder.parentFolderId,
                     isOpen: folder.isOpen,
                     index: folder.index
                 )
@@ -672,6 +673,7 @@ extension TabManager {
                         icon: SumiZenFolderIconCatalog.normalizedFolderIconValue(folder.icon),
                         color: folder.color.toHexString() ?? "#000000",
                         spaceId: space.id,
+                        parentFolderId: folder.parentFolderId,
                         isOpen: folder.isOpen,
                         index: folder.index
                     )
@@ -863,6 +865,7 @@ extension TabManager {
                     id: dto.id,
                     name: dto.name,
                     spaceId: dto.spaceId,
+                    parentFolderId: dto.parentFolderId,
                     icon: dto.icon,
                     color: NSColor(hex: dto.color) ?? .controlAccentColor,
                     index: dto.index

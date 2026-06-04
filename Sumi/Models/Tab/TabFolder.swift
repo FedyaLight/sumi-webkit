@@ -13,6 +13,7 @@ public class TabFolder: NSObject, Identifiable, ObservableObject {
     public let id: UUID
     @Published var name: String
     var spaceId: UUID
+    @Published var parentFolderId: UUID?
     @Published var isOpen: Bool = false
     @Published var icon: String = ""
     @Published var index: Int
@@ -22,6 +23,7 @@ public class TabFolder: NSObject, Identifiable, ObservableObject {
         id: UUID = UUID(),
         name: String,
         spaceId: UUID,
+        parentFolderId: UUID? = nil,
         icon: String = "",
         color: NSColor = .controlAccentColor,
         index: Int = 0
@@ -29,6 +31,7 @@ public class TabFolder: NSObject, Identifiable, ObservableObject {
         self.id = id
         self.name = name
         self.spaceId = spaceId
+        self.parentFolderId = parentFolderId
         self.icon = SumiZenFolderIconCatalog.normalizedFolderIconValue(icon)
         self.color = color
         self.index = index

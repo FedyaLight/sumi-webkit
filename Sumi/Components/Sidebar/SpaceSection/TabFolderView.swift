@@ -10,6 +10,7 @@ import AppKit
 
 struct TabFolderView: View {
     private enum FolderListItem: Hashable {
+        case folder(UUID)
         case shortcut(UUID)
         case placeholder
     }
@@ -27,16 +28,17 @@ struct TabFolderView: View {
     @ObservedObject var folder: TabFolder
     let space: Space
     let shortcutPins: [ShortcutPin]
+    let childFolders: [TabFolder]
+    let childFoldersByParentId: [UUID: [TabFolder]]
+    let folderPinsByFolderId: [UUID: [ShortcutPin]]
     let renderMode: SpaceViewRenderMode
-    let topLevelPinnedIndex: Int?
+    let parentFolderId: UUID?
+    let containerIndex: Int
+    let nestingDepth: Int
+    let onUngroup: () -> Void
     let onDelete: () -> Void
 
-    @State private var measuredExpandedFolderContentHeight: CGFloat = 0
-    @State private var measuredExpandedFolderContentItemCount: Int?
-    @State private var measuredCollapsedFolderContentHeight: CGFloat = 0
     @State private var displayedCollapsedProjectionIDs: [UUID] = []
-    @State private var deferredExpandedHeightMutation = SidebarDeferredStateMutation<CGFloat>()
-    @State private var deferredCollapsedHeightMutation = SidebarDeferredStateMutation<CGFloat>()
     @State private var isFolderHeaderHovered = false
 
     @EnvironmentObject var browserManager: BrowserManager
@@ -55,15 +57,50 @@ struct TabFolderView: View {
         shortcutPins
     }
 
+    private var descendantShortcutPins: [ShortcutPin] {
+        descendantShortcutPins(in: folder.id, visited: [])
+    }
+
+    private func descendantShortcutPins(in folderId: UUID, visited: Set<UUID>) -> [ShortcutPin] {
+        guard !visited.contains(folderId) else { return [] }
+        var nextVisited = visited
+        nextVisited.insert(folderId)
+
+        let directPins = folderPinsByFolderId[folderId] ?? []
+        let nestedPins = (childFoldersByParentId[folderId] ?? []).flatMap { childFolder in
+            descendantShortcutPins(in: childFolder.id, visited: nextVisited)
+        }
+        return directPins + nestedPins
+    }
+
     private var folderProjectionState: SidebarFolderProjectionState {
         windowState.sidebarFolderProjection(for: folder.id)
     }
 
     private var baseFolderItems: [FolderListItem] {
-        shortcutPinsInFolder
-            .map { ($0.index, FolderListItem.shortcut($0.id)) }
-            .sorted { lhs, rhs in lhs.0 < rhs.0 }
-            .map(\.1)
+        sortedFolderItems(childFolders: childFolders, shortcutPins: shortcutPinsInFolder)
+    }
+
+    private func sortedFolderItems(childFolders: [TabFolder], shortcutPins: [ShortcutPin]) -> [FolderListItem] {
+        let folders = childFolders.map { ($0.index, 0, FolderListItem.folder($0.id)) }
+        let pins = shortcutPins.map { ($0.index, 1, FolderListItem.shortcut($0.id)) }
+        return (folders + pins)
+            .sorted { lhs, rhs in
+                if lhs.0 != rhs.0 { return lhs.0 < rhs.0 }
+                if lhs.1 != rhs.1 { return lhs.1 < rhs.1 }
+                switch (lhs.2, rhs.2) {
+                case (.folder(let left), .folder(let right)),
+                     (.shortcut(let left), .shortcut(let right)):
+                    return left.uuidString < right.uuidString
+                case (.folder, .shortcut):
+                    return true
+                case (.shortcut, .folder):
+                    return false
+                case (.placeholder, _), (_, .placeholder):
+                    return false
+                }
+            }
+            .map(\.2)
     }
 
     private var folderModelChildCount: Int {
@@ -95,10 +132,12 @@ struct TabFolderView: View {
             return nil
         }
         return items.first { item in
-            if case .shortcut(let id) = item {
+            switch item {
+            case .folder(let id), .shortcut(let id):
                 return id == projectionDragItemId
+            case .placeholder:
+                return false
             }
-            return false
         }
     }
 
@@ -113,10 +152,12 @@ struct TabFolderView: View {
            dragState.shouldHideCommittedCrossContainerPlaceholder(
                 into: .folder(folder.id),
                 targetAlreadyContainsDraggedItem: baseFolderItems.contains { item in
-                    if case .shortcut(let id) = item {
+                    switch item {
+                    case .folder(let id), .shortcut(let id):
                         return id == projectionDragItemId
+                    case .placeholder:
+                        return false
                     }
-                    return false
                 }
            ) {
             return nil
@@ -194,7 +235,7 @@ struct TabFolderView: View {
     }
 
     private var resolvedTopLevelPinnedIndex: Int {
-        topLevelPinnedIndex ?? 0
+        containerIndex
     }
 
 
@@ -203,43 +244,15 @@ struct TabFolderView: View {
     }
 
     private var isTopLevelPinnedFolder: Bool {
-        topLevelPinnedIndex != nil
+        parentFolderId == nil
     }
 
-    private var expandedFolderContentFallbackHeight: CGFloat {
-        (CGFloat(folderItems.count) * SidebarRowLayout.rowHeight) +
-            (Self.folderContentVerticalPadding * 2)
-    }
-
-    private var collapsedFolderContentFallbackHeight: CGFloat {
-        let projectedCount = max(
-            displayedCollapsedProjectionIDs.count,
-            targetCollapsedProjectionIDs.count
-        )
-        guard projectedCount > 0 else { return 0 }
-        return (CGFloat(projectedCount) * SidebarRowLayout.rowHeight) +
-            (Self.folderContentVerticalPadding * 2)
-    }
-
-    private var expandedFolderContentHeight: CGFloat {
-        expandedFolderContentFallbackHeight
-    }
-
-    private var collapsedFolderContentHeight: CGFloat {
-        guard hasCollapsedProjectionForLayout else { return 0 }
-        return collapsedFolderContentFallbackHeight
-    }
-
-    private var folderBodyTargetHeight: CGFloat {
-        folder.isOpen ? expandedFolderContentHeight : collapsedFolderContentHeight
-    }
-
-    private var folderBodyTargetOpacity: Double {
-        folderBodyTargetHeight > 0 ? 1 : 0
+    private var folderBodyShouldRender: Bool {
+        folder.isOpen || hasCollapsedProjectionForLayout
     }
 
     private var folderBodyGeometryIsActive: Bool {
-        isInteractive && (folder.isOpen || hasCollapsedProjectionForLayout)
+        isInteractive && folderBodyShouldRender
     }
 
     private var folderLayoutAnimation: Animation? {
@@ -250,12 +263,12 @@ struct TabFolderView: View {
 
     private var folderHasActiveSelection: Bool {
         if let currentShortcutPinId = windowState.currentShortcutPinId,
-           shortcutPinsInFolder.contains(where: { $0.id == currentShortcutPinId }) {
+           descendantShortcutPins.contains(where: { $0.id == currentShortcutPinId }) {
             return true
         }
 
         guard let currentTabId = windowState.currentTabId else { return false }
-        return shortcutPinsInFolder.contains { pin in
+        return descendantShortcutPins.contains { pin in
             browserManager.tabManager.shortcutLiveTab(for: pin.id, in: windowState.id)?.id == currentTabId
         }
     }
@@ -349,6 +362,7 @@ struct TabFolderView: View {
             .sidebarFolderDropGeometry(
                 folderId: folder.id,
                 spaceId: space.id,
+                parentFolderId: parentFolderId,
                 topLevelIndex: resolvedTopLevelPinnedIndex,
                 childCount: folderModelChildCount,
                 isOpen: folder.isOpen,
@@ -358,20 +372,21 @@ struct TabFolderView: View {
             )
     }
 
+    @ViewBuilder
     private var folderBodyAnimatedContent: some View {
-        ZStack(alignment: .topLeading) {
+        if folderBodyShouldRender {
             folderBodyVisibleContent
-            folderBodyHeightMeasurements
+                .transition(.opacity)
+                .animation(folderLayoutAnimation, value: folder.isOpen)
+                .animation(folderLayoutAnimation, value: folderItems)
+                .animation(folderLayoutAnimation, value: displayedCollapsedProjectionIDs)
+                .animation(folderLayoutAnimation, value: targetCollapsedProjectionIDs)
+        } else {
+            Color.clear
+                .frame(height: 0)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
-        .frame(height: folderBodyTargetHeight, alignment: .top)
-        .opacity(folderBodyTargetOpacity)
-        .clipped()
-        .animation(folderLayoutAnimation, value: folder.isOpen)
-        .animation(folderLayoutAnimation, value: folderBodyTargetHeight)
-        .animation(folderLayoutAnimation, value: folderBodyTargetOpacity)
-        .animation(folderLayoutAnimation, value: folderItems)
-        .animation(folderLayoutAnimation, value: displayedCollapsedProjectionIDs)
-        .animation(folderLayoutAnimation, value: targetCollapsedProjectionIDs)
     }
 
     private var folderBodyVisibleContent: some View {
@@ -387,69 +402,29 @@ struct TabFolderView: View {
         .animation(folderLayoutAnimation, value: targetCollapsedProjectionIDs)
     }
 
-    private var folderBodyHeightMeasurements: some View {
-        let measuredExpandedItems = baseFolderItems
-        return ZStack(alignment: .topLeading) {
-            folderBodyContent(
-                items: measuredExpandedItems,
-                reportsGeometry: false,
-                reportsFolderChildGeometry: false
-            )
-                .fixedSize(horizontal: false, vertical: true)
-                .background {
-                    FolderBodyHeightReader { height in
-                        deferredExpandedHeightMutation.schedule(height) { resolvedHeight in
-                            updateMeasuredExpandedFolderContentHeight(
-                                resolvedHeight,
-                                itemCount: measuredExpandedItems.count
-                            )
-                        }
-                    }
-                }
-                .hidden()
-
-            collapsedFolderContent
-                .fixedSize(horizontal: false, vertical: true)
-                .background {
-                    FolderBodyHeightReader { height in
-                        deferredCollapsedHeightMutation.schedule(height) { resolvedHeight in
-                            updateMeasuredCollapsedFolderContentHeight(resolvedHeight)
-                        }
-                    }
-                }
-                .hidden()
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-        .transaction { transaction in
-            transaction.animation = nil
-        }
-    }
-
     @ViewBuilder
     private var folderAfterDropTarget: some View {
-        if isTopLevelPinnedFolder {
-            let height = dragState.isDragging ? SidebarRowLayout.rowHeight * 0.45 : 0
-            Color.clear
-                .frame(height: height)
-                .frame(maxWidth: .infinity)
-                .offset(y: height / 2)
-                .transaction { transaction in
-                    transaction.animation = nil
-                    transaction.disablesAnimations = true
-                }
-                .sidebarFolderDropGeometry(
-                    folderId: folder.id,
-                    spaceId: space.id,
-                    topLevelIndex: resolvedTopLevelPinnedIndex,
-                    childCount: folderModelChildCount,
-                    isOpen: folder.isOpen,
-                    region: .after,
-                    generation: dragState.sidebarGeometryGeneration,
-                    isActive: isInteractive && height > 0
-                )
-                .allowsHitTesting(false)
-        }
+        let height = dragState.isDragging ? SidebarRowLayout.rowHeight * 0.45 : 0
+        Color.clear
+            .frame(height: height)
+            .frame(maxWidth: .infinity)
+            .offset(y: height / 2)
+            .transaction { transaction in
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
+            .sidebarFolderDropGeometry(
+                folderId: folder.id,
+                spaceId: space.id,
+                parentFolderId: parentFolderId,
+                topLevelIndex: resolvedTopLevelPinnedIndex,
+                childCount: folderModelChildCount,
+                isOpen: folder.isOpen,
+                region: .after,
+                generation: dragState.sidebarGeometryGeneration,
+                isActive: isInteractive && height > 0
+            )
+            .allowsHitTesting(false)
     }
 
 
@@ -458,6 +433,7 @@ struct TabFolderView: View {
         .sidebarFolderDropGeometry(
             folderId: folder.id,
             spaceId: space.id,
+            parentFolderId: parentFolderId,
             topLevelIndex: resolvedTopLevelPinnedIndex,
             childCount: folderModelChildCount,
             isOpen: folder.isOpen,
@@ -470,7 +446,7 @@ struct TabFolderView: View {
             isInteractionEnabled: isInteractive,
             dragSource: SidebarDragSourceConfiguration(
                 item: SumiDragItem.folder(folderId: folder.id, title: folder.name),
-                sourceZone: .spacePinned(space.id),
+                sourceZone: parentFolderId.map(DropZoneID.folder) ?? .spacePinned(space.id),
                 previewKind: .folderRow,
                 pinnedConfig: .large,
                 folderGlyphPresentation: folderGlyphPresentation,
@@ -551,14 +527,6 @@ struct TabFolderView: View {
         .frame(width: SidebarRowLayout.folderTitleLeading, alignment: .leading)
     }
 
-    private var collapsedFolderContent: some View {
-        folderBodyContent(
-            items: visibleCollapsedProjectionIDs.map(FolderListItem.shortcut),
-            reportsGeometry: false,
-            reportsFolderChildGeometry: false
-        )
-    }
-
     private func folderContent(reportsGeometry: Bool = true) -> some View {
         folderBodyContent(
             items: folderItems,
@@ -575,6 +543,18 @@ struct TabFolderView: View {
         return VStack(spacing: 0) {
             ForEach(folderDisplayEntries(from: items)) { entry in
                 switch entry.item {
+                case .folder(let folderId):
+                    if let childFolder = childFolders.first(where: { $0.id == folderId }) {
+                        nestedFolderView(childFolder, containerIndex: entry.dropIndex)
+                            .sidebarFolderChildDropGeometry(
+                                spaceId: space.id,
+                                folderId: folder.id,
+                                childId: childFolder.id,
+                                index: entry.dropIndex,
+                                generation: dragState.sidebarGeometryGeneration,
+                                isActive: isInteractive && reportsGeometry && reportsFolderChildGeometry
+                            )
+                    }
                 case .shortcut(let pinId):
                     if let pin = shortcutPinsInFolder.first(where: { $0.id == pinId }) {
                         folderShortcutView(pin)
@@ -594,23 +574,61 @@ struct TabFolderView: View {
         }
         .padding(.leading, Self.folderContentLeadingPadding)
         .padding(.vertical, Self.folderContentVerticalPadding)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.clear)
-        )
+        .background(alignment: .leading) {
+            folderNestingGuide(isVisible: !items.isEmpty)
+        }
         .animation(folderLayoutAnimation, value: items)
     }
 
+    private func nestedFolderView(_ childFolder: TabFolder, containerIndex: Int) -> some View {
+        TabFolderView(
+            folder: childFolder,
+            space: space,
+            shortcutPins: folderPinsByFolderId[childFolder.id] ?? [],
+            childFolders: childFoldersByParentId[childFolder.id] ?? [],
+            childFoldersByParentId: childFoldersByParentId,
+            folderPinsByFolderId: folderPinsByFolderId,
+            renderMode: renderMode,
+            parentFolderId: folder.id,
+            containerIndex: containerIndex,
+            nestingDepth: nestingDepth + 1,
+            onUngroup: {
+                ungroupNestedFolder(childFolder)
+            },
+            onDelete: {
+                deleteNestedFolder(childFolder)
+            }
+        )
+        .environmentObject(browserManager)
+        .environmentObject(splitManager)
+        .environment(windowState)
+    }
+
+    @ViewBuilder
+    private func folderNestingGuide(isVisible: Bool) -> some View {
+        if isVisible {
+            Rectangle()
+                .fill(tokens.separator.opacity(0.55))
+                .frame(width: 1)
+                .padding(.vertical, 6)
+                .offset(x: 6)
+                .accessibilityHidden(true)
+        }
+    }
+
     private func folderDisplayEntries(from items: [FolderListItem]) -> [FolderDisplayEntry] {
-        var shortcutCount = 0
+        var childCount = 0
         return items.map { item in
             let entry = FolderDisplayEntry(
                 item: item,
-                dropIndex: shortcutCount,
-                id: folderDisplayID(for: item, placeholderIndex: shortcutCount)
+                dropIndex: childCount,
+                id: folderDisplayID(for: item, placeholderIndex: childCount)
             )
-            if case .shortcut = item {
-                shortcutCount += 1
+            switch item {
+            case .folder, .shortcut:
+                childCount += 1
+            case .placeholder:
+                break
             }
             return entry
         }
@@ -621,6 +639,8 @@ struct TabFolderView: View {
         placeholderIndex: Int
     ) -> String {
         switch item {
+        case .folder(let id):
+            return "folder-\(id.uuidString)"
         case .shortcut(let id):
             return "item-\(id.uuidString)"
         case .placeholder:
@@ -792,6 +812,7 @@ struct TabFolderView: View {
                 },
                 alphabetize: alphabetizeTabs,
                 unloadActiveTabs: unloadActiveTabsAction,
+                ungroup: onUngroup,
                 delete: onDelete
             )
         )
@@ -891,18 +912,6 @@ struct TabFolderView: View {
         }
     }
 
-    private func updateMeasuredExpandedFolderContentHeight(_ height: CGFloat, itemCount: Int) {
-        guard measuredExpandedFolderContentItemCount != itemCount
-                || abs(measuredExpandedFolderContentHeight - height) > 0.5 else { return }
-        measuredExpandedFolderContentItemCount = itemCount
-        measuredExpandedFolderContentHeight = height
-    }
-
-    private func updateMeasuredCollapsedFolderContentHeight(_ height: CGFloat) {
-        guard abs(measuredCollapsedFolderContentHeight - height) > 0.5 else { return }
-        measuredCollapsedFolderContentHeight = height
-    }
-
     private func activateShortcutPin(_ pin: ShortcutPin) {
         let tab = browserManager.tabManager.activateShortcutPin(
             pin,
@@ -935,6 +944,36 @@ struct TabFolderView: View {
             window: windowState.window,
             onDelete: { removeShortcutPin(pin) }
         )
+    }
+
+    private func deleteNestedFolder(_ childFolder: TabFolder) {
+        let childCount = browserManager.tabManager.folderRecursiveChildCount(
+            for: childFolder.id,
+            in: space.id
+        )
+        guard childCount == 0 else {
+            SidebarSavedItemDeletionConfirmationPresenter.confirmDeleteFolder(
+                folderName: childFolder.name,
+                childCount: childCount,
+                window: windowState.window,
+                onDelete: {
+                    mutateFolderContent {
+                        browserManager.tabManager.deleteFolder(childFolder.id)
+                    }
+                }
+            )
+            return
+        }
+
+        mutateFolderContent {
+            browserManager.tabManager.deleteFolder(childFolder.id)
+        }
+    }
+
+    private func ungroupNestedFolder(_ childFolder: TabFolder) {
+        mutateFolderContent {
+            browserManager.tabManager.ungroupFolder(childFolder.id)
+        }
     }
 
     private func mutateFolderContent(_ update: () -> Void) {
@@ -1024,13 +1063,13 @@ struct TabFolderView: View {
     }
 
     private var folderHasLiveSavedTabs: Bool {
-        shortcutPinsInFolder.contains { pin in
+        descendantShortcutPins.contains { pin in
             browserManager.tabManager.shortcutLiveTab(for: pin.id, in: windowState.id) != nil
         }
     }
 
     private func unloadActiveFolderTabs() {
-        for pin in shortcutPinsInFolder {
+        for pin in descendantShortcutPins {
             unloadShortcutPin(pin)
         }
     }
@@ -1061,23 +1100,6 @@ struct TabFolderView: View {
     }
 
 }
-
-private struct FolderBodyHeightReader: View {
-    let onChange: (CGFloat) -> Void
-
-    var body: some View {
-        GeometryReader { geometry in
-            Color.clear
-                .onAppear {
-                    onChange(geometry.size.height)
-                }
-                .onChange(of: geometry.size.height) { _, height in
-                    onChange(height)
-                }
-        }
-    }
-}
-
 struct SumiFolderGlyphPalette {
     let backFill: Color
     let frontFill: Color

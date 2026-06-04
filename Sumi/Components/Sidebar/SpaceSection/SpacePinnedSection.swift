@@ -408,8 +408,14 @@ extension SpaceView {
             folder: folder,
             space: space,
             shortcutPins: launcherProjection?.folderPins[folder.id] ?? [],
+            childFolders: launcherProjection?.childFolders[folder.id] ?? [],
+            childFoldersByParentId: launcherProjection?.childFolders ?? [:],
+            folderPinsByFolderId: launcherProjection?.folderPins ?? [:],
             renderMode: renderMode,
-            topLevelPinnedIndex: topLevelPinnedIndex,
+            parentFolderId: nil,
+            containerIndex: topLevelPinnedIndex,
+            nestingDepth: 0,
+            onUngroup: { ungroupFolder(folder) },
             onDelete: { deleteFolder(folder) }
         )
         .environmentObject(browserManager)
@@ -564,8 +570,14 @@ extension SpaceView {
 
     // MARK: - Folder Management
 
+    private func ungroupFolder(_ folder: TabFolder) {
+        mutatePinnedContent {
+            browserManager.tabManager.ungroupFolder(folder.id)
+        }
+    }
+
     private func deleteFolder(_ folder: TabFolder) {
-        let childCount = launcherProjection?.folderPins[folder.id]?.count ?? 0
+        let childCount = browserManager.tabManager.folderRecursiveChildCount(for: folder.id, in: space.id)
         guard childCount == 0 else {
             confirmDeleteFolder(folder, childCount: childCount)
             return

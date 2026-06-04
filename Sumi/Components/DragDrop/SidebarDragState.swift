@@ -246,6 +246,7 @@ final class SidebarDragState: ObservableObject {
     func scheduleFolderDropTarget(
         folderId: UUID,
         spaceId: UUID,
+        parentFolderId: UUID?,
         topLevelIndex: Int,
         childCount: Int,
         isOpen: Bool,
@@ -261,6 +262,7 @@ final class SidebarDragState: ObservableObject {
             state.applyFolderDropTarget(
                 folderId: folderId,
                 spaceId: spaceId,
+                parentFolderId: parentFolderId,
                 topLevelIndex: topLevelIndex,
                 childCount: childCount,
                 isOpen: isOpen,
@@ -830,6 +832,7 @@ final class SidebarDragState: ObservableObject {
     func applyFolderDropTarget(
         folderId: UUID,
         spaceId: UUID,
+        parentFolderId: UUID?,
         topLevelIndex: Int,
         childCount: Int,
         isOpen: Bool,
@@ -862,11 +865,13 @@ final class SidebarDragState: ObservableObject {
             var target = store.folderDropTargets[folderId] ?? SidebarFolderDropTargetMetrics(
                 folderId: folderId,
                 spaceId: spaceId,
+                parentFolderId: parentFolderId,
                 topLevelIndex: topLevelIndex,
                 childCount: childCount,
                 isOpen: isOpen
             )
             target.spaceId = spaceId
+            target.parentFolderId = parentFolderId
             target.topLevelIndex = topLevelIndex
             target.childCount = childCount
             target.isOpen = isOpen
