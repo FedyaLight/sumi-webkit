@@ -353,6 +353,7 @@ struct ChromeMV3ExtensionPageLinkedResource:
     var inertLocalScript: Bool
     var blocked: Bool
     var diagnostics: [String]
+    var resourceType: String? = nil
 }
 
 struct ChromeMV3ExtensionPageResourceResolution:
@@ -601,6 +602,8 @@ enum ChromeMV3ExtensionPageResourceResolver {
                     tagName: "script",
                     attributeName: "src",
                     rawValue: src,
+                    resourceType:
+                        scriptResourceType(from: attribute("type", in: tag)),
                     rootURL: rootURL,
                     pageDirectory: pageDirectory,
                     fileManager: fileManager,
@@ -628,7 +631,8 @@ enum ChromeMV3ExtensionPageResourceResolver {
                         ? []
                         : [
                             "Inline script is not a local inert fixture script.",
-                        ]
+                        ],
+                resourceType: "inline"
             )
         }
     }
@@ -650,6 +654,8 @@ enum ChromeMV3ExtensionPageResourceResolver {
                 tagName: tagName,
                 attributeName: attributeName,
                 rawValue: raw,
+                resourceType:
+                    tagResourceType(tagName: tagName, tag: tag),
                 rootURL: rootURL,
                 pageDirectory: pageDirectory,
                 fileManager: fileManager,
@@ -662,6 +668,7 @@ enum ChromeMV3ExtensionPageResourceResolver {
         tagName: String,
         attributeName: String,
         rawValue: String,
+        resourceType: String?,
         rootURL: URL,
         pageDirectory: String,
         fileManager: FileManager,
@@ -680,7 +687,8 @@ enum ChromeMV3ExtensionPageResourceResolver {
                 blocked: true,
                 diagnostics: [
                     "Remote resource is blocked: \(rawValue)",
-                ]
+                ],
+                resourceType: resourceType
             )
         }
 
@@ -699,7 +707,8 @@ enum ChromeMV3ExtensionPageResourceResolver {
                 kind: .unsafeLocalPath,
                 inertLocalScript: false,
                 blocked: true,
-                diagnostics: [reason]
+                diagnostics: [reason],
+                resourceType: resourceType
             )
         case .success(let path):
             let url = ChromeMV3ExtensionPageResourcePath.resourceURL(
@@ -721,7 +730,8 @@ enum ChromeMV3ExtensionPageResourceResolver {
                     blocked: true,
                     diagnostics: [
                         "Linked local extension page resource is missing: \(path)",
-                    ]
+                    ],
+                    resourceType: resourceType
                 )
             }
             let isScript = tagName.lowercased() == "script"
@@ -755,9 +765,58 @@ enum ChromeMV3ExtensionPageResourceResolver {
                         ? [
                             "Local script is not explicitly classified as an inert fixture script: \(path)",
                         ]
-                        : []
+                        : [],
+                resourceType: resourceType
             )
         }
+    }
+
+    private static func scriptResourceType(from rawType: String?) -> String {
+        let type = rawType?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard let type, type.isEmpty == false else {
+            return "classic"
+        }
+        if type == "module" {
+            return "module"
+        }
+        return safeResourceType(type) ?? "other-script"
+    }
+
+    private static func tagResourceType(
+        tagName: String,
+        tag: String
+    ) -> String? {
+        if tagName.lowercased() == "link" {
+            let rel = attribute("rel", in: tag)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            let type = attribute("type", in: tag)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            return safeResourceType(
+                [
+                    rel.map { "rel=\($0)" },
+                    type.map { "type=\($0)" },
+                ]
+                .compactMap { $0 }
+                .joined(separator: ";")
+            )
+        }
+        return nil
+    }
+
+    private static func safeResourceType(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false,
+              trimmed.count <= 80,
+              trimmed.range(
+                  of: #"^[a-z0-9._+/\-;= ]+$"#,
+                  options: .regularExpression
+              ) != nil
+        else { return nil }
+        return trimmed
     }
 
     private static func localScriptContentLooksInert(_ url: URL?) -> Bool {
@@ -804,8 +863,10 @@ enum ChromeMV3ExtensionPageResourceResolver {
         let escaped = NSRegularExpression.escapedPattern(for: tagName)
         let pattern =
             #"<\s*\#(escaped)\b([^>]*)>(.*?)<\s*/\s*\#(escaped)\s*>"#
-        let selfClosing =
-            #"<\s*\#(escaped)\b([^>]*)/?>"#
+        let selfClosing = selfClosingTagPattern(
+            escapedTagName: escaped,
+            tagName: tagName
+        )
         var matches: [(String, String)] = []
         matches += regexMatches(pattern: pattern, in: html).map { match in
             let tag = match.indices.contains(0) ? String(match[0]) : ""
@@ -817,6 +878,32 @@ enum ChromeMV3ExtensionPageResourceResolver {
             return (tag, "")
         }
         return matches
+    }
+
+    private static func selfClosingTagPattern(
+        escapedTagName: String,
+        tagName: String
+    ) -> String {
+        let voidTags: Set<String> = [
+            "area",
+            "base",
+            "br",
+            "col",
+            "embed",
+            "hr",
+            "img",
+            "input",
+            "link",
+            "meta",
+            "param",
+            "source",
+            "track",
+            "wbr",
+        ]
+        if voidTags.contains(tagName.lowercased()) {
+            return #"<\s*\#(escapedTagName)\b([^>]*)/?>"#
+        }
+        return #"<\s*\#(escapedTagName)\b([^>]*)\s*/>"#
     }
 
     private static func attribute(

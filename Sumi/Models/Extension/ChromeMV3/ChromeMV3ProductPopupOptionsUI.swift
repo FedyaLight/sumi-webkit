@@ -1949,6 +1949,10 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         ChromeMV3PopupOptionsWKScriptMessageHandler?
     private let messageHandlerName: String?
     private var bridgeHandler: ChromeMV3PopupOptionsJSBridgeHandler?
+    #if DEBUG
+    private var diagnosticsDelegate:
+        ChromeMV3ProductPopupOptionsWKDiagnosticsDelegate?
+    #endif
     private(set) var installedUserScriptCount = 0
     private(set) var installedScriptMessageHandlerCount = 0
     #if canImport(AppKit)
@@ -2006,6 +2010,11 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
                 ChromeMV3PopupOptionsWKScriptMessageHandler(
                     handler: handler
                 )
+            #if DEBUG
+            handler.recordHostDiagnosticEvents(
+                bridgeInstallation.hostDiagnosticEvents
+            )
+            #endif
             userContentController.addScriptMessageHandler(
                 scriptHandler,
                 contentWorld: .page,
@@ -2031,6 +2040,20 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         self.userContentController = userContentController
         self.messageHandlerName = messageHandlerName
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        #if DEBUG
+        if let bridgeHandler {
+            let diagnosticsDelegate =
+                ChromeMV3ProductPopupOptionsWKDiagnosticsDelegate(
+                    bridgeHandler: bridgeHandler,
+                    readAccessURL: readAccessURL
+                )
+            webView.navigationDelegate = diagnosticsDelegate
+            webView.uiDelegate = diagnosticsDelegate
+            self.diagnosticsDelegate = diagnosticsDelegate
+        } else {
+            self.diagnosticsDelegate = nil
+        }
+        #endif
         webView.loadFileURL(
             loadFileURL,
             allowingReadAccessTo: readAccessURL
@@ -2146,6 +2169,9 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         webView = nil
         scriptHandler = nil
         bridgeHandler = nil
+        #if DEBUG
+        diagnosticsDelegate = nil
+        #endif
         userContentController = nil
         installedUserScriptCount = 0
         installedScriptMessageHandlerCount = 0
@@ -2186,6 +2212,173 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
     }
     #endif
 }
+
+#if DEBUG
+@MainActor
+private final class ChromeMV3ProductPopupOptionsWKDiagnosticsDelegate:
+    NSObject,
+    WKNavigationDelegate,
+    WKUIDelegate
+{
+    private weak var bridgeHandler: ChromeMV3PopupOptionsJSBridgeHandler?
+    private let readAccessURL: URL
+
+    init(
+        bridgeHandler: ChromeMV3PopupOptionsJSBridgeHandler,
+        readAccessURL: URL
+    ) {
+        self.bridgeHandler = bridgeHandler
+        self.readAccessURL = readAccessURL.standardizedFileURL
+        super.init()
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler:
+            @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
+    ) {
+        record(
+            ChromeMV3PopupOptionsHostDiagnostics.navigationEvent(
+                kind: "hostNavigationAction",
+                apiName: "webkit.navigationAction",
+                url: navigationAction.request.url,
+                readAccessURL: readAccessURL,
+                resultClassifier: "navigation action allowed",
+                extraDiagnostics: [
+                    "navigationType=\(navigationAction.navigationType.rawValue)",
+                    "mainFrame=\(navigationAction.targetFrame?.isMainFrame ?? false)",
+                ]
+            )
+        )
+        _ = webView
+        decisionHandler(.allow)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationResponse: WKNavigationResponse,
+        decisionHandler:
+            @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void
+    ) {
+        let response = navigationResponse.response
+        var diagnostics = [
+            "mainFrame=\(navigationResponse.isForMainFrame)",
+            "mimeType=\(safeToken(response.mimeType ?? "none"))",
+            "expectedContentLength=\(safeContentLength(response.expectedContentLength))",
+        ]
+        if let http = response as? HTTPURLResponse {
+            diagnostics.append("status=\(http.statusCode)")
+        } else {
+            diagnostics.append("status=unavailable")
+        }
+        record(
+            ChromeMV3PopupOptionsHostDiagnostics.navigationEvent(
+                kind: "hostNavigationResponse",
+                apiName: "webkit.navigationResponse",
+                url: response.url,
+                readAccessURL: readAccessURL,
+                resultClassifier: "navigation response allowed",
+                extraDiagnostics: diagnostics
+            )
+        )
+        _ = webView
+        decisionHandler(.allow)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFinish navigation: WKNavigation!
+    ) {
+        record(
+            ChromeMV3PopupOptionsHostDiagnostics.navigationEvent(
+                kind: "hostNavigationFinish",
+                apiName: "webkit.didFinish",
+                url: webView.url,
+                readAccessURL: readAccessURL,
+                resultClassifier: "navigation finished"
+            )
+        )
+        _ = navigation
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFail navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        _ = navigation
+        recordNavigationFailure(webView: webView, error: error)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        _ = navigation
+        recordNavigationFailure(webView: webView, error: error)
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        record(
+            ChromeMV3PopupOptionsHostDiagnostics.navigationEvent(
+                kind: "webContentProcessTerminated",
+                apiName: "webkit.webContentProcessDidTerminate",
+                url: webView.url,
+                readAccessURL: readAccessURL,
+                resultClassifier: "web content process terminated",
+                firstError: "web content process terminated"
+            )
+        )
+    }
+
+    private func recordNavigationFailure(
+        webView: WKWebView,
+        error: Error
+    ) {
+        let nsError = error as NSError
+        record(
+            ChromeMV3PopupOptionsHostDiagnostics.navigationEvent(
+                kind: "hostNavigationFailure",
+                apiName: "webkit.navigationFailure",
+                url: webView.url,
+                readAccessURL: readAccessURL,
+                resultClassifier: "navigation failed",
+                firstError:
+                    "navigation failed: \(safeToken(nsError.domain))#\(nsError.code)",
+                extraDiagnostics: [
+                    "errorDomain=\(safeToken(nsError.domain))",
+                    "errorCode=\(nsError.code)",
+                ]
+            )
+        )
+    }
+
+    private func record(_ event: ChromeMV3PopupOptionsHostDiagnosticEvent) {
+        bridgeHandler?.recordHostDiagnosticEvent(event)
+    }
+
+    private func safeToken(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false,
+              trimmed.count <= 96,
+              trimmed.range(
+                  of: #"^[A-Za-z0-9._+\-/=:# ]+$"#,
+                  options: .regularExpression
+              ) != nil
+        else { return "redacted" }
+        return trimmed
+    }
+
+    private func safeContentLength(_ value: Int64) -> String {
+        guard value >= 0, value <= 100_000_000 else {
+            return "unavailable"
+        }
+        return String(value)
+    }
+}
+#endif
 
 #if canImport(AppKit)
 @MainActor

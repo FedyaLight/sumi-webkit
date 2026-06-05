@@ -272,6 +272,42 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
             factory.lastBridgeInstallation?.allowlist,
             .controlledActionPopupPolicy
         )
+        #if DEBUG
+        let hostEvents = factory.lastBridgeInstallation?
+            .hostDiagnosticEvents ?? []
+        let resourceEvents = hostEvents.filter {
+            $0.apiName == "host.resourcePreflight"
+        }
+        XCTAssertEqual(resourceEvents.count, 5)
+        XCTAssertTrue(resourceEvents.allSatisfy {
+            $0.resultClassifier == "resource exists"
+        })
+        XCTAssertEqual(
+            resourceEvents.filter {
+                $0.diagnostics.contains("tag=script")
+            }.count,
+            4
+        )
+        XCTAssertTrue(resourceEvents.contains {
+            $0.diagnostics.contains("normalizedPath=popup/main.js")
+                && $0.diagnostics.contains("tag=script")
+                && $0.diagnostics.contains("type=classic")
+                && $0.diagnostics.contains("exists=true")
+                && $0.diagnostics.contains("insideGeneratedRoot=true")
+        })
+        XCTAssertTrue(resourceEvents.contains {
+            $0.diagnostics.contains("normalizedPath=popup/main.css")
+                && $0.diagnostics.contains("tag=link")
+                && $0.diagnostics.contains("type=rel=stylesheet")
+                && $0.diagnostics.contains("exists=true")
+                && $0.diagnostics.contains("insideGeneratedRoot=true")
+        })
+        XCTAssertFalse(hostEvents.contains {
+            $0.diagnostics.contains { diagnostic in
+                diagnostic.contains(generatedRoot.path)
+            }
+        })
+        #endif
         XCTAssertEqual(open.nativeHostLaunchAttempted, false)
         XCTAssertEqual(close.nativeHostLaunchAttempted, false)
     }

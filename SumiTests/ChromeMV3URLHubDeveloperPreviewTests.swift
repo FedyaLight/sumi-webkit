@@ -2077,7 +2077,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
     ) async throws -> ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot {
         var latest:
             ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?
-        for _ in 0..<120 {
+        for _ in 0..<200 {
             if let snapshot =
                 module
                 .chromeMV3PopupOptionsBridgeDiagnosticsSnapshotForTesting(
@@ -2086,10 +2086,22 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 )
             {
                 latest = snapshot
+                let hasFatalDiagnostic =
+                    snapshot.jsDebugRouteEvents.contains { event in
+                        event.firstMissingAPIOrPermissionOrLifecycleError != nil
+                            || [
+                                "consoleError",
+                                "cspViolation",
+                                "hostNavigationFailure",
+                                "resourceLoadError",
+                                "scriptError",
+                                "unhandledRejection",
+                                "webContentProcessTerminated",
+                            ].contains(event.eventKind)
+                    }
                 if snapshot.pendingUnresolvedJSDebugRoutes.isEmpty == false
-                    || snapshot.jsDebugRouteEvents.count >= 8
-                    || snapshot.callRecords.count >= 4
-                {
+                    || hasFatalDiagnostic
+                    || snapshot.callRecords.count >= 4 {
                     return snapshot
                 }
             }
@@ -2147,6 +2159,49 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         _ snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
     ) -> String {
         let events = snapshot.jsDebugRouteEvents
+        if let hostPreflightFailure = events.first(where: {
+            $0.eventKind == "hostPreloadResource"
+                && $0.firstMissingAPIOrPermissionOrLifecycleError != nil
+        }) {
+            return hostPreflightFailure.resultClassifier
+                ?? hostPreflightFailure.firstMissingAPIOrPermissionOrLifecycleError
+                ?? "host resource preflight failed"
+        }
+        if events.contains(where: {
+            $0.eventKind == "resourceLoadError"
+        }) {
+            return "resource load error"
+        }
+        if events.contains(where: {
+            $0.eventKind == "cspViolation"
+        }) {
+            return "CSP violation"
+        }
+        if events.contains(where: {
+            $0.eventKind == "scriptError"
+        }) {
+            return "script error"
+        }
+        if events.contains(where: {
+            $0.eventKind == "unhandledRejection"
+        }) {
+            return "Promise rejection"
+        }
+        if events.contains(where: {
+            $0.eventKind == "consoleError"
+        }) {
+            return "console error"
+        }
+        if events.contains(where: {
+            $0.eventKind == "hostNavigationFailure"
+        }) {
+            return "navigation failed"
+        }
+        if events.contains(where: {
+            $0.eventKind == "webContentProcessTerminated"
+        }) {
+            return "web content process terminated"
+        }
         if events.contains(where: {
             $0.resultClassifier == "missing storage.session"
         }) {

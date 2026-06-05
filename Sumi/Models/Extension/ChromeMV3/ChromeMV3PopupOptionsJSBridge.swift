@@ -536,6 +536,9 @@ struct ChromeMV3PopupOptionsJSBridgeInstallation:
     var scriptSource: String?
     var messageHandlerName: String
     var diagnostics: [String]
+    #if DEBUG
+    var hostDiagnosticEvents: [ChromeMV3PopupOptionsHostDiagnosticEvent] = []
+    #endif
 
     static func make(
         launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord
@@ -549,6 +552,21 @@ struct ChromeMV3PopupOptionsJSBridgeInstallation:
                 configuration: configuration
             )
             : nil
+        #if DEBUG
+        return ChromeMV3PopupOptionsJSBridgeInstallation(
+            configuration: configuration,
+            allowlist: configuration.allowlist,
+            bridgeAvailable: configuration.bridgeAvailable,
+            scriptSource: scriptSource,
+            messageHandlerName:
+                ChromeMV3PopupOptionsJSShimSource.bridgeMessageHandlerName,
+            diagnostics: configuration.diagnostics,
+            hostDiagnosticEvents:
+                ChromeMV3PopupOptionsHostDiagnostics.preloadEvents(
+                    launchRecord: launchRecord
+                )
+        )
+        #else
         return ChromeMV3PopupOptionsJSBridgeInstallation(
             configuration: configuration,
             allowlist: configuration.allowlist,
@@ -558,6 +576,7 @@ struct ChromeMV3PopupOptionsJSBridgeInstallation:
                 ChromeMV3PopupOptionsJSShimSource.bridgeMessageHandlerName,
             diagnostics: configuration.diagnostics
         )
+        #endif
     }
 }
 
@@ -631,6 +650,301 @@ struct ChromeMV3PopupOptionsJSDebugRouteEventRecord:
     var firstMissingAPIOrPermissionOrLifecycleError: String?
     var diagnostics: [String]
 }
+
+#if DEBUG
+struct ChromeMV3PopupOptionsHostDiagnosticEvent:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var eventKind: String
+    var apiName: String
+    var targetContext: String
+    var safeMessageShapeClassification: String
+    var resultClassifier: String?
+    var firstMissingAPIOrPermissionOrLifecycleError: String?
+    var diagnostics: [String]
+
+    init(
+        eventKind: String,
+        apiName: String,
+        targetContext: String,
+        safeMessageShapeClassification: String = "hostDiagnostic",
+        resultClassifier: String? = nil,
+        firstMissingAPIOrPermissionOrLifecycleError: String? = nil,
+        diagnostics: [String]
+    ) {
+        self.eventKind = eventKind
+        self.apiName = apiName
+        self.targetContext = targetContext
+        self.safeMessageShapeClassification =
+            safeMessageShapeClassification
+        self.resultClassifier = resultClassifier
+        self.firstMissingAPIOrPermissionOrLifecycleError =
+            firstMissingAPIOrPermissionOrLifecycleError
+        self.diagnostics = diagnostics
+    }
+}
+
+enum ChromeMV3PopupOptionsHostDiagnostics {
+    static func preloadEvents(
+        launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord
+    ) -> [ChromeMV3PopupOptionsHostDiagnosticEvent] {
+        guard launchRecord.surface == .actionPopup else { return [] }
+        var events: [ChromeMV3PopupOptionsHostDiagnosticEvent] = []
+        let rootURL = launchRecord.generatedRewrittenBundlePath.map {
+            URL(fileURLWithPath: $0, isDirectory: true)
+                .standardizedFileURL
+        }
+        let pageRelativePath =
+            launchRecord.normalizedPath
+            ?? launchRecord.declaredPath
+            ?? "unknown"
+        events.append(
+            ChromeMV3PopupOptionsHostDiagnosticEvent(
+                eventKind: "hostPreloadResource",
+                apiName: "host.popupLoad",
+                targetContext: "host",
+                safeMessageShapeClassification: "hostPreload:mainFrame",
+                resultClassifier:
+                    launchRecord.generatedResourcePath == nil
+                        ? "popup main resource unavailable"
+                        : "popup main resource resolved",
+                firstMissingAPIOrPermissionOrLifecycleError:
+                    launchRecord.generatedResourcePath == nil
+                        ? "popup main resource unavailable"
+                        : nil,
+                diagnostics: [
+                    "mainResource=\(safeRelativePath(pageRelativePath))",
+                    "declaredPath=\(safeRelativePath(launchRecord.declaredPath ?? "none"))",
+                    "normalizedPath=\(safeRelativePath(launchRecord.normalizedPath ?? "none"))",
+                    "loadScheme=file",
+                    "readAccessRoot=generatedPackageRoot",
+                    "fileBackedPage=true",
+                ]
+            )
+        )
+
+        guard let resolution = launchRecord.resourceResolution else {
+            return events
+        }
+
+        let audited = resolution.linkedResources.filter {
+            $0.tagName == "script" || $0.tagName == "link"
+        }
+        for resource in audited {
+            let normalized = safeRelativePath(
+                resource.normalizedPath ?? "none"
+            )
+            let insideRoot =
+                resource.generatedResourcePath.flatMap { path in
+                    rootURL.map { pathIsInsideGeneratedRoot(path, rootURL: $0) }
+                } ?? false
+            let classifier =
+                resourceClassifier(resource: resource, insideRoot: insideRoot)
+            let firstError =
+                classifier == "resource exists"
+                    ? nil
+                    : classifier
+            var diagnostics = [
+                "tag=\(safeToken(resource.tagName, fallback: "unknown"))",
+                "attribute=\(safeToken(resource.attributeName ?? "none", fallback: "none"))",
+                "kind=\(resource.kind.rawValue)",
+                "type=\(safeToken(resource.resourceType ?? "none", fallback: "none"))",
+                "rawShape=\(safeURLShape(resource.rawValue))",
+                "normalizedPath=\(normalized)",
+                "exists=\(resource.exists)",
+                "insideGeneratedRoot=\(insideRoot)",
+                "blocked=\(resource.blocked)",
+            ]
+            diagnostics.append(
+                "rootEscape=\(resource.generatedResourcePath != nil && insideRoot == false)"
+            )
+            events.append(
+                ChromeMV3PopupOptionsHostDiagnosticEvent(
+                    eventKind: "hostPreloadResource",
+                    apiName: "host.resourcePreflight",
+                    targetContext: "resource",
+                    safeMessageShapeClassification:
+                        "resourceTag=\(safeToken(resource.tagName, fallback: "unknown"))",
+                    resultClassifier: classifier,
+                    firstMissingAPIOrPermissionOrLifecycleError:
+                        firstError,
+                    diagnostics: diagnostics
+                )
+            )
+        }
+        return events
+    }
+
+    static func navigationEvent(
+        kind: String,
+        apiName: String,
+        url: URL?,
+        readAccessURL: URL,
+        resultClassifier: String,
+        firstError: String? = nil,
+        extraDiagnostics: [String] = []
+    ) -> ChromeMV3PopupOptionsHostDiagnosticEvent {
+        ChromeMV3PopupOptionsHostDiagnosticEvent(
+            eventKind: kind,
+            apiName: apiName,
+            targetContext: "navigation",
+            safeMessageShapeClassification: "navigationURLShape",
+            resultClassifier: resultClassifier,
+            firstMissingAPIOrPermissionOrLifecycleError: firstError,
+            diagnostics:
+                [
+                    "urlShape=\(safeURLShape(url?.absoluteString ?? ""))",
+                    "relativePath=\(relativePath(url, rootURL: readAccessURL))",
+                    "readAccessRoot=generatedPackageRoot",
+                    "insideReadAccessRoot=\(urlInsideRoot(url, rootURL: readAccessURL))",
+                ]
+                + extraDiagnostics
+        )
+    }
+
+    static func safeURLShape(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return "none" }
+        if ChromeMV3ExtensionPageResourcePath.isRemote(trimmed) {
+            return "remote:\(safeRemoteHost(trimmed))"
+        }
+        if trimmed.hasPrefix("file://") {
+            return "file:\(safeRelativePath(lastPathComponents(trimmed)))"
+        }
+        if trimmed.hasPrefix("chrome-extension://") {
+            return "extension:\(safeRelativePath(lastPathComponents(trimmed)))"
+        }
+        return safeRelativePath(trimmed)
+    }
+
+    static func safeRelativePath(_ path: String) -> String {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return "none" }
+        let withoutQuery = trimmed
+            .split(separator: "#", maxSplits: 1)
+            .first
+            .map(String.init) ?? trimmed
+        let pathOnly = withoutQuery
+            .split(separator: "?", maxSplits: 1)
+            .first
+            .map(String.init) ?? withoutQuery
+        let pieces = pathOnly
+            .split(separator: "/")
+            .filter { $0.isEmpty == false }
+            .suffix(4)
+            .map(String.init)
+        let joined = pieces.isEmpty ? pathOnly : pieces.joined(separator: "/")
+        guard joined.count <= 160,
+              containsSensitiveFragment(joined) == false,
+              joined.range(
+                  of: #"^[A-Za-z0-9._@+\-/=:%]+$"#,
+                  options: .regularExpression
+              ) != nil
+        else { return "redacted" }
+        return joined
+    }
+
+    private static func resourceClassifier(
+        resource: ChromeMV3ExtensionPageLinkedResource,
+        insideRoot: Bool
+    ) -> String {
+        if resource.generatedResourcePath != nil && insideRoot == false {
+            return "resource path escaped package root"
+        }
+        switch resource.kind {
+        case .missingLocalResource:
+            return "missing local resource"
+        case .unsafeLocalPath:
+            return "unsafe local resource path"
+        case .remoteResource:
+            return "remote resource blocked"
+        case .inlineScript:
+            return "inline script blocked by extension-page CSP"
+        default:
+            return resource.exists ? "resource exists" : "resource unavailable"
+        }
+    }
+
+    private static func safeToken(
+        _ value: String,
+        fallback: String
+    ) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false,
+              trimmed.count <= 80,
+              containsSensitiveFragment(trimmed) == false,
+              trimmed.range(
+                  of: #"^[A-Za-z0-9._+/\-;=]+$"#,
+                  options: .regularExpression
+              ) != nil
+        else { return fallback }
+        return trimmed
+    }
+
+    private static func relativePath(_ url: URL?, rootURL: URL) -> String {
+        guard let url, url.isFileURL else { return "none" }
+        let root = rootURL.standardizedFileURL.path
+        let path = url.standardizedFileURL.path
+        let rootPrefix = root.hasSuffix("/") ? root : root + "/"
+        guard path.hasPrefix(rootPrefix) else { return "outsideReadAccessRoot" }
+        return safeRelativePath(String(path.dropFirst(rootPrefix.count)))
+    }
+
+    private static func urlInsideRoot(_ url: URL?, rootURL: URL) -> Bool {
+        guard let url, url.isFileURL else { return false }
+        return pathIsInsideGeneratedRoot(url.path, rootURL: rootURL)
+    }
+
+    private static func pathIsInsideGeneratedRoot(
+        _ path: String,
+        rootURL: URL
+    ) -> Bool {
+        let root = rootURL.standardizedFileURL.path
+        let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
+        let rootPrefix = root.hasSuffix("/") ? root : root + "/"
+        return standardized == root || standardized.hasPrefix(rootPrefix)
+    }
+
+    private static func lastPathComponents(_ value: String) -> String {
+        let withoutQuery = value
+            .split(separator: "#", maxSplits: 1)
+            .first
+            .map(String.init) ?? value
+        let pathOnly = withoutQuery
+            .split(separator: "?", maxSplits: 1)
+            .first
+            .map(String.init) ?? withoutQuery
+        return pathOnly
+            .split(separator: "/")
+            .suffix(4)
+            .joined(separator: "/")
+    }
+
+    private static func safeRemoteHost(_ value: String) -> String {
+        guard let url = URL(string: value),
+              let host = url.host,
+              containsSensitiveFragment(host) == false
+        else { return "remote" }
+        return safeToken(host, fallback: "remote")
+    }
+
+    private static func containsSensitiveFragment(_ value: String) -> Bool {
+        let lower = value.lowercased()
+        return [
+            "auth",
+            "cookie",
+            "credential",
+            "password",
+            "secret",
+            "sessionid",
+            "token",
+            "vault",
+        ].contains { lower.contains($0) }
+    }
+}
+#endif
 
 struct ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot:
     Codable,
@@ -1211,6 +1525,32 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         )
     }
 
+    func recordHostDiagnosticEvent(
+        _ event: ChromeMV3PopupOptionsHostDiagnosticEvent
+    ) {
+        recordJSDebugRouteEvent([
+            "namespace": "__sumiDebug",
+            "methodName": "event",
+            "eventKind": event.eventKind,
+            "apiName": event.apiName,
+            "sourceContext": configuration.sourceContext.rawValue,
+            "targetContext": event.targetContext,
+            "safeMessageShapeClassification":
+                event.safeMessageShapeClassification,
+            "safeCommandTypeActionFieldNames": [],
+            "resultClassifier": event.resultClassifier as Any,
+            "firstMissingAPIOrPermissionOrLifecycleError":
+                event.firstMissingAPIOrPermissionOrLifecycleError as Any,
+            "diagnostics": event.diagnostics,
+        ])
+    }
+
+    func recordHostDiagnosticEvents(
+        _ events: [ChromeMV3PopupOptionsHostDiagnosticEvent]
+    ) {
+        events.forEach(recordHostDiagnosticEvent)
+    }
+
     private func recordJSDebugRouteEvent(_ raw: [String: Any]) {
         nextJSDebugRouteEventSequence += 1
         let eventKind =
@@ -1367,9 +1707,20 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         "portOnDisconnectDispatched",
         "portOnMessageDispatched",
         "promiseRejected",
+        "consoleError",
+        "consoleWarn",
+        "cspViolation",
+        "hostNavigationAction",
+        "hostNavigationFailure",
+        "hostNavigationFinish",
+        "hostNavigationResponse",
+        "hostPreloadResource",
+        "resourceLoaded",
         "resourceLoadError",
+        "resourceTimingSnapshot",
         "scriptError",
         "unhandledRejection",
+        "webContentProcessTerminated",
     ]
 
     private nonisolated static let allowedJSDebugInvocationModes:
@@ -1381,8 +1732,12 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
 
     private nonisolated static let allowedJSDebugTargetContexts: Set<String> = [
         "contentScript",
+        "console",
+        "csp",
+        "host",
         "nativeApplication",
         "nativeApplicationPort",
+        "navigation",
         "resource",
         "serviceWorker",
         "storage.local",
@@ -6096,11 +6451,6 @@ enum ChromeMV3PopupOptionsJSShimSource {
             return "unknown pending promise";
           }
 
-          function debugSanitizedMessage(message) {
-            const safe = debugSafeString(message, 180);
-            return safe || null;
-          }
-
           function debugSafeInteger(value) {
             if (typeof value !== "number" || !Number.isFinite(value)) {
               return null;
@@ -6126,6 +6476,177 @@ enum ChromeMV3PopupOptionsJSShimSource {
             }
             const tail = pieces.slice(Math.max(0, pieces.length - 2)).join("/");
             return debugSafeString(tail, 140);
+          }
+
+          function debugSanitizedText(value, maxLength) {
+            if (value === null || value === undefined) {
+              return null;
+            }
+            const string = String(value);
+            if (debugIsSensitiveName(string)) {
+              return null;
+            }
+            const redactedURLs = string.replace(
+              /(?:file|https?|chrome-extension):\\/\\/[^\\s"'<>)]*/g,
+              (match) => {
+                const descriptor = debugSafeResourceDescriptor(match);
+                return descriptor ? "resource:" + descriptor : "resource:redacted";
+              }
+            );
+            return debugSafeString(redactedURLs, maxLength || 180);
+          }
+
+          function debugSanitizedMessage(message) {
+            return debugSanitizedText(message, 180);
+          }
+
+          function debugSafeElementAttribute(target, name, maxLength) {
+            try {
+              if (!target || typeof target.getAttribute !== "function") {
+                return null;
+              }
+              return debugSafeString(target.getAttribute(name) || "", maxLength || 80);
+            } catch (_) {
+              return null;
+            }
+          }
+
+          function debugResourceDiagnostics(target) {
+            const tag = debugSafeString(String(target && target.tagName || "").toLowerCase(), 40) || "unknown";
+            const resource = debugSafeResourceDescriptor(
+              target && (target.currentSrc || target.src || target.href || "")
+            );
+            const type = debugSafeElementAttribute(target, "type", 80)
+              || (tag === "script" ? "classic" : null);
+            const rel = debugSafeElementAttribute(target, "rel", 80);
+            const asValue = debugSafeElementAttribute(target, "as", 80);
+            const diagnostics = [
+              "tag=" + tag,
+              resource ? "resource=" + resource : "resource=unknown"
+            ];
+            if (type) {
+              diagnostics.push("type=" + type);
+            }
+            if (rel) {
+              diagnostics.push("rel=" + rel);
+            }
+            if (asValue) {
+              diagnostics.push("as=" + asValue);
+            }
+            return { tag, resource, type, rel, asValue, diagnostics };
+          }
+
+          const __sumiResourceEventCounters = {
+            load: 0,
+            error: 0,
+            timing: 0
+          };
+
+          function debugRecordResourceEvent(eventKind, target, resultClassifier) {
+            const key = eventKind === "resourceLoaded" ? "load" : "error";
+            if (__sumiResourceEventCounters[key] >= 80) {
+              return;
+            }
+            __sumiResourceEventCounters[key] += 1;
+            const details = debugResourceDiagnostics(target);
+            debugRecord(eventKind, {
+              apiName: "resource." + details.tag,
+              targetContext: "resource",
+              resultClassifier,
+              firstMissingAPIOrPermissionOrLifecycleError:
+                eventKind === "resourceLoadError"
+                  ? (details.resource
+                    ? "resource load error: " + details.resource
+                    : "resource load error")
+                  : null,
+              safeMessageShapeClassification: "resourceTag=" + details.tag,
+              diagnostics:
+                [
+                  eventKind === "resourceLoadError"
+                    ? "Popup resource emitted an error event."
+                    : "Popup resource emitted a load event."
+                ]
+                .concat(details.diagnostics)
+            });
+          }
+
+          function debugRecordResourceTiming(reason) {
+            if (__sumiResourceEventCounters.timing >= 6) {
+              return;
+            }
+            __sumiResourceEventCounters.timing += 1;
+            let entries = [];
+            try {
+              entries = globalThis.performance
+                && typeof globalThis.performance.getEntriesByType === "function"
+                ? globalThis.performance.getEntriesByType("resource")
+                : [];
+            } catch (_) {
+              entries = [];
+            }
+            const diagnostics = ["reason=" + reason];
+            entries.slice(Math.max(0, entries.length - 60)).forEach((entry) => {
+              const descriptor = debugSafeResourceDescriptor(entry && entry.name);
+              const initiator = debugSafeString(entry && entry.initiatorType, 40) || "unknown";
+              const duration = debugSafeInteger(entry && entry.duration);
+              const transferSize = debugSafeInteger(entry && entry.transferSize);
+              const responseStatus = debugSafeInteger(entry && entry.responseStatus);
+              if (!descriptor) {
+                return;
+              }
+              let line = "resource=" + descriptor + ";initiator=" + initiator;
+              if (duration) {
+                line += ";durationMs=" + duration;
+              }
+              if (transferSize) {
+                line += ";transferSize=" + transferSize;
+              }
+              if (responseStatus) {
+                line += ";status=" + responseStatus;
+              }
+              diagnostics.push(line);
+            });
+            debugRecord("resourceTimingSnapshot", {
+              apiName: "performance.resourceTiming",
+              targetContext: "resource",
+              resultClassifier: "resource timing snapshot",
+              safeMessageShapeClassification: "resourceTimingCount=" + String(entries.length),
+              diagnostics
+            });
+          }
+
+          function debugInstallConsoleCapture(level) {
+            try {
+              const consoleObject = globalThis.console;
+              if (!consoleObject || typeof consoleObject[level] !== "function") {
+                return;
+              }
+              const original = consoleObject[level];
+              Object.defineProperty(consoleObject, level, {
+                value() {
+                  const args = Array.prototype.slice.call(arguments);
+                  const firstMessage = debugSanitizedText(args[0], 180);
+                  debugRecord(level === "error" ? "consoleError" : "consoleWarn", {
+                    apiName: "console." + level,
+                    targetContext: "console",
+                    resultClassifier:
+                      level === "error" ? "console error" : "console warning",
+                    firstMissingAPIOrPermissionOrLifecycleError:
+                      level === "error" ? firstMessage : null,
+                    safeMessageShapeClassification: debugArgsShape(args),
+                    safeCommandTypeActionFieldNames:
+                      Array.from(new Set(args.flatMap((value) => debugSafeFieldsInValue(value, 0)))).sort(),
+                    diagnostics:
+                      firstMessage
+                        ? ["console." + level + "=" + firstMessage]
+                        : ["console." + level + " called; raw arguments omitted."]
+                  });
+                  return original.apply(this, args);
+                },
+                configurable: true
+              });
+            } catch (_) {
+            }
           }
 
           function debugPost(record) {
@@ -6290,46 +6811,36 @@ enum ChromeMV3PopupOptionsJSShimSource {
             }, record || {}));
           }
 
-          globalThis.addEventListener("unhandledrejection", (event) => {
-            const reason = event && event.reason;
-            debugRecord("unhandledRejection", {
-              apiName: "global.unhandledrejection",
-              targetContext: "unknown",
-              resultClassifier: "Promise rejection",
-              firstMissingAPIOrPermissionOrLifecycleError:
-                debugSanitizedMessage(reason && (reason.message || String(reason))),
-              diagnostics: ["Popup emitted an unhandled Promise rejection."]
-            });
-          });
+          let __sumiLastScriptError = {
+            key: null,
+            atMS: -1000
+          };
 
-          globalThis.addEventListener("error", (event) => {
-            const target = event && event.target;
-            if (target && target !== globalThis && target !== globalThis.window) {
-              const tag = debugSafeString(String(target.tagName || "").toLowerCase(), 40) || "unknown";
-              const resource = debugSafeResourceDescriptor(
-                target.currentSrc || target.src || target.href || ""
-              );
-              debugRecord("resourceLoadError", {
-                apiName: "resource." + tag,
-                targetContext: "resource",
-                resultClassifier: "CSP/resource issue",
-                firstMissingAPIOrPermissionOrLifecycleError:
-                  resource ? "resource load error: " + resource : "resource load error",
-                safeMessageShapeClassification: "resourceTag=" + tag,
-                diagnostics: [
-                  "Popup resource emitted an error event.",
-                  "tag=" + tag,
-                  resource ? "resource=" + resource : "resource=unknown"
-                ]
-              });
+          function debugRecordScriptError(messageValue, filenameValue, lineValue, columnValue, errorValue, sourceLabel) {
+            const message = debugSanitizedMessage(messageValue);
+            const filename = debugSafeResourceDescriptor(filenameValue);
+            const line = debugSafeInteger(lineValue);
+            const column = debugSafeInteger(columnValue);
+            const errorName = debugSafeString(errorValue && errorValue.name, 80);
+            const dedupeKey = [
+              message || "",
+              filename || "",
+              line || "",
+              column || "",
+              errorName || ""
+            ].join("|");
+            const now = debugNowMS();
+            if (
+              __sumiLastScriptError.key === dedupeKey
+              && now - __sumiLastScriptError.atMS < 50
+            ) {
               return;
             }
-            const message = debugSanitizedMessage(event && event.message);
-            const filename = debugSafeResourceDescriptor(event && event.filename);
-            const line = debugSafeInteger(event && event.lineno);
-            const column = debugSafeInteger(event && event.colno);
-            const errorName = debugSafeString(event && event.error && event.error.name, 80);
-            const diagnostics = ["Popup emitted a window error event."];
+            __sumiLastScriptError.key = dedupeKey;
+            __sumiLastScriptError.atMS = now;
+            const diagnostics = [
+              "Popup emitted a " + sourceLabel + " script error."
+            ];
             if (message) {
               diagnostics.push("message=" + message);
             }
@@ -6353,7 +6864,138 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 message,
               diagnostics
             });
+          }
+
+          debugInstallConsoleCapture("error");
+          debugInstallConsoleCapture("warn");
+
+          globalThis.onerror = function(message, source, lineno, colno, error) {
+            debugRecordScriptError(
+              message,
+              source,
+              lineno,
+              colno,
+              error,
+              "window.onerror"
+            );
+            return false;
+          };
+
+          globalThis.addEventListener("unhandledrejection", (event) => {
+            const reason = event && event.reason;
+            const message = debugSanitizedMessage(
+              reason && (reason.message || String(reason))
+            );
+            const errorName = debugSafeString(reason && reason.name, 80);
+            const diagnostics = ["Popup emitted an unhandled Promise rejection."];
+            if (message) {
+              diagnostics.push("message=" + message);
+            }
+            if (errorName) {
+              diagnostics.push("errorName=" + errorName);
+            }
+            debugRecord("unhandledRejection", {
+              apiName: "global.unhandledrejection",
+              targetContext: "unknown",
+              resultClassifier: "Promise rejection",
+              firstMissingAPIOrPermissionOrLifecycleError:
+                message,
+              diagnostics
+            });
           });
+
+          globalThis.addEventListener("securitypolicyviolation", (event) => {
+            const blocked = debugSafeResourceDescriptor(event && event.blockedURI);
+            const source = debugSafeResourceDescriptor(event && event.sourceFile);
+            const effectiveDirective = debugSafeString(
+              event && event.effectiveDirective,
+              80
+            );
+            const violatedDirective = debugSafeString(
+              event && event.violatedDirective,
+              120
+            );
+            const disposition = debugSafeString(event && event.disposition, 40);
+            const line = debugSafeInteger(event && event.lineNumber);
+            const column = debugSafeInteger(event && event.columnNumber);
+            const diagnostics = ["Popup emitted a securitypolicyviolation event."];
+            if (effectiveDirective) {
+              diagnostics.push("effectiveDirective=" + effectiveDirective);
+            }
+            if (violatedDirective) {
+              diagnostics.push("violatedDirective=" + violatedDirective);
+            }
+            if (blocked) {
+              diagnostics.push("blockedResource=" + blocked);
+            }
+            if (source) {
+              diagnostics.push("source=" + source);
+            }
+            if (line) {
+              diagnostics.push("line=" + line);
+            }
+            if (column) {
+              diagnostics.push("column=" + column);
+            }
+            if (disposition) {
+              diagnostics.push("disposition=" + disposition);
+            }
+            debugRecord("cspViolation", {
+              apiName: "securitypolicyviolation",
+              targetContext: "csp",
+              resultClassifier: "CSP violation",
+              firstMissingAPIOrPermissionOrLifecycleError:
+                effectiveDirective
+                  ? "CSP violation: " + effectiveDirective
+                  : "CSP violation",
+              safeMessageShapeClassification: "cspViolation",
+              diagnostics
+            });
+          }, true);
+
+          globalThis.addEventListener("load", (event) => {
+            const target = event && event.target;
+            if (!target || target === globalThis || target === globalThis.window || target === globalThis.document) {
+              return;
+            }
+            debugRecordResourceEvent(
+              "resourceLoaded",
+              target,
+              "resource loaded"
+            );
+          }, true);
+
+          globalThis.addEventListener("error", (event) => {
+            const target = event && event.target;
+            if (target && target !== globalThis && target !== globalThis.window) {
+              debugRecordResourceEvent(
+                "resourceLoadError",
+                target,
+                "resource load error"
+              );
+              return;
+            }
+            debugRecordScriptError(
+              event && event.message,
+              event && event.filename,
+              event && event.lineno,
+              event && event.colno,
+              event && event.error,
+              "window error event"
+            );
+          }, true);
+
+          globalThis.addEventListener("DOMContentLoaded", () => {
+            debugRecordResourceTiming("domcontentloaded");
+          }, { once: true });
+
+          globalThis.addEventListener("load", () => {
+            debugRecordResourceTiming("window-load");
+          }, { once: true });
+
+          globalThis.setTimeout(() => {
+            debugRecordResourceTiming("timer-250ms");
+          }, 250);
 
           Object.defineProperty(globalThis, "__sumiChromeMV3PopupOptionsDebugSnapshot", {
             value() {
