@@ -26,16 +26,6 @@ struct ShortcutsSettingsView: View {
                 SettingsRow(title: "Search") {
                     searchField
                 }
-
-                SettingsDivider()
-
-                SettingsActionRow(
-                    title: "Defaults",
-                    subtitle: "Restore the built-in keyboard shortcuts.",
-                    buttonTitle: "Reset"
-                ) {
-                    shortcutManager.resetToDefaults()
-                }
             }
 
             SettingsSection(
@@ -60,6 +50,16 @@ struct ShortcutsSettingsView: View {
                             }
                         }
                     }
+                }
+
+                SettingsDivider()
+
+                HStack {
+                    Spacer()
+                    Button("Restore Defaults") {
+                        shortcutManager.resetToDefaults()
+                    }
+                    .buttonStyle(.bordered)
                 }
             }
         }
