@@ -9,6 +9,34 @@ enum SidebarRowMotionMetrics {
     static let pressedScale = SidebarMotionPolicy.rowPressedScale
 }
 
+enum SidebarRowInsertionMotionPolicy {
+    static let initialOpacity: Double = 0
+    static let finalOpacity: Double = 1
+    static let initialScale: CGFloat = 0.985
+    static let finalScale: CGFloat = 1
+}
+
+struct SidebarRowInsertionRevealModifier: ViewModifier {
+    let isAppearing: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(
+                isAppearing
+                    ? SidebarRowInsertionMotionPolicy.initialOpacity
+                    : SidebarRowInsertionMotionPolicy.finalOpacity
+            )
+            .scaleEffect(
+                isAppearing
+                    ? SidebarRowInsertionMotionPolicy.initialScale
+                    : SidebarRowInsertionMotionPolicy.finalScale,
+                anchor: .center
+            )
+            .transition(.identity)
+    }
+}
+
+
 enum SidebarDropMotion {
     static let contentLayoutDuration: Double = 0.18
     static let shortcutRestoreRevealStartDelay: Double = 0.016
@@ -261,5 +289,9 @@ extension View {
 
     func sidebarZenActionOpacity(_ isVisible: Bool) -> some View {
         modifier(SidebarZenActionOpacityModifier(isVisible: isVisible))
+    }
+
+    func sidebarRowInsertionReveal(isAppearing: Bool) -> some View {
+        modifier(SidebarRowInsertionRevealModifier(isAppearing: isAppearing))
     }
 }

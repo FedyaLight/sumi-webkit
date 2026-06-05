@@ -72,6 +72,11 @@ enum SidebarMotionPolicy {
         return .smooth(duration: 0.18)
     }
 
+    static func folderLayoutAnimation(for mode: Mode) -> Animation? {
+        guard mode != .reducedMotion else { return nil }
+        return .easeInOut(duration: 0.18)
+    }
+
     static func spaceSwitchAnimation(for mode: Mode) -> Animation? {
         guard mode != .reducedMotion else { return nil }
         return .timingCurve(0.16, 1.0, 0.3, 1.0, duration: 0.37)

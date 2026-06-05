@@ -451,17 +451,7 @@ extension SpaceView {
         }
         .frame(height: SidebarRowLayout.rowHeight, alignment: .top)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .opacity(isAppearing
-            ? SidebarRowInsertionMotionPolicy.initialOpacity
-            : SidebarRowInsertionMotionPolicy.finalOpacity
-        )
-        .scaleEffect(
-            isAppearing
-                ? SidebarRowInsertionMotionPolicy.initialScale
-                : SidebarRowInsertionMotionPolicy.finalScale,
-            anchor: .center
-        )
-        .transition(.identity)
+        .sidebarRowInsertionReveal(isAppearing: isAppearing)
         .clipped()
         .allowsHitTesting(false)
         .accessibilityHidden(true)

@@ -25,7 +25,6 @@ struct TabFolderView: View {
 
     private static let folderContentLeadingPadding: CGFloat = 14
     private static let folderContentVerticalPadding: CGFloat = 4
-    private static let zenFolderContentAnimation = Animation.easeInOut(duration: 0.18)
 
     @ObservedObject var folder: TabFolder
     let space: Space
@@ -290,8 +289,12 @@ struct TabFolderView: View {
     }
 
     private var folderLayoutAnimation: Animation? {
-        isInteractive && !reduceMotion && !sumiSettings.shouldReduceChromeMotion && !dragState.isCompletingDrop
-            ? Self.zenFolderContentAnimation
+        isInteractive && !dragState.isCompletingDrop
+            ? SidebarMotionPolicy.folderLayoutAnimation(
+                for: SidebarMotionPolicy.currentMode(
+                    reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
+                )
+            )
             : nil
     }
 
@@ -781,17 +784,7 @@ struct TabFolderView: View {
         }
         .frame(height: SidebarRowLayout.rowHeight, alignment: .top)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .opacity(isAppearing
-            ? SidebarRowInsertionMotionPolicy.initialOpacity
-            : SidebarRowInsertionMotionPolicy.finalOpacity
-        )
-        .scaleEffect(
-            isAppearing
-                ? SidebarRowInsertionMotionPolicy.initialScale
-                : SidebarRowInsertionMotionPolicy.finalScale,
-            anchor: .center
-        )
-        .transition(.identity)
+        .sidebarRowInsertionReveal(isAppearing: isAppearing)
         .clipped()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -1096,13 +1089,13 @@ struct TabFolderView: View {
     }
 
     private func alphabetizeTabs() {
-        withAnimation(Self.zenFolderContentAnimation) {
+        withAnimation(folderLayoutAnimation) {
             browserManager.tabManager.alphabetizeFolderPins(folder.id, in: space.id)
         }
     }
 
     private func toggleFolderOpenState() {
-        withAnimation(Self.zenFolderContentAnimation) {
+        withAnimation(folderLayoutAnimation) {
             browserManager.tabManager.toggleFolderOpenState(folder.id)
         }
     }
@@ -1152,7 +1145,7 @@ struct TabFolderView: View {
         }
 
         if animated && isInteractive && !dragState.isCompletingDrop {
-            withAnimation(Self.zenFolderContentAnimation, update)
+            withAnimation(folderLayoutAnimation, update)
         } else {
             update()
         }

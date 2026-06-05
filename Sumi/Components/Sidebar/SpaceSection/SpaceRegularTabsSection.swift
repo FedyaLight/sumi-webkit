@@ -11,12 +11,6 @@ private enum RegularExternalDropGapPlacement: Equatable {
     case bottom
 }
 
-enum SidebarRowInsertionMotionPolicy {
-    static let initialOpacity: Double = 0
-    static let finalOpacity: Double = 1
-    static let initialScale: CGFloat = 0.985
-    static let finalScale: CGFloat = 1
-}
 
 private let regularDragProjectionGapId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
 
@@ -441,17 +435,9 @@ extension SpaceView {
         VStack(spacing: 0) {
             regularTabView(tab)
         }
-        .opacity(isAppearing
-            ? SidebarRowInsertionMotionPolicy.initialOpacity
-            : SidebarRowInsertionMotionPolicy.finalOpacity
-        )
-        .scaleEffect(
-            isAppearing
-                ? SidebarRowInsertionMotionPolicy.initialScale
-                : SidebarRowInsertionMotionPolicy.finalScale,
-            anchor: .center
-        )
-        .transition(.identity)
+        .frame(height: isAppearing ? 0 : SidebarRowLayout.rowHeight, alignment: .top)
+        .clipped()
+        .sidebarRowInsertionReveal(isAppearing: isAppearing)
         .zIndex(regularTabRowZIndex(tab))
     }
 
