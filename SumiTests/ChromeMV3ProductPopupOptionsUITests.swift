@@ -256,8 +256,23 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
             "storage.session.clear"
         ))
-        XCTAssertFalse(launchRecord.apiSurface.allowedMethods.contains(
+        XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
             "storage.sync.get"
+        ))
+        XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
+            "storage.sync.set"
+        ))
+        XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
+            "storage.sync.remove"
+        ))
+        XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
+            "storage.sync.clear"
+        ))
+        XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
+            "i18n.getMessage"
+        ))
+        XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
+            "i18n.getUILanguage"
         ))
         XCTAssertFalse(launchRecord.apiSurface.allowedMethods.contains(
             "tabs.connect"

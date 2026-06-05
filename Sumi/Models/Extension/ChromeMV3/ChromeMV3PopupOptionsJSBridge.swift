@@ -197,6 +197,7 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
     static let controlledActionPopupPolicy =
         ChromeMV3PopupOptionsAPIMethodPolicy(
             exposedNamespaces: [
+                "i18n",
                 "runtime",
                 "storage.local",
                 "storage.session",
@@ -215,6 +216,8 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
                 "webRequest",
             ],
             allowedMethods: [
+                "i18n.getMessage",
+                "i18n.getUILanguage",
                 "runtime.connect",
                 "runtime.getManifest",
                 "runtime.getURL",
@@ -523,6 +526,328 @@ struct ChromeMV3PopupOptionsRuntimeManifestSnapshot:
     }
 }
 
+struct ChromeMV3PopupOptionsI18nMessageRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var message: String
+    var placeholders: [String: String]
+
+    var foundationObject: [String: Any] {
+        [
+            "message": message,
+            "placeholders": placeholders,
+        ]
+    }
+}
+
+struct ChromeMV3PopupOptionsI18nCatalogSnapshot:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var uiLanguage: String
+    var defaultLocaleDirectory: String?
+    var localeSearchOrder: [String]
+    var loadedCatalogLocales: [String]
+    var catalogs:
+        [String: [String: ChromeMV3PopupOptionsI18nMessageRecord]]
+    var diagnostics: [String]
+
+    var foundationObject: [String: Any] {
+        [
+            "uiLanguage": uiLanguage,
+            "defaultLocale": defaultLocaleDirectory as Any,
+            "localeSearchOrder": localeSearchOrder,
+            "loadedCatalogLocales": loadedCatalogLocales,
+            "catalogs": catalogs.mapValues {
+                $0.mapValues(\.foundationObject)
+            },
+        ]
+    }
+
+    static func fromGeneratedBundleRootPath(
+        _ rootPath: String?,
+        runtimeManifest: ChromeMV3PopupOptionsRuntimeManifestSnapshot?,
+        uiLanguageOverride: String? = nil
+    ) -> ChromeMV3PopupOptionsI18nCatalogSnapshot? {
+        guard let rootPath, rootPath.isEmpty == false else { return nil }
+        let rootURL = URL(fileURLWithPath: rootPath, isDirectory: true)
+        guard rootDirectoryIsUsable(rootURL) else {
+            return emptySnapshot(
+                uiLanguageOverride: uiLanguageOverride,
+                diagnostics: [
+                    "method=chrome.i18n.catalogSnapshot",
+                    "generatedPackageRootUsable=false",
+                    "i18nCatalogSnapshotResult=catalogRootUnavailable",
+                    "No raw localized message values are recorded.",
+                ]
+            )
+        }
+
+        let uiLanguage = chromeUILanguage(uiLanguageOverride)
+        let defaultLocaleDirectory = manifestDefaultLocaleDirectory(
+            runtimeManifest
+        )
+        let localeSearchOrder = uniqueLocaleSearchOrder(
+            uiLanguage: uiLanguage,
+            defaultLocaleDirectory: defaultLocaleDirectory
+        )
+        let loadedCatalogs = localeSearchOrder.reduce(
+            into:
+                [String: [String: ChromeMV3PopupOptionsI18nMessageRecord]]()
+        ) { result, localeDirectory in
+            if let catalog = loadCatalog(
+                rootURL: rootURL,
+                localeDirectory: localeDirectory
+            ), catalog.isEmpty == false {
+                result[localeDirectory] = catalog
+            }
+        }
+        let loadedCatalogLocales = localeSearchOrder.filter {
+            loadedCatalogs[$0] != nil
+        }
+        let primaryLocale = loadedCatalogLocales.first ?? "none"
+        let fallbackLocaleUsed =
+            loadedCatalogLocales.first.map { firstLoaded in
+                firstLoaded != localeSearchOrder.first
+            } ?? false
+        let catalogMessageCounts = loadedCatalogLocales.map {
+            "\($0)=\(loadedCatalogs[$0]?.count ?? 0)"
+        }
+        let diagnostics = uniqueSortedPopupOptionsBridge([
+            "method=chrome.i18n.catalogSnapshot",
+            "uiLanguage=\(uiLanguage)",
+            "defaultLocale=\(defaultLocaleDirectory ?? "none")",
+            "primaryLocale=\(primaryLocale)",
+            "fallbackLocaleUsed=\(fallbackLocaleUsed)",
+            "localeSearchOrderCount=\(localeSearchOrder.count)",
+            "loadedCatalogLocaleCount=\(loadedCatalogLocales.count)",
+            "catalogMessageCounts=\(catalogMessageCounts.joined(separator: ","))",
+            "generatedPackageRootUsable=true",
+            "i18nCatalogSnapshotResult=i18nCatalogSnapshotLoaded",
+            "No raw localized message values are recorded.",
+        ])
+        return ChromeMV3PopupOptionsI18nCatalogSnapshot(
+            uiLanguage: uiLanguage,
+            defaultLocaleDirectory: defaultLocaleDirectory,
+            localeSearchOrder: localeSearchOrder,
+            loadedCatalogLocales: loadedCatalogLocales,
+            catalogs: loadedCatalogs,
+            diagnostics: diagnostics
+        )
+    }
+
+    private static func emptySnapshot(
+        uiLanguageOverride: String?,
+        diagnostics: [String]
+    ) -> ChromeMV3PopupOptionsI18nCatalogSnapshot {
+        let uiLanguage = chromeUILanguage(uiLanguageOverride)
+        return ChromeMV3PopupOptionsI18nCatalogSnapshot(
+            uiLanguage: uiLanguage,
+            defaultLocaleDirectory: nil,
+            localeSearchOrder: [],
+            loadedCatalogLocales: [],
+            catalogs: [:],
+            diagnostics: uniqueSortedPopupOptionsBridge(diagnostics + [
+                "uiLanguage=\(uiLanguage)",
+                "localeSearchOrderCount=0",
+                "loadedCatalogLocaleCount=0",
+            ])
+        )
+    }
+
+    private static func rootDirectoryIsUsable(_ rootURL: URL) -> Bool {
+        guard rootURL.path.isEmpty == false,
+              isSymbolicLink(rootURL) == false
+        else { return false }
+        let values = try? rootURL.resourceValues(forKeys: [.isDirectoryKey])
+        return values?.isDirectory == true
+    }
+
+    private static func manifestDefaultLocaleDirectory(
+        _ runtimeManifest: ChromeMV3PopupOptionsRuntimeManifestSnapshot?
+    ) -> String? {
+        guard let object = runtimeManifest?.manifestPayload.objectValue,
+              let rawDefaultLocale = object["default_locale"]?.stringValue
+        else { return nil }
+        return normalizedLocaleDirectory(rawDefaultLocale)
+    }
+
+    private static func chromeUILanguage(
+        _ override: String?
+    ) -> String {
+        let raw =
+            override?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? Locale.preferredLanguages.first
+            ?? Locale.current.identifier
+        let normalized = raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "_", with: "-")
+        guard normalized.range(
+            of: #"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,3}$"#,
+            options: .regularExpression
+        ) != nil else {
+            return "en-US"
+        }
+        let pieces = normalized.split(separator: "-").map(String.init)
+        guard let language = pieces.first?.lowercased(),
+              language.isEmpty == false
+        else { return "en-US" }
+        let tail = pieces.dropFirst().map { piece -> String in
+            if piece.count == 2 {
+                return piece.uppercased()
+            }
+            return piece
+        }
+        return ([language] + tail).joined(separator: "-")
+    }
+
+    private static func uniqueLocaleSearchOrder(
+        uiLanguage: String,
+        defaultLocaleDirectory: String?
+    ) -> [String] {
+        let uiDirectory = normalizedLocaleDirectory(uiLanguage)
+        let languageDirectory = uiDirectory?
+            .split(separator: "_")
+            .first
+            .map(String.init)
+        return uniqueSortedPreservingOrderPopupOptionsBridge([
+            uiDirectory,
+            languageDirectory,
+            defaultLocaleDirectory,
+        ].compactMap { $0 })
+    }
+
+    private static func normalizedLocaleDirectory(
+        _ rawValue: String
+    ) -> String? {
+        let normalized = rawValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "-", with: "_")
+        guard normalized.range(
+            of: #"^[A-Za-z]{2,3}(?:_[A-Za-z0-9]{2,8}){0,3}$"#,
+            options: .regularExpression
+        ) != nil else { return nil }
+        let pieces = normalized.split(separator: "_").map(String.init)
+        guard let language = pieces.first?.lowercased(),
+              language.isEmpty == false
+        else { return nil }
+        let tail = pieces.dropFirst().map { piece -> String in
+            if piece.count == 2 {
+                return piece.uppercased()
+            }
+            return piece
+        }
+        return ([language] + tail).joined(separator: "_")
+    }
+
+    private static func loadCatalog(
+        rootURL: URL,
+        localeDirectory: String
+    ) -> [String: ChromeMV3PopupOptionsI18nMessageRecord]? {
+        guard let catalogURL = safeCatalogURL(
+            rootURL: rootURL,
+            localeDirectory: localeDirectory
+        ) else { return nil }
+        let values = try? catalogURL.resourceValues(forKeys: [
+            .fileSizeKey,
+            .isRegularFileKey,
+            .isSymbolicLinkKey,
+        ])
+        guard values?.isRegularFile == true,
+              values?.isSymbolicLink != true,
+              (values?.fileSize ?? 0) <= 2_000_000,
+              let data = try? Data(contentsOf: catalogURL),
+              data.count <= 2_000_000,
+              let decoded = try? JSONDecoder().decode(
+                ChromeMV3StorageValue.self,
+                from: data
+              ),
+              let rootObject = decoded.objectValue
+        else { return nil }
+        return parseCatalogRoot(rootObject)
+    }
+
+    private static func safeCatalogURL(
+        rootURL: URL,
+        localeDirectory: String
+    ) -> URL? {
+        guard normalizedLocaleDirectory(localeDirectory) == localeDirectory
+        else { return nil }
+        let localesURL = rootURL.appendingPathComponent(
+            "_locales",
+            isDirectory: true
+        )
+        let localeURL = localesURL.appendingPathComponent(
+            localeDirectory,
+            isDirectory: true
+        )
+        let catalogURL = localeURL.appendingPathComponent(
+            "messages.json",
+            isDirectory: false
+        )
+        guard url(catalogURL, isInsideRootURL: rootURL),
+              isSymbolicLink(localesURL) == false,
+              isSymbolicLink(localeURL) == false,
+              isSymbolicLink(catalogURL) == false
+        else { return nil }
+        return catalogURL
+    }
+
+    private static func url(_ url: URL, isInsideRootURL rootURL: URL) -> Bool {
+        let rootPath = rootURL.standardizedFileURL.path
+        let path = url.standardizedFileURL.path
+        return path == rootPath || path.hasPrefix(rootPath + "/")
+    }
+
+    private static func isSymbolicLink(_ url: URL) -> Bool {
+        let values = try? url.resourceValues(forKeys: [.isSymbolicLinkKey])
+        return values?.isSymbolicLink == true
+    }
+
+    private static func parseCatalogRoot(
+        _ rootObject: [String: ChromeMV3StorageValue]
+    ) -> [String: ChromeMV3PopupOptionsI18nMessageRecord] {
+        rootObject.reduce(into: [:]) { result, entry in
+            guard let messageKey = normalizedMessageKey(entry.key),
+                  let messageObject = entry.value.objectValue,
+                  let message = messageObject["message"]?.stringValue
+            else { return }
+            let placeholders = parsePlaceholders(
+                messageObject["placeholders"]?.objectValue
+            )
+            result[messageKey] = ChromeMV3PopupOptionsI18nMessageRecord(
+                message: message,
+                placeholders: placeholders
+            )
+        }
+    }
+
+    private static func parsePlaceholders(
+        _ placeholdersObject: [String: ChromeMV3StorageValue]?
+    ) -> [String: String] {
+        guard let placeholdersObject else { return [:] }
+        return placeholdersObject.reduce(into: [:]) { result, entry in
+            guard let placeholderKey = normalizedMessageKey(entry.key),
+                  let placeholderObject = entry.value.objectValue,
+                  let content = placeholderObject["content"]?.stringValue
+            else { return }
+            result[placeholderKey] = content
+        }
+    }
+
+    private static func normalizedMessageKey(_ rawValue: String) -> String? {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.range(
+            of: #"^[A-Za-z0-9_@.-]{1,160}$"#,
+            options: .regularExpression
+        ) != nil else { return nil }
+        return trimmed.lowercased()
+    }
+}
+
 struct ChromeMV3PopupOptionsJSBridgeConfiguration:
     Codable,
     Equatable,
@@ -555,6 +880,8 @@ struct ChromeMV3PopupOptionsJSBridgeConfiguration:
     var contentScriptAttachmentAvailableInProduct: Bool
     var runtimeLoadable: Bool
     var runtimeManifest: ChromeMV3PopupOptionsRuntimeManifestSnapshot? = nil
+    var i18nCatalogSnapshot:
+        ChromeMV3PopupOptionsI18nCatalogSnapshot? = nil
     var manifestPermissions: [String]
     var manifestOptionalPermissions: [String]
     var manifestHostPermissions: [String]
@@ -580,6 +907,25 @@ struct ChromeMV3PopupOptionsJSBridgeConfiguration:
             launchRecord.canOpen
                 && launchRecord.gateRecord
                 .popupOptionsJSBridgeAvailableInDeveloperPreview
+        let runtimeManifest =
+            ChromeMV3PopupOptionsRuntimeManifestSnapshot
+            .fromGeneratedBundleRootPath(
+                launchRecord.generatedRewrittenBundlePath
+            )
+        let i18nCatalogSnapshot =
+            bridgeAvailable
+                && launchRecord.apiMethodPolicy.exposedNamespaces
+                .contains("i18n")
+                && launchRecord.apiMethodPolicy.allowedMethods
+                .contains("i18n.getMessage")
+                && launchRecord.apiMethodPolicy.allowedMethods
+                .contains("i18n.getUILanguage")
+            ? ChromeMV3PopupOptionsI18nCatalogSnapshot
+                .fromGeneratedBundleRootPath(
+                    launchRecord.generatedRewrittenBundlePath,
+                    runtimeManifest: runtimeManifest
+                )
+            : nil
         return ChromeMV3PopupOptionsJSBridgeConfiguration(
             extensionID: launchRecord.extensionID,
             profileID: launchRecord.profileID,
@@ -629,11 +975,8 @@ struct ChromeMV3PopupOptionsJSBridgeConfiguration:
             normalTabRuntimeBridgeAvailable: false,
             contentScriptAttachmentAvailableInProduct: false,
             runtimeLoadable: false,
-            runtimeManifest:
-                ChromeMV3PopupOptionsRuntimeManifestSnapshot
-                .fromGeneratedBundleRootPath(
-                    launchRecord.generatedRewrittenBundlePath
-                ),
+            runtimeManifest: runtimeManifest,
+            i18nCatalogSnapshot: i18nCatalogSnapshot,
             manifestPermissions:
                 uniqueSortedPopupOptionsBridge(
                     launchRecord.manifestPermissions
@@ -657,17 +1000,23 @@ struct ChromeMV3PopupOptionsJSBridgeConfiguration:
                 ),
             allowlist: launchRecord.apiMethodPolicy,
             diagnostics:
-                uniqueSortedPopupOptionsBridge([
+                uniqueSortedPopupOptionsBridge(
+                    [
                     bridgeAvailable
                         ? "Popup/options JS bridge is available only for this extension-owned developer-preview WebView."
                         : "Popup/options JS bridge is unavailable because launch gates did not pass.",
+                    i18nCatalogSnapshot == nil
+                        ? "chrome.i18n remains unavailable for this popup/options bridge policy."
+                        : "chrome.i18n is available only for this controlled popup/options bridge policy.",
                     "Public product popup/options bridge remains unavailable.",
                     "Normal-tab runtime bridge remains unavailable.",
                     "Content-script product attachment remains unavailable.",
                     "runtimeLoadable remains false.",
                     Self.productNormalTabBridgeInstallationGuard,
                     Self.contentScriptProductAttachmentGuard,
-                ])
+                    ]
+                    + (i18nCatalogSnapshot?.diagnostics ?? [])
+                )
         )
     }
 
@@ -1966,6 +2315,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         "csp",
         "dom",
         "host",
+        "i18n",
         "manifest",
         "nativeApplication",
         "nativeApplicationPort",
@@ -5822,6 +6172,15 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 configuration.runtimeManifest?.manifestPayload
                 .popupOptionsBridgeFoundationObject ?? NSNull(),
             "runtimeManifestAvailable": configuration.runtimeManifest != nil,
+            "i18nCatalog":
+                configuration.i18nCatalogSnapshot?.foundationObject
+                ?? NSNull(),
+            "i18nExposed":
+                configuration.allowlist.exposedNamespaces.contains("i18n")
+                && configuration.allowlist.allowedMethods
+                .contains("i18n.getMessage")
+                && configuration.allowlist.allowedMethods
+                .contains("i18n.getUILanguage"),
             "storageSessionExposed":
                 configuration.allowlist.exposedNamespaces
                 .contains("storage.session")
@@ -5850,6 +6209,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
           const local = {};
           const session = {};
           const sync = {};
+          const i18n = {};
           const permissions = {};
           const tabs = {};
           const scripting = {};
@@ -5961,6 +6321,230 @@ enum ChromeMV3PopupOptionsJSShimSource {
                     deepCloneJSONCompatible(config.runtimeManifest)
                   )
                 : null;
+
+          const i18nCatalogTemplate =
+            config.i18nCatalog
+              && typeof config.i18nCatalog === "object"
+              && !Array.isArray(config.i18nCatalog)
+                ? deepFreezeJSONCompatible(
+                    deepCloneJSONCompatible(config.i18nCatalog)
+                  )
+                : deepFreezeJSONCompatible({
+                    uiLanguage: "en-US",
+                    defaultLocale: null,
+                    localeSearchOrder: [],
+                    loadedCatalogLocales: [],
+                    catalogs: {}
+                  });
+
+          function i18nUILanguage() {
+            const language = i18nCatalogTemplate.uiLanguage;
+            return typeof language === "string" && language
+              ? language
+              : "en-US";
+          }
+
+          function i18nLocaleSearchOrder() {
+            const order = i18nCatalogTemplate.localeSearchOrder;
+            return Array.isArray(order)
+              ? order.filter((locale) => typeof locale === "string" && locale)
+              : [];
+          }
+
+          function i18nCatalogs() {
+            const catalogs = i18nCatalogTemplate.catalogs;
+            return catalogs && typeof catalogs === "object" && !Array.isArray(catalogs)
+              ? catalogs
+              : {};
+          }
+
+          function i18nDefaultLocale() {
+            const locale = i18nCatalogTemplate.defaultLocale;
+            return typeof locale === "string" && locale ? locale : null;
+          }
+
+          function i18nNormalizeMessageKey(value) {
+            if (typeof value !== "string") {
+              return null;
+            }
+            const trimmed = value.trim();
+            if (!/^[A-Za-z0-9_@.-]{1,160}$/.test(trimmed)) {
+              return null;
+            }
+            return trimmed.toLowerCase();
+          }
+
+          function i18nLoadedLocaleCount() {
+            const loaded = i18nCatalogTemplate.loadedCatalogLocales;
+            return Array.isArray(loaded) ? loaded.length : 0;
+          }
+
+          function i18nMessageKeyShape(messageName) {
+            if (typeof messageName !== "string") {
+              return "messageNameType=" + typeof messageName;
+            }
+            return "messageNameLength=" + String(messageName.length);
+          }
+
+          function i18nSubstitutionShape(rawSubstitutions) {
+            if (rawSubstitutions === undefined) {
+              return "substitutions:0";
+            }
+            if (typeof rawSubstitutions === "string") {
+              return "substitutions:string";
+            }
+            if (Array.isArray(rawSubstitutions)) {
+              return "substitutions:array:length=" + String(rawSubstitutions.length);
+            }
+            return "substitutions:type=" + typeof rawSubstitutions;
+          }
+
+          function i18nParseSubstitutions(rawSubstitutions) {
+            if (rawSubstitutions === undefined) {
+              return { valid: true, values: [], shape: "substitutions:0" };
+            }
+            if (typeof rawSubstitutions === "string") {
+              return {
+                valid: true,
+                values: [rawSubstitutions],
+                shape: "substitutions:string"
+              };
+            }
+            if (Array.isArray(rawSubstitutions)) {
+              if (rawSubstitutions.length > 9) {
+                return {
+                  valid: false,
+                  values: [],
+                  shape: "substitutions:array:length=" + String(rawSubstitutions.length)
+                };
+              }
+              return {
+                valid: true,
+                values: rawSubstitutions.map((value) => {
+                  if (value === undefined || value === null) {
+                    return "";
+                  }
+                  return String(value);
+                }),
+                shape: "substitutions:array:length=" + String(rawSubstitutions.length)
+              };
+            }
+            return {
+              valid: false,
+              values: [],
+              shape: "substitutions:type=" + typeof rawSubstitutions
+            };
+          }
+
+          function i18nLookupMessage(messageName) {
+            const key = i18nNormalizeMessageKey(messageName);
+            if (!key) {
+              return null;
+            }
+            const catalogs = i18nCatalogs();
+            const searchOrder = i18nLocaleSearchOrder();
+            for (const locale of searchOrder) {
+              const catalog = catalogs[locale];
+              if (
+                catalog
+                && typeof catalog === "object"
+                && Object.prototype.hasOwnProperty.call(catalog, key)
+              ) {
+                const record = catalog[key];
+                if (record && typeof record.message === "string") {
+                  return { key, locale, record };
+                }
+              }
+            }
+            return { key, locale: null, record: null };
+          }
+
+          function i18nResolveSubstitutionContent(content, substitutions) {
+            if (typeof content !== "string" || content.length === 0) {
+              return "";
+            }
+            const sentinel = "\\u0000SumiI18nDollar\\u0000";
+            return content
+              .replace(/\\$\\$/g, sentinel)
+              .replace(/\\$([1-9])/g, (_match, index) => {
+                return substitutions[Number(index) - 1] || "";
+              })
+              .replace(new RegExp(sentinel, "g"), "$");
+          }
+
+          function i18nFormatMessage(record, substitutions, options) {
+            const sentinel = "\\u0000SumiI18nDollar\\u0000";
+            let message = String(record.message || "");
+            if (options && typeof options === "object" && options.escapeLt === true) {
+              message = message.replace(/</g, "&lt;");
+            }
+            const placeholders =
+              record.placeholders
+              && typeof record.placeholders === "object"
+              && !Array.isArray(record.placeholders)
+                ? record.placeholders
+                : {};
+            return message
+              .replace(/\\$\\$/g, sentinel)
+              .replace(/\\$([A-Za-z0-9_@.-]+)\\$/g, (match, rawName) => {
+                const name = String(rawName || "").toLowerCase();
+                if (!Object.prototype.hasOwnProperty.call(placeholders, name)) {
+                  return match;
+                }
+                return i18nResolveSubstitutionContent(
+                  placeholders[name],
+                  substitutions
+                );
+              })
+              .replace(/\\$([1-9])/g, (_match, index) => {
+                return substitutions[Number(index) - 1] || "";
+              })
+              .replace(new RegExp(sentinel, "g"), "$");
+          }
+
+          function i18nBidiInfo() {
+            const language = i18nUILanguage().split("-", 1)[0].toLowerCase();
+            const rtl = ["ar", "fa", "he", "iw", "ur"].includes(language);
+            return rtl
+              ? { dir: "rtl", reversedDir: "ltr", startEdge: "right", endEdge: "left" }
+              : { dir: "ltr", reversedDir: "rtl", startEdge: "left", endEdge: "right" };
+          }
+
+          function i18nPredefinedMessage(messageName) {
+            if (typeof messageName !== "string" || messageName.indexOf("@@") !== 0) {
+              return null;
+            }
+            const name = messageName.toLowerCase();
+            const bidi = i18nBidiInfo();
+            if (name === "@@extension_id") {
+              return config.extensionID;
+            }
+            if (name === "@@ui_locale") {
+              return i18nUILanguage().replace(/-/g, "_");
+            }
+            if (name === "@@bidi_dir") {
+              return bidi.dir;
+            }
+            if (name === "@@bidi_reversed_dir") {
+              return bidi.reversedDir;
+            }
+            if (name === "@@bidi_start_edge") {
+              return bidi.startEdge;
+            }
+            if (name === "@@bidi_end_edge") {
+              return bidi.endEdge;
+            }
+            return null;
+          }
+
+          function i18nDebugRecord(methodName, record) {
+            debugI18nCall(methodName, Object.assign({
+              uiLanguage: i18nUILanguage(),
+              defaultLocale: i18nDefaultLocale() || "none",
+              localeSearchOrderCount: i18nLocaleSearchOrder().length,
+              loadedCatalogLocaleCount: i18nLoadedLocaleCount()
+            }, record || {}));
+          }
 
           function invokeCallback(callback, message, args) {
             lastErrorValue = message ? { message } : undefined;
@@ -6654,6 +7238,161 @@ enum ChromeMV3PopupOptionsJSShimSource {
             }
           });
 
+          Object.defineProperty(i18n, "getUILanguage", {
+            value() {
+              const uiLanguage = i18nUILanguage();
+              i18nDebugRecord("getUILanguage", {
+                methodName: "chrome.i18n.getUILanguage",
+                selectedLocale: uiLanguage,
+                fallbackLocaleUsed: false,
+                messageKeyShape: "none",
+                substitutionShape: "arguments:0",
+                resultClassifier: "uiLanguageReturned",
+                diagnostics: [
+                  "method=chrome.i18n.getUILanguage",
+                  "uiLanguage=" + uiLanguage,
+                  "selectedLocale=" + uiLanguage,
+                  "fallbackLocaleUsed=false",
+                  "messageKeyCount=0",
+                  "substitutionShape=arguments:0",
+                  "resultClassifier=uiLanguageReturned",
+                  "No raw localized message values are recorded."
+                ]
+              });
+              return uiLanguage;
+            },
+            enumerable: true
+          });
+
+          Object.defineProperty(i18n, "getMessage", {
+            value(messageName, substitutions, options) {
+              const rawSubstitutionShape = i18nSubstitutionShape(substitutions);
+              const keyShape = i18nMessageKeyShape(messageName);
+              if (typeof messageName !== "string") {
+                i18nDebugRecord("getMessage", {
+                  methodName: "chrome.i18n.getMessage",
+                  selectedLocale: "none",
+                  fallbackLocaleUsed: false,
+                  messageKeyShape: keyShape,
+                  substitutionShape: rawSubstitutionShape,
+                  resultClassifier: "invalidMessageName",
+                  diagnostics: [
+                    "method=chrome.i18n.getMessage",
+                    "messageKeyCount=0",
+                    "messageKeyShape=" + keyShape,
+                    "substitutionShape=" + rawSubstitutionShape,
+                    "selectedLocale=none",
+                    "fallbackLocaleUsed=false",
+                    "resultClassifier=invalidMessageName",
+                    "No raw localized message values are recorded."
+                  ]
+                });
+                return undefined;
+              }
+              const substitutionsResult = i18nParseSubstitutions(substitutions);
+              if (!substitutionsResult.valid) {
+                i18nDebugRecord("getMessage", {
+                  methodName: "chrome.i18n.getMessage",
+                  selectedLocale: "none",
+                  fallbackLocaleUsed: false,
+                  messageKeyShape: keyShape,
+                  substitutionShape: substitutionsResult.shape,
+                  resultClassifier: "invalidSubstitutions",
+                  diagnostics: [
+                    "method=chrome.i18n.getMessage",
+                    "messageKeyCount=1",
+                    "messageKeyShape=" + keyShape,
+                    "substitutionShape=" + substitutionsResult.shape,
+                    "selectedLocale=none",
+                    "fallbackLocaleUsed=false",
+                    "resultClassifier=invalidSubstitutions",
+                    "No raw localized message values are recorded."
+                  ]
+                });
+                return undefined;
+              }
+              const predefined = i18nPredefinedMessage(messageName);
+              if (predefined !== null) {
+                i18nDebugRecord("getMessage", {
+                  methodName: "chrome.i18n.getMessage",
+                  selectedLocale: "predefined",
+                  fallbackLocaleUsed: false,
+                  messageKeyShape: keyShape,
+                  substitutionShape: substitutionsResult.shape,
+                  resultClassifier: "predefinedMessageReturned",
+                  diagnostics: [
+                    "method=chrome.i18n.getMessage",
+                    "messageKeyCount=1",
+                    "messageKeyShape=" + keyShape,
+                    "substitutionShape=" + substitutionsResult.shape,
+                    "selectedLocale=predefined",
+                    "fallbackLocaleUsed=false",
+                    "resultClassifier=predefinedMessageReturned",
+                    "No raw localized message values are recorded."
+                  ]
+                });
+                return predefined;
+              }
+              const lookup = i18nLookupMessage(messageName);
+              if (!lookup || !lookup.record) {
+                i18nDebugRecord("getMessage", {
+                  methodName: "chrome.i18n.getMessage",
+                  selectedLocale: "none",
+                  fallbackLocaleUsed: false,
+                  messageKeyShape: keyShape,
+                  substitutionShape: substitutionsResult.shape,
+                  resultClassifier: "messageMissing",
+                  diagnostics: [
+                    "method=chrome.i18n.getMessage",
+                    "messageKeyCount=1",
+                    "messageKeyShape=" + keyShape,
+                    "substitutionShape=" + substitutionsResult.shape,
+                    "selectedLocale=none",
+                    "fallbackLocaleUsed=false",
+                    "resultClassifier=messageMissing",
+                    "No raw localized message values are recorded."
+                  ]
+                });
+                return "";
+              }
+              const result = i18nFormatMessage(
+                lookup.record,
+                substitutionsResult.values,
+                options
+              );
+              const primaryLocale = i18nLocaleSearchOrder()[0] || null;
+              const fallbackLocaleUsed =
+                primaryLocale !== null && lookup.locale !== primaryLocale;
+              i18nDebugRecord("getMessage", {
+                methodName: "chrome.i18n.getMessage",
+                selectedLocale: lookup.locale || "none",
+                fallbackLocaleUsed,
+                messageKeyShape: keyShape,
+                substitutionShape: substitutionsResult.shape,
+                resultClassifier:
+                  result.length > 0
+                    ? "localizedMessageReturned"
+                    : "emptyLocalizedMessageReturned",
+                diagnostics: [
+                  "method=chrome.i18n.getMessage",
+                  "messageKeyCount=1",
+                  "messageKeyShape=" + keyShape,
+                  "substitutionShape=" + substitutionsResult.shape,
+                  "selectedLocale=" + (lookup.locale || "none"),
+                  "fallbackLocaleUsed=" + String(fallbackLocaleUsed),
+                  "resultClassifier=" + (
+                    result.length > 0
+                      ? "localizedMessageReturned"
+                      : "emptyLocalizedMessageReturned"
+                  ),
+                  "No raw localized message values are recorded."
+                ]
+              });
+              return result;
+            },
+            enumerable: true
+          });
+
           ["contains", "request", "remove"].forEach((methodName) => {
             Object.defineProperty(permissions, methodName, {
               value(permissionsObject, callback) {
@@ -6772,6 +7511,12 @@ enum ChromeMV3PopupOptionsJSShimSource {
             value: storageObject,
             enumerable: true
           });
+          if (config.i18nExposed) {
+            Object.defineProperty(chromeObject, "i18n", {
+              value: Object.freeze(i18n),
+              enumerable: true
+            });
+          }
           Object.defineProperty(chromeObject, "permissions", {
             value: Object.freeze(permissions),
             enumerable: true
@@ -6830,6 +7575,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
           function debugMissingAPI(apiName, resultClassifier, targetContext) {}
           function debugPortEvent(eventKind, record) {}
           function debugRuntimeGetManifest(manifest, succeeded) {}
+          function debugI18nCall(methodName, record) {}
           function debugPostGetManifestBootstrapSentinel(succeeded) {}
         """
     }
@@ -6944,6 +7690,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
           }
 
           function debugTargetContext(namespace, methodName) {
+            if (namespace === "i18n") {
+              return "i18n";
+            }
             if (namespace === "storage") {
               if (methodName.indexOf("local.") === 0) {
                 return "storage.local";
@@ -7451,6 +8200,33 @@ enum ChromeMV3PopupOptionsJSShimSource {
             });
           }
 
+          function debugI18nCall(methodName, record) {
+            const details = record || {};
+            const diagnostics = Array.isArray(details.diagnostics)
+              ? details.diagnostics
+              : [
+                "method=chrome.i18n." + methodName,
+                "uiLanguage=" + String(details.uiLanguage || "unknown"),
+                "defaultLocale=" + String(details.defaultLocale || "none"),
+                "selectedLocale=" + String(details.selectedLocale || "none"),
+                "fallbackLocaleUsed=" + String(!!details.fallbackLocaleUsed),
+                "messageKeyShape=" + String(details.messageKeyShape || "none"),
+                "substitutionShape=" + String(details.substitutionShape || "arguments:0"),
+                "resultClassifier=" + String(details.resultClassifier || "unknown"),
+                "No raw localized message values are recorded."
+              ];
+            debugRecord("bridgeCallResolved", {
+              apiName: "chrome.i18n." + methodName,
+              targetContext: "i18n",
+              resultClassifier: details.resultClassifier || "i18nCallReturned",
+              safeMessageShapeClassification: [
+                "messageKeyShape=" + String(details.messageKeyShape || "none"),
+                "substitutionShape=" + String(details.substitutionShape || "arguments:0")
+              ].join(";"),
+              diagnostics
+            });
+          }
+
           function debugCoarseDOMState() {
             const body = globalThis.document && globalThis.document.body;
             const text = body && typeof body.innerText === "string"
@@ -7644,6 +8420,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
             const storageSyncRouteCount = routeEvents.filter((event) => {
               return event.targetContext === "storage.sync";
             }).length;
+            const i18nRouteCount = routeEvents.filter((event) => {
+              return event.targetContext === "i18n";
+            }).length;
             const nativeRouteCount = routeEvents.filter((event) => {
               return event.targetContext === "nativeApplication"
                 || event.targetContext === "nativeApplicationPort";
@@ -7688,6 +8467,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 "storageLocalRouteEvents=" + String(storageLocalRouteCount),
                 "storageSessionRouteEvents=" + String(storageSessionRouteCount),
                 "storageSyncRouteEvents=" + String(storageSyncRouteCount),
+                "i18nRouteEvents=" + String(i18nRouteCount),
                 "nativeRouteEvents=" + String(nativeRouteCount),
                 "No raw storage values, message bodies, form values, manifest bodies, URLs, or private payloads were recorded."
               ]
@@ -7961,6 +8741,18 @@ final class ChromeMV3PopupOptionsWKScriptMessageHandler:
 
 private func uniqueSortedPopupOptionsBridge(_ values: [String]) -> [String] {
     Array(Set(values.filter { $0.isEmpty == false })).sorted()
+}
+
+private func uniqueSortedPreservingOrderPopupOptionsBridge(
+    _ values: [String]
+) -> [String] {
+    var seen: Set<String> = []
+    var unique: [String] = []
+    for value in values where value.isEmpty == false
+        && seen.insert(value).inserted {
+        unique.append(value)
+    }
+    return unique
 }
 
 private func stableIDPopupOptionsBridge(

@@ -1768,6 +1768,16 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertFalse(actionViewSource.contains("Unpin from Toolbar"))
         XCTAssertFalse(hubSource.contains(manualSmokeRunnerCall))
         XCTAssertFalse(hubSource.contains(artifactWriterCall))
+        XCTAssertFalse(
+            [
+                modelSource,
+                hubSource,
+                actionViewSource,
+                moduleSource,
+                popupOptionsSource,
+            ].joined(separator: "\n")
+                .contains("ChromeMV3PopupOptionsI18nCatalogSnapshot")
+        )
         XCTAssertTrue(actionViewSource.contains("openActionPopupFromURLHub"))
         XCTAssertTrue(
             moduleSource.contains(
@@ -1824,7 +1834,27 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             popupOptionsBridgeSource.contains("\"storage.session.get\"")
         )
         XCTAssertTrue(
+            popupOptionsBridgeSource.contains("\"i18n.getMessage\"")
+        )
+        XCTAssertTrue(
+            popupOptionsBridgeSource.contains("\"i18n.getUILanguage\"")
+        )
+        XCTAssertTrue(
+            popupOptionsBridgeSource.contains("i18nExposed")
+        )
+        XCTAssertTrue(
+            popupOptionsBridgeSource.contains(
+                "No raw localized message values are recorded."
+            )
+        )
+        XCTAssertTrue(
             popupOptionsBridgeSource.contains("storageSessionExposed")
+        )
+        XCTAssertFalse(popupOptionsBridgeSource.contains("\"tabs.getCurrent\""))
+        XCTAssertFalse(
+            popupOptionsBridgeSource.contains(
+                "Object.defineProperty(tabs, \"getCurrent\""
+            )
         )
         XCTAssertFalse(
             popupOptionsBridgeSource.contains(

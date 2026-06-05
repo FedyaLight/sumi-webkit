@@ -553,6 +553,30 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             controlledPolicy.allowedMethods.contains("storage.sync.get")
         )
         XCTAssertTrue(
+            controlledPolicy.allowedMethods.contains("i18n.getMessage")
+        )
+        XCTAssertTrue(
+            controlledPolicy.allowedMethods.contains("i18n.getUILanguage")
+        )
+        XCTAssertTrue(
+            controlledPolicy.exposedNamespaces.contains("i18n")
+        )
+        XCTAssertFalse(
+            ChromeMV3PopupOptionsAPIMethodPolicy.defaultPolicy
+                .allowedMethods
+                .contains("i18n.getMessage")
+        )
+        XCTAssertFalse(
+            ChromeMV3PopupOptionsAPIMethodPolicy.defaultPolicy
+                .allowedMethods
+                .contains("i18n.getUILanguage")
+        )
+        XCTAssertFalse(
+            ChromeMV3PopupOptionsAPIMethodPolicy.defaultPolicy
+                .exposedNamespaces
+                .contains("i18n")
+        )
+        XCTAssertTrue(
             controlledPolicy.allowedMethods.contains(
                 "storage.sync.getBytesInUse"
             )
@@ -601,6 +625,20 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(
             source.contains("storageSyncExposed")
         )
+        XCTAssertTrue(
+            source.contains("ChromeMV3PopupOptionsI18nCatalogSnapshot")
+        )
+        XCTAssertTrue(
+            source.contains("i18nExposed")
+        )
+        XCTAssertTrue(
+            source.contains("debugI18nCall")
+        )
+        XCTAssertTrue(
+            source.contains("No raw localized message values are recorded.")
+        )
+        XCTAssertFalse(source.contains("\"tabs.getCurrent\""))
+        XCTAssertFalse(source.contains("Object.defineProperty(tabs, \"getCurrent\""))
         XCTAssertTrue(source.contains("syncBackend=localCompatibility"))
         XCTAssertTrue(
             source.contains("if (config.storageSessionExposed)")
@@ -625,6 +663,66 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         )
         XCTAssertFalse(source.contains("storage.sync cloud"))
         XCTAssertFalse(source.contains("cross-device sync is performed."))
+    }
+
+    func testI18nCatalogSnapshotRejectsSymlinkEscapedCatalogs()
+        throws
+    {
+        let root = try makeTemporaryDirectory()
+        let outside = try makeTemporaryDirectory()
+        try """
+        {
+          "manifest_version": 3,
+          "name": "__MSG_appName__",
+          "version": "1.0.0",
+          "default_locale": "en"
+        }
+        """.write(
+            to: root.appendingPathComponent("manifest.json"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let localeRoot = root
+            .appendingPathComponent("_locales", isDirectory: true)
+            .appendingPathComponent("en", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: localeRoot,
+            withIntermediateDirectories: true
+        )
+        let escapedCatalog = outside.appendingPathComponent("messages.json")
+        try """
+        {
+          "appName": { "message": "Escaped localized value" }
+        }
+        """.write(to: escapedCatalog, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(
+            at: localeRoot.appendingPathComponent("messages.json"),
+            withDestinationURL: escapedCatalog
+        )
+
+        let runtimeManifest = try XCTUnwrap(
+            ChromeMV3PopupOptionsRuntimeManifestSnapshot
+                .fromGeneratedBundleRootPath(root.path)
+        )
+        let snapshot = try XCTUnwrap(
+            ChromeMV3PopupOptionsI18nCatalogSnapshot
+                .fromGeneratedBundleRootPath(
+                    root.path,
+                    runtimeManifest: runtimeManifest,
+                    uiLanguageOverride: "en-US"
+                )
+        )
+
+        XCTAssertEqual(snapshot.defaultLocaleDirectory, "en")
+        XCTAssertEqual(snapshot.localeSearchOrder, ["en_US", "en"])
+        XCTAssertTrue(snapshot.loadedCatalogLocales.isEmpty)
+        XCTAssertTrue(snapshot.catalogs.isEmpty)
+        let encoded = String(
+            data: try JSONEncoder().encode(snapshot),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertFalse(encoded.contains("Escaped localized value"))
+        XCTAssertFalse(encoded.contains(outside.path))
     }
 
     @MainActor
@@ -1681,6 +1779,183 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
 
     #if canImport(WebKit)
     @MainActor
+    func testControlledI18nUsesGeneratedCatalogFallbackAndPlaceholders()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        let htmlURL = root.appendingPathComponent("popup.html")
+        try """
+        <!doctype html>
+        <meta charset="utf-8">
+        <title>I18n Popup</title>
+        <main data-sumi-extension-page-fixture-marker="safe">Popup</main>
+        """.write(to: htmlURL, atomically: true, encoding: .utf8)
+        try """
+        {
+          "manifest_version": 3,
+          "name": "__MSG_appName__",
+          "version": "1.0.0",
+          "default_locale": "en",
+          "action": { "default_popup": "popup.html" }
+        }
+        """.write(
+            to: root.appendingPathComponent("manifest.json"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let frLocale = root
+            .appendingPathComponent("_locales", isDirectory: true)
+            .appendingPathComponent("fr", isDirectory: true)
+        let enLocale = root
+            .appendingPathComponent("_locales", isDirectory: true)
+            .appendingPathComponent("en", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: frLocale,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: enLocale,
+            withIntermediateDirectories: true
+        )
+        try """
+        {
+          "helloName": {
+            "message": "Bonjour $user$",
+            "placeholders": {
+              "user": { "content": "$1" }
+            }
+          }
+        }
+        """.write(
+            to: frLocale.appendingPathComponent("messages.json"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try """
+        {
+          "fallbackOnly": { "message": "Default only" },
+          "htmlValue": { "message": "<tag $1" },
+          "positional": { "message": "One $1 two $2" }
+        }
+        """.write(
+            to: enLocale.appendingPathComponent("messages.json"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let runtimeManifest = try XCTUnwrap(
+            ChromeMV3PopupOptionsRuntimeManifestSnapshot
+                .fromGeneratedBundleRootPath(root.path)
+        )
+        let i18nSnapshot = try XCTUnwrap(
+            ChromeMV3PopupOptionsI18nCatalogSnapshot
+                .fromGeneratedBundleRootPath(
+                    root.path,
+                    runtimeManifest: runtimeManifest,
+                    uiLanguageOverride: "fr-CA"
+                )
+        )
+        let config = configuration(
+            runtimeManifest: runtimeManifest,
+            i18nCatalogSnapshot: i18nSnapshot,
+            allowlist: .controlledActionPopupPolicy
+        )
+        let installation = ChromeMV3PopupOptionsJSBridgeInstallation(
+            configuration: config,
+            allowlist: config.allowlist,
+            bridgeAvailable: true,
+            scriptSource: ChromeMV3PopupOptionsJSShimSource.source(
+                configuration: config
+            ),
+            messageHandlerName:
+                ChromeMV3PopupOptionsJSShimSource.bridgeMessageHandlerName,
+            diagnostics: config.diagnostics
+        )
+        let handle = ChromeMV3ProductPopupOptionsWKWebViewHandle(
+            loadFileURL: htmlURL,
+            readAccessURL: root,
+            bridgeInstallation: installation,
+            permissionPromptPresenter: nil,
+            permissionEventDispatcher: nil
+        )
+        defer { handle.tearDown() }
+
+        try await handle.waitForLoadForTesting()
+        let raw = try await handle.callAsyncJavaScriptForTesting(
+            """
+            const uiLanguage = chrome.i18n.getUILanguage();
+            const hello = chrome.i18n.getMessage("helloName", "ZXQSUB742");
+            const fallback = chrome.i18n.getMessage("fallbackOnly");
+            const positional = chrome.i18n.getMessage("positional", ["uno", "dos"]);
+            const escaped = chrome.i18n.getMessage(
+              "htmlValue",
+              ["raw"],
+              { escapeLt: true }
+            );
+            const missing = chrome.i18n.getMessage("missingKey");
+            const predefinedLocale = chrome.i18n.getMessage("@@ui_locale");
+            const tooManyType = typeof chrome.i18n.getMessage(
+              "helloName",
+              ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+            );
+            await new Promise((resolve) => setTimeout(resolve, 60));
+            return {
+              hasI18n: !!chrome.i18n,
+              uiLanguage,
+              hello,
+              fallback,
+              positional,
+              escaped,
+              missing,
+              predefinedLocale,
+              tooManyType,
+              isGetMessagePromise:
+                !!hello && typeof hello.then === "function"
+            };
+            """
+        )
+        let object = try XCTUnwrap(raw as? [String: Any])
+
+        XCTAssertEqual(object["hasI18n"] as? Bool, true)
+        XCTAssertEqual(object["uiLanguage"] as? String, "fr-CA")
+        XCTAssertEqual(object["hello"] as? String, "Bonjour ZXQSUB742")
+        XCTAssertEqual(object["fallback"] as? String, "Default only")
+        XCTAssertEqual(object["positional"] as? String, "One uno two dos")
+        XCTAssertEqual(object["escaped"] as? String, "&lt;tag raw")
+        XCTAssertEqual(object["missing"] as? String, "")
+        XCTAssertEqual(object["predefinedLocale"] as? String, "fr_CA")
+        XCTAssertEqual(object["tooManyType"] as? String, "undefined")
+        XCTAssertEqual(object["isGetMessagePromise"] as? Bool, false)
+
+        let snapshot = try XCTUnwrap(
+            handle.popupOptionsBridgeDiagnosticsSnapshot
+        )
+        XCTAssertTrue(snapshot.jsDebugRouteEvents.contains {
+            $0.apiName == "chrome.i18n.getUILanguage"
+                && $0.targetContext == "i18n"
+                && $0.resultClassifier == "uiLanguageReturned"
+        })
+        XCTAssertTrue(snapshot.jsDebugRouteEvents.contains {
+            $0.apiName == "chrome.i18n.getMessage"
+                && $0.targetContext == "i18n"
+                && $0.resultClassifier == "localizedMessageReturned"
+                && $0.diagnostics.contains("fallbackLocaleUsed=true")
+        })
+        XCTAssertTrue(snapshot.jsDebugRouteEvents.contains {
+            $0.apiName == "chrome.i18n.getMessage"
+                && $0.targetContext == "i18n"
+                && $0.resultClassifier == "messageMissing"
+        })
+        let encodedSnapshot = String(
+            data: try JSONEncoder().encode(snapshot),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertFalse(encodedSnapshot.contains("Bonjour"))
+        XCTAssertFalse(encodedSnapshot.contains("Default only"))
+        XCTAssertFalse(encodedSnapshot.contains("ZXQSUB742"))
+        XCTAssertFalse(encodedSnapshot.contains("<tag"))
+    }
+
+    @MainActor
     func testControlledPopupHostLoadsRealBitwardenDefaultPopupWithExistingBridge()
         async throws
     {
@@ -2124,6 +2399,8 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         manifestHostPermissions: [String] = [],
         manifestOptionalHostPermissions: [String] = [],
         runtimeManifest: ChromeMV3PopupOptionsRuntimeManifestSnapshot? = nil,
+        i18nCatalogSnapshot:
+            ChromeMV3PopupOptionsI18nCatalogSnapshot? = nil,
         activeTabGrants: [ChromeMV3ActiveTabGrant] = [],
         allowlist: ChromeMV3PopupOptionsAPIMethodPolicy = .defaultPolicy,
         storageLocalRootPath: String? = nil,
@@ -2147,6 +2424,7 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             contentScriptAttachmentAvailableInProduct: false,
             runtimeLoadable: false,
             runtimeManifest: runtimeManifest,
+            i18nCatalogSnapshot: i18nCatalogSnapshot,
             manifestPermissions: manifestPermissions,
             manifestOptionalPermissions: manifestOptionalPermissions,
             manifestHostPermissions: manifestHostPermissions,
