@@ -995,6 +995,9 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         let customSchemeResourceEvents = snapshot.jsDebugRouteEvents.filter {
             $0.apiName == "customScheme.resource"
         }
+        let activeGeneratedVersion = record.generatedBundleVersions.first {
+            $0.id == record.activeGeneratedVersionID
+        }
 
         XCTAssertFalse(customSchemeResourceEvents.isEmpty)
         XCTAssertTrue(customSchemeResourceEvents.contains {
@@ -1016,6 +1019,10 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             firstBlocker: firstBlocker,
             tabsConnectFatal: tabsConnectFatal,
             extraLines: [
+                "extensionID=\(record.extensionID)",
+                "profileID=\(record.profileID)",
+                "generatedBundleVersionID=\(record.activeGeneratedVersionID ?? "none")",
+                "generatedPackageID=\(activeGeneratedVersion?.generatedBundleRecordID ?? "none")",
                 "customSchemeResourceEvents=\(customSchemeResourceEvents.count)"
             ]
         )
@@ -1801,7 +1808,32 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             )
         )
         XCTAssertTrue(
+            moduleSource.contains(
+                "controlledActionPopupServiceWorkerLifecycleSession"
+            )
+        )
+        XCTAssertTrue(
+            moduleSource.contains(
+                "ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore"
+            )
+        )
+        XCTAssertTrue(
+            moduleSource.contains(
+                "ChromeMV3ServiceWorkerJSExecutionHarness"
+            )
+        )
+        XCTAssertTrue(
+            moduleSource.contains(
+                "nativePortKeepaliveAvailableInFixture: false"
+            )
+        )
+        XCTAssertTrue(
             moduleSource.contains("manager.openActionPopupFromURLHub")
+        )
+        XCTAssertTrue(
+            popupOptionsSource.contains(
+                "sharedLifecycleSessionReleaseHandler"
+            )
         )
         XCTAssertTrue(
             popupOptionsSource.contains(
@@ -1826,6 +1858,11 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         )
         XCTAssertTrue(
             popupOptionsBridgeSource.contains("\"runtime.connect\"")
+        )
+        XCTAssertTrue(
+            popupOptionsBridgeSource.contains(
+                "runtime.connect delivered a named Port to captured service-worker runtime.onConnect JavaScript listener(s)."
+            )
         )
         XCTAssertTrue(
             popupOptionsBridgeSource.contains("\"tabs.sendMessage\"")
@@ -1947,6 +1984,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             nativePopupBoundarySources.contains("addScript" + "MessageHandler")
         )
         XCTAssertFalse(nativePopupBoundarySources.contains("Process" + "("))
+        XCTAssertFalse(moduleSource.contains("com.bitwarden.desktop"))
         XCTAssertFalse(nativePopupBoundarySources.contains("navigationDelegate ="))
         XCTAssertFalse(
             nativePopupBoundarySources.contains(
@@ -2741,6 +2779,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 "port=\(route.portName ?? "none")",
                 "messageCount=\(route.portMessageCount)",
                 "firstError=\(route.firstMissingAPIOrPermissionOrLifecycleError ?? "none")",
+                "diagnostics=\(route.diagnostics.joined(separator: "|"))",
             ].joined(separator: " ")
         }
         return pendingLines + eventLines + routeLines

@@ -1,7 +1,250 @@
 import AppKit
+import CryptoKit
 import Foundation
 import SwiftData
 import WebKit
+
+#if DEBUG
+@MainActor
+private final class ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore {
+    private struct Record {
+        var session: ChromeMV3ServiceWorkerSharedLifecycleSession
+        var harness: ChromeMV3ServiceWorkerJSExecutionHarness
+        var profileID: String
+        var extensionID: String
+        var generatedPackageID: String
+        var popupSessionID: String
+        var lifecycleSessionID: String
+    }
+
+    private var records: [String: Record] = [:]
+
+    func sessionForControlledActionPopupRuntimePort(
+        launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord,
+        installedExtension: InstalledExtension?,
+        localExperimentalGateAllowed: Bool,
+        trace: (String) -> Void
+    ) -> ChromeMV3ServiceWorkerSharedLifecycleSession? {
+        let recordKey = makeRecordKey(launchRecord: launchRecord)
+        if let existing = records[recordKey] {
+            trace(
+                "[controlled-action-popup-service-worker] extension=\(existing.extensionID) profile=\(existing.profileID) generatedPackageID=\(existing.generatedPackageID) popupSession=\(existing.popupSessionID) lifecycleSession=\(existing.lifecycleSessionID) action=reuse workerState=retained onConnectListenerCount=\(listenerCount(.runtimeOnConnect, in: existing.session)) onMessageListenerCount=\(listenerCount(.runtimeOnMessage, in: existing.session)) onConnectDispatcherCount=\(existing.session.jsListenerDispatcherCount(for: .runtimeOnConnect)) keepaliveCount=\(existing.session.runtimeOwner.snapshot.activeKeepaliveRecords.count) gate=allowed nativeHost=false runtimeLoadable=false"
+            )
+            return existing.session
+        }
+        guard localExperimentalGateAllowed,
+              launchRecord.surface == .actionPopup,
+              launchRecord.apiMethodPolicy
+                == ChromeMV3PopupOptionsAPIMethodPolicy
+                    .controlledActionPopupPolicy
+        else {
+            trace(
+                "[controlled-action-popup-service-worker] extension=\(launchRecord.extensionID) profile=\(launchRecord.profileID) popupSession=\(recordKey) action=blocked reason=notControlledActionPopupGate surface=\(launchRecord.surface.rawValue) nativeHost=false runtimeLoadable=false"
+            )
+            return nil
+        }
+        guard launchRecord.canOpen else {
+            trace(
+                "[controlled-action-popup-service-worker] extension=\(launchRecord.extensionID) profile=\(launchRecord.profileID) popupSession=\(recordKey) action=blocked reason=launchRecordCannotOpen blockers=\(launchRecord.blockers.map(\.rawValue).joined(separator: ",")) nativeHost=false runtimeLoadable=false"
+            )
+            return nil
+        }
+        guard let installedExtension, installedExtension.isEnabled else {
+            trace(
+                "[controlled-action-popup-service-worker] extension=\(launchRecord.extensionID) profile=\(launchRecord.profileID) popupSession=\(recordKey) action=blocked reason=extensionMissingOrDisabled nativeHost=false runtimeLoadable=false"
+            )
+            return nil
+        }
+        guard let generatedRootPath =
+                launchRecord.generatedRewrittenBundlePath
+                ?? launchRecord.generatedBundleRootPath
+        else {
+            trace(
+                "[controlled-action-popup-service-worker] extension=\(launchRecord.extensionID) profile=\(launchRecord.profileID) popupSession=\(recordKey) action=blocked reason=generatedBundleRootMissing nativeHost=false runtimeLoadable=false"
+            )
+            return nil
+        }
+
+        let generatedRootURL = URL(
+            fileURLWithPath: generatedRootPath,
+            isDirectory: true
+        ).standardizedFileURL
+        guard let generatedRecord = generatedBundleRecord(
+            rootURL: generatedRootURL
+        ) else {
+            trace(
+                "[controlled-action-popup-service-worker] extension=\(launchRecord.extensionID) profile=\(launchRecord.profileID) popupSession=\(recordKey) action=blocked reason=generatedBundleMetadataUnavailable nativeHost=false runtimeLoadable=false"
+            )
+            return nil
+        }
+        let manifest: ChromeMV3Manifest
+        do {
+            manifest = try ChromeMV3ManifestValidator.validateManifestFile(
+                at: generatedRootURL.appendingPathComponent("manifest.json")
+            )
+        } catch {
+            trace(
+                "[controlled-action-popup-service-worker] extension=\(launchRecord.extensionID) profile=\(launchRecord.profileID) generatedPackageID=\(generatedRecord.id) popupSession=\(recordKey) action=blocked reason=manifestValidationFailed nativeHost=false runtimeLoadable=false"
+            )
+            return nil
+        }
+
+        let key = ChromeMV3ServiceWorkerSharedLifecycleSessionKey.make(
+            profileID: launchRecord.profileID,
+            extensionID: launchRecord.extensionID,
+            lifecycleSessionID:
+                "controlled-action-popup-sw-\(recordKey)"
+        )
+        let session = ChromeMV3ServiceWorkerSharedLifecycleSession(
+            key: key,
+            configuration:
+                .internalFixture(
+                    extensionID: key.extensionID,
+                    profileID: key.profileID,
+                    moduleState: .enabled,
+                    explicitInternalLifecycleAllowed:
+                        localExperimentalGateAllowed,
+                    nativePortKeepaliveAvailableInFixture: false,
+                    fixedLifecycleSessionID: key.lifecycleSessionID
+                )
+        )
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request:
+                ChromeMV3ServiceWorkerJSExecutionRequest(
+                    manifest: manifest,
+                    generatedBundleRecord: generatedRecord,
+                    extensionID: launchRecord.extensionID,
+                    profileID: launchRecord.profileID,
+                    moduleState: .enabled,
+                    extensionEnabled: installedExtension.isEnabled,
+                    localExperimentalGateAllowed:
+                        localExperimentalGateAllowed,
+                    dynamicImportRewriteExperimentAllowed: true
+                )
+        )
+        let start = harness.start()
+        let canDispatch =
+            start.status == .running || harness.canDispatchCapturedListeners
+        if canDispatch {
+            harness.attachCapturedListenerDispatchers(
+                to: session,
+                clearingExisting: true
+            )
+        }
+        let onConnectCaptured = harness.capturedListener(
+            for: .runtimeOnConnect
+        )
+        let onMessageCaptured = harness.capturedListener(
+            for: .runtimeOnMessage
+        )
+        records[recordKey] = Record(
+            session: session,
+            harness: harness,
+            profileID: launchRecord.profileID,
+            extensionID: launchRecord.extensionID,
+            generatedPackageID: generatedRecord.id,
+            popupSessionID: recordKey,
+            lifecycleSessionID: key.lifecycleSessionID
+        )
+        trace(
+            "[controlled-action-popup-service-worker] extension=\(launchRecord.extensionID) profile=\(launchRecord.profileID) generatedPackageID=\(generatedRecord.id) generatedBundleVersion=\(launchRecord.generatedBundleVersionID ?? "none") popupSession=\(recordKey) lifecycleSession=\(key.lifecycleSessionID) action=create workerStart=\(start.status.rawValue) workerDispatchReady=\(canDispatch) capturedListenerCount=\(harness.snapshot.capturedListeners.count) onConnectCaptured=\(onConnectCaptured) onMessageCaptured=\(onMessageCaptured) onConnectListenerCount=\(listenerCount(.runtimeOnConnect, in: session)) onMessageListenerCount=\(listenerCount(.runtimeOnMessage, in: session)) onConnectDispatcherCount=\(session.jsListenerDispatcherCount(for: .runtimeOnConnect)) nativePortKeepalive=false permanentBackground=false nativeHost=false runtimeLoadable=false portName=callerProvided"
+        )
+        return session
+    }
+
+    func releaseControlledActionPopupRuntimePortSession(
+        launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord,
+        reason: String,
+        trace: (String) -> Void
+    ) {
+        let recordKey = makeRecordKey(launchRecord: launchRecord)
+        guard let record = records.removeValue(forKey: recordKey) else {
+            return
+        }
+        let activeBefore =
+            record.session.runtimeOwner.snapshot.activeKeepaliveRecords.count
+        _ = record.session.triggerIdleRelease(reason: reason)
+        let activeAfter =
+            record.session.runtimeOwner.snapshot.activeKeepaliveRecords.count
+        record.harness.reset()
+        record.session.reset()
+        trace(
+            "[controlled-action-popup-service-worker] extension=\(record.extensionID) profile=\(record.profileID) generatedPackageID=\(record.generatedPackageID) popupSession=\(record.popupSessionID) lifecycleSession=\(record.lifecycleSessionID) action=release teardown=popup-close keepaliveBefore=\(activeBefore) keepaliveAfter=\(activeAfter) result=complete reason=\(reason) nativeHost=false runtimeLoadable=false"
+        )
+    }
+
+    private func generatedBundleRecord(
+        rootURL: URL
+    ) -> ChromeMV3GeneratedBundleRecord? {
+        let metadataURL = rootURL.appendingPathComponent(
+            ChromeMV3GeneratedBundleWriter.metadataFileName
+        )
+        let manifestURL = rootURL.appendingPathComponent("manifest.json")
+        guard regularFile(metadataURL),
+              regularFile(manifestURL),
+              let data = try? Data(contentsOf: metadataURL)
+        else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let record = try? decoder.decode(
+            ChromeMV3GeneratedBundleRecord.self,
+            from: data
+        ) else { return nil }
+        guard URL(
+            fileURLWithPath: record.generatedBundleRootPath,
+            isDirectory: true
+        ).standardizedFileURL == rootURL,
+              URL(fileURLWithPath: record.generatedManifestPath)
+                .standardizedFileURL == manifestURL.standardizedFileURL,
+              URL(fileURLWithPath: record.generatedMetadataPath)
+                .standardizedFileURL == metadataURL.standardizedFileURL
+        else { return nil }
+        return record
+    }
+
+    private func regularFile(_ url: URL) -> Bool {
+        guard FileManager.default.fileExists(atPath: url.path),
+              (try? FileManager.default.destinationOfSymbolicLink(
+                atPath: url.path
+              )) == nil
+        else { return false }
+        let values = try? url.resourceValues(forKeys: [.isRegularFileKey])
+        return values?.isRegularFile == true
+    }
+
+    private func makeRecordKey(
+        launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord
+    ) -> String {
+        stableIDControlledActionPopupLifecycle(
+            prefix: "controlled-action-popup-session",
+            parts: [
+                launchRecord.profileID,
+                launchRecord.extensionID,
+                launchRecord.surface.rawValue,
+                launchRecord.generatedBundleVersionID ?? "no-version",
+            ]
+        )
+    }
+
+    private func listenerCount(
+        _ event: ChromeMV3ServiceWorkerSyntheticListenerEvent,
+        in session: ChromeMV3ServiceWorkerSharedLifecycleSession
+    ) -> Int {
+        session.runtimeOwner.listenerRegistry.summary
+            .listenerCountsByEvent[event.rawValue] ?? 0
+    }
+}
+
+private func stableIDControlledActionPopupLifecycle(
+    prefix: String,
+    parts: [String]
+) -> String {
+    let joined = parts.joined(separator: "\u{1F}")
+    let digest = SHA256.hash(data: Data(joined.utf8))
+    let hex = digest.map { String(format: "%02x", $0) }.joined()
+    return "\(prefix)-\(String(hex.prefix(16)))"
+}
+#endif
 
 @MainActor
 final class SumiExtensionsModule {
@@ -109,6 +352,8 @@ final class SumiExtensionsModule {
             ChromeMV3SidePanelOffscreenIdentityCompatibilityReport?
         private var lastChromeMV3EndToEndInstallDiagnosticsReport:
             ChromeMV3EndToEndInstallDiagnosticsReport?
+        private let controlledActionPopupServiceWorkerLifecycleStore =
+            ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore()
     #endif
     weak var browserManager: BrowserManager?
     #if DEBUG
@@ -4947,11 +5192,75 @@ final class SumiExtensionsModule {
                     }
                 #endif
                 return nil
+            },
+            sharedLifecycleSessionProvider: { [weak self] launchRecord in
+                #if DEBUG
+                    guard let self else { return nil }
+                    return self
+                        .controlledActionPopupServiceWorkerLifecycleSession(
+                            for: launchRecord
+                        )
+                #else
+                    _ = launchRecord
+                    return nil
+                #endif
+            },
+            sharedLifecycleSessionReleaseHandler: {
+                [weak self] launchRecord, _, reason in
+                #if DEBUG
+                    self?
+                        .releaseControlledActionPopupServiceWorkerLifecycleSession(
+                            for: launchRecord,
+                            reason: reason
+                        )
+                #else
+                    _ = launchRecord
+                    _ = reason
+                #endif
             }
         )
         cachedChromeMV3PopupOptionsHostController = controller
         return controller
     }
+
+    #if DEBUG
+    private func controlledActionPopupServiceWorkerLifecycleSession(
+        for launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord
+    ) -> ChromeMV3ServiceWorkerSharedLifecycleSession? {
+        let localExperimentalGateAllowed =
+            RuntimeDiagnostics.debugDefaultBool(
+                forKey: ExtensionManager
+                    .controlledCompatibilityActionPopupDefaultsKey
+            )
+        let installedExtension = cachedManager?.installedExtensions.first {
+            $0.id == launchRecord.extensionID
+        }
+        return controlledActionPopupServiceWorkerLifecycleStore
+            .sessionForControlledActionPopupRuntimePort(
+                launchRecord: launchRecord,
+                installedExtension: installedExtension,
+                localExperimentalGateAllowed:
+                    localExperimentalGateAllowed,
+                trace: { [weak self] message in
+                    self?.cachedManager?.extensionRuntimeTrace(message)
+                }
+            )
+    }
+
+    private func releaseControlledActionPopupServiceWorkerLifecycleSession(
+        for launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord,
+        reason: ChromeMV3ProductPopupOptionsTeardownReason
+    ) {
+        controlledActionPopupServiceWorkerLifecycleStore
+            .releaseControlledActionPopupRuntimePortSession(
+                launchRecord: launchRecord,
+                reason: reason.rawValue,
+                trace: { [weak self] message in
+                    self?.cachedManager?.extensionRuntimeTrace(message)
+                }
+            )
+    }
+    #endif
 
     private func tearDownChromeMV3PopupOptionsHostController(
         reason: ChromeMV3ProductPopupOptionsTeardownReason

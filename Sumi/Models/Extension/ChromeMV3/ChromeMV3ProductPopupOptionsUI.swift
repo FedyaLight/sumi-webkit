@@ -1450,6 +1450,8 @@ final class ChromeMV3ProductPopupOptionsHostController {
     private struct ActiveSession {
         var launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord
         var handle: ChromeMV3PopupOptionsWebViewHandle
+        var sharedLifecycleSession:
+            ChromeMV3ServiceWorkerSharedLifecycleSession?
     }
 
     private let factory: ChromeMV3PopupOptionsWebViewFactory
@@ -1462,6 +1464,12 @@ final class ChromeMV3ProductPopupOptionsHostController {
     private let sharedLifecycleSessionProvider:
         @MainActor (ChromeMV3ProductPopupOptionsLaunchRecord)
             -> ChromeMV3ServiceWorkerSharedLifecycleSession?
+    private let sharedLifecycleSessionReleaseHandler:
+        @MainActor (
+            ChromeMV3ProductPopupOptionsLaunchRecord,
+            ChromeMV3ServiceWorkerSharedLifecycleSession,
+            ChromeMV3ProductPopupOptionsTeardownReason
+        ) -> Void
     private var sessions: [String: ActiveSession] = [:]
 
     init(
@@ -1475,7 +1483,13 @@ final class ChromeMV3ProductPopupOptionsHostController {
                 -> ChromeMV3ContentScriptEndpointRegistry? = { nil },
         sharedLifecycleSessionProvider:
             @escaping @MainActor (ChromeMV3ProductPopupOptionsLaunchRecord)
-                -> ChromeMV3ServiceWorkerSharedLifecycleSession? = { _ in nil }
+                -> ChromeMV3ServiceWorkerSharedLifecycleSession? = { _ in nil },
+        sharedLifecycleSessionReleaseHandler:
+            @escaping @MainActor (
+                ChromeMV3ProductPopupOptionsLaunchRecord,
+                ChromeMV3ServiceWorkerSharedLifecycleSession,
+                ChromeMV3ProductPopupOptionsTeardownReason
+            ) -> Void = { _, _, _ in }
     ) {
         self.factory = factory
         self.permissionPromptPresenter = permissionPromptPresenter
@@ -1483,6 +1497,8 @@ final class ChromeMV3ProductPopupOptionsHostController {
         self.contentScriptEndpointRegistryProvider =
             contentScriptEndpointRegistryProvider
         self.sharedLifecycleSessionProvider = sharedLifecycleSessionProvider
+        self.sharedLifecycleSessionReleaseHandler =
+            sharedLifecycleSessionReleaseHandler
     }
 
     var activeSessionCount: Int {
@@ -1590,6 +1606,8 @@ final class ChromeMV3ProductPopupOptionsHostController {
                 ChromeMV3PopupOptionsJSBridgeInstallation.make(
                     launchRecord: launchRecord
                 )
+            let sharedLifecycleSession =
+                sharedLifecycleSessionProvider(launchRecord)
             let handle = try factory.createWebView(
                 loadFileURL: fileURL,
                 allowingReadAccessTo: readAccessURL,
@@ -1597,7 +1615,7 @@ final class ChromeMV3ProductPopupOptionsHostController {
                 contentScriptEndpointRegistry:
                     contentScriptEndpointRegistryProvider(),
                 sharedLifecycleSession:
-                    sharedLifecycleSessionProvider(launchRecord),
+                    sharedLifecycleSession,
                 presentationContext: presentationContext,
                 permissionPromptPresenter: permissionPromptPresenter,
                 permissionEventDispatcher: permissionEventDispatcher
@@ -1608,7 +1626,8 @@ final class ChromeMV3ProductPopupOptionsHostController {
             opened.lifecycleEvents = [.opened, .loaded]
             sessions[key] = ActiveSession(
                 launchRecord: opened,
-                handle: handle
+                handle: handle,
+                sharedLifecycleSession: sharedLifecycleSession
             )
             return ChromeMV3ProductPopupOptionsRunResult(
                 status: .succeeded,
@@ -1725,6 +1744,15 @@ final class ChromeMV3ProductPopupOptionsHostController {
             lastBridgeSnapshot =
                 session.handle.popupOptionsBridgeDiagnosticsSnapshot
             session.handle.tearDown()
+            if let sharedLifecycleSession =
+                session.sharedLifecycleSession
+            {
+                sharedLifecycleSessionReleaseHandler(
+                    session.launchRecord,
+                    sharedLifecycleSession,
+                    reason
+                )
+            }
             var closed = session.launchRecord
             closed.hostCreationState = .tornDown
             closed.lifecycleState = .teardownComplete

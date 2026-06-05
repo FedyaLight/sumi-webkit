@@ -2995,12 +2995,22 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     lastErrorCode: contract.error.rawValue,
                     serviceWorkerLifecycleWakeResult:
                         jsResult.lifecycleWakeResult,
-                    diagnostics:
-                        jsResult.diagnostics
-                        + contract.diagnostics
-                        + [
-                            "runtime.connect reached a captured service-worker JavaScript runtime.onConnect dispatcher but no Port was opened.",
-                        ]
+                diagnostics:
+                    jsResult.diagnostics
+                    + runtimePortLifecycleDiagnostics(
+                        portName: connectName,
+                        listenerInvoked: false,
+                        lifecycleSessionID:
+                            jsResult.lifecycleWakeResult?.sessionID,
+                        listenerCount:
+                            runtimeOnConnectListenerCount(),
+                        onMessageListenerCount:
+                            runtimeOnMessageListenerCount()
+                    )
+                    + contract.diagnostics
+                    + [
+                        "runtime.connect reached a captured service-worker JavaScript runtime.onConnect dispatcher but no Port was opened.",
+                    ]
                 )
             }
             syntheticPortIDs.insert(portID)
@@ -3020,6 +3030,16 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     jsResult.lifecycleWakeResult,
                 diagnostics:
                     jsResult.diagnostics
+                    + runtimePortLifecycleDiagnostics(
+                        portName: connectName,
+                        listenerInvoked: true,
+                        lifecycleSessionID:
+                            jsResult.lifecycleWakeResult?.sessionID,
+                        listenerCount:
+                            runtimeOnConnectListenerCount(),
+                        onMessageListenerCount:
+                            runtimeOnMessageListenerCount()
+                    )
                     + [
                         "runtime.connect delivered a named Port to captured service-worker runtime.onConnect JavaScript listener(s).",
                         "Port ID \(portID) is bound for later runtime Port.postMessage and disconnect delivery.",
@@ -3044,11 +3064,20 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                         ?? contract.futureLastErrorMessage,
                     lastErrorCode: contract.error.rawValue,
                     serviceWorkerLifecycleWakeResult: lifecycleResult,
-                    diagnostics:
-                        lifecycleResult.diagnostics
-                        + contract.diagnostics
-                        + [
-                            "runtime.connect reached the local experimental service-worker lifecycle but no listener accepted it.",
+                diagnostics:
+                    lifecycleResult.diagnostics
+                    + runtimePortLifecycleDiagnostics(
+                        portName: connectName,
+                        listenerInvoked: false,
+                        lifecycleSessionID: lifecycleResult.sessionID,
+                        listenerCount:
+                            runtimeOnConnectListenerCount(),
+                        onMessageListenerCount:
+                            runtimeOnMessageListenerCount()
+                    )
+                    + contract.diagnostics
+                    + [
+                        "runtime.connect reached the local experimental service-worker lifecycle but no listener accepted it.",
                         ]
                 )
             }
@@ -3067,6 +3096,15 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 serviceWorkerLifecycleWakeResult: lifecycleResult,
                 diagnostics:
                     lifecycleResult.diagnostics
+                    + runtimePortLifecycleDiagnostics(
+                        portName: connectName,
+                        listenerInvoked: true,
+                        lifecycleSessionID: lifecycleResult.sessionID,
+                        listenerCount:
+                            runtimeOnConnectListenerCount(),
+                        onMessageListenerCount:
+                            runtimeOnMessageListenerCount()
+                    )
                     + [
                         "runtime.connect opened a local experimental service-worker Port keepalive.",
                     ]
@@ -3084,10 +3122,52 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 "runtimeLoadable": .bool(false),
             ]),
             diagnostics: [
+                "lifecycleSession=none",
+                "listenerCount=0",
+                "listenerInvoked=false",
+                "senderMetadata=extensionPage;tabId=none;frameId=none;documentId=none;urlRedacted=false",
+                "portName=callerProvided",
                 "runtime.connect returned a popup/options-scoped synthetic Port object.",
                 "No service-worker wake or real runtime Port was opened.",
             ]
         )
+    }
+
+    private func runtimePortLifecycleDiagnostics(
+        portName: String,
+        listenerInvoked: Bool,
+        lifecycleSessionID: String?,
+        listenerCount: Int,
+        onMessageListenerCount: Int?
+    ) -> [String] {
+        [
+            "lifecycleSession=\(lifecycleSessionID ?? sharedLifecycleSession?.key.lifecycleSessionID ?? "none")",
+            "listenerCount=\(listenerCount)",
+            "listenerInvoked=\(listenerInvoked)",
+            "onMessageListenerCount=\(onMessageListenerCount.map(String.init) ?? "unknown")",
+            "senderMetadata=extensionPage;tabId=none;frameId=none;documentId=none;urlRedacted=false",
+            portName.isEmpty
+                ? "portName=empty"
+                : "portName=callerProvided",
+        ]
+    }
+
+    private func runtimeOnConnectListenerCount() -> Int {
+        sharedLifecycleSession?.runtimeOwner.listenerRegistry.summary
+            .listenerCountsByEvent[
+                ChromeMV3ServiceWorkerSyntheticListenerEvent
+                    .runtimeOnConnect
+                    .rawValue
+            ] ?? 0
+    }
+
+    private func runtimeOnMessageListenerCount() -> Int {
+        sharedLifecycleSession?.runtimeOwner.listenerRegistry.summary
+            .listenerCountsByEvent[
+                ChromeMV3ServiceWorkerSyntheticListenerEvent
+                    .runtimeOnMessage
+                    .rawValue
+            ] ?? 0
     }
 
     private func runtimePortPostMessage(
