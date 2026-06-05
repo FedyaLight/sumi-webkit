@@ -216,7 +216,7 @@ struct SettingsGeneralTab: View {
                 .frame(width: 86, alignment: .center)
 
             Text("Actions")
-                .frame(width: 64, alignment: .trailing)
+                .frame(width: 68, alignment: .center)
         }
         .font(.caption.weight(.semibold))
         .foregroundStyle(.secondary)
@@ -325,15 +325,14 @@ struct SettingsGeneralTab: View {
             }
 
             if isInteractive {
-                HStack(spacing: 6) {
+                HStack(spacing: 12) {
                     Button {
                         editingSearchEngine = SearchEngineEditorDraft(engine: engine)
                     } label: {
                         Image(systemName: "pencil")
+                            .font(.system(size: 13, weight: .regular))
                     }
-                    .buttonStyle(.plain)
-                    .frame(width: 26, height: 26)
-                    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .buttonStyle(NavButtonStyle(size: .small))
                     .help("Edit search engine")
 
                     Button(role: .destructive) {
@@ -342,24 +341,24 @@ struct SettingsGeneralTab: View {
                         }
                     } label: {
                         Image(systemName: "trash")
+                            .font(.system(size: 13, weight: .regular))
                     }
-                    .buttonStyle(.plain)
-                    .frame(width: 26, height: 26)
-                    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .buttonStyle(NavButtonStyle(size: .small))
                     .disabled(!canDeleteSearchEngine(engine))
                     .help(canDeleteSearchEngine(engine) ? "Delete search engine" : "At least one search engine is required")
                 }
-                .foregroundStyle(.secondary)
-                .frame(width: 64, alignment: .trailing)
+                .frame(width: 68, alignment: .center)
             } else {
-                HStack(spacing: 6) {
+                HStack(spacing: 12) {
                     Image(systemName: "pencil")
-                        .frame(width: 26, height: 26)
+                        .font(.system(size: 13, weight: .regular))
+                        .frame(width: 28, height: 28)
                     Image(systemName: "trash")
-                        .frame(width: 26, height: 26)
+                        .font(.system(size: 13, weight: .regular))
+                        .frame(width: 28, height: 28)
                 }
                 .foregroundStyle(.secondary)
-                .frame(width: 64, alignment: .trailing)
+                .frame(width: 68, alignment: .center)
                 .accessibilityHidden(true)
             }
         }

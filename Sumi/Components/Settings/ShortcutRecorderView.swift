@@ -21,22 +21,20 @@ struct ShortcutRecorderView: View {
     var body: some View {
         HStack(spacing: 8) {
             Button(action: toggleRecording) {
-                HStack(spacing: 4) {
-                    Image(systemName: isRecording ? "stop.fill" : "pencil")
-                    Text(isRecording ? "Recording..." : (keyCombination?.displayString ?? "Not Set"))
+                if isRecording {
+                    HStack(spacing: 4) {
+                        Image(systemName: "stop.fill")
+                        Text("Recording...")
+                            .font(.system(.body, design: .monospaced))
+                    }
+                } else {
+                    Text(keyCombination?.displayString ?? "Not Set")
                         .font(.system(.body, design: .monospaced))
                 }
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
             .tint(isRecording ? .red : nil)
-            .onHover { isHovered in
-                if isHovered {
-                    NSCursor.pointingHand.push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
 
             if let message = validationResult.userMessage {
                 Image(systemName: "exclamationmark.triangle")

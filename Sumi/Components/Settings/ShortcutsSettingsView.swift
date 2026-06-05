@@ -4,30 +4,17 @@ struct ShortcutsSettingsView: View {
     let shortcutManager: KeyboardShortcutManager
 
     @State private var searchText = ""
-    @State private var selectedCategory: ShortcutCategory?
 
     private var filteredShortcuts: [KeyboardShortcut] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         return shortcutManager.shortcuts
             .filter { shortcut in
-                selectedCategory.map { shortcut.action.category == $0 } ?? true
-            }
-            .filter { shortcut in
-                return query.isEmpty || shortcut.action.displayName.localizedCaseInsensitiveContains(query)
+                query.isEmpty || shortcut.action.displayName.localizedCaseInsensitiveContains(query)
             }
     }
 
     private var shortcutsByCategory: [ShortcutCategory: [KeyboardShortcut]] {
         Dictionary(grouping: filteredShortcuts, by: \.action.category)
-    }
-
-    private var selectedCategoryBinding: Binding<String> {
-        Binding(
-            get: { selectedCategory?.rawValue ?? "all" },
-            set: { newValue in
-                selectedCategory = newValue == "all" ? nil : ShortcutCategory(rawValue: newValue)
-            }
-        )
     }
 
     var body: some View {
@@ -38,19 +25,6 @@ struct ShortcutsSettingsView: View {
             ) {
                 SettingsRow(title: "Search") {
                     searchField
-                }
-
-                SettingsDivider()
-
-                SettingsRow(title: "Category") {
-                    Picker("", selection: selectedCategoryBinding) {
-                        Text("All").tag("all")
-                        ForEach(ShortcutCategory.allCases, id: \.self) { category in
-                            Text(category.displayName).tag(category.rawValue)
-                        }
-                    }
-                    .labelsHidden()
-                    .settingsTrailingControl(width: 180)
                 }
 
                 SettingsDivider()

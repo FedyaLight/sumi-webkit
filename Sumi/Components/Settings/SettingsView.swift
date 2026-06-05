@@ -41,7 +41,7 @@ struct SumiDataRecoverySettingsPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            SettingsSectionCard(
+            SettingsSection(
                 title: "Browser Import",
                 subtitle: "Bring spaces, launchers, tabs, folders, themes, profiles, and bookmarks into Sumi."
             ) {
@@ -88,7 +88,7 @@ struct SumiDataRecoverySettingsPane: View {
                 }
             }
 
-            SettingsSectionCard(
+            SettingsSection(
                 title: "Export & Backup",
                 subtitle: "Write portable Sumi data without cookies, passwords, caches, downloads, or WebKit website data."
             ) {
@@ -809,7 +809,7 @@ struct SumiExtensionsSettingsPane: View {
         installedExtensions: [InstalledExtension]
     ) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            SettingsSectionCard(
+            SettingsSection(
                 title: "Extensions",
                 subtitle: extensionManager.extensionsLoaded
                     ? "Sumi is using the WebKit WebExtension backend"
@@ -830,7 +830,7 @@ struct SumiExtensionsSettingsPane: View {
                 }
             }
 
-            SettingsSectionCard(
+            SettingsSection(
                 title: "Installed Extensions",
                 subtitle: installedExtensions.isEmpty
                     ? "No extensions are installed"
@@ -1007,12 +1007,10 @@ struct ProfilesSettingsView: View {
 
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(\.resolvedThemeContext) private var themeContext
-    @State private var selectedProfileID: UUID? = nil
     @State private var profileEditorPresentation: ProfileEditorPresentation?
-    @State private var profilePendingDeletion: Profile?
 
     var body: some View {
-        SettingsSectionCard(
+        SettingsSection(
             title: "Browsing Profiles",
             subtitle: "Each profile keeps website data, history, and extension state separate."
         ) {
@@ -1036,46 +1034,15 @@ struct ProfilesSettingsView: View {
                 }
             }
         }
-        .onAppear(perform: reconcileSelectedProfile)
-        .onChange(of: profileIDs) { _, _ in
-            reconcileSelectedProfile()
-        }
         .sheet(item: $profileEditorPresentation) { presentation in
             profileEditorSheet(for: presentation)
                 .environment(\.resolvedThemeContext, profileEditorThemeContext)
                 .environment(\.colorScheme, profileEditorColorScheme)
                 .preferredColorScheme(profileEditorColorScheme)
         }
-        .confirmationDialog(
-            "Delete Profile?",
-            isPresented: deleteConfirmationPresented,
-            titleVisibility: .visible,
-            presenting: profilePendingDeletion
-        ) { profile in
-            Button("Delete Profile", role: .destructive) {
-                confirmDelete(profile)
-            }
-
-            Button("Cancel", role: .cancel) {
-                profilePendingDeletion = nil
-            }
-        } message: { profile in
-            Text(deleteConfirmationMessage(for: profile))
-        }
     }
 
     // MARK: - Helpers
-    private var profileIDs: [UUID] {
-        browserManager.profileManager.profiles.map(\.id)
-    }
-
-    private var selectedProfile: Profile? {
-        guard let selectedProfileID else { return nil }
-        return browserManager.profileManager.profiles.first {
-            $0.id == selectedProfileID
-        }
-    }
-
     private var profileEditorThemeContext: ResolvedThemeContext {
         themeContext.nativeSurfaceThemeContext
     }
@@ -1084,29 +1051,14 @@ struct ProfilesSettingsView: View {
         profileEditorThemeContext.nativeSurfaceColorScheme
     }
 
-    private var deleteConfirmationPresented: Binding<Bool> {
-        Binding(
-            get: {
-                profilePendingDeletion != nil
-            },
-            set: { isPresented in
-                if !isPresented {
-                    profilePendingDeletion = nil
-                }
-            }
-        )
-    }
-
     private var profileRows: some View {
         VStack(spacing: 0) {
             ForEach(browserManager.profileManager.profiles, id: \.id) { profile in
                 ProfileRowView(
                     profile: profile,
-                    isSelected: selectedProfileID == profile.id,
                     spacesCount: spacesCount(for: profile),
                     tabsCount: tabsCount(for: profile),
                     canDelete: canDelete(profile),
-                    onSelect: { selectedProfileID = profile.id },
                     onEdit: { startEdit(profile) },
                     onDelete: { startDelete(profile) }
                 )
@@ -1120,30 +1072,13 @@ struct ProfilesSettingsView: View {
     }
 
     private var profileToolbar: some View {
-        HStack(spacing: 8) {
+        HStack {
+            Spacer()
             Button("Add Profile...") {
                 profileEditorPresentation = .add
             }
             .buttonStyle(.bordered)
-
-            Button("Remove Profile...", role: .destructive) {
-                deleteSelectedProfile()
-            }
-            .buttonStyle(.bordered)
-            .disabled(selectedProfile.map(canDelete) != true)
-
-            Spacer(minLength: 0)
         }
-    }
-
-    private func reconcileSelectedProfile() {
-        if let selectedProfileID,
-           browserManager.profileManager.profiles.contains(where: { $0.id == selectedProfileID })
-        {
-            return
-        }
-
-        selectedProfileID = browserManager.profileManager.profiles.first?.id
     }
 
     private func canDelete(_ profile: Profile) -> Bool {
@@ -1208,30 +1143,42 @@ struct ProfilesSettingsView: View {
     }
 
     private func startEdit(_ profile: Profile) {
-        selectedProfileID = profile.id
         profileEditorPresentation = .edit(profile.id)
-    }
-
-    private func deleteSelectedProfile() {
-        guard let selectedProfile else { return }
-        startDelete(selectedProfile)
     }
 
     private func startDelete(_ profile: Profile) {
         guard canDelete(profile) else { return }
-        selectedProfileID = profile.id
-        profilePendingDeletion = profile
+        
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Delete “\(profile.name)”?"
+        alert.informativeText = deleteConfirmationMessage(for: profile)
+        if let icon = NSImage(
+            systemSymbolName: "trash",
+            accessibilityDescription: "Delete Profile"
+        ) {
+            alert.icon = icon
+        }
+
+        let deleteButton = alert.addButton(withTitle: "Delete Profile")
+        deleteButton.hasDestructiveAction = true
+
+        let cancelButton = alert.addButton(withTitle: "Cancel")
+        cancelButton.keyEquivalent = "\u{1b}"
+        
+        if alert.runModal() == .alertFirstButtonReturn {
+            confirmDelete(profile)
+        }
     }
 
     private func createProfile(name: String, icon: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, isProfileNameAvailable(trimmed) else { return }
 
-        let created = browserManager.profileManager.createProfile(
+        _ = browserManager.profileManager.createProfile(
             name: trimmed,
             icon: SumiProfileIcon.storedValue(icon)
         )
-        selectedProfileID = created.id
         profileEditorPresentation = nil
     }
 
@@ -1244,14 +1191,12 @@ struct ProfilesSettingsView: View {
         profile.name = trimmed
         profile.icon = SumiProfileIcon.storedValue(icon)
         browserManager.profileManager.persistProfiles()
-        selectedProfileID = profile.id
         profileEditorPresentation = nil
     }
 
     private func confirmDelete(_ profile: Profile) {
         guard canDelete(profile) else { return }
         browserManager.deleteProfile(profile)
-        profilePendingDeletion = nil
     }
 
     private func isProfileNameAvailable(
@@ -1275,25 +1220,3 @@ struct ProfilesSettingsView: View {
     }
 }
 
-// MARK: - Styled Components
-struct SettingsSectionCard<Content: View>: View {
-    let title: String
-    var subtitle: String? = nil
-    @ViewBuilder var content: Content
-
-    init(
-        title: String,
-        subtitle: String? = nil,
-        @ViewBuilder content: () -> Content
-    ) {
-        self.title = title
-        self.subtitle = subtitle
-        self.content = content()
-    }
-
-    var body: some View {
-        SettingsSection(title: title, subtitle: subtitle) {
-            content
-        }
-    }
-}

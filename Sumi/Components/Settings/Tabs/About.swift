@@ -26,7 +26,7 @@ private enum SumiAppMetadata {
 struct SettingsAboutTab: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            SettingsSectionCard(
+            SettingsSection(
                 title: "About Sumi",
                 subtitle: "Version \(SumiAppMetadata.shortVersion) / Build \(SumiAppMetadata.buildNumber)"
             ) {
@@ -61,7 +61,7 @@ struct SettingsAboutTab: View {
                 }
             }
 
-            SettingsSectionCard(
+            SettingsSection(
                 title: "Protection Data Notices",
                 subtitle: "Generated trackingNetwork bundle data may be derived from DuckDuckGo Tracker Radar / TDS."
             ) {

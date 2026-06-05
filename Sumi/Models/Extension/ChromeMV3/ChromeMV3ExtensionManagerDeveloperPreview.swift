@@ -4441,7 +4441,7 @@ struct ChromeMV3ExtensionManagerView: View {
         }
 
         private var gateSection: some View {
-            SettingsSectionCard(
+            SettingsSection(
                 title: "Local Experimental MV3",
                 subtitle: listViewModel.gate.managerAvailableInDeveloperPreview
                     ? "Import and manage local packages. Product/default runtime remains off."
@@ -4485,7 +4485,7 @@ struct ChromeMV3ExtensionManagerView: View {
             if let report = selectedDetail?.packageIntakeReport
                 ?? listViewModel.packageIntakeReport
             {
-                SettingsSectionCard(
+                SettingsSection(
                     title: "Package Intake",
                     subtitle:
                         "\(report.sourceKind.rawValue) - \(report.preflightResult.status.rawValue)"
@@ -4520,7 +4520,7 @@ struct ChromeMV3ExtensionManagerView: View {
         }
 
         private var actionsHeader: some View {
-            SettingsSectionCard(
+            SettingsSection(
                 title: "Import Local MV3",
                 subtitle: "Local package intake creates metadata only. Import and enable do not execute extension code."
             ) {
@@ -4552,7 +4552,7 @@ struct ChromeMV3ExtensionManagerView: View {
         }
 
         private var listSection: some View {
-            SettingsSectionCard(
+            SettingsSection(
                 title: "Installed Local MV3",
                 subtitle: listViewModel.items.isEmpty
                     ? "No local experimental MV3 extensions."
@@ -4616,7 +4616,7 @@ struct ChromeMV3ExtensionManagerView: View {
         @ViewBuilder
         private var detailSection: some View {
             if let selectedDetail {
-                SettingsSectionCard(
+                SettingsSection(
                     title: selectedDetail.listItem.name,
                     subtitle:
                         "\(selectedDetail.listItem.extensionID) - \(selectedDetail.listItem.version)"
@@ -4633,7 +4633,7 @@ struct ChromeMV3ExtensionManagerView: View {
                     }
                 }
             } else {
-                SettingsSectionCard(
+                SettingsSection(
                     title: "Compatibility Report",
                     subtitle: "Select an internal MV3 extension to inspect blockers."
                 ) {

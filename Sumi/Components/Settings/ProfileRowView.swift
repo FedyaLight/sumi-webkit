@@ -9,15 +9,11 @@ import SwiftUI
 
 struct ProfileRowView: View {
     let profile: Profile
-    let isSelected: Bool
     let spacesCount: Int
     let tabsCount: Int
     let canDelete: Bool
-    let onSelect: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
-
-    @State private var isHovering: Bool = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -45,25 +41,28 @@ struct ProfileRowView: View {
 
             Spacer()
 
-            Button(action: onEdit) {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 16, weight: .regular))
+            HStack(spacing: 12) {
+                Button(action: onEdit) {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 14, weight: .regular))
+                }
+                .buttonStyle(NavButtonStyle(size: .small))
+                .help("Edit Profile")
+                .accessibilityLabel("Edit \(profile.name)")
+
+                Button(role: .destructive, action: onDelete) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 14, weight: .regular))
+                }
+                .buttonStyle(NavButtonStyle(size: .small))
+                .disabled(!canDelete)
+                .help("Delete Profile")
+                .accessibilityLabel("Delete \(profile.name)")
             }
-            .buttonStyle(.borderless)
-            .help("Edit Profile")
-            .accessibilityLabel("Edit \(profile.name)")
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(rowBackground)
-        )
         .contentShape(Rectangle())
-        .onTapGesture(perform: onSelect)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.12)) { isHovering = hovering }
-        }
         .contextMenu {
             Button("Edit Profile...") {
                 onEdit()
@@ -78,17 +77,6 @@ struct ProfileRowView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(profile.name), \(profileDetailText)")
-        .accessibilityValue(isSelected ? "Selected" : "")
-    }
-
-    private var rowBackground: Color {
-        if isSelected {
-            return Color.accentColor.opacity(0.14)
-        }
-        if isHovering {
-            return Color.primary.opacity(0.04)
-        }
-        return .clear
     }
 
     private var profileDetailText: String {
