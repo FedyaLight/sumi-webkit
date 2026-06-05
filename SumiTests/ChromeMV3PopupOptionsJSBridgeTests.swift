@@ -561,13 +561,31 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(
             controlledPolicy.allowedMethods.contains("tabs.getCurrent")
         )
+        XCTAssertTrue(
+            controlledPolicy.allowedMethods.contains(
+                "extension.getBackgroundPage"
+            )
+        )
         XCTAssertFalse(
             ChromeMV3PopupOptionsAPIMethodPolicy.defaultPolicy
                 .allowedMethods
                 .contains("tabs.getCurrent")
         )
+        XCTAssertFalse(
+            ChromeMV3PopupOptionsAPIMethodPolicy.defaultPolicy
+                .allowedMethods
+                .contains("extension.getBackgroundPage")
+        )
         XCTAssertTrue(
             controlledPolicy.exposedNamespaces.contains("i18n")
+        )
+        XCTAssertTrue(
+            controlledPolicy.exposedNamespaces.contains("extension")
+        )
+        XCTAssertFalse(
+            ChromeMV3PopupOptionsAPIMethodPolicy.defaultPolicy
+                .exposedNamespaces
+                .contains("extension")
         )
         XCTAssertFalse(
             ChromeMV3PopupOptionsAPIMethodPolicy.defaultPolicy
@@ -691,6 +709,32 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
                 "method=tabs.getCurrent namespace=chrome/browser result=undefined"
             )
         )
+        XCTAssertTrue(source.contains("\"extension.getBackgroundPage\""))
+        XCTAssertTrue(
+            source.contains(
+                "controlledExtensionGetBackgroundPageCompatibilitySurface"
+            )
+        )
+        XCTAssertTrue(source.contains("controlledExtensionNamespace"))
+        XCTAssertTrue(
+            source.contains("Object.defineProperty(target, \"extension\"")
+        )
+        XCTAssertTrue(source.contains("debugExtensionNamespaceAccess"))
+        XCTAssertTrue(source.contains("debugExtensionGetBackgroundPage"))
+        XCTAssertTrue(
+            source.contains(
+                "method=extension.getBackgroundPage namespace="
+            )
+        )
+        XCTAssertTrue(source.contains("result=\" + classifier"))
+        XCTAssertTrue(
+            source.contains(
+                "No fake background page/window or service-worker internals were returned."
+            )
+        )
+        XCTAssertTrue(
+            source.contains("No broad legacy chrome.extension APIs are exposed.")
+        )
         XCTAssertTrue(source.contains("syncBackend=localCompatibility"))
         XCTAssertTrue(
             source.contains("if (config.storageSessionExposed)")
@@ -783,6 +827,21 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             )
         )
         XCTAssertTrue(
+            controlledActionPopupSource.contains(
+                "\"controlledExtensionGetBackgroundPageCompatibilitySurface\":true"
+            )
+        )
+        XCTAssertTrue(
+            controlledActionPopupSource.contains(
+                "Object.defineProperty(target, \"extension\""
+            )
+        )
+        XCTAssertTrue(
+            controlledActionPopupSource.contains(
+                "Object.defineProperty(namespace, \"getBackgroundPage\""
+            )
+        )
+        XCTAssertTrue(
             controlledActionPopupSource.contains("Chrome/0.0.0.0")
         )
         XCTAssertTrue(
@@ -793,9 +852,19 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
                 "Object.defineProperty(tabs, \"getCurrent\""
             )
         )
+        XCTAssertTrue(
+            defaultActionPopupSource.contains(
+                "\"controlledExtensionGetBackgroundPageCompatibilitySurface\":false"
+            )
+        )
         XCTAssertFalse(
             controlledOptionsPageSource.contains(
                 "Object.defineProperty(tabs, \"getCurrent\""
+            )
+        )
+        XCTAssertTrue(
+            controlledOptionsPageSource.contains(
+                "\"controlledExtensionGetBackgroundPageCompatibilitySurface\":false"
             )
         )
     }
@@ -2257,6 +2326,8 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             """
             const chromeCurrent = await chrome.tabs.getCurrent();
             const browserCurrent = await browser.tabs.getCurrent();
+            const chromeBackgroundPage = chrome.extension.getBackgroundPage();
+            const browserBackgroundPage = browser.extension.getBackgroundPage();
             let getCurrentCallbackIsUndefined = false;
             let getCurrentCallbackLastError = "unset";
             await new Promise((resolve) => {
@@ -2332,8 +2403,28 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
                 !!globalThis.browser
                 && !!browser.tabs
                 && typeof browser.tabs.getCurrent === "function",
+              hasChromeExtension:
+                !!globalThis.chrome
+                && !!chrome.extension,
+              hasBrowserExtension:
+                !!globalThis.browser
+                && !!browser.extension,
+              hasChromeExtensionGetBackgroundPage:
+                !!globalThis.chrome
+                && !!chrome.extension
+                && typeof chrome.extension.getBackgroundPage === "function",
+              hasBrowserExtensionGetBackgroundPage:
+                !!globalThis.browser
+                && !!browser.extension
+                && typeof browser.extension.getBackgroundPage === "function",
+              chromeExtensionKeys:
+                Object.keys(chrome.extension).sort(),
+              browserExtensionKeys:
+                Object.keys(browser.extension).sort(),
               chromeCurrentIsUndefined: chromeCurrent === undefined,
               browserCurrentIsUndefined: browserCurrent === undefined,
+              chromeBackgroundPageIsNull: chromeBackgroundPage === null,
+              browserBackgroundPageIsNull: browserBackgroundPage === null,
               getCurrentCallbackIsUndefined,
               getCurrentCallbackLastError,
               getCurrentLastErrorAfterCallback:
@@ -2377,8 +2468,28 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         )
         XCTAssertEqual(object["hasChromeTabsGetCurrent"] as? Bool, true)
         XCTAssertEqual(object["hasBrowserTabsGetCurrent"] as? Bool, true)
+        XCTAssertEqual(object["hasChromeExtension"] as? Bool, true)
+        XCTAssertEqual(object["hasBrowserExtension"] as? Bool, true)
+        XCTAssertEqual(
+            object["hasChromeExtensionGetBackgroundPage"] as? Bool,
+            true
+        )
+        XCTAssertEqual(
+            object["hasBrowserExtensionGetBackgroundPage"] as? Bool,
+            true
+        )
+        XCTAssertEqual(
+            object["chromeExtensionKeys"] as? [String],
+            ["getBackgroundPage"]
+        )
+        XCTAssertEqual(
+            object["browserExtensionKeys"] as? [String],
+            ["getBackgroundPage"]
+        )
         XCTAssertEqual(object["chromeCurrentIsUndefined"] as? Bool, true)
         XCTAssertEqual(object["browserCurrentIsUndefined"] as? Bool, true)
+        XCTAssertEqual(object["chromeBackgroundPageIsNull"] as? Bool, true)
+        XCTAssertEqual(object["browserBackgroundPageIsNull"] as? Bool, true)
         XCTAssertEqual(object["getCurrentCallbackIsUndefined"] as? Bool, true)
         XCTAssertTrue(object["getCurrentCallbackLastError"] is NSNull)
         XCTAssertTrue(object["getCurrentLastErrorAfterCallback"] is NSNull)
@@ -2393,6 +2504,10 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         })
         XCTAssertTrue(snapshot.observedMethods.contains("runtime.getManifest"))
         XCTAssertTrue(snapshot.observedMethods.contains("tabs.getCurrent"))
+        XCTAssertFalse(
+            snapshot.observedMethods.contains("extension.getBackgroundPage"),
+            "extension.getBackgroundPage is synchronous JS-only and must not route through the Swift host."
+        )
         XCTAssertTrue(snapshot.callRecords.contains {
             $0.namespace == "tabs"
                 && $0.methodName == "getCurrent"
@@ -2412,6 +2527,31 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
                 .firstMissingAPIOrPermissionOrLifecycleError?
                 .contains("tabs.getCurrent") == true
         )
+        XCTAssertTrue(snapshot.jsDebugRouteEvents.contains {
+            $0.eventKind == "extensionNamespaceAccessed"
+                && $0.apiName == "chrome.extension"
+                && $0.resultClassifier == "namespace returned"
+        })
+        XCTAssertTrue(snapshot.jsDebugRouteEvents.contains {
+            $0.eventKind == "extensionNamespaceAccessed"
+                && $0.apiName == "browser.extension"
+                && $0.resultClassifier == "namespace returned"
+        })
+        XCTAssertTrue(snapshot.jsDebugRouteEvents.contains {
+            $0.eventKind == "extensionMethodCalled"
+                && $0.apiName == "chrome.extension.getBackgroundPage"
+                && $0.resultClassifier == "null"
+                && $0.diagnostics.contains {
+                    $0.contains(
+                        "No fake background page/window or service-worker internals were returned."
+                    )
+                }
+        })
+        XCTAssertTrue(snapshot.jsDebugRouteEvents.contains {
+            $0.eventKind == "extensionMethodCalled"
+                && $0.apiName == "browser.extension.getBackgroundPage"
+                && $0.resultClassifier == "null"
+        })
         let platformProbeEvents = snapshot.jsDebugRouteEvents.filter {
             $0.apiName == "navigator.platformIdentity"
         }

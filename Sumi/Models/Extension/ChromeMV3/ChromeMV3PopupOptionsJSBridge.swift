@@ -196,14 +196,20 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
 
     static let controlledActionPopupPolicy =
         ChromeMV3PopupOptionsAPIMethodPolicy(
-            exposedNamespaces: [
-                "i18n",
-                "runtime",
-                "storage.local",
-                "storage.session",
-                "storage.sync",
-                "tabs",
-            ],
+            exposedNamespaces: {
+                var namespaces = [
+                    "i18n",
+                    "runtime",
+                    "storage.local",
+                    "storage.session",
+                    "storage.sync",
+                    "tabs",
+                ]
+                #if DEBUG
+                namespaces.append("extension")
+                #endif
+                return namespaces
+            }(),
             blockedNamespaces: [
                 "contextMenus",
                 "declarativeNetRequest",
@@ -246,6 +252,7 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
                     "tabs.sendMessage",
                 ]
                 #if DEBUG
+                methods.append("extension.getBackgroundPage")
                 methods.append("tabs.getCurrent")
                 #endif
                 return methods
@@ -2279,6 +2286,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         "bridgeCallResolved",
         "bridgeCallRejected",
         "callbackLastError",
+        "extensionMethodCalled",
+        "extensionNamespaceAccessed",
         "missingAPIAccess",
         "pendingTimeout",
         "portDisconnected",
@@ -2317,6 +2326,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         ]
 
     private nonisolated static let allowedJSDebugTargetContexts: Set<String> = [
+        "backgroundPage",
         "contentScript",
         "console",
         "csp",
@@ -6208,6 +6218,10 @@ enum ChromeMV3PopupOptionsJSShimSource {
             controlledNavigatorCompatibilitySurface
             && configuration.allowlist.allowedMethods
                 .contains("tabs.getCurrent")
+        let controlledExtensionGetBackgroundPageCompatibilitySurface =
+            controlledNavigatorCompatibilitySurface
+            && configuration.allowlist.allowedMethods
+                .contains("extension.getBackgroundPage")
         let tabsGetCurrentSource =
             controlledTabsGetCurrentCompatibilitySurface
                 ? """
@@ -6223,6 +6237,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
         #else
         let controlledNavigatorCompatibilitySurface = false
         let controlledTabsGetCurrentCompatibilitySurface = false
+        let controlledExtensionGetBackgroundPageCompatibilitySurface = false
         let tabsGetCurrentSource = ""
         #endif
         let configJSON = jsonString([
@@ -6234,6 +6249,8 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 controlledNavigatorCompatibilitySurface,
             "controlledTabsGetCurrentCompatibilitySurface":
                 controlledTabsGetCurrentCompatibilitySurface,
+            "controlledExtensionGetBackgroundPageCompatibilitySurface":
+                controlledExtensionGetBackgroundPageCompatibilitySurface,
             "extensionBaseURLString": configuration.extensionBaseURLString,
             "runtimeManifest":
                 configuration.runtimeManifest?.manifestPayload
@@ -7583,6 +7600,22 @@ enum ChromeMV3PopupOptionsJSShimSource {
             });
           }
 
+          function controlledExtensionNamespace(rootName) {
+            const namespace = {};
+            Object.defineProperty(namespace, "getBackgroundPage", {
+              value() {
+                debugExtensionGetBackgroundPage(
+                  rootName,
+                  "null",
+                  Array.prototype.slice.call(arguments)
+                );
+                return null;
+              },
+              enumerable: true
+            });
+            return Object.freeze(namespace);
+          }
+
           Object.defineProperty(chromeObject, "runtime", {
             value: Object.freeze(runtime),
             enumerable: true
@@ -7615,8 +7648,30 @@ enum ChromeMV3PopupOptionsJSShimSource {
               enumerable: true
             });
           });
+          function rootTarget(rootName) {
+            const target = {};
+            Object.getOwnPropertyNames(chromeObject).forEach((key) => {
+              Object.defineProperty(
+                target,
+                key,
+                Object.getOwnPropertyDescriptor(chromeObject, key)
+              );
+            });
+            if (config.controlledExtensionGetBackgroundPageCompatibilitySurface) {
+              const extensionSurface = controlledExtensionNamespace(rootName);
+              Object.defineProperty(target, "extension", {
+                get() {
+                  debugExtensionNamespaceAccess(rootName);
+                  return extensionSurface;
+                },
+                enumerable: true
+              });
+            }
+            return Object.freeze(target);
+          }
           function rootObject(rootName) {
-            return new Proxy(Object.freeze(chromeObject), {
+            const target = rootTarget(rootName);
+            return new Proxy(target, {
               get(target, prop, receiver) {
                 if (typeof prop === "string" && !Reflect.has(target, prop)) {
                   debugMissingAPI(
@@ -7658,6 +7713,8 @@ enum ChromeMV3PopupOptionsJSShimSource {
           function debugPortEvent(eventKind, record) {}
           function debugRuntimeGetManifest(manifest, succeeded) {}
           function debugI18nCall(methodName, record) {}
+          function debugExtensionNamespaceAccess(rootName) {}
+          function debugExtensionGetBackgroundPage(rootName, resultClassifier, args) {}
           function debugPlatformEnvironmentProbe(phase, extras) {}
           function debugPostGetManifestBootstrapSentinel(succeeded) {}
 
@@ -7778,6 +7835,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
             if (namespace === "i18n") {
               return "i18n";
             }
+            if (namespace === "extension") {
+              return "backgroundPage";
+            }
             if (namespace === "storage") {
               if (methodName.indexOf("local.") === 0) {
                 return "storage.local";
@@ -7874,6 +7934,12 @@ enum ChromeMV3PopupOptionsJSShimSource {
               return response && response.lastErrorCode
                 ? response.lastErrorCode
                 : "tabs.getCurrent error";
+            }
+            if (namespace === "extension" && methodName === "getBackgroundPage") {
+              if (response && response.succeeded) {
+                return response.resultPayload === null ? "null" : "returned";
+              }
+              return "unsupported";
             }
             if (namespace === "runtime" && methodName === "connect") {
               if (response && response.succeeded && response.resultPayload && response.resultPayload.canWakeServiceWorkerNow === false) {
@@ -8248,6 +8314,40 @@ enum ChromeMV3PopupOptionsJSShimSource {
               safeMessageShapeClassification: "arguments:0",
               diagnostics: [
                 "Missing or unsupported chrome.* namespace/property was accessed by the popup."
+              ]
+            });
+          }
+
+          function debugExtensionNamespaceAccess(rootName) {
+            debugRecord("extensionNamespaceAccessed", {
+              apiName: rootName + ".extension",
+              targetContext: "backgroundPage",
+              resultClassifier: "namespace returned",
+              firstMissingAPIOrPermissionOrLifecycleError: null,
+              safeMessageShapeClassification: "arguments:0",
+              diagnostics: [
+                "Controlled action popup read " + rootName + ".extension.",
+                "Only extension.getBackgroundPage is exposed on this DEBUG/local-experimental namespace.",
+                "No broad legacy chrome.extension APIs are exposed."
+              ]
+            });
+          }
+
+          function debugExtensionGetBackgroundPage(rootName, resultClassifier, args) {
+            const classifier = resultClassifier || "null";
+            debugRecord("extensionMethodCalled", {
+              apiName: rootName + ".extension.getBackgroundPage",
+              targetContext: "backgroundPage",
+              resultClassifier: classifier,
+              firstMissingAPIOrPermissionOrLifecycleError: null,
+              safeMessageShapeClassification: debugArgsShape(args || []),
+              safeCommandTypeActionFieldNames: [],
+              diagnostics: [
+                "method=extension.getBackgroundPage namespace=" + rootName
+                  + " result=" + classifier
+                  + " redaction=notApplicable sourceContext=" + config.sourceContext,
+                "Chrome MV3 has no background page window when the extension uses a service worker; returning null.",
+                "No fake background page/window or service-worker internals were returned."
               ]
             });
           }
@@ -8773,6 +8873,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
             const i18nRouteCount = routeEvents.filter((event) => {
               return event.targetContext === "i18n";
             }).length;
+            const extensionNamespaceRouteCount = routeEvents.filter((event) => {
+              return event.targetContext === "backgroundPage";
+            }).length;
             const nativeRouteCount = routeEvents.filter((event) => {
               return event.targetContext === "nativeApplication"
                 || event.targetContext === "nativeApplicationPort";
@@ -8818,6 +8921,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 "storageSessionRouteEvents=" + String(storageSessionRouteCount),
                 "storageSyncRouteEvents=" + String(storageSyncRouteCount),
                 "i18nRouteEvents=" + String(i18nRouteCount),
+                "extensionNamespaceRouteEvents=" + String(extensionNamespaceRouteCount),
                 "nativeRouteEvents=" + String(nativeRouteCount),
                 "No raw storage values, message bodies, form values, manifest bodies, URLs, or private payloads were recorded."
               ]

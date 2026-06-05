@@ -1858,6 +1858,36 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         )
         XCTAssertTrue(
             popupOptionsBridgeSource.contains(
+                "\"extension.getBackgroundPage\""
+            )
+        )
+        XCTAssertTrue(
+            popupOptionsBridgeSource.contains(
+                "controlledExtensionGetBackgroundPageCompatibilitySurface"
+            )
+        )
+        XCTAssertTrue(
+            popupOptionsBridgeSource.contains(
+                "Object.defineProperty(target, \"extension\""
+            )
+        )
+        XCTAssertTrue(
+            popupOptionsBridgeSource.contains(
+                "Object.defineProperty(namespace, \"getBackgroundPage\""
+            )
+        )
+        XCTAssertTrue(
+            popupOptionsBridgeSource.contains(
+                "No fake background page/window or service-worker internals were returned."
+            )
+        )
+        XCTAssertTrue(
+            popupOptionsBridgeSource.contains(
+                "No broad legacy chrome.extension APIs are exposed."
+            )
+        )
+        XCTAssertTrue(
+            popupOptionsBridgeSource.contains(
                 "controlledTabsGetCurrentCompatibilitySurface"
             )
         )
