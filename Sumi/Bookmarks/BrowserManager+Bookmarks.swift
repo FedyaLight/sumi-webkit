@@ -221,65 +221,11 @@ extension BrowserManager {
         inResolvedWindow targetWindow: BrowserWindowState,
         selecting folderID: String?
     ) {
-        let targetURL = SumiSurface.bookmarksSurfaceURL(selecting: folderID)
-
-        if targetWindow.isIncognito, let profile = targetWindow.ephemeralProfile {
-            if let existing = targetWindow.ephemeralTabs.first(where: { $0.representsSumiBookmarksSurface }) {
-                configureBookmarksTab(existing, url: targetURL)
-                selectTab(existing, in: targetWindow)
-            } else {
-                let newTab = tabManager.createEphemeralTab(
-                    url: targetURL,
-                    in: targetWindow,
-                    profile: profile
-                )
-                configureBookmarksTab(newTab, url: targetURL)
-                selectTab(newTab, in: targetWindow)
-            }
-            targetWindow.window?.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-
-        let targetSpace =
-            targetWindow.currentSpaceId.flatMap { id in
-                tabManager.spaces.first(where: { $0.id == id })
-            }
-            ?? targetWindow.currentProfileId.flatMap { pid in
-                tabManager.spaces.first(where: { $0.profileId == pid })
-            }
-            ?? tabManager.currentSpace
-
-        let spaceIdForLookup = targetSpace?.id ?? tabManager.currentSpace?.id
-        if let sid = spaceIdForLookup,
-           let existing = (tabManager.tabsBySpace[sid] ?? []).first(where: { $0.representsSumiBookmarksSurface })
-        {
-            configureBookmarksTab(existing, url: targetURL)
-            selectTab(existing, in: targetWindow)
-            targetWindow.window?.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-
-        let newTab = openNewTab(
-            url: targetURL.absoluteString,
-            context: .foreground(
-                windowState: targetWindow,
-                preferredSpaceId: targetSpace?.id,
-                loadPolicy: .deferred
-            )
+        openNativeBrowserSurface(
+            .bookmarks,
+            url: SumiSurface.bookmarksSurfaceURL(selecting: folderID),
+            in: targetWindow
         )
-        configureBookmarksTab(newTab, url: targetURL)
-        targetWindow.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    private func configureBookmarksTab(_ tab: Tab, url: URL) {
-        tab.url = url
-        tab.name = "Bookmarks"
-        tab.favicon = Image(systemName: SumiSurface.bookmarksTabFaviconSystemImageName)
-        tab.faviconIsTemplateGlobePlaceholder = false
-        tabManager.scheduleRuntimeStatePersistence(for: tab)
     }
 
     private func bookmarkableRegularTabsForActiveWindow() -> [Tab] {

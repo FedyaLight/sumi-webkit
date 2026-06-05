@@ -210,7 +210,7 @@ struct SplitGroupSidebarRow: View {
                 value: departingItemIds.map(\.uuidString).sorted()
             )
         }
-        .splitGroupRowLifecycle(isCollapsing: isCollapsingRow)
+        .sidebarRowLifecycle(isCollapsed: isCollapsingRow)
         .padding(.horizontal, 2)
         .frame(minWidth: 0, maxWidth: .infinity)
         .sidebarRowSurface(
@@ -473,28 +473,6 @@ struct SplitGroupSidebarRow: View {
 
     private var tokens: ChromeThemeTokens {
         themeContext.tokens(settings: sumiSettings)
-    }
-}
-
-private struct SplitGroupRowLifecycleModifier: ViewModifier {
-    let isCollapsing: Bool
-
-    func body(content: Content) -> some View {
-        let row = content
-            .frame(height: isCollapsing ? 0 : SidebarRowLayout.rowHeight, alignment: .top)
-            .opacity(isCollapsing ? 0 : 1)
-
-        if isCollapsing {
-            row.clipped()
-        } else {
-            row
-        }
-    }
-}
-
-private extension View {
-    func splitGroupRowLifecycle(isCollapsing: Bool) -> some View {
-        modifier(SplitGroupRowLifecycleModifier(isCollapsing: isCollapsing))
     }
 }
 

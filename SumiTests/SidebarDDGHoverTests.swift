@@ -353,10 +353,10 @@ final class SidebarDDGHoverTests: XCTestCase {
 
     func testExpandedSidebarRowsDoNotClipSelectionShadowBleed() throws {
         let motionSource = try Self.source(named: "Sumi/Components/Sidebar/SidebarZenMotion.swift")
-        let lifecycleStart = try XCTUnwrap(motionSource.range(of: "private struct SidebarZenRowLifecycleModifier"))
+        let lifecycleStart = try XCTUnwrap(motionSource.range(of: "struct SidebarRowLifecycleModifier"))
         let transitionStart = try XCTUnwrap(
             motionSource.range(
-                of: "private struct SidebarZenRowLifecycleTransitionModifier",
+                of: "private struct SidebarRowListItemTransitionModifier",
                 range: lifecycleStart.lowerBound..<motionSource.endIndex
             )
         )
@@ -367,19 +367,9 @@ final class SidebarDDGHoverTests: XCTestCase {
         XCTAssertTrue(lifecycleSource.contains("} else {"))
 
         let splitSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SplitGroupSidebarRow.swift")
-        let splitLifecycleStart = try XCTUnwrap(splitSource.range(of: "private struct SplitGroupRowLifecycleModifier"))
-        let splitExtensionStart = try XCTUnwrap(
-            splitSource.range(
-                of: "private extension View",
-                range: splitLifecycleStart.lowerBound..<splitSource.endIndex
-            )
-        )
-        let splitLifecycleSource = String(splitSource[splitLifecycleStart.lowerBound..<splitExtensionStart.lowerBound])
 
-        XCTAssertTrue(splitSource.contains(".splitGroupRowLifecycle(isCollapsing: isCollapsingRow)"))
-        XCTAssertTrue(splitLifecycleSource.contains("if isCollapsing"))
-        XCTAssertTrue(splitLifecycleSource.contains("row.clipped()"))
-        XCTAssertTrue(splitLifecycleSource.contains("} else {"))
+        XCTAssertTrue(splitSource.contains(".sidebarRowLifecycle(isCollapsed: isCollapsingRow)"))
+        XCTAssertFalse(splitSource.contains("SplitGroupRowLifecycleModifier"))
     }
 
     func testRegularTabsUseLazyStackForRowVirtualization() throws {
@@ -406,17 +396,29 @@ final class SidebarDDGHoverTests: XCTestCase {
         let regularTabsSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SpaceRegularTabsSection.swift")
         let pinnedSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SpacePinnedSection.swift")
         let folderSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/TabFolderView.swift")
+        let motionSource = try Self.source(named: "Sumi/Components/Sidebar/SidebarZenMotion.swift")
 
-        XCTAssertTrue(spaceViewSource.contains("regularAppearingTabIds"))
         XCTAssertTrue(spaceViewSource.contains("shortcutRestoreAppearingGapIds"))
-        XCTAssertTrue(regularTabsSource.contains("SidebarRowInsertionMotionPolicy"))
-        XCTAssertTrue(regularTabsSource.contains("regularAppearingTabIds.formUnion(insertedIds)"))
-        XCTAssertTrue(regularTabsSource.contains("regularAppearingTabIds.subtract(insertedIds)"))
-        XCTAssertFalse(spaceViewSource.contains("regularInsertedTabHeights"))
-        XCTAssertFalse(spaceViewSource.contains("shortcutRestoreGapHeights"))
-        XCTAssertFalse(regularTabsSource.contains("regularInsertedTabHeights"))
-        XCTAssertFalse(regularTabsSource.contains("RegularInsertedTabPreview"))
-        XCTAssertFalse(regularTabsSource.contains("SidebarRegularTabInsertionAnimationPolicy"))
+        XCTAssertTrue(spaceViewSource.contains("regularGapHeights"))
+        XCTAssertTrue(spaceViewSource.contains("regularAppearingTabIds"))
+        XCTAssertTrue(spaceViewSource.contains("regularDisappearingTabIds"))
+        XCTAssertTrue(spaceViewSource.contains("regularRemovalGapTabs"))
+        XCTAssertTrue(regularTabsSource.contains("regularDisappearingTabIds.insert(tabId)"))
+        XCTAssertTrue(regularTabsSource.contains("animateRegularRowRemoval"))
+        XCTAssertTrue(regularTabsSource.contains("regularRemovalGap("))
+        XCTAssertTrue(regularTabsSource.contains("sidebarRowStagedInsertion(isRevealing: hidesContent)"))
+        XCTAssertTrue(regularTabsSource.contains("regularGapHeights[tabId] = 0"))
+        XCTAssertTrue(regularTabsSource.contains("regularTabsUsesExpandedDragSpacer"))
+        XCTAssertFalse(regularTabsSource.contains(".animation(sidebarContentMutationAnimation, value: tabs.map"))
+        XCTAssertTrue(motionSource.contains("struct SidebarRowStagedInsertionModifier"))
+        XCTAssertTrue(motionSource.contains("static var sidebarRowListItem: AnyTransition"))
+        XCTAssertTrue(motionSource.contains(".identity"))
+        XCTAssertFalse(regularTabsSource.contains("guard !regularRenderedTabItems.isEmpty"))
+        XCTAssertFalse(regularTabsSource.contains("if !tabs.isEmpty || regularTabsUsesProjectedDropLayout"))
+        XCTAssertFalse(regularTabsSource.contains("sidebarRowListItemTransition"))
+        XCTAssertTrue(pinnedSource.contains(".sidebarRowStagedInsertion(isRevealing: isAppearing)"))
+        XCTAssertTrue(folderSource.contains(".sidebarRowStagedInsertion(isRevealing: isAppearing)"))
+        XCTAssertFalse(regularTabsSource.contains("animateRegularDeferredRemoval"))
         XCTAssertFalse(pinnedSource.contains("shortcutRestoreGapHeights"))
         XCTAssertFalse(folderSource.contains("shortcutRestoreGapHeights"))
     }

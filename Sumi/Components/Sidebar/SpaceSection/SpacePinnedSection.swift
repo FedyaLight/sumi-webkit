@@ -284,6 +284,7 @@ extension SpaceView {
                 generation: dragState.sidebarGeometryGeneration,
                 isActive: isInteractive
             )
+            .sidebarRowListItemTransition(isEnabled: isInteractive)
         }
     }
 
@@ -373,6 +374,10 @@ extension SpaceView {
         .animation(sidebarContentMutationAnimation, value: spacePinnedItems)
         .animation(sidebarContentMutationAnimation, value: shortcutRestoreGaps)
         .animation(sidebarContentMutationAnimation, value: shortcutRestoreAppearingGapIds)
+        .animation(
+            sidebarContentMutationAnimation,
+            value: projectedSpacePinnedDisplayEntries.map(\.id)
+        )
         .padding(.bottom, 8) // Add padding to act as drag tail for spacePinned
     }
 
@@ -436,7 +441,7 @@ extension SpaceView {
             .frame(height: SidebarRowLayout.rowHeight)
             .frame(maxWidth: .infinity)
             .allowsHitTesting(false)
-            .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .center)))
+            .transition(.sidebarRowDropGap)
             .accessibilityHidden(true)
     }
 
@@ -451,7 +456,7 @@ extension SpaceView {
         }
         .frame(height: SidebarRowLayout.rowHeight, alignment: .top)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .sidebarRowInsertionReveal(isAppearing: isAppearing)
+        .sidebarRowStagedInsertion(isRevealing: isAppearing)
         .clipped()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -534,7 +539,7 @@ extension SpaceView {
                 generation: dragState.sidebarGeometryGeneration,
                 isActive: isInteractive
             )
-            .sidebarZenRowLifecycleTransition(isEnabled: isInteractive)
+            .sidebarRowListItemTransition(isEnabled: isInteractive)
         } else {
             let activeTab = activeShortcutTab(for: pin)
             ShortcutSidebarRow(
@@ -564,7 +569,7 @@ extension SpaceView {
                 generation: dragState.sidebarGeometryGeneration,
                 isActive: isInteractive
             )
-            .sidebarZenRowLifecycleTransition(isEnabled: isInteractive)
+            .sidebarRowListItemTransition(isEnabled: isInteractive)
         }
     }
 

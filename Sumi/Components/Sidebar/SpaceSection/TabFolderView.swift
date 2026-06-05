@@ -413,7 +413,7 @@ struct TabFolderView: View {
     private var folderBodyAnimatedContent: some View {
         if folderBodyShouldRender {
             folderBodyVisibleContent
-                .transition(.opacity)
+                .transition(.sidebarRowContentOpacity)
                 .animation(folderLayoutAnimation, value: folder.isOpen)
                 .animation(folderLayoutAnimation, value: folderItems)
                 .animation(folderLayoutAnimation, value: displayedCollapsedProjectionIDs)
@@ -769,7 +769,7 @@ struct TabFolderView: View {
             .frame(height: SidebarRowLayout.rowHeight)
             .frame(maxWidth: .infinity)
             .allowsHitTesting(false)
-            .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .center)))
+            .transition(.sidebarRowDropGap)
             .accessibilityHidden(true)
     }
 
@@ -784,7 +784,7 @@ struct TabFolderView: View {
         }
         .frame(height: SidebarRowLayout.rowHeight, alignment: .top)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .sidebarRowInsertionReveal(isAppearing: isAppearing)
+        .sidebarRowStagedInsertion(isRevealing: isAppearing)
         .clipped()
         .allowsHitTesting(false)
         .accessibilityHidden(true)

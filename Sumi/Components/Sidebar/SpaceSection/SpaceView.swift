@@ -45,11 +45,13 @@ struct SpaceView: View {
     @State var regularRenderedTabItems: [RegularTabRenderedItem] = []
     @State var regularGapHeights: [UUID: CGFloat] = [:]
     @State var regularAppearingTabIds = Set<UUID>()
-    @State var regularDeferredRemovalGapIdsByTabId: [UUID: UUID] = [:]
+    @State var regularDisappearingTabIds = Set<UUID>()
+    @State var regularRemovalGapTabs: [UUID: Tab] = [:]
+    @State var regularTabRenderCache: [UUID: Tab] = [:]
+    @State var regularLayoutAnimationGeneration = 0
     @State var regularSplitSegmentRemovalIds = Set<UUID>()
     @State var shortcutRestoreGaps: [ShortcutRestoreGap] = []
     @State var shortcutRestoreAppearingGapIds = Set<UUID>()
-    @State var regularLayoutAnimationGeneration = 0
     @State var tabListVerticalScrollOffset: CGFloat = 0
     @Environment(\.resolvedThemeContext) var themeContext
     @Environment(\.accessibilityReduceMotion) var reduceMotion
@@ -116,22 +118,16 @@ extension SpaceView {
             return
         }
 
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        transaction.animation = nil
-        withTransaction(transaction) {
-            _ = shortcutRestoreAppearingGapIds.insert(gap.id)
-        }
-
-        withAnimation(SidebarDropMotion.contentLayout) {
+        SidebarRowStagedReveal.insert(gap.id, into: &shortcutRestoreAppearingGapIds) {
             shortcutRestoreGaps.append(gap)
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + SidebarDropMotion.shortcutRestoreRevealStartDelay) {
-            guard shortcutRestoreGaps.contains(where: { $0.id == gap.id }) else { return }
-            withAnimation(SidebarDropMotion.contentLayout) {
-                _ = shortcutRestoreAppearingGapIds.remove(gap.id)
-            }
+        SidebarRowStagedReveal.reveal(
+            [gap.id],
+            in: $shortcutRestoreAppearingGapIds,
+            animation: SidebarDropMotion.contentLayout
+        ) {
+            shortcutRestoreGaps.contains(where: { $0.id == gap.id })
         }
     }
 

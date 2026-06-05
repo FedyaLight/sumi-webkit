@@ -33,19 +33,24 @@ final class HistoryNavigationTests: XCTestCase {
         XCTAssertTrue(tab.usesChromeThemedTemplateFavicon)
     }
 
-    func testOpenHistoryTabCreatesNewBrowserTabEachTime() {
+    func testOpenHistoryTabReusesExistingHistorySurface() throws {
         let (browserManager, _, windowState, space) = makeHarness()
 
         browserManager.openHistoryTab(in: windowState)
+        let firstHistoryTab = try XCTUnwrap(
+            browserManager.tabManager.tabs(in: space).first(where: \.representsSumiHistorySurface)
+        )
+
         browserManager.openHistoryTab(selecting: .older, in: windowState)
 
         let historyTabs = browserManager.tabManager.tabs(in: space).filter(\.representsSumiHistorySurface)
-        XCTAssertEqual(historyTabs.count, 2)
+        XCTAssertEqual(historyTabs.count, 1)
+        XCTAssertEqual(historyTabs.first?.id, firstHistoryTab.id)
         XCTAssertEqual(
-            historyTabs.last?.url,
-            SumiSurface.historySurfaceURL(rangeQuery: HistoryRange.all.paneQueryValue)
+            historyTabs.first?.url,
+            SumiSurface.historySurfaceURL(rangeQuery: HistoryRange.older.paneQueryValue)
         )
-        XCTAssertEqual(windowState.currentTabId, historyTabs.last?.id)
+        XCTAssertEqual(windowState.currentTabId, firstHistoryTab.id)
     }
 
     private func makeHarness() -> (BrowserManager, WindowRegistry, BrowserWindowState, Space) {

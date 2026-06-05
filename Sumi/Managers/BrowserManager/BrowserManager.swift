@@ -1359,26 +1359,11 @@ class BrowserManager: ObservableObject {
     /// Opens Sumi settings as a normal browser tab (one per space), optionally focusing a pane.
     func openSettingsTab(selecting pane: SettingsTabs, in windowState: BrowserWindowState? = nil) {
         guard let windowState = windowState ?? windowRegistry?.activeWindow else { return }
-
-        let targetURL: URL
-        switch pane {
-        case .userScripts:
-            sumiSettings?.extensionsSettingsSubPane = .userScripts
-            sumiSettings?.currentSettingsTab = .extensions
-            targetURL = SumiSurface.settingsSurfaceURL(paneQuery: SettingsTabs.userScripts.paneQueryValue)
-        case .extensions:
-            sumiSettings?.extensionsSettingsSubPane = .extensions
-            sumiSettings?.currentSettingsTab = .extensions
-            targetURL = pane.settingsSurfaceURL
-        default:
-            sumiSettings?.currentSettingsTab = pane
-            if pane == .privacy {
-                sumiSettings?.privacySettingsRoute = .overview
-            }
-            targetURL = pane.settingsSurfaceURL
-        }
-
-        openSettingsSurface(targetURL: targetURL, in: windowState)
+        openNativeBrowserSurface(
+            .settings,
+            url: settingsSurfaceURL(for: pane),
+            in: windowState
+        )
     }
 
     func openSiteSettingsTab(
@@ -1403,76 +1388,39 @@ class BrowserManager: ObservableObject {
             )
             : nil
 
-        sumiSettings?.currentSettingsTab = .privacy
-        sumiSettings?.privacySettingsRoute = .siteSettings(filter)
-        let targetURL = sumiSettings?.settingsSurfaceURLForCurrentNavigation()
-            ?? SumiSurface.settingsSurfaceURL(
-                paneQuery: SettingsTabs.privacy.paneQueryValue,
-                extraQueryItems: [URLQueryItem(name: "section", value: "siteSettings")]
-            )
-        openSettingsSurface(targetURL: targetURL, in: windowState)
+        openNativeBrowserSurface(
+            .settings,
+            url: privacySiteSettingsSurfaceURL(filter: filter),
+            in: windowState
+        )
     }
 
-    private func openSettingsSurface(targetURL: URL, in windowState: BrowserWindowState) {
-        if windowState.isIncognito, let profile = windowState.ephemeralProfile {
-            if let existing = windowState.ephemeralTabs.first(where: { $0.representsSumiSettingsSurface }) {
-                existing.url = targetURL
-                existing.name = "Settings"
-                existing.favicon = Image(systemName: SumiSurface.settingsTabFaviconSystemImageName)
-                existing.faviconIsTemplateGlobePlaceholder = false
-                selectTab(existing, in: windowState)
-            } else {
-                let newTab = tabManager.createEphemeralTab(
-                    url: targetURL,
-                    in: windowState,
-                    profile: profile
-                )
-                newTab.name = "Settings"
-                newTab.favicon = Image(systemName: SumiSurface.settingsTabFaviconSystemImageName)
-                newTab.faviconIsTemplateGlobePlaceholder = false
-                selectTab(newTab, in: windowState)
-            }
-            windowState.window?.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
+    private func settingsSurfaceURL(for pane: SettingsTabs) -> URL {
+        switch pane {
+        case .userScripts:
+            return SumiSurface.settingsSurfaceURL(paneQuery: SettingsTabs.userScripts.paneQueryValue)
+        default:
+            return pane.settingsSurfaceURL
         }
+    }
 
-        let targetSpace =
-            windowState.currentSpaceId.flatMap { id in
-                tabManager.spaces.first(where: { $0.id == id })
+    private func privacySiteSettingsSurfaceURL(filter: SumiSettingsSiteSettingsFilter?) -> URL {
+        var extraQueryItems = [URLQueryItem(name: "section", value: "siteSettings")]
+        if let filter {
+            if let origin = filter.requestingOriginIdentity, !origin.isEmpty {
+                extraQueryItems.append(URLQueryItem(name: "origin", value: origin))
             }
-            ?? windowState.currentProfileId.flatMap { pid in
-                tabManager.spaces.first(where: { $0.profileId == pid })
+            if let topOrigin = filter.topOriginIdentity, !topOrigin.isEmpty {
+                extraQueryItems.append(URLQueryItem(name: "topOrigin", value: topOrigin))
             }
-            ?? tabManager.currentSpace
-
-        let spaceIdForLookup = targetSpace?.id ?? tabManager.currentSpace?.id
-        if let sid = spaceIdForLookup,
-           let existing = (tabManager.tabsBySpace[sid] ?? []).first(where: { $0.representsSumiSettingsSurface })
-        {
-            existing.url = targetURL
-            existing.name = "Settings"
-            existing.favicon = Image(systemName: SumiSurface.settingsTabFaviconSystemImageName)
-            existing.faviconIsTemplateGlobePlaceholder = false
-            selectTab(existing, in: windowState)
-            windowState.window?.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
+            if let site = filter.displayDomain, !site.isEmpty {
+                extraQueryItems.append(URLQueryItem(name: "site", value: site))
+            }
         }
-
-        let newTab = openNewTab(
-            url: targetURL.absoluteString,
-            context: .foreground(
-                windowState: windowState,
-                preferredSpaceId: targetSpace?.id,
-                loadPolicy: .deferred
-            )
+        return SumiSurface.settingsSurfaceURL(
+            paneQuery: SettingsTabs.privacy.paneQueryValue,
+            extraQueryItems: extraQueryItems
         )
-        newTab.name = "Settings"
-        newTab.favicon = Image(systemName: SumiSurface.settingsTabFaviconSystemImageName)
-        newTab.faviconIsTemplateGlobePlaceholder = false
-        windowState.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     func duplicateCurrentTab() {

@@ -124,9 +124,11 @@ extension SpaceView {
             regularTabsDragSpacer
         }
         .onAppear {
+            cacheRegularTabsForRemovalAnimation(tabs)
             syncRegularRenderedTabsWithoutAnimation(to: tabs.map(\.id))
         }
         .onChange(of: tabs.map(\.id)) { oldValue, newValue in
+            cacheRegularTabsForRemovalAnimation(tabs)
             animateRegularRenderedTabsChange(from: oldValue, to: newValue)
         }
         .sidebarSectionGeometry(
@@ -164,15 +166,11 @@ extension SpaceView {
     }
 
     private var regularTabsListInner: some View {
-        Group {
-            if !tabs.isEmpty || regularTabsUsesProjectedDropLayout {
-                regularTabsContent
-            }
-        }
-        .animation(
-            isInteractive && dragState.shouldAnimateDropLayout ? SidebarDropMotion.gap : nil,
-            value: regularProjectedItems(currentTabs: tabs)
-        )
+        regularTabsContent
+            .animation(
+                isInteractive && dragState.shouldAnimateDropLayout ? SidebarDropMotion.gap : nil,
+                value: regularProjectedItems(currentTabs: tabs)
+            )
     }
 
     private var regularTabsContent: some View {
@@ -184,9 +182,14 @@ extension SpaceView {
         .contentShape(Rectangle())
     }
 
+    private var regularTabsUsesExpandedDragSpacer: Bool {
+        regularTabsRenderedRowCount == 0
+    }
+
     private var regularTabsDragSpacer: some View {
         Color.clear
-            .frame(height: tabs.isEmpty ? 48 : 24)
+            .frame(height: regularTabsUsesExpandedDragSpacer ? 48 : 24)
+            .animation(sidebarContentMutationAnimation, value: regularTabsUsesExpandedDragSpacer)
     }
 
     private func regularTabsView(currentTabs: [Tab]) -> some View {
@@ -233,14 +236,23 @@ extension SpaceView {
                         .zIndex(regularSplitGroupRowZIndex(group))
                     } else if groupedTabIds.contains(tabId) {
                         EmptyView()
-                    } else if let tab = tabById[tabId] {
-                        regularRenderedTabView(tab)
+                    } else if let tab = tabById[tabId]
+                        ?? regularTabRenderCache[tabId]
+                        ?? regularRemovalGapTabs[tabId] {
+                        if regularRemovalGapTabs[tabId] != nil {
+                            regularRemovalGap(tabId, tab: tab)
+                        } else {
+                            regularRenderedTabView(tab)
+                        }
                     }
                 case .gap(let gapId):
                     regularLayoutGap(gapId)
                 }
             }
         }
+        .animation(sidebarContentMutationAnimation, value: regularRenderedTabItems)
+        .animation(sidebarContentMutationAnimation, value: regularGapHeights)
+        .animation(sidebarContentMutationAnimation, value: regularDisappearingTabIds)
     }
 
     private func visibleSplitGroups(currentTabs: [Tab]) -> [SplitGroup] {
@@ -413,32 +425,17 @@ extension SpaceView {
             }
         }
 
-        let currentTabIds = currentTabs.map(\.id)
-        guard !regularRenderedTabItems.isEmpty else {
-            return currentTabIds.map(RegularTabRenderedItem.tab)
-        }
-
-        return regularRenderedTabItems.compactMap { item in
-            switch item {
-            case .tab(let tabId):
-                return currentTabIds.contains(tabId) ? item : nil
-            case .gap:
-                return item
-            }
-        }
+        return regularRenderedTabItems
     }
 
     @ViewBuilder
     private func regularRenderedTabView(_ tab: Tab) -> some View {
-        let isAppearing = regularAppearingTabIds.contains(tab.id)
+        let hidesContent = regularAppearingTabIds.contains(tab.id)
+            || regularDisappearingTabIds.contains(tab.id)
 
-        VStack(spacing: 0) {
-            regularTabView(tab)
-        }
-        .frame(height: isAppearing ? 0 : SidebarRowLayout.rowHeight, alignment: .top)
-        .clipped()
-        .sidebarRowInsertionReveal(isAppearing: isAppearing)
-        .zIndex(regularTabRowZIndex(tab))
+        regularTabView(tab)
+            .sidebarRowStagedInsertion(isRevealing: hidesContent)
+            .zIndex(regularTabRowZIndex(tab))
     }
 
     private func regularTabRowZIndex(_ tab: Tab) -> Double {
@@ -465,6 +462,33 @@ extension SpaceView {
             .accessibilityHidden(true)
     }
 
+    private func regularRemovalGap(_ tabId: UUID, tab: Tab) -> some View {
+        let height = regularGapHeights[tabId] ?? SidebarRowLayout.rowHeight
+        let hidesContent = regularDisappearingTabIds.contains(tabId)
+
+        return regularTabView(tab)
+            .opacity(
+                hidesContent
+                    ? SidebarRowInsertionMotionPolicy.hiddenOpacity
+                    : SidebarRowInsertionMotionPolicy.visibleOpacity
+            )
+            .frame(height: height, alignment: .top)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    private func cacheRegularTabsForRemovalAnimation(_ currentTabs: [Tab]) {
+        for tab in currentTabs {
+            regularTabRenderCache[tab.id] = tab
+        }
+    }
+
+    private func resolvedTabForRemovalAnimation(tabId: UUID) -> Tab? {
+        browserManager.tabManager.tab(for: tabId) ?? regularTabRenderCache[tabId]
+    }
+
     private func syncRegularRenderedTabsWithoutAnimation(to tabIds: [UUID]) {
         var transaction = Transaction()
         transaction.disablesAnimations = true
@@ -473,7 +497,8 @@ extension SpaceView {
             regularRenderedTabItems = tabIds.map(RegularTabRenderedItem.tab)
             regularGapHeights.removeAll()
             regularAppearingTabIds.removeAll()
-            regularDeferredRemovalGapIdsByTabId.removeAll()
+            regularDisappearingTabIds.removeAll()
+            regularRemovalGapTabs.removeAll()
             regularLayoutAnimationGeneration += 1
         }
     }
@@ -490,18 +515,18 @@ extension SpaceView {
             return
         }
 
-        if let removedId = oldIds.first(where: { !newIds.contains($0) }),
-           let removalIndex = oldIds.firstIndex(of: removedId) {
+        if let removedId = oldIds.first(where: { !newIds.contains($0) }) {
             if regularSplitSegmentRemovalIds.remove(removedId) != nil {
                 syncRegularRenderedTabsWithoutAnimation(to: newIds)
                 return
             }
-            if let gapId = regularDeferredRemovalGapIdsByTabId[removedId] {
-                completeDeferredRegularRemoval(removedId: removedId, gapId: gapId, newIds: newIds)
+            if regularRenderedTabItems.contains(where: { item in
+                if case .tab(let tabId) = item { return tabId == removedId }
+                return false
+            }) {
+                animateRegularRowRemoval(tabId: removedId, animation: animation)
                 return
             }
-            animateRegularRemoval(removalIndex: removalIndex, newIds: newIds, animation: animation)
-            return
         }
 
         withAnimation(animation) {
@@ -515,14 +540,11 @@ extension SpaceView {
         animation: Animation
     ) {
         let finalItems = newIds.map(RegularTabRenderedItem.tab)
-        let generation = regularLayoutAnimationGeneration + 1
 
         var transaction = Transaction()
         transaction.disablesAnimations = true
         transaction.animation = nil
         withTransaction(transaction) {
-            regularLayoutAnimationGeneration = generation
-            regularAppearingTabIds.removeAll()
             regularAppearingTabIds.formUnion(insertedIds)
         }
 
@@ -531,138 +553,62 @@ extension SpaceView {
         }
 
         DispatchQueue.main.async {
-            guard regularLayoutAnimationGeneration == generation else { return }
             withAnimation(animation) {
                 regularAppearingTabIds.subtract(insertedIds)
             }
         }
-
-        completeRegularInsertionAnimation(
-            generation: generation,
-            finalItems: finalItems,
-            insertedIds: insertedIds
-        )
     }
 
-    private func animateRegularRemoval(
-        removalIndex: Int,
-        newIds: [UUID],
-        animation: Animation
+    private func animateRegularRowRemoval(
+        tabId: UUID,
+        animation: Animation,
+        onComplete: (() -> Void)? = nil
     ) {
-        let gapId = UUID()
-        let finalItems = newIds.map(RegularTabRenderedItem.tab)
-        var stagedItems = finalItems
-        stagedItems.insert(.gap(gapId), at: min(removalIndex, stagedItems.count))
-        let generation = regularLayoutAnimationGeneration + 1
-
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        transaction.animation = nil
-        withTransaction(transaction) {
-            regularLayoutAnimationGeneration = generation
-            regularAppearingTabIds.removeAll()
-            regularRenderedTabItems = stagedItems
-            regularGapHeights[gapId] = SidebarRowLayout.rowHeight
-        }
-
-        DispatchQueue.main.async {
-            withAnimation(animation) {
-                regularGapHeights[gapId] = 0
-            }
-        }
-
-        completeRegularRemovalAnimation(generation: generation, finalItems: finalItems, gapId: gapId)
-    }
-
-    @discardableResult
-    private func animateRegularDeferredRemoval(_ tab: Tab, animation: Animation) -> Bool {
-        let currentIds = tabs.map(\.id)
-        guard currentIds.contains(tab.id) else {
+        guard regularRenderedTabItems.contains(where: { item in
+            if case .tab(let id) = item { return id == tabId }
             return false
+        }) else {
+            onComplete?()
+            return
         }
-        guard regularDeferredRemovalGapIdsByTabId[tab.id] == nil else {
-            return true
+        guard let tab = resolvedTabForRemovalAnimation(tabId: tabId) else {
+            onComplete?()
+            return
         }
 
-        let gapId = UUID()
-        let stagedItems = currentIds.map { tabId -> RegularTabRenderedItem in
-            tabId == tab.id ? .gap(gapId) : .tab(tabId)
-        }
         let generation = regularLayoutAnimationGeneration + 1
+        let finalItems = regularRenderedTabItems.compactMap { item -> RegularTabRenderedItem? in
+            if case .tab(let id) = item, id == tabId { return nil }
+            return item
+        }
 
         var transaction = Transaction()
         transaction.disablesAnimations = true
         transaction.animation = nil
         withTransaction(transaction) {
             regularLayoutAnimationGeneration = generation
-            regularAppearingTabIds.removeAll()
-            regularRenderedTabItems = stagedItems
-            regularGapHeights[gapId] = SidebarRowLayout.rowHeight
-            regularDeferredRemovalGapIdsByTabId[tab.id] = gapId
+            regularAppearingTabIds.remove(tabId)
+            regularRemovalGapTabs[tabId] = tab
+            regularGapHeights[tabId] = SidebarRowLayout.rowHeight
         }
 
-        DispatchQueue.main.async {
-            withAnimation(animation) {
-                regularGapHeights[gapId] = 0
-            }
+        withAnimation(animation) {
+            regularDisappearingTabIds.insert(tabId)
+            regularGapHeights[tabId] = 0
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + SidebarDropMotion.contentLayoutDuration) {
-            guard regularDeferredRemovalGapIdsByTabId[tab.id] == gapId else { return }
-            onCloseTab(tab)
-        }
-
-        return true
-    }
-
-    private func completeDeferredRegularRemoval(
-        removedId: UUID,
-        gapId: UUID,
-        newIds: [UUID]
-    ) {
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        transaction.animation = nil
-        withTransaction(transaction) {
-            regularRenderedTabItems = newIds.map(RegularTabRenderedItem.tab)
-            regularGapHeights.removeValue(forKey: gapId)
-            regularAppearingTabIds.removeAll()
-            regularDeferredRemovalGapIdsByTabId.removeValue(forKey: removedId)
-            regularLayoutAnimationGeneration += 1
-        }
-    }
-
-    private func completeRegularInsertionAnimation(
-        generation: Int,
-        finalItems: [RegularTabRenderedItem],
-        insertedIds: Set<UUID>
-    ) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + SidebarDropMotion.contentLayoutDuration) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + SidebarRowCollapseGapMotion.duration) {
             guard regularLayoutAnimationGeneration == generation else { return }
             var transaction = Transaction()
             transaction.disablesAnimations = true
             transaction.animation = nil
             withTransaction(transaction) {
                 regularRenderedTabItems = finalItems
-                regularAppearingTabIds.subtract(insertedIds)
+                regularGapHeights.removeValue(forKey: tabId)
+                regularRemovalGapTabs.removeValue(forKey: tabId)
+                regularDisappearingTabIds.remove(tabId)
             }
-        }
-    }
-
-    private func completeRegularRemovalAnimation(
-        generation: Int,
-        finalItems: [RegularTabRenderedItem],
-        gapId: UUID
-    ) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + SidebarDropMotion.contentLayoutDuration) {
-            guard regularLayoutAnimationGeneration == generation else { return }
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            transaction.animation = nil
-            withTransaction(transaction) {
-                regularRenderedTabItems = finalItems
-                regularGapHeights.removeValue(forKey: gapId)
-            }
+            onComplete?()
         }
     }
 
@@ -751,7 +697,7 @@ extension SpaceView {
             .frame(height: SidebarRowLayout.rowHeight)
             .frame(maxWidth: .infinity)
             .allowsHitTesting(false)
-            .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .center)))
+            .transition(.sidebarRowDropGap)
             .accessibilityHidden(true)
     }
 
@@ -788,11 +734,12 @@ extension SpaceView {
     }
 
     private func closeRegularTab(_ tab: Tab) {
-        if let animation = sidebarContentMutationAnimation {
-            if !animateRegularDeferredRemoval(tab, animation: animation) {
-                onCloseTab(tab)
-            }
-        } else {
+        guard let animation = sidebarContentMutationAnimation else {
+            onCloseTab(tab)
+            return
+        }
+
+        animateRegularRowRemoval(tabId: tab.id, animation: animation) {
             onCloseTab(tab)
         }
     }

@@ -94,22 +94,14 @@ extension BrowserManager {
 
     private func openHistoryTab(
         inResolvedWindow targetWindow: BrowserWindowState,
-        selecting _: HistoryRange
+        selecting range: HistoryRange
     ) {
-        let historyURL = SumiSurface.historySurfaceURL(rangeQuery: HistoryRange.all.paneQueryValue)
-        let newTab = openNewTab(
-            url: historyURL.absoluteString,
-            context: .foreground(
-                windowState: targetWindow,
-                preferredSpaceId: targetWindow.currentSpaceId,
-                loadPolicy: .deferred
-            )
+        openNativeBrowserSurface(
+            .history,
+            url: SumiSurface.historySurfaceURL(rangeQuery: range.paneQueryValue),
+            in: targetWindow,
+            preferredSpaceId: targetWindow.currentSpaceId
         )
-        newTab.name = "History"
-        newTab.favicon = Image(systemName: SumiSurface.historyTabFaviconSystemImageName)
-        newTab.faviconIsTemplateGlobePlaceholder = false
-        targetWindow.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     func openHistoryURLFromMenuItem(_ url: URL) {
