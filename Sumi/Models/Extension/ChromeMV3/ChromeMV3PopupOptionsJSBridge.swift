@@ -816,6 +816,11 @@ enum ChromeMV3PopupOptionsHostDiagnostics {
         if trimmed.hasPrefix("chrome-extension://") {
             return "extension:\(safeRelativePath(lastPathComponents(trimmed)))"
         }
+        if trimmed.hasPrefix("sumi-extension-page-diagnostic://") {
+            let path = URLComponents(string: trimmed)?.path ?? ""
+            let relativePath = String(path.drop(while: { $0 == "/" }))
+            return "diagnostic-extension:\(safeRelativePath(relativePath))"
+        }
         return safeRelativePath(trimmed)
     }
 
@@ -876,7 +881,7 @@ enum ChromeMV3PopupOptionsHostDiagnostics {
               trimmed.count <= 80,
               containsSensitiveFragment(trimmed) == false,
               trimmed.range(
-                  of: #"^[A-Za-z0-9._+/\-;=]+$"#,
+                  of: #"^[A-Za-z0-9._+/\-;= ]+$"#,
                   options: .regularExpression
               ) != nil
         else { return fallback }
@@ -892,9 +897,13 @@ enum ChromeMV3PopupOptionsHostDiagnostics {
         return safeRelativePath(String(path.dropFirst(rootPrefix.count)))
     }
 
-    private static func urlInsideRoot(_ url: URL?, rootURL: URL) -> Bool {
+    static func urlInsideRoot(_ url: URL?, rootURL: URL) -> Bool {
         guard let url, url.isFileURL else { return false }
         return pathIsInsideGeneratedRoot(url.path, rootURL: rootURL)
+    }
+
+    static func safeDiagnosticToken(_ value: String) -> String {
+        safeToken(value, fallback: "redacted")
     }
 
     private static func pathIsInsideGeneratedRoot(
@@ -6487,7 +6496,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
               return null;
             }
             const redactedURLs = string.replace(
-              /(?:file|https?|chrome-extension):\\/\\/[^\\s"'<>)]*/g,
+              /(?:file|https?|chrome-extension|sumi-extension-page-diagnostic):\\/\\/[^\\s"'<>)]*/g,
               (match) => {
                 const descriptor = debugSafeResourceDescriptor(match);
                 return descriptor ? "resource:" + descriptor : "resource:redacted";

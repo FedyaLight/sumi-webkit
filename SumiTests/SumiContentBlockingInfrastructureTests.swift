@@ -546,10 +546,22 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
     }
 
     func testNormalPageInterceptionIsNotRegisteredInSumiSources() throws {
-        let source = try Self.sumiSourceCorpus()
+        let source = try Self.sumiSourceCorpus(excluding: [
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift",
+        ])
+        let popupDiagnosticSource = try Self.source(
+            named: "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift"
+        )
 
         XCTAssertFalse(source.contains("setURLSchemeHandler("))
         XCTAssertFalse(source.contains("WKURLSchemeHandler"))
+        XCTAssertTrue(popupDiagnosticSource.contains("#if DEBUG"))
+        XCTAssertTrue(popupDiagnosticSource.contains("WKURLSchemeHandler"))
+        XCTAssertTrue(
+            popupDiagnosticSource.contains(
+                "sumi-extension-page-diagnostic"
+            )
+        )
     }
 
     private static func validRuleListDefinition() -> SumiContentRuleListDefinition {
@@ -600,7 +612,9 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 
-    private static func sumiSourceCorpus() throws -> String {
+    private static func sumiSourceCorpus(
+        excluding excludedRelativePaths: Set<String> = []
+    ) throws -> String {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -616,6 +630,14 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
             guard url.pathExtension == "swift" else { continue }
             let resourceValues = try url.resourceValues(forKeys: [.isRegularFileKey])
             guard resourceValues.isRegularFile == true else { continue }
+            let relativePath = String(
+                url.standardizedFileURL.path.dropFirst(
+                    repoRoot.standardizedFileURL.path.count + 1
+                )
+            )
+            guard excludedRelativePaths.contains(relativePath) == false else {
+                continue
+            }
             corpus += try String(contentsOf: url, encoding: .utf8)
             corpus += "\n"
         }

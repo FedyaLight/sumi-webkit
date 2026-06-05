@@ -736,6 +736,10 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
 
         let nativeHostWasRunning =
             bitwardenNativeHostRunningApplicationIdentifiers()
+        UserDefaults.standard.removeObject(
+            forKey: ExtensionManager
+                .controlledCompatibilityActionPopupDiagnosticSchemeDefaultsKey
+        )
         UserDefaults.standard.set(
             true,
             forKey: ExtensionManager
@@ -745,6 +749,10 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             UserDefaults.standard.removeObject(
                 forKey: ExtensionManager
                     .controlledCompatibilityActionPopupDefaultsKey
+            )
+            UserDefaults.standard.removeObject(
+                forKey: ExtensionManager
+                    .controlledCompatibilityActionPopupDiagnosticSchemeDefaultsKey
             )
         }
         XCTAssertTrue(
@@ -845,6 +853,177 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         print("SumiControlledBitwardenPopup nativeHostLaunched=false")
         for line in controlledBitwardenPopupSanitizedLogLines(snapshot) {
             print("SumiControlledBitwardenPopup \(line)")
+        }
+
+        _ = module.chromeMV3ClosePopupOptionsThroughManager(
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+    }
+
+    @MainActor
+    func testDebugControlledBitwardenURLHubActionPopupDiagnosticSchemeDiagnostics()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Controlled popup WKWebView diagnostics require macOS 15.5.")
+        }
+
+        let bitwardenRoot = URL(
+            fileURLWithPath:
+                "/Users/fedaefimov/Downloads/Aura/mv3-test-extensions/bitwarden",
+            isDirectory: true
+        )
+        try XCTSkipUnless(
+            FileManager.default.fileExists(
+                atPath: bitwardenRoot.appendingPathComponent("manifest.json").path
+            ),
+            "Local Bitwarden package is not available."
+        )
+
+        let nativeHostWasRunning =
+            bitwardenNativeHostRunningApplicationIdentifiers()
+        UserDefaults.standard.set(
+            true,
+            forKey: ExtensionManager
+                .controlledCompatibilityActionPopupDefaultsKey
+        )
+        UserDefaults.standard.set(
+            true,
+            forKey: ExtensionManager
+                .controlledCompatibilityActionPopupDiagnosticSchemeDefaultsKey
+        )
+        defer {
+            UserDefaults.standard.removeObject(
+                forKey: ExtensionManager
+                    .controlledCompatibilityActionPopupDefaultsKey
+            )
+            UserDefaults.standard.removeObject(
+                forKey: ExtensionManager
+                    .controlledCompatibilityActionPopupDiagnosticSchemeDefaultsKey
+            )
+        }
+        XCTAssertTrue(
+            RuntimeDiagnostics.debugDefaultBool(
+                forKey: ExtensionManager
+                    .controlledCompatibilityActionPopupDefaultsKey
+            )
+        )
+        XCTAssertTrue(
+            RuntimeDiagnostics.debugDefaultBool(
+                forKey: ExtensionManager
+                    .controlledCompatibilityActionPopupDiagnosticSchemeDefaultsKey
+            )
+        )
+
+        let root = try makeTemporaryDirectory()
+        let profileID = UUID()
+        let module = try makeModule(
+            enabled: true,
+            includesModelContext: true,
+            popupOptionsWebViewFactory: {
+                ChromeMV3ProductPopupOptionsWKWebViewFactory(
+                    loadingMode: .diagnosticCustomScheme
+                )
+            }
+        )
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: bitwardenRoot,
+            profileID: profileID.uuidString,
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+        XCTAssertTrue(install.succeeded)
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: record.extensionID
+        )
+
+        let currentTab = Tab(url: URL(string: "https://example.com/login")!)
+        currentTab.profileId = profileID
+        let installedAction = try XCTUnwrap(
+            module.surfaceStore.enabledExtensions.first {
+                $0.id == record.extensionID
+            }
+        )
+        let preflightLaunchRecord =
+            ChromeMV3ProductPopupOptionsLaunchPlanner
+            .controlledActionPopupLaunchRecord(
+                rootURL: ChromeMV3ExtensionManagerStoreLocation
+                    .defaultRootURL(),
+                profileID: profileID.uuidString,
+                installedExtension: installedAction,
+                managerGate: module.chromeMV3ExtensionManagerGate(),
+                moduleEnabled: true
+            )
+        let preflightSummary =
+            controlledBitwardenPopupPreflightSummary(
+                preflightLaunchRecord
+            )
+        print("SumiControlledBitwardenPopupDiagnosticScheme \(preflightSummary)")
+        let result = await module.openActionPopupFromURLHub(
+            extensionId: record.extensionID,
+            currentTab: currentTab
+        )
+
+        guard result.opened else {
+            XCTFail("\(result.message) \(preflightSummary)")
+            XCTAssertEqual(
+                bitwardenNativeHostRunningApplicationIdentifiers(),
+                nativeHostWasRunning,
+                "The controlled Bitwarden diagnostic scheme must not launch com.bitwarden.desktop."
+            )
+            return
+        }
+        XCTAssertNil(result.blocker)
+        XCTAssertNil(result.nativePopupBoundarySnapshot)
+        XCTAssertTrue(result.sanitizedBridgeSnapshotDiagnostics.contains {
+            $0.contains("DEBUG-only controlled custom-scheme diagnostic popup host")
+        })
+
+        let snapshot = try await waitForControlledBitwardenPopupBridgeSnapshot(
+            module: module,
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+        let domState = try await controlledBitwardenPopupDOMState(
+            module: module,
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+        let firstBlocker =
+            controlledBitwardenPopupFirstFatalBlocker(snapshot)
+        let tabsConnectFatal =
+            controlledBitwardenTabsConnectActuallyFatal(snapshot)
+        let customSchemeResourceEvents = snapshot.jsDebugRouteEvents.filter {
+            $0.apiName == "customScheme.resource"
+        }
+
+        XCTAssertFalse(customSchemeResourceEvents.isEmpty)
+        XCTAssertTrue(customSchemeResourceEvents.contains {
+            $0.diagnostics.contains(
+                "loadScheme=sumi-extension-page-diagnostic"
+            )
+        })
+        XCTAssertNotEqual(firstBlocker, "unknown")
+        XCTAssertEqual(
+            bitwardenNativeHostRunningApplicationIdentifiers(),
+            nativeHostWasRunning,
+            "The controlled Bitwarden diagnostic scheme must not launch com.bitwarden.desktop."
+        )
+
+        print("SumiControlledBitwardenPopupDiagnosticScheme reproducedControlledHost=true")
+        print("SumiControlledBitwardenPopupDiagnosticScheme domState=\(domState)")
+        print("SumiControlledBitwardenPopupDiagnosticScheme firstFatalBlocker=\(firstBlocker)")
+        print("SumiControlledBitwardenPopupDiagnosticScheme pendingCount=\(snapshot.pendingUnresolvedJSDebugRoutes.count)")
+        print("SumiControlledBitwardenPopupDiagnosticScheme routeEvents=\(snapshot.jsDebugRouteEvents.count)")
+        print("SumiControlledBitwardenPopupDiagnosticScheme customSchemeResourceEvents=\(customSchemeResourceEvents.count)")
+        print("SumiControlledBitwardenPopupDiagnosticScheme callRecords=\(snapshot.callRecords.count)")
+        print("SumiControlledBitwardenPopupDiagnosticScheme tabsConnectActuallyFatal=\(tabsConnectFatal)")
+        print("SumiControlledBitwardenPopupDiagnosticScheme nativeHostLaunched=false")
+        for line in controlledBitwardenPopupSanitizedLogLines(snapshot) {
+            print("SumiControlledBitwardenPopupDiagnosticScheme \(line)")
         }
 
         _ = module.chromeMV3ClosePopupOptionsThroughManager(
@@ -1599,6 +1778,17 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertTrue(
             moduleSource.contains(
                 "controlledCompatibilityActionPopupDefaultsKey"
+            )
+        )
+        XCTAssertTrue(
+            moduleSource.contains(
+                "controlledCompatibilityActionPopupDiagnosticSchemeDefaultsKey"
+            )
+        )
+        XCTAssertTrue(popupOptionsSource.contains("case diagnosticCustomScheme"))
+        XCTAssertTrue(
+            popupOptionsSource.contains(
+                "sumi-extension-page-diagnostic"
             )
         )
         XCTAssertTrue(

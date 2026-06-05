@@ -18,6 +18,18 @@ import AppKit
 import WebKit
 #endif
 
+enum ChromeMV3ProductPopupOptionsLoadingMode:
+    String,
+    Codable,
+    Equatable,
+    Sendable
+{
+    case fileBacked
+    #if DEBUG
+    case diagnosticCustomScheme
+    #endif
+}
+
 enum ChromeMV3ProductPopupOptionsSurface:
     String,
     Codable,
@@ -1854,13 +1866,22 @@ final class ChromeMV3ProductPopupOptionsHostController {
 final class ChromeMV3ProductPopupOptionsWKWebViewFactory:
     ChromeMV3PopupOptionsWebViewFactory
 {
+    private let loadingMode: ChromeMV3ProductPopupOptionsLoadingMode
+
+    init(
+        loadingMode: ChromeMV3ProductPopupOptionsLoadingMode = .fileBacked
+    ) {
+        self.loadingMode = loadingMode
+    }
+
     func createWebView(
         loadFileURL: URL,
         allowingReadAccessTo readAccessURL: URL
     ) throws -> ChromeMV3PopupOptionsWebViewHandle {
         ChromeMV3ProductPopupOptionsWKWebViewHandle(
             loadFileURL: loadFileURL,
-            readAccessURL: readAccessURL
+            readAccessURL: readAccessURL,
+            loadingMode: loadingMode
         )
     }
 
@@ -1928,6 +1949,7 @@ final class ChromeMV3ProductPopupOptionsWKWebViewFactory:
         ChromeMV3ProductPopupOptionsWKWebViewHandle(
             loadFileURL: loadFileURL,
             readAccessURL: readAccessURL,
+            loadingMode: loadingMode,
             bridgeInstallation: bridgeInstallation,
             contentScriptEndpointRegistry:
                 contentScriptEndpointRegistry,
@@ -1952,6 +1974,8 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
     #if DEBUG
     private var diagnosticsDelegate:
         ChromeMV3ProductPopupOptionsWKDiagnosticsDelegate?
+    private var diagnosticSchemeHandler:
+        ChromeMV3PopupOptionsDiagnosticURLSchemeHandler?
     #endif
     private(set) var installedUserScriptCount = 0
     private(set) var installedScriptMessageHandlerCount = 0
@@ -1963,14 +1987,29 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
     private var isTearingDown = false
     #endif
 
-    init(loadFileURL: URL, readAccessURL: URL) {
+    init(
+        loadFileURL: URL,
+        readAccessURL: URL,
+        loadingMode: ChromeMV3ProductPopupOptionsLoadingMode = .fileBacked
+    ) {
         self.messageHandlerName = nil
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
+        #if DEBUG
+        let diagnosticSchemeHandler = Self.installDiagnosticSchemeHandlerIfNeeded(
+            into: configuration,
+            loadingMode: loadingMode,
+            readAccessURL: readAccessURL,
+            bridgeHandler: nil
+        )
+        self.diagnosticSchemeHandler = diagnosticSchemeHandler
+        #endif
         let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.loadFileURL(
-            loadFileURL,
-            allowingReadAccessTo: readAccessURL
+        Self.load(
+            webView: webView,
+            loadFileURL: loadFileURL,
+            readAccessURL: readAccessURL,
+            loadingMode: loadingMode
         )
         self.webView = webView
     }
@@ -1978,6 +2017,7 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
     init(
         loadFileURL: URL,
         readAccessURL: URL,
+        loadingMode: ChromeMV3ProductPopupOptionsLoadingMode = .fileBacked,
         bridgeInstallation:
             ChromeMV3PopupOptionsJSBridgeInstallation,
         contentScriptEndpointRegistry:
@@ -2037,6 +2077,15 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
             self.bridgeHandler = nil
         }
         configuration.userContentController = userContentController
+        #if DEBUG
+        let diagnosticSchemeHandler = Self.installDiagnosticSchemeHandlerIfNeeded(
+            into: configuration,
+            loadingMode: loadingMode,
+            readAccessURL: readAccessURL,
+            bridgeHandler: bridgeHandler
+        )
+        self.diagnosticSchemeHandler = diagnosticSchemeHandler
+        #endif
         self.userContentController = userContentController
         self.messageHandlerName = messageHandlerName
         let webView = WKWebView(frame: .zero, configuration: configuration)
@@ -2054,9 +2103,11 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
             self.diagnosticsDelegate = nil
         }
         #endif
-        webView.loadFileURL(
-            loadFileURL,
-            allowingReadAccessTo: readAccessURL
+        Self.load(
+            webView: webView,
+            loadFileURL: loadFileURL,
+            readAccessURL: readAccessURL,
+            loadingMode: loadingMode
         )
         self.webView = webView
         #if canImport(AppKit)
@@ -2171,11 +2222,55 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         bridgeHandler = nil
         #if DEBUG
         diagnosticsDelegate = nil
+        diagnosticSchemeHandler = nil
         #endif
         userContentController = nil
         installedUserScriptCount = 0
         installedScriptMessageHandlerCount = 0
     }
+
+    private static func load(
+        webView: WKWebView,
+        loadFileURL: URL,
+        readAccessURL: URL,
+        loadingMode: ChromeMV3ProductPopupOptionsLoadingMode
+    ) {
+        #if DEBUG
+        if loadingMode == .diagnosticCustomScheme,
+           let url = ChromeMV3PopupOptionsDiagnosticURLSchemeHandler
+            .diagnosticURL(
+                forFileURL: loadFileURL,
+                rootURL: readAccessURL
+            )
+        {
+            webView.load(URLRequest(url: url))
+            return
+        }
+        #endif
+        webView.loadFileURL(
+            loadFileURL,
+            allowingReadAccessTo: readAccessURL
+        )
+    }
+
+    #if DEBUG
+    private static func installDiagnosticSchemeHandlerIfNeeded(
+        into configuration: WKWebViewConfiguration,
+        loadingMode: ChromeMV3ProductPopupOptionsLoadingMode,
+        readAccessURL: URL,
+        bridgeHandler: ChromeMV3PopupOptionsJSBridgeHandler?
+    ) -> ChromeMV3PopupOptionsDiagnosticURLSchemeHandler? {
+        guard loadingMode == .diagnosticCustomScheme else { return nil }
+        let scheme = ChromeMV3PopupOptionsDiagnosticURLSchemeHandler.scheme
+        guard WKWebView.handlesURLScheme(scheme) == false else { return nil }
+        let handler = ChromeMV3PopupOptionsDiagnosticURLSchemeHandler(
+            rootURL: readAccessURL,
+            bridgeHandler: bridgeHandler
+        )
+        configuration.setURLSchemeHandler(handler, forURLScheme: scheme)
+        return handler
+    }
+    #endif
 
     #if DEBUG
     private var loadWaiter:
@@ -2376,6 +2471,423 @@ private final class ChromeMV3ProductPopupOptionsWKDiagnosticsDelegate:
             return "unavailable"
         }
         return String(value)
+    }
+}
+
+@MainActor
+final class ChromeMV3PopupOptionsDiagnosticURLSchemeHandler:
+    NSObject,
+    WKURLSchemeHandler
+{
+    static let scheme = "sumi-extension-page-diagnostic"
+    private static let host = "extension"
+
+    private let rootURL: URL
+    private weak var bridgeHandler: ChromeMV3PopupOptionsJSBridgeHandler?
+    private let fileManager: FileManager
+    private var stoppedTasks: Set<ObjectIdentifier> = []
+
+    init(
+        rootURL: URL,
+        bridgeHandler: ChromeMV3PopupOptionsJSBridgeHandler?,
+        fileManager: FileManager = .default
+    ) {
+        self.rootURL = rootURL.standardizedFileURL
+        self.bridgeHandler = bridgeHandler
+        self.fileManager = fileManager
+        super.init()
+    }
+
+    static func diagnosticURL(
+        forFileURL fileURL: URL,
+        rootURL: URL
+    ) -> URL? {
+        let root = rootURL.standardizedFileURL.path
+        let file = fileURL.standardizedFileURL.path
+        let rootPrefix = root.hasSuffix("/") ? root : root + "/"
+        guard file.hasPrefix(rootPrefix) else { return nil }
+        let relativePath = String(file.dropFirst(rootPrefix.count))
+        return diagnosticURL(relativePath: relativePath)
+    }
+
+    static func diagnosticURL(relativePath: String) -> URL? {
+        switch ChromeMV3ExtensionPageResourcePath.normalize(relativePath) {
+        case .failure:
+            return nil
+        case .success(let normalizedPath):
+            var components = URLComponents()
+            components.scheme = scheme
+            components.host = host
+            components.path = "/" + normalizedPath
+            return components.url
+        }
+    }
+
+    func resolveForTesting(
+        _ url: URL?
+    ) -> ChromeMV3PopupOptionsDiagnosticURLSchemeResolution {
+        resolve(url)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        start urlSchemeTask: WKURLSchemeTask
+    ) {
+        _ = webView
+        let taskID = ObjectIdentifier(urlSchemeTask as AnyObject)
+        stoppedTasks.remove(taskID)
+        defer { stoppedTasks.remove(taskID) }
+
+        let resolution = resolve(urlSchemeTask.request.url)
+        switch resolution.status {
+        case .served:
+            guard let data = resolution.data,
+                  let mimeType = resolution.mimeType,
+                  isStopped(taskID) == false
+            else { return }
+            let response = URLResponse(
+                url: resolution.url
+                    ?? urlSchemeTask.request.url
+                    ?? Self.diagnosticURL(relativePath: resolution.relativePath)
+                    ?? URL(string: "\(Self.scheme)://\(Self.host)/")!,
+                mimeType: mimeType,
+                expectedContentLength: data.count,
+                textEncodingName:
+                    ChromeMV3PopupOptionsDiagnosticMIME.isText(mimeType)
+                        ? "utf-8"
+                        : nil
+            )
+            record(resolution: resolution)
+            guard isStopped(taskID) == false else { return }
+            urlSchemeTask.didReceive(response)
+            guard isStopped(taskID) == false else { return }
+            urlSchemeTask.didReceive(data)
+            guard isStopped(taskID) == false else { return }
+            urlSchemeTask.didFinish()
+        case .failed:
+            record(resolution: resolution)
+            guard isStopped(taskID) == false else { return }
+            urlSchemeTask.didFailWithError(
+                NSError(
+                    domain: "Sumi.ChromeMV3PopupDiagnosticScheme",
+                    code: resolution.errorCode,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            resolution.failureReason
+                                ?? "resource load failed",
+                    ]
+                )
+            )
+        }
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        stop urlSchemeTask: WKURLSchemeTask
+    ) {
+        _ = webView
+        stoppedTasks.insert(ObjectIdentifier(urlSchemeTask as AnyObject))
+    }
+
+    private func isStopped(_ taskID: ObjectIdentifier) -> Bool {
+        stoppedTasks.contains(taskID)
+    }
+
+    private func resolve(
+        _ url: URL?
+    ) -> ChromeMV3PopupOptionsDiagnosticURLSchemeResolution {
+        guard let url,
+              url.scheme?.lowercased() == Self.scheme
+        else {
+            return .failed(
+                url: url,
+                relativePath: "none",
+                reason: "diagnostic scheme request had an unsupported scheme",
+                code: 1
+            )
+        }
+        guard url.host == Self.host else {
+            return .failed(
+                url: url,
+                relativePath: "none",
+                reason: "diagnostic scheme request had an unsupported host",
+                code: 2
+            )
+        }
+
+        let requestPath = String(url.path.drop(while: { $0 == "/" }))
+        switch ChromeMV3ExtensionPageResourcePath.normalize(requestPath) {
+        case .failure(let reason):
+            return .failed(
+                url: url,
+                relativePath:
+                    ChromeMV3PopupOptionsHostDiagnostics.safeRelativePath(
+                        requestPath
+                    ),
+                reason: reason,
+                code: 3
+            )
+        case .success(let relativePath):
+            guard rootIsUsable() else {
+                return .failed(
+                    url: url,
+                    relativePath: relativePath,
+                    reason:
+                        "diagnostic scheme generated package root is missing or is a symlink",
+                    code: 4
+                )
+            }
+            guard let fileURL = ChromeMV3ExtensionPageResourcePath.resourceURL(
+                normalizedRelativePath: relativePath,
+                rootURL: rootURL
+            ) else {
+                return .failed(
+                    url: url,
+                    relativePath: relativePath,
+                    reason:
+                        "diagnostic scheme resource path escaped the generated package root",
+                    code: 5
+                )
+            }
+            guard resourcePathContainsNoSymlink(fileURL: fileURL) else {
+                return .failed(
+                    url: url,
+                    relativePath: relativePath,
+                    reason:
+                        "diagnostic scheme resource path contains a symlink",
+                    code: 6
+                )
+            }
+            guard fileExistsAndIsRegular(fileURL) else {
+                return .failed(
+                    url: url,
+                    relativePath: relativePath,
+                    reason: "diagnostic scheme resource is missing",
+                    code: 7
+                )
+            }
+            guard let mimeType =
+                    ChromeMV3PopupOptionsDiagnosticMIME.mimeType(
+                        for: fileURL.pathExtension
+                    )
+            else {
+                return .failed(
+                    url: url,
+                    relativePath: relativePath,
+                    reason:
+                        "diagnostic scheme resource MIME type is unsupported",
+                    code: 8
+                )
+            }
+            do {
+                let data = try Data(contentsOf: fileURL)
+                return .served(
+                    url: url,
+                    relativePath: relativePath,
+                    fileURL: fileURL,
+                    mimeType: mimeType,
+                    data: data
+                )
+            } catch {
+                return .failed(
+                    url: url,
+                    relativePath: relativePath,
+                    reason:
+                        "diagnostic scheme resource could not be read",
+                    code: 9
+                )
+            }
+        }
+    }
+
+    private func rootIsUsable() -> Bool {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(
+            atPath: rootURL.path,
+            isDirectory: &isDirectory
+        ), isDirectory.boolValue else {
+            return false
+        }
+        return isSymbolicLink(rootURL) == false
+    }
+
+    private func resourcePathContainsNoSymlink(fileURL: URL) -> Bool {
+        let rootPath = rootURL.standardizedFileURL.path
+        let filePath = fileURL.standardizedFileURL.path
+        let rootPrefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        guard filePath.hasPrefix(rootPrefix) else { return false }
+        let relativePath = String(filePath.dropFirst(rootPrefix.count))
+        var current = rootURL
+        for component in relativePath.split(separator: "/").map(String.init) {
+            current = current.appendingPathComponent(component)
+            if isSymbolicLink(current) {
+                return false
+            }
+        }
+        return true
+    }
+
+    private func fileExistsAndIsRegular(_ url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(
+            atPath: url.path,
+            isDirectory: &isDirectory
+        ), isDirectory.boolValue == false else {
+            return false
+        }
+        return isSymbolicLink(url) == false
+    }
+
+    private func isSymbolicLink(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isSymbolicLinkKey])
+            .isSymbolicLink) == true
+    }
+
+    private func record(
+        resolution: ChromeMV3PopupOptionsDiagnosticURLSchemeResolution
+    ) {
+        let served = resolution.status == .served
+        let insideReadAccessRoot = resolution.fileURL.map {
+            ChromeMV3PopupOptionsHostDiagnostics.urlInsideRoot(
+                $0,
+                rootURL: rootURL
+            )
+        } ?? false
+        var diagnostics = [
+            served
+                ? "Diagnostic custom scheme served a generated package resource."
+                : "Diagnostic custom scheme blocked a generated package resource.",
+            "loadScheme=\(Self.scheme)",
+            "resource=\(ChromeMV3PopupOptionsHostDiagnostics.safeRelativePath(resolution.relativePath))",
+            "urlShape=\(ChromeMV3PopupOptionsHostDiagnostics.safeURLShape(resolution.url?.absoluteString ?? ""))",
+            "insideReadAccessRoot=\(insideReadAccessRoot)",
+        ]
+        if let mimeType = resolution.mimeType {
+            diagnostics.append("mimeType=\(mimeType)")
+        }
+        let safeFailure = resolution.failureReason.map {
+            ChromeMV3PopupOptionsHostDiagnostics.safeDiagnosticToken($0)
+        }
+        if let reason = resolution.failureReason {
+            diagnostics.append(
+                "failure=\(ChromeMV3PopupOptionsHostDiagnostics.safeDiagnosticToken(reason))"
+            )
+        }
+        bridgeHandler?.recordHostDiagnosticEvent(
+            ChromeMV3PopupOptionsHostDiagnosticEvent(
+                eventKind: served ? "resourceLoaded" : "resourceLoadError",
+                apiName: "customScheme.resource",
+                targetContext: "resource",
+                safeMessageShapeClassification: "customSchemeResource",
+                resultClassifier:
+                    served ? "custom scheme resource served"
+                        : "custom scheme resource blocked",
+                firstMissingAPIOrPermissionOrLifecycleError:
+                    served ? nil : safeFailure,
+                diagnostics: diagnostics
+            )
+        )
+    }
+}
+
+struct ChromeMV3PopupOptionsDiagnosticURLSchemeResolution:
+    Equatable,
+    Sendable
+{
+    enum Status: String, Equatable, Sendable {
+        case served
+        case failed
+    }
+
+    var status: Status
+    var url: URL?
+    var relativePath: String
+    var fileURL: URL?
+    var mimeType: String?
+    var data: Data?
+    var failureReason: String?
+    var errorCode: Int
+
+    static func served(
+        url: URL,
+        relativePath: String,
+        fileURL: URL,
+        mimeType: String,
+        data: Data
+    ) -> ChromeMV3PopupOptionsDiagnosticURLSchemeResolution {
+        ChromeMV3PopupOptionsDiagnosticURLSchemeResolution(
+            status: .served,
+            url: url,
+            relativePath: relativePath,
+            fileURL: fileURL,
+            mimeType: mimeType,
+            data: data,
+            failureReason: nil,
+            errorCode: 0
+        )
+    }
+
+    static func failed(
+        url: URL?,
+        relativePath: String,
+        reason: String,
+        code: Int
+    ) -> ChromeMV3PopupOptionsDiagnosticURLSchemeResolution {
+        ChromeMV3PopupOptionsDiagnosticURLSchemeResolution(
+            status: .failed,
+            url: url,
+            relativePath: relativePath,
+            fileURL: nil,
+            mimeType: nil,
+            data: nil,
+            failureReason: reason,
+            errorCode: code
+        )
+    }
+}
+
+enum ChromeMV3PopupOptionsDiagnosticMIME {
+    static func mimeType(for pathExtension: String) -> String? {
+        switch pathExtension.lowercased() {
+        case "html", "htm":
+            return "text/html"
+        case "js", "mjs", "cjs":
+            return "text/javascript"
+        case "css":
+            return "text/css"
+        case "json", "map":
+            return "application/json"
+        case "png":
+            return "image/png"
+        case "jpg", "jpeg":
+            return "image/jpeg"
+        case "gif":
+            return "image/gif"
+        case "webp":
+            return "image/webp"
+        case "ico":
+            return "image/x-icon"
+        case "svg":
+            return "image/svg+xml"
+        case "woff":
+            return "font/woff"
+        case "woff2":
+            return "font/woff2"
+        case "ttf":
+            return "font/ttf"
+        case "otf":
+            return "font/otf"
+        case "eot":
+            return "application/vnd.ms-fontobject"
+        default:
+            return nil
+        }
+    }
+
+    static func isText(_ mimeType: String) -> Bool {
+        mimeType.hasPrefix("text/")
+            || mimeType == "application/json"
+            || mimeType == "image/svg+xml"
     }
 }
 #endif

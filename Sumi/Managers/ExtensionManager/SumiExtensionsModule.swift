@@ -164,7 +164,21 @@ final class SumiExtensionsModule {
         },
         chromeMV3PopupOptionsWebViewFactory:
             @escaping @MainActor () -> ChromeMV3PopupOptionsWebViewFactory = {
+                #if DEBUG
+                let loadingMode:
+                    ChromeMV3ProductPopupOptionsLoadingMode =
+                    RuntimeDiagnostics.debugDefaultBool(
+                        forKey: ExtensionManager
+                            .controlledCompatibilityActionPopupDiagnosticSchemeDefaultsKey
+                    )
+                        ? .diagnosticCustomScheme
+                        : .fileBacked
+                return ChromeMV3ProductPopupOptionsWKWebViewFactory(
+                    loadingMode: loadingMode
+                )
+                #else
                 ChromeMV3ProductPopupOptionsWKWebViewFactory()
+                #endif
             },
         surfaceStore: BrowserExtensionSurfaceStore? = nil
     ) {
@@ -4767,13 +4781,19 @@ final class SumiExtensionsModule {
                     "The controlled compatibility action popup host did not open: \(result.diagnostics.joined(separator: " "))"
             )
         }
+        let diagnosticSchemeEnabled = RuntimeDiagnostics.debugDefaultBool(
+            forKey: ExtensionManager
+                .controlledCompatibilityActionPopupDiagnosticSchemeDefaultsKey
+        )
         return .openedPopup(
             message:
                 "Extension action popup opened through Sumi's controlled MV3 compatibility host.",
             nativePopupBoundarySnapshot: nil,
             sanitizedBridgeSnapshot: nil,
             diagnostics: result.diagnostics + [
-                "URL-hub opened the extension action.default_popup through the controlled file-backed compatibility popup host.",
+                diagnosticSchemeEnabled
+                    ? "URL-hub opened the extension action.default_popup through the DEBUG-only controlled custom-scheme diagnostic popup host."
+                    : "URL-hub opened the extension action.default_popup through the controlled file-backed compatibility popup host.",
                 anchorView == nil
                     ? "No live URL-hub action tile anchor was available; the WebView was created without presenting an NSPopover."
                     : "Controlled compatibility popup was anchored to the URL-hub action tile.",

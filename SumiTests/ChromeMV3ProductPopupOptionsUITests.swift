@@ -1,6 +1,10 @@
 import Foundation
 import XCTest
 
+#if canImport(WebKit)
+import WebKit
+#endif
+
 @testable import Sumi
 
 @MainActor
@@ -239,6 +243,18 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
             "storage.local.clear"
         ))
+        XCTAssertFalse(launchRecord.apiSurface.allowedMethods.contains(
+            "storage.session.get"
+        ))
+        XCTAssertFalse(launchRecord.apiSurface.allowedMethods.contains(
+            "storage.sync.get"
+        ))
+        XCTAssertFalse(launchRecord.apiSurface.allowedMethods.contains(
+            "tabs.connect"
+        ))
+        XCTAssertFalse(launchRecord.apiSurface.allowedMethods.contains(
+            "runtime.sendNativeMessage"
+        ))
         XCTAssertFalse(launchRecord.apiSurface.blockedMethods.contains {
             $0.namespace == "storage" && $0.methodName == "local.*"
         })
@@ -311,6 +327,174 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         XCTAssertEqual(open.nativeHostLaunchAttempted, false)
         XCTAssertEqual(close.nativeHostLaunchAttempted, false)
     }
+
+    #if DEBUG
+    func testDiagnosticCustomSchemeMapsGeneratedPopupResourcesInsideRootOnly()
+        throws
+    {
+        let root = try makeTemporaryDirectory()
+        let popupDirectory = root.appendingPathComponent(
+            "popup",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: popupDirectory,
+            withIntermediateDirectories: true
+        )
+
+        let html = "<!doctype html><script src=\"main.js\"></script>"
+        let css = "body { margin: 0; }"
+        let json = #"{"appName":{"message":"Fixture"}}"#
+        let svg = #"<svg xmlns="http://www.w3.org/2000/svg"></svg>"#
+        let png = Data([0x89, 0x50, 0x4e, 0x47])
+        let font = Data([0x77, 0x4f, 0x46, 0x32])
+        try html.write(
+            to: popupDirectory.appendingPathComponent("index.html"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "globalThis.__fixture = true;".write(
+            to: popupDirectory.appendingPathComponent("main.js"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try css.write(
+            to: popupDirectory.appendingPathComponent("main.css"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try json.write(
+            to: root.appendingPathComponent("manifest.json"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try svg.write(
+            to: popupDirectory.appendingPathComponent("icon.svg"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try png.write(to: popupDirectory.appendingPathComponent("icon.png"))
+        try font.write(
+            to: popupDirectory.appendingPathComponent("font.woff2")
+        )
+
+        let handler = ChromeMV3PopupOptionsDiagnosticURLSchemeHandler(
+            rootURL: root,
+            bridgeHandler: nil
+        )
+        let pageURL = root.appendingPathComponent("popup/index.html")
+        let diagnosticURL = try XCTUnwrap(
+            ChromeMV3PopupOptionsDiagnosticURLSchemeHandler.diagnosticURL(
+                forFileURL: pageURL,
+                rootURL: root
+            )
+        )
+
+        XCTAssertEqual(diagnosticURL.scheme, "sumi-extension-page-diagnostic")
+        XCTAssertEqual(diagnosticURL.host, "extension")
+        XCTAssertEqual(diagnosticURL.path, "/popup/index.html")
+
+        let htmlResolution = handler.resolveForTesting(diagnosticURL)
+        XCTAssertEqual(htmlResolution.status, .served)
+        XCTAssertEqual(htmlResolution.relativePath, "popup/index.html")
+        XCTAssertEqual(htmlResolution.mimeType, "text/html")
+        XCTAssertEqual(htmlResolution.data, Data(html.utf8))
+        XCTAssertEqual(htmlResolution.fileURL?.standardizedFileURL, pageURL)
+
+        let cases: [(String, String)] = [
+            ("popup/main.js", "text/javascript"),
+            ("popup/main.css", "text/css"),
+            ("manifest.json", "application/json"),
+            ("popup/icon.png", "image/png"),
+            ("popup/icon.svg", "image/svg+xml"),
+            ("popup/font.woff2", "font/woff2"),
+        ]
+        for (relativePath, mimeType) in cases {
+            let url = try XCTUnwrap(
+                ChromeMV3PopupOptionsDiagnosticURLSchemeHandler
+                    .diagnosticURL(relativePath: relativePath)
+            )
+            let resolution = handler.resolveForTesting(url)
+            XCTAssertEqual(resolution.status, .served, relativePath)
+            XCTAssertEqual(resolution.relativePath, relativePath)
+            XCTAssertEqual(resolution.mimeType, mimeType)
+        }
+
+        XCTAssertNil(
+            ChromeMV3PopupOptionsDiagnosticURLSchemeHandler.diagnosticURL(
+                relativePath: "../manifest.json"
+            )
+        )
+        XCTAssertNil(
+            ChromeMV3PopupOptionsDiagnosticURLSchemeHandler.diagnosticURL(
+                forFileURL: FileManager.default.temporaryDirectory
+                    .appendingPathComponent("outside.html"),
+                rootURL: root
+            )
+        )
+
+        let missingURL = try XCTUnwrap(
+            ChromeMV3PopupOptionsDiagnosticURLSchemeHandler.diagnosticURL(
+                relativePath: "popup/missing.js"
+            )
+        )
+        let missingResolution = handler.resolveForTesting(missingURL)
+        XCTAssertEqual(missingResolution.status, .failed)
+        XCTAssertEqual(missingResolution.errorCode, 7)
+
+        let linkURL = popupDirectory.appendingPathComponent("link.js")
+        try FileManager.default.createSymbolicLink(
+            at: linkURL,
+            withDestinationURL: popupDirectory.appendingPathComponent("main.js")
+        )
+        let symlinkURL = try XCTUnwrap(
+            ChromeMV3PopupOptionsDiagnosticURLSchemeHandler.diagnosticURL(
+                relativePath: "popup/link.js"
+            )
+        )
+        let symlinkResolution = handler.resolveForTesting(symlinkURL)
+        XCTAssertEqual(symlinkResolution.status, .failed)
+        XCTAssertEqual(symlinkResolution.errorCode, 6)
+
+        #if canImport(WebKit)
+        XCTAssertFalse(
+            WKWebView.handlesURLScheme(
+                ChromeMV3PopupOptionsDiagnosticURLSchemeHandler.scheme
+            )
+        )
+        #endif
+    }
+
+    func testDiagnosticCustomSchemeMIMETypesAreNarrowAndExplicit() {
+        XCTAssertEqual(
+            ChromeMV3PopupOptionsDiagnosticMIME.mimeType(for: "html"),
+            "text/html"
+        )
+        XCTAssertEqual(
+            ChromeMV3PopupOptionsDiagnosticMIME.mimeType(for: "js"),
+            "text/javascript"
+        )
+        XCTAssertEqual(
+            ChromeMV3PopupOptionsDiagnosticMIME.mimeType(for: "css"),
+            "text/css"
+        )
+        XCTAssertEqual(
+            ChromeMV3PopupOptionsDiagnosticMIME.mimeType(for: "json"),
+            "application/json"
+        )
+        XCTAssertEqual(
+            ChromeMV3PopupOptionsDiagnosticMIME.mimeType(for: "svg"),
+            "image/svg+xml"
+        )
+        XCTAssertEqual(
+            ChromeMV3PopupOptionsDiagnosticMIME.mimeType(for: "woff2"),
+            "font/woff2"
+        )
+        XCTAssertNil(
+            ChromeMV3PopupOptionsDiagnosticMIME.mimeType(for: "wasm")
+        )
+    }
+    #endif
 
     func testDisabledExtensionBlocksPopupOpenWithoutWebView() throws {
         let fixture = try installFixture(
@@ -664,6 +848,26 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         XCTAssertTrue(
             bridgeSource.contains(
                 "popupOptionsJSBridgeDoesNotAttachProductContentScripts"
+            )
+        )
+        XCTAssertTrue(hostSource.contains("ChromeMV3ProductPopupOptionsLoadingMode"))
+        XCTAssertTrue(hostSource.contains("case diagnosticCustomScheme"))
+        XCTAssertTrue(hostSource.contains("#if DEBUG"))
+        XCTAssertTrue(hostSource.contains("WKURLSchemeHandler"))
+        XCTAssertTrue(hostSource.contains("setURLSchemeHandler"))
+        XCTAssertTrue(
+            hostSource.contains(
+                "sumi-extension-page-diagnostic"
+            )
+        )
+        XCTAssertTrue(
+            bridgeSource.contains(
+                "sumi-extension-page-diagnostic"
+            )
+        )
+        XCTAssertTrue(
+            moduleSource.contains(
+                "controlledCompatibilityActionPopupDiagnosticSchemeDefaultsKey"
             )
         )
     }
