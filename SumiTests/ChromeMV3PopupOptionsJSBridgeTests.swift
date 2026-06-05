@@ -249,6 +249,174 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(encoded.contains("com.bitwarden.desktop"))
     }
 
+    func testControlledRuntimeGetManifestReturnsGeneratedManifestCloneWithoutInternalMetadata()
+        throws
+    {
+        let manifest: ChromeMV3StorageValue = .object([
+            "manifest_version": .number(3),
+            "name": .string("__MSG_appName__"),
+            "version": .string("2026.1.0"),
+            "action": .object([
+                "default_popup": .string("popup/index.html"),
+            ]),
+            "permissions": .array([.string("storage"), .string("tabs")]),
+            "optional_permissions": .array([.string("nativeMessaging")]),
+            "host_permissions": .array([.string("https://example.com/*")]),
+            "background": .object([
+                "service_worker": .string("background.js"),
+                "type": .string("module"),
+            ]),
+            "content_scripts": .array([
+                .object([
+                    "matches": .array([.string("https://example.com/*")]),
+                    "js": .array([.string("content.js")]),
+                ]),
+            ]),
+            "web_accessible_resources": .array([
+                .object([
+                    "resources": .array([.string("images/icon.png")]),
+                    "matches": .array([.string("https://example.com/*")]),
+                ]),
+            ]),
+            "content_security_policy": .object([
+                "extension_pages": .string("script-src 'self'; object-src 'self'"),
+            ]),
+            "default_locale": .string("en"),
+            "browser_specific_settings": .object([
+                "gecko": .object(["id": .string("generic@example.test")]),
+            ]),
+            "generatedBundleRootPath": .string("/must/not/expose"),
+            "manifestSHA256": .string("must-not-expose"),
+            "diagnostics": .array([.string("must-not-expose")]),
+            "_sumi_internal": .object([
+                "profileRootPath": .string("/must/not/expose"),
+            ]),
+        ])
+        let runtimeManifest = try XCTUnwrap(
+            ChromeMV3PopupOptionsRuntimeManifestSnapshot
+                .fromManifestPayload(manifest)
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                runtimeManifest: runtimeManifest,
+                allowlist: .controlledActionPopupPolicy
+            )
+        )
+
+        let response = handler.handle(request(
+            namespace: "runtime",
+            methodName: "getManifest"
+        ))
+
+        XCTAssertTrue(response.succeeded)
+        XCTAssertFalse(response.nativeHostLaunchAttempted)
+        XCTAssertFalse(response.serviceWorkerWakeAttempted)
+        XCTAssertFalse(response.runtimeLoadable)
+        let object = try XCTUnwrap(objectValue(response.resultPayload))
+        XCTAssertEqual(numberValue(object["manifest_version"]), 3)
+        XCTAssertEqual(stringValue(object["name"]), "__MSG_appName__")
+        XCTAssertEqual(stringValue(object["version"]), "2026.1.0")
+        XCTAssertEqual(
+            stringValue(objectValue(object["action"])?["default_popup"]),
+            "popup/index.html"
+        )
+        XCTAssertEqual(
+            stringArrayValue(object["permissions"]),
+            ["storage", "tabs"]
+        )
+        XCTAssertEqual(
+            stringArrayValue(object["optional_permissions"]),
+            ["nativeMessaging"]
+        )
+        XCTAssertEqual(
+            stringArrayValue(object["host_permissions"]),
+            ["https://example.com/*"]
+        )
+        XCTAssertNotNil(object["background"])
+        XCTAssertNotNil(object["content_scripts"])
+        XCTAssertNotNil(object["web_accessible_resources"])
+        XCTAssertNotNil(object["content_security_policy"])
+        XCTAssertEqual(stringValue(object["default_locale"]), "en")
+        XCTAssertNotNil(object["browser_specific_settings"])
+        XCTAssertNil(object["generatedBundleRootPath"])
+        XCTAssertNil(object["manifestSHA256"])
+        XCTAssertNil(object["diagnostics"])
+        XCTAssertNil(object["_sumi_internal"])
+
+        let snapshot = handler.diagnosticsSnapshot
+        XCTAssertTrue(snapshot.observedMethods.contains("runtime.getManifest"))
+        XCTAssertTrue(snapshot.sanitizedBridgeRouteRecords.contains {
+            $0.apiName == "runtime.getManifest"
+                && $0.targetContext == "manifest"
+                && $0.resultClassifier == "manifestReturned"
+                && $0.safeMessageShapeClassification.contains("keyCount=")
+                && $0.diagnostics.contains("method=runtime.getManifest")
+                && $0.diagnostics.contains("manifestVersion=3")
+        })
+        let encoded = String(
+            data: try JSONEncoder().encode(snapshot),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertTrue(encoded.contains("safeTopLevelManifestFields="))
+        XCTAssertFalse(encoded.contains("/must/not/expose"))
+        XCTAssertFalse(encoded.contains("must-not-expose"))
+        XCTAssertFalse(encoded.contains("generatedBundleRootPath"))
+        XCTAssertFalse(encoded.contains("manifestSHA256"))
+        XCTAssertFalse(encoded.contains("profileRootPath"))
+        XCTAssertFalse(encoded.contains("full manifest JSON"))
+    }
+
+    func testControlledRuntimeGetManifestSourceGuardsStayScopedAndGeneric()
+        throws
+    {
+        let source = try String(
+            contentsOf: URL(
+                fileURLWithPath:
+                    #filePath
+            )
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent(
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3PopupOptionsJSBridge.swift"
+            ),
+            encoding: .utf8
+        )
+        let controlledPolicy =
+            ChromeMV3PopupOptionsAPIMethodPolicy.controlledActionPopupPolicy
+
+        XCTAssertTrue(
+            controlledPolicy.allowedMethods.contains("runtime.getManifest")
+        )
+        XCTAssertFalse(
+            controlledPolicy.allowedMethods.contains("storage.session.get")
+        )
+        XCTAssertFalse(
+            controlledPolicy.allowedMethods.contains("storage.sync.get")
+        )
+        XCTAssertFalse(
+            controlledPolicy.allowedMethods.contains("contextMenus.create")
+        )
+        XCTAssertFalse(
+            controlledPolicy.allowedMethods.contains("scripting.executeScript")
+        )
+        XCTAssertFalse(source.localizedCaseInsensitiveContains("bitwarden"))
+        XCTAssertFalse(source.localizedCaseInsensitiveContains("1password"))
+        XCTAssertFalse(source.localizedCaseInsensitiveContains("proton"))
+        XCTAssertFalse(
+            source.contains("com.bitwarden.desktop"),
+            "getManifest must not launch or name any native host."
+        )
+        XCTAssertTrue(
+            source.contains("runtime.getManifest source=generated-package-manifest-json.")
+        )
+        XCTAssertTrue(
+            source.contains("runtimeManifestTemplate")
+        )
+        XCTAssertTrue(
+            source.contains("deepCloneJSONCompatible(runtimeManifestTemplate)")
+        )
+    }
+
     @MainActor
     func testNativeActionPopupBoundaryPayloadShapeSanitizesSensitiveBodies()
         throws
@@ -1214,7 +1382,12 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             manifestPermissions: manifest.permissions,
             manifestOptionalPermissions: manifest.optionalPermissions,
             manifestHostPermissions: manifest.hostPermissions,
-            manifestOptionalHostPermissions: manifest.optionalHostPermissions
+            manifestOptionalHostPermissions: manifest.optionalHostPermissions,
+            runtimeManifest:
+                ChromeMV3PopupOptionsRuntimeManifestSnapshot
+                .fromGeneratedBundleRootPath(
+                    generated.generatedBundleRootURL.path
+                )
         )
         let installation = ChromeMV3PopupOptionsJSBridgeInstallation(
             configuration: config,
@@ -1253,6 +1426,15 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
                 !!globalThis.chrome
                 && !!chrome.runtime
                 && typeof chrome.runtime.sendMessage === "function",
+              hasChromeRuntimeGetManifest:
+                !!globalThis.chrome
+                && !!chrome.runtime
+                && typeof chrome.runtime.getManifest === "function",
+              manifestVersion:
+                chrome.runtime.getManifest().manifest_version,
+              manifestPopup:
+                chrome.runtime.getManifest().action
+                && chrome.runtime.getManifest().action.default_popup,
               hasBrowserRuntime:
                 !!globalThis.browser
                 && !!browser.runtime
@@ -1278,6 +1460,9 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(scriptSrcs.contains("../popup/main.js"))
         XCTAssertTrue(stylesheetHrefs.contains("../popup/main.css"))
         XCTAssertEqual(object["hasChromeRuntime"] as? Bool, true)
+        XCTAssertEqual(object["hasChromeRuntimeGetManifest"] as? Bool, true)
+        XCTAssertEqual(object["manifestVersion"] as? Int, 3)
+        XCTAssertEqual(object["manifestPopup"] as? String, "popup/index.html")
         XCTAssertEqual(object["hasBrowserRuntime"] as? Bool, true)
         XCTAssertEqual(object["hasChromeTabs"] as? Bool, true)
         XCTAssertEqual(handle.installedUserScriptCount, 1)
@@ -1288,6 +1473,14 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(snapshot.callRecords.allSatisfy {
             $0.nativeHostLaunchAttempted == false
         })
+        XCTAssertTrue(snapshot.observedMethods.contains("runtime.getManifest"))
+        let encodedSnapshot = String(
+            data: try JSONEncoder().encode(snapshot),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertFalse(encodedSnapshot.contains("getManifest is not a function"))
+        XCTAssertFalse(encodedSnapshot.contains(generated.generatedBundleRootURL.path))
+        XCTAssertFalse(encodedSnapshot.contains(packageRoot.path))
         #if canImport(AppKit)
         XCTAssertEqual(
             bitwardenNativeHostRunningApplicationIdentifiers(),
@@ -1309,9 +1502,28 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         <title>Popup Bridge</title>
         <main data-sumi-extension-page-fixture-marker="safe">Popup</main>
         """.write(to: htmlURL, atomically: true, encoding: .utf8)
+        let runtimeManifest = try XCTUnwrap(
+            ChromeMV3PopupOptionsRuntimeManifestSnapshot
+                .fromManifestPayload(.object([
+                    "manifest_version": .number(3),
+                    "name": .string("Generic Popup Bridge"),
+                    "version": .string("1.0.0"),
+                    "action": .object([
+                        "default_popup": .string("popup.html"),
+                    ]),
+                    "permissions": .array([
+                        .string("storage"),
+                        .string("tabs"),
+                    ]),
+                    "host_permissions": .array([
+                        .string("https://example.com/*"),
+                    ]),
+                ]))
+        )
         let config = configuration(
             manifestPermissions: ["tabs"],
-            manifestHostPermissions: ["https://example.com/*"]
+            manifestHostPermissions: ["https://example.com/*"],
+            runtimeManifest: runtimeManifest
         )
         let installation = ChromeMV3PopupOptionsJSBridgeInstallation(
             configuration: config,
@@ -1343,6 +1555,12 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             await chrome.storage.local.set({ alpha: "beta" });
             const stored = await chrome.storage.local.get("alpha");
             const tabs = await chrome.tabs.query({ active: true });
+            const firstManifest = chrome.runtime.getManifest();
+            const isManifestPromise =
+              !!firstManifest && typeof firstManifest.then === "function";
+            firstManifest.name = "mutated";
+            firstManifest.action.default_popup = "mutated.html";
+            const secondManifest = chrome.runtime.getManifest();
             let promiseRejected = false;
             try {
               await chrome.tabs.sendMessage(1, { ping: true });
@@ -1358,12 +1576,19 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
                 resolve();
               });
             });
+            await new Promise((resolve) => setTimeout(resolve, 60));
             return {
               hasChrome: !!chrome.runtime && !!browser.runtime,
               stored: stored.alpha,
               changeCount: changes.length,
               changeArea: changes[0] && changes[0].areaName,
               tabURL: tabs[0] && tabs[0].url,
+              hasGetManifest:
+                typeof chrome.runtime.getManifest === "function",
+              manifestVersion: secondManifest.manifest_version,
+              manifestName: secondManifest.name,
+              manifestPopup: secondManifest.action.default_popup,
+              isManifestPromise,
               promiseRejected,
               callbackLastError,
               lastErrorAfterCallback: chrome.runtime.lastError || null
@@ -1377,6 +1602,11 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertEqual(object["changeCount"] as? Int, 1)
         XCTAssertEqual(object["changeArea"] as? String, "local")
         XCTAssertEqual(object["tabURL"] as? String, "https://example.com/login")
+        XCTAssertEqual(object["hasGetManifest"] as? Bool, true)
+        XCTAssertEqual(object["manifestVersion"] as? Int, 3)
+        XCTAssertEqual(object["manifestName"] as? String, "Generic Popup Bridge")
+        XCTAssertEqual(object["manifestPopup"] as? String, "popup.html")
+        XCTAssertEqual(object["isManifestPromise"] as? Bool, false)
         XCTAssertEqual(object["promiseRejected"] as? Bool, true)
         XCTAssertTrue((object["callbackLastError"] as? String)?
             .contains("Receiving end") == true)
@@ -1384,8 +1614,12 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         let snapshot = try XCTUnwrap(
             handle.popupOptionsBridgeDiagnosticsSnapshot
         )
+        XCTAssertTrue(snapshot.observedMethods.contains("runtime.getManifest"))
         XCTAssertTrue(snapshot.observedMethods.contains("storage.local.set"))
         XCTAssertTrue(snapshot.observedMethods.contains("tabs.sendMessage"))
+        XCTAssertTrue(snapshot.callRecords.allSatisfy {
+            $0.nativeHostLaunchAttempted == false
+        })
     }
 
     @MainActor
@@ -1518,6 +1752,7 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         manifestOptionalPermissions: [String] = [],
         manifestHostPermissions: [String] = [],
         manifestOptionalHostPermissions: [String] = [],
+        runtimeManifest: ChromeMV3PopupOptionsRuntimeManifestSnapshot? = nil,
         activeTabGrants: [ChromeMV3ActiveTabGrant] = [],
         allowlist: ChromeMV3PopupOptionsAPIMethodPolicy = .defaultPolicy,
         storageLocalRootPath: String? = nil
@@ -1538,6 +1773,7 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             normalTabRuntimeBridgeAvailable: false,
             contentScriptAttachmentAvailableInProduct: false,
             runtimeLoadable: false,
+            runtimeManifest: runtimeManifest,
             manifestPermissions: manifestPermissions,
             manifestOptionalPermissions: manifestOptionalPermissions,
             manifestHostPermissions: manifestHostPermissions,

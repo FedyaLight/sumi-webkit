@@ -64,6 +64,7 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
             "permissions.request",
             "runtime.connect",
             "runtime.connectNative",
+            "runtime.getManifest",
             "runtime.getURL",
             "runtime.lastError",
             "runtime.nativePort.disconnect",
@@ -214,6 +215,7 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
             ],
             allowedMethods: [
                 "runtime.connect",
+                "runtime.getManifest",
                 "runtime.getURL",
                 "runtime.lastError",
                 "runtime.port.disconnect",
@@ -367,6 +369,158 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
     }
 }
 
+struct ChromeMV3PopupOptionsRuntimeManifestSnapshot:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var manifestPayload: ChromeMV3StorageValue
+    var topLevelKeyCount: Int
+    var safeTopLevelFieldNames: [String]
+    var manifestVersion: Int?
+    var diagnostics: [String]
+
+    static func fromGeneratedBundleRootPath(
+        _ rootPath: String?
+    ) -> ChromeMV3PopupOptionsRuntimeManifestSnapshot? {
+        guard let rootPath, rootPath.isEmpty == false else { return nil }
+        let manifestURL = URL(fileURLWithPath: rootPath, isDirectory: true)
+            .appendingPathComponent("manifest.json")
+        guard let data = try? Data(contentsOf: manifestURL) else {
+            return nil
+        }
+        return fromManifestData(data)
+    }
+
+    static func fromManifestData(
+        _ data: Data
+    ) -> ChromeMV3PopupOptionsRuntimeManifestSnapshot? {
+        guard let decoded = try? JSONDecoder().decode(
+            ChromeMV3StorageValue.self,
+            from: data
+        ) else { return nil }
+        return fromManifestPayload(decoded)
+    }
+
+    static func fromManifestPayload(
+        _ payload: ChromeMV3StorageValue
+    ) -> ChromeMV3PopupOptionsRuntimeManifestSnapshot? {
+        let sanitized = sanitizedManifestValue(payload)
+        guard case .object(let object) = sanitized else { return nil }
+        let fieldNames = safeTopLevelManifestFieldNames(object.keys)
+        let manifestVersion = manifestVersionValue(object["manifest_version"])
+        return ChromeMV3PopupOptionsRuntimeManifestSnapshot(
+            manifestPayload: sanitized,
+            topLevelKeyCount: object.count,
+            safeTopLevelFieldNames: fieldNames,
+            manifestVersion: manifestVersion,
+            diagnostics:
+                uniqueSortedPopupOptionsBridge([
+                    "method=runtime.getManifest",
+                    "topLevelManifestKeyCount=\(object.count)",
+                    "safeTopLevelManifestFields=\(fieldNames.joined(separator: ","))",
+                    "manifestVersion=\(manifestVersion.map(String.init) ?? "unknown")",
+                    "succeeded=true",
+                    "resultClassifier=manifestReturned",
+                    "runtime.getManifest source=generated-package-manifest-json.",
+                    "runtime.getManifest diagnostics omit manifest body and host filesystem paths.",
+                ])
+        )
+    }
+
+    private static func sanitizedManifestValue(
+        _ value: ChromeMV3StorageValue
+    ) -> ChromeMV3StorageValue {
+        switch value {
+        case .array(let values):
+            return .array(values.map(sanitizedManifestValue))
+        case .object(let object):
+            return .object(sanitizedManifestObject(object))
+        case .bool, .null, .number, .string:
+            return value
+        }
+    }
+
+    private static func sanitizedManifestObject(
+        _ object: [String: ChromeMV3StorageValue]
+    ) -> [String: ChromeMV3StorageValue] {
+        object.reduce(into: [:]) { result, entry in
+            guard isManifestKeyExposable(entry.key) else { return }
+            result[entry.key] = sanitizedManifestValue(entry.value)
+        }
+    }
+
+    private static func isManifestKeyExposable(_ key: String) -> Bool {
+        let lower = key.lowercased()
+        let blockedExact: Set<String> = [
+            "diagnostics",
+            "generatedbundlerootpath",
+            "generatedmanifestpath",
+            "generatedmanifestsha256",
+            "generatedmetadatapath",
+            "generatedresourcepath",
+            "generatedrewrittenbundlepath",
+            "generatorversion",
+            "manifestrewritedryrundirectorypath",
+            "manifestrewritedryrunreportpath",
+            "manifestrewritepreviewpath",
+            "manifestsha256",
+            "managerstorerootpath",
+            "originalbundlepath",
+            "originalbundlerootpath",
+            "profileid",
+            "profilerootpath",
+            "runtimeresourceplanpath",
+            "sourcesha256",
+            "storagelocalrootpath",
+            "truststate",
+        ]
+        guard blockedExact.contains(lower) == false else { return false }
+        return lower.hasPrefix("_sumi") == false
+            && lower.hasPrefix("sumi_") == false
+    }
+
+    private static func safeTopLevelManifestFieldNames(
+        _ keys: Dictionary<String, ChromeMV3StorageValue>.Keys
+    ) -> [String] {
+        keys
+            .filter { key in
+                key.range(
+                    of: #"^[A-Za-z0-9_.:-]{1,80}$"#,
+                    options: .regularExpression
+                ) != nil && containsSensitiveManifestFragment(key) == false
+            }
+            .sorted()
+    }
+
+    private static func containsSensitiveManifestFragment(
+        _ value: String
+    ) -> Bool {
+        let lower = value.lowercased()
+        return [
+            "cookie",
+            "credential",
+            "password",
+            "secret",
+            "sessionid",
+            "token",
+            "vault",
+        ].contains { lower.contains($0) }
+    }
+
+    private static func manifestVersionValue(
+        _ value: ChromeMV3StorageValue?
+    ) -> Int? {
+        guard case .number(let number)? = value,
+              number.isFinite,
+              number.rounded() == number,
+              number >= 0,
+              number <= Double(Int.max)
+        else { return nil }
+        return Int(number)
+    }
+}
+
 struct ChromeMV3PopupOptionsJSBridgeConfiguration:
     Codable,
     Equatable,
@@ -397,6 +551,7 @@ struct ChromeMV3PopupOptionsJSBridgeConfiguration:
     var normalTabRuntimeBridgeAvailable: Bool
     var contentScriptAttachmentAvailableInProduct: Bool
     var runtimeLoadable: Bool
+    var runtimeManifest: ChromeMV3PopupOptionsRuntimeManifestSnapshot? = nil
     var manifestPermissions: [String]
     var manifestOptionalPermissions: [String]
     var manifestHostPermissions: [String]
@@ -462,6 +617,11 @@ struct ChromeMV3PopupOptionsJSBridgeConfiguration:
             normalTabRuntimeBridgeAvailable: false,
             contentScriptAttachmentAvailableInProduct: false,
             runtimeLoadable: false,
+            runtimeManifest:
+                ChromeMV3PopupOptionsRuntimeManifestSnapshot
+                .fromGeneratedBundleRootPath(
+                    launchRecord.generatedRewrittenBundlePath
+                ),
             manifestPermissions:
                 uniqueSortedPopupOptionsBridge(
                     launchRecord.manifestPermissions
@@ -1744,6 +1904,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         "console",
         "csp",
         "host",
+        "manifest",
         "nativeApplication",
         "nativeApplicationPort",
         "navigation",
@@ -1840,6 +2001,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             return runtimeSendMessage(request)
         case ("runtime", "connect"):
             return runtimeConnect(request)
+        case ("runtime", "getManifest"):
+            return runtimeGetManifest(request)
         case ("runtime", "getURL"):
             return runtimeGetURL(request)
         case ("runtime", "port.postMessage"):
@@ -2634,6 +2797,48 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             diagnostics: [
                 "runtime.getURL returned a deterministic chrome-extension URL string for the extension-owned page.",
             ]
+        )
+    }
+
+    private func runtimeGetManifest(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        guard request.arguments.isEmpty else {
+            return invalidArguments(
+                request,
+                "runtime.getManifest does not accept arguments."
+            )
+        }
+        guard let runtimeManifest = configuration.runtimeManifest else {
+            return response(
+                request: request,
+                succeeded: false,
+                lastErrorMessage:
+                    "Chrome MV3 generated manifest snapshot is unavailable for this popup/options page.",
+                lastErrorCode:
+                    ChromeMV3JSBridgeErrorCode.contextNotLoaded.rawValue,
+                diagnostics: [
+                    "method=runtime.getManifest",
+                    "topLevelManifestKeyCount=0",
+                    "safeTopLevelManifestFields=",
+                    "manifestVersion=unknown",
+                    "succeeded=false",
+                    "resultClassifier=manifestUnavailable",
+                    "runtime.getManifest did not fabricate a manifest when the generated-package manifest snapshot was unavailable.",
+                    "runtime.getManifest diagnostics omit manifest body and host filesystem paths.",
+                ]
+            )
+        }
+        return response(
+            request: request,
+            succeeded: true,
+            payload: runtimeManifest.manifestPayload,
+            diagnostics:
+                runtimeManifest.diagnostics
+                + [
+                    "runtime.getManifest returned a generated-package manifest payload for this extension-owned page.",
+                    "runtime.getManifest did not wake service workers or launch native hosts.",
+                ]
         )
     }
 
@@ -4582,6 +4787,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         [
             "runtime.sendMessage",
             "runtime.connect",
+            "runtime.getManifest",
             "runtime.port.postMessage",
             "runtime.port.disconnect",
             "tabs.query",
@@ -4617,6 +4823,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
              ("storage", "local.getBytesInUse"), ("storage", "local.remove"),
              ("storage", "local.set"):
             return "storage.local"
+        case ("runtime", "getManifest"):
+            return "manifest"
         case ("runtime", "sendMessage"), ("runtime", "connect"),
              ("runtime", "port.postMessage"), ("runtime", "port.disconnect"):
             return "serviceWorker"
@@ -5339,6 +5547,10 @@ enum ChromeMV3PopupOptionsJSShimSource {
             "surfaceID": configuration.surfaceID,
             "sourceContext": configuration.sourceContext.rawValue,
             "extensionBaseURLString": configuration.extensionBaseURLString,
+            "runtimeManifest":
+                configuration.runtimeManifest?.manifestPayload
+                .popupOptionsBridgeFoundationObject ?? NSNull(),
+            "runtimeManifestAvailable": configuration.runtimeManifest != nil,
             "bridgeMessageHandlerName": bridgeMessageHandlerName,
         ])
         #if DEBUG
@@ -5442,6 +5654,30 @@ enum ChromeMV3PopupOptionsJSShimSource {
             }
             return JSON.parse(JSON.stringify(value));
           }
+
+          function deepCloneJSONCompatible(value) {
+            return JSON.parse(JSON.stringify(value));
+          }
+
+          function deepFreezeJSONCompatible(value) {
+            if (!value || typeof value !== "object" || Object.isFrozen(value)) {
+              return value;
+            }
+            Object.keys(value).forEach((key) => {
+              deepFreezeJSONCompatible(value[key]);
+            });
+            return Object.freeze(value);
+          }
+
+          const runtimeManifestTemplate =
+            config.runtimeManifestAvailable
+              && config.runtimeManifest
+              && typeof config.runtimeManifest === "object"
+              && !Array.isArray(config.runtimeManifest)
+                ? deepFreezeJSONCompatible(
+                    deepCloneJSONCompatible(config.runtimeManifest)
+                  )
+                : null;
 
           function invokeCallback(callback, message, args) {
             lastErrorValue = message ? { message } : undefined;
@@ -5938,6 +6174,27 @@ enum ChromeMV3PopupOptionsJSShimSource {
             enumerable: true
           });
 
+          Object.defineProperty(runtime, "getManifest", {
+            value() {
+              bridgePost(
+                "runtime",
+                "getManifest",
+                "fireAndForget",
+                []
+              ).catch(() => {});
+              if (!runtimeManifestTemplate) {
+                debugRuntimeGetManifest(null, false);
+                throw new Error(
+                  "Chrome MV3 generated manifest snapshot is unavailable."
+                );
+              }
+              const manifest = deepCloneJSONCompatible(runtimeManifestTemplate);
+              debugRuntimeGetManifest(manifest, true);
+              return manifest;
+            },
+            enumerable: true
+          });
+
           Object.defineProperty(runtime, "sendMessage", {
             value() {
               const rawArgs = Array.prototype.slice.call(arguments);
@@ -6254,6 +6511,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
           function debugPromiseRejected(namespace, methodName, message) {}
           function debugMissingAPI(apiName, resultClassifier, targetContext) {}
           function debugPortEvent(eventKind, record) {}
+          function debugRuntimeGetManifest(manifest, succeeded) {}
         """
     }
 
@@ -6382,6 +6640,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
             if (namespace === "runtime" && methodName === "connect") {
               return "serviceWorker";
             }
+            if (namespace === "runtime" && methodName === "getManifest") {
+              return "manifest";
+            }
             if (namespace === "runtime" && methodName.indexOf("port.") === 0) {
               return "serviceWorker";
             }
@@ -6444,6 +6705,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 return "service worker not waking";
               }
               return response && response.succeeded ? "listenerRespondedSync" : "service worker not waking";
+            }
+            if (namespace === "runtime" && methodName === "getManifest") {
+              return response && response.succeeded ? "manifestReturned" : "manifestUnavailable";
             }
             if (namespace === "runtime" && methodName === "port.postMessage") {
               return response && response.succeeded ? "Port response delivered" : "Port message not delivered";
@@ -6813,6 +7077,52 @@ enum ChromeMV3PopupOptionsJSShimSource {
             });
           }
 
+          function debugSafeManifestFieldNames(manifest) {
+            if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+              return [];
+            }
+            return Object.keys(manifest)
+              .filter((key) => /^[A-Za-z0-9_.:-]{1,80}$/.test(key))
+              .filter((key) => !debugIsSensitiveName(key))
+              .sort();
+          }
+
+          function debugRuntimeGetManifest(manifest, succeeded) {
+            const safeFields = debugSafeManifestFieldNames(manifest);
+            const manifestVersion =
+              manifest
+              && typeof manifest.manifest_version === "number"
+              && Number.isFinite(manifest.manifest_version)
+                ? Math.round(manifest.manifest_version)
+                : null;
+            const keyCount =
+              manifest && typeof manifest === "object" && !Array.isArray(manifest)
+                ? Object.keys(manifest).length
+                : 0;
+            debugRecord("bridgeCallResolved", {
+              apiName: "runtime.getManifest",
+              targetContext: "manifest",
+              resultClassifier:
+                succeeded ? "manifestReturned" : "manifestUnavailable",
+              safeMessageShapeClassification:
+                succeeded
+                  ? "object:keyCount=" + String(keyCount)
+                  : "manifestUnavailable",
+              diagnostics: [
+                "method=runtime.getManifest",
+                "topLevelManifestKeyCount=" + String(keyCount),
+                "safeTopLevelManifestFields=" + safeFields.join(","),
+                "manifestVersion=" + (
+                  manifestVersion === null
+                    ? "unknown"
+                    : String(manifestVersion)
+                ),
+                "succeeded=" + (succeeded ? "true" : "false"),
+                "runtime.getManifest JS diagnostics omit manifest body and host filesystem paths."
+              ]
+            });
+          }
+
           function debugPortEvent(eventKind, record) {
             debugRecord(eventKind, Object.assign({
               targetContext: "serviceWorker",
@@ -7026,7 +7336,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
     }
     #endif
 
-    private static func jsonString(_ object: [String: String]) -> String {
+    private static func jsonString(_ object: [String: Any]) -> String {
         let data = (try? JSONSerialization.data(
             withJSONObject: object,
             options: [.sortedKeys]
