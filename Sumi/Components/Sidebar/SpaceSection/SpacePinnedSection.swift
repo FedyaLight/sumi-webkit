@@ -372,7 +372,7 @@ extension SpaceView {
         )
         .animation(sidebarContentMutationAnimation, value: spacePinnedItems)
         .animation(sidebarContentMutationAnimation, value: shortcutRestoreGaps)
-        .animation(sidebarContentMutationAnimation, value: shortcutRestoreGapHeights.map { "\($0.key.uuidString):\($0.value)" }.sorted())
+        .animation(sidebarContentMutationAnimation, value: shortcutRestoreAppearingGapIds)
         .padding(.bottom, 8) // Add padding to act as drag tail for spacePinned
     }
 
@@ -441,7 +441,7 @@ extension SpaceView {
     }
 
     private func shortcutRestoreGap(_ gapId: UUID) -> some View {
-        let height = shortcutRestoreGapHeights[gapId] ?? 0
+        let isAppearing = shortcutRestoreAppearingGapIds.contains(gapId)
         return ZStack(alignment: .topLeading) {
             if let gap = shortcutRestoreGaps.first(where: { $0.id == gapId }),
                let pin = browserManager.tabManager.shortcutPin(by: gap.pinId) {
@@ -449,12 +449,22 @@ extension SpaceView {
                     .frame(height: SidebarRowLayout.rowHeight, alignment: .top)
             }
         }
-        .frame(height: height, alignment: .top)
+        .frame(height: SidebarRowLayout.rowHeight, alignment: .top)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .opacity(isAppearing
+            ? SidebarRowInsertionMotionPolicy.initialOpacity
+            : SidebarRowInsertionMotionPolicy.finalOpacity
+        )
+        .scaleEffect(
+            isAppearing
+                ? SidebarRowInsertionMotionPolicy.initialScale
+                : SidebarRowInsertionMotionPolicy.finalScale,
+            anchor: .center
+        )
+        .transition(.identity)
         .clipped()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .animation(sidebarContentMutationAnimation, value: height)
     }
 
     private var pinnedRevealStrip: some View {
@@ -484,7 +494,7 @@ extension SpaceView {
             childFoldersByParentId: launcherProjection?.childFolders ?? [:],
             folderPinsByFolderId: launcherProjection?.folderPins ?? [:],
             shortcutRestoreGaps: $shortcutRestoreGaps,
-            shortcutRestoreGapHeights: $shortcutRestoreGapHeights,
+            shortcutRestoreAppearingGapIds: $shortcutRestoreAppearingGapIds,
             renderMode: renderMode,
             parentFolderId: nil,
             containerIndex: topLevelPinnedIndex,

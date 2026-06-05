@@ -1126,18 +1126,21 @@ class BrowserManager: ObservableObject {
         let windowState: BrowserWindowState?
         let sourceTab: Tab?
         let preferredSpaceId: UUID?
+        let regularInsertionIndex: Int?
         let activationPolicy: TabOpenActivationPolicy
 
         static func foreground(
             windowState: BrowserWindowState,
             sourceTab: Tab? = nil,
             preferredSpaceId: UUID? = nil,
+            regularInsertionIndex: Int? = nil,
             loadPolicy: TabSelectionLoadPolicy = .deferred
         ) -> TabOpenContext {
             TabOpenContext(
                 windowState: windowState,
                 sourceTab: sourceTab,
                 preferredSpaceId: preferredSpaceId,
+                regularInsertionIndex: regularInsertionIndex,
                 activationPolicy: .foreground(windowState: windowState, loadPolicy: loadPolicy)
             )
         }
@@ -1145,12 +1148,14 @@ class BrowserManager: ObservableObject {
         static func background(
             windowState: BrowserWindowState? = nil,
             sourceTab: Tab? = nil,
-            preferredSpaceId: UUID? = nil
+            preferredSpaceId: UUID? = nil,
+            regularInsertionIndex: Int? = nil
         ) -> TabOpenContext {
             TabOpenContext(
                 windowState: windowState,
                 sourceTab: sourceTab,
                 preferredSpaceId: preferredSpaceId,
+                regularInsertionIndex: regularInsertionIndex,
                 activationPolicy: .background
             )
         }
@@ -1245,10 +1250,16 @@ class BrowserManager: ObservableObject {
 
         let targetSpace = resolvedTabOpenSpace(for: context)
         let shouldActivateInTabManager = false
+        let regularInsertionIndex = context.regularInsertionIndex
+            ?? tabManager.regularChildInsertionIndex(
+                openedFrom: context.sourceTab,
+                in: targetSpace
+            )
         let newTab = tabManager.createNewTab(
             url: url,
             in: targetSpace,
-            activate: shouldActivateInTabManager
+            activate: shouldActivateInTabManager,
+            regularInsertionIndex: regularInsertionIndex
         )
 
         switch context.activationPolicy {
@@ -1479,8 +1490,10 @@ class BrowserManager: ObservableObject {
             }
             ?? tab.spaceId.flatMap { id in tabManager.spaces.first(where: { $0.id == id }) }
             ?? tabManager.currentSpace
-        let currentTabIndex = tabManager.tabs.firstIndex(where: { $0.id == tab.id }) ?? 0
-        let insertIndex = currentTabIndex + 1
+        let insertIndex = tabManager.regularChildInsertionIndex(
+            openedFrom: tab,
+            in: targetSpace
+        )
 
         let newTab = Tab(
             url: tab.url,
@@ -1494,10 +1507,7 @@ class BrowserManager: ObservableObject {
         newTab.faviconIsTemplateGlobePlaceholder = tab.faviconIsTemplateGlobePlaceholder
         newTab.profileId = tab.profileId
 
-        tabManager.addTab(newTab)
-        if let spaceId = targetSpace?.id {
-            tabManager.reorderRegularTabs(newTab, in: spaceId, to: insertIndex)
-        }
+        tabManager.addTab(newTab, regularInsertionIndex: insertIndex)
         selectTab(newTab, in: windowState)
     }
 

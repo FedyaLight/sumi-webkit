@@ -44,11 +44,11 @@ struct SpaceView: View {
     @State var isNewTabHovered = false
     @State var regularRenderedTabItems: [RegularTabRenderedItem] = []
     @State var regularGapHeights: [UUID: CGFloat] = [:]
-    @State var regularInsertedTabHeights: [UUID: CGFloat] = [:]
+    @State var regularAppearingTabIds = Set<UUID>()
     @State var regularDeferredRemovalGapIdsByTabId: [UUID: UUID] = [:]
     @State var regularSplitSegmentRemovalIds = Set<UUID>()
     @State var shortcutRestoreGaps: [ShortcutRestoreGap] = []
-    @State var shortcutRestoreGapHeights: [UUID: CGFloat] = [:]
+    @State var shortcutRestoreAppearingGapIds = Set<UUID>()
     @State var regularLayoutAnimationGeneration = 0
     @State var tabListVerticalScrollOffset: CGFloat = 0
     @Environment(\.resolvedThemeContext) var themeContext
@@ -120,14 +120,17 @@ extension SpaceView {
         transaction.disablesAnimations = true
         transaction.animation = nil
         withTransaction(transaction) {
+            _ = shortcutRestoreAppearingGapIds.insert(gap.id)
+        }
+
+        withAnimation(SidebarDropMotion.contentLayout) {
             shortcutRestoreGaps.append(gap)
-            shortcutRestoreGapHeights[gap.id] = 0
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + SidebarDropMotion.shortcutRestoreRevealStartDelay) {
             guard shortcutRestoreGaps.contains(where: { $0.id == gap.id }) else { return }
             withAnimation(SidebarDropMotion.contentLayout) {
-                shortcutRestoreGapHeights[gap.id] = SidebarRowLayout.rowHeight
+                _ = shortcutRestoreAppearingGapIds.remove(gap.id)
             }
         }
     }
@@ -150,7 +153,7 @@ extension SpaceView {
         withTransaction(transaction) {
             update()
             shortcutRestoreGaps.removeAll { $0.id == existingGap.id }
-            shortcutRestoreGapHeights.removeValue(forKey: existingGap.id)
+            _ = shortcutRestoreAppearingGapIds.remove(existingGap.id)
         }
     }
 

@@ -11,6 +11,13 @@ private enum RegularExternalDropGapPlacement: Equatable {
     case bottom
 }
 
+enum SidebarRowInsertionMotionPolicy {
+    static let initialOpacity: Double = 0
+    static let finalOpacity: Double = 1
+    static let initialScale: CGFloat = 0.985
+    static let finalScale: CGFloat = 1
+}
+
 private let regularDragProjectionGapId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
 
 extension SpaceView {
@@ -429,21 +436,23 @@ extension SpaceView {
 
     @ViewBuilder
     private func regularRenderedTabView(_ tab: Tab) -> some View {
-        if let height = regularInsertedTabHeights[tab.id] {
-            let progress = regularInsertedTabProgress(for: height)
+        let isAppearing = regularAppearingTabIds.contains(tab.id)
 
-            regularInsertedTabPreview(tab, progress: progress)
-                .frame(height: height, alignment: .top)
-                .frame(maxWidth: .infinity)
-                .clipped()
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        } else {
-            VStack(spacing: 0) {
-                regularTabView(tab)
-            }
-            .zIndex(regularTabRowZIndex(tab))
+        VStack(spacing: 0) {
+            regularTabView(tab)
         }
+        .opacity(isAppearing
+            ? SidebarRowInsertionMotionPolicy.initialOpacity
+            : SidebarRowInsertionMotionPolicy.finalOpacity
+        )
+        .scaleEffect(
+            isAppearing
+                ? SidebarRowInsertionMotionPolicy.initialScale
+                : SidebarRowInsertionMotionPolicy.finalScale,
+            anchor: .center
+        )
+        .transition(.identity)
+        .zIndex(regularTabRowZIndex(tab))
     }
 
     private func regularTabRowZIndex(_ tab: Tab) -> Double {
@@ -459,11 +468,6 @@ extension SpaceView {
         )
     }
 
-    private func regularInsertedTabProgress(for height: CGFloat) -> CGFloat {
-        guard SidebarRowLayout.rowHeight > 0 else { return 1 }
-        return min(max(height / SidebarRowLayout.rowHeight, 0), 1)
-    }
-
     private func regularLayoutGap(_ gapId: UUID) -> some View {
         let height = regularGapHeights[gapId] ?? SidebarRowLayout.rowHeight
 
@@ -475,73 +479,6 @@ extension SpaceView {
             .accessibilityHidden(true)
     }
 
-    private func regularInsertedTabPreview(_ tab: Tab, progress: CGFloat) -> some View {
-        HStack(spacing: 8) {
-            regularInsertedTabPreviewIcon(tab)
-
-            RegularInsertedTabPreviewTitle(
-                title: tab.name,
-                color: tokens.primaryText,
-                trailingFadePadding: SidebarHoverChrome.trailingFadePadding(
-                    showsTrailingAction: windowState.currentTabId == tab.id
-                )
-            )
-            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-            .textSelection(.disabled)
-
-            Image(systemName: "xmark")
-                .font(.system(size: 12, weight: .heavy))
-                .foregroundStyle(tokens.primaryText)
-                .frame(
-                    width: SidebarRowLayout.trailingActionSize,
-                    height: SidebarRowLayout.trailingActionSize
-                )
-                .opacity(windowState.currentTabId == tab.id ? 1 : 0)
-        }
-        .padding(.leading, SidebarRowLayout.leadingInset)
-        .padding(.trailing, SidebarRowLayout.trailingInset)
-        .frame(height: SidebarRowLayout.rowHeight)
-        .frame(minWidth: 0, maxWidth: .infinity)
-        .sidebarRowSurface(
-            background: windowState.currentTabId == tab.id ? tokens.sidebarRowActive : Color.clear,
-            cornerRadius: sumiSettings.resolvedCornerRadius(12),
-            tokens: tokens,
-            isVisible: windowState.currentTabId == tab.id,
-            drawsSelectionShadow: windowState.currentTabId == tab.id
-        )
-        .offset(y: -4 * (1 - progress))
-    }
-
-    @ViewBuilder
-    private func regularInsertedTabPreviewIcon(_ tab: Tab) -> some View {
-        if tab.usesChromeThemedTemplateFavicon {
-            Image(systemName: regularInsertedTabPreviewSystemImageName(for: tab))
-                .font(.system(size: SidebarRowLayout.faviconSize * 0.78, weight: .medium))
-                .symbolRenderingMode(.monochrome)
-                .foregroundStyle(tokens.primaryText)
-                .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
-        } else {
-            tab.favicon
-                .resizable()
-                .scaledToFit()
-                .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        }
-    }
-
-    private func regularInsertedTabPreviewSystemImageName(for tab: Tab) -> String {
-        if tab.representsSumiSettingsSurface {
-            return SumiSurface.settingsTabFaviconSystemImageName
-        }
-        if tab.representsSumiHistorySurface {
-            return SumiSurface.historyTabFaviconSystemImageName
-        }
-        if tab.representsSumiBookmarksSurface {
-            return SumiSurface.bookmarksTabFaviconSystemImageName
-        }
-        return "globe"
-    }
-
     private func syncRegularRenderedTabsWithoutAnimation(to tabIds: [UUID]) {
         var transaction = Transaction()
         transaction.disablesAnimations = true
@@ -549,7 +486,7 @@ extension SpaceView {
         withTransaction(transaction) {
             regularRenderedTabItems = tabIds.map(RegularTabRenderedItem.tab)
             regularGapHeights.removeAll()
-            regularInsertedTabHeights.removeAll()
+            regularAppearingTabIds.removeAll()
             regularDeferredRemovalGapIdsByTabId.removeAll()
             regularLayoutAnimationGeneration += 1
         }
@@ -561,8 +498,9 @@ extension SpaceView {
             return
         }
 
-        if let insertedId = newIds.first(where: { !oldIds.contains($0) }) {
-            animateRegularInsertion(insertedId: insertedId, newIds: newIds, animation: animation)
+        let insertedIds = Set(newIds.filter { !oldIds.contains($0) })
+        if !insertedIds.isEmpty {
+            animateRegularInsertion(insertedIds: insertedIds, newIds: newIds, animation: animation)
             return
         }
 
@@ -586,7 +524,7 @@ extension SpaceView {
     }
 
     private func animateRegularInsertion(
-        insertedId: UUID,
+        insertedIds: Set<UUID>,
         newIds: [UUID],
         animation: Animation
     ) {
@@ -598,17 +536,26 @@ extension SpaceView {
         transaction.animation = nil
         withTransaction(transaction) {
             regularLayoutAnimationGeneration = generation
+            regularAppearingTabIds.removeAll()
+            regularAppearingTabIds.formUnion(insertedIds)
+        }
+
+        withAnimation(animation) {
             regularRenderedTabItems = finalItems
-            regularInsertedTabHeights[insertedId] = 0
         }
 
         DispatchQueue.main.async {
+            guard regularLayoutAnimationGeneration == generation else { return }
             withAnimation(animation) {
-                regularInsertedTabHeights[insertedId] = SidebarRowLayout.rowHeight
+                regularAppearingTabIds.subtract(insertedIds)
             }
         }
 
-        completeRegularInsertionAnimation(generation: generation, finalItems: finalItems, insertedId: insertedId)
+        completeRegularInsertionAnimation(
+            generation: generation,
+            finalItems: finalItems,
+            insertedIds: insertedIds
+        )
     }
 
     private func animateRegularRemoval(
@@ -627,6 +574,7 @@ extension SpaceView {
         transaction.animation = nil
         withTransaction(transaction) {
             regularLayoutAnimationGeneration = generation
+            regularAppearingTabIds.removeAll()
             regularRenderedTabItems = stagedItems
             regularGapHeights[gapId] = SidebarRowLayout.rowHeight
         }
@@ -661,6 +609,7 @@ extension SpaceView {
         transaction.animation = nil
         withTransaction(transaction) {
             regularLayoutAnimationGeneration = generation
+            regularAppearingTabIds.removeAll()
             regularRenderedTabItems = stagedItems
             regularGapHeights[gapId] = SidebarRowLayout.rowHeight
             regularDeferredRemovalGapIdsByTabId[tab.id] = gapId
@@ -691,6 +640,7 @@ extension SpaceView {
         withTransaction(transaction) {
             regularRenderedTabItems = newIds.map(RegularTabRenderedItem.tab)
             regularGapHeights.removeValue(forKey: gapId)
+            regularAppearingTabIds.removeAll()
             regularDeferredRemovalGapIdsByTabId.removeValue(forKey: removedId)
             regularLayoutAnimationGeneration += 1
         }
@@ -699,7 +649,7 @@ extension SpaceView {
     private func completeRegularInsertionAnimation(
         generation: Int,
         finalItems: [RegularTabRenderedItem],
-        insertedId: UUID
+        insertedIds: Set<UUID>
     ) {
         DispatchQueue.main.asyncAfter(deadline: .now() + SidebarDropMotion.contentLayoutDuration) {
             guard regularLayoutAnimationGeneration == generation else { return }
@@ -708,7 +658,7 @@ extension SpaceView {
             transaction.animation = nil
             withTransaction(transaction) {
                 regularRenderedTabItems = finalItems
-                regularInsertedTabHeights.removeValue(forKey: insertedId)
+                regularAppearingTabIds.subtract(insertedIds)
             }
         }
     }
@@ -986,64 +936,5 @@ extension SpaceView {
             height: 1
         )
         picker.show(relativeTo: anchor, of: contentView, preferredEdge: .minY)
-    }
-}
-
-private struct RegularInsertedTabPreviewTitle: View {
-    let title: String
-    let color: Color
-    let trailingFadePadding: CGFloat
-
-    private let fadeWidth: CGFloat = 32
-
-    var body: some View {
-        GeometryReader { proxy in
-            Text(title)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(color)
-                .lineLimit(1)
-                .allowsTightening(false)
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
-                .clipped()
-                .mask(
-                    RegularInsertedTabPreviewTitleFadeMask(
-                        fadeWidth: fadeWidth,
-                        trailingPadding: trailingFadePadding
-                    )
-                )
-        }
-        .frame(height: SidebarRowLayout.titleHeight, alignment: .center)
-        .accessibilityLabel(title)
-    }
-}
-
-private struct RegularInsertedTabPreviewTitleFadeMask: View {
-    let fadeWidth: CGFloat
-    let trailingPadding: CGFloat
-
-    var body: some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            let availableWidth = max(width - trailingPadding, 0)
-            let safeFadeWidth = min(fadeWidth, availableWidth)
-            let start = width > 0
-                ? (width - (trailingPadding + safeFadeWidth)) / width
-                : 1
-            let end = width > 0
-                ? (width - trailingPadding) / width
-                : 1
-
-            LinearGradient(
-                stops: [
-                    .init(color: .white, location: 0),
-                    .init(color: .white, location: max(0, min(start, 1))),
-                    .init(color: .clear, location: max(0, min(end, 1))),
-                    .init(color: .clear, location: 1)
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-        }
     }
 }

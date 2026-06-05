@@ -76,6 +76,21 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         XCTAssertEqual(tabManager.tab(for: preview.id)?.id, preview.id)
     }
 
+    func testDuplicatingRegularTabPublishesOnlyFinalInsertionOrder() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let space = tabManager.createSpace(name: "Workspace")
+        let source = tabManager.createNewTab(url: "https://example.com/source", in: space)
+        let trailing = tabManager.createNewTab(url: "https://example.com/trailing", in: space, activate: false)
+        let recorder = TabsBySpaceRecorder(tabManager: tabManager, spaceId: space.id)
+        recorder.reset()
+
+        let duplicate = tabManager.duplicateAsRegularForSplit(from: source, anchor: source)
+
+        let expectedOrder = [source.id, duplicate.id, trailing.id]
+        XCTAssertEqual(tabManager.tabsBySpace[space.id]?.map(\.id), expectedOrder)
+        XCTAssertEqual(recorder.snapshots, [expectedOrder])
+    }
+
     func testRemovingSelectedTabPublishesOnceAndSelectsReplacement() throws {
         let tabManager = try makeInMemoryTabManager()
         let recorder = StructuralEventRecorder(tabManager: tabManager)
@@ -153,5 +168,21 @@ private final class StructuralEventRecorder {
 
     func reset() {
         count = 0
+    }
+}
+
+private final class TabsBySpaceRecorder {
+    private var cancellable: AnyCancellable?
+    private(set) var snapshots: [[UUID]] = []
+
+    @MainActor
+    init(tabManager: TabManager, spaceId: UUID) {
+        cancellable = tabManager.$tabsBySpace.sink { [weak self] tabsBySpace in
+            self?.snapshots.append(tabsBySpace[spaceId]?.map(\.id) ?? [])
+        }
+    }
+
+    func reset() {
+        snapshots.removeAll()
     }
 }

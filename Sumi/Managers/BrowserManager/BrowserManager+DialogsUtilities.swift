@@ -420,11 +420,14 @@ extension BrowserManager {
         switch slot {
         case .spaceRegular(let spaceId, let index):
             guard tabManager.spaces.contains(where: { $0.id == spaceId }) else { return false }
-            let tab = openNewTab(
+            _ = openNewTab(
                 url: url.absoluteString,
-                context: .foreground(windowState: windowState, preferredSpaceId: spaceId)
+                context: .foreground(
+                    windowState: windowState,
+                    preferredSpaceId: spaceId,
+                    regularInsertionIndex: index
+                )
             )
-            _ = tabManager.reorderRegularTabs(tab, in: spaceId, to: index)
             return true
 
         case .spacePinned(let spaceId, let index):

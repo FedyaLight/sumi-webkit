@@ -34,7 +34,7 @@ struct TabFolderView: View {
     let childFoldersByParentId: [UUID: [TabFolder]]
     let folderPinsByFolderId: [UUID: [ShortcutPin]]
     @Binding var shortcutRestoreGaps: [ShortcutRestoreGap]
-    @Binding var shortcutRestoreGapHeights: [UUID: CGFloat]
+    @Binding var shortcutRestoreAppearingGapIds: Set<UUID>
     let renderMode: SpaceViewRenderMode
     let parentFolderId: UUID?
     let containerIndex: Int
@@ -634,7 +634,7 @@ struct TabFolderView: View {
             childFoldersByParentId: childFoldersByParentId,
             folderPinsByFolderId: folderPinsByFolderId,
             shortcutRestoreGaps: $shortcutRestoreGaps,
-            shortcutRestoreGapHeights: $shortcutRestoreGapHeights,
+            shortcutRestoreAppearingGapIds: $shortcutRestoreAppearingGapIds,
             renderMode: renderMode,
             parentFolderId: folder.id,
             containerIndex: containerIndex,
@@ -771,7 +771,7 @@ struct TabFolderView: View {
     }
 
     private func shortcutRestoreGap(_ gapId: UUID) -> some View {
-        let height = shortcutRestoreGapHeights[gapId] ?? 0
+        let isAppearing = shortcutRestoreAppearingGapIds.contains(gapId)
         return ZStack(alignment: .topLeading) {
             if let gap = shortcutRestoreGaps.first(where: { $0.id == gapId }),
                let pin = browserManager.tabManager.shortcutPin(by: gap.pinId) {
@@ -779,12 +779,22 @@ struct TabFolderView: View {
                     .frame(height: SidebarRowLayout.rowHeight, alignment: .top)
             }
         }
-        .frame(height: height, alignment: .top)
+        .frame(height: SidebarRowLayout.rowHeight, alignment: .top)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .opacity(isAppearing
+            ? SidebarRowInsertionMotionPolicy.initialOpacity
+            : SidebarRowInsertionMotionPolicy.finalOpacity
+        )
+        .scaleEffect(
+            isAppearing
+                ? SidebarRowInsertionMotionPolicy.initialScale
+                : SidebarRowInsertionMotionPolicy.finalScale,
+            anchor: .center
+        )
+        .transition(.identity)
         .clipped()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .animation(folderLayoutAnimation, value: height)
     }
 
     private func performShortcutHostedSegmentAction(

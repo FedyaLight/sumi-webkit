@@ -401,6 +401,26 @@ final class SidebarDDGHoverTests: XCTestCase {
         XCTAssertTrue(source.contains(".zIndex(regularSplitGroupRowZIndex(group))"))
     }
 
+    func testSidebarRowInsertionUsesUnifiedFullHeightAppearance() throws {
+        let spaceViewSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SpaceView.swift")
+        let regularTabsSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SpaceRegularTabsSection.swift")
+        let pinnedSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SpacePinnedSection.swift")
+        let folderSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/TabFolderView.swift")
+
+        XCTAssertTrue(spaceViewSource.contains("regularAppearingTabIds"))
+        XCTAssertTrue(spaceViewSource.contains("shortcutRestoreAppearingGapIds"))
+        XCTAssertTrue(regularTabsSource.contains("SidebarRowInsertionMotionPolicy"))
+        XCTAssertTrue(regularTabsSource.contains("regularAppearingTabIds.formUnion(insertedIds)"))
+        XCTAssertTrue(regularTabsSource.contains("regularAppearingTabIds.subtract(insertedIds)"))
+        XCTAssertFalse(spaceViewSource.contains("regularInsertedTabHeights"))
+        XCTAssertFalse(spaceViewSource.contains("shortcutRestoreGapHeights"))
+        XCTAssertFalse(regularTabsSource.contains("regularInsertedTabHeights"))
+        XCTAssertFalse(regularTabsSource.contains("RegularInsertedTabPreview"))
+        XCTAssertFalse(regularTabsSource.contains("SidebarRegularTabInsertionAnimationPolicy"))
+        XCTAssertFalse(pinnedSource.contains("shortcutRestoreGapHeights"))
+        XCTAssertFalse(folderSource.contains("shortcutRestoreGapHeights"))
+    }
+
     func testPinnedAndEssentialsUseLazyStacksForScrollableRows() throws {
         let pinnedGridSource = try Self.source(named: "Sumi/Components/Sidebar/PinnedButtons/PinnedGrid.swift")
         let gridRowsStart = try XCTUnwrap(

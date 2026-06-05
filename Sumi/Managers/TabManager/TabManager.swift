@@ -919,21 +919,12 @@ class TabManager: ObservableObject {
                 browserManager: browserManager
             )
 
-            // Add at end first, then reposition next to anchor if provided.
-            addTab(newTab)
-
-            if let a = anchor, let sid = a.spaceId, let arr = tabsBySpace[sid] {
-                // Find indices in current ordering
-                if let anchorIndex = arr.firstIndex(where: { $0.id == a.id }),
-                   let newIndex = arr.firstIndex(where: { $0.id == newTab.id })
-                {
-                    // Compute desired position relative to anchor
-                    let desired = min(max(anchorIndex + (placeAfterAnchor ? 1 : 0), 0), arr.count)
-                    if newIndex != desired {
-                        reorderRegularTabs(newTab, in: sid, to: desired)
-                    }
+            let insertionIndex = anchor
+                .flatMap { anchor in
+                    tabsBySpace[targetSpace.id]?.firstIndex(where: { $0.id == anchor.id })
                 }
-            }
+                .map { $0 + (placeAfterAnchor ? 1 : 0) }
+            addTab(newTab, regularInsertionIndex: insertionIndex)
 
             return newTab
         }
@@ -996,7 +987,7 @@ class TabManager: ObservableObject {
 
     // MARK: - Tab Management (Normal within current space)
 
-    func addTab(_ tab: Tab) {
+    func addTab(_ tab: Tab, regularInsertionIndex: Int? = nil) {
         withStructuralUpdateTransaction {
             attach(tab)
             if contains(tab) { return }
@@ -1008,7 +999,7 @@ class TabManager: ObservableObject {
                 RuntimeDiagnostics.debug("Skipping addTab for '\(tab.name)' because no spaceId was resolved.", category: "TabManager")
                 return
             }
-            insertRegularTab(tab, in: sid, at: nil)
+            insertRegularTab(tab, in: sid, at: regularInsertionIndex)
         
             // Load the tab in compositor if it's the current tab
             if tab.id == currentTab?.id {
@@ -1271,7 +1262,8 @@ class TabManager: ObservableObject {
         url: String = SumiSurface.emptyTabURL.absoluteString,
         in space: Space? = nil,
         activate: Bool = true,
-        webViewConfigurationOverride: WKWebViewConfiguration? = nil
+        webViewConfigurationOverride: WKWebViewConfiguration? = nil,
+        regularInsertionIndex: Int? = nil
     ) -> Tab {
         return withStructuralUpdateTransaction {
             let settings = sumiSettings ?? browserManager?.sumiSettings
@@ -1280,7 +1272,12 @@ class TabManager: ObservableObject {
             guard let validURL = URL(string: normalizedUrl)
             else {
                 RuntimeDiagnostics.debug("Invalid URL '\(url)' while creating a new tab; falling back to Sumi empty surface.", category: "TabManager")
-                return createNewTab(in: space)
+                return createNewTab(
+                    in: space,
+                    activate: activate,
+                    webViewConfigurationOverride: webViewConfigurationOverride,
+                    regularInsertionIndex: regularInsertionIndex
+                )
             }
 
             let targetSpace: Space? = space ?? currentSpace ?? ensureDefaultSpaceIfNeeded()
@@ -1295,7 +1292,8 @@ class TabManager: ObservableObject {
             }
             let sid = targetSpace?.id
 
-            let nextIndex = sid
+            let nextIndex = regularInsertionIndex
+                ?? sid
                 .flatMap { tabsBySpace[$0]?.map(\.index).max() }
                 .map { $0 + 1 }
                 ?? 0
@@ -1312,7 +1310,7 @@ class TabManager: ObservableObject {
             if let webViewConfigurationOverride {
                 newTab.applyWebViewConfigurationOverride(webViewConfigurationOverride)
             }
-            addTab(newTab)
+            addTab(newTab, regularInsertionIndex: regularInsertionIndex)
             if activate {
                 setActiveTab(newTab)
             }
