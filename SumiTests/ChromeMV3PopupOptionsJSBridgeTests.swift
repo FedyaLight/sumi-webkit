@@ -559,6 +559,14 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             controlledPolicy.allowedMethods.contains("i18n.getUILanguage")
         )
         XCTAssertTrue(
+            controlledPolicy.allowedMethods.contains("tabs.getCurrent")
+        )
+        XCTAssertFalse(
+            ChromeMV3PopupOptionsAPIMethodPolicy.defaultPolicy
+                .allowedMethods
+                .contains("tabs.getCurrent")
+        )
+        XCTAssertTrue(
             controlledPolicy.exposedNamespaces.contains("i18n")
         )
         XCTAssertFalse(
@@ -669,8 +677,20 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(
             source.contains("Object.defineProperty(runtime, \"getPlatformInfo\"")
         )
-        XCTAssertFalse(source.contains("\"tabs.getCurrent\""))
-        XCTAssertFalse(source.contains("Object.defineProperty(tabs, \"getCurrent\""))
+        XCTAssertTrue(source.contains("\"tabs.getCurrent\""))
+        XCTAssertTrue(
+            source.contains("Object.defineProperty(tabs, \"getCurrent\"")
+        )
+        XCTAssertTrue(
+            source.contains(
+                "controlledTabsGetCurrentCompatibilitySurface"
+            )
+        )
+        XCTAssertTrue(
+            source.contains(
+                "method=tabs.getCurrent namespace=chrome/browser result=undefined"
+            )
+        )
         XCTAssertTrue(source.contains("syncBackend=localCompatibility"))
         XCTAssertTrue(
             source.contains("if (config.storageSessionExposed)")
@@ -754,12 +774,12 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(compatibilityFunctionPrefix.contains("return;"))
         XCTAssertFalse(
             controlledActionPopupSource.contains(
-                "Object.defineProperty(tabs, \"getCurrent\""
+                "Object.defineProperty(runtime, \"getPlatformInfo\""
             )
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             controlledActionPopupSource.contains(
-                "Object.defineProperty(runtime, \"getPlatformInfo\""
+                "Object.defineProperty(tabs, \"getCurrent\""
             )
         )
         XCTAssertTrue(
@@ -767,6 +787,16 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         )
         XCTAssertTrue(
             controlledActionPopupSource.contains("userAgentData=absent")
+        )
+        XCTAssertFalse(
+            defaultActionPopupSource.contains(
+                "Object.defineProperty(tabs, \"getCurrent\""
+            )
+        )
+        XCTAssertFalse(
+            controlledOptionsPageSource.contains(
+                "Object.defineProperty(tabs, \"getCurrent\""
+            )
         )
     }
 
@@ -1538,6 +1568,67 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(visible.normalTabRuntimeBridgeAvailable)
     }
 
+    func testControlledActionPopupTabsGetCurrentReturnsUndefined() throws {
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                allowlist: .controlledActionPopupPolicy
+            )
+        )
+
+        let promise = handler.handle(request(
+            namespace: "tabs",
+            methodName: "getCurrent",
+            invocationMode: .promise
+        ))
+        let callback = handler.handle(request(
+            namespace: "tabs",
+            methodName: "getCurrent",
+            invocationMode: .callback
+        ))
+        let defaultPolicy = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration()
+        ).handle(request(
+            namespace: "tabs",
+            methodName: "getCurrent"
+        ))
+
+        XCTAssertTrue(promise.succeeded)
+        XCTAssertNil(promise.resultPayload)
+        XCTAssertFalse(promise.promiseWouldReject)
+        XCTAssertFalse(promise.callbackWouldSetLastError)
+        XCTAssertTrue(callback.succeeded)
+        XCTAssertNil(callback.resultPayload)
+        XCTAssertFalse(callback.callbackWouldSetLastError)
+        XCTAssertFalse(defaultPolicy.succeeded)
+        XCTAssertEqual(defaultPolicy.lastErrorCode, "productBlocked")
+
+        let records = handler.diagnosticsSnapshot.callRecords.filter {
+            $0.namespace == "tabs" && $0.methodName == "getCurrent"
+        }
+        XCTAssertEqual(records.count, 2)
+        XCTAssertTrue(records.allSatisfy(\.succeeded))
+        XCTAssertTrue(records.allSatisfy {
+            $0.nativeHostLaunchAttempted == false
+                && $0.serviceWorkerWakeAttempted == false
+        })
+        XCTAssertTrue(records.allSatisfy {
+            $0.diagnostics.contains {
+                $0.contains("method=tabs.getCurrent")
+                    && $0.contains("namespace=chrome/browser")
+                    && $0.contains("result=undefined")
+                    && $0.contains("redaction=notApplicable")
+            }
+        })
+        let encoded = String(
+            data: try JSONEncoder().encode(records),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertFalse(encoded.contains("https://example.com/login"))
+        XCTAssertFalse(encoded.contains("Example Login"))
+        XCTAssertFalse(encoded.contains("favIconUrl"))
+        XCTAssertFalse(encoded.contains("pendingUrl"))
+    }
+
     func testUnsupportedPopupOptionsAPIsProduceDeterministicDiagnostics()
         throws
     {
@@ -2164,6 +2255,19 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         try await handle.waitForLoadForTesting()
         let raw = try await handle.callAsyncJavaScriptForTesting(
             """
+            const chromeCurrent = await chrome.tabs.getCurrent();
+            const browserCurrent = await browser.tabs.getCurrent();
+            let getCurrentCallbackIsUndefined = false;
+            let getCurrentCallbackLastError = "unset";
+            await new Promise((resolve) => {
+              chrome.tabs.getCurrent(function(tab) {
+                getCurrentCallbackIsUndefined = tab === undefined;
+                getCurrentCallbackLastError = chrome.runtime.lastError
+                  ? chrome.runtime.lastError.message
+                  : null;
+                resolve();
+              });
+            });
             return {
               title: document.title,
               hasAppRoot: !!document.querySelector("app-root"),
@@ -2223,7 +2327,17 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
               hasChromeTabsGetCurrent:
                 !!globalThis.chrome
                 && !!chrome.tabs
-                && typeof chrome.tabs.getCurrent === "function"
+                && typeof chrome.tabs.getCurrent === "function",
+              hasBrowserTabsGetCurrent:
+                !!globalThis.browser
+                && !!browser.tabs
+                && typeof browser.tabs.getCurrent === "function",
+              chromeCurrentIsUndefined: chromeCurrent === undefined,
+              browserCurrentIsUndefined: browserCurrent === undefined,
+              getCurrentCallbackIsUndefined,
+              getCurrentCallbackLastError,
+              getCurrentLastErrorAfterCallback:
+                chrome.runtime.lastError || null
             };
             """
         )
@@ -2261,7 +2375,13 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             object["hasChromeRuntimeGetBrowserInfo"] as? Bool,
             false
         )
-        XCTAssertEqual(object["hasChromeTabsGetCurrent"] as? Bool, false)
+        XCTAssertEqual(object["hasChromeTabsGetCurrent"] as? Bool, true)
+        XCTAssertEqual(object["hasBrowserTabsGetCurrent"] as? Bool, true)
+        XCTAssertEqual(object["chromeCurrentIsUndefined"] as? Bool, true)
+        XCTAssertEqual(object["browserCurrentIsUndefined"] as? Bool, true)
+        XCTAssertEqual(object["getCurrentCallbackIsUndefined"] as? Bool, true)
+        XCTAssertTrue(object["getCurrentCallbackLastError"] is NSNull)
+        XCTAssertTrue(object["getCurrentLastErrorAfterCallback"] is NSNull)
         try await Task.sleep(nanoseconds: 3_800_000_000)
         XCTAssertEqual(handle.installedUserScriptCount, 1)
         XCTAssertEqual(handle.installedScriptMessageHandlerCount, 1)
@@ -2272,6 +2392,26 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             $0.nativeHostLaunchAttempted == false
         })
         XCTAssertTrue(snapshot.observedMethods.contains("runtime.getManifest"))
+        XCTAssertTrue(snapshot.observedMethods.contains("tabs.getCurrent"))
+        XCTAssertTrue(snapshot.callRecords.contains {
+            $0.namespace == "tabs"
+                && $0.methodName == "getCurrent"
+                && $0.succeeded
+                && $0.diagnostics.contains {
+                    $0.contains("method=tabs.getCurrent")
+                        && $0.contains("result=undefined")
+                        && $0.contains("redaction=notApplicable")
+                }
+        })
+        let postBootstrapCheckpoints = snapshot.jsDebugRouteEvents.filter {
+            $0.apiName == "postBootstrap.sentinel"
+        }
+        let finalPostBootstrapCheckpoint = postBootstrapCheckpoints.last
+        XCTAssertFalse(
+            finalPostBootstrapCheckpoint?
+                .firstMissingAPIOrPermissionOrLifecycleError?
+                .contains("tabs.getCurrent") == true
+        )
         let platformProbeEvents = snapshot.jsDebugRouteEvents.filter {
             $0.apiName == "navigator.platformIdentity"
         }
@@ -2348,7 +2488,8 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         let config = configuration(
             manifestPermissions: ["tabs"],
             manifestHostPermissions: ["https://example.com/*"],
-            runtimeManifest: runtimeManifest
+            runtimeManifest: runtimeManifest,
+            allowlist: .controlledActionPopupPolicy
         )
         let installation = ChromeMV3PopupOptionsJSBridgeInstallation(
             configuration: config,
@@ -2380,6 +2521,23 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             await chrome.storage.local.set({ alpha: "beta" });
             const stored = await chrome.storage.local.get("alpha");
             const tabs = await chrome.tabs.query({ active: true });
+            const chromeCurrent = await chrome.tabs.getCurrent();
+            const browserCurrent = await browser.tabs.getCurrent();
+            let getCurrentCallbackIsUndefined = false;
+            let getCurrentCallbackArgCount = -1;
+            let getCurrentCallbackLastError = "unset";
+            await new Promise((resolve) => {
+              chrome.tabs.getCurrent(function(tab) {
+                getCurrentCallbackIsUndefined = tab === undefined;
+                getCurrentCallbackArgCount = arguments.length;
+                getCurrentCallbackLastError = chrome.runtime.lastError
+                  ? chrome.runtime.lastError.message
+                  : null;
+                resolve();
+              });
+            });
+            const getCurrentLastErrorAfterCallback =
+              chrome.runtime.lastError || null;
             const firstManifest = chrome.runtime.getManifest();
             const isManifestPromise =
               !!firstManifest && typeof firstManifest.then === "function";
@@ -2408,6 +2566,12 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
               changeCount: changes.length,
               changeArea: changes[0] && changes[0].areaName,
               tabURL: tabs[0] && tabs[0].url,
+              chromeCurrentIsUndefined: chromeCurrent === undefined,
+              browserCurrentIsUndefined: browserCurrent === undefined,
+              getCurrentCallbackIsUndefined,
+              getCurrentCallbackArgCount,
+              getCurrentCallbackLastError,
+              getCurrentLastErrorAfterCallback,
               hasGetManifest:
                 typeof chrome.runtime.getManifest === "function",
               manifestVersion: secondManifest.manifest_version,
@@ -2427,6 +2591,12 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertEqual(object["changeCount"] as? Int, 1)
         XCTAssertEqual(object["changeArea"] as? String, "local")
         XCTAssertEqual(object["tabURL"] as? String, "https://example.com/login")
+        XCTAssertEqual(object["chromeCurrentIsUndefined"] as? Bool, true)
+        XCTAssertEqual(object["browserCurrentIsUndefined"] as? Bool, true)
+        XCTAssertEqual(object["getCurrentCallbackIsUndefined"] as? Bool, true)
+        XCTAssertEqual(object["getCurrentCallbackArgCount"] as? Int, 1)
+        XCTAssertTrue(object["getCurrentCallbackLastError"] is NSNull)
+        XCTAssertTrue(object["getCurrentLastErrorAfterCallback"] is NSNull)
         XCTAssertEqual(object["hasGetManifest"] as? Bool, true)
         XCTAssertEqual(object["manifestVersion"] as? Int, 3)
         XCTAssertEqual(object["manifestName"] as? String, "Generic Popup Bridge")
@@ -2441,7 +2611,16 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         )
         XCTAssertTrue(snapshot.observedMethods.contains("runtime.getManifest"))
         XCTAssertTrue(snapshot.observedMethods.contains("storage.local.set"))
+        XCTAssertTrue(snapshot.observedMethods.contains("tabs.getCurrent"))
         XCTAssertTrue(snapshot.observedMethods.contains("tabs.sendMessage"))
+        XCTAssertTrue(snapshot.callRecords.contains {
+            $0.namespace == "tabs"
+                && $0.methodName == "getCurrent"
+                && $0.succeeded
+                && $0.diagnostics.contains {
+                    $0.contains("result=undefined")
+                }
+        })
         XCTAssertTrue(snapshot.callRecords.allSatisfy {
             $0.nativeHostLaunchAttempted == false
         })

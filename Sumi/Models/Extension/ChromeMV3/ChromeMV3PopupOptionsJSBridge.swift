@@ -215,35 +215,41 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
                 "scripting",
                 "webRequest",
             ],
-            allowedMethods: [
-                "i18n.getMessage",
-                "i18n.getUILanguage",
-                "runtime.connect",
-                "runtime.getManifest",
-                "runtime.getURL",
-                "runtime.lastError",
-                "runtime.port.disconnect",
-                "runtime.port.postMessage",
-                "runtime.sendMessage",
-                "storage.local.clear",
-                "storage.local.get",
-                "storage.local.getBytesInUse",
-                "storage.local.remove",
-                "storage.local.set",
-                "storage.onChanged",
-                "storage.session.clear",
-                "storage.session.get",
-                "storage.session.getBytesInUse",
-                "storage.session.remove",
-                "storage.session.set",
-                "storage.sync.clear",
-                "storage.sync.get",
-                "storage.sync.getBytesInUse",
-                "storage.sync.remove",
-                "storage.sync.set",
-                "tabs.query",
-                "tabs.sendMessage",
-            ],
+            allowedMethods: {
+                var methods = [
+                    "i18n.getMessage",
+                    "i18n.getUILanguage",
+                    "runtime.connect",
+                    "runtime.getManifest",
+                    "runtime.getURL",
+                    "runtime.lastError",
+                    "runtime.port.disconnect",
+                    "runtime.port.postMessage",
+                    "runtime.sendMessage",
+                    "storage.local.clear",
+                    "storage.local.get",
+                    "storage.local.getBytesInUse",
+                    "storage.local.remove",
+                    "storage.local.set",
+                    "storage.onChanged",
+                    "storage.session.clear",
+                    "storage.session.get",
+                    "storage.session.getBytesInUse",
+                    "storage.session.remove",
+                    "storage.session.set",
+                    "storage.sync.clear",
+                    "storage.sync.get",
+                    "storage.sync.getBytesInUse",
+                    "storage.sync.remove",
+                    "storage.sync.set",
+                    "tabs.query",
+                    "tabs.sendMessage",
+                ]
+                #if DEBUG
+                methods.append("tabs.getCurrent")
+                #endif
+                return methods
+            }(),
             blockedDiagnostics: (
                 [
                     blocked(
@@ -2459,6 +2465,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             return permissionsEventListenerCountChanged(request)
         case ("tabs", "query"):
             return tabsQuery(request)
+        case ("tabs", "getCurrent"):
+            return tabsGetCurrent(request)
         case ("tabs", "sendMessage"):
             return tabsSendMessage(request)
         case ("tabs", "connect"):
@@ -4173,6 +4181,27 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         )
     }
 
+    private func tabsGetCurrent(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        guard request.arguments.isEmpty else {
+            return invalidArguments(
+                request,
+                "tabs.getCurrent does not accept arguments other than an optional callback."
+            )
+        }
+        return response(
+            request: request,
+            succeeded: true,
+            payload: nil,
+            diagnostics: [
+                "method=tabs.getCurrent namespace=chrome/browser result=undefined redaction=notApplicable sourceContext=\(configuration.sourceContext.rawValue)",
+                "tabs.getCurrent was called from a controlled action popup non-tab context; Chrome documents popup views as returning undefined.",
+                "No active-tab lookup, broad tab enumeration, or synthetic Tab object was returned.",
+            ]
+        )
+    }
+
     private func tabsSendMessage(
         _ request: ChromeMV3RuntimeJSBridgeHostRequest,
         sourceContextOverride: ChromeMV3JSBridgeSourceContext? = nil
@@ -5370,6 +5399,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             "runtime.getManifest",
             "runtime.port.postMessage",
             "runtime.port.disconnect",
+            "tabs.getCurrent",
             "tabs.query",
             "tabs.sendMessage",
             "tabs.connect",
@@ -5402,6 +5432,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             switch (namespace, methodName) {
             case ("tabs", "query"):
                 return "tabs"
+            case ("tabs", "getCurrent"):
+                return "tabs"
             case ("tabs", "sendMessage"):
                 return "contentScript"
             default:
@@ -5426,6 +5458,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         case ("runtime", "sendMessage"), ("runtime", "connect"),
              ("runtime", "port.postMessage"), ("runtime", "port.disconnect"):
             return "serviceWorker"
+        case ("tabs", "getCurrent"):
+            return "tabs"
         case ("tabs", "query"):
             return "tabs"
         case ("tabs", "sendMessage"), ("tabs", "connect"),
@@ -6170,8 +6204,26 @@ enum ChromeMV3PopupOptionsJSShimSource {
             && configuration.allowlist
                 == ChromeMV3PopupOptionsAPIMethodPolicy
                 .controlledActionPopupPolicy
+        let controlledTabsGetCurrentCompatibilitySurface =
+            controlledNavigatorCompatibilitySurface
+            && configuration.allowlist.allowedMethods
+                .contains("tabs.getCurrent")
+        let tabsGetCurrentSource =
+            controlledTabsGetCurrentCompatibilitySurface
+                ? """
+          Object.defineProperty(tabs, "getCurrent", {
+            value(callback) {
+              const cb = typeof callback === "function" ? callback : null;
+              return callbackOrPromise("tabs", "getCurrent", [], cb);
+            },
+            enumerable: true
+          });
+        """
+                : ""
         #else
         let controlledNavigatorCompatibilitySurface = false
+        let controlledTabsGetCurrentCompatibilitySurface = false
+        let tabsGetCurrentSource = ""
         #endif
         let configJSON = jsonString([
             "extensionID": configuration.extensionID,
@@ -6180,6 +6232,8 @@ enum ChromeMV3PopupOptionsJSShimSource {
             "sourceContext": configuration.sourceContext.rawValue,
             "controlledNavigatorCompatibilitySurface":
                 controlledNavigatorCompatibilitySurface,
+            "controlledTabsGetCurrentCompatibilitySurface":
+                controlledTabsGetCurrentCompatibilitySurface,
             "extensionBaseURLString": configuration.extensionBaseURLString,
             "runtimeManifest":
                 configuration.runtimeManifest?.manifestPayload
@@ -6603,6 +6657,13 @@ enum ChromeMV3PopupOptionsJSShimSource {
             if (namespace === "permissions" || methodName === "query") {
               return [response.resultPayload];
             }
+            if (namespace === "tabs" && methodName === "getCurrent") {
+              return [
+                response.resultPayload === null || response.resultPayload === undefined
+                  ? undefined
+                  : response.resultPayload
+              ];
+            }
             if (namespace === "runtime" && methodName === "sendMessage") {
               return [response.resultPayload];
             }
@@ -6621,6 +6682,11 @@ enum ChromeMV3PopupOptionsJSShimSource {
             }
             if (namespace === "storage") {
               return undefined;
+            }
+            if (namespace === "tabs" && methodName === "getCurrent") {
+              return response.resultPayload === null || response.resultPayload === undefined
+                ? undefined
+                : response.resultPayload;
             }
             return response.resultPayload;
           }
@@ -7443,6 +7509,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
             },
             enumerable: true
           });
+          \(tabsGetCurrentSource)
           Object.defineProperty(tabs, "sendMessage", {
             value(tabId, message, options, callback) {
               let cb = null;
@@ -7740,6 +7807,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
             if (namespace === "tabs" && methodName === "query") {
               return "tabs";
             }
+            if (namespace === "tabs" && methodName === "getCurrent") {
+              return "tabs";
+            }
             if (namespace === "tabs") {
               return "contentScript";
             }
@@ -7794,6 +7864,16 @@ enum ChromeMV3PopupOptionsJSShimSource {
               return response && response.succeeded
                 ? "listenerRespondedSync"
                 : "missing tabs.connect";
+            }
+            if (namespace === "tabs" && methodName === "getCurrent") {
+              if (response && response.succeeded) {
+                return response.resultPayload === null || response.resultPayload === undefined
+                  ? "undefined"
+                  : "tab";
+              }
+              return response && response.lastErrorCode
+                ? response.lastErrorCode
+                : "tabs.getCurrent error";
             }
             if (namespace === "runtime" && methodName === "connect") {
               if (response && response.succeeded && response.resultPayload && response.resultPayload.canWakeServiceWorkerNow === false) {

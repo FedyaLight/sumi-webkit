@@ -1850,10 +1850,15 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertTrue(
             popupOptionsBridgeSource.contains("storageSessionExposed")
         )
-        XCTAssertFalse(popupOptionsBridgeSource.contains("\"tabs.getCurrent\""))
-        XCTAssertFalse(
+        XCTAssertTrue(popupOptionsBridgeSource.contains("\"tabs.getCurrent\""))
+        XCTAssertTrue(
             popupOptionsBridgeSource.contains(
                 "Object.defineProperty(tabs, \"getCurrent\""
+            )
+        )
+        XCTAssertTrue(
+            popupOptionsBridgeSource.contains(
+                "controlledTabsGetCurrentCompatibilitySurface"
             )
         )
         XCTAssertFalse(
