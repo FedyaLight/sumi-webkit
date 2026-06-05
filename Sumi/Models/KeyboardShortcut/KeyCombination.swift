@@ -10,12 +10,6 @@ struct KeyCombination: Hashable, Codable {
         self.modifiers = modifiers
     }
 
-    var displayString: String {
-        var parts = modifiers.displayStrings
-        parts.append(key.uppercased())
-        return parts.joined(separator: " + ")
-    }
-
     var lookupKey: String {
         var parts: [String] = []
         if modifiers.contains(.command) { parts.append("cmd") }
@@ -85,14 +79,5 @@ struct Modifiers: OptionSet, Hashable, Codable {
         if eventModifierFlags.contains(.control) { modifiers.insert(.control) }
         if eventModifierFlags.contains(.shift) { modifiers.insert(.shift) }
         self = modifiers
-    }
-
-    var displayStrings: [String] {
-        var strings: [String] = []
-        if contains(.command) { strings.append("⌘") }
-        if contains(.option) { strings.append("⌥") }
-        if contains(.control) { strings.append("⌃") }
-        if contains(.shift) { strings.append("⇧") }
-        return strings
     }
 }
