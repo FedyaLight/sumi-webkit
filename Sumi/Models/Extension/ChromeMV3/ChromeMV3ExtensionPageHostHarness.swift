@@ -2014,19 +2014,30 @@ enum ChromeMV3ExtensionPageResourcePath {
             separator: "/",
             omittingEmptySubsequences: false
         )
-        guard
-            segments.isEmpty == false,
-            segments.allSatisfy({ segment in
-                segment.isEmpty == false
-                    && segment != "."
-                    && segment != ".."
-            })
-        else {
+        var normalizedSegments: [String] = []
+        for segment in segments {
+            if segment.isEmpty || segment == "." {
+                return .failure(
+                    "Extension page resource path escapes the generated bundle: \(rawPath)"
+                )
+            }
+            if segment == ".." {
+                guard normalizedSegments.isEmpty == false else {
+                    return .failure(
+                        "Extension page resource path escapes the generated bundle: \(rawPath)"
+                    )
+                }
+                normalizedSegments.removeLast()
+                continue
+            }
+            normalizedSegments.append(String(segment))
+        }
+        guard normalizedSegments.isEmpty == false else {
             return .failure(
                 "Extension page resource path escapes the generated bundle: \(rawPath)"
             )
         }
-        return .success(candidate)
+        return .success(normalizedSegments.joined(separator: "/"))
     }
 
     static func resourceURL(

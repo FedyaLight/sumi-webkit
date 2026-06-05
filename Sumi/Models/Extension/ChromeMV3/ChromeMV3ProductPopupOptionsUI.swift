@@ -1321,6 +1321,10 @@ protocol ChromeMV3PopupOptionsWebViewHandle: AnyObject {
     var popupOptionsBridgeDiagnosticsSnapshot:
         ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot? { get }
 
+    #if DEBUG
+    func evaluateJavaScriptForTesting(_ script: String) async throws -> Any?
+    #endif
+
     func tearDown()
 }
 
@@ -1330,6 +1334,13 @@ extension ChromeMV3PopupOptionsWebViewHandle {
         ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot? {
         nil
     }
+
+    #if DEBUG
+    func evaluateJavaScriptForTesting(_ script: String) async throws -> Any? {
+        _ = script
+        return nil
+    }
+    #endif
 }
 
 @MainActor
@@ -1476,6 +1487,45 @@ final class ChromeMV3ProductPopupOptionsHostController {
             )
         }
     }
+
+    #if DEBUG
+    func diagnosticsSnapshot(
+        profileID: String,
+        extensionID: String,
+        surface: ChromeMV3ProductPopupOptionsSurface? = nil
+    ) -> ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot? {
+        let key = sessions.keys.first {
+            matchesSessionKey(
+                $0,
+                profileID: profileID,
+                extensionID: extensionID,
+                surface: surface
+            )
+        }
+        guard let key else { return nil }
+        return sessions[key]?.handle.popupOptionsBridgeDiagnosticsSnapshot
+    }
+
+    func evaluateJavaScriptForTesting(
+        profileID: String,
+        extensionID: String,
+        surface: ChromeMV3ProductPopupOptionsSurface? = nil,
+        script: String
+    ) async throws -> Any? {
+        let key = sessions.keys.first {
+            matchesSessionKey(
+                $0,
+                profileID: profileID,
+                extensionID: extensionID,
+                surface: surface
+            )
+        }
+        guard let key, let handle = sessions[key]?.handle else {
+            return nil
+        }
+        return try await handle.evaluateJavaScriptForTesting(script)
+    }
+    #endif
 
     func open(
         _ launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord,
@@ -2118,6 +2168,11 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
             return
         }
         try await waiter.wait()
+    }
+
+    func evaluateJavaScriptForTesting(_ script: String) async throws -> Any? {
+        guard let webView else { return nil }
+        return try await webView.evaluateJavaScript(script)
     }
 
     func callAsyncJavaScriptForTesting(_ script: String) async throws -> Any? {

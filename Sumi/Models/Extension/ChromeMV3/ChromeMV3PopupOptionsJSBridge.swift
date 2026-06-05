@@ -611,6 +611,27 @@ struct ChromeMV3PopupOptionsSanitizedBridgeRouteRecord:
     var diagnostics: [String]
 }
 
+struct ChromeMV3PopupOptionsJSDebugRouteEventRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var sequence: Int
+    var eventKind: String
+    var apiName: String
+    var bridgeCallID: String?
+    var invocationMode: String?
+    var sourceContext: String
+    var targetContext: String?
+    var safeMessageShapeClassification: String
+    var safeCommandTypeActionFieldNames: [String]
+    var portName: String?
+    var ageMilliseconds: Int?
+    var resultClassifier: String?
+    var firstMissingAPIOrPermissionOrLifecycleError: String?
+    var diagnostics: [String]
+}
+
 struct ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot:
     Codable,
     Equatable,
@@ -623,6 +644,10 @@ struct ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot:
     var callRecords: [ChromeMV3PopupOptionsJSBridgeCallRecord]
     var sanitizedBridgeRouteRecords:
         [ChromeMV3PopupOptionsSanitizedBridgeRouteRecord]
+    var jsDebugRouteEvents:
+        [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
+    var pendingUnresolvedJSDebugRoutes:
+        [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
     var blockedAPIs: [ChromeMV3PopupOptionsBlockedAPIDiagnostic]
     var lastAPIErrorSummary: String?
     var storageOnChangedPayloadCount: Int
@@ -766,6 +791,9 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     private var callRecords: [ChromeMV3PopupOptionsJSBridgeCallRecord] = []
     private var sanitizedBridgeRouteRecords:
         [ChromeMV3PopupOptionsSanitizedBridgeRouteRecord] = []
+    private var jsDebugRouteEvents:
+        [ChromeMV3PopupOptionsJSDebugRouteEventRecord] = []
+    private var nextJSDebugRouteEventSequence = 0
     private var onChangedPayloads: [ChromeMV3StorageOnChangedEventPayload] = []
     private var syntheticPortIDs: Set<String> = []
     private var serviceWorkerLifecyclePortIDs: Set<String> = []
@@ -988,6 +1016,12 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 ),
             callRecords: callRecords,
             sanitizedBridgeRouteRecords: sanitizedBridgeRouteRecords,
+            jsDebugRouteEvents: jsDebugRouteEvents,
+            pendingUnresolvedJSDebugRoutes:
+                jsDebugRouteEvents.filter {
+                    $0.eventKind == "pendingTimeout"
+                        || $0.resultClassifier == "unknown pending promise"
+                },
             blockedAPIs:
                 uniqueBlockedDiagnostics(
                     blocked.map {
@@ -1084,6 +1118,11 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     }
 
     func handle(_ body: Any) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        #if DEBUG
+        if let debugResponse = handleJSDebugEvent(body) {
+            return debugResponse
+        }
+        #endif
         switch ChromeMV3RuntimeJSBridgeHostRequest.parse(body) {
         case .success(let request):
             return handle(request)
@@ -1105,6 +1144,11 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     func handleAsync(
         _ body: Any
     ) async -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        #if DEBUG
+        if let debugResponse = handleJSDebugEvent(body) {
+            return debugResponse
+        }
+        #endif
         switch ChromeMV3RuntimeJSBridgeHostRequest.parse(body) {
         case .success(let request):
             return await handleAsync(request)
@@ -1121,6 +1165,257 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             )
         }
     }
+
+    #if DEBUG
+    private func handleJSDebugEvent(
+        _ body: Any
+    ) -> ChromeMV3PopupOptionsJSBridgeHostResponse? {
+        guard let raw = body as? [String: Any],
+              raw["namespace"] as? String == "__sumiDebug",
+              raw["methodName"] as? String == "event"
+        else { return nil }
+
+        recordJSDebugRouteEvent(raw)
+        let bridgeCallID =
+            sanitizedJSDebugString(raw["bridgeCallID"], maxLength: 180)
+            ?? stableIDPopupOptionsBridge(
+                prefix: "popup-options-js-debug-event",
+                parts: [
+                    configuration.surfaceID,
+                    String(nextJSDebugRouteEventSequence),
+                ]
+            )
+        return ChromeMV3PopupOptionsJSBridgeHostResponse(
+            bridgeCallID: bridgeCallID,
+            namespace: "__sumiDebug",
+            methodName: "event",
+            succeeded: true,
+            resultPayload: .null,
+            onChangedPayload: nil,
+            permissionEventPayload: nil,
+            lastErrorMessage: nil,
+            lastErrorCode: nil,
+            callbackWouldSetLastError: false,
+            promiseWouldReject: false,
+            blockedAPIDiagnostic: nil,
+            normalTabRuntimeBridgeAvailable: false,
+            contentScriptAttachmentAvailableInProduct: false,
+            serviceWorkerWakeAttempted: false,
+            serviceWorkerLifecycleWakeResult: nil,
+            nativeHostLaunchAttempted: false,
+            runtimeLoadable: false,
+            diagnostics: [
+                "DEBUG-only controlled popup route diagnostic accepted.",
+                "No raw message body, storage value, credential, vault, token, cookie, or form value was accepted.",
+            ]
+        )
+    }
+
+    private func recordJSDebugRouteEvent(_ raw: [String: Any]) {
+        nextJSDebugRouteEventSequence += 1
+        let eventKind =
+            sanitizedJSDebugString(
+                raw["eventKind"],
+                allowedValues: Self.allowedJSDebugEventKinds
+            ) ?? "unknown"
+        let apiName =
+            sanitizedJSDebugString(raw["apiName"], maxLength: 96)
+            ?? "unknown"
+        let record = ChromeMV3PopupOptionsJSDebugRouteEventRecord(
+            sequence: nextJSDebugRouteEventSequence,
+            eventKind: eventKind,
+            apiName: apiName,
+            bridgeCallID:
+                sanitizedJSDebugString(
+                    raw["bridgeCallID"],
+                    maxLength: 180
+                ),
+            invocationMode:
+                sanitizedJSDebugString(
+                    raw["invocationMode"],
+                    allowedValues: Self.allowedJSDebugInvocationModes
+                ),
+            sourceContext:
+                sanitizedJSDebugString(
+                    raw["sourceContext"],
+                    allowedValues:
+                        Set(ChromeMV3JSBridgeSourceContext.allCases.map(\.rawValue))
+                ) ?? configuration.sourceContext.rawValue,
+            targetContext:
+                sanitizedJSDebugString(
+                    raw["targetContext"],
+                    allowedValues: Self.allowedJSDebugTargetContexts
+                ),
+            safeMessageShapeClassification:
+                sanitizedJSDebugString(
+                    raw["safeMessageShapeClassification"],
+                    maxLength: 240
+                ) ?? "shape=unknown",
+            safeCommandTypeActionFieldNames:
+                sanitizedJSDebugFieldNames(
+                    raw["safeCommandTypeActionFieldNames"]
+                ),
+            portName: sanitizedJSDebugPortName(raw["portName"]),
+            ageMilliseconds:
+                sanitizedJSDebugAgeMilliseconds(raw["ageMilliseconds"]),
+            resultClassifier:
+                sanitizedJSDebugString(
+                    raw["resultClassifier"],
+                    maxLength: 96
+                ),
+            firstMissingAPIOrPermissionOrLifecycleError:
+                sanitizedJSDebugString(
+                    raw["firstMissingAPIOrPermissionOrLifecycleError"],
+                    maxLength: 180
+                ),
+            diagnostics:
+                sanitizedJSDebugDiagnostics(raw["diagnostics"])
+        )
+        jsDebugRouteEvents.append(record)
+        if jsDebugRouteEvents.count > 800 {
+            jsDebugRouteEvents.removeFirst(
+                jsDebugRouteEvents.count - 800
+            )
+        }
+    }
+
+    private func sanitizedJSDebugString(
+        _ value: Any?,
+        allowedValues: Set<String>? = nil,
+        maxLength: Int = 120
+    ) -> String? {
+        guard let string = value as? String else { return nil }
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false,
+              trimmed.count <= maxLength,
+              Self.containsSensitiveJSDebugFragment(trimmed) == false
+        else { return nil }
+        if let allowedValues {
+            return allowedValues.contains(trimmed) ? trimmed : nil
+        }
+        guard trimmed.unicodeScalars.allSatisfy({
+            CharacterSet.controlCharacters.contains($0) == false
+        }) else { return nil }
+        return trimmed
+    }
+
+    private func sanitizedJSDebugAgeMilliseconds(_ value: Any?) -> Int? {
+        let intValue: Int?
+        if let number = value as? NSNumber {
+            intValue = number.intValue
+        } else {
+            intValue = value as? Int
+        }
+        guard let intValue, intValue >= 0, intValue <= 600_000 else {
+            return nil
+        }
+        return intValue
+    }
+
+    private func sanitizedJSDebugFieldNames(_ value: Any?) -> [String] {
+        guard let fields = value as? [String] else { return [] }
+        return uniqueSortedPopupOptionsBridge(
+            fields.filter {
+                Self.safeJSDebugFieldNames.contains($0)
+                    && Self.containsSensitiveJSDebugFragment($0) == false
+            }
+        )
+    }
+
+    private func sanitizedJSDebugPortName(_ value: Any?) -> String? {
+        guard let portName = sanitizedJSDebugString(value, maxLength: 80),
+              portName.range(
+                of: #"^[A-Za-z][A-Za-z0-9_.:-]{0,79}$"#,
+                options: .regularExpression
+              ) != nil
+        else { return nil }
+        return portName
+    }
+
+    private func sanitizedJSDebugDiagnostics(_ value: Any?) -> [String] {
+        guard let diagnostics = value as? [String] else { return [] }
+        return uniqueSortedPopupOptionsBridge(
+            diagnostics.compactMap {
+                sanitizedJSDebugString($0, maxLength: 220)
+            }
+        )
+    }
+
+    private nonisolated static func containsSensitiveJSDebugFragment(
+        _ value: String
+    ) -> Bool {
+        let lower = value.lowercased()
+        return sensitiveJSDebugFragments.contains {
+            lower.contains($0)
+        }
+    }
+
+    private nonisolated static let allowedJSDebugEventKinds: Set<String> = [
+        "bridgeCallStarted",
+        "bridgeCallResolved",
+        "bridgeCallRejected",
+        "callbackLastError",
+        "missingAPIAccess",
+        "pendingTimeout",
+        "portDisconnected",
+        "portListenerAdded",
+        "portListenerRemoved",
+        "portMessageBridgeFailed",
+        "portMessageCalled",
+        "portMessageDelivered",
+        "portMessageQueued",
+        "portOnDisconnectDispatched",
+        "portOnMessageDispatched",
+        "promiseRejected",
+        "resourceLoadError",
+        "scriptError",
+        "unhandledRejection",
+    ]
+
+    private nonisolated static let allowedJSDebugInvocationModes:
+        Set<String> = [
+            "callback",
+            "fireAndForget",
+            "promise",
+        ]
+
+    private nonisolated static let allowedJSDebugTargetContexts: Set<String> = [
+        "contentScript",
+        "nativeApplication",
+        "nativeApplicationPort",
+        "resource",
+        "serviceWorker",
+        "storage.local",
+        "storage.managed",
+        "storage.session",
+        "storage.sync",
+        "tabs",
+        "unknown",
+    ]
+
+    private nonisolated static let safeJSDebugFieldNames: Set<String> = [
+        "action",
+        "command",
+        "kind",
+        "messageType",
+        "method",
+        "name",
+        "operation",
+        "requestType",
+        "type",
+    ]
+
+    private nonisolated static let sensitiveJSDebugFragments: Set<String> = [
+        "auth",
+        "cookie",
+        "credential",
+        "password",
+        "secret",
+        "sessionid",
+        "token",
+        "vault",
+    ]
+    #endif
 
     @MainActor
     func handleAsync(
@@ -1392,6 +1687,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             namespace: localStorageBroker.namespace
         )
         callRecords.removeAll()
+        jsDebugRouteEvents.removeAll()
+        nextJSDebugRouteEventSequence = 0
         onChangedPayloads.removeAll()
         for portID in serviceWorkerLifecyclePortIDs {
             sharedLifecycleSession?.disconnectKeepalive(
@@ -4680,6 +4977,11 @@ enum ChromeMV3PopupOptionsJSShimSource {
             "extensionBaseURLString": configuration.extensionBaseURLString,
             "bridgeMessageHandlerName": bridgeMessageHandlerName,
         ])
+        #if DEBUG
+        let debugSupportSource = debugSupportSource()
+        #else
+        let debugSupportSource = debugSupportNoopSource()
+        #endif
         return """
         (() => {
           "use strict";
@@ -4696,6 +4998,8 @@ enum ChromeMV3PopupOptionsJSShimSource {
           let nextBridgeCallNumber = 0;
           let nextPortNumber = 0;
           const portState = new WeakMap();
+
+          \(debugSupportSource)
 
           function unavailable(namespace, methodName) {
             return {
@@ -4719,10 +5023,23 @@ enum ChromeMV3PopupOptionsJSShimSource {
               && globalThis.webkit.messageHandlers
               && globalThis.webkit.messageHandlers[bridgeName];
             if (!handler || typeof handler.postMessage !== "function") {
-              return Promise.resolve(unavailable(namespace, methodName));
+              const unavailableResponse = unavailable(namespace, methodName);
+              debugMissingAPI(
+                debugAPIName(namespace, methodName),
+                "unknown pending promise",
+                debugTargetContext(namespace, methodName)
+              );
+              return Promise.resolve(unavailableResponse);
             }
             nextBridgeCallNumber += 1;
-            return handler.postMessage(Object.assign({
+            const bridgeCallID = [
+              "popup-options-js",
+              config.surfaceID,
+              namespace,
+              methodName,
+              String(nextBridgeCallNumber)
+            ].join("-");
+            const request = Object.assign({
               namespace,
               methodName,
               invocationMode,
@@ -4730,15 +5047,29 @@ enum ChromeMV3PopupOptionsJSShimSource {
               profileID: config.profileID,
               sourceContext: config.sourceContext,
               surfaceID: config.surfaceID,
-              bridgeCallID: [
-                "popup-options-js",
-                config.surfaceID,
-                namespace,
-                methodName,
-                String(nextBridgeCallNumber)
-              ].join("-"),
+              bridgeCallID,
               arguments: args || []
-            }, extra || {}));
+            }, extra || {});
+            debugBridgeStart(
+              namespace,
+              methodName,
+              invocationMode,
+              request.arguments,
+              bridgeCallID
+            );
+            try {
+              return Promise.resolve(handler.postMessage(request))
+                .then((response) => {
+                  debugBridgeResolved(response);
+                  return response;
+                }, (error) => {
+                  debugBridgeRejected(namespace, methodName, bridgeCallID, error);
+                  throw error;
+                });
+            } catch (error) {
+              debugBridgeRejected(namespace, methodName, bridgeCallID, error);
+              return Promise.reject(error);
+            }
           }
 
           function toJSONCompatible(value) {
@@ -4768,9 +5099,15 @@ enum ChromeMV3PopupOptionsJSShimSource {
           }
 
           function rejectFromResponse(response) {
-            return Promise.reject(
-              new Error(response.lastErrorMessage || "Popup/options JS bridge call failed.")
-            );
+            const error = new Error(response.lastErrorMessage || "Popup/options JS bridge call failed.");
+            try {
+              Object.defineProperty(error, "__sumiBridgeResponseRejected", {
+                value: true,
+                configurable: false
+              });
+            } catch (_) {
+            }
+            return Promise.reject(error);
           }
 
           function callbackArgs(namespace, methodName, response) {
@@ -4834,10 +5171,16 @@ enum ChromeMV3PopupOptionsJSShimSource {
             if (callback) {
               promise.then((response) => {
                 if (response.succeeded) {
+                  debugCallbackLastError(namespace, methodName, null);
                   invokeCallback(callback, null, callbackArgs(namespace, methodName, response));
                 } else {
+                  debugCallbackLastError(namespace, methodName, response.lastErrorMessage);
                   invokeCallback(callback, response.lastErrorMessage, []);
                 }
+              }).catch((error) => {
+                const message = error && (error.message || String(error));
+                debugCallbackLastError(namespace, methodName, message);
+                invokeCallback(callback, message || "Popup/options JS bridge call failed.", []);
               });
               return undefined;
             }
@@ -4845,7 +5188,13 @@ enum ChromeMV3PopupOptionsJSShimSource {
               if (response.succeeded) {
                 return promiseValue(namespace, methodName, response);
               }
+              debugPromiseRejected(namespace, methodName, response.lastErrorMessage);
               return rejectFromResponse(response);
+            }).catch((error) => {
+              if (!error || error.__sumiBridgeResponseRejected !== true) {
+                debugPromiseRejected(namespace, methodName, error && (error.message || String(error)));
+              }
+              throw error;
             });
           }
 
@@ -4984,18 +5333,36 @@ enum ChromeMV3PopupOptionsJSShimSource {
             };
           }
 
-          function makePortEvent() {
+          function makePortEvent(eventName, stateProvider) {
             const listeners = [];
             return Object.freeze({
               addListener(listener) {
                 if (typeof listener === "function" && !listeners.includes(listener)) {
                   listeners.push(listener);
+                  const state = stateProvider ? stateProvider() : null;
+                  debugPortEvent("portListenerAdded", {
+                    apiName: eventName,
+                    portName: state ? debugSafePortName(state.name) : null,
+                    resultClassifier: "listener added",
+                    diagnostics: [
+                      "Port event listener added; listenerCount=" + String(listeners.length)
+                    ]
+                  });
                 }
               },
               removeListener(listener) {
                 const index = listeners.indexOf(listener);
                 if (index >= 0) {
                   listeners.splice(index, 1);
+                  const state = stateProvider ? stateProvider() : null;
+                  debugPortEvent("portListenerRemoved", {
+                    apiName: eventName,
+                    portName: state ? debugSafePortName(state.name) : null,
+                    resultClassifier: "listener removed",
+                    diagnostics: [
+                      "Port event listener removed; listenerCount=" + String(listeners.length)
+                    ]
+                  });
                 }
               },
               hasListener(listener) {
@@ -5003,6 +5370,24 @@ enum ChromeMV3PopupOptionsJSShimSource {
               },
               dispatch() {
                 const args = Array.prototype.slice.call(arguments);
+                const state = stateProvider ? stateProvider() : null;
+                debugPortEvent(
+                  eventName === "Port.onMessage"
+                    ? "portOnMessageDispatched"
+                    : "portOnDisconnectDispatched",
+                  {
+                    apiName: eventName,
+                    portName: state ? debugSafePortName(state.name) : null,
+                    safeMessageShapeClassification: debugArgsShape(args),
+                    resultClassifier:
+                      listeners.length > 0
+                        ? "Port response delivered"
+                        : "Port response not delivered",
+                    diagnostics: [
+                      "Port event dispatched; listenerCount=" + String(listeners.length)
+                    ]
+                  }
+                );
                 listeners.slice().forEach((listener) => listener.apply(undefined, args));
               }
             });
@@ -5012,20 +5397,35 @@ enum ChromeMV3PopupOptionsJSShimSource {
             const port = {};
             const state = {
               id: null,
+              name: name || "",
               disconnected: false,
               delivery: delivery || null,
               sender: null,
               pendingMessages: [],
               deliveredMessageCount: 0,
-              onMessage: makePortEvent(),
-              onDisconnect: makePortEvent()
+              onMessage: null,
+              onDisconnect: null
             };
+            state.onMessage = makePortEvent("Port.onMessage", () => state);
+            state.onDisconnect = makePortEvent("Port.onDisconnect", () => state);
             function markDisconnected(message) {
               if (state.disconnected) {
                 return;
               }
               state.disconnected = true;
               state.pendingMessages = [];
+              debugPortEvent("portDisconnected", {
+                apiName: "Port.disconnect",
+                portName: debugSafePortName(state.name),
+                resultClassifier: message ? "lastError" : "disconnected",
+                firstMissingAPIOrPermissionOrLifecycleError:
+                  debugSanitizedMessage(message),
+                diagnostics: [
+                  message
+                    ? "Port disconnected with runtime.lastError."
+                    : "Port disconnected."
+                ]
+              });
               dispatchDisconnect(state, port, message || null);
             }
             function dispatchPostedMessages(payload) {
@@ -5042,12 +5442,26 @@ enum ChromeMV3PopupOptionsJSShimSource {
               }
             }
             function sendNativePortMessage(message) {
+              debugPortEvent("portMessageCalled", {
+                apiName: "Port.postMessage",
+                portName: debugSafePortName(state.name),
+                safeMessageShapeClassification: debugValueShape(message, 0),
+                resultClassifier: "called",
+                diagnostics: ["Port.postMessage called by popup."]
+              });
               if (!state.delivery || !state.delivery.namespace || !state.delivery.postMessage) {
                 state.onMessage.dispatch(message, port);
                 return;
               }
               if (!state.id) {
                 state.pendingMessages.push(message);
+                debugPortEvent("portMessageQueued", {
+                  apiName: "Port.postMessage",
+                  portName: debugSafePortName(state.name),
+                  safeMessageShapeClassification: debugValueShape(message, 0),
+                  resultClassifier: "queued",
+                  diagnostics: ["Port.postMessage queued until bridge Port ID resolves."]
+                });
                 return;
               }
               bridgePost(
@@ -5057,9 +5471,23 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 [state.id, message]
               ).then((response) => {
                 if (!response.succeeded) {
+                  debugPortEvent("portMessageBridgeFailed", {
+                    apiName: state.delivery.namespace + "." + state.delivery.postMessage,
+                    portName: debugSafePortName(state.name),
+                    resultClassifier: "Port message not delivered",
+                    firstMissingAPIOrPermissionOrLifecycleError:
+                      debugSanitizedMessage(response.lastErrorMessage),
+                    diagnostics: ["Port.postMessage bridge response failed."]
+                  });
                   markDisconnected(response.lastErrorMessage);
                   return;
                 }
+                debugPortEvent("portMessageDelivered", {
+                  apiName: state.delivery.namespace + "." + state.delivery.postMessage,
+                  portName: debugSafePortName(state.name),
+                  resultClassifier: "Port message delivered",
+                  diagnostics: ["Port.postMessage bridge response succeeded."]
+                });
                 dispatchPostedMessages(response.resultPayload || {});
               }).catch(() => markDisconnected("Native messaging port is closed."));
             }
@@ -5273,6 +5701,19 @@ enum ChromeMV3PopupOptionsJSShimSource {
             value: storageOnChanged,
             enumerable: true
           });
+          const storageObject = new Proxy(Object.freeze(storage), {
+            get(target, prop, receiver) {
+              if (typeof prop === "string" && ["session", "sync", "managed"].includes(prop)) {
+                debugMissingAPI(
+                  "chrome.storage." + prop,
+                  "missing storage." + prop,
+                  "storage." + prop
+                );
+                return undefined;
+              }
+              return Reflect.get(target, prop, receiver);
+            }
+          });
 
           ["contains", "request", "remove"].forEach((methodName) => {
             Object.defineProperty(permissions, methodName, {
@@ -5389,7 +5830,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
             enumerable: true
           });
           Object.defineProperty(chromeObject, "storage", {
-            value: Object.freeze(storage),
+            value: storageObject,
             enumerable: true
           });
           Object.defineProperty(chromeObject, "permissions", {
@@ -5410,18 +5851,529 @@ enum ChromeMV3PopupOptionsJSShimSource {
               enumerable: true
             });
           });
+          function rootObject(rootName) {
+            return new Proxy(Object.freeze(chromeObject), {
+              get(target, prop, receiver) {
+                if (typeof prop === "string" && !Reflect.has(target, prop)) {
+                  debugMissingAPI(
+                    rootName + "." + prop,
+                    "missing Chrome API namespace",
+                    "unknown"
+                  );
+                  return undefined;
+                }
+                return Reflect.get(target, prop, receiver);
+              }
+            });
+          }
+          const chromeRoot = rootObject("chrome");
+          const browserRoot = rootObject("browser");
 
           Object.defineProperty(globalThis, "chrome", {
-            value: Object.freeze(chromeObject),
+            value: chromeRoot,
             configurable: true
           });
           Object.defineProperty(globalThis, "browser", {
-            value: chromeObject,
+            value: browserRoot,
             configurable: true
           });
         })();
         """
     }
+
+    private static func debugSupportNoopSource() -> String {
+        """
+          function debugBridgeStart(namespace, methodName, invocationMode, args, bridgeCallID) {}
+          function debugBridgeResolved(response) {}
+          function debugBridgeRejected(namespace, methodName, bridgeCallID, error) {}
+          function debugCallbackLastError(namespace, methodName, message) {}
+          function debugPromiseRejected(namespace, methodName, message) {}
+          function debugMissingAPI(apiName, resultClassifier, targetContext) {}
+          function debugPortEvent(eventKind, record) {}
+        """
+    }
+
+    #if DEBUG
+    private static func debugSupportSource() -> String {
+        """
+          const __sumiDebugEvents = [];
+          const __sumiPendingBridgeCalls = new Map();
+          const __sumiDebugStartedAt = Date.now();
+          const __sumiPendingTimeoutMS = 900;
+          const __sumiSafeFieldNames = new Set([
+            "action", "command", "kind", "messageType", "method", "name",
+            "operation", "requestType", "type"
+          ]);
+          const __sumiSensitiveFragments = [
+            "auth", "cookie", "credential", "password", "secret",
+            "sessionid", "token", "vault"
+          ];
+
+          function debugNowMS() {
+            return Math.max(0, Date.now() - __sumiDebugStartedAt);
+          }
+
+          function debugIsSensitiveName(name) {
+            const lower = String(name || "").toLowerCase();
+            return __sumiSensitiveFragments.some((fragment) => lower.includes(fragment));
+          }
+
+          function debugSafeString(value, maxLength) {
+            if (typeof value !== "string") {
+              return null;
+            }
+            const trimmed = value.trim();
+            if (!trimmed || trimmed.length > (maxLength || 120)) {
+              return null;
+            }
+            if (debugIsSensitiveName(trimmed)) {
+              return null;
+            }
+            if (/[\\u0000-\\u001f\\u007f]/.test(trimmed)) {
+              return null;
+            }
+            return trimmed;
+          }
+
+          function debugSafePortName(value) {
+            const name = debugSafeString(value, 80);
+            if (!name || !/^[A-Za-z][A-Za-z0-9_.:-]{0,79}$/.test(name)) {
+              return null;
+            }
+            return name;
+          }
+
+          function debugSafeFieldsInValue(value, depth) {
+            if (depth > 3 || !value || typeof value !== "object") {
+              return [];
+            }
+            if (Array.isArray(value)) {
+              return Array.from(new Set(value.flatMap((item) => debugSafeFieldsInValue(item, depth + 1)))).sort();
+            }
+            return Object.keys(value)
+              .filter((key) => __sumiSafeFieldNames.has(key))
+              .filter((key) => !debugIsSensitiveName(key))
+              .sort();
+          }
+
+          function debugValueShape(value, depth) {
+            if (value === null) {
+              return "null";
+            }
+            if (value === undefined) {
+              return "undefined";
+            }
+            if (Array.isArray(value)) {
+              return "array:length=" + value.length;
+            }
+            const type = typeof value;
+            if (type === "object") {
+              const fields = debugSafeFieldsInValue(value, depth || 0);
+              return "object:keyCount=" + Object.keys(value).length
+                + (fields.length ? ";safeFields=" + fields.join(",") : "");
+            }
+            if (type === "string") {
+              return "string:length=" + value.length;
+            }
+            if (type === "number") {
+              return "number";
+            }
+            if (type === "boolean") {
+              return "boolean";
+            }
+            if (type === "function") {
+              return "function";
+            }
+            return "value:" + type;
+          }
+
+          function debugArgsShape(args) {
+            const list = Array.isArray(args) ? args : [];
+            if (list.length === 0) {
+              return "arguments:0";
+            }
+            return list.map((value, index) => {
+              return "arg" + index + "=" + debugValueShape(value, 0);
+            }).join(";");
+          }
+
+          function debugTargetContext(namespace, methodName) {
+            if (namespace === "storage") {
+              if (methodName.indexOf("local.") === 0) {
+                return "storage.local";
+              }
+              if (methodName.indexOf("session.") === 0) {
+                return "storage.session";
+              }
+              if (methodName.indexOf("sync.") === 0) {
+                return "storage.sync";
+              }
+              if (methodName.indexOf("managed.") === 0) {
+                return "storage.managed";
+              }
+            }
+            if (namespace === "runtime" && methodName === "sendMessage") {
+              return "serviceWorker";
+            }
+            if (namespace === "runtime" && methodName === "connect") {
+              return "serviceWorker";
+            }
+            if (namespace === "runtime" && methodName.indexOf("port.") === 0) {
+              return "serviceWorker";
+            }
+            if (namespace === "tabs" && methodName === "query") {
+              return "tabs";
+            }
+            if (namespace === "tabs") {
+              return "contentScript";
+            }
+            if (methodName === "sendNativeMessage") {
+              return "nativeApplication";
+            }
+            if (methodName === "connectNative" || methodName === "nativePort.postMessage" || methodName === "nativePort.disconnect") {
+              return "nativeApplicationPort";
+            }
+            return "unknown";
+          }
+
+          function debugPortName(namespace, methodName, args) {
+            if (namespace === "runtime" && methodName === "connect") {
+              if (args[0] && typeof args[0] === "object") {
+                return debugSafePortName(args[0].name);
+              }
+              if (args[1] && typeof args[1] === "object") {
+                return debugSafePortName(args[1].name);
+              }
+            }
+            if (namespace === "tabs" && methodName === "connect") {
+              return debugSafePortName(args[1] && args[1].name);
+            }
+            return null;
+          }
+
+          function debugAPIName(namespace, methodName) {
+            return namespace + "." + methodName;
+          }
+
+          function debugClassifier(namespace, methodName, response) {
+            if (namespace === "storage" && methodName.indexOf("local.") === 0) {
+              return response && response.succeeded
+                ? "storageLocalBrokerSucceeded"
+                : "pending unresolved storage call";
+            }
+            if (namespace === "storage" && methodName.indexOf("session.") === 0) {
+              return "missing storage.session";
+            }
+            if (namespace === "storage" && methodName.indexOf("sync.") === 0) {
+              return "missing storage.sync";
+            }
+            if (namespace === "storage" && methodName.indexOf("managed.") === 0) {
+              return "missing storage.managed";
+            }
+            if (namespace === "tabs" && methodName === "connect") {
+              return response && response.succeeded
+                ? "listenerRespondedSync"
+                : "missing tabs.connect";
+            }
+            if (namespace === "runtime" && methodName === "connect") {
+              if (response && response.succeeded && response.resultPayload && response.resultPayload.canWakeServiceWorkerNow === false) {
+                return "service worker not waking";
+              }
+              return response && response.succeeded ? "listenerRespondedSync" : "service worker not waking";
+            }
+            if (namespace === "runtime" && methodName === "port.postMessage") {
+              return response && response.succeeded ? "Port response delivered" : "Port message not delivered";
+            }
+            if (response && response.succeeded) {
+              return "listenerRespondedSync";
+            }
+            if (response && response.lastErrorCode === "noReceivingEnd") {
+              return "service worker listener missing";
+            }
+            if (response && response.lastErrorCode) {
+              return response.lastErrorCode;
+            }
+            return "unknown pending promise";
+          }
+
+          function debugSanitizedMessage(message) {
+            const safe = debugSafeString(message, 180);
+            return safe || null;
+          }
+
+          function debugSafeInteger(value) {
+            if (typeof value !== "number" || !Number.isFinite(value)) {
+              return null;
+            }
+            const rounded = Math.round(value);
+            if (rounded < 0 || rounded > 1000000) {
+              return null;
+            }
+            return String(rounded);
+          }
+
+          function debugSafeResourceDescriptor(value) {
+            if (typeof value !== "string") {
+              return null;
+            }
+            const beforeQuery = value.split("#", 1)[0].split("?", 1)[0];
+            if (debugIsSensitiveName(beforeQuery)) {
+              return null;
+            }
+            const pieces = beforeQuery.split("/").filter(Boolean);
+            if (pieces.length === 0) {
+              return null;
+            }
+            const tail = pieces.slice(Math.max(0, pieces.length - 2)).join("/");
+            return debugSafeString(tail, 140);
+          }
+
+          function debugPost(record) {
+            try {
+              const handler = globalThis.webkit
+                && globalThis.webkit.messageHandlers
+                && globalThis.webkit.messageHandlers[bridgeName];
+              if (!handler || typeof handler.postMessage !== "function") {
+                return;
+              }
+              handler.postMessage(Object.assign({
+                namespace: "__sumiDebug",
+                methodName: "event",
+                invocationMode: "fireAndForget",
+                extensionID: config.extensionID,
+                profileID: config.profileID,
+                sourceContext: config.sourceContext,
+                surfaceID: config.surfaceID,
+                bridgeCallID: "popup-options-js-debug-" + String(debugNowMS())
+              }, record));
+            } catch (_) {
+            }
+          }
+
+          function debugRecord(eventKind, record) {
+            const sanitized = Object.assign({
+              eventKind,
+              sourceContext: config.sourceContext,
+              safeMessageShapeClassification: "shape=unknown",
+              safeCommandTypeActionFieldNames: [],
+              diagnostics: []
+            }, record || {});
+            __sumiDebugEvents.push(Object.assign({ atMs: debugNowMS() }, sanitized));
+            if (__sumiDebugEvents.length > 800) {
+              __sumiDebugEvents.splice(0, __sumiDebugEvents.length - 800);
+            }
+            debugPost(sanitized);
+          }
+
+          function debugBridgeStart(namespace, methodName, invocationMode, args, bridgeCallID) {
+            const apiName = debugAPIName(namespace, methodName);
+            const pending = {
+              apiName,
+              bridgeCallID,
+              invocationMode,
+              sourceContext: config.sourceContext,
+              targetContext: debugTargetContext(namespace, methodName),
+              safeMessageShapeClassification: debugArgsShape(args),
+              safeCommandTypeActionFieldNames: Array.from(new Set((args || []).flatMap((value) => debugSafeFieldsInValue(value, 0)))).sort(),
+              portName: debugPortName(namespace, methodName, args),
+              startedAt: debugNowMS()
+            };
+            __sumiPendingBridgeCalls.set(bridgeCallID, pending);
+            debugRecord("bridgeCallStarted", Object.assign({}, pending, {
+              resultClassifier: "pending"
+            }));
+            globalThis.setTimeout(() => {
+              const current = __sumiPendingBridgeCalls.get(bridgeCallID);
+              if (!current) {
+                return;
+              }
+              const age = debugNowMS() - current.startedAt;
+              debugRecord("pendingTimeout", Object.assign({}, current, {
+                ageMilliseconds: Math.round(age),
+                resultClassifier: debugClassifier(namespace, methodName, null),
+                firstMissingAPIOrPermissionOrLifecycleError: debugClassifier(namespace, methodName, null),
+                diagnostics: [
+                  "Bridge call remained unresolved past the DEBUG pending-route timeout."
+                ]
+              }));
+            }, __sumiPendingTimeoutMS);
+          }
+
+          function debugBridgeResolved(response) {
+            if (!response || !response.bridgeCallID) {
+              return;
+            }
+            const pending = __sumiPendingBridgeCalls.get(response.bridgeCallID);
+            if (!pending) {
+              return;
+            }
+            __sumiPendingBridgeCalls.delete(response.bridgeCallID);
+            const parts = pending.apiName.split(".");
+            const namespace = parts.shift() || "unknown";
+            const methodName = parts.join(".");
+            debugRecord("bridgeCallResolved", Object.assign({}, pending, {
+              ageMilliseconds: Math.round(debugNowMS() - pending.startedAt),
+              resultClassifier: debugClassifier(namespace, methodName, response),
+              firstMissingAPIOrPermissionOrLifecycleError:
+                response.succeeded ? null : debugSanitizedMessage(response.lastErrorMessage),
+              diagnostics: [
+                response.succeeded
+                  ? "Bridge call resolved successfully."
+                  : "Bridge call resolved with lastError."
+              ]
+            }));
+          }
+
+          function debugBridgeRejected(namespace, methodName, bridgeCallID, error) {
+            const pending = __sumiPendingBridgeCalls.get(bridgeCallID);
+            if (pending) {
+              __sumiPendingBridgeCalls.delete(bridgeCallID);
+            }
+            debugRecord("bridgeCallRejected", Object.assign({}, pending || {
+              apiName: debugAPIName(namespace, methodName),
+              bridgeCallID,
+              targetContext: debugTargetContext(namespace, methodName),
+              safeMessageShapeClassification: "arguments:unknown"
+            }, {
+              ageMilliseconds: pending ? Math.round(debugNowMS() - pending.startedAt) : null,
+              resultClassifier: "unknown pending promise",
+              firstMissingAPIOrPermissionOrLifecycleError:
+                debugSanitizedMessage(error && (error.message || String(error))),
+              diagnostics: ["Bridge postMessage Promise rejected before a host response."]
+            }));
+          }
+
+          function debugCallbackLastError(namespace, methodName, message) {
+            debugRecord("callbackLastError", {
+              apiName: debugAPIName(namespace, methodName),
+              targetContext: debugTargetContext(namespace, methodName),
+              resultClassifier: message ? "callback runtime.lastError" : "callback succeeded",
+              firstMissingAPIOrPermissionOrLifecycleError:
+                debugSanitizedMessage(message),
+              diagnostics: [
+                message
+                  ? "Callback observed runtime.lastError."
+                  : "Callback completed without runtime.lastError."
+              ]
+            });
+          }
+
+          function debugPromiseRejected(namespace, methodName, message) {
+            debugRecord("promiseRejected", {
+              apiName: debugAPIName(namespace, methodName),
+              targetContext: debugTargetContext(namespace, methodName),
+              resultClassifier: "Promise rejection",
+              firstMissingAPIOrPermissionOrLifecycleError:
+                debugSanitizedMessage(message),
+              diagnostics: ["Promise rejected from popup/options bridge response."]
+            });
+          }
+
+          function debugMissingAPI(apiName, resultClassifier, targetContext) {
+            debugRecord("missingAPIAccess", {
+              apiName,
+              targetContext: targetContext || "unknown",
+              resultClassifier: resultClassifier || "missing Chrome API namespace",
+              firstMissingAPIOrPermissionOrLifecycleError:
+                resultClassifier || "missing Chrome API namespace",
+              safeMessageShapeClassification: "arguments:0",
+              diagnostics: [
+                "Missing or unsupported chrome.* namespace/property was accessed by the popup."
+              ]
+            });
+          }
+
+          function debugPortEvent(eventKind, record) {
+            debugRecord(eventKind, Object.assign({
+              targetContext: "serviceWorker",
+              safeMessageShapeClassification: "arguments:0"
+            }, record || {}));
+          }
+
+          globalThis.addEventListener("unhandledrejection", (event) => {
+            const reason = event && event.reason;
+            debugRecord("unhandledRejection", {
+              apiName: "global.unhandledrejection",
+              targetContext: "unknown",
+              resultClassifier: "Promise rejection",
+              firstMissingAPIOrPermissionOrLifecycleError:
+                debugSanitizedMessage(reason && (reason.message || String(reason))),
+              diagnostics: ["Popup emitted an unhandled Promise rejection."]
+            });
+          });
+
+          globalThis.addEventListener("error", (event) => {
+            const target = event && event.target;
+            if (target && target !== globalThis && target !== globalThis.window) {
+              const tag = debugSafeString(String(target.tagName || "").toLowerCase(), 40) || "unknown";
+              const resource = debugSafeResourceDescriptor(
+                target.currentSrc || target.src || target.href || ""
+              );
+              debugRecord("resourceLoadError", {
+                apiName: "resource." + tag,
+                targetContext: "resource",
+                resultClassifier: "CSP/resource issue",
+                firstMissingAPIOrPermissionOrLifecycleError:
+                  resource ? "resource load error: " + resource : "resource load error",
+                safeMessageShapeClassification: "resourceTag=" + tag,
+                diagnostics: [
+                  "Popup resource emitted an error event.",
+                  "tag=" + tag,
+                  resource ? "resource=" + resource : "resource=unknown"
+                ]
+              });
+              return;
+            }
+            const message = debugSanitizedMessage(event && event.message);
+            const filename = debugSafeResourceDescriptor(event && event.filename);
+            const line = debugSafeInteger(event && event.lineno);
+            const column = debugSafeInteger(event && event.colno);
+            const errorName = debugSafeString(event && event.error && event.error.name, 80);
+            const diagnostics = ["Popup emitted a window error event."];
+            if (message) {
+              diagnostics.push("message=" + message);
+            }
+            if (filename) {
+              diagnostics.push("resource=" + filename);
+            }
+            if (line) {
+              diagnostics.push("line=" + line);
+            }
+            if (column) {
+              diagnostics.push("column=" + column);
+            }
+            if (errorName) {
+              diagnostics.push("errorName=" + errorName);
+            }
+            debugRecord("scriptError", {
+              apiName: "global.error",
+              targetContext: "unknown",
+              resultClassifier: "script error",
+              firstMissingAPIOrPermissionOrLifecycleError:
+                message,
+              diagnostics
+            });
+          });
+
+          Object.defineProperty(globalThis, "__sumiChromeMV3PopupOptionsDebugSnapshot", {
+            value() {
+              const pending = Array.from(__sumiPendingBridgeCalls.values()).map((entry) => {
+                return Object.assign({}, entry, {
+                  ageMilliseconds: Math.round(debugNowMS() - entry.startedAt),
+                  resultClassifier: "unknown pending promise"
+                });
+              });
+              return {
+                sourceContext: config.sourceContext,
+                pending,
+                events: __sumiDebugEvents.slice()
+              };
+            },
+            configurable: false
+          });
+        """
+    }
+    #endif
 
     private static func jsonString(_ object: [String: String]) -> String {
         let data = (try? JSONSerialization.data(

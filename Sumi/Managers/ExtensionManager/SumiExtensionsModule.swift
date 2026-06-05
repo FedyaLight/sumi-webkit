@@ -4837,6 +4837,35 @@ final class SumiExtensionsModule {
         cachedChromeMV3PopupOptionsHostController?.activeSessionCount ?? 0
     }
 
+    #if DEBUG
+    func chromeMV3PopupOptionsBridgeDiagnosticsSnapshotForTesting(
+        profileID: String,
+        extensionID: String,
+        surface: ChromeMV3ProductPopupOptionsSurface = .actionPopup
+    ) -> ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot? {
+        cachedChromeMV3PopupOptionsHostController?.diagnosticsSnapshot(
+            profileID: profileID,
+            extensionID: extensionID,
+            surface: surface
+        )
+    }
+
+    func chromeMV3PopupOptionsEvaluateJavaScriptForTesting(
+        profileID: String,
+        extensionID: String,
+        surface: ChromeMV3ProductPopupOptionsSurface = .actionPopup,
+        script: String
+    ) async throws -> Any? {
+        try await cachedChromeMV3PopupOptionsHostController?
+            .evaluateJavaScriptForTesting(
+                profileID: profileID,
+                extensionID: extensionID,
+                surface: surface,
+                script: script
+            )
+    }
+    #endif
+
     var chromeMV3PermissionEventDispatchRecordsForTesting:
         [ChromeMV3PermissionEventDispatchRecord]
     {

@@ -715,6 +715,145 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
     }
 
     @MainActor
+    func testDebugControlledBitwardenURLHubActionPopupSpinnerDiagnostics()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Controlled popup WKWebView diagnostics require macOS 15.5.")
+        }
+
+        let bitwardenRoot = URL(
+            fileURLWithPath:
+                "/Users/fedaefimov/Downloads/Aura/mv3-test-extensions/bitwarden",
+            isDirectory: true
+        )
+        try XCTSkipUnless(
+            FileManager.default.fileExists(
+                atPath: bitwardenRoot.appendingPathComponent("manifest.json").path
+            ),
+            "Local Bitwarden package is not available."
+        )
+
+        let nativeHostWasRunning =
+            bitwardenNativeHostRunningApplicationIdentifiers()
+        UserDefaults.standard.set(
+            true,
+            forKey: ExtensionManager
+                .controlledCompatibilityActionPopupDefaultsKey
+        )
+        defer {
+            UserDefaults.standard.removeObject(
+                forKey: ExtensionManager
+                    .controlledCompatibilityActionPopupDefaultsKey
+            )
+        }
+        XCTAssertTrue(
+            RuntimeDiagnostics.debugDefaultBool(
+                forKey: ExtensionManager
+                    .controlledCompatibilityActionPopupDefaultsKey
+            )
+        )
+
+        let root = try makeTemporaryDirectory()
+        let profileID = UUID()
+        let module = try makeModule(enabled: true, includesModelContext: true)
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: bitwardenRoot,
+            profileID: profileID.uuidString,
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+        XCTAssertTrue(install.succeeded)
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: record.extensionID
+        )
+
+        let currentTab = Tab(url: URL(string: "https://example.com/login")!)
+        currentTab.profileId = profileID
+        let installedAction = try XCTUnwrap(
+            module.surfaceStore.enabledExtensions.first {
+                $0.id == record.extensionID
+            }
+        )
+        let preflightLaunchRecord =
+            ChromeMV3ProductPopupOptionsLaunchPlanner
+            .controlledActionPopupLaunchRecord(
+                rootURL: ChromeMV3ExtensionManagerStoreLocation
+                    .defaultRootURL(),
+                profileID: profileID.uuidString,
+                installedExtension: installedAction,
+                managerGate: module.chromeMV3ExtensionManagerGate(),
+                moduleEnabled: true
+            )
+        let preflightSummary =
+            controlledBitwardenPopupPreflightSummary(
+                preflightLaunchRecord
+            )
+        print("SumiControlledBitwardenPopup \(preflightSummary)")
+        let result = await module.openActionPopupFromURLHub(
+            extensionId: record.extensionID,
+            currentTab: currentTab
+        )
+
+        guard result.opened else {
+            XCTFail("\(result.message) \(preflightSummary)")
+            XCTAssertEqual(
+                bitwardenNativeHostRunningApplicationIdentifiers(),
+                nativeHostWasRunning,
+                "The controlled Bitwarden popup diagnostics must not launch com.bitwarden.desktop."
+            )
+            return
+        }
+        XCTAssertNil(result.blocker)
+        XCTAssertNil(result.nativePopupBoundarySnapshot)
+        XCTAssertTrue(result.sanitizedBridgeSnapshotDiagnostics.contains {
+            $0.contains("controlled file-backed compatibility popup host")
+        })
+
+        let snapshot = try await waitForControlledBitwardenPopupBridgeSnapshot(
+            module: module,
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+        let domState = try await controlledBitwardenPopupDOMState(
+            module: module,
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+        let firstBlocker =
+            controlledBitwardenPopupFirstFatalBlocker(snapshot)
+        let tabsConnectFatal =
+            controlledBitwardenTabsConnectActuallyFatal(snapshot)
+
+        XCTAssertFalse(snapshot.jsDebugRouteEvents.isEmpty)
+        XCTAssertNotEqual(firstBlocker, "unknown")
+        XCTAssertEqual(
+            bitwardenNativeHostRunningApplicationIdentifiers(),
+            nativeHostWasRunning,
+            "The controlled Bitwarden popup diagnostics must not launch com.bitwarden.desktop."
+        )
+
+        print("SumiControlledBitwardenPopup reproducedControlledHost=true")
+        print("SumiControlledBitwardenPopup domState=\(domState)")
+        print("SumiControlledBitwardenPopup firstFatalBlocker=\(firstBlocker)")
+        print("SumiControlledBitwardenPopup pendingCount=\(snapshot.pendingUnresolvedJSDebugRoutes.count)")
+        print("SumiControlledBitwardenPopup routeEvents=\(snapshot.jsDebugRouteEvents.count)")
+        print("SumiControlledBitwardenPopup callRecords=\(snapshot.callRecords.count)")
+        print("SumiControlledBitwardenPopup tabsConnectActuallyFatal=\(tabsConnectFatal)")
+        print("SumiControlledBitwardenPopup nativeHostLaunched=false")
+        for line in controlledBitwardenPopupSanitizedLogLines(snapshot) {
+            print("SumiControlledBitwardenPopup \(line)")
+        }
+
+        _ = module.chromeMV3ClosePopupOptionsThroughManager(
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+    }
+
+    @MainActor
     func testURLHubActionClickReportsSelectedPackageContextLoadFailurePrecisely()
         async throws
     {
@@ -1899,6 +2038,220 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         return module.surfaceStore.enabledExtensions.first {
             $0.id == extensionId
         }
+    }
+
+    private func controlledBitwardenPopupPreflightSummary(
+        _ launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord?
+    ) -> String {
+        guard let launchRecord else {
+            return "preflightLaunchRecord=none"
+        }
+        let linkedKinds =
+            Dictionary(
+                grouping:
+                    launchRecord.resourceResolution?.linkedResources
+                        .map(\.kind.rawValue) ?? [],
+                by: { $0 }
+            )
+            .map { "\($0.key):\($0.value.count)" }
+            .sorted()
+            .joined(separator: ",")
+        return [
+            "preflightCanOpen=\(launchRecord.canOpen)",
+            "declaredPath=\(launchRecord.declaredPath ?? "none")",
+            "validation=\(launchRecord.resourceValidationState.rawValue)",
+            "blockers=\(launchRecord.blockers.map(\.rawValue).joined(separator: ","))",
+            "resourceBlockers=\((launchRecord.resourceResolution?.blockingReasons ?? []).joined(separator: "|"))",
+            "missingResources=\((launchRecord.resourceResolution?.missingResourcePaths ?? []).joined(separator: ","))",
+            "unsafeResources=\((launchRecord.resourceResolution?.unsafeResourcePaths ?? []).joined(separator: ","))",
+            "remoteResources=\((launchRecord.resourceResolution?.remoteResourceReferences ?? []).joined(separator: ","))",
+            "linkedResourceKinds=\(linkedKinds)",
+        ].joined(separator: " ")
+    }
+
+    @MainActor
+    private func waitForControlledBitwardenPopupBridgeSnapshot(
+        module: SumiExtensionsModule,
+        profileID: String,
+        extensionID: String
+    ) async throws -> ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot {
+        var latest:
+            ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?
+        for _ in 0..<120 {
+            if let snapshot =
+                module
+                .chromeMV3PopupOptionsBridgeDiagnosticsSnapshotForTesting(
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+            {
+                latest = snapshot
+                if snapshot.pendingUnresolvedJSDebugRoutes.isEmpty == false
+                    || snapshot.jsDebugRouteEvents.count >= 8
+                    || snapshot.callRecords.count >= 4
+                {
+                    return snapshot
+                }
+            }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        return try XCTUnwrap(
+            latest,
+            "No controlled popup bridge diagnostics snapshot was captured."
+        )
+    }
+
+    @MainActor
+    private func controlledBitwardenPopupDOMState(
+        module: SumiExtensionsModule,
+        profileID: String,
+        extensionID: String
+    ) async throws -> String {
+        let script = """
+        (() => {
+          const text = document.body && document.body.innerText
+            ? document.body.innerText
+            : "";
+          const debugSnapshot =
+            globalThis.__sumiChromeMV3PopupOptionsDebugSnapshot
+              ? globalThis.__sumiChromeMV3PopupOptionsDebugSnapshot()
+              : { events: [], pending: [] };
+          return JSON.stringify({
+            readyState: document.readyState,
+            hasLoadingText: /\\bloading\\b/i.test(text),
+            hasBusyIndicator: !!document.querySelector(
+              '[role="progressbar"],[aria-busy="true"],.spinner,.loading,app-loading,bit-progress'
+            ),
+            inputCount: document.querySelectorAll('input').length,
+            buttonCount: document.querySelectorAll('button').length,
+            visibleTextLength: text.trim().length,
+            debugEventCount: Array.isArray(debugSnapshot.events)
+              ? debugSnapshot.events.length
+              : 0,
+            pendingCount: Array.isArray(debugSnapshot.pending)
+              ? debugSnapshot.pending.length
+              : 0
+          });
+        })();
+        """
+        let value = try await module
+            .chromeMV3PopupOptionsEvaluateJavaScriptForTesting(
+                profileID: profileID,
+                extensionID: extensionID,
+                script: script
+            )
+        return value as? String ?? "{}"
+    }
+
+    private func controlledBitwardenPopupFirstFatalBlocker(
+        _ snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
+    ) -> String {
+        let events = snapshot.jsDebugRouteEvents
+        if events.contains(where: {
+            $0.resultClassifier == "missing storage.session"
+        }) {
+            return "missing storage.session"
+        }
+        if events.contains(where: {
+            $0.resultClassifier == "missing storage.sync"
+        }) {
+            return "missing storage.sync"
+        }
+        if events.contains(where: {
+            $0.resultClassifier == "missing storage.managed"
+        }) {
+            return "missing storage.managed"
+        }
+        if events.contains(where: {
+            $0.resultClassifier == "service worker not waking"
+        }) {
+            return "service worker not waking"
+        }
+        if events.contains(where: {
+            $0.resultClassifier == "Port message not delivered"
+        }) {
+            return "Port message not delivered"
+        }
+        if events.contains(where: {
+            $0.resultClassifier == "Port response not delivered"
+        }) {
+            return "Port response not delivered"
+        }
+        if events.contains(where: {
+            $0.resultClassifier == "missing tabs.connect"
+        }) {
+            return "missing tabs.connect"
+        }
+        if let pending = snapshot.pendingUnresolvedJSDebugRoutes.first {
+            return pending.resultClassifier ?? "unknown pending promise"
+        }
+        if let lastError = events.first(where: {
+            $0.firstMissingAPIOrPermissionOrLifecycleError != nil
+        }) {
+            return lastError.resultClassifier ?? "unknown"
+        }
+        return "unknown"
+    }
+
+    private func controlledBitwardenTabsConnectActuallyFatal(
+        _ snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
+    ) -> Bool {
+        guard let firstFatal = snapshot.jsDebugRouteEvents.first(where: {
+            [
+                "missing storage.session",
+                "missing storage.sync",
+                "missing storage.managed",
+                "service worker not waking",
+                "Port message not delivered",
+                "Port response not delivered",
+                "missing tabs.connect",
+                "unknown pending promise",
+            ].contains($0.resultClassifier ?? "")
+        }) else {
+            return false
+        }
+        return firstFatal.apiName == "tabs.connect"
+    }
+
+    private func controlledBitwardenPopupSanitizedLogLines(
+        _ snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
+    ) -> [String] {
+        let eventLines = snapshot.jsDebugRouteEvents.prefix(80).map {
+            event in
+            [
+                "seq=\(event.sequence)",
+                "event=\(event.eventKind)",
+                "api=\(event.apiName)",
+                "target=\(event.targetContext ?? "unknown")",
+                "classifier=\(event.resultClassifier ?? "none")",
+                "ageMs=\(event.ageMilliseconds.map(String.init) ?? "na")",
+                "shape=\(event.safeMessageShapeClassification)",
+                "fields=\(event.safeCommandTypeActionFieldNames.joined(separator: ","))",
+                "port=\(event.portName ?? "none")",
+                "firstError=\(event.firstMissingAPIOrPermissionOrLifecycleError ?? "none")",
+                "diagnostics=\(event.diagnostics.joined(separator: "|"))",
+            ].joined(separator: " ")
+        }
+        let pendingLines = snapshot.pendingUnresolvedJSDebugRoutes.map {
+            event in
+            "pending api=\(event.apiName) ageMs=\(event.ageMilliseconds.map(String.init) ?? "na") classifier=\(event.resultClassifier ?? "unknown pending promise")"
+        }
+        let routeLines = snapshot.sanitizedBridgeRouteRecords.prefix(40).map {
+            route in
+            [
+                "swiftRoute",
+                "api=\(route.apiName)",
+                "target=\(route.targetContext)",
+                "classifier=\(route.resultClassifier)",
+                "listeners=\(route.listenerCount)",
+                "invoked=\(route.listenerInvoked)",
+                "sendResponse=\(route.sendResponseCalled)",
+                "port=\(route.portName ?? "none")",
+                "messageCount=\(route.portMessageCount)",
+                "firstError=\(route.firstMissingAPIOrPermissionOrLifecycleError ?? "none")",
+            ].joined(separator: " ")
+        }
+        return pendingLines + eventLines + routeLines
     }
 
     @available(macOS 15.5, *)

@@ -82,6 +82,78 @@ final class ChromeMV3ExtensionPageHostHarnessTests: XCTestCase {
         )
     }
 
+    func testResourceResolverAllowsParentSegmentThatStaysInBundle()
+        throws
+    {
+        let root = try makeExtensionPageRoot(
+            named: "safe-parent-resource",
+            manifest: [
+                "manifest_version": 3,
+                "name": "Safe Parent Resource",
+                "version": "1.0",
+                "action": ["default_popup": "popup/index.html"],
+            ],
+            resources: [
+                "popup/index.html": """
+                <!doctype html>
+                <link href="../popup/main.css" rel="stylesheet">
+                <img src="../popup/icon.png" alt="">
+                """,
+                "popup/main.css": "body { color: #111; }",
+                "popup/icon.png": "",
+            ]
+        )
+
+        let model = ChromeMV3ExtensionPageDeclarationReader.read(
+            generatedRewrittenRootPath: root.path
+        )
+        let declaration = try XCTUnwrap(model.declarations.first)
+        let resolution = ChromeMV3ExtensionPageResourceResolver.resolve(
+            declaration: declaration
+        )
+
+        XCTAssertTrue(resolution.resourceSafeForExtensionPageHost)
+        XCTAssertEqual(resolution.missingResourcePaths, [])
+        XCTAssertEqual(resolution.unsafeResourcePaths, [])
+        XCTAssertEqual(
+            resolution.linkedResources.compactMap(\.normalizedPath).sorted(),
+            ["popup/icon.png", "popup/main.css"]
+        )
+
+        let escapingRoot = try makeExtensionPageRoot(
+            named: "unsafe-parent-resource",
+            manifest: [
+                "manifest_version": 3,
+                "name": "Unsafe Parent Resource",
+                "version": "1.0",
+                "action": ["default_popup": "popup/index.html"],
+            ],
+            resources: [
+                "popup/index.html": """
+                <!doctype html>
+                <img src="../../outside.png" alt="">
+                """,
+            ]
+        )
+
+        let escapingModel = ChromeMV3ExtensionPageDeclarationReader.read(
+            generatedRewrittenRootPath: escapingRoot.path
+        )
+        let escapingDeclaration = try XCTUnwrap(
+            escapingModel.declarations.first
+        )
+        let escapingResolution =
+            ChromeMV3ExtensionPageResourceResolver.resolve(
+                declaration: escapingDeclaration
+            )
+
+        XCTAssertFalse(escapingResolution.resourceSafeForExtensionPageHost)
+        XCTAssertEqual(
+            escapingResolution.unsafeResourcePaths,
+            ["../../outside.png"]
+        )
+    }
+
     func testMissingPageResourceIsDiagnosed() throws {
         let root = try makeExtensionPageRoot(
             named: "missing-page",
