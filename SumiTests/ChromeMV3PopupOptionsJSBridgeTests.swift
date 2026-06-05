@@ -600,6 +600,14 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(
             controlledPolicy.allowedMethods.contains("scripting.executeScript")
         )
+        XCTAssertFalse(
+            controlledPolicy.allowedMethods.contains("runtime.getPlatformInfo")
+        )
+        XCTAssertFalse(
+            ChromeMV3PopupOptionsAPIMethodPolicy.defaultPolicy
+                .allowedMethods
+                .contains("runtime.getPlatformInfo")
+        )
         XCTAssertFalse(source.localizedCaseInsensitiveContains("bitwarden"))
         XCTAssertFalse(source.localizedCaseInsensitiveContains("1password"))
         XCTAssertFalse(source.localizedCaseInsensitiveContains("proton"))
@@ -637,6 +645,30 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(
             source.contains("No raw localized message values are recorded.")
         )
+        XCTAssertTrue(
+            source.contains("controlledNavigatorCompatibilitySurface")
+        )
+        XCTAssertTrue(
+            source.contains("installControlledNavigatorCompatibilitySurface")
+        )
+        XCTAssertTrue(
+            source.contains("debugPlatformEnvironmentProbe")
+        )
+        XCTAssertTrue(
+            source.contains("navigator.platformIdentity")
+        )
+        XCTAssertTrue(
+            source.contains("Chrome/0.0.0.0")
+        )
+        XCTAssertTrue(
+            source.contains("MacIntel")
+        )
+        XCTAssertTrue(
+            source.contains("No raw user agent, language tags, storage data, message bodies, or form values are recorded.")
+        )
+        XCTAssertFalse(
+            source.contains("Object.defineProperty(runtime, \"getPlatformInfo\"")
+        )
         XCTAssertFalse(source.contains("\"tabs.getCurrent\""))
         XCTAssertFalse(source.contains("Object.defineProperty(tabs, \"getCurrent\""))
         XCTAssertTrue(source.contains("syncBackend=localCompatibility"))
@@ -663,6 +695,79 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         )
         XCTAssertFalse(source.contains("storage.sync cloud"))
         XCTAssertFalse(source.contains("cross-device sync is performed."))
+    }
+
+    func testNavigatorCompatibilitySurfaceIsControlledActionPopupOnly()
+        throws
+    {
+        let controlledActionPopupSource =
+            ChromeMV3PopupOptionsJSShimSource.source(
+                configuration: configuration(
+                    allowlist: .controlledActionPopupPolicy
+                )
+            )
+        let defaultActionPopupSource =
+            ChromeMV3PopupOptionsJSShimSource.source(
+                configuration: configuration()
+            )
+        let controlledOptionsPageSource =
+            ChromeMV3PopupOptionsJSShimSource.source(
+                configuration: configuration(
+                    surface: .optionsPage,
+                    allowlist: .controlledActionPopupPolicy
+                )
+            )
+
+        XCTAssertTrue(
+            controlledActionPopupSource.contains(
+                "\"controlledNavigatorCompatibilitySurface\":true"
+            )
+        )
+        XCTAssertTrue(
+            defaultActionPopupSource.contains(
+                "\"controlledNavigatorCompatibilitySurface\":false"
+            )
+        )
+        XCTAssertTrue(
+            controlledOptionsPageSource.contains(
+                "\"controlledNavigatorCompatibilitySurface\":false"
+            )
+        )
+        XCTAssertTrue(
+            controlledActionPopupSource.contains(
+                "installControlledNavigatorCompatibilitySurface();"
+            )
+        )
+        let compatibilityFunctionStart = try XCTUnwrap(
+            controlledActionPopupSource.range(
+                of: "function installControlledNavigatorCompatibilitySurface()"
+            )
+        )
+        let compatibilityFunctionPrefix =
+            controlledActionPopupSource[compatibilityFunctionStart.lowerBound...]
+                .prefix(220)
+        XCTAssertTrue(
+            compatibilityFunctionPrefix.contains(
+                "if (!config.controlledNavigatorCompatibilitySurface)"
+            )
+        )
+        XCTAssertTrue(compatibilityFunctionPrefix.contains("return;"))
+        XCTAssertFalse(
+            controlledActionPopupSource.contains(
+                "Object.defineProperty(tabs, \"getCurrent\""
+            )
+        )
+        XCTAssertFalse(
+            controlledActionPopupSource.contains(
+                "Object.defineProperty(runtime, \"getPlatformInfo\""
+            )
+        )
+        XCTAssertTrue(
+            controlledActionPopupSource.contains("Chrome/0.0.0.0")
+        )
+        XCTAssertTrue(
+            controlledActionPopupSource.contains("userAgentData=absent")
+        )
     }
 
     func testI18nCatalogSnapshotRejectsSymlinkEscapedCatalogs()
@@ -2033,7 +2138,8 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
                 ChromeMV3PopupOptionsRuntimeManifestSnapshot
                 .fromGeneratedBundleRootPath(
                     generated.generatedBundleRootURL.path
-                )
+                ),
+            allowlist: .controlledActionPopupPolicy
         )
         let installation = ChromeMV3PopupOptionsJSBridgeInstallation(
             configuration: config,
@@ -2081,14 +2187,43 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
               manifestPopup:
                 chrome.runtime.getManifest().action
                 && chrome.runtime.getManifest().action.default_popup,
-              hasBrowserRuntime:
+            hasBrowserRuntime:
                 !!globalThis.browser
                 && !!browser.runtime
                 && typeof browser.runtime.connect === "function",
-              hasChromeTabs:
+            hasChromeTabs:
                 !!globalThis.chrome
                 && !!chrome.tabs
-                && typeof chrome.tabs.query === "function"
+                && typeof chrome.tabs.query === "function",
+              navigatorUAHasChromeToken:
+                navigator.userAgent.indexOf(" Chrome/") !== -1,
+              navigatorUAHasSafariToken:
+                navigator.userAgent.indexOf(" Safari/") !== -1,
+              navigatorPlatformShape:
+                /^Mac/i.test(navigator.platform || "") ? "mac" : "other",
+              hasUserAgentData:
+                !!navigator.userAgentData,
+              userAgentDataBrandsCount:
+                navigator.userAgentData
+                && Array.isArray(navigator.userAgentData.brands)
+                  ? navigator.userAgentData.brands.length
+                  : 0,
+              hasChromeRuntimeGetPlatformInfo:
+                !!globalThis.chrome
+                && !!chrome.runtime
+                && typeof chrome.runtime.getPlatformInfo === "function",
+              hasBrowserRuntimeGetPlatformInfo:
+                !!globalThis.browser
+                && !!browser.runtime
+                && typeof browser.runtime.getPlatformInfo === "function",
+              hasChromeRuntimeGetBrowserInfo:
+                !!globalThis.chrome
+                && !!chrome.runtime
+                && typeof chrome.runtime.getBrowserInfo === "function",
+              hasChromeTabsGetCurrent:
+                !!globalThis.chrome
+                && !!chrome.tabs
+                && typeof chrome.tabs.getCurrent === "function"
             };
             """
         )
@@ -2111,6 +2246,23 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertEqual(object["manifestPopup"] as? String, "popup/index.html")
         XCTAssertEqual(object["hasBrowserRuntime"] as? Bool, true)
         XCTAssertEqual(object["hasChromeTabs"] as? Bool, true)
+        XCTAssertEqual(object["navigatorUAHasChromeToken"] as? Bool, true)
+        XCTAssertEqual(object["navigatorUAHasSafariToken"] as? Bool, true)
+        XCTAssertEqual(object["navigatorPlatformShape"] as? String, "mac")
+        XCTAssertEqual(
+            object["hasChromeRuntimeGetPlatformInfo"] as? Bool,
+            false
+        )
+        XCTAssertEqual(
+            object["hasBrowserRuntimeGetPlatformInfo"] as? Bool,
+            false
+        )
+        XCTAssertEqual(
+            object["hasChromeRuntimeGetBrowserInfo"] as? Bool,
+            false
+        )
+        XCTAssertEqual(object["hasChromeTabsGetCurrent"] as? Bool, false)
+        try await Task.sleep(nanoseconds: 3_800_000_000)
         XCTAssertEqual(handle.installedUserScriptCount, 1)
         XCTAssertEqual(handle.installedScriptMessageHandlerCount, 1)
         let snapshot = try XCTUnwrap(
@@ -2120,10 +2272,37 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             $0.nativeHostLaunchAttempted == false
         })
         XCTAssertTrue(snapshot.observedMethods.contains("runtime.getManifest"))
+        let platformProbeEvents = snapshot.jsDebugRouteEvents.filter {
+            $0.apiName == "navigator.platformIdentity"
+        }
+        XCTAssertTrue(platformProbeEvents.contains {
+            $0.targetContext == "platform"
+                && $0.diagnostics.contains("phase=preNavigatorCompatibility")
+                && $0.diagnostics.contains("uaHasAppleWebKit=true")
+                && $0.diagnostics.contains("uaHasChromeSignal=false")
+                && $0.diagnostics.contains("uaHasSafariSignal=false")
+                && $0.diagnostics.contains("platformShape=mac")
+                && $0.diagnostics.contains("userAgentData=absent")
+                && $0.diagnostics.contains("chromeRuntimeGetPlatformInfo=false")
+                && $0.diagnostics.contains("browserRuntimePresent=true")
+        })
+        XCTAssertTrue(platformProbeEvents.contains {
+            $0.targetContext == "platform"
+                && $0.diagnostics.contains("phase=postNavigatorCompatibility")
+                && $0.diagnostics.contains("knownBrowserFamilyAfter=true")
+                && $0.diagnostics.contains("uaHasChromeSignal=true")
+                && $0.diagnostics.contains("uaHasSafariSignal=true")
+                && $0.diagnostics.contains("userAgentOverrideApplied=true")
+                && $0.diagnostics.contains(
+                    "userAgentOverrideKind=reducedChromeMac"
+                )
+        })
         let encodedSnapshot = String(
             data: try JSONEncoder().encode(snapshot),
             encoding: .utf8
         ) ?? ""
+        XCTAssertFalse(encodedSnapshot.contains("this.device.toString"))
+        XCTAssertFalse(encodedSnapshot.contains("null is not an object"))
         XCTAssertFalse(encodedSnapshot.contains("getManifest is not a function"))
         XCTAssertFalse(encodedSnapshot.contains(generated.generatedBundleRootURL.path))
         XCTAssertFalse(encodedSnapshot.contains(packageRoot.path))

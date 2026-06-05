@@ -2289,6 +2289,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         "consoleError",
         "consoleWarn",
         "cspViolation",
+        "environmentProbe",
         "hostNavigationAction",
         "hostNavigationFailure",
         "hostNavigationFinish",
@@ -2320,6 +2321,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         "nativeApplication",
         "nativeApplicationPort",
         "navigation",
+        "platform",
         "resource",
         "serviceWorker",
         "storage.local",
@@ -6162,11 +6164,22 @@ enum ChromeMV3PopupOptionsJSShimSource {
     static func source(
         configuration: ChromeMV3PopupOptionsJSBridgeConfiguration
     ) -> String {
+        #if DEBUG
+        let controlledNavigatorCompatibilitySurface =
+            configuration.sourceContext == .actionPopup
+            && configuration.allowlist
+                == ChromeMV3PopupOptionsAPIMethodPolicy
+                .controlledActionPopupPolicy
+        #else
+        let controlledNavigatorCompatibilitySurface = false
+        #endif
         let configJSON = jsonString([
             "extensionID": configuration.extensionID,
             "profileID": configuration.profileID,
             "surfaceID": configuration.surfaceID,
             "sourceContext": configuration.sourceContext.rawValue,
+            "controlledNavigatorCompatibilitySurface":
+                controlledNavigatorCompatibilitySurface,
             "extensionBaseURLString": configuration.extensionBaseURLString,
             "runtimeManifest":
                 configuration.runtimeManifest?.manifestPayload
@@ -7561,6 +7574,8 @@ enum ChromeMV3PopupOptionsJSShimSource {
             value: browserRoot,
             configurable: true
           });
+
+          installControlledNavigatorCompatibilitySurface();
         })();
         """
     }
@@ -7576,7 +7591,10 @@ enum ChromeMV3PopupOptionsJSShimSource {
           function debugPortEvent(eventKind, record) {}
           function debugRuntimeGetManifest(manifest, succeeded) {}
           function debugI18nCall(methodName, record) {}
+          function debugPlatformEnvironmentProbe(phase, extras) {}
           function debugPostGetManifestBootstrapSentinel(succeeded) {}
+
+          function installControlledNavigatorCompatibilitySurface() {}
         """
     }
 
@@ -8152,6 +8170,258 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 "Missing or unsupported chrome.* namespace/property was accessed by the popup."
               ]
             });
+          }
+
+          function debugUserAgentLengthBucket(value) {
+            const length = String(value || "").length;
+            if (length === 0) {
+              return "0";
+            }
+            if (length < 40) {
+              return "1-39";
+            }
+            if (length < 80) {
+              return "40-79";
+            }
+            if (length < 120) {
+              return "80-119";
+            }
+            if (length < 180) {
+              return "120-179";
+            }
+            return "180+";
+          }
+
+          function debugUserAgentTokenDiagnostics(value) {
+            const userAgent = String(value || "");
+            return [
+              "uaLengthBucket=" + debugUserAgentLengthBucket(userAgent),
+              "uaHasMozilla=" + String(userAgent.indexOf("Mozilla/") !== -1),
+              "uaHasAppleWebKit=" + String(userAgent.indexOf("AppleWebKit/") !== -1),
+              "uaHasChromeSignal=" + String(userAgent.indexOf(" Chrome/") !== -1),
+              "uaHasEdgeSignal=" + String(userAgent.indexOf(" Edg/") !== -1),
+              "uaHasOperaSignal=" + String(userAgent.indexOf(" OPR/") !== -1),
+              "uaHasVivaldiSignal=" + String(userAgent.indexOf(" Vivaldi/") !== -1),
+              "uaHasFirefoxSignal=" + String(userAgent.indexOf(" Firefox/") !== -1),
+              "uaHasGeckoSignal=" + String(userAgent.indexOf(" Gecko/") !== -1),
+              "uaHasSafariSignal=" + String(userAgent.indexOf(" Safari/") !== -1)
+            ];
+          }
+
+          function debugPlatformShape(value) {
+            const platform = String(value || "");
+            if (!platform) {
+              return "empty";
+            }
+            if (/^Mac/i.test(platform)) {
+              return "mac";
+            }
+            if (/^Win/i.test(platform)) {
+              return "win";
+            }
+            if (/Linux/i.test(platform)) {
+              return "linux";
+            }
+            if (/iPhone|iPad|iPod/i.test(platform)) {
+              return "ios";
+            }
+            return "other";
+          }
+
+          function debugLanguageShape(value) {
+            const language = String(value || "");
+            if (!language) {
+              return "empty";
+            }
+            return /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(language)
+              ? "bcp47-like"
+              : "other";
+          }
+
+          function debugBrandClass(value) {
+            const brand = String(value || "").toLowerCase();
+            if (brand.indexOf("chromium") !== -1) {
+              return "chromium";
+            }
+            if (brand.indexOf("chrome") !== -1) {
+              return "chrome";
+            }
+            if (brand.indexOf("edge") !== -1) {
+              return "edge";
+            }
+            if (brand.indexOf("opera") !== -1) {
+              return "opera";
+            }
+            if (brand.indexOf("firefox") !== -1) {
+              return "firefox";
+            }
+            if (brand.indexOf("safari") !== -1) {
+              return "safari";
+            }
+            if (brand.indexOf("not") !== -1) {
+              return "notabrand";
+            }
+            return "other";
+          }
+
+          function debugUserAgentDataDiagnostics(value) {
+            if (!value || typeof value !== "object") {
+              return ["userAgentData=absent"];
+            }
+            const brands = Array.isArray(value.brands) ? value.brands : [];
+            const brandClasses = Array.from(new Set(brands.map((entry) => {
+              return debugBrandClass(entry && entry.brand);
+            }))).sort();
+            return [
+              "userAgentData=present",
+              "userAgentDataBrandsCount=" + String(brands.length),
+              "userAgentDataBrandClasses=" + (brandClasses.join(",") || "none"),
+              "userAgentDataMobileType=" + typeof value.mobile,
+              "userAgentDataPlatformShape=" + debugPlatformShape(value.platform)
+            ];
+          }
+
+          function debugSafeNamespaceKeys(value) {
+            if (!value || typeof value !== "object") {
+              return "none";
+            }
+            try {
+              const keys = Object.keys(value)
+                .filter((key) => /^[A-Za-z][A-Za-z0-9_.:-]{0,48}$/.test(key))
+                .filter((key) => !debugIsSensitiveName(key))
+                .sort();
+              return keys.slice(0, 24).join(",") || "none";
+            } catch (_) {
+              return "unavailable";
+            }
+          }
+
+          function debugPlatformEnvironmentProbe(phase, extras) {
+            const nav = globalThis.navigator || {};
+            const chromeRuntime = globalThis.chrome && globalThis.chrome.runtime;
+            const browserRuntime = globalThis.browser && globalThis.browser.runtime;
+            const userAgent = String(nav.userAgent || "");
+            const diagnostics = [
+              "phase=" + phase,
+              "sourceContext=" + config.sourceContext,
+              "compatGate=" + String(!!config.controlledNavigatorCompatibilitySurface),
+              "platformShape=" + debugPlatformShape(nav.platform),
+              "languageShape=" + debugLanguageShape(nav.language),
+              "languagesCount=" + String(Array.isArray(nav.languages) ? nav.languages.length : 0),
+              "chromeTopLevelKeys=" + debugSafeNamespaceKeys(globalThis.chrome),
+              "browserTopLevelKeys=" + debugSafeNamespaceKeys(globalThis.browser),
+              "chromeRuntimePresent=" + String(!!chromeRuntime),
+              "browserRuntimePresent=" + String(!!browserRuntime),
+              "browserRuntimeSharesChromeRuntime=" + String(!!chromeRuntime && chromeRuntime === browserRuntime),
+              "chromeRuntimeGetPlatformInfo=" + String(
+                !!chromeRuntime && typeof chromeRuntime.getPlatformInfo === "function"
+              ),
+              "chromeRuntimeGetBrowserInfo=" + String(
+                !!chromeRuntime && typeof chromeRuntime.getBrowserInfo === "function"
+              ),
+              "browserRuntimeGetPlatformInfo=" + String(
+                !!browserRuntime && typeof browserRuntime.getPlatformInfo === "function"
+              ),
+              "browserRuntimeGetBrowserInfo=" + String(
+                !!browserRuntime && typeof browserRuntime.getBrowserInfo === "function"
+              )
+            ]
+              .concat(debugUserAgentTokenDiagnostics(userAgent))
+              .concat(debugUserAgentDataDiagnostics(nav.userAgentData))
+              .concat(Array.isArray(extras) ? extras : []);
+            debugRecord("environmentProbe", {
+              apiName: "navigator.platformIdentity",
+              targetContext: "platform",
+              resultClassifier: "platform probe captured",
+              safeMessageShapeClassification: [
+                "navigator",
+                "uaLengthBucket=" + debugUserAgentLengthBucket(userAgent),
+                "platformShape=" + debugPlatformShape(nav.platform),
+                "languageShape=" + debugLanguageShape(nav.language)
+              ].join(";"),
+              diagnostics
+            });
+          }
+
+          function hasKnownBrowserFamilyUserAgentToken(value) {
+            const userAgent = String(value || "");
+            return userAgent.indexOf(" Chrome/") !== -1
+              || userAgent.indexOf(" Edg/") !== -1
+              || userAgent.indexOf(" OPR/") !== -1
+              || userAgent.indexOf(" Vivaldi/") !== -1
+              || userAgent.indexOf(" Firefox/") !== -1
+              || userAgent.indexOf(" Gecko/") !== -1
+              || userAgent.indexOf(" Safari/") !== -1;
+          }
+
+          function defineControlledNavigatorGetter(name, value) {
+            const nav = globalThis.navigator;
+            const targets = [
+              { label: "navigator", value: nav },
+              { label: "navigatorPrototype", value: nav && Object.getPrototypeOf(nav) }
+            ];
+            for (const target of targets) {
+              try {
+                if (!target.value) {
+                  continue;
+                }
+                Object.defineProperty(target.value, name, {
+                  get() {
+                    return value;
+                  },
+                  configurable: true
+                });
+                if (String(nav && nav[name] || "") === value) {
+                  return { applied: true, target: target.label };
+                }
+              } catch (_) {
+              }
+            }
+            return { applied: false, target: "none" };
+          }
+
+          function installControlledNavigatorCompatibilitySurface() {
+            if (!config.controlledNavigatorCompatibilitySurface) {
+              return;
+            }
+            const nav = globalThis.navigator || {};
+            const beforeUserAgent = String(nav.userAgent || "");
+            const beforePlatform = String(nav.platform || "");
+            const knownFamilyBefore =
+              hasKnownBrowserFamilyUserAgentToken(beforeUserAgent);
+            debugPlatformEnvironmentProbe("preNavigatorCompatibility", [
+              "knownBrowserFamilyBefore=" + String(knownFamilyBefore),
+              "platformOverrideCandidate=" + String(!/^Mac/i.test(beforePlatform || "")),
+              "No raw user agent, language tags, storage data, message bodies, or form values are recorded."
+            ]);
+
+            const reducedMacChromeUserAgent =
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/0.0.0.0 Safari/537.36";
+            const userAgentResult = knownFamilyBefore
+              ? { applied: false, target: "alreadyCompatible" }
+              : defineControlledNavigatorGetter("userAgent", reducedMacChromeUserAgent);
+            const platformResult = /^Mac/i.test(beforePlatform || "")
+              ? { applied: false, target: "alreadyCompatible" }
+              : defineControlledNavigatorGetter("platform", "MacIntel");
+
+            debugPlatformEnvironmentProbe("postNavigatorCompatibility", [
+              "knownBrowserFamilyBefore=" + String(knownFamilyBefore),
+              "knownBrowserFamilyAfter=" + String(
+                hasKnownBrowserFamilyUserAgentToken(
+                  globalThis.navigator && globalThis.navigator.userAgent
+                )
+              ),
+              "compatOverrideApplied=" + String(
+                userAgentResult.applied || platformResult.applied
+              ),
+              "userAgentOverrideApplied=" + String(userAgentResult.applied),
+              "userAgentOverrideTarget=" + userAgentResult.target,
+              "userAgentOverrideKind=reducedChromeMac",
+              "platformOverrideApplied=" + String(platformResult.applied),
+              "platformOverrideTarget=" + platformResult.target,
+              "platformOverrideKind=macIntel",
+              "compatReason=missingKnownBrowserFamilySignal"
+            ]);
           }
 
           function debugSafeManifestFieldNames(manifest) {
