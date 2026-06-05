@@ -843,17 +843,13 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             "The controlled Bitwarden popup diagnostics must not launch com.bitwarden.desktop."
         )
 
-        print("SumiControlledBitwardenPopup reproducedControlledHost=true")
-        print("SumiControlledBitwardenPopup domState=\(domState)")
-        print("SumiControlledBitwardenPopup firstFatalBlocker=\(firstBlocker)")
-        print("SumiControlledBitwardenPopup pendingCount=\(snapshot.pendingUnresolvedJSDebugRoutes.count)")
-        print("SumiControlledBitwardenPopup routeEvents=\(snapshot.jsDebugRouteEvents.count)")
-        print("SumiControlledBitwardenPopup callRecords=\(snapshot.callRecords.count)")
-        print("SumiControlledBitwardenPopup tabsConnectActuallyFatal=\(tabsConnectFatal)")
-        print("SumiControlledBitwardenPopup nativeHostLaunched=false")
-        for line in controlledBitwardenPopupSanitizedLogLines(snapshot) {
-            print("SumiControlledBitwardenPopup \(line)")
-        }
+        recordControlledBitwardenPopupSanitizedDiagnostics(
+            prefix: "SumiControlledBitwardenPopup",
+            snapshot: snapshot,
+            domState: domState,
+            firstBlocker: firstBlocker,
+            tabsConnectFatal: tabsConnectFatal
+        )
 
         _ = module.chromeMV3ClosePopupOptionsThroughManager(
             profileID: record.profileID,
@@ -1013,18 +1009,16 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             "The controlled Bitwarden diagnostic scheme must not launch com.bitwarden.desktop."
         )
 
-        print("SumiControlledBitwardenPopupDiagnosticScheme reproducedControlledHost=true")
-        print("SumiControlledBitwardenPopupDiagnosticScheme domState=\(domState)")
-        print("SumiControlledBitwardenPopupDiagnosticScheme firstFatalBlocker=\(firstBlocker)")
-        print("SumiControlledBitwardenPopupDiagnosticScheme pendingCount=\(snapshot.pendingUnresolvedJSDebugRoutes.count)")
-        print("SumiControlledBitwardenPopupDiagnosticScheme routeEvents=\(snapshot.jsDebugRouteEvents.count)")
-        print("SumiControlledBitwardenPopupDiagnosticScheme customSchemeResourceEvents=\(customSchemeResourceEvents.count)")
-        print("SumiControlledBitwardenPopupDiagnosticScheme callRecords=\(snapshot.callRecords.count)")
-        print("SumiControlledBitwardenPopupDiagnosticScheme tabsConnectActuallyFatal=\(tabsConnectFatal)")
-        print("SumiControlledBitwardenPopupDiagnosticScheme nativeHostLaunched=false")
-        for line in controlledBitwardenPopupSanitizedLogLines(snapshot) {
-            print("SumiControlledBitwardenPopupDiagnosticScheme \(line)")
-        }
+        recordControlledBitwardenPopupSanitizedDiagnostics(
+            prefix: "SumiControlledBitwardenPopupDiagnosticScheme",
+            snapshot: snapshot,
+            domState: domState,
+            firstBlocker: firstBlocker,
+            tabsConnectFatal: tabsConnectFatal,
+            extraLines: [
+                "customSchemeResourceEvents=\(customSchemeResourceEvents.count)"
+            ]
+        )
 
         _ = module.chromeMV3ClosePopupOptionsThroughManager(
             profileID: record.profileID,
@@ -1826,6 +1820,12 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertTrue(
             popupOptionsBridgeSource.contains("\"tabs.sendMessage\"")
         )
+        XCTAssertTrue(
+            popupOptionsBridgeSource.contains("\"storage.session.get\"")
+        )
+        XCTAssertTrue(
+            popupOptionsBridgeSource.contains("storageSessionExposed")
+        )
         XCTAssertFalse(
             popupOptionsBridgeSource.contains(
                 "controlledActionPopupPolicy" + ".allowedMethods.append"
@@ -2577,6 +2577,42 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             return false
         }
         return firstFatal.apiName == "tabs.connect"
+    }
+
+    private func recordControlledBitwardenPopupSanitizedDiagnostics(
+        prefix: String,
+        snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot,
+        domState: String,
+        firstBlocker: String,
+        tabsConnectFatal: Bool,
+        extraLines: [String] = []
+    ) {
+        let lines =
+            [
+                "reproducedControlledHost=true",
+                "domState=\(domState)",
+                "firstFatalBlocker=\(firstBlocker)",
+                "pendingCount=\(snapshot.pendingUnresolvedJSDebugRoutes.count)",
+                "routeEvents=\(snapshot.jsDebugRouteEvents.count)",
+                "callRecords=\(snapshot.callRecords.count)",
+                "tabsConnectActuallyFatal=\(tabsConnectFatal)",
+                "nativeHostLaunched=false",
+            ]
+            + extraLines
+            + controlledBitwardenPopupSanitizedLogLines(snapshot)
+
+        for line in lines {
+            print("\(prefix) \(line)")
+        }
+
+        let attachment = XCTAttachment(
+            string: lines
+                .map { "\(prefix) \($0)" }
+                .joined(separator: "\n")
+        )
+        attachment.name = "\(prefix)-sanitized-diagnostics"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     private func controlledBitwardenPopupManifestReturnedSequence(

@@ -199,6 +199,7 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
             exposedNamespaces: [
                 "runtime",
                 "storage.local",
+                "storage.session",
                 "tabs",
             ],
             blockedNamespaces: [
@@ -210,7 +211,6 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
                 "permissions",
                 "sidePanel",
                 "scripting",
-                "storage.session",
                 "webRequest",
             ],
             allowedMethods: [
@@ -227,6 +227,11 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
                 "storage.local.remove",
                 "storage.local.set",
                 "storage.onChanged",
+                "storage.session.clear",
+                "storage.session.get",
+                "storage.session.getBytesInUse",
+                "storage.session.remove",
+                "storage.session.set",
                 "tabs.query",
                 "tabs.sendMessage",
             ],
@@ -249,15 +254,6 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
                         remediation:
                             "Keep native messaging unavailable until a separate trusted-host product policy exists.",
                         roadmapOwner: "Native messaging product policy"
-                    ),
-                    blocked(
-                        namespace: "storage",
-                        methodName: "session.*",
-                        reason:
-                            "storage.session is outside this controlled action popup increment.",
-                        remediation:
-                            "Add storage.session through a separate reviewed implementation prompt.",
-                        roadmapOwner: "Storage product prompt"
                     ),
                     blocked(
                         namespace: "permissions",
@@ -1248,6 +1244,7 @@ private struct ChromeMV3PopupOptionsBridgeInputError: Error, Equatable {
 final class ChromeMV3PopupOptionsJSBridgeHandler {
     let configuration: ChromeMV3PopupOptionsJSBridgeConfiguration
     private var localStorageBroker: ChromeMV3StorageBroker
+    private var sessionStorageBroker: ChromeMV3StorageBroker
     private let storageOperationHandler: ChromeMV3StorageAPIOperationHandler
     private var permissionRuntimeOwner: ChromeMV3PermissionRuntimeStateOwner
     private let tabRegistry: ChromeMV3SyntheticTabRegistry
@@ -1352,6 +1349,11 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             extensionID: configuration.extensionID,
             area: .local
         )
+        let sessionNamespace = ChromeMV3StorageNamespace(
+            profileID: configuration.profileID,
+            extensionID: configuration.extensionID,
+            area: .session
+        )
         var storageBroker = ChromeMV3StorageBroker(
             namespace: namespace,
             persistenceMode:
@@ -1371,6 +1373,10 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             )
         }
         self.localStorageBroker = storageBroker
+        self.sessionStorageBroker = ChromeMV3StorageBroker(
+            namespace: sessionNamespace,
+            persistenceMode: .inMemory
+        )
         self.storagePersistenceDiagnostics =
             uniqueSortedPopupOptionsBridge(storageDiagnostics)
         self.storageOperationHandler =
@@ -1455,9 +1461,15 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     ) -> [String] {
         guard configuration.bridgeAvailable else {
             return [
-                "storage.local broker remains disabled because the popup/options bridge gate is closed.",
+                "storage.local and storage.session brokers remain disabled because the popup/options bridge gate is closed.",
             ]
         }
+        let sessionDiagnostics = [
+            "storage.session uses memory-only state for this controlled popup/options bridge lifetime.",
+            "storage.session is scoped to this profile ID, extension ID, and session area.",
+            "storage.session has no host-backed snapshot URL and is never persisted to disk.",
+            "Private/off-record tabs are rejected before controlled popup launch; no off-record session storage root is written.",
+        ]
         guard let rootPath = configuration.storageLocalRootPath,
               rootPath.isEmpty == false
         else {
@@ -1465,14 +1477,14 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 "storage.local uses memory-only state because no profile storage root is available.",
                 "Private/off-record controlled popup storage is not persisted to disk.",
                 "storage.local remains scoped to this profile ID, extension ID, and local area.",
-            ]
+            ] + sessionDiagnostics
         }
         return [
             "storage.local uses a developer-preview host-backed broker scoped by profile ID, extension ID, and local area.",
             "storage.local values are persisted only in the controlled popup developer-preview storage root.",
             "No raw storage keys or values are included in popup/storage diagnostics.",
             "Private/off-record tabs are rejected before controlled popup launch; no off-record storage root is written.",
-        ]
+        ] + sessionDiagnostics
     }
 
     var diagnosticsSnapshot:
@@ -2023,8 +2035,13 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
              ("storage", "local.set"),
              ("storage", "local.remove"),
              ("storage", "local.clear"),
-             ("storage", "local.getBytesInUse"):
-            return storageLocal(request)
+             ("storage", "local.getBytesInUse"),
+             ("storage", "session.get"),
+             ("storage", "session.set"),
+             ("storage", "session.remove"),
+             ("storage", "session.clear"),
+             ("storage", "session.getBytesInUse"):
+            return storageArea(request)
         case ("permissions", "contains"):
             return permissionsContains(request)
         case ("permissions", "getAll"):
@@ -2214,6 +2231,10 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     func tearDown() {
         localStorageBroker = ChromeMV3StorageBroker(
             namespace: localStorageBroker.namespace
+        )
+        sessionStorageBroker = ChromeMV3StorageBroker(
+            namespace: sessionStorageBroker.namespace,
+            persistenceMode: .inMemory
         )
         callRecords.removeAll()
         jsDebugRouteEvents.removeAll()
@@ -3117,17 +3138,40 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         return .object(object)
     }
 
-    private func storageLocal(
+    private func storageArea(
         _ request: ChromeMV3RuntimeJSBridgeHostRequest
     ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
         switch storageInput(request) {
         case .failure(let error):
             return invalidArguments(request, error.message)
         case .success(let input):
-            let envelope = storageOperationHandler.handle(
-                input,
-                broker: &localStorageBroker
-            )
+            let area = input.area
+            let areaName = area.chromeAreaName
+            let envelope: ChromeMV3StorageAPIOperationResultEnvelope
+            switch area {
+            case .local:
+                envelope = storageOperationHandler.handle(
+                    input,
+                    broker: &localStorageBroker
+                )
+            case .session:
+                envelope = storageOperationHandler.handle(
+                    input,
+                    broker: &sessionStorageBroker
+                )
+            case .sync, .managed:
+                return response(
+                    request: request,
+                    succeeded: false,
+                    lastErrorMessage:
+                        ChromeMV3StorageErrorCode.areaUnsupported.rawValue,
+                    lastErrorCode:
+                        ChromeMV3StorageErrorCode.areaUnsupported.rawValue,
+                    diagnostics: [
+                        "Only storage.local and storage.session are routable by the popup/options storage bridge.",
+                    ]
+                )
+            }
             if envelope.succeeded == false {
                 return response(
                     request: request,
@@ -3144,6 +3188,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     diagnostics:
                         storageLifecycleDiagnostics(
                             request: request,
+                            area: area,
                             envelope: envelope,
                             resultPayload: nil,
                             onChangedPayload: nil,
@@ -3170,17 +3215,18 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 payload: resultPayload,
                 onChangedPayload: onChanged,
                 serviceWorkerLifecycleWakeResult: lifecycleResult,
-                diagnostics:
-                    storageLifecycleDiagnostics(
-                        request: request,
-                        envelope: envelope,
-                        resultPayload: resultPayload,
-                        onChangedPayload: onChanged,
-                        serviceWorkerWakeAttempted: lifecycleResult != nil
-                    )
+                    diagnostics:
+                        storageLifecycleDiagnostics(
+                            request: request,
+                            area: area,
+                            envelope: envelope,
+                            resultPayload: resultPayload,
+                            onChangedPayload: onChanged,
+                            serviceWorkerWakeAttempted: lifecycleResult != nil
+                        )
                         + (lifecycleResult?.diagnostics ?? [])
                         + [
-                            "storage.local operation used the existing storage operation handler.",
+                            "storage.\(areaName) operation used the existing storage operation handler.",
                             lifecycleResult == nil
                                 ? "storage.onChanged dispatch is in-page only without a shared lifecycle session."
                                 : "storage.onChanged routed through the local experimental service-worker lifecycle.",
@@ -4539,6 +4585,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
 
     private func storageLifecycleDiagnostics(
         request: ChromeMV3RuntimeJSBridgeHostRequest,
+        area: ChromeMV3StorageAreaKind,
         envelope: ChromeMV3StorageAPIOperationResultEnvelope,
         resultPayload: ChromeMV3StorageValue?,
         onChangedPayload: ChromeMV3StorageOnChangedEventPayload?,
@@ -4548,19 +4595,24 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             prefix: "extension",
             parts: [configuration.extensionID]
         )
+        let profileIDHash = stableIDPopupOptionsBridge(
+            prefix: "profile",
+            parts: [configuration.profileID]
+        )
+        let areaName = area.chromeAreaName
         return uniqueSortedPopupOptionsBridge(
             storagePersistenceDiagnostics
                 + storageOperationHandler.state.diagnostics
                 + [
-                    "storage.local developer-preview bridge handled method=\(request.methodName) keyShape=\(storageKeySelectorShape(request: request)) keyCount=\(storageKeyCount(request: request)) valueShape=\(storageMutationValueShape(request: request)) resultShape=\(storageDiagnosticValueShape(resultPayload)) resultClassifier=\(storageResultClassifier(envelope: envelope)).",
-                    "storage.local scope is profileID=\(configuration.profileID);extensionIDHash=\(extensionIDHash);area=local.",
-                    "storage.local changedKeyCount=\(envelope.changedKeys.count);onChangedPayload=\(onChangedPayload == nil ? "none" : "shapeOnly").",
+                    "storage.\(areaName) developer-preview bridge handled method=\(request.methodName) area=\(areaName) keyShape=\(storageKeySelectorShape(request: request)) keyCount=\(storageKeyCount(request: request)) valueShape=\(storageMutationValueShape(request: request)) resultShape=\(storageDiagnosticValueShape(resultPayload)) resultClassifier=\(storageResultClassifier(envelope: envelope)).",
+                    "storage.\(areaName) scope is profileIDHash=\(profileIDHash);extensionIDHash=\(extensionIDHash);area=\(areaName).",
+                    "storage.\(areaName) changedKeyCount=\(envelope.changedKeys.count);onChangedPayload=\(onChangedPayload == nil ? "none" : "shapeOnly").",
                     serviceWorkerWakeAttempted
                         ? "storage.onChanged attempted local experimental service-worker lifecycle routing."
                         : "storage.onChanged did not attempt service-worker wake for this operation.",
                     "Callback-scoped runtime.lastError and Promise rejection behavior are preserved by the popup bridge response envelope.",
                     "No raw storage keys or values are included in popup/storage diagnostics.",
-                    "No native host launch occurred for storage.local.",
+                    "No native host launch occurred for storage.\(areaName).",
                 ]
         )
     }
@@ -4571,24 +4623,49 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         "storage;method=\(request.methodName);keyShape=\(storageKeySelectorShape(request: request));keyCount=\(storageKeyCount(request: request));valueShape=\(storageMutationValueShape(request: request))"
     }
 
-    private func isStorageLocalRoute(
+    private func isStorageRoute(
         namespace: String,
         methodName: String
     ) -> Bool {
-        namespace == "storage" && methodName.hasPrefix("local.")
+        namespace == "storage"
+            && (
+                methodName.hasPrefix("local.")
+                    || methodName.hasPrefix("session.")
+            )
+    }
+
+    private func storageAreaName(
+        methodName: String
+    ) -> String? {
+        if methodName.hasPrefix("local.") {
+            return "local"
+        }
+        if methodName.hasPrefix("session.") {
+            return "session"
+        }
+        return nil
+    }
+
+    private func storageOperationName(
+        methodName: String
+    ) -> String {
+        if let dot = methodName.firstIndex(of: ".") {
+            return String(methodName[methodName.index(after: dot)...])
+        }
+        return methodName
     }
 
     private func storageKeySelectorShape(
         request: ChromeMV3RuntimeJSBridgeHostRequest
     ) -> String {
-        switch request.methodName {
-        case "local.clear":
+        switch storageOperationName(methodName: request.methodName) {
+        case "clear":
             return request.arguments.isEmpty ? "none" : "unexpected"
-        case "local.set":
+        case "set":
             return request.arguments.first?.objectValue == nil
                 ? "invalid"
                 : "objectKeys"
-        case "local.get", "local.getBytesInUse", "local.remove":
+        case "get", "getBytesInUse", "remove":
             return storageKeySelectorShape(value: request.arguments.first)
         default:
             return "unsupported"
@@ -4616,12 +4693,12 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     private func storageKeyCount(
         request: ChromeMV3RuntimeJSBridgeHostRequest
     ) -> Int {
-        switch request.methodName {
-        case "local.clear":
+        switch storageOperationName(methodName: request.methodName) {
+        case "clear":
             return 0
-        case "local.set":
+        case "set":
             return request.arguments.first?.objectValue?.count ?? 0
-        case "local.get", "local.getBytesInUse", "local.remove":
+        case "get", "getBytesInUse", "remove":
             return storageKeyCount(value: request.arguments.first)
         default:
             return 0
@@ -4647,7 +4724,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     private func storageMutationValueShape(
         request: ChromeMV3RuntimeJSBridgeHostRequest
     ) -> String {
-        guard request.methodName == "local.set",
+        guard storageOperationName(methodName: request.methodName) == "set",
               let object = request.arguments.first?.objectValue
         else { return "none" }
         let shapes = uniqueSortedPopupOptionsBridge(
@@ -4699,10 +4776,23 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         envelope: ChromeMV3StorageAPIOperationResultEnvelope
     ) -> String {
         if envelope.succeeded {
-            return "storageLocalBrokerSucceeded"
+            return storageResultClassifierName(
+                areaName: envelope.area.chromeAreaName
+            )
         }
         return envelope.futureLastErrorContract?.code.rawValue
             ?? ChromeMV3JSBridgeErrorCode.invalidArguments.rawValue
+    }
+
+    private func storageResultClassifierName(areaName: String) -> String {
+        switch areaName {
+        case "local":
+            return "storageLocalBrokerSucceeded"
+        case "session":
+            return "storageSessionBrokerSucceeded"
+        default:
+            return "storageBrokerSucceeded"
+        }
     }
 
     #if DEBUG
@@ -4802,6 +4892,11 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             "storage.local.getBytesInUse",
             "storage.local.remove",
             "storage.local.set",
+            "storage.session.clear",
+            "storage.session.get",
+            "storage.session.getBytesInUse",
+            "storage.session.remove",
+            "storage.session.set",
         ].contains(apiName)
     }
 
@@ -4825,6 +4920,10 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
              ("storage", "local.getBytesInUse"), ("storage", "local.remove"),
              ("storage", "local.set"):
             return "storage.local"
+        case ("storage", "session.clear"), ("storage", "session.get"),
+             ("storage", "session.getBytesInUse"),
+             ("storage", "session.remove"), ("storage", "session.set"):
+            return "storage.session"
         case ("runtime", "getManifest"):
             return "manifest"
         case ("runtime", "sendMessage"), ("runtime", "connect"),
@@ -4844,7 +4943,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         request: ChromeMV3RuntimeJSBridgeHostRequest?,
         response: ChromeMV3PopupOptionsJSBridgeHostResponse
     ) -> String {
-        if isStorageLocalRoute(
+        if isStorageRoute(
             namespace: response.namespace,
             methodName: response.methodName
         ) {
@@ -4999,13 +5098,17 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         response: ChromeMV3PopupOptionsJSBridgeHostResponse,
         diagnostics: [String]
     ) -> String {
-        if isStorageLocalRoute(
+        if isStorageRoute(
             namespace: response.namespace,
             methodName: response.methodName
         ) {
             return response.succeeded
-                ? "storageLocalBrokerSucceeded"
-                : (response.lastErrorCode ?? "storageLocalBrokerBlocked")
+                ? storageResultClassifierName(
+                    areaName:
+                        storageAreaName(methodName: response.methodName)
+                        ?? "storage"
+                )
+                : (response.lastErrorCode ?? "storageBrokerBlocked")
         }
         if let explicit = diagnosticStringValue(
             diagnostics,
@@ -5114,6 +5217,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             "vault",
             "auth payload",
             "form value",
+            "sessionid",
         ]
         return blocked.contains { lower.contains($0) } == false
     }
@@ -5123,7 +5227,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         for request: ChromeMV3RuntimeJSBridgeHostRequest?
     ) -> String {
         if let request,
-           isStorageLocalRoute(
+           isStorageRoute(
                namespace: request.namespace,
                methodName: request.methodName
            )
@@ -5180,47 +5284,65 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         ChromeMV3StorageAPIOperationInput,
         ChromeMV3PopupOptionsBridgeInputError
     > {
+        let area: ChromeMV3StorageAreaKind
+        switch storageAreaName(methodName: request.methodName) {
+        case "local":
+            area = .local
+        case "session":
+            area = .session
+        default:
+            return .failure(.init(message: "Unsupported storage area."))
+        }
+        let areaName = area.chromeAreaName
+        let method = storageOperationName(methodName: request.methodName)
         let operation: ChromeMV3StorageOperationKind
-        switch request.methodName {
-        case "local.get":
+        switch method {
+        case "get":
             operation = .get
             guard request.arguments.count <= 1 else {
                 return .failure(.init(
-                    message: "storage.local.get accepts at most one key selector."
+                    message:
+                        "storage.\(areaName).get accepts at most one key selector."
                 ))
             }
-        case "local.set":
+        case "set":
             operation = .set
             guard request.arguments.count == 1,
                   request.arguments[0].objectValue != nil
             else {
                 return .failure(.init(
-                    message: "storage.local.set requires one object argument."
+                    message:
+                        "storage.\(areaName).set requires one object argument."
                 ))
             }
-        case "local.remove":
+        case "remove":
             operation = .remove
             guard request.arguments.count == 1 else {
                 return .failure(.init(
-                    message: "storage.local.remove requires a key or key array."
+                    message:
+                        "storage.\(areaName).remove requires a key or key array."
                 ))
             }
-        case "local.clear":
+        case "clear":
             operation = .clear
             guard request.arguments.isEmpty else {
                 return .failure(.init(
-                    message: "storage.local.clear does not accept arguments."
+                    message:
+                        "storage.\(areaName).clear does not accept arguments."
                 ))
             }
-        case "local.getBytesInUse":
+        case "getBytesInUse":
             operation = .getBytesInUse
             guard request.arguments.count <= 1 else {
                 return .failure(.init(
-                    message: "storage.local.getBytesInUse accepts at most one key selector."
+                    message:
+                        "storage.\(areaName).getBytesInUse accepts at most one key selector."
                 ))
             }
         default:
-            return .failure(.init(message: "Unsupported storage.local method."))
+            return .failure(.init(
+                message: "Unsupported storage.\(areaName) method."
+            ))
         }
 
         let selector: ChromeMV3StorageAPIKeySelector?
@@ -5252,7 +5374,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             ChromeMV3StorageAPIOperationInput(
                 extensionID: configuration.extensionID,
                 profileID: configuration.profileID,
-                area: .local,
+                area: area,
                 operation: operation,
                 invocationMode:
                     request.invocationMode == .callback
@@ -5262,7 +5384,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 values: request.arguments.first?.objectValue ?? [:],
                 sourceContext: configuration.sourceContext.storageContext,
                 diagnostics: [
-                    "Popup/options bridge normalized storage.local request.",
+                    "Popup/options bridge normalized storage.\(areaName) request.",
                 ]
             )
         )
@@ -5553,6 +5675,11 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 configuration.runtimeManifest?.manifestPayload
                 .popupOptionsBridgeFoundationObject ?? NSNull(),
             "runtimeManifestAvailable": configuration.runtimeManifest != nil,
+            "storageSessionExposed":
+                configuration.allowlist.exposedNamespaces
+                .contains("storage.session")
+                && configuration.allowlist.allowedMethods
+                .contains("storage.session.get"),
             "bridgeMessageHandlerName": bridgeMessageHandlerName,
         ])
         #if DEBUG
@@ -5569,6 +5696,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
           const runtime = {};
           const storage = {};
           const local = {};
+          const session = {};
           const permissions = {};
           const tabs = {};
           const scripting = {};
@@ -5716,10 +5844,10 @@ enum ChromeMV3PopupOptionsJSShimSource {
             if (!response.succeeded) {
               return [];
             }
-            if (namespace === "storage" && methodName === "local.get") {
+            if (namespace === "storage" && methodName.endsWith(".get")) {
               return [response.resultPayload || {}];
             }
-            if (namespace === "storage" && methodName === "local.getBytesInUse") {
+            if (namespace === "storage" && methodName.endsWith(".getBytesInUse")) {
               return [Number(response.resultPayload || 0)];
             }
             if (namespace === "permissions" || methodName === "query") {
@@ -5735,10 +5863,10 @@ enum ChromeMV3PopupOptionsJSShimSource {
           }
 
           function promiseValue(namespace, methodName, response) {
-            if (namespace === "storage" && methodName === "local.get") {
+            if (namespace === "storage" && methodName.endsWith(".get")) {
               return response.resultPayload || {};
             }
-            if (namespace === "storage" && methodName === "local.getBytesInUse") {
+            if (namespace === "storage" && methodName.endsWith(".getBytesInUse")) {
               return Number(response.resultPayload || 0);
             }
             if (namespace === "storage") {
@@ -5846,7 +5974,11 @@ enum ChromeMV3PopupOptionsJSShimSource {
           const permissionsOnRemoved = makeEvent("onRemoved");
 
           function normalizeOnChangedPayload(payload) {
-            if (!payload || payload.areaName !== "local" || !Array.isArray(payload.changes)) {
+            if (
+              !payload
+              || !["local", "session"].includes(payload.areaName)
+              || !Array.isArray(payload.changes)
+            ) {
               return null;
             }
             const changes = {};
@@ -6281,54 +6413,73 @@ enum ChromeMV3PopupOptionsJSShimSource {
             enumerable: true
           });
 
-          Object.defineProperty(local, "get", {
-            value(keys, callback) {
-              const parsed = optionalKeysAndCallback(keys, callback);
-              const args = parsed.keys === undefined ? [] : [parsed.keys];
-              return callbackOrPromise("storage", "local.get", args, parsed.callback);
-            },
-            enumerable: true
-          });
-          Object.defineProperty(local, "set", {
-            value(items, callback) {
-              const cb = typeof callback === "function" ? callback : null;
-              return callbackOrPromise("storage", "local.set", [items], cb);
-            },
-            enumerable: true
-          });
-          Object.defineProperty(local, "remove", {
-            value(keys, callback) {
-              const cb = typeof callback === "function" ? callback : null;
-              return callbackOrPromise("storage", "local.remove", [keys], cb);
-            },
-            enumerable: true
-          });
-          Object.defineProperty(local, "clear", {
-            value(callback) {
-              const cb = typeof callback === "function" ? callback : null;
-              return callbackOrPromise("storage", "local.clear", [], cb);
-            },
-            enumerable: true
-          });
-          Object.defineProperty(local, "getBytesInUse", {
-            value(keys, callback) {
-              const parsed = optionalKeysAndCallback(keys, callback);
-              const args = parsed.keys === undefined ? [] : [parsed.keys];
-              return callbackOrPromise("storage", "local.getBytesInUse", args, parsed.callback);
-            },
-            enumerable: true
-          });
+          function defineStorageArea(areaObject, areaName) {
+            Object.defineProperty(areaObject, "get", {
+              value(keys, callback) {
+                const parsed = optionalKeysAndCallback(keys, callback);
+                const args = parsed.keys === undefined ? [] : [parsed.keys];
+                return callbackOrPromise("storage", areaName + ".get", args, parsed.callback);
+              },
+              enumerable: true
+            });
+            Object.defineProperty(areaObject, "set", {
+              value(items, callback) {
+                const cb = typeof callback === "function" ? callback : null;
+                return callbackOrPromise("storage", areaName + ".set", [items], cb);
+              },
+              enumerable: true
+            });
+            Object.defineProperty(areaObject, "remove", {
+              value(keys, callback) {
+                const cb = typeof callback === "function" ? callback : null;
+                return callbackOrPromise("storage", areaName + ".remove", [keys], cb);
+              },
+              enumerable: true
+            });
+            Object.defineProperty(areaObject, "clear", {
+              value(callback) {
+                const cb = typeof callback === "function" ? callback : null;
+                return callbackOrPromise("storage", areaName + ".clear", [], cb);
+              },
+              enumerable: true
+            });
+            Object.defineProperty(areaObject, "getBytesInUse", {
+              value(keys, callback) {
+                const parsed = optionalKeysAndCallback(keys, callback);
+                const args = parsed.keys === undefined ? [] : [parsed.keys];
+                return callbackOrPromise("storage", areaName + ".getBytesInUse", args, parsed.callback);
+              },
+              enumerable: true
+            });
+          }
+
+          defineStorageArea(local, "local");
+          if (config.storageSessionExposed) {
+            defineStorageArea(session, "session");
+          }
           Object.defineProperty(storage, "local", {
             value: Object.freeze(local),
             enumerable: true
           });
+          if (config.storageSessionExposed) {
+            Object.defineProperty(storage, "session", {
+              value: Object.freeze(session),
+              enumerable: true
+            });
+          }
           Object.defineProperty(storage, "onChanged", {
             value: storageOnChanged,
             enumerable: true
           });
           const storageObject = new Proxy(Object.freeze(storage), {
             get(target, prop, receiver) {
-              if (typeof prop === "string" && ["session", "sync", "managed"].includes(prop)) {
+              if (
+                typeof prop === "string"
+                && (
+                  ["sync", "managed"].includes(prop)
+                  || (prop === "session" && !config.storageSessionExposed)
+                )
+              ) {
                 debugMissingAPI(
                   "chrome.storage." + prop,
                   "missing storage." + prop,
@@ -6697,7 +6848,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 : "pending unresolved storage call";
             }
             if (namespace === "storage" && methodName.indexOf("session.") === 0) {
-              return "missing storage.session";
+              return response && response.succeeded
+                ? "storageSessionBrokerSucceeded"
+                : "pending unresolved storage call";
             }
             if (namespace === "storage" && methodName.indexOf("sync.") === 0) {
               return "missing storage.sync";
@@ -7320,6 +7473,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
             const storageLocalRouteCount = routeEvents.filter((event) => {
               return event.targetContext === "storage.local";
             }).length;
+            const storageSessionRouteCount = routeEvents.filter((event) => {
+              return event.targetContext === "storage.session";
+            }).length;
             const nativeRouteCount = routeEvents.filter((event) => {
               return event.targetContext === "nativeApplication"
                 || event.targetContext === "nativeApplicationPort";
@@ -7362,6 +7518,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 "serviceWorkerRouteEvents=" + String(serviceWorkerRouteCount),
                 "contentScriptRouteEvents=" + String(contentScriptRouteCount),
                 "storageLocalRouteEvents=" + String(storageLocalRouteCount),
+                "storageSessionRouteEvents=" + String(storageSessionRouteCount),
                 "nativeRouteEvents=" + String(nativeRouteCount),
                 "No raw storage values, message bodies, form values, manifest bodies, URLs, or private payloads were recorded."
               ]

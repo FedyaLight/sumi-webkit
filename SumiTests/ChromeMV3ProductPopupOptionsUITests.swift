@@ -219,6 +219,7 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         XCTAssertTrue(launchRecord.apiSurface.runtimeAvailable)
         XCTAssertTrue(launchRecord.apiSurface.tabsAvailable)
         XCTAssertTrue(launchRecord.apiSurface.storageLocalAvailable)
+        XCTAssertTrue(launchRecord.apiSurface.storageSessionAvailable)
         XCTAssertFalse(launchRecord.apiSurface.permissionsAvailable)
         XCTAssertFalse(launchRecord.apiSurface.scriptingAvailable)
         XCTAssertFalse(launchRecord.apiSurface.nativeMessagingAvailable)
@@ -243,8 +244,17 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
             "storage.local.clear"
         ))
-        XCTAssertFalse(launchRecord.apiSurface.allowedMethods.contains(
+        XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
             "storage.session.get"
+        ))
+        XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
+            "storage.session.set"
+        ))
+        XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
+            "storage.session.remove"
+        ))
+        XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
+            "storage.session.clear"
         ))
         XCTAssertFalse(launchRecord.apiSurface.allowedMethods.contains(
             "storage.sync.get"
@@ -258,7 +268,7 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         XCTAssertFalse(launchRecord.apiSurface.blockedMethods.contains {
             $0.namespace == "storage" && $0.methodName == "local.*"
         })
-        XCTAssertTrue(launchRecord.apiSurface.blockedMethods.contains {
+        XCTAssertFalse(launchRecord.apiSurface.blockedMethods.contains {
             $0.namespace == "storage" && $0.methodName == "session.*"
         })
         XCTAssertTrue(launchRecord.resourceResolution?.linkedResources

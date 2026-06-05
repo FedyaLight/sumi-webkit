@@ -178,6 +178,20 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             methodName: "local.get",
             arguments: [.string("authToken")]
         ))
+        let sessionSet = handler.handle(request(
+            namespace: "storage",
+            methodName: "session.set",
+            arguments: [
+                .object([
+                    "sessionSecret": .string("must-not-appear"),
+                ]),
+            ]
+        ))
+        let session = handler.handle(request(
+            namespace: "storage",
+            methodName: "session.get",
+            arguments: [.object(["sessionSecret": .bool(false)])]
+        ))
         let native = handler.handle(request(
             namespace: "runtime",
             methodName: "sendNativeMessage",
@@ -200,6 +214,14 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         )
         XCTAssertNil(storage.blockedAPIDiagnostic)
         XCTAssertFalse(storage.nativeHostLaunchAttempted)
+        XCTAssertTrue(sessionSet.succeeded)
+        XCTAssertEqual(sessionSet.onChangedPayload?.areaName, "session")
+        XCTAssertTrue(session.succeeded)
+        XCTAssertEqual(
+            session.resultPayload,
+            .object(["sessionSecret": .string("must-not-appear")])
+        )
+        XCTAssertFalse(session.nativeHostLaunchAttempted)
         XCTAssertFalse(native.succeeded)
         XCTAssertEqual(native.blockedAPIDiagnostic?.namespace, "runtime")
         XCTAssertEqual(
@@ -212,6 +234,8 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(snapshot.observedMethods.contains("runtime.sendMessage"))
         XCTAssertTrue(snapshot.observedMethods.contains("storage.local.set"))
         XCTAssertTrue(snapshot.observedMethods.contains("storage.local.get"))
+        XCTAssertTrue(snapshot.observedMethods.contains("storage.session.set"))
+        XCTAssertTrue(snapshot.observedMethods.contains("storage.session.get"))
         XCTAssertTrue(
             snapshot.observedMethods.contains("runtime.sendNativeMessage")
         )
@@ -236,6 +260,20 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
                     "keyShape=singleString"
                 )
         })
+        XCTAssertTrue(snapshot.sanitizedBridgeRouteRecords.contains {
+            $0.apiName == "storage.session.set"
+                && $0.targetContext == "storage.session"
+                && $0.resultClassifier == "storageSessionBrokerSucceeded"
+                && $0.safeMessageShapeClassification.contains("keyCount=1")
+        })
+        XCTAssertTrue(snapshot.sanitizedBridgeRouteRecords.contains {
+            $0.apiName == "storage.session.get"
+                && $0.targetContext == "storage.session"
+                && $0.resultClassifier == "storageSessionBrokerSucceeded"
+                && $0.safeMessageShapeClassification.contains(
+                    "keyShape=objectDefaults"
+                )
+        })
         XCTAssertTrue(snapshot.blockedAPIs.contains {
             $0.namespace == "runtime"
                 && $0.methodName == "sendNativeMessage"
@@ -246,7 +284,115 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         ) ?? ""
         XCTAssertFalse(encoded.contains("must-not-appear"))
         XCTAssertFalse(encoded.contains("authToken"))
+        XCTAssertFalse(encoded.contains("sessionSecret"))
         XCTAssertFalse(encoded.contains("com.bitwarden.desktop"))
+    }
+
+    func testControlledActionPopupStorageSessionIsMemoryScopedAndLocalPersists()
+        throws
+    {
+        let storageRoot = try makeTemporaryDirectory()
+        let config = configuration(
+            extensionID: "storage-session-extension",
+            profileID: "storage-session-profile",
+            allowlist: .controlledActionPopupPolicy,
+            storageLocalRootPath: storageRoot.path
+        )
+        let first = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: config
+        )
+
+        let localSet = first.handle(request(
+            namespace: "storage",
+            methodName: "local.set",
+            arguments: [.object(["localKey": .string("persisted")])]
+        ))
+        let sessionSet = first.handle(request(
+            namespace: "storage",
+            methodName: "session.set",
+            arguments: [
+                .object([
+                    "sessionKey": .object([
+                        "kind": .string("shape-only"),
+                        "enabled": .bool(true),
+                    ]),
+                ]),
+            ],
+            invocationMode: .callback
+        ))
+        let sessionBytes = first.handle(request(
+            namespace: "storage",
+            methodName: "session.getBytesInUse",
+            arguments: [.array([.string("sessionKey")])]
+        ))
+        let sessionRemove = first.handle(request(
+            namespace: "storage",
+            methodName: "session.remove",
+            arguments: [.string("sessionKey")]
+        ))
+        let sessionClear = first.handle(request(
+            namespace: "storage",
+            methodName: "session.clear"
+        ))
+
+        XCTAssertTrue(localSet.succeeded)
+        XCTAssertTrue(sessionSet.succeeded)
+        XCTAssertEqual(sessionSet.onChangedPayload?.areaName, "session")
+        XCTAssertGreaterThan(numberValue(sessionBytes.resultPayload) ?? 0, 0)
+        XCTAssertTrue(sessionRemove.succeeded)
+        XCTAssertEqual(sessionRemove.onChangedPayload?.areaName, "session")
+        XCTAssertTrue(sessionClear.succeeded)
+
+        let paths = FileManager.default
+            .enumerator(atPath: storageRoot.path)?
+            .compactMap { $0 as? String } ?? []
+        XCTAssertTrue(paths.contains {
+            $0.hasSuffix("local/storage-snapshot.json")
+        })
+        XCTAssertFalse(paths.contains {
+            $0.contains("/session/")
+                || $0.hasPrefix("session/")
+                || $0.contains("session/storage-snapshot.json")
+        })
+
+        let second = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: config
+        )
+        let reloadedLocal = second.handle(request(
+            namespace: "storage",
+            methodName: "local.get",
+            arguments: [.string("localKey")]
+        ))
+        let reloadedSession = second.handle(request(
+            namespace: "storage",
+            methodName: "session.get",
+            arguments: [.object(["sessionKey": .bool(false)])]
+        ))
+
+        XCTAssertEqual(
+            reloadedLocal.resultPayload,
+            .object(["localKey": .string("persisted")])
+        )
+        XCTAssertEqual(
+            reloadedSession.resultPayload,
+            .object(["sessionKey": .bool(false)])
+        )
+
+        let snapshot = first.diagnosticsSnapshot
+        let encoded = String(
+            data: try JSONEncoder().encode(snapshot),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertTrue(snapshot.storageOnChangedPayloadCount >= 2)
+        XCTAssertTrue(snapshot.sanitizedBridgeRouteRecords.contains {
+            $0.apiName == "storage.session.getBytesInUse"
+                && $0.targetContext == "storage.session"
+                && $0.resultClassifier == "storageSessionBrokerSucceeded"
+        })
+        XCTAssertTrue(encoded.contains("area=session"))
+        XCTAssertTrue(encoded.contains("valueShape=object:keyCount=1"))
+        XCTAssertFalse(encoded.contains("sessionKey"))
+        XCTAssertFalse(encoded.contains("shape-only"))
     }
 
     func testControlledRuntimeGetManifestReturnsGeneratedManifestCloneWithoutInternalMetadata()
@@ -387,8 +533,21 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(
             controlledPolicy.allowedMethods.contains("runtime.getManifest")
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             controlledPolicy.allowedMethods.contains("storage.session.get")
+        )
+        XCTAssertTrue(
+            controlledPolicy.allowedMethods.contains("storage.session.set")
+        )
+        XCTAssertFalse(
+            ChromeMV3PopupOptionsAPIMethodPolicy.defaultPolicy
+                .allowedMethods
+                .contains("storage.session.get")
+        )
+        XCTAssertFalse(
+            ChromeMV3PopupOptionsAPIMethodPolicy.defaultPolicy
+                .exposedNamespaces
+                .contains("storage.session")
         )
         XCTAssertFalse(
             controlledPolicy.allowedMethods.contains("storage.sync.get")
@@ -417,6 +576,12 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         )
         XCTAssertTrue(
             source.contains("postBootstrapCheckpoint")
+        )
+        XCTAssertTrue(
+            source.contains("storageSessionExposed")
+        )
+        XCTAssertTrue(
+            source.contains("if (config.storageSessionExposed)")
         )
         XCTAssertTrue(
             source.contains("debugPostGetManifestBootstrapSentinel(true)")

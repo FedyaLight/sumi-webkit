@@ -1960,9 +1960,10 @@ struct ChromeMV3StorageAPIOperationHandlerState:
             runtimeMessagingStillBlocked: true,
             nativeMessagingStillBlocked: true,
             diagnostics: [
-                "Developer-preview controlled popup bridge may execute storage.local broker operations.",
-                "storage.local is scoped to this extension ID and profile ID.",
-                "Normal-tab runtime storage, default product storage exposure, native messaging, storage.session, storage.sync, and managed storage remain blocked.",
+                "Developer-preview controlled popup bridge may execute storage.local and storage.session broker operations.",
+                "storage.local and storage.session are scoped to this extension ID and profile ID.",
+                "storage.session remains memory-only and is not persisted to host files.",
+                "Normal-tab runtime storage, default product storage exposure, native messaging, storage.sync, and managed storage remain blocked.",
             ]
         )
 
