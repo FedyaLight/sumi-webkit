@@ -334,6 +334,130 @@ final class SidebarDDGHoverTests: XCTestCase {
         XCTAssertEqual(reservedPadding, SidebarHoverChrome.trailingFadePadding(showsTrailingAction: true))
     }
 
+    func testSelectedRowShadowBleedIsAppliedToOuterRowWrapper() throws {
+        let source = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SidebarRowLayout.swift")
+        let bleedBranchStart = try XCTUnwrap(source.range(of: "if drawsShadow"))
+        let surfaceBody = String(source[bleedBranchStart.lowerBound...])
+
+        XCTAssertTrue(source.contains("static let selectionShadowBleed"))
+        XCTAssertTrue(surfaceBody.contains(".padding(SidebarRowLayout.selectionShadowBleed)"))
+        XCTAssertTrue(surfaceBody.contains(".padding(-SidebarRowLayout.selectionShadowBleed)"))
+        XCTAssertTrue(surfaceBody.contains(".zIndex(SidebarRowLayout.selectionZIndex)"))
+        XCTAssertFalse(source.contains("reservesShadowBleed"))
+        XCTAssertFalse(surfaceBody.contains(".zIndex(0)"))
+        XCTAssertLessThan(
+            try XCTUnwrap(surfaceBody.range(of: ".padding(-SidebarRowLayout.selectionShadowBleed)")).lowerBound,
+            try XCTUnwrap(surfaceBody.range(of: ".zIndex(SidebarRowLayout.selectionZIndex)")).lowerBound
+        )
+    }
+
+    func testExpandedSidebarRowsDoNotClipSelectionShadowBleed() throws {
+        let motionSource = try Self.source(named: "Sumi/Components/Sidebar/SidebarZenMotion.swift")
+        let lifecycleStart = try XCTUnwrap(motionSource.range(of: "private struct SidebarZenRowLifecycleModifier"))
+        let transitionStart = try XCTUnwrap(
+            motionSource.range(
+                of: "private struct SidebarZenRowLifecycleTransitionModifier",
+                range: lifecycleStart.lowerBound..<motionSource.endIndex
+            )
+        )
+        let lifecycleSource = String(motionSource[lifecycleStart.lowerBound..<transitionStart.lowerBound])
+
+        XCTAssertTrue(lifecycleSource.contains("if isCollapsed"))
+        XCTAssertTrue(lifecycleSource.contains("row.clipped()"))
+        XCTAssertTrue(lifecycleSource.contains("} else {"))
+
+        let splitSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SplitGroupSidebarRow.swift")
+        let splitLifecycleStart = try XCTUnwrap(splitSource.range(of: "private struct SplitGroupRowLifecycleModifier"))
+        let splitExtensionStart = try XCTUnwrap(
+            splitSource.range(
+                of: "private extension View",
+                range: splitLifecycleStart.lowerBound..<splitSource.endIndex
+            )
+        )
+        let splitLifecycleSource = String(splitSource[splitLifecycleStart.lowerBound..<splitExtensionStart.lowerBound])
+
+        XCTAssertTrue(splitSource.contains(".splitGroupRowLifecycle(isCollapsing: isCollapsingRow)"))
+        XCTAssertTrue(splitLifecycleSource.contains("if isCollapsing"))
+        XCTAssertTrue(splitLifecycleSource.contains("row.clipped()"))
+        XCTAssertTrue(splitLifecycleSource.contains("} else {"))
+    }
+
+    func testRegularTabsUseLazyStackForRowVirtualization() throws {
+        let source = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SpaceRegularTabsSection.swift")
+        let viewStart = try XCTUnwrap(source.range(of: "private func regularTabsView(currentTabs: [Tab]) -> some View"))
+        let nextFunctionStart = try XCTUnwrap(
+            source.range(
+                of: "private func visibleSplitGroups(currentTabs: [Tab]) -> [SplitGroup]",
+                range: viewStart.lowerBound..<source.endIndex
+            )
+        )
+        let regularTabsViewSource = String(source[viewStart.lowerBound..<nextFunctionStart.lowerBound])
+
+        XCTAssertFalse(source.contains("regularTabsUsesLazyRowStack"))
+        XCTAssertFalse(source.contains("regularTabsRowStack"))
+        XCTAssertTrue(regularTabsViewSource.contains("LazyVStack(alignment: .leading, spacing: 2)"))
+        XCTAssertFalse(regularTabsViewSource.contains("\n        VStack(alignment: .leading, spacing: 2)"))
+        XCTAssertTrue(source.contains(".zIndex(regularTabRowZIndex(tab))"))
+        XCTAssertTrue(source.contains(".zIndex(regularSplitGroupRowZIndex(group))"))
+    }
+
+    func testPinnedAndEssentialsUseLazyStacksForScrollableRows() throws {
+        let pinnedGridSource = try Self.source(named: "Sumi/Components/Sidebar/PinnedButtons/PinnedGrid.swift")
+        let gridRowsStart = try XCTUnwrap(
+            pinnedGridSource.range(of: "LazyVStack(spacing: pinnedTabsConfiguration.gridSpacing)")
+        )
+        let gridRowsSource = String(pinnedGridSource[gridRowsStart.lowerBound...])
+
+        XCTAssertTrue(gridRowsSource.contains("ForEach(displayRows, id: \\.stableID)"))
+        XCTAssertFalse(pinnedGridSource.contains("\n                VStack(spacing: pinnedTabsConfiguration.gridSpacing)"))
+
+        let pinnedSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SpacePinnedSection.swift")
+        let pinnedListStart = try XCTUnwrap(Self.sourceRangeStart(
+            in: pinnedSource,
+            marker: "private var pinnedTabsList: some View"
+        ))
+        let pinnedZIndexStart = try XCTUnwrap(
+            pinnedSource.range(
+                of: "private func spacePinnedDisplayEntryZIndex",
+                range: pinnedListStart..<pinnedSource.endIndex
+            )
+        )
+        let pinnedListSource = String(pinnedSource[pinnedListStart..<pinnedZIndexStart.lowerBound])
+
+        XCTAssertTrue(pinnedListSource.contains("return LazyVStack(spacing: 0)"))
+        XCTAssertFalse(pinnedListSource.contains("return VStack(spacing: 0)"))
+
+        let folderSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/TabFolderView.swift")
+        let folderBodyStart = try XCTUnwrap(Self.sourceRangeStart(
+            in: folderSource,
+            marker: "private func folderBodyContent("
+        ))
+        let nestedFolderStart = try XCTUnwrap(
+            folderSource.range(
+                of: "private func nestedFolderView",
+                range: folderBodyStart..<folderSource.endIndex
+            )
+        )
+        let folderBodySource = String(folderSource[folderBodyStart..<nestedFolderStart.lowerBound])
+
+        XCTAssertTrue(folderBodySource.contains("return LazyVStack(spacing: 0)"))
+        XCTAssertFalse(folderBodySource.contains("return VStack(spacing: 0)"))
+    }
+
+    func testSelectionShadowIsOwnedByRowSurfaceOnly() throws {
+        let rowSurfaceSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SidebarRowLayout.swift")
+        let regularTabSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SpaceTab.swift")
+        let shortcutRowSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/ShortcutSidebarRow.swift")
+        let snapshotRowsSource = try Self.source(named: "Navigation/Sidebar/SpacesSideBarView.swift")
+        let splitGroupSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SplitGroupSidebarRow.swift")
+
+        XCTAssertTrue(rowSurfaceSource.contains("tokens.sidebarSelectionShadow"))
+        XCTAssertFalse(regularTabSource.contains(".shadow("))
+        XCTAssertFalse(shortcutRowSource.contains(".shadow("))
+        XCTAssertFalse(snapshotRowsSource.contains(".shadow("))
+        XCTAssertFalse(splitGroupSource.contains(".shadow("))
+    }
+
     func testCollapsedSidebarHoverTrackingUsesActiveAppTrackingArea() throws {
         let source = try Self.source(named: "Sumi/Components/Sidebar/SidebarDDGHover.swift")
 
@@ -360,9 +484,11 @@ final class SidebarDDGHoverTests: XCTestCase {
         let rowSource = String(source[..<segmentStart.lowerBound])
         let segmentContentSource = String(source[segmentStart.lowerBound..<actionButtonStart.lowerBound])
 
-        XCTAssertTrue(rowSource.contains(".fill(rowBackground)"))
+        XCTAssertTrue(rowSource.contains(".sidebarRowSurface("))
+        XCTAssertTrue(rowSource.contains("background: rowBackground"))
         XCTAssertTrue(rowSource.contains(".sidebarDDGHover($isRowHovered, isEnabled: isRowHoverTrackingEnabled)"))
         XCTAssertTrue(rowSource.contains("private var rowBackground: Color"))
+        XCTAssertTrue(rowSource.contains("private var drawsRowSurface: Bool"))
         XCTAssertTrue(rowSource.contains("private var showsRowHoverBackground: Bool"))
         XCTAssertTrue(rowSource.contains("private var isRowHoverTrackingEnabled: Bool"))
         XCTAssertTrue(rowSource.contains("private var isFocusedGroup: Bool"))
@@ -383,6 +509,7 @@ final class SidebarDDGHoverTests: XCTestCase {
         let shortcutPinSource = try Self.source(named: "Sumi/Models/Tab/ShortcutPin.swift")
         let shortcutRowSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/ShortcutSidebarRow.swift")
         let transitionSnapshotSource = try Self.source(named: "Navigation/Sidebar/SpacesSideBarView.swift")
+        let transitionPinnedTileSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSnapshotPinnedTileView.swift")
 
         XCTAssertFalse(pinnedGridSource.contains("EssentialSplitBadge"))
         XCTAssertFalse(pinnedGridSource.contains("showsSplitProxyBadge"))
@@ -402,7 +529,12 @@ final class SidebarDDGHoverTests: XCTestCase {
         XCTAssertFalse(transitionSnapshotSource.contains("splitBadge"))
         XCTAssertFalse(transitionSnapshotSource.contains("rectangle.split.2x1"))
         XCTAssertTrue(transitionSnapshotSource.contains("showsSplitOutline"))
-        XCTAssertTrue(transitionSnapshotSource.contains("PinnedTileSplitGroupOutlineMask"))
+
+        XCTAssertFalse(transitionPinnedTileSource.contains("showsSplitProxyBadge"))
+        XCTAssertFalse(transitionPinnedTileSource.contains("showsSplitBadge"))
+        XCTAssertFalse(transitionPinnedTileSource.contains("splitBadge"))
+        XCTAssertTrue(transitionPinnedTileSource.contains("showsSplitOutline"))
+        XCTAssertTrue(transitionPinnedTileSource.contains("PinnedTileSplitGroupOutlineMask"))
 
         XCTAssertTrue(pinnedTileSource.contains("PinnedTileSplitGroupOutlineMask"))
         XCTAssertTrue(pinnedTileSource.contains("dash: [dash, gap]"))
@@ -470,6 +602,10 @@ final class SidebarDDGHoverTests: XCTestCase {
     private static func source(named path: String) throws -> String {
         let url = repoRoot.appendingPathComponent(path)
         return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    private static func sourceRangeStart(in source: String, marker: String) -> String.Index? {
+        source.range(of: marker)?.lowerBound
     }
 
     private static var repoRoot: URL {

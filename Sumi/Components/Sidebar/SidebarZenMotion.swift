@@ -89,10 +89,15 @@ private struct SidebarZenRowLifecycleModifier: ViewModifier {
     let isCollapsed: Bool
 
     func body(content: Content) -> some View {
-        content
+        let row = content
             .frame(height: isCollapsed ? 0 : SidebarRowLayout.rowHeight, alignment: .top)
             .opacity(isCollapsed ? 0 : 1)
-            .clipped()
+
+        if isCollapsed {
+            row.clipped()
+        } else {
+            row
+        }
     }
 }
 

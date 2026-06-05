@@ -521,11 +521,13 @@ struct TabFolderView: View {
                     .padding(.horizontal, -folderDragHighlightHorizontalBleed)
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(displayIsHovering ? tokens.sidebarRowHover : Color.clear)
+        .sidebarRowSurface(
+            background: displayIsHovering ? tokens.sidebarRowHover : Color.clear,
+            cornerRadius: sumiSettings.resolvedCornerRadius(12),
+            tokens: tokens,
+            isVisible: displayIsHovering,
+            drawsSelectionShadow: false
         )
-        .clipShape(RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(12), style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(12), style: .continuous))
         .sidebarDDGHover($isFolderHeaderHovered, isEnabled: isInteractive)
     }
@@ -566,50 +568,53 @@ struct TabFolderView: View {
         reportsGeometry: Bool,
         reportsFolderChildGeometry: Bool
     ) -> some View {
-        return VStack(spacing: 0) {
+        return LazyVStack(spacing: 0) {
             ForEach(folderDisplayEntries(from: items)) { entry in
-                switch entry.item {
-                case .folder(let folderId):
-                    if let childFolder = childFolders.first(where: { $0.id == folderId }) {
-                        nestedFolderView(childFolder, containerIndex: entry.dropIndex)
-                            .sidebarFolderChildDropGeometry(
-                                spaceId: space.id,
-                                folderId: folder.id,
-                                childId: childFolder.id,
-                                index: entry.dropIndex,
-                                generation: dragState.sidebarGeometryGeneration,
-                                isActive: isInteractive && reportsGeometry && reportsFolderChildGeometry
-                            )
+                VStack(spacing: 0) {
+                    switch entry.item {
+                    case .folder(let folderId):
+                        if let childFolder = childFolders.first(where: { $0.id == folderId }) {
+                            nestedFolderView(childFolder, containerIndex: entry.dropIndex)
+                                .sidebarFolderChildDropGeometry(
+                                    spaceId: space.id,
+                                    folderId: folder.id,
+                                    childId: childFolder.id,
+                                    index: entry.dropIndex,
+                                    generation: dragState.sidebarGeometryGeneration,
+                                    isActive: isInteractive && reportsGeometry && reportsFolderChildGeometry
+                                )
+                        }
+                    case .shortcut(let pinId):
+                        if let pin = shortcutPinsInFolder.first(where: { $0.id == pinId }) {
+                            folderShortcutView(pin)
+                                .sidebarFolderChildDropGeometry(
+                                    spaceId: space.id,
+                                    folderId: folder.id,
+                                    childId: pin.id,
+                                    index: entry.dropIndex,
+                                    generation: dragState.sidebarGeometryGeneration,
+                                    isActive: isInteractive && reportsGeometry && reportsFolderChildGeometry
+                                )
+                        }
+                    case .splitGroup(let groupId):
+                        if let group = browserManager.tabManager.splitGroup(with: groupId) {
+                            shortcutHostedSplitGroupView(group)
+                                .sidebarFolderChildDropGeometry(
+                                    spaceId: space.id,
+                                    folderId: folder.id,
+                                    childId: group.id,
+                                    index: entry.dropIndex,
+                                    generation: dragState.sidebarGeometryGeneration,
+                                    isActive: isInteractive && reportsGeometry && reportsFolderChildGeometry
+                                )
+                        }
+                    case .restoreGap(let gapId):
+                        shortcutRestoreGap(gapId)
+                    case .placeholder:
+                        folderDropGap
                     }
-                case .shortcut(let pinId):
-                    if let pin = shortcutPinsInFolder.first(where: { $0.id == pinId }) {
-                        folderShortcutView(pin)
-                            .sidebarFolderChildDropGeometry(
-                                spaceId: space.id,
-                                folderId: folder.id,
-                                childId: pin.id,
-                                index: entry.dropIndex,
-                                generation: dragState.sidebarGeometryGeneration,
-                                isActive: isInteractive && reportsGeometry && reportsFolderChildGeometry
-                            )
-                    }
-                case .splitGroup(let groupId):
-                    if let group = browserManager.tabManager.splitGroup(with: groupId) {
-                        shortcutHostedSplitGroupView(group)
-                            .sidebarFolderChildDropGeometry(
-                                spaceId: space.id,
-                                folderId: folder.id,
-                                childId: group.id,
-                                index: entry.dropIndex,
-                                generation: dragState.sidebarGeometryGeneration,
-                                isActive: isInteractive && reportsGeometry && reportsFolderChildGeometry
-                            )
-                    }
-                case .restoreGap(let gapId):
-                    shortcutRestoreGap(gapId)
-                case .placeholder:
-                    folderDropGap
                 }
+                .zIndex(folderDisplayEntryZIndex(entry))
             }
         }
         .padding(.leading, Self.folderContentLeadingPadding)
@@ -676,6 +681,60 @@ struct TabFolderView: View {
             }
             return entry
         }
+    }
+
+    private func folderDisplayEntryZIndex(_ entry: FolderDisplayEntry) -> Double {
+        SidebarSelectionElevation.zIndex(isElevated: folderListItemIsElevated(entry.item))
+    }
+
+    private func folderListItemIsElevated(_ item: FolderListItem) -> Bool {
+        switch item {
+        case .folder(let folderId):
+            return folderContainsElevatedSelection(folderId)
+        case .shortcut(let pinId):
+            guard let pin = shortcutPinsInFolder.first(where: { $0.id == pinId }) else {
+                return false
+            }
+            if let placeholderGroup = browserManager.tabManager.regularHostedSplitPlaceholderGroup(for: pin) {
+                return isFolderSplitPlaceholderSelected(placeholderGroup, pin: pin)
+            }
+            return shortcutPinIsElevated(pin)
+        case .splitGroup(let groupId):
+            guard let group = browserManager.tabManager.splitGroup(with: groupId) else {
+                return false
+            }
+            return splitGroupIsElevated(group)
+        case .restoreGap, .placeholder:
+            return false
+        }
+    }
+
+    private func shortcutPinIsElevated(_ pin: ShortcutPin) -> Bool {
+        browserManager.tabManager.shortcutRuntimeAffordanceState(for: pin, in: windowState).isSelected
+    }
+
+    private func splitGroupIsElevated(_ group: SplitGroup) -> Bool {
+        SidebarSelectionElevation.splitGroupContainsCurrentTab(
+            group,
+            currentTabId: windowState.currentTabId
+        )
+    }
+
+    private func folderContainsElevatedSelection(_ folderId: UUID, visited: Set<UUID> = []) -> Bool {
+        SidebarSelectionElevation.folderContainsSelection(
+            folderId: folderId,
+            visited: visited,
+            folderPins: { folderPinsByFolderId[$0] ?? [] },
+            childFolders: { childFoldersByParentId[$0] ?? [] },
+            splitGroups: {
+                browserManager.tabManager.shortcutHostedSplitGroups(
+                    for: space.id,
+                    inFolder: $0
+                )
+            },
+            isShortcutElevated: shortcutPinIsElevated,
+            isSplitGroupElevated: splitGroupIsElevated
+        )
     }
 
     private func folderDisplayID(

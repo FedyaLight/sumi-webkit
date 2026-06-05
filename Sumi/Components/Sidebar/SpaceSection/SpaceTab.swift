@@ -118,9 +118,6 @@ struct SpaceTab: View {
             .frame(height: SidebarRowLayout.rowHeight)
             .frame(minWidth: 0, maxWidth: .infinity)
             .contentShape(Rectangle())
-            .background(
-                backgroundColor
-            )
             .overlay(alignment: .leading) {
                 rowActivationOverlay
             }
@@ -128,7 +125,13 @@ struct SpaceTab: View {
                 trailingAccessory
                     .padding(.trailing, SidebarRowLayout.trailingInset)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .sidebarRowSurface(
+                background: backgroundColor,
+                cornerRadius: rowCornerRadius,
+                tokens: tokens,
+                isVisible: drawsRowSurface,
+                drawsSelectionShadow: isCurrentTab
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("tab-row-\(tab.id.uuidString)")
@@ -177,11 +180,6 @@ struct SpaceTab: View {
             guard fetchesVisiblePresentation else { return }
             await tab.fetchFaviconForVisiblePresentation()
         }
-        .shadow(color: isActive ? shadowColor : Color.clear, radius: isActive ? 2 : 0, y: 1.5)
-    }
-
-    private var isActive: Bool {
-        return browserManager.currentTab(for: windowState)?.id == tab.id
     }
 
     private var rowSourceID: String {
@@ -192,8 +190,8 @@ struct SpaceTab: View {
         return browserManager.currentTab(for: windowState)?.id == tab.id
     }
 
-    private var shadowColor: Color {
-        tokens.sidebarSelectionShadow
+    private var rowCornerRadius: CGFloat {
+        settings.resolvedCornerRadius(12)
     }
 
     private var backgroundColor: Color {
@@ -205,6 +203,11 @@ struct SpaceTab: View {
             return Color.clear
         }
     }
+
+    private var drawsRowSurface: Bool {
+        isCurrentTab || displayIsHovering
+    }
+
     private var textTab: Color {
         return tokens.primaryText
     }

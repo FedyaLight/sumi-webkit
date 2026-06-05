@@ -336,7 +336,7 @@ extension SpaceView {
     private var pinnedTabsList: some View {
         let allItems = projectedSpacePinnedDisplayEntries
         
-        return VStack(spacing: 0) {
+        return LazyVStack(spacing: 0) {
             Color.clear
                 .frame(height: dropGuideEdgeAllowance)
                 .allowsHitTesting(false)
@@ -362,6 +362,7 @@ extension SpaceView {
                         shortcutRestoreGap(gapId)
                     }
                 }
+                .zIndex(spacePinnedDisplayEntryZIndex(entry))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -373,6 +374,61 @@ extension SpaceView {
         .animation(sidebarContentMutationAnimation, value: shortcutRestoreGaps)
         .animation(sidebarContentMutationAnimation, value: shortcutRestoreGapHeights.map { "\($0.key.uuidString):\($0.value)" }.sorted())
         .padding(.bottom, 8) // Add padding to act as drag tail for spacePinned
+    }
+
+    private func spacePinnedDisplayEntryZIndex(_ entry: SpacePinnedDisplayEntry) -> Double {
+        guard case .item(let item) = entry.item else {
+            return 0
+        }
+        return SidebarSelectionElevation.zIndex(isElevated: spacePinnedItemIsElevated(item))
+    }
+
+    private func spacePinnedItemIsElevated(_ item: SpacePinnedListItem) -> Bool {
+        switch item {
+        case .folder(let folderId):
+            return folderContainsElevatedSelection(folderId)
+        case .shortcut(let pinId):
+            guard let pin = topLevelPinnedPins.first(where: { $0.id == pinId }) else {
+                return false
+            }
+            if let placeholderGroup = browserManager.tabManager.regularHostedSplitPlaceholderGroup(for: pin) {
+                return isPinnedSplitPlaceholderSelected(placeholderGroup, pin: pin)
+            }
+            return shortcutPinIsElevated(pin)
+        case .splitGroup(let groupId):
+            guard let group = browserManager.tabManager.splitGroup(with: groupId) else {
+                return false
+            }
+            return splitGroupIsElevated(group)
+        }
+    }
+
+    private func shortcutPinIsElevated(_ pin: ShortcutPin) -> Bool {
+        browserManager.tabManager.shortcutRuntimeAffordanceState(for: pin, in: windowState).isSelected
+    }
+
+    private func splitGroupIsElevated(_ group: SplitGroup) -> Bool {
+        SidebarSelectionElevation.splitGroupContainsCurrentTab(
+            group,
+            currentTabId: windowState.currentTabId
+        )
+    }
+
+    private func folderContainsElevatedSelection(_ folderId: UUID, visited: Set<UUID> = []) -> Bool {
+        SidebarSelectionElevation.folderContainsSelection(
+            folderId: folderId,
+            visited: visited,
+            folderPins: { launcherProjection?.folderPins[$0] ?? [] },
+            childFolders: { launcherProjection?.childFolders[$0] ?? [] },
+            splitGroups: {
+                browserManager.tabManager.shortcutHostedSplitGroups(
+                    for: space.id,
+                    inFolder: $0
+                )
+            },
+            isShortcutElevated: shortcutPinIsElevated,
+            isSplitGroupElevated: splitGroupIsElevated
+        )
     }
 
     private var pinnedDropGap: some View {
@@ -830,8 +886,13 @@ struct ShortcutSplitPlaceholderRow: View {
         .padding(.trailing, SidebarRowLayout.trailingInset)
         .frame(height: SidebarRowLayout.rowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(backgroundColor)
-        .clipShape(RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(12), style: .continuous))
+        .sidebarRowSurface(
+            background: backgroundColor,
+            cornerRadius: sumiSettings.resolvedCornerRadius(12),
+            tokens: tokens,
+            isVisible: drawsRowSurface,
+            drawsSelectionShadow: isSelected
+        )
         .contentShape(Rectangle())
         .onTapGesture(perform: action)
         .sidebarDDGHover($isRowHovered, isEnabled: isAppKitInteractionEnabled)
@@ -853,6 +914,10 @@ struct ShortcutSplitPlaceholderRow: View {
             return tokens.sidebarRowHover
         }
         return .clear
+    }
+
+    private var drawsRowSurface: Bool {
+        isSelected || displayIsHovering
     }
 
     private var displayIsHovering: Bool {

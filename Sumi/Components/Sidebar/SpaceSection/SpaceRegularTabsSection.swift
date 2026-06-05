@@ -48,10 +48,12 @@ extension SpaceView {
         .padding(.horizontal, 10)
         .frame(height: 36)
         .frame(minWidth: 0, maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(12), style: .continuous)
-                .fill(displayIsNewTabHovered ? tokens.sidebarRowHover : Color.clear)
-                .padding(.horizontal, 2)
+        .sidebarRowSurface(
+            background: displayIsNewTabHovered ? tokens.sidebarRowHover : Color.clear,
+            cornerRadius: sumiSettings.resolvedCornerRadius(12),
+            tokens: tokens,
+            isVisible: displayIsNewTabHovered,
+            drawsSelectionShadow: false
         )
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .sidebarDDGHover($isNewTabHovered, isEnabled: isInteractive)
@@ -160,16 +162,6 @@ extension SpaceView {
         regularDisplayItems(currentTabs: tabs).count
     }
 
-    private var regularTabsUsesLazyRowStack: Bool {
-        isInteractive
-            && !dragState.isDragging
-            && !dragState.isDropProjectionActive
-            && !dragState.isCompletingDrop
-            && regularGapHeights.isEmpty
-            && regularInsertedTabHeights.isEmpty
-            && regularDeferredRemovalGapIdsByTabId.isEmpty
-    }
-
     private var regularTabsListInner: some View {
         Group {
             if !tabs.isEmpty || regularTabsUsesProjectedDropLayout {
@@ -197,7 +189,7 @@ extension SpaceView {
     }
 
     private func regularTabsView(currentTabs: [Tab]) -> some View {
-        return regularTabsRowStack {
+        LazyVStack(alignment: .leading, spacing: 2) {
             let tabById = Dictionary(uniqueKeysWithValues: currentTabs.map { ($0.id, $0) })
             let splitGroups = visibleSplitGroups(currentTabs: currentTabs)
             let groupedTabIds = Set(splitGroups.flatMap(\.tabIds))
@@ -237,6 +229,7 @@ extension SpaceView {
                         )
                         .environmentObject(browserManager)
                         .environmentObject(splitManager)
+                        .zIndex(regularSplitGroupRowZIndex(group))
                     } else if groupedTabIds.contains(tabId) {
                         EmptyView()
                     } else if let tab = tabById[tabId] {
@@ -407,21 +400,6 @@ extension SpaceView {
         }
     }
 
-    @ViewBuilder
-    private func regularTabsRowStack<Content: View>(
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        if regularTabsUsesLazyRowStack {
-            LazyVStack(alignment: .leading, spacing: 2) {
-                content()
-            }
-        } else {
-            VStack(alignment: .leading, spacing: 2) {
-                content()
-            }
-        }
-    }
-
     private func regularDisplayItems(currentTabs: [Tab]) -> [RegularTabRenderedItem] {
         if regularTabsUsesProjectedDropLayout {
             return regularProjectedItems(currentTabs: currentTabs).map { item in
@@ -464,7 +442,21 @@ extension SpaceView {
             VStack(spacing: 0) {
                 regularTabView(tab)
             }
+            .zIndex(regularTabRowZIndex(tab))
         }
+    }
+
+    private func regularTabRowZIndex(_ tab: Tab) -> Double {
+        SidebarSelectionElevation.zIndex(isElevated: windowState.currentTabId == tab.id)
+    }
+
+    private func regularSplitGroupRowZIndex(_ group: SplitGroup) -> Double {
+        SidebarSelectionElevation.zIndex(
+            isElevated: SidebarSelectionElevation.splitGroupContainsCurrentTab(
+                group,
+                currentTabId: windowState.currentTabId
+            )
+        )
     }
 
     private func regularInsertedTabProgress(for height: CGFloat) -> CGFloat {
@@ -510,8 +502,13 @@ extension SpaceView {
         .padding(.trailing, SidebarRowLayout.trailingInset)
         .frame(height: SidebarRowLayout.rowHeight)
         .frame(minWidth: 0, maxWidth: .infinity)
-        .background(windowState.currentTabId == tab.id ? tokens.sidebarRowActive : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .sidebarRowSurface(
+            background: windowState.currentTabId == tab.id ? tokens.sidebarRowActive : Color.clear,
+            cornerRadius: sumiSettings.resolvedCornerRadius(12),
+            tokens: tokens,
+            isVisible: windowState.currentTabId == tab.id,
+            drawsSelectionShadow: windowState.currentTabId == tab.id
+        )
         .offset(y: -4 * (1 - progress))
     }
 

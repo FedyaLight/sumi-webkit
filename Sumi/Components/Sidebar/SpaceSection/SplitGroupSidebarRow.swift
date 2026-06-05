@@ -210,16 +210,16 @@ struct SplitGroupSidebarRow: View {
                 value: departingItemIds.map(\.uuidString).sorted()
             )
         }
-        .frame(height: isCollapsingRow ? 0 : SidebarRowLayout.rowHeight, alignment: .top)
-        .opacity(isCollapsingRow ? 0 : 1)
-        .clipped()
+        .splitGroupRowLifecycle(isCollapsing: isCollapsingRow)
         .padding(.horizontal, 2)
         .frame(minWidth: 0, maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(8), style: .continuous)
-                .fill(rowBackground)
+        .sidebarRowSurface(
+            background: rowBackground,
+            cornerRadius: sumiSettings.resolvedCornerRadius(8),
+            tokens: tokens,
+            isVisible: drawsRowSurface,
+            drawsSelectionShadow: isFocusedGroup
         )
-        .clipShape(RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(8), style: .continuous))
         .sidebarDDGHover($isRowHovered, isEnabled: isRowHoverTrackingEnabled)
         .accessibilityIdentifier("space-split-group-\(group.id.uuidString)")
         .onAppear {
@@ -250,6 +250,10 @@ struct SplitGroupSidebarRow: View {
             return tokens.sidebarRowHover
         }
         return Color.clear
+    }
+
+    private var drawsRowSurface: Bool {
+        isFocusedGroup || showsRowHoverBackground
     }
 
     private var showsRowHoverBackground: Bool {
@@ -469,6 +473,28 @@ struct SplitGroupSidebarRow: View {
 
     private var tokens: ChromeThemeTokens {
         themeContext.tokens(settings: sumiSettings)
+    }
+}
+
+private struct SplitGroupRowLifecycleModifier: ViewModifier {
+    let isCollapsing: Bool
+
+    func body(content: Content) -> some View {
+        let row = content
+            .frame(height: isCollapsing ? 0 : SidebarRowLayout.rowHeight, alignment: .top)
+            .opacity(isCollapsing ? 0 : 1)
+
+        if isCollapsing {
+            row.clipped()
+        } else {
+            row
+        }
+    }
+}
+
+private extension View {
+    func splitGroupRowLifecycle(isCollapsing: Bool) -> some View {
+        modifier(SplitGroupRowLifecycleModifier(isCollapsing: isCollapsing))
     }
 }
 

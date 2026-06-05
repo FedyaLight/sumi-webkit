@@ -286,7 +286,7 @@ private struct ThemeChromePalette {
         let sidebarRowActive: Color = {
             switch scheme {
             case .light:
-                return Color.white.opacity(0.8)
+                return Color.white.opacity(0.85)
             case .dark:
                 return Color.white.opacity(0.18)
             @unknown default:
@@ -296,9 +296,9 @@ private struct ThemeChromePalette {
         let sidebarRowHover: Color = {
             switch scheme {
             case .light:
-                return Color.black.opacity(0.1)
+                return Color.black.opacity(0.08)
             case .dark:
-                return Color.white.opacity(0.1)
+                return Color.white.opacity(0.10)
             @unknown default:
                 return Color.primary.opacity(0.1)
             }
@@ -306,7 +306,7 @@ private struct ThemeChromePalette {
         let sidebarSelectionShadow: Color = {
             switch scheme {
             case .light:
-                return Color.black.opacity(0.09)
+                return Color.black.opacity(0.15)
             case .dark:
                 return Color.black.opacity(0.05)
             @unknown default:

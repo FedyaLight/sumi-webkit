@@ -1029,12 +1029,12 @@ private struct SpaceSnapshotShortcutRowView: View {
         .padding(.trailing, SidebarRowLayout.trailingInset)
         .frame(height: SidebarRowLayout.rowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(shortcut.presentationState.isSelected ? tokens.sidebarRowActive : .clear)
-        .clipShape(RoundedRectangle(cornerRadius: rowCornerRadius, style: .continuous))
-        .shadow(
-            color: shortcut.presentationState.isSelected ? tokens.sidebarSelectionShadow : .clear,
-            radius: shortcut.presentationState.isSelected ? 2 : 0,
-            y: shortcut.presentationState.isSelected ? 1 : 0
+        .sidebarRowSurface(
+            background: shortcut.presentationState.isSelected ? tokens.sidebarRowActive : .clear,
+            cornerRadius: rowCornerRadius,
+            tokens: tokens,
+            isVisible: shortcut.presentationState.isSelected,
+            drawsSelectionShadow: shortcut.presentationState.isSelected
         )
     }
 }
@@ -1126,12 +1126,12 @@ private struct SpaceSnapshotRegularTabRowView: View {
         .padding(.trailing, SidebarRowLayout.trailingInset)
         .frame(height: SidebarRowLayout.rowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tab.isSelected ? tokens.sidebarRowActive : .clear)
-        .clipShape(RoundedRectangle(cornerRadius: rowCornerRadius, style: .continuous))
-        .shadow(
-            color: tab.isSelected ? tokens.sidebarSelectionShadow : .clear,
-            radius: tab.isSelected ? 2 : 0,
-            y: tab.isSelected ? 1.5 : 0
+        .sidebarRowSurface(
+            background: tab.isSelected ? tokens.sidebarRowActive : .clear,
+            cornerRadius: rowCornerRadius,
+            tokens: tokens,
+            isVisible: tab.isSelected,
+            drawsSelectionShadow: tab.isSelected
         )
     }
 

@@ -450,7 +450,7 @@ struct PinnedGrid: View {
                 .frame(height: revealHeight, alignment: .top)
                 .animation(shouldAnimateDropLayout ? .easeInOut(duration: 0.18) : nil, value: showsRevealGap)
             } else {
-                VStack(spacing: pinnedTabsConfiguration.gridSpacing) {
+                LazyVStack(spacing: pinnedTabsConfiguration.gridSpacing) {
                     ForEach(displayRows, id: \.stableID) { row in
                         HStack(spacing: pinnedTabsConfiguration.gridSpacing) {
                             ForEach(row.cells, id: \.stableID) { cell in

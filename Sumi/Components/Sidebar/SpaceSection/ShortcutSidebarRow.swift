@@ -211,7 +211,6 @@ private struct ShortcutSidebarRowChrome: View {
         }
         .frame(height: SidebarRowLayout.rowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(backgroundColor)
         .overlay(alignment: .leading) {
             rowActivationOverlay
         }
@@ -219,7 +218,13 @@ private struct ShortcutSidebarRowChrome: View {
             trailingActionButton
                 .padding(.trailing, SidebarRowLayout.trailingInset)
         }
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .sidebarRowSurface(
+            background: backgroundColor,
+            cornerRadius: cornerRadius,
+            tokens: tokens,
+            isVisible: drawsRowSurface,
+            drawsSelectionShadow: runtimeAffordance.isSelected
+        )
         // Expose the row container itself so the launcher keeps the same source identity
         // when runtime drift replaces the leading favicon with the reset control.
         .accessibilityElement(children: .contain)
@@ -253,11 +258,6 @@ private struct ShortcutSidebarRowChrome: View {
             primaryAction: action,
             sourceID: rowSourceID,
             entries: contextMenuEntries
-        )
-        .shadow(
-            color: runtimeAffordance.isSelected ? tokens.sidebarSelectionShadow : .clear,
-            radius: runtimeAffordance.isSelected ? 2 : 0,
-            y: runtimeAffordance.isSelected ? 1 : 0
         )
     }
 
@@ -436,6 +436,10 @@ private struct ShortcutSidebarRowChrome: View {
             return tokens.sidebarRowHover
         }
         return .clear
+    }
+
+    private var drawsRowSurface: Bool {
+        runtimeAffordance.isSelected || displayIsHovering
     }
 
     private var rowSourceID: String {
