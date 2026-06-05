@@ -2276,8 +2276,13 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 )
             {
                 latest = snapshot
-                let hasFatalDiagnostic =
-                    snapshot.jsDebugRouteEvents.contains { event in
+                let manifestReturned =
+                    controlledBitwardenPopupManifestReturnedSequence(snapshot)
+                        != nil
+                let postManifestEvents =
+                    controlledBitwardenPopupPostGetManifestEvents(snapshot)
+                let hasPostManifestBlocker =
+                    postManifestEvents.contains { event in
                         event.firstMissingAPIOrPermissionOrLifecycleError != nil
                             || [
                                 "consoleError",
@@ -2289,9 +2294,13 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                                 "webContentProcessTerminated",
                             ].contains(event.eventKind)
                     }
-                if snapshot.pendingUnresolvedJSDebugRoutes.isEmpty == false
-                    || hasFatalDiagnostic
-                    || snapshot.callRecords.count >= 4 {
+                let finalCheckpointReached =
+                    postManifestEvents.contains { event in
+                        event.eventKind == "postBootstrapCheckpoint"
+                            && event.diagnostics.contains("phase=final")
+                    }
+                if manifestReturned
+                    && (finalCheckpointReached || hasPostManifestBlocker) {
                     return snapshot
                 }
             }
@@ -2318,14 +2327,61 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             globalThis.__sumiChromeMV3PopupOptionsDebugSnapshot
               ? globalThis.__sumiChromeMV3PopupOptionsDebugSnapshot()
               : { events: [], pending: [] };
+          const inputCount =
+            document.querySelectorAll('input,textarea,select').length;
+          const buttonCount =
+            document.querySelectorAll(
+              'button,[role="button"],input[type="button"],input[type="submit"]'
+            ).length;
+          const linkCount = document.querySelectorAll('a[href]').length;
+          const controlCount = inputCount + buttonCount + linkCount;
+          const elementCount = document.body
+            ? document.body.querySelectorAll('*').length
+            : 0;
+          const hasBusyIndicator = !!document.querySelector(
+            '[role="progressbar"],[aria-busy="true"],.spinner,.loading,.loader,[data-loading="true"]'
+          );
+          const hasLoadingText =
+            /\\b(loading|please wait|initializing|syncing)\\b/i.test(text);
+          const blankCandidate =
+            text.trim().length === 0 && controlCount === 0 && elementCount <= 1;
+          const usableFormCandidate =
+            (inputCount > 0 && buttonCount > 0)
+              || (controlCount >= 2 && text.trim().length > 0);
+          const sentinels = Array.isArray(debugSnapshot.events)
+            ? debugSnapshot.events.filter((event) => {
+                return event && event.eventKind === 'postBootstrapCheckpoint';
+              })
+            : [];
+          const finalSentinel =
+            sentinels.find((event) => {
+              return Array.isArray(event.diagnostics)
+                && event.diagnostics.includes('phase=final');
+            }) || sentinels[sentinels.length - 1] || null;
+          let coarseClassification = 'waits on app state';
+          if (usableFormCandidate && !hasBusyIndicator) {
+            coarseClassification = 'usable onboarding/login UI reached';
+          } else if (blankCandidate) {
+            coarseClassification = 'blank';
+          } else if (hasBusyIndicator || hasLoadingText) {
+            coarseClassification = 'spinner/loading';
+          }
           return JSON.stringify({
             readyState: document.readyState,
-            hasLoadingText: /\\bloading\\b/i.test(text),
-            hasBusyIndicator: !!document.querySelector(
-              '[role="progressbar"],[aria-busy="true"],.spinner,.loading,app-loading,bit-progress'
-            ),
-            inputCount: document.querySelectorAll('input').length,
-            buttonCount: document.querySelectorAll('button').length,
+            hasLoadingText,
+            hasBusyIndicator,
+            inputCount,
+            buttonCount,
+            linkCount,
+            controlCount,
+            elementCount,
+            blankCandidate,
+            usableFormCandidate,
+            coarseClassification,
+            postBootstrapClassifier:
+              finalSentinel && finalSentinel.resultClassifier
+                ? finalSentinel.resultClassifier
+                : null,
             visibleTextLength: text.trim().length,
             debugEventCount: Array.isArray(debugSnapshot.events)
               ? debugSnapshot.events.length
@@ -2348,7 +2404,12 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
     private func controlledBitwardenPopupFirstFatalBlocker(
         _ snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
     ) -> String {
-        let events = snapshot.jsDebugRouteEvents
+        let events = controlledBitwardenPopupPostGetManifestEvents(snapshot)
+        if let firstBlocker = events.first(where: {
+            controlledBitwardenPopupIsBlockerEvent($0)
+        }) {
+            return controlledBitwardenPopupBlockerLabel(firstBlocker)
+        }
         if let hostPreflightFailure = events.first(where: {
             $0.eventKind == "hostPreloadResource"
                 && $0.firstMissingAPIOrPermissionOrLifecycleError != nil
@@ -2427,7 +2488,11 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         }) {
             return "missing tabs.connect"
         }
-        if let pending = snapshot.pendingUnresolvedJSDebugRoutes.first {
+        if let pending = snapshot.pendingUnresolvedJSDebugRoutes.first(
+            where: { pending in
+                events.contains { $0.sequence == pending.sequence }
+            }
+        ) {
             return pending.resultClassifier ?? "unknown pending promise"
         }
         if let lastError = events.first(where: {
@@ -2435,27 +2500,108 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         }) {
             return lastError.resultClassifier ?? "unknown"
         }
+        if let finalCheckpoint = events.last(where: {
+            $0.eventKind == "postBootstrapCheckpoint"
+                && $0.diagnostics.contains("phase=final")
+        }) {
+            return finalCheckpoint.resultClassifier
+                ?? "post-getManifest sentinel completed"
+        }
+        if let checkpoint = events.last(where: {
+            $0.eventKind == "postBootstrapCheckpoint"
+        }) {
+            return checkpoint.resultClassifier
+                ?? "post-getManifest sentinel observed"
+        }
         return "unknown"
+    }
+
+    private func controlledBitwardenPopupIsBlockerEvent(
+        _ event: ChromeMV3PopupOptionsJSDebugRouteEventRecord
+    ) -> Bool {
+        if event.firstMissingAPIOrPermissionOrLifecycleError != nil {
+            return true
+        }
+        if [
+            "consoleError",
+            "cspViolation",
+            "hostNavigationFailure",
+            "resourceLoadError",
+            "scriptError",
+            "unhandledRejection",
+            "webContentProcessTerminated",
+        ].contains(event.eventKind) {
+            return true
+        }
+        return [
+            "missing storage.session",
+            "missing storage.sync",
+            "missing storage.managed",
+            "service worker not waking",
+            "Port message not delivered",
+            "Port response not delivered",
+            "missing tabs.connect",
+            "unknown pending promise",
+        ].contains(event.resultClassifier ?? "")
+    }
+
+    private func controlledBitwardenPopupBlockerLabel(
+        _ event: ChromeMV3PopupOptionsJSDebugRouteEventRecord
+    ) -> String {
+        if let classifier = event.resultClassifier,
+           classifier != "pending"
+        {
+            return classifier
+        }
+        return event.firstMissingAPIOrPermissionOrLifecycleError
+            ?? event.eventKind
     }
 
     private func controlledBitwardenTabsConnectActuallyFatal(
         _ snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
     ) -> Bool {
-        guard let firstFatal = snapshot.jsDebugRouteEvents.first(where: {
-            [
-                "missing storage.session",
-                "missing storage.sync",
-                "missing storage.managed",
-                "service worker not waking",
-                "Port message not delivered",
-                "Port response not delivered",
-                "missing tabs.connect",
-                "unknown pending promise",
-            ].contains($0.resultClassifier ?? "")
-        }) else {
+        guard let firstFatal =
+            controlledBitwardenPopupPostGetManifestEvents(snapshot)
+            .first(where: { event in
+                [
+                    "missing storage.session",
+                    "missing storage.sync",
+                    "missing storage.managed",
+                    "service worker not waking",
+                    "Port message not delivered",
+                    "Port response not delivered",
+                    "missing tabs.connect",
+                    "unknown pending promise",
+                ].contains(event.resultClassifier ?? "")
+            }) else {
             return false
         }
         return firstFatal.apiName == "tabs.connect"
+    }
+
+    private func controlledBitwardenPopupManifestReturnedSequence(
+        _ snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
+    ) -> Int? {
+        snapshot.jsDebugRouteEvents
+            .filter {
+                $0.apiName == "runtime.getManifest"
+                    && $0.resultClassifier == "manifestReturned"
+            }
+            .map(\.sequence)
+            .min()
+    }
+
+    private func controlledBitwardenPopupPostGetManifestEvents(
+        _ snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
+    ) -> [ChromeMV3PopupOptionsJSDebugRouteEventRecord] {
+        guard let manifestSequence =
+            controlledBitwardenPopupManifestReturnedSequence(snapshot)
+        else {
+            return snapshot.jsDebugRouteEvents
+        }
+        return snapshot.jsDebugRouteEvents.filter {
+            $0.sequence > manifestSequence
+        }
     }
 
     private func controlledBitwardenPopupSanitizedLogLines(

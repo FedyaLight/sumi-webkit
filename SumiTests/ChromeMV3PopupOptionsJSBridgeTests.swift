@@ -415,6 +415,21 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(
             source.contains("deepCloneJSONCompatible(runtimeManifestTemplate)")
         )
+        XCTAssertTrue(
+            source.contains("postBootstrapCheckpoint")
+        )
+        XCTAssertTrue(
+            source.contains("debugPostGetManifestBootstrapSentinel(true)")
+        )
+        XCTAssertTrue(
+            source.contains("debugPostGetManifestBootstrapSentinel(false)")
+        )
+        XCTAssertTrue(
+            source.contains("debugCoarseDOMState")
+        )
+        XCTAssertTrue(
+            source.contains("No raw storage values, message bodies, form values, manifest bodies, URLs, or private payloads were recorded.")
+        )
     }
 
     @MainActor

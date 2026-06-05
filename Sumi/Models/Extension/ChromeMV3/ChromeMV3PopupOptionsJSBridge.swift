@@ -1875,6 +1875,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         "portMessageQueued",
         "portOnDisconnectDispatched",
         "portOnMessageDispatched",
+        "postBootstrapCheckpoint",
         "promiseRejected",
         "consoleError",
         "consoleWarn",
@@ -1903,6 +1904,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         "contentScript",
         "console",
         "csp",
+        "dom",
         "host",
         "manifest",
         "nativeApplication",
@@ -6184,12 +6186,14 @@ enum ChromeMV3PopupOptionsJSShimSource {
               ).catch(() => {});
               if (!runtimeManifestTemplate) {
                 debugRuntimeGetManifest(null, false);
+                debugPostGetManifestBootstrapSentinel(false);
                 throw new Error(
                   "Chrome MV3 generated manifest snapshot is unavailable."
                 );
               }
               const manifest = deepCloneJSONCompatible(runtimeManifestTemplate);
               debugRuntimeGetManifest(manifest, true);
+              debugPostGetManifestBootstrapSentinel(true);
               return manifest;
             },
             enumerable: true
@@ -6512,6 +6516,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
           function debugMissingAPI(apiName, resultClassifier, targetContext) {}
           function debugPortEvent(eventKind, record) {}
           function debugRuntimeGetManifest(manifest, succeeded) {}
+          function debugPostGetManifestBootstrapSentinel(succeeded) {}
         """
     }
 
@@ -6522,6 +6527,11 @@ enum ChromeMV3PopupOptionsJSShimSource {
           const __sumiPendingBridgeCalls = new Map();
           const __sumiDebugStartedAt = Date.now();
           const __sumiPendingTimeoutMS = 900;
+          const __sumiPostBootstrapCheckpointMS = [250, 900, 1800, 3500];
+          const __sumiPostBootstrapState = {
+            manifestReturnedAt: null,
+            scheduled: false
+          };
           const __sumiSafeFieldNames = new Set([
             "action", "command", "kind", "messageType", "method", "name",
             "operation", "requestType", "type"
@@ -7120,6 +7130,261 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 "succeeded=" + (succeeded ? "true" : "false"),
                 "runtime.getManifest JS diagnostics omit manifest body and host filesystem paths."
               ]
+            });
+          }
+
+          function debugCoarseDOMState() {
+            const body = globalThis.document && globalThis.document.body;
+            const text = body && typeof body.innerText === "string"
+              ? body.innerText
+              : "";
+            const trimmedTextLength = text.trim().length;
+            const queryCount = (selector) => {
+              try {
+                return globalThis.document.querySelectorAll(selector).length;
+              } catch (_) {
+                return 0;
+              }
+            };
+            const inputCount = queryCount("input,textarea,select");
+            const buttonCount = queryCount("button,[role='button'],input[type='button'],input[type='submit']");
+            const linkCount = queryCount("a[href]");
+            const formCount = queryCount("form");
+            const appRootCount = queryCount("app-root,[data-app-root],main,#app,#root");
+            const elementCount = body && typeof body.querySelectorAll === "function"
+              ? body.querySelectorAll("*").length
+              : 0;
+            const hasBusyIndicator =
+              queryCount("[role='progressbar'],[aria-busy='true'],.spinner,.loading,.loader,[data-loading='true']") > 0;
+            const hasLoadingText = /\\b(loading|please wait|initializing|syncing)\\b/i.test(text);
+            const controlCount = inputCount + buttonCount + linkCount;
+            const blankCandidate =
+              trimmedTextLength === 0
+                && controlCount === 0
+                && elementCount <= Math.max(1, appRootCount);
+            const usableFormCandidate =
+              (inputCount > 0 && buttonCount > 0)
+                || (controlCount >= 2 && trimmedTextLength > 0);
+            return {
+              readyState: globalThis.document ? globalThis.document.readyState : "unknown",
+              trimmedTextLength,
+              inputCount,
+              buttonCount,
+              linkCount,
+              formCount,
+              appRootCount,
+              elementCount,
+              hasBusyIndicator,
+              hasLoadingText,
+              controlCount,
+              blankCandidate,
+              usableFormCandidate
+            };
+          }
+
+          function debugPostBootstrapEventsSinceManifest() {
+            const manifestAt = __sumiPostBootstrapState.manifestReturnedAt;
+            if (manifestAt === null) {
+              return [];
+            }
+            return __sumiDebugEvents.filter((event) => {
+              return event
+                && event.atMs >= manifestAt
+                && event.eventKind !== "postBootstrapCheckpoint"
+                && !(event.apiName === "runtime.getManifest"
+                  && event.resultClassifier === "manifestReturned");
+            });
+          }
+
+          function debugPostBootstrapPendingRoutes() {
+            return Array.from(__sumiPendingBridgeCalls.values()).map((entry) => {
+              return Object.assign({}, entry, {
+                ageMilliseconds: Math.round(debugNowMS() - entry.startedAt),
+                resultClassifier: "unknown pending promise"
+              });
+            });
+          }
+
+          function debugPostBootstrapClassification(dom, routeEvents, pending) {
+            const firstBlocker = routeEvents.find((event) => {
+              return event.eventKind === "missingAPIAccess"
+                || /^missing /.test(event.resultClassifier || "")
+                || [
+                  "scriptError",
+                  "unhandledRejection",
+                  "consoleError",
+                  "cspViolation",
+                  "resourceLoadError",
+                  "webContentProcessTerminated"
+                ].includes(event.eventKind);
+            });
+            if (firstBlocker) {
+              if (firstBlocker.eventKind === "missingAPIAccess"
+                  || /^missing /.test(firstBlocker.resultClassifier || "")) {
+                return {
+                  resultClassifier: "waits on missing API",
+                  firstError:
+                    firstBlocker.firstMissingAPIOrPermissionOrLifecycleError
+                      || firstBlocker.resultClassifier
+                      || "missing API"
+                };
+              }
+              if (firstBlocker.eventKind === "scriptError") {
+                return {
+                  resultClassifier: "crashed after script error",
+                  firstError:
+                    firstBlocker.firstMissingAPIOrPermissionOrLifecycleError
+                      || "script error"
+                };
+              }
+              if (firstBlocker.eventKind === "unhandledRejection") {
+                return {
+                  resultClassifier: "Promise rejection",
+                  firstError:
+                    firstBlocker.firstMissingAPIOrPermissionOrLifecycleError
+                      || "Promise rejection"
+                };
+              }
+              if (firstBlocker.eventKind === "resourceLoadError") {
+                return {
+                  resultClassifier: "network/resource failure",
+                  firstError:
+                    firstBlocker.firstMissingAPIOrPermissionOrLifecycleError
+                      || "resource load error"
+                };
+              }
+              return {
+                resultClassifier:
+                  firstBlocker.resultClassifier || firstBlocker.eventKind,
+                firstError:
+                  firstBlocker.firstMissingAPIOrPermissionOrLifecycleError
+                    || firstBlocker.resultClassifier
+                    || firstBlocker.eventKind
+              };
+            }
+            const oldPending = pending.find((entry) => {
+              return entry.ageMilliseconds >= __sumiPendingTimeoutMS;
+            });
+            if (oldPending) {
+              return {
+                resultClassifier: "waits on unresolved bridge call",
+                firstError:
+                  oldPending.resultClassifier || "unknown pending promise"
+              };
+            }
+            if (dom.usableFormCandidate && !dom.hasBusyIndicator) {
+              return {
+                resultClassifier: "usable onboarding/login UI reached",
+                firstError: null
+              };
+            }
+            if (dom.blankCandidate) {
+              return {
+                resultClassifier: "blank",
+                firstError: null
+              };
+            }
+            if (dom.hasBusyIndicator || dom.hasLoadingText) {
+              return {
+                resultClassifier: "spinner/loading",
+                firstError: null
+              };
+            }
+            if (routeEvents.length === 0) {
+              return {
+                resultClassifier: "no further route emitted within timeout",
+                firstError: null
+              };
+            }
+            return {
+              resultClassifier: "waits on app state",
+              firstError: null
+            };
+          }
+
+          function debugPostBootstrapCheckpoint(phase) {
+            if (__sumiPostBootstrapState.manifestReturnedAt === null) {
+              return;
+            }
+            const dom = debugCoarseDOMState();
+            const routeEvents = debugPostBootstrapEventsSinceManifest();
+            const pending = debugPostBootstrapPendingRoutes();
+            const classification =
+              debugPostBootstrapClassification(dom, routeEvents, pending);
+            const serviceWorkerRouteCount = routeEvents.filter((event) => {
+              return event.targetContext === "serviceWorker";
+            }).length;
+            const contentScriptRouteCount = routeEvents.filter((event) => {
+              return event.targetContext === "contentScript";
+            }).length;
+            const storageLocalRouteCount = routeEvents.filter((event) => {
+              return event.targetContext === "storage.local";
+            }).length;
+            const nativeRouteCount = routeEvents.filter((event) => {
+              return event.targetContext === "nativeApplication"
+                || event.targetContext === "nativeApplicationPort";
+            }).length;
+            const routeCountExcludingSentinel = routeEvents.filter((event) => {
+              return event.apiName !== "postBootstrap.sentinel";
+            }).length;
+            debugRecord("postBootstrapCheckpoint", {
+              apiName: "postBootstrap.sentinel",
+              targetContext: "dom",
+              resultClassifier: classification.resultClassifier,
+              firstMissingAPIOrPermissionOrLifecycleError:
+                classification.firstError,
+              safeMessageShapeClassification: [
+                "dom",
+                "readyState=" + dom.readyState,
+                "controlCount=" + String(dom.controlCount),
+                "inputCount=" + String(dom.inputCount),
+                "buttonCount=" + String(dom.buttonCount)
+              ].join(";"),
+              diagnostics: [
+                "phase=" + phase,
+                "sinceGetManifestMs=" + String(Math.round(
+                  debugNowMS() - __sumiPostBootstrapState.manifestReturnedAt
+                )),
+                "readyState=" + dom.readyState,
+                "visibleTextLength=" + String(dom.trimmedTextLength),
+                "inputCount=" + String(dom.inputCount),
+                "buttonCount=" + String(dom.buttonCount),
+                "linkCount=" + String(dom.linkCount),
+                "formCount=" + String(dom.formCount),
+                "appRootCount=" + String(dom.appRootCount),
+                "elementCount=" + String(dom.elementCount),
+                "hasBusyIndicator=" + String(dom.hasBusyIndicator),
+                "hasLoadingText=" + String(dom.hasLoadingText),
+                "blankCandidate=" + String(dom.blankCandidate),
+                "usableFormCandidate=" + String(dom.usableFormCandidate),
+                "routesAfterGetManifest=" + String(routeCountExcludingSentinel),
+                "pendingRouteCount=" + String(pending.length),
+                "serviceWorkerRouteEvents=" + String(serviceWorkerRouteCount),
+                "contentScriptRouteEvents=" + String(contentScriptRouteCount),
+                "storageLocalRouteEvents=" + String(storageLocalRouteCount),
+                "nativeRouteEvents=" + String(nativeRouteCount),
+                "No raw storage values, message bodies, form values, manifest bodies, URLs, or private payloads were recorded."
+              ]
+            });
+          }
+
+          function debugPostGetManifestBootstrapSentinel(succeeded) {
+            if (!succeeded || __sumiPostBootstrapState.scheduled) {
+              return;
+            }
+            __sumiPostBootstrapState.manifestReturnedAt = debugNowMS();
+            __sumiPostBootstrapState.scheduled = true;
+            debugPostBootstrapCheckpoint("immediate");
+            __sumiPostBootstrapCheckpointMS.forEach((delay) => {
+              globalThis.setTimeout(() => {
+                debugPostBootstrapCheckpoint(
+                  delay === __sumiPostBootstrapCheckpointMS[
+                    __sumiPostBootstrapCheckpointMS.length - 1
+                  ]
+                    ? "final"
+                    : String(delay) + "ms"
+                );
+              }, delay);
             });
           }
 
