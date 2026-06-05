@@ -62,4 +62,19 @@ final class ThemeSettingsDefaultsTests: XCTestCase {
         XCTAssertFalse(recreatedSettings.showBrowserToasts)
         XCTAssertFalse(harness.defaults.bool(forKey: "settings.showBrowserToasts"))
     }
+
+    func testSidebarMiniPlayerDefaultEnabledAndPersist() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+
+        XCTAssertTrue(settings.sidebarMiniPlayerEnabled)
+
+        settings.sidebarMiniPlayerEnabled = false
+        let recreatedSettings = SumiSettingsService(userDefaults: harness.defaults)
+
+        XCTAssertFalse(recreatedSettings.sidebarMiniPlayerEnabled)
+        XCTAssertFalse(harness.defaults.bool(forKey: "settings.sidebarMiniPlayerEnabled"))
+    }
 }

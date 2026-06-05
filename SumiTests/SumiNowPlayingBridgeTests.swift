@@ -33,3 +33,75 @@ final class SumiNowPlayingBridgeTests: XCTestCase {
         XCTAssertEqual(info.playbackState, .playing)
     }
 }
+
+@MainActor
+final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
+    func testDisablingFeatureSuspendsController() {
+        let controller = SumiNativeNowPlayingController(
+            candidateProvider: { _ in [] },
+            infoProvider: { _, _, _ in nil },
+            commandExecutor: { _, _, _, _ in false },
+            activationHandler: { _, _, _ in }
+        )
+
+        controller.setFeatureEnabled(true)
+        controller.setFeatureEnabled(false)
+
+        XCTAssertFalse(controller.isFeatureEnabled)
+        XCTAssertNil(controller.cardState)
+    }
+
+    func testScheduleRefreshIsNoOpWhenFeatureDisabled() async {
+        let controller = SumiNativeNowPlayingController(
+            candidateProvider: { _ in [] },
+            infoProvider: { _, _, _ in nil },
+            commandExecutor: { _, _, _, _ in false },
+            activationHandler: { _, _, _ in }
+        )
+
+        controller.setFeatureEnabled(false)
+        controller.scheduleRefresh(delayNanoseconds: 0)
+
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertNil(controller.cardState)
+    }
+
+    func testShouldMountMiniPlayerRequiresVisibleGlobalState() {
+        let windowId = UUID()
+        let tabId = UUID()
+        let windowState = BrowserWindowState(id: windowId)
+        windowState.currentTabId = tabId
+
+        let globalState = SumiBackgroundMediaCardState(
+            id: "test",
+            tabId: tabId,
+            windowId: windowId,
+            title: "Title",
+            subtitle: "",
+            sourceHost: nil,
+            tabTitle: "Title",
+            playbackState: .playing,
+            isMuted: false,
+            favicon: nil,
+            canPlayPause: true,
+            canMute: true
+        )
+
+        XCTAssertFalse(
+            SumiBackgroundMediaCardStore.shouldMountMiniPlayer(
+                globalState: globalState,
+                in: windowState
+            )
+        )
+
+        windowState.currentTabId = UUID()
+
+        XCTAssertTrue(
+            SumiBackgroundMediaCardStore.shouldMountMiniPlayer(
+                globalState: globalState,
+                in: windowState
+            )
+        )
+    }
+}

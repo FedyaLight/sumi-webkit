@@ -47,6 +47,15 @@ struct SettingsAppearanceTab: View {
                         .toggleStyle(.switch)
                 }
 
+                SettingsRow(
+                    title: "Mini player",
+                    subtitle: "Show media controls for background tabs at the bottom of the sidebar."
+                ) {
+                    Toggle("", isOn: $settings.sidebarMiniPlayerEnabled)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+
                 SettingsDivider()
 
                 SettingsRow(

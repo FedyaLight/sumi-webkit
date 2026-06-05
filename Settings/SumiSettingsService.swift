@@ -21,6 +21,7 @@ class SumiSettingsService {
     private let askBeforeQuitKey = "settings.askBeforeQuit"
     private let sidebarPositionKey = "settings.sidebarPosition"
     private let sidebarCompactSpacesKey = "settings.sidebarCompactSpaces"
+    private let sidebarMiniPlayerEnabledKey = "settings.sidebarMiniPlayerEnabled"
     private let glanceEnabledKey = "settings.glanceEnabled"
     private let showSidebarToggleButtonKey = "settings.showSidebarToggleButton"
     private let showNewTabButtonInTabListKey = "settings.showNewTabButtonInTabList"
@@ -139,6 +140,13 @@ class SumiSettingsService {
     var sidebarCompactSpaces: Bool {
         didSet {
             userDefaults.set(sidebarCompactSpaces, forKey: sidebarCompactSpacesKey)
+        }
+    }
+
+    var sidebarMiniPlayerEnabled: Bool {
+        didSet {
+            userDefaults.set(sidebarMiniPlayerEnabled, forKey: sidebarMiniPlayerEnabledKey)
+            SumiNativeNowPlayingController.shared.setFeatureEnabled(sidebarMiniPlayerEnabled)
         }
     }
     
@@ -318,6 +326,7 @@ class SumiSettingsService {
             askBeforeQuitKey: true,
             sidebarPositionKey: SidebarPosition.left.rawValue,
             sidebarCompactSpacesKey: false,
+            sidebarMiniPlayerEnabledKey: true,
             glanceEnabledKey: true,
             showSidebarToggleButtonKey: true,
             showNewTabButtonInTabListKey: true,
@@ -356,6 +365,11 @@ class SumiSettingsService {
         self.askBeforeQuit = userDefaults.bool(forKey: askBeforeQuitKey)
         self.sidebarPosition = SidebarPosition(rawValue: userDefaults.string(forKey: sidebarPositionKey) ?? "left") ?? SidebarPosition.left
         self.sidebarCompactSpaces = userDefaults.bool(forKey: sidebarCompactSpacesKey)
+        if userDefaults.object(forKey: sidebarMiniPlayerEnabledKey) == nil {
+            self.sidebarMiniPlayerEnabled = true
+        } else {
+            self.sidebarMiniPlayerEnabled = userDefaults.bool(forKey: sidebarMiniPlayerEnabledKey)
+        }
         if userDefaults.object(forKey: glanceEnabledKey) == nil {
             self.glanceEnabled = true
         } else {
@@ -457,6 +471,7 @@ class SumiSettingsService {
         ) ?? .compact
 
         enforceSumiChromeDefaults()
+        SumiNativeNowPlayingController.shared.setFeatureEnabled(sidebarMiniPlayerEnabled)
         energySaverSystemObservationToken = energySaverSystemMonitor.addObserver {
             [weak self] snapshot in
             self?.energySaverSystemSnapshot = snapshot

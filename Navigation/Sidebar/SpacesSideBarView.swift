@@ -1284,7 +1284,15 @@ struct SpacesSideBarView: View {
     @State private var transitionSnapshot: SpaceSidebarTransitionSnapshot?
     @State private var transitionTask: Task<Void, Never>?
     @ObservedObject private var dragState = SidebarDragState.shared
+    @ObservedObject private var nowPlayingController = SumiNativeNowPlayingController.shared
 
+    private var shouldMountMiniPlayer: Bool {
+        guard sumiSettings.sidebarMiniPlayerEnabled else { return false }
+        return SumiBackgroundMediaCardStore.shouldMountMiniPlayer(
+            globalState: nowPlayingController.cardState,
+            in: windowState
+        )
+    }
 
     var body: some View {
         sidebarContent
@@ -1339,9 +1347,11 @@ struct SpacesSideBarView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 VStack(spacing: 8) {
-                    MediaControlsView()
-                        .environmentObject(browserManager)
-                        .environment(windowState)
+                    if shouldMountMiniPlayer {
+                        MediaControlsView()
+                            .environmentObject(browserManager)
+                            .environment(windowState)
+                    }
 
                     SidebarBottomBar(
                         visualSelectedSpaceId: visualSpaceId,

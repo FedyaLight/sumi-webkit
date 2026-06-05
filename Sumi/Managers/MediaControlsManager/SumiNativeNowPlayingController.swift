@@ -14,6 +14,8 @@ final class SumiNativeNowPlayingController: ObservableObject {
 
     @Published private(set) var cardState: SumiBackgroundMediaCardState?
 
+    private(set) var isFeatureEnabled = true
+
     private weak var browserManager: BrowserManager?
     private let candidateProvider: CandidateProvider
     private let infoProvider: InfoProvider
@@ -44,16 +46,30 @@ final class SumiNativeNowPlayingController: ObservableObject {
         self.activationHandler = activationHandler
     }
 
+    func setFeatureEnabled(_ enabled: Bool) {
+        guard isFeatureEnabled != enabled else { return }
+        isFeatureEnabled = enabled
+
+        if enabled {
+            scheduleRefresh(delayNanoseconds: 0)
+        } else {
+            suspend()
+        }
+    }
+
     func configure(browserManager: BrowserManager) {
         self.browserManager = browserManager
+        guard isFeatureEnabled else { return }
         scheduleRefresh(delayNanoseconds: 0)
     }
 
     func handleSceneActive() {
+        guard isFeatureEnabled else { return }
         scheduleRefresh(delayNanoseconds: 0)
     }
 
     func scheduleRefresh(delayNanoseconds: UInt64 = 100_000_000) {
+        guard isFeatureEnabled else { return }
         refreshTask?.cancel()
         refreshTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -66,6 +82,11 @@ final class SumiNativeNowPlayingController: ObservableObject {
     }
 
     func refreshImmediately() async {
+        guard isFeatureEnabled else {
+            clearCardState()
+            return
+        }
+
         guard let browserManager else {
             clearCardState()
             return
@@ -108,7 +129,8 @@ final class SumiNativeNowPlayingController: ObservableObject {
     }
 
     func activateOwner() {
-        guard let browserManager,
+        guard isFeatureEnabled,
+              let browserManager,
               let owner = resolvedOwner(using: browserManager)
         else {
             return
@@ -118,7 +140,8 @@ final class SumiNativeNowPlayingController: ObservableObject {
     }
 
     func togglePlayPause() async {
-        guard let browserManager,
+        guard isFeatureEnabled,
+              let browserManager,
               let owner = resolvedOwner(using: browserManager),
               let cardState
         else {
@@ -145,6 +168,7 @@ final class SumiNativeNowPlayingController: ObservableObject {
     }
 
     func handleTabActivated(_ tabId: UUID) {
+        guard isFeatureEnabled else { return }
         if pausedCardOwner?.tabId == tabId {
             pausedCardOwner = nil
         }
@@ -154,6 +178,7 @@ final class SumiNativeNowPlayingController: ObservableObject {
     }
 
     func handleTabUnloaded(_ tabId: UUID) {
+        guard isFeatureEnabled else { return }
         if pausedCardOwner?.tabId == tabId {
             pausedCardOwner = nil
         }
@@ -163,7 +188,8 @@ final class SumiNativeNowPlayingController: ObservableObject {
     }
 
     func toggleMute() async {
-        guard let browserManager,
+        guard isFeatureEnabled,
+              let browserManager,
               let owner = resolvedOwner(using: browserManager),
               let cardState,
               cardState.canMute
@@ -376,6 +402,12 @@ final class SumiNativeNowPlayingController: ObservableObject {
         self.cardState = cardState
     }
 
+    private func suspend() {
+        refreshTask?.cancel()
+        refreshTask = nil
+        clearCardState()
+    }
+
     private func clearCardState() {
         currentOwner = nil
         pausedCardOwner = nil
@@ -522,23 +554,30 @@ final class SumiBackgroundMediaCardStore: ObservableObject {
             return
         }
 
-        guard !windowState.isIncognito else {
-            cardState = nil
-            return
-        }
+        cardState = Self.visibleCardState(globalState: state, in: windowState)
+    }
 
-        guard let state else {
-            cardState = nil
-            return
-        }
+    /// Whether this window should host `MediaControlsView` for the given global controller state.
+    static func shouldMountMiniPlayer(
+        globalState: SumiBackgroundMediaCardState?,
+        in windowState: BrowserWindowState
+    ) -> Bool {
+        visibleCardState(globalState: globalState, in: windowState) != nil
+    }
 
-        if state.windowId == windowState.id,
-           state.tabId == windowState.currentTabId
+    private static func visibleCardState(
+        globalState: SumiBackgroundMediaCardState?,
+        in windowState: BrowserWindowState
+    ) -> SumiBackgroundMediaCardState? {
+        guard !windowState.isIncognito else { return nil }
+        guard let globalState else { return nil }
+
+        if globalState.windowId == windowState.id,
+           globalState.tabId == windowState.currentTabId
         {
-            cardState = nil
-            return
+            return nil
         }
 
-        cardState = state
+        return globalState
     }
 }
