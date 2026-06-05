@@ -52,14 +52,8 @@ struct ShortcutsSettingsView: View {
                     }
                 }
 
-                SettingsDivider()
-
-                HStack {
-                    Spacer()
-                    Button("Restore Defaults") {
-                        shortcutManager.resetToDefaults()
-                    }
-                    .buttonStyle(.bordered)
+                SettingsSectionFooter {
+                    shortcutManager.resetToDefaults()
                 }
             }
         }

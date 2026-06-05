@@ -185,6 +185,32 @@ struct SettingsEmptyState: View {
         .padding(.vertical, 24)
     }
 }
+struct SettingsSectionFooter: View {
+    var buttonTitle: String = "Restore Defaults"
+    var infoText: String? = nil
+    let action: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            SettingsDivider()
+
+            HStack(spacing: 10) {
+                if let infoText {
+                    Text(infoText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 12)
+
+                Button(buttonTitle, action: action)
+                    .buttonStyle(.bordered)
+            }
+        }
+    }
+}
+
 
 extension View {
     func settingsTrailingControl(width: CGFloat) -> some View {

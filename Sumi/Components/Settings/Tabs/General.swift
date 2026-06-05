@@ -97,20 +97,8 @@ struct SettingsGeneralTab: View {
                     }
                 }
 
-                SettingsDivider()
-
-                HStack(spacing: 10) {
-                    Text(tabSearchSummary)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Spacer(minLength: 12)
-
-                    Button("Restore Defaults") {
-                        showingRestoreDefaultsConfirmation = true
-                    }
-                    .buttonStyle(.bordered)
+                SettingsSectionFooter(infoText: tabSearchSummary) {
+                    showingRestoreDefaultsConfirmation = true
                 }
             }
         }
