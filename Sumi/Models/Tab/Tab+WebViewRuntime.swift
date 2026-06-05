@@ -35,22 +35,10 @@ extension Tab {
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         _webView = webView
 
-        installNavigationDelegate(on: webView)
-        webView.uiDelegate = self
-        webView.allowsBackForwardNavigationGestures = true
-        webView.allowsMagnification = true
-        webView.setValue(true, forKey: "drawsBackground")
-        webView.owningTab = self
-        SumiUserAgent.apply(to: webView)
+        applyOwnedTabWebViewNavigationSetup(to: webView)
+        applyOwnedTabWebViewOwnershipBaseline(to: webView)
+        applyOwnedTabWebViewNavigationPreferences(to: webView)
         SharedVisitedLinkStoreProvider.shared.enableVisitedLinkRecording(on: webView)
-
-        if RuntimeDiagnostics.isDeveloperInspectionEnabled {
-            webView.isInspectable = true
-        }
-
-        webView.allowsLinkPreview = true
-        webView.configuration.preferences.isFraudulentWebsiteWarningEnabled = true
-        webView.configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         installRuntimeObservers(on: webView)
 
         if isExtensionOriginated {
@@ -111,23 +99,10 @@ extension Tab {
     }
 
     func configureNormalTabWebView(_ webView: FocusableWKWebView, reason: String) {
-        installNavigationDelegate(on: webView)
-        webView.uiDelegate = self
-        webView.allowsBackForwardNavigationGestures = true
-        webView.allowsMagnification = true
-        webView.setValue(true, forKey: "drawsBackground")
-        webView.owningTab = self
-        SumiUserAgent.apply(to: webView)
+        applyOwnedTabWebViewNavigationSetup(to: webView)
+        applyOwnedTabWebViewOwnershipBaseline(to: webView)
+        applyOwnedTabWebViewNavigationPreferences(to: webView)
         SharedVisitedLinkStoreProvider.shared.enableVisitedLinkRecording(on: webView)
-
-        if RuntimeDiagnostics.isDeveloperInspectionEnabled {
-            webView.isInspectable = true
-        }
-
-        webView.allowsLinkPreview = true
-        webView.configuration.preferences.isFraudulentWebsiteWarningEnabled = true
-        webView.configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
-
         installRuntimeObservers(on: webView)
         if let scriptsProvider = webView.configuration.userContentController.sumiNormalTabUserScriptsProvider {
             ensureFaviconsTabExtension(using: scriptsProvider.faviconScripts)
@@ -295,10 +270,7 @@ extension Tab {
         if let webView = _webView {
             if didReuseExistingWebView || !(webView is FocusableWKWebView) {
                 SharedVisitedLinkStoreProvider.shared.enableVisitedLinkRecording(on: webView)
-                installNavigationDelegate(on: webView)
-                webView.uiDelegate = self
-                webView.allowsBackForwardNavigationGestures = true
-                webView.allowsMagnification = true
+                applyOwnedTabWebViewNavigationSetup(to: webView)
                 installRuntimeObservers(on: webView)
                 if let scriptsProvider = webView.configuration.userContentController.sumiNormalTabUserScriptsProvider {
                     ensureFaviconsTabExtension(using: scriptsProvider.faviconScripts)
@@ -307,13 +279,7 @@ extension Tab {
         }
 
         if let webView = _webView {
-            if RuntimeDiagnostics.isDeveloperInspectionEnabled {
-                webView.isInspectable = true
-            }
-
-            webView.allowsLinkPreview = true
-            webView.configuration.preferences.isFraudulentWebsiteWarningEnabled = true
-            webView.configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+            applyOwnedTabWebViewNavigationPreferences(to: webView)
         }
 
         registerNormalTabWithExtensionRuntimeIfNeeded(reason: "Tab.setupWebView")
@@ -542,14 +508,32 @@ extension Tab {
         }
     }
 
-    private func configureAuxiliaryOverrideWebView(_ webView: FocusableWKWebView, reason: String) {
+    private func applyOwnedTabWebViewNavigationSetup(to webView: WKWebView) {
         installNavigationDelegate(on: webView)
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
+    }
+
+    private func applyOwnedTabWebViewOwnershipBaseline(to webView: FocusableWKWebView) {
         webView.setValue(true, forKey: "drawsBackground")
         webView.owningTab = self
         SumiUserAgent.apply(to: webView)
+    }
+
+    private func applyOwnedTabWebViewNavigationPreferences(to webView: WKWebView) {
+        if RuntimeDiagnostics.isDeveloperInspectionEnabled {
+            webView.isInspectable = true
+        }
+
+        webView.allowsLinkPreview = true
+        webView.configuration.preferences.isFraudulentWebsiteWarningEnabled = true
+        webView.configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+    }
+
+    private func configureAuxiliaryOverrideWebView(_ webView: FocusableWKWebView, reason: String) {
+        applyOwnedTabWebViewNavigationSetup(to: webView)
+        applyOwnedTabWebViewOwnershipBaseline(to: webView)
         installRuntimeObservers(on: webView)
         if let scriptsProvider = webView.configuration.userContentController.sumiNormalTabUserScriptsProvider {
             ensureFaviconsTabExtension(using: scriptsProvider.faviconScripts)

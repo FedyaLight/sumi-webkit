@@ -5,7 +5,6 @@ import SwiftUI
 final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
     enum Metrics {
         static let contentSize = NSSize(width: 360, height: 156)
-        static let closeAnimationFallbackDelay: UInt64 = 350_000_000
     }
 
     private final class ActiveSession {
@@ -93,7 +92,7 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         popover.delegate = self
         popover.contentViewController = hostingController
         popover.contentSize = Self.Metrics.contentSize
-        popover.appearance = NSAppearance.sumiChromeAppearance(
+        popover.appearance = PopoverPresenterChromeSupport.appearance(
             for: surfaceColorScheme,
             fallback: anchor.view.window?.effectiveAppearance ?? windowState.window?.effectiveAppearance
         )
@@ -140,10 +139,10 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         guard !activeSession.isClosing else { return }
         activeSession.isClosing = true
 
-        if activeSession.popover.isShown {
-            activeSession.popover.close()
-            activeSession.closeFallbackTask = Task { @MainActor [weak self, weak activeSession] in
-                try? await Task.sleep(nanoseconds: Self.Metrics.closeAnimationFallbackDelay)
+        PopoverPresenterChromeSupport.closePopoverWithFallback(
+            popover: activeSession.popover,
+            closeFallbackTask: &activeSession.closeFallbackTask,
+            onFallback: { [weak self, weak activeSession] in
                 guard let self,
                       let activeSession,
                       self.activeSession === activeSession
@@ -153,10 +152,12 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
                     activeSession,
                     reason: "ShortcutEditorPopoverPresenter.closeFallback"
                 )
+            },
+            onNotShown: { [weak self, weak activeSession] in
+                guard let self, let activeSession else { return }
+                self.finishClosedSession(activeSession, reason: "ShortcutEditorPopoverPresenter.closeNotShown")
             }
-        } else {
-            finishClosedSession(activeSession, reason: "ShortcutEditorPopoverPresenter.closeNotShown")
-        }
+        )
     }
 
     private func finishClosedSession(

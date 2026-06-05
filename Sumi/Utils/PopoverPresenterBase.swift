@@ -1,6 +1,11 @@
 import AppKit
 import SwiftUI
 
+enum PopoverPresenterMetrics {
+    static let closeAnimationFallbackDelay: UInt64 = 350_000_000
+    static let resizeAnimationDuration: TimeInterval = 0.18
+}
+
 @MainActor
 enum PopoverPresenterChromeSupport {
     static func appearance(
@@ -33,7 +38,7 @@ enum PopoverPresenterChromeSupport {
         popover: NSPopover,
         from startSize: NSSize,
         to targetSize: NSSize,
-        duration: TimeInterval,
+        duration: TimeInterval = PopoverPresenterMetrics.resizeAnimationDuration,
         animationTask: inout Task<Void, Never>?
     ) {
         guard popover.contentSize != targetSize else { return }
@@ -45,5 +50,44 @@ enum PopoverPresenterChromeSupport {
             duration: duration,
             animationTask: &animationTask
         )
+    }
+
+    static func isAnchorViewReady(
+        _ anchorView: NSView,
+        checkHiddenAncestors: Bool
+    ) -> Bool {
+        guard anchorView.window != nil, anchorView.alphaValue > 0 else {
+            return false
+        }
+        if checkHiddenAncestors {
+            return !anchorView.isHiddenOrHasHiddenAncestor
+        }
+        return !anchorView.isHidden
+    }
+
+    static func scheduleCloseFallback(
+        task: inout Task<Void, Never>?,
+        onTimeout: @escaping @MainActor () -> Void
+    ) {
+        task?.cancel()
+        task = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: PopoverPresenterMetrics.closeAnimationFallbackDelay)
+            guard !Task.isCancelled else { return }
+            onTimeout()
+        }
+    }
+
+    static func closePopoverWithFallback(
+        popover: NSPopover,
+        closeFallbackTask: inout Task<Void, Never>?,
+        onFallback: @escaping @MainActor () -> Void,
+        onNotShown: @escaping @MainActor () -> Void
+    ) {
+        if popover.isShown {
+            popover.close()
+            scheduleCloseFallback(task: &closeFallbackTask, onTimeout: onFallback)
+        } else {
+            onNotShown()
+        }
     }
 }

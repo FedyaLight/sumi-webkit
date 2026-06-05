@@ -8,7 +8,6 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         static var contentSize: NSSize {
             NSSize(width: GradientEditorView.panelWidth, height: 526)
         }
-        static let closeAnimationFallbackDelay: UInt64 = 350_000_000
     }
 
     enum CloseDisposition {
@@ -97,7 +96,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         popover.delegate = self
         popover.contentViewController = hostingController
         popover.contentSize = Self.Metrics.contentSize
-        popover.appearance = NSAppearance.sumiChromeAppearance(
+        popover.appearance = PopoverPresenterChromeSupport.appearance(
             for: nativeSurfaceColorScheme(
                 in: windowState,
                 settings: browserManager.sumiSettings ?? SumiSettingsService()
@@ -287,10 +286,10 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         guard !activeSession.isClosing else { return }
 
         activeSession.isClosing = true
-        if activeSession.popover.isShown {
-            activeSession.popover.close()
-            activeSession.closeFallbackTask = Task { @MainActor [weak self, weak activeSession] in
-                try? await Task.sleep(nanoseconds: Self.Metrics.closeAnimationFallbackDelay)
+        PopoverPresenterChromeSupport.closePopoverWithFallback(
+            popover: activeSession.popover,
+            closeFallbackTask: &activeSession.closeFallbackTask,
+            onFallback: { [weak self, weak activeSession] in
                 guard let self,
                       let activeSession,
                       self.activeSession === activeSession
@@ -300,13 +299,15 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
                     activeSession,
                     reason: "WorkspaceThemePickerPopoverPresenter.closeFallback"
                 )
+            },
+            onNotShown: { [weak self, weak activeSession] in
+                guard let self, let activeSession else { return }
+                self.finishClosedSession(
+                    activeSession,
+                    reason: "WorkspaceThemePickerPopoverPresenter.closeNotShown"
+                )
             }
-        } else {
-            finishClosedSession(
-                activeSession,
-                reason: "WorkspaceThemePickerPopoverPresenter.closeNotShown"
-            )
-        }
+        )
     }
 
     private func finishClosedSession(

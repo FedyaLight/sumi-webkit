@@ -7,8 +7,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
     private enum Metrics {
         static let fallbackControlsSize = NSSize(width: 234, height: 250)
         static let maximumHeight: CGFloat = 560
-        static let resizeAnimationDuration: TimeInterval = 0.18
-        static let closeAnimationFallbackDelay: UInt64 = 350_000_000
+        static let resizeAnimationDuration = PopoverPresenterMetrics.resizeAnimationDuration
     }
 
     private final class AnchorRegistration {
@@ -172,9 +171,10 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
     ) {
         guard let registration = anchors[windowState.id],
               let anchorView = registration.view,
-              anchorView.window != nil,
-              !anchorView.isHiddenOrHasHiddenAncestor,
-              anchorView.alphaValue > 0
+              PopoverPresenterChromeSupport.isAnchorViewReady(
+                  anchorView,
+                  checkHiddenAncestors: true
+              )
         else {
             if allowRetry {
                 beginPendingTransientSessionIfNeeded(in: windowState)
@@ -252,8 +252,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
 
         session.isClosing = true
         session.popover.close()
-        session.closeFallbackTask = Task { @MainActor [weak self, weak session] in
-            try? await Task.sleep(nanoseconds: Metrics.closeAnimationFallbackDelay)
+        PopoverPresenterChromeSupport.scheduleCloseFallback(task: &session.closeFallbackTask) { [weak self, weak session] in
             guard let self,
                   let session,
                   self.activeSessions[windowID] === session

@@ -289,8 +289,6 @@ final class SpaceEditorPopoverPresenter: NSObject, NSPopoverDelegate {
     enum Metrics {
         static let fullContentSize = NSSize(width: 340, height: 144)
         static let compactContentSize = NSSize(width: 340, height: 104)
-        static let closeAnimationFallbackDelay: UInt64 = 350_000_000
-
         static func contentSize(profileCount: Int) -> NSSize {
             profileCount > 1 ? fullContentSize : compactContentSize
         }
@@ -373,7 +371,7 @@ final class SpaceEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         popover.delegate = self
         popover.contentViewController = viewController
         popover.contentSize = Self.Metrics.contentSize(profileCount: profiles.count)
-        popover.appearance = NSAppearance.sumiChromeAppearance(
+        popover.appearance = PopoverPresenterChromeSupport.appearance(
             for: surfaceColorScheme,
             fallback: anchor.view.window?.effectiveAppearance ?? windowState.window?.effectiveAppearance
         )
@@ -415,19 +413,21 @@ final class SpaceEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         guard !activeSession.isClosing else { return }
         activeSession.isClosing = true
 
-        if activeSession.popover.isShown {
-            activeSession.popover.close()
-            activeSession.closeFallbackTask = Task { @MainActor [weak self, weak activeSession] in
-                try? await Task.sleep(nanoseconds: Self.Metrics.closeAnimationFallbackDelay)
+        PopoverPresenterChromeSupport.closePopoverWithFallback(
+            popover: activeSession.popover,
+            closeFallbackTask: &activeSession.closeFallbackTask,
+            onFallback: { [weak self, weak activeSession] in
                 guard let self,
                       let activeSession,
                       self.activeSession === activeSession
                 else { return }
                 self.finishClosedSession(activeSession, reason: "SpaceEditorPopoverPresenter.closeFallback")
+            },
+            onNotShown: { [weak self, weak activeSession] in
+                guard let self, let activeSession else { return }
+                self.finishClosedSession(activeSession, reason: "SpaceEditorPopoverPresenter.closeNotShown")
             }
-        } else {
-            finishClosedSession(activeSession, reason: "SpaceEditorPopoverPresenter.closeNotShown")
-        }
+        )
     }
 
     private func finishClosedSession(_ closedSession: ActiveSession, reason: String) {

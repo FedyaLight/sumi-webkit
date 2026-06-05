@@ -13,8 +13,7 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
         static let maximumRowsHeight: CGFloat = 330
         static let footerHeight: CGFloat = 52
         static let maximumHeight: CGFloat = 390
-        static let resizeAnimationDuration: TimeInterval = 0.18
-        static let closeAnimationFallbackDelay: UInt64 = 350_000_000
+        static let resizeAnimationDuration = PopoverPresenterMetrics.resizeAnimationDuration
     }
 
     private final class AnchorRegistration {
@@ -140,9 +139,10 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
     ) {
         guard let registration = anchors[windowState.id],
               let anchorView = registration.view,
-              anchorView.window != nil,
-              !anchorView.isHidden,
-              anchorView.alphaValue > 0
+              PopoverPresenterChromeSupport.isAnchorViewReady(
+                  anchorView,
+                  checkHiddenAncestors: false
+              )
         else {
             if allowRetry {
                 beginPendingTransientSessionIfNeeded(in: windowState)
@@ -211,8 +211,7 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
 
         session.isClosing = true
         session.popover.close()
-        session.closeFallbackTask = Task { @MainActor [weak self, weak session] in
-            try? await Task.sleep(nanoseconds: Metrics.closeAnimationFallbackDelay)
+        PopoverPresenterChromeSupport.scheduleCloseFallback(task: &session.closeFallbackTask) { [weak self, weak session] in
             guard let self,
                   let session,
                   self.activeSessions[windowID] === session
