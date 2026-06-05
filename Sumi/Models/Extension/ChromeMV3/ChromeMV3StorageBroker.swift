@@ -40,6 +40,7 @@ enum ChromeMV3StoragePersistencePolicy:
     Sendable
 {
     case deferredSyncLocalOnlyDecision
+    case localCompatibilitySync
     case memoryOnlyExtensionSession
     case profilePersistentLocal
     case unsupportedManagedPolicy
@@ -53,6 +54,7 @@ enum ChromeMV3StorageAreaAvailabilityStatus:
 {
     case brokerModelAvailable
     case deferredLocalOnlyDecision
+    case localCompatibilityBrokerAvailable
     case unsupportedManagedPolicy
 }
 
@@ -74,6 +76,17 @@ enum ChromeMV3StorageSyncSupportPolicy:
     Sendable
 {
     case deferredLocalOnlyFutureEmulation
+    case localCompatibility
+}
+
+enum ChromeMV3StorageSyncCompatibilityBackend:
+    String,
+    Codable,
+    CaseIterable,
+    Sendable
+{
+    case localCompatibility
+    case unavailable
 }
 
 struct ChromeMV3StorageSyncPolicy:
@@ -107,6 +120,26 @@ struct ChromeMV3StorageSyncPolicy:
             "No browser account sync integration is created.",
         ]
     )
+
+    static let controlledPopupLocalCompatibility =
+        ChromeMV3StorageSyncPolicy(
+            status: .localCompatibility,
+            runtimeImplementedNow: false,
+            brokerModelOperationsAvailable: true,
+            reason:
+                "DEBUG/local-experimental controlled popup storage.sync uses a profile-scoped local compatibility backend because Sumi has no cloud sync service.",
+            compatibilityRisk:
+                "Extensions that require cross-device synchronization will not receive it; values remain local to this Sumi profile and extension ID.",
+            passwordManagerImpact:
+                "Password-manager popups may persist settings through storage.sync-like calls without receiving synced vault, unlock, or account state.",
+            futureUserFacingPolicyNeeded: true,
+            diagnostics: [
+                "syncBackend=localCompatibility",
+                "No cloud sync support is claimed.",
+                "No Sumi account sync integration is created.",
+                "No cross-device sync is performed.",
+            ]
+        )
 }
 
 enum ChromeMV3StorageOperationKind:
@@ -356,7 +389,9 @@ struct ChromeMV3StorageQuotaPolicy:
 
     static func policy(
         for area: ChromeMV3StorageAreaKind,
-        unlimitedStoragePermissionPresent: Bool = false
+        unlimitedStoragePermissionPresent: Bool = false,
+        syncBackend:
+            ChromeMV3StorageSyncCompatibilityBackend = .unavailable
     ) -> ChromeMV3StorageQuotaPolicy {
         switch area {
         case .local:
@@ -397,10 +432,14 @@ struct ChromeMV3StorageQuotaPolicy:
                 maxItems: 512,
                 unlimitedStoragePermissionCanBypass: false,
                 calculationMode:
-                    "Quota constants are recorded for diagnostics only because storage.sync is deferred.",
+                    syncBackend == .localCompatibility
+                        ? "Chrome storage.sync quota constants are enforced against the local compatibility backend using deterministic key plus canonical JSON value byte counts."
+                        : "Quota constants are recorded for diagnostics only because storage.sync is deferred.",
                 diagnostics: [
                     "Chrome documents storage.sync QUOTA_BYTES, QUOTA_BYTES_PER_ITEM, and MAX_ITEMS.",
-                    "No sync or local-only emulation is active in this prompt.",
+                    syncBackend == .localCompatibility
+                        ? "syncBackend=localCompatibility; no cloud sync, write-rate throttling, or cross-device propagation is implemented."
+                        : "No sync or local-only emulation is active in this prompt.",
                 ]
             )
         case .managed:
@@ -460,7 +499,9 @@ struct ChromeMV3StorageAreaRecord:
         area: ChromeMV3StorageAreaKind,
         extensionID: String,
         profileID: String,
-        unlimitedStoragePermissionPresent: Bool = false
+        unlimitedStoragePermissionPresent: Bool = false,
+        syncBackend:
+            ChromeMV3StorageSyncCompatibilityBackend = .unavailable
     ) -> ChromeMV3StorageAreaRecord {
         let extensionID = extensionID.isEmpty
             ? "unknown-extension"
@@ -468,7 +509,9 @@ struct ChromeMV3StorageAreaRecord:
         let profileID = profileID.isEmpty ? "unknown-profile" : profileID
         let quota = ChromeMV3StorageQuotaPolicy.policy(
             for: area,
-            unlimitedStoragePermissionPresent: unlimitedStoragePermissionPresent
+            unlimitedStoragePermissionPresent:
+                unlimitedStoragePermissionPresent,
+            syncBackend: syncBackend
         )
         let recordID = ChromeMV3StorageStableID.make(
             prefix: "storage-area",
@@ -517,6 +560,28 @@ struct ChromeMV3StorageAreaRecord:
                 ]
             )
         case .sync:
+            if syncBackend == .localCompatibility {
+                return ChromeMV3StorageAreaRecord(
+                    area: area,
+                    extensionID: extensionID,
+                    profileID: profileID,
+                    recordID: recordID,
+                    profileIsolated: true,
+                    persistencePolicy: .localCompatibilitySync,
+                    availabilityStatus: .localCompatibilityBrokerAvailable,
+                    contentScriptAccessDefault: .exposedByDefault,
+                    quotaPolicy: quota,
+                    readAllowedByModel: true,
+                    writeAllowedByModel: true,
+                    runtimeImplementedNow: false,
+                    diagnostics: [
+                        "storage.sync uses syncBackend=localCompatibility only when an explicit developer-preview controlled popup/options bridge opts in.",
+                        "No cloud sync, Sumi account sync, or cross-device propagation is claimed.",
+                        "Values are scoped by profile ID, extension ID, and sync area.",
+                        "Chrome storage.sync item/total/max-item quotas are enforced; write-rate throttling is not implemented.",
+                    ]
+                )
+            }
             return ChromeMV3StorageAreaRecord(
                 area: area,
                 extensionID: extensionID,
@@ -794,21 +859,28 @@ struct ChromeMV3StorageBroker:
     var namespace: ChromeMV3StorageNamespace
     var areaRecord: ChromeMV3StorageAreaRecord
     var persistenceMode: ChromeMV3StorageBrokerPersistenceMode
+    var syncBackend: ChromeMV3StorageSyncCompatibilityBackend
     private(set) var snapshot: ChromeMV3StorageSnapshot
 
     init(
         namespace: ChromeMV3StorageNamespace,
         persistenceMode: ChromeMV3StorageBrokerPersistenceMode = .inMemory,
         initialValues: [String: ChromeMV3StorageValue] = [:],
-        unlimitedStoragePermissionPresent: Bool = false
+        unlimitedStoragePermissionPresent: Bool = false,
+        syncBackend:
+            ChromeMV3StorageSyncCompatibilityBackend = .unavailable
     ) {
         self.namespace = namespace
+        self.syncBackend = namespace.area == .sync
+            ? syncBackend
+            : .unavailable
         self.areaRecord = ChromeMV3StorageAreaRecord.make(
             area: namespace.area,
             extensionID: namespace.extensionID,
             profileID: namespace.profileID,
             unlimitedStoragePermissionPresent:
-                unlimitedStoragePermissionPresent
+                unlimitedStoragePermissionPresent,
+            syncBackend: self.syncBackend
         )
         self.persistenceMode = persistenceMode
         self.snapshot = ChromeMV3StorageSnapshot(
@@ -1156,6 +1228,7 @@ struct ChromeMV3StorageBroker:
     var snapshotURL: URL? {
         guard case .hostBacked(let rootURL) = persistenceMode,
               namespace.area == .local
+                || areaRecord.persistencePolicy == .localCompatibilitySync
         else { return nil }
         return namespace.relativePathComponents.reduce(
             rootURL.standardizedFileURL
@@ -1928,6 +2001,7 @@ struct ChromeMV3StorageAPIOperationHandlerState:
     var modelContextAllowsBrokerExecution: Bool
     var requestedJSRuntimeExecution: Bool
     var storageBackendAvailable: Bool
+    var syncLocalCompatibilityBrokerAllowed: Bool
     var sessionContentScriptAccessAllowed: Bool
     var runtimeMessagingStillBlocked: Bool
     var nativeMessagingStillBlocked: Bool
@@ -1940,6 +2014,7 @@ struct ChromeMV3StorageAPIOperationHandlerState:
             modelContextAllowsBrokerExecution: true,
             requestedJSRuntimeExecution: false,
             storageBackendAvailable: true,
+            syncLocalCompatibilityBrokerAllowed: false,
             sessionContentScriptAccessAllowed: false,
             runtimeMessagingStillBlocked: true,
             nativeMessagingStillBlocked: true,
@@ -1950,22 +2025,41 @@ struct ChromeMV3StorageAPIOperationHandlerState:
         )
 
     static let enabledDeveloperPreviewPopupOptionsBridge =
+        developerPreviewPopupOptionsBridge(
+            syncLocalCompatibilityBrokerAllowed: false
+        )
+
+    static func developerPreviewPopupOptionsBridge(
+        syncLocalCompatibilityBrokerAllowed: Bool
+    ) -> ChromeMV3StorageAPIOperationHandlerState {
         ChromeMV3StorageAPIOperationHandlerState(
             extensionsModuleEnabled: true,
             storagePermissionDetected: true,
             modelContextAllowsBrokerExecution: true,
             requestedJSRuntimeExecution: false,
             storageBackendAvailable: true,
+            syncLocalCompatibilityBrokerAllowed:
+                syncLocalCompatibilityBrokerAllowed,
             sessionContentScriptAccessAllowed: false,
             runtimeMessagingStillBlocked: true,
             nativeMessagingStillBlocked: true,
-            diagnostics: [
-                "Developer-preview controlled popup bridge may execute storage.local and storage.session broker operations.",
-                "storage.local and storage.session are scoped to this extension ID and profile ID.",
-                "storage.session remains memory-only and is not persisted to host files.",
-                "Normal-tab runtime storage, default product storage exposure, native messaging, storage.sync, and managed storage remain blocked.",
-            ]
+            diagnostics:
+                syncLocalCompatibilityBrokerAllowed
+                    ? [
+                        "Developer-preview controlled popup bridge may execute storage.local, storage.session, and storage.sync localCompatibility broker operations.",
+                        "storage.local, storage.session, and storage.sync are scoped to this extension ID and profile ID.",
+                        "storage.sync uses syncBackend=localCompatibility and does not claim cloud sync or cross-device propagation.",
+                        "storage.session remains memory-only and is not persisted to host files.",
+                        "Normal-tab runtime storage, default product storage exposure, native messaging, managed storage, and real cloud sync remain blocked.",
+                    ]
+                    : [
+                        "Developer-preview popup/options bridge may execute storage.local and storage.session broker operations.",
+                        "storage.local and storage.session are scoped to this extension ID and profile ID.",
+                        "storage.session remains memory-only and is not persisted to host files.",
+                        "Normal-tab runtime storage, default product storage exposure, native messaging, storage.sync, and managed storage remain blocked.",
+                    ]
         )
+    }
 
     static let disabledModule =
         ChromeMV3StorageAPIOperationHandlerState(
@@ -1974,6 +2068,7 @@ struct ChromeMV3StorageAPIOperationHandlerState:
             modelContextAllowsBrokerExecution: false,
             requestedJSRuntimeExecution: false,
             storageBackendAvailable: true,
+            syncLocalCompatibilityBrokerAllowed: false,
             sessionContentScriptAccessAllowed: false,
             runtimeMessagingStillBlocked: true,
             nativeMessagingStillBlocked: true,
@@ -2074,7 +2169,9 @@ struct ChromeMV3StorageAPIOperationHandler: Sendable {
                 normalizedSelector: nil
             )
         }
-        if input.area == .sync {
+        if input.area == .sync,
+           state.syncLocalCompatibilityBrokerAllowed == false
+        {
             return failure(
                 input: input,
                 code: .syncUnavailable,

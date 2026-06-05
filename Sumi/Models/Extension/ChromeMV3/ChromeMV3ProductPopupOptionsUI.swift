@@ -830,7 +830,8 @@ enum ChromeMV3ProductPopupOptionsLaunchPlanner {
             "CSP is preserved only to the extent WebKit enforces it for the loaded file-backed HTML; chrome-extension:// origin semantics are approximated by bridge metadata and chrome.runtime.getURL, not by a custom extension URL scheme.",
             "storage.local get/set/remove/clear are routed through the developer-preview broker when the controlled bridge is installed.",
             "storage.session get/set/remove/clear are routed through a memory-only developer-preview broker when the controlled bridge is installed.",
-            "Native messaging, storage.sync, managed storage, scripting, permissions, DNR, webRequest, offscreen, contextMenus, and Web Store APIs remain outside this controlled action popup policy.",
+            "storage.sync get/set/remove/clear are routed through a developer-preview local compatibility backend when the controlled bridge is installed; no cloud sync is claimed.",
+            "Native messaging, managed storage, scripting, permissions, DNR, webRequest, offscreen, contextMenus, and Web Store APIs remain outside this controlled action popup policy.",
         ]
         var declaration: ChromeMV3ExtensionPageDeclaration?
         var resolution: ChromeMV3ExtensionPageResourceResolution?

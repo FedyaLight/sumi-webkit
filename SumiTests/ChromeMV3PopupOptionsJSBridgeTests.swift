@@ -549,8 +549,26 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
                 .exposedNamespaces
                 .contains("storage.session")
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             controlledPolicy.allowedMethods.contains("storage.sync.get")
+        )
+        XCTAssertTrue(
+            controlledPolicy.allowedMethods.contains(
+                "storage.sync.getBytesInUse"
+            )
+        )
+        XCTAssertTrue(
+            controlledPolicy.exposedNamespaces.contains("storage.sync")
+        )
+        XCTAssertFalse(
+            ChromeMV3PopupOptionsAPIMethodPolicy.defaultPolicy
+                .allowedMethods
+                .contains("storage.sync.get")
+        )
+        XCTAssertFalse(
+            ChromeMV3PopupOptionsAPIMethodPolicy.defaultPolicy
+                .exposedNamespaces
+                .contains("storage.sync")
         )
         XCTAssertFalse(
             controlledPolicy.allowedMethods.contains("contextMenus.create")
@@ -581,7 +599,17 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             source.contains("storageSessionExposed")
         )
         XCTAssertTrue(
+            source.contains("storageSyncExposed")
+        )
+        XCTAssertTrue(source.contains("syncBackend=localCompatibility"))
+        XCTAssertTrue(
             source.contains("if (config.storageSessionExposed)")
+        )
+        XCTAssertTrue(
+            source.contains("if (config.storageSyncExposed)")
+        )
+        XCTAssertTrue(
+            source.contains("[\"local\", \"session\", \"sync\"]")
         )
         XCTAssertTrue(
             source.contains("debugPostGetManifestBootstrapSentinel(true)")
@@ -595,6 +623,8 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(
             source.contains("No raw storage values, message bodies, form values, manifest bodies, URLs, or private payloads were recorded.")
         )
+        XCTAssertFalse(source.contains("storage.sync cloud"))
+        XCTAssertFalse(source.contains("cross-device sync is performed."))
     }
 
     @MainActor
@@ -1043,6 +1073,167 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(encoded.contains("keyShape=singleString"))
         XCTAssertTrue(encoded.contains("keyCount=1"))
         XCTAssertFalse(encoded.contains("sensitiveStorageKey"))
+        XCTAssertFalse(encoded.contains("nestedSecret"))
+        XCTAssertFalse(encoded.contains("must-not-appear"))
+    }
+
+    func testControlledStorageSyncUsesLocalCompatibilityBackendWithoutRawDiagnostics()
+        throws
+    {
+        let root = try makeTemporaryDirectory()
+        let storageRoot = root.appendingPathComponent(
+            "StorageSyncLocalCompatibility",
+            isDirectory: true
+        ).path
+        let first = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                extensionID: "generic-extension-a",
+                profileID: "profile-a",
+                allowlist: .controlledActionPopupPolicy,
+                storageSyncRootPath: storageRoot
+            )
+        )
+
+        let set = first.handle(request(
+            namespace: "storage",
+            methodName: "sync.set",
+            arguments: [
+                .object([
+                    "syncSensitiveKey": .object([
+                        "nestedSecret": .string("must-not-appear"),
+                    ]),
+                ]),
+            ]
+        ))
+        let get = first.handle(request(
+            namespace: "storage",
+            methodName: "sync.get",
+            arguments: [.string("syncSensitiveKey")]
+        ))
+        let bytes = first.handle(request(
+            namespace: "storage",
+            methodName: "sync.getBytesInUse",
+            arguments: [.string("syncSensitiveKey")]
+        ))
+        let remove = first.handle(request(
+            namespace: "storage",
+            methodName: "sync.remove",
+            arguments: [.string("syncSensitiveKey")]
+        ))
+        let clear = first.handle(request(
+            namespace: "storage",
+            methodName: "sync.clear"
+        ))
+
+        XCTAssertTrue(set.succeeded)
+        XCTAssertEqual(set.onChangedPayload?.areaName, "sync")
+        XCTAssertEqual(
+            set.onChangedPayload?.serviceWorkerWakeRequired,
+            false
+        )
+        XCTAssertFalse(set.nativeHostLaunchAttempted)
+        XCTAssertEqual(
+            get.resultPayload,
+            .object([
+                "syncSensitiveKey": .object([
+                    "nestedSecret": .string("must-not-appear"),
+                ]),
+            ])
+        )
+        XCTAssertTrue(bytes.succeeded)
+        XCTAssertTrue(numberValue(bytes.resultPayload) ?? 0 > 0)
+        XCTAssertTrue(remove.succeeded)
+        XCTAssertTrue(clear.succeeded)
+        XCTAssertEqual(
+            first.diagnosticsSnapshot.storageOnChangedPayloadCount,
+            2
+        )
+        XCTAssertTrue(first.diagnosticsSnapshot.observedMethods.contains(
+            "storage.sync.set"
+        ))
+
+        let second = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                extensionID: "generic-extension-a",
+                profileID: "profile-a",
+                allowlist: .controlledActionPopupPolicy,
+                storageSyncRootPath: storageRoot
+            )
+        )
+        let persisted = second.handle(request(
+            namespace: "storage",
+            methodName: "sync.get",
+            arguments: [.string("syncSensitiveKey")]
+        ))
+        XCTAssertEqual(persisted.resultPayload, .object([:]))
+
+        let third = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                extensionID: "generic-extension-a",
+                profileID: "profile-a",
+                allowlist: .controlledActionPopupPolicy,
+                storageSyncRootPath: storageRoot
+            )
+        )
+        _ = third.handle(request(
+            namespace: "storage",
+            methodName: "sync.set",
+            arguments: [.object(["syncSensitiveKey": .string("persisted")])]
+        ))
+        let reloaded = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                extensionID: "generic-extension-a",
+                profileID: "profile-a",
+                allowlist: .controlledActionPopupPolicy,
+                storageSyncRootPath: storageRoot
+            )
+        )
+        let reloadedGet = reloaded.handle(request(
+            namespace: "storage",
+            methodName: "sync.get",
+            arguments: [.string("syncSensitiveKey")]
+        ))
+        XCTAssertEqual(
+            reloadedGet.resultPayload,
+            .object(["syncSensitiveKey": .string("persisted")])
+        )
+
+        let isolated = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                extensionID: "generic-extension-b",
+                profileID: "profile-a",
+                allowlist: .controlledActionPopupPolicy,
+                storageSyncRootPath: storageRoot
+            )
+        )
+        let isolatedGet = isolated.handle(request(
+            namespace: "storage",
+            methodName: "sync.get",
+            arguments: [.string("syncSensitiveKey")]
+        ))
+        XCTAssertEqual(isolatedGet.resultPayload, .object([:]))
+
+        let defaultPolicyResponse = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                allowlist: .defaultPolicy,
+                storageSyncRootPath: storageRoot
+            )
+        ).handle(request(
+            namespace: "storage",
+            methodName: "sync.get",
+            arguments: [.string("syncSensitiveKey")]
+        ))
+        XCTAssertFalse(defaultPolicyResponse.succeeded)
+
+        let encoded = String(
+            data: try JSONEncoder().encode(first.diagnosticsSnapshot),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertTrue(encoded.contains("storageSyncLocalCompatibilitySucceeded"))
+        XCTAssertTrue(encoded.contains("backend=localCompatibility"))
+        XCTAssertTrue(encoded.contains("keyShape=singleString"))
+        XCTAssertTrue(encoded.contains("keyCount=1"))
+        XCTAssertFalse(encoded.contains("syncSensitiveKey"))
         XCTAssertFalse(encoded.contains("nestedSecret"))
         XCTAssertFalse(encoded.contains("must-not-appear"))
     }
@@ -1935,7 +2126,8 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         runtimeManifest: ChromeMV3PopupOptionsRuntimeManifestSnapshot? = nil,
         activeTabGrants: [ChromeMV3ActiveTabGrant] = [],
         allowlist: ChromeMV3PopupOptionsAPIMethodPolicy = .defaultPolicy,
-        storageLocalRootPath: String? = nil
+        storageLocalRootPath: String? = nil,
+        storageSyncRootPath: String? = nil
     ) -> ChromeMV3PopupOptionsJSBridgeConfiguration {
         ChromeMV3PopupOptionsJSBridgeConfiguration(
             extensionID: extensionID,
@@ -1945,6 +2137,7 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             extensionBaseURLString: "chrome-extension://\(extensionID)/",
             permissionStateRootPath: nil,
             storageLocalRootPath: storageLocalRootPath,
+            storageSyncRootPath: storageSyncRootPath,
             moduleState: moduleState,
             bridgeAvailable: bridgeAvailable,
             popupOptionsJSBridgeAvailableInDeveloperPreview:
