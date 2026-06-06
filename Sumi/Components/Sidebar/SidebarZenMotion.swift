@@ -366,15 +366,21 @@ extension View {
         modifier(SidebarRowStagedInsertionModifier(isRevealing: isRevealing))
     }
 
+    @ViewBuilder
     func sidebarRowAnimatedListSlot(_ motion: RegularTabRowMotion) -> some View {
-        opacity(motion.hidesContent
+        let content = opacity(motion.hidesContent
             ? SidebarRowInsertionMotionPolicy.hiddenOpacity
             : SidebarRowInsertionMotionPolicy.visibleOpacity)
             .frame(height: motion.layoutHeight, alignment: .top)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .clipped()
             .allowsHitTesting(!motion.isInteractionDisabled)
             .accessibilityHidden(motion.isInteractionDisabled)
+
+        if motion.layoutHeight < SidebarRowLayout.rowHeight || motion.hidesContent {
+            content.clipped()
+        } else {
+            content
+        }
     }
 
     func sidebarRowLayoutGap(height: CGFloat) -> some View {
