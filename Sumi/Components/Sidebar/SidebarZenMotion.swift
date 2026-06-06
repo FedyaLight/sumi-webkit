@@ -250,16 +250,30 @@ private struct SidebarZenActionButtonBody: View {
     }
 }
 
+enum SidebarMotionTransaction {
+    static func withoutAnimation(_ body: () -> Void) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        transaction.animation = nil
+        withTransaction(transaction, body)
+    }
+
+    static func afterContentLayout(_ action: @escaping @MainActor () -> Void) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + SidebarRowCollapseGapMotion.duration) {
+            Task { @MainActor in
+                action()
+            }
+        }
+    }
+}
+
 enum SidebarRowStagedReveal {
     static func insert(
         _ id: UUID,
         into set: inout Set<UUID>,
         withoutAnimation update: () -> Void
     ) {
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        transaction.animation = nil
-        withTransaction(transaction) {
+        SidebarMotionTransaction.withoutAnimation {
             _ = set.insert(id)
             update()
         }
@@ -307,14 +321,6 @@ extension AnyTransition {
             .animation(sidebarRowLayoutAnimation)
     }
 
-    static var zenSidebarRowLifecycle: AnyTransition {
-        .modifier(
-            active: SidebarRowLifecycleModifier(isCollapsed: true),
-            identity: SidebarRowLifecycleModifier(isCollapsed: false)
-        )
-        .animation(sidebarRowLayoutAnimation)
-    }
-
     /// Prefer gap-collapse layout for list mutations; keep identity on stable rows.
     static var sidebarRowListItem: AnyTransition {
         .identity
@@ -348,10 +354,6 @@ extension View {
         modifier(SidebarRowListItemTransitionModifier(isEnabled: isEnabled))
     }
 
-    func sidebarZenRowLifecycleTransition(isEnabled: Bool = true) -> some View {
-        sidebarRowListItemTransition(isEnabled: isEnabled)
-    }
-
     func sidebarZenCompositeLifecycleTransition(isEnabled: Bool = true) -> some View {
         modifier(SidebarZenCompositeLifecycleTransitionModifier(isEnabled: isEnabled))
     }
@@ -364,7 +366,25 @@ extension View {
         modifier(SidebarRowStagedInsertionModifier(isRevealing: isRevealing))
     }
 
-    func sidebarRowInsertionReveal(isAppearing: Bool) -> some View {
-        sidebarRowStagedInsertion(isRevealing: isAppearing)
+    func sidebarRowAnimatedListSlot(_ motion: RegularTabRowMotion) -> some View {
+        opacity(motion.hidesContent
+            ? SidebarRowInsertionMotionPolicy.hiddenOpacity
+            : SidebarRowInsertionMotionPolicy.visibleOpacity)
+            .frame(height: motion.layoutHeight, alignment: .top)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
+            .allowsHitTesting(!motion.isInteractionDisabled)
+            .accessibilityHidden(motion.isInteractionDisabled)
+    }
+
+    func sidebarRowLayoutGap(height: CGFloat) -> some View {
+        Color.clear
+            .sidebarRowAnimatedListSlot(
+                RegularTabRowMotion(
+                    layoutHeight: height,
+                    hidesContent: false,
+                    isInteractionDisabled: true
+                )
+            )
     }
 }

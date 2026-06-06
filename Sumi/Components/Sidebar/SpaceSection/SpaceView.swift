@@ -15,11 +15,6 @@ enum SpaceViewRenderMode {
 
 }
 
-enum RegularTabRenderedItem: Hashable {
-    case tab(UUID)
-    case gap(UUID)
-}
-
 struct ShortcutRestoreGap: Identifiable, Hashable {
     enum Container: Hashable {
         case spacePinned(UUID)
@@ -42,13 +37,7 @@ struct SpaceView: View {
     @Environment(\.sumiSettings) var sumiSettings
     @ObservedObject var dragState = SidebarDragState.shared
     @State var isNewTabHovered = false
-    @State var regularRenderedTabItems: [RegularTabRenderedItem] = []
-    @State var regularGapHeights: [UUID: CGFloat] = [:]
-    @State var regularAppearingTabIds = Set<UUID>()
-    @State var regularDisappearingTabIds = Set<UUID>()
-    @State var regularRemovalGapTabs: [UUID: Tab] = [:]
-    @State var regularTabRenderCache: [UUID: Tab] = [:]
-    @State var regularLayoutAnimationGeneration = 0
+    @State var regularTabsListAnimation = RegularTabsListAnimationState()
     @State var regularSplitSegmentRemovalIds = Set<UUID>()
     @State var shortcutRestoreGaps: [ShortcutRestoreGap] = []
     @State var shortcutRestoreAppearingGapIds = Set<UUID>()
@@ -143,10 +132,7 @@ extension SpaceView {
             return
         }
 
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        transaction.animation = nil
-        withTransaction(transaction) {
+        SidebarMotionTransaction.withoutAnimation {
             update()
             shortcutRestoreGaps.removeAll { $0.id == existingGap.id }
             _ = shortcutRestoreAppearingGapIds.remove(existingGap.id)
