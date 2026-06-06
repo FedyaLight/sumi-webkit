@@ -6415,7 +6415,6 @@ enum ChromeMV3PopupOptionsJSShimSource {
           const scripting = {};
           let lastErrorValue;
           let nextBridgeCallNumber = 0;
-          let nextPortNumber = 0;
           const portState = new WeakMap();
 
           \(debugSupportSource)
@@ -7405,12 +7404,6 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 disconnect: "port.disconnect"
               });
               const state = portState.get(port);
-              nextPortNumber += 1;
-              state.id = [
-                config.surfaceID,
-                "runtime-port",
-                String(nextPortNumber)
-              ].join(":");
               bridgePost("runtime", "connect", "fireAndForget", args.map(toJSONCompatible))
                 .then((response) => {
                   if (!response.succeeded) {

@@ -3151,6 +3151,139 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
     }
 
     @MainActor
+    func testRealPopupOptionsWKWebViewQueuesRuntimePortMessageUntilHostPortIDResolves()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        let htmlURL = root.appendingPathComponent("popup.html")
+        try """
+        <!doctype html>
+        <meta charset="utf-8">
+        <title>Runtime Port Popup</title>
+        <main data-sumi-extension-page-fixture-marker="safe">Popup</main>
+        """.write(to: htmlURL, atomically: true, encoding: .utf8)
+        let session = try makeSharedLifecycleSession()
+        registerRuntimePortEchoDispatchers(on: session)
+        let config = configuration(
+            allowlist: .controlledActionPopupPolicy
+        )
+        let installation = ChromeMV3PopupOptionsJSBridgeInstallation(
+            configuration: config,
+            allowlist: config.allowlist,
+            bridgeAvailable: true,
+            scriptSource: ChromeMV3PopupOptionsJSShimSource.source(
+                configuration: config
+            ),
+            messageHandlerName:
+                ChromeMV3PopupOptionsJSShimSource.bridgeMessageHandlerName,
+            diagnostics: config.diagnostics
+        )
+        let handle = ChromeMV3ProductPopupOptionsWKWebViewHandle(
+            loadFileURL: htmlURL,
+            readAccessURL: root,
+            bridgeInstallation: installation,
+            sharedLifecycleSession: session,
+            permissionPromptPresenter: nil,
+            permissionEventDispatcher: nil
+        )
+        defer { handle.tearDown() }
+
+        try await handle.waitForLoadForTesting()
+        let raw = try await handle.callAsyncJavaScriptForTesting(
+            """
+            const port = chrome.runtime.connect();
+            const messages = [];
+            let disconnectCount = 0;
+            let disconnectLastError = null;
+            port.onMessage.addListener((message) => {
+              messages.push({
+                hasEcho: !!message.echo,
+                echoPing:
+                  !!message.echo && message.echo.ping === true
+              });
+            });
+            port.onDisconnect.addListener(() => {
+              disconnectCount += 1;
+              disconnectLastError = chrome.runtime.lastError
+                ? chrome.runtime.lastError.message
+                : null;
+            });
+            port.postMessage({ ping: true });
+            await new Promise((resolve) => setTimeout(resolve, 160));
+            const beforeDisconnectCount = disconnectCount;
+            const beforeDisconnectLastError = disconnectLastError;
+            port.disconnect();
+            await new Promise((resolve) => setTimeout(resolve, 60));
+            const debug = globalThis.__sumiChromeMV3PopupOptionsDebugSnapshot();
+            return {
+              messageCount: messages.length,
+              firstMessageHasEcho: messages[0] && messages[0].hasEcho,
+              firstMessageEchoPing: messages[0] && messages[0].echoPing,
+              beforeDisconnectCount,
+              beforeDisconnectLastError,
+              disconnectCount,
+              disconnectLastError,
+              pendingCount: debug.pending.length,
+              queuedEventCount: debug.events.filter((event) => {
+                return event.eventKind === "portMessageQueued";
+              }).length,
+              deliveredEventCount: debug.events.filter((event) => {
+                return event.eventKind === "portMessageDelivered";
+              }).length,
+              failedEventCount: debug.events.filter((event) => {
+                return event.eventKind === "portMessageBridgeFailed";
+              }).length
+            };
+            """
+        )
+        let object = try XCTUnwrap(raw as? [String: Any])
+
+        XCTAssertEqual(object["messageCount"] as? Int, 1)
+        XCTAssertEqual(object["firstMessageHasEcho"] as? Bool, true)
+        XCTAssertEqual(object["firstMessageEchoPing"] as? Bool, true)
+        XCTAssertEqual(object["beforeDisconnectCount"] as? Int, 0)
+        XCTAssertTrue(object["beforeDisconnectLastError"] is NSNull)
+        XCTAssertEqual(object["disconnectCount"] as? Int, 1)
+        XCTAssertTrue(object["disconnectLastError"] is NSNull)
+        XCTAssertEqual(object["pendingCount"] as? Int, 0)
+        XCTAssertEqual(object["queuedEventCount"] as? Int, 1)
+        XCTAssertEqual(object["deliveredEventCount"] as? Int, 1)
+        XCTAssertEqual(object["failedEventCount"] as? Int, 0)
+
+        let snapshot = try XCTUnwrap(
+            handle.popupOptionsBridgeDiagnosticsSnapshot
+        )
+        XCTAssertTrue(snapshot.observedMethods.contains("runtime.connect"))
+        XCTAssertTrue(snapshot.observedMethods.contains(
+            "runtime.port.postMessage"
+        ))
+        XCTAssertTrue(snapshot.observedMethods.contains(
+            "runtime.port.disconnect"
+        ))
+        XCTAssertTrue(snapshot.jsDebugRouteEvents.contains {
+            $0.eventKind == "portMessageQueued"
+                && $0.apiName == "Port.postMessage"
+                && $0.resultClassifier == "queued"
+        })
+        XCTAssertTrue(snapshot.jsDebugRouteEvents.contains {
+            $0.eventKind == "portMessageDelivered"
+                && $0.apiName == "runtime.port.postMessage"
+                && $0.resultClassifier == "Port message delivered"
+        })
+        XCTAssertFalse(snapshot.jsDebugRouteEvents.contains {
+            $0.eventKind == "portMessageBridgeFailed"
+        })
+        XCTAssertTrue(
+            session.runtimeOwner.snapshot.activeKeepaliveRecords.isEmpty
+        )
+        let encodedSnapshot = String(
+            data: try JSONEncoder().encode(snapshot),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertFalse(encodedSnapshot.contains("\"ping\""))
+    }
+
+    @MainActor
     func testRealPopupOptionsWKWebViewReportsNativeMessagingUnavailableLikeChrome()
         async throws
     {
