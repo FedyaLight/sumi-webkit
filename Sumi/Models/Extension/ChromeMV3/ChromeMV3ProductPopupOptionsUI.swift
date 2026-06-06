@@ -2911,6 +2911,8 @@ enum ChromeMV3PopupOptionsDiagnosticMIME {
             return "font/otf"
         case "eot":
             return "application/vnd.ms-fontobject"
+        case "wasm":
+            return "application/wasm"
         default:
             return nil
         }

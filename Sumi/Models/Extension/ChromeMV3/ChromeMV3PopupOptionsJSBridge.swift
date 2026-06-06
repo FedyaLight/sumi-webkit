@@ -7366,6 +7366,42 @@ enum ChromeMV3PopupOptionsJSShimSource {
             });
           }
 
+          function storageAreaObject(areaName, areaObject) {
+            return new Proxy(Object.freeze(areaObject), {
+              get(target, prop, receiver) {
+                if (prop === "onChanged") {
+                  debugMissingAPI(
+                    "chrome.storage." + areaName + ".onChanged",
+                    "missing storage." + areaName + ".onChanged",
+                    "storage." + areaName
+                  );
+                  return undefined;
+                }
+                return Reflect.get(target, prop, receiver);
+              }
+            });
+          }
+
+          function namespaceObject(namespaceName, namespaceObject) {
+            return new Proxy(Object.freeze(namespaceObject), {
+              get(target, prop, receiver) {
+                if (
+                  typeof prop === "string"
+                  && !Reflect.has(target, prop)
+                  && /^on[A-Z]/.test(prop)
+                ) {
+                  debugMissingAPI(
+                    "chrome." + namespaceName + "." + prop,
+                    "missing " + namespaceName + "." + prop,
+                    namespaceName
+                  );
+                  return undefined;
+                }
+                return Reflect.get(target, prop, receiver);
+              }
+            });
+          }
+
           defineStorageArea(local, "local");
           if (config.storageSessionExposed) {
             defineStorageArea(session, "session");
@@ -7373,19 +7409,20 @@ enum ChromeMV3PopupOptionsJSShimSource {
           if (config.storageSyncExposed) {
             defineStorageArea(sync, "sync");
           }
+          const runtimeObject = namespaceObject("runtime", runtime);
           Object.defineProperty(storage, "local", {
-            value: Object.freeze(local),
+            value: storageAreaObject("local", local),
             enumerable: true
           });
           if (config.storageSessionExposed) {
             Object.defineProperty(storage, "session", {
-              value: Object.freeze(session),
+              value: storageAreaObject("session", session),
               enumerable: true
             });
           }
           if (config.storageSyncExposed) {
             Object.defineProperty(storage, "sync", {
-              value: Object.freeze(sync),
+              value: storageAreaObject("sync", sync),
               enumerable: true
             });
           }
@@ -7696,8 +7733,10 @@ enum ChromeMV3PopupOptionsJSShimSource {
             return Object.freeze(namespace);
           }
 
+          const tabsObject = namespaceObject("tabs", tabs);
+
           Object.defineProperty(chromeObject, "runtime", {
-            value: Object.freeze(runtime),
+            value: runtimeObject,
             enumerable: true
           });
           Object.defineProperty(chromeObject, "storage", {
@@ -7715,7 +7754,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
             enumerable: true
           });
           Object.defineProperty(chromeObject, "tabs", {
-            value: Object.freeze(tabs),
+            value: tabsObject,
             enumerable: true
           });
           Object.defineProperty(chromeObject, "scripting", {
@@ -8094,6 +8133,88 @@ enum ChromeMV3PopupOptionsJSShimSource {
             return debugSanitizedText(message, 180);
           }
 
+          function debugSafeFunctionName(value) {
+            const name = debugSafeString(value, 100);
+            if (!name || !/^[A-Za-z0-9_$.[\\]<>: -]+$/.test(name)) {
+              return null;
+            }
+            return name;
+          }
+
+          function debugStackFrameDiagnostics(line, frameIndex) {
+            const raw = typeof line === "string" ? line.trim() : "";
+            if (!raw || debugIsSensitiveName(raw)) {
+              return null;
+            }
+            let functionName = null;
+            let resource = null;
+            let lineNumber = null;
+            let columnNumber = null;
+
+            const urlMatch = raw.match(/((?:file|https?|chrome-extension|sumi-extension-page-diagnostic):\\/\\/[^\\s)]+):(\\d+):(\\d+)/);
+            if (urlMatch) {
+              resource = debugSafeResourceDescriptor(urlMatch[1]);
+              lineNumber = debugSafeInteger(Number(urlMatch[2]));
+              columnNumber = debugSafeInteger(Number(urlMatch[3]));
+              const prefix = raw.slice(0, urlMatch.index).replace(/^at\\s+/, "").replace(/[(@\\s]+$/, "");
+              functionName = debugSafeFunctionName(prefix);
+            } else {
+              const compactMatch = raw.match(/^([^@]+)@([^\\s)]+):(\\d+):(\\d+)/);
+              if (compactMatch) {
+                functionName = debugSafeFunctionName(compactMatch[1]);
+                resource = debugSafeResourceDescriptor(compactMatch[2]);
+                lineNumber = debugSafeInteger(Number(compactMatch[3]));
+                columnNumber = debugSafeInteger(Number(compactMatch[4]));
+              }
+            }
+
+            const parts = [];
+            if (functionName) {
+              parts.push("function=" + functionName);
+            }
+            if (resource) {
+              parts.push("resource=" + resource);
+            }
+            if (lineNumber) {
+              parts.push("line=" + lineNumber);
+            }
+            if (columnNumber) {
+              parts.push("column=" + columnNumber);
+            }
+            if (parts.length === 0) {
+              return null;
+            }
+            return "stackFrame" + frameIndex + "=" + parts.join(";");
+          }
+
+          function debugConsoleErrorDiagnostics(args) {
+            const diagnostics = [];
+            const list = Array.isArray(args) ? args : [];
+            list.slice(0, 4).forEach((value, index) => {
+              if (!value || typeof value !== "object") {
+                return;
+              }
+              const errorName = debugSafeString(value.name, 80);
+              const message = debugSanitizedMessage(value.message);
+              if (errorName) {
+                diagnostics.push("arg" + index + ".errorName=" + errorName);
+              }
+              if (message) {
+                diagnostics.push("arg" + index + ".message=" + message);
+              }
+              const stack = typeof value.stack === "string" ? value.stack : "";
+              if (!stack || debugIsSensitiveName(stack)) {
+                return;
+              }
+              stack.split("\\n")
+                .slice(1, 7)
+                .map((line, frameIndex) => debugStackFrameDiagnostics(line, frameIndex))
+                .filter(Boolean)
+                .forEach((line) => diagnostics.push("arg" + index + "." + line));
+            });
+            return diagnostics;
+          }
+
           function debugSafeElementAttribute(target, name, maxLength) {
             try {
               if (!target || typeof target.getAttribute !== "function") {
@@ -8233,7 +8354,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
                     diagnostics:
                       firstMessage
                         ? ["console." + level + "=" + firstMessage]
+                            .concat(debugConsoleErrorDiagnostics(args))
                         : ["console." + level + " called; raw arguments omitted."]
+                            .concat(debugConsoleErrorDiagnostics(args))
                   });
                   return original.apply(this, args);
                 },

@@ -402,6 +402,8 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         try font.write(
             to: popupDirectory.appendingPathComponent("font.woff2")
         )
+        try Data([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00])
+            .write(to: popupDirectory.appendingPathComponent("module.wasm"))
 
         let handler = ChromeMV3PopupOptionsDiagnosticURLSchemeHandler(
             rootURL: root,
@@ -433,6 +435,7 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
             ("popup/icon.png", "image/png"),
             ("popup/icon.svg", "image/svg+xml"),
             ("popup/font.woff2", "font/woff2"),
+            ("popup/module.wasm", "application/wasm"),
         ]
         for (relativePath, mimeType) in cases {
             let url = try XCTUnwrap(
@@ -515,8 +518,12 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
             ChromeMV3PopupOptionsDiagnosticMIME.mimeType(for: "woff2"),
             "font/woff2"
         )
-        XCTAssertNil(
-            ChromeMV3PopupOptionsDiagnosticMIME.mimeType(for: "wasm")
+        XCTAssertEqual(
+            ChromeMV3PopupOptionsDiagnosticMIME.mimeType(for: "wasm"),
+            "application/wasm"
+        )
+        XCTAssertFalse(
+            ChromeMV3PopupOptionsDiagnosticMIME.isText("application/wasm")
         )
     }
     #endif
