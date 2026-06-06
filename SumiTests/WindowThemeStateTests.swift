@@ -128,8 +128,8 @@ final class WindowThemeStateTests: XCTestCase {
     }
 
     func testResolvedThemeContextOnlySkipsNativeMaterialWhenChromeIsFullyCovered() {
-        let opaqueTheme = makeTheme(opacity: 0.98)
-        let translucentTheme = makeTheme(opacity: 0.72)
+        let opaqueTheme = makeTheme(opacity: 0.30)
+        let tintedTheme = makeTheme(opacity: 0.29)
 
         let idleOpaque = makeContext(
             workspaceTheme: opaqueTheme,
@@ -140,9 +140,9 @@ final class WindowThemeStateTests: XCTestCase {
         XCTAssertTrue(idleOpaque.rendersOpaqueCustomChromeTheme)
 
         let mixedTransition = makeContext(
-            workspaceTheme: translucentTheme,
+            workspaceTheme: tintedTheme,
             sourceWorkspaceTheme: opaqueTheme,
-            targetWorkspaceTheme: translucentTheme,
+            targetWorkspaceTheme: tintedTheme,
             isInteractiveTransition: true
         )
         XCTAssertFalse(mixedTransition.rendersOpaqueCustomChromeTheme)

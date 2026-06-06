@@ -37,6 +37,9 @@ struct SpaceGradientViewport: Equatable {
 private struct SpaceGradientRenderPlan: Equatable {
     var gradient: WorkspaceResolvedGradient
     var intensity: Double
+    var colorOpacity: Double
+    var saturation: Double
+    var allowsTexture: Bool
 }
 
 // Renders the current space's gradient as a bottom background layer.
@@ -90,14 +93,14 @@ struct SpaceGradientBackgroundView: View {
                 width: fieldSize.width * clampedViewport.origin.x,
                 height: fieldSize.height * clampedViewport.origin.y
             )
-            let renderPlan = gradientRenderPlan()
+            let renderPlan = sumiSettings.shouldUseOpaqueChromeSurfaces ? nil : gradientRenderPlan()
             ZStack {
                 nativeBaseLayer
 
-                if let renderPlan, !sumiSettings.shouldUseOpaqueChromeSurfaces {
+                if let renderPlan {
                     themedLayer(
                         for: renderPlan.gradient,
-                        intensity: renderPlan.intensity,
+                        plan: renderPlan,
                         localSize: proxy.size,
                         fieldSize: fieldSize,
                         fieldOffset: fieldOffset
@@ -120,32 +123,11 @@ struct SpaceGradientBackgroundView: View {
             case .browser:
                 chromeTokens.windowBackground
             case .toolbarChrome:
-                if accessibilityReduceTransparency {
+                if accessibilityReduceTransparency || sumiSettings.shouldUseOpaqueChromeSurfaces {
                     chromeTokens.windowBackground
-                } else if shouldRenderNativeMaterialBase {
-                    if hasThemeTransitionContext && themeContext.sourceChromeColorScheme != themeContext.targetChromeColorScheme {
-                        ZStack {
-                            NativeChromeMaterialBackground(role: nativeMaterialRole)
-                            
-                            let currentScheme = themeContext.nativeSurfaceColorScheme
-                            let isCurrentLight = currentScheme == .light
-                            let maxOpacity: Double = isCurrentLight ? 0.35 : 0.20
-                            let overlayColor = isCurrentLight ? Color.black : Color.white
-                            
-                            let factor: Double = {
-                                if transitionProgress < 0.5 {
-                                    return transitionProgress / 0.5
-                                } else {
-                                    return (1.0 - transitionProgress) / 0.5
-                                }
-                            }()
-                            
-                            overlayColor
-                                .opacity(factor * maxOpacity)
-                        }
-                    } else {
-                        NativeChromeMaterialBackground(role: nativeMaterialRole)
-                    }
+                } else if nativeMaterialOpacity > 0 || shouldKeepNativeMaterialDuringHandoff {
+                    nativeMaterialLayer
+                        .opacity(nativeMaterialOpacity)
                 } else {
                     Color.clear
                 }
@@ -157,8 +139,55 @@ struct SpaceGradientBackgroundView: View {
         themeContext.rendersCustomChromeTheme
     }
 
-    private var shouldRenderNativeMaterialBase: Bool {
-        !themeContext.rendersOpaqueCustomChromeTheme
+    private var nativeMaterialOpacity: Double {
+        guard shouldRenderCustomTheme else { return 1 }
+
+        if hasThemeTransitionContext {
+            return interpolatedIntensity(
+                from: themeContext.sourceWorkspaceTheme.gradientTheme.customChromeThemeNativeMaterialOpacity,
+                to: themeContext.targetWorkspaceTheme.gradientTheme.customChromeThemeNativeMaterialOpacity
+            )
+        }
+
+        return themeContext.workspaceTheme.gradientTheme.customChromeThemeNativeMaterialOpacity
+    }
+
+    private var shouldKeepNativeMaterialDuringHandoff: Bool {
+        guard shouldRenderCustomTheme else { return true }
+
+        if hasThemeTransitionContext {
+            return themeContext.sourceWorkspaceTheme.gradientTheme.keepsNativeMaterialDuringHandoff
+                || themeContext.targetWorkspaceTheme.gradientTheme.keepsNativeMaterialDuringHandoff
+        }
+
+        return themeContext.workspaceTheme.gradientTheme.keepsNativeMaterialDuringHandoff
+    }
+
+    @ViewBuilder
+    private var nativeMaterialLayer: some View {
+        if hasThemeTransitionContext && themeContext.sourceChromeColorScheme != themeContext.targetChromeColorScheme {
+            ZStack {
+                NativeChromeMaterialBackground(role: nativeMaterialRole)
+
+                let currentScheme = themeContext.nativeSurfaceColorScheme
+                let isCurrentLight = currentScheme == .light
+                let maxOpacity: Double = isCurrentLight ? 0.35 : 0.20
+                let overlayColor = isCurrentLight ? Color.black : Color.white
+
+                let factor: Double = {
+                    if transitionProgress < 0.5 {
+                        return transitionProgress / 0.5
+                    } else {
+                        return (1.0 - transitionProgress) / 0.5
+                    }
+                }()
+
+                overlayColor
+                    .opacity(factor * maxOpacity)
+            }
+        } else {
+            NativeChromeMaterialBackground(role: nativeMaterialRole)
+        }
     }
 
     private func gradientRenderPlan() -> SpaceGradientRenderPlan? {
@@ -179,14 +208,37 @@ struct SpaceGradientBackgroundView: View {
                     intensity: interpolatedIntensity(
                         from: themeContext.sourceCustomChromeThemeIntensity,
                         to: themeContext.targetCustomChromeThemeIntensity
-                    )
+                    ),
+                    colorOpacity: interpolatedIntensity(
+                        from: colorOpacity(
+                            for: sourceGradient,
+                            theme: themeContext.sourceWorkspaceTheme
+                        ),
+                        to: colorOpacity(
+                            for: targetGradient,
+                            theme: themeContext.targetWorkspaceTheme
+                        )
+                    ),
+                    saturation: interpolatedIntensity(
+                        from: themeContext.sourceWorkspaceTheme.gradientTheme.customChromeThemeSaturation,
+                        to: themeContext.targetWorkspaceTheme.gradientTheme.customChromeThemeSaturation
+                    ),
+                    allowsTexture: themeContext.sourceWorkspaceTheme.gradientTheme.allowsCustomChromeTexture
+                        && themeContext.targetWorkspaceTheme.gradientTheme.allowsCustomChromeTexture
                 )
             }
         }
 
+        let activeGradient = gradient(from: activeResolution)
         return SpaceGradientRenderPlan(
-            gradient: gradient(from: activeResolution),
-            intensity: themeContext.activeCustomChromeThemeIntensity
+            gradient: activeGradient,
+            intensity: themeContext.activeCustomChromeThemeIntensity,
+            colorOpacity: colorOpacity(
+                for: activeGradient,
+                theme: themeContext.workspaceTheme
+            ),
+            saturation: themeContext.workspaceTheme.gradientTheme.customChromeThemeSaturation,
+            allowsTexture: themeContext.workspaceTheme.gradientTheme.allowsCustomChromeTexture
         )
     }
 
@@ -205,9 +257,20 @@ struct SpaceGradientBackgroundView: View {
         source + (target - source) * transitionProgress
     }
 
+    private func colorOpacity(
+        for gradient: WorkspaceResolvedGradient,
+        theme: WorkspaceTheme
+    ) -> Double {
+        let handoffProgress = theme.gradientTheme.customChromeThemeMaterialHandoffProgress
+        guard handoffProgress > 0 else {
+            return gradient.opacity
+        }
+        return gradient.opacity + (1 - gradient.opacity) * handoffProgress
+    }
+
     private func themedLayer(
         for gradient: WorkspaceResolvedGradient,
-        intensity: Double,
+        plan: SpaceGradientRenderPlan,
         localSize: CGSize,
         fieldSize: CGSize,
         fieldOffset: CGSize
@@ -216,30 +279,31 @@ struct SpaceGradientBackgroundView: View {
             chromeTokens.windowBackground
             gradientVisualLayer(
                 for: gradient,
-                intensity: intensity,
+                plan: plan,
                 localSize: localSize,
                 fieldSize: fieldSize,
                 fieldOffset: fieldOffset
             )
         }
-        .opacity(min(max(intensity, 0), 1))
+        .opacity(min(max(plan.intensity, 0), 1))
     }
 
     private func gradientVisualLayer(
         for gradient: WorkspaceResolvedGradient,
-        intensity: Double,
+        plan: SpaceGradientRenderPlan,
         localSize: CGSize,
         fieldSize: CGSize,
         fieldOffset: CGSize
     ) -> some View {
-        let clampedIntensity = min(max(intensity, 0), 1)
-        let effectiveNoiseOpacity = clampedIntensity < 0.08
+        let clampedIntensity = min(max(plan.intensity, 0), 1)
+        let effectiveNoiseOpacity = !plan.allowsTexture
             ? 0
             : max(0, min(1, gradient.texture * clampedIntensity))
 
         return ZStack {
             SpaceMeshGradientView(gradient: gradient)
-                .opacity(max(0, min(1, gradient.opacity)))
+                .saturation(max(0, min(1, plan.saturation)))
+                .opacity(max(0, min(1, plan.colorOpacity)))
                 .frame(width: fieldSize.width, height: fieldSize.height)
                 .clipped()
                 .allowsHitTesting(false)

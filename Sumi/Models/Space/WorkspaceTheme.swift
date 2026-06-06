@@ -304,6 +304,10 @@ struct WorkspaceGradientTheme: Codable, Hashable, Sendable {
     static let minimumOpacity: Double = 0
     static let maximumOpacity: Double = 1
     static let textureSteps: Double = 16
+    static let customChromeThemeDisableThreshold: Double = 0.02
+    static let customChromeThemeMaterialHandoffStartThreshold: Double = 0.25
+    static let customChromeThemeOpaqueThreshold: Double = 0.30
+    static let customChromeTextureEnableThreshold: Double = 0.31
 
     var type: String
     var colors: [WorkspaceThemeColor]
@@ -401,15 +405,14 @@ struct WorkspaceGradientTheme: Codable, Hashable, Sendable {
         opacity = WorkspaceGradientTheme.clampOpacity(value)
     }
 
-    static let customChromeThemeDisableThreshold: Double = 0.02
-    static let customChromeThemeOpaqueThreshold: Double = 0.98
-
     var customChromeThemeIntensity: Double {
         if opacity < WorkspaceGradientTheme.customChromeThemeDisableThreshold {
             return 0
         }
-        if opacity >= WorkspaceGradientTheme.customChromeThemeOpaqueThreshold {
-            return 1
+        if opacity >= WorkspaceGradientTheme.customChromeThemeMaterialHandoffStartThreshold {
+            let progress = customChromeThemeMaterialHandoffProgress
+            let start = WorkspaceGradientTheme.customChromeThemeMaterialHandoffStartThreshold
+            return start + (1 - start) * progress
         }
         return opacity
     }
@@ -420,6 +423,37 @@ struct WorkspaceGradientTheme: Codable, Hashable, Sendable {
 
     var rendersOpaqueCustomChromeTheme: Bool {
         customChromeThemeIntensity >= 1
+    }
+
+    var customChromeThemeSaturation: Double {
+        if !rendersOpaqueCustomChromeTheme {
+            let progress = customChromeThemeMaterialHandoffProgress
+            return 1 - (1 - opacity) * progress
+        }
+
+        return min(max(opacity, 0), 1)
+    }
+
+    var allowsCustomChromeTexture: Bool {
+        opacity >= WorkspaceGradientTheme.customChromeTextureEnableThreshold
+    }
+
+    var customChromeThemeNativeMaterialOpacity: Double {
+        guard opacity >= WorkspaceGradientTheme.customChromeThemeMaterialHandoffStartThreshold else {
+            return 1
+        }
+        return 1 - customChromeThemeMaterialHandoffProgress
+    }
+
+    var keepsNativeMaterialDuringHandoff: Bool {
+        opacity < WorkspaceGradientTheme.customChromeTextureEnableThreshold
+    }
+
+    var customChromeThemeMaterialHandoffProgress: Double {
+        let start = WorkspaceGradientTheme.customChromeThemeMaterialHandoffStartThreshold
+        let end = WorkspaceGradientTheme.customChromeThemeOpaqueThreshold
+        guard opacity >= start, end > start else { return 0 }
+        return min(max((opacity - start) / (end - start), 0), 1)
     }
 
     mutating func replaceColors(

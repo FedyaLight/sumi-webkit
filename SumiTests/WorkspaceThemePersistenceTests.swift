@@ -118,16 +118,64 @@ final class WorkspaceThemePersistenceTests: XCTestCase {
         XCTAssertEqual(hidden.customChromeThemeIntensity, 0, accuracy: 0.0001)
         XCTAssertFalse(hidden.usesCustomChromeTheme)
         XCTAssertFalse(hidden.rendersOpaqueCustomChromeTheme)
+        XCTAssertFalse(hidden.allowsCustomChromeTexture)
 
         let visible = WorkspaceGradientTheme(colors: makeThemeColors(), opacity: 0.02, texture: 0.18)
         XCTAssertEqual(visible.customChromeThemeIntensity, 0.02, accuracy: 0.0001)
         XCTAssertTrue(visible.usesCustomChromeTheme)
         XCTAssertFalse(visible.rendersOpaqueCustomChromeTheme)
+        XCTAssertFalse(visible.allowsCustomChromeTexture)
 
-        let opaque = WorkspaceGradientTheme(colors: makeThemeColors(), opacity: 0.98, texture: 0.18)
+        let handoffMidpoint = WorkspaceGradientTheme(colors: makeThemeColors(), opacity: 0.275, texture: 0.18)
+        XCTAssertEqual(handoffMidpoint.customChromeThemeMaterialHandoffProgress, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(handoffMidpoint.customChromeThemeIntensity, 0.625, accuracy: 0.0001)
+        XCTAssertEqual(handoffMidpoint.customChromeThemeSaturation, 0.6375, accuracy: 0.0001)
+        XCTAssertEqual(handoffMidpoint.customChromeThemeNativeMaterialOpacity, 0.5, accuracy: 0.0001)
+        XCTAssertTrue(handoffMidpoint.keepsNativeMaterialDuringHandoff)
+        XCTAssertFalse(handoffMidpoint.rendersOpaqueCustomChromeTheme)
+        XCTAssertFalse(handoffMidpoint.allowsCustomChromeTexture)
+
+        let tinted = WorkspaceGradientTheme(colors: makeThemeColors(), opacity: 0.30, texture: 0.18)
+        XCTAssertEqual(tinted.customChromeThemeIntensity, 1, accuracy: 0.0001)
+        XCTAssertTrue(tinted.usesCustomChromeTheme)
+        XCTAssertTrue(tinted.rendersOpaqueCustomChromeTheme)
+        XCTAssertEqual(tinted.customChromeThemeSaturation, 0.30, accuracy: 0.0001)
+        XCTAssertEqual(tinted.customChromeThemeNativeMaterialOpacity, 0, accuracy: 0.0001)
+        XCTAssertTrue(tinted.keepsNativeMaterialDuringHandoff)
+        XCTAssertFalse(tinted.allowsCustomChromeTexture)
+
+        let opaque = WorkspaceGradientTheme(colors: makeThemeColors(), opacity: 1, texture: 0.18)
         XCTAssertEqual(opaque.customChromeThemeIntensity, 1, accuracy: 0.0001)
         XCTAssertTrue(opaque.usesCustomChromeTheme)
         XCTAssertTrue(opaque.rendersOpaqueCustomChromeTheme)
+        XCTAssertEqual(opaque.customChromeThemeSaturation, 1, accuracy: 0.0001)
+        XCTAssertFalse(opaque.keepsNativeMaterialDuringHandoff)
+        XCTAssertTrue(opaque.allowsCustomChromeTexture)
+    }
+
+    func testCustomChromeSaturationAndTextureFollowOptimizedBands() {
+        let materialOnly = WorkspaceGradientTheme(colors: makeThemeColors(), opacity: 0.019, texture: 0.18)
+        let tintedMaterial = WorkspaceGradientTheme(colors: makeThemeColors(), opacity: 0.29, texture: 0.18)
+        let opaqueDesaturated = WorkspaceGradientTheme(colors: makeThemeColors(), opacity: 0.30, texture: 0.18)
+        let opaqueMidSaturation = WorkspaceGradientTheme(colors: makeThemeColors(), opacity: 0.65, texture: 0.18)
+        let opaqueTextureEnabled = WorkspaceGradientTheme(colors: makeThemeColors(), opacity: 0.31, texture: 0.18)
+
+        XCTAssertEqual(materialOnly.customChromeThemeIntensity, 0, accuracy: 0.0001)
+        XCTAssertEqual(tintedMaterial.customChromeThemeMaterialHandoffProgress, 0.8, accuracy: 0.0001)
+        XCTAssertEqual(tintedMaterial.customChromeThemeIntensity, 0.85, accuracy: 0.0001)
+        XCTAssertEqual(tintedMaterial.customChromeThemeSaturation, 0.432, accuracy: 0.0001)
+        XCTAssertEqual(tintedMaterial.customChromeThemeNativeMaterialOpacity, 0.2, accuracy: 0.0001)
+        XCTAssertFalse(tintedMaterial.rendersOpaqueCustomChromeTheme)
+        XCTAssertFalse(tintedMaterial.allowsCustomChromeTexture)
+
+        XCTAssertTrue(opaqueDesaturated.rendersOpaqueCustomChromeTheme)
+        XCTAssertEqual(opaqueDesaturated.customChromeThemeSaturation, 0.30, accuracy: 0.0001)
+        XCTAssertFalse(opaqueDesaturated.allowsCustomChromeTexture)
+
+        XCTAssertEqual(opaqueMidSaturation.customChromeThemeSaturation, 0.65, accuracy: 0.0001)
+        XCTAssertEqual(opaqueTextureEnabled.customChromeThemeSaturation, 0.31, accuracy: 0.0001)
+        XCTAssertFalse(opaqueTextureEnabled.keepsNativeMaterialDuringHandoff)
+        XCTAssertTrue(opaqueTextureEnabled.allowsCustomChromeTexture)
     }
 
     func testGradientThemeAllowsZeroPersistedDotsWithoutDefaultFallback() {
