@@ -2347,7 +2347,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
     ) async throws -> ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot {
         var latest:
             ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?
-        for _ in 0..<200 {
+        for _ in 0..<280 {
             if let snapshot =
                 module
                 .chromeMV3PopupOptionsBridgeDiagnosticsSnapshotForTesting(
@@ -2379,12 +2379,78 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                         event.eventKind == "postBootstrapCheckpoint"
                             && event.diagnostics.contains("phase=final")
                     }
+                let bootstrapResourceClasses = Set(
+                    postManifestEvents
+                        .filter { $0.eventKind == "bootstrapResourceObserved" }
+                        .flatMap(\.diagnostics)
+                        .compactMap { diagnostic -> String? in
+                            guard diagnostic.hasPrefix("resourceClass=")
+                            else { return nil }
+                            return String(
+                                diagnostic.dropFirst(
+                                    "resourceClass=".count
+                                )
+                            )
+                        }
+                )
+                let resourceFinalClasses = Set(
+                    postManifestEvents
+                        .filter { $0.eventKind == "postBootstrapCheckpoint" }
+                        .flatMap(\.diagnostics)
+                        .compactMap { diagnostic -> String? in
+                            guard diagnostic.hasPrefix(
+                                "phase=resource-final-"
+                            ) else { return nil }
+                            return String(
+                                diagnostic.dropFirst(
+                                    "phase=resource-final-".count
+                                )
+                            )
+                        }
+                )
+                let resourceFinalCheckpointReached =
+                    bootstrapResourceClasses.isEmpty
+                        || bootstrapResourceClasses.isSubset(
+                            of: resourceFinalClasses
+                        )
                 if manifestReturned
-                    && (finalCheckpointReached || hasPostManifestBlocker) {
+                    && (
+                        hasPostManifestBlocker
+                            || (
+                                finalCheckpointReached
+                                    && resourceFinalCheckpointReached
+                            )
+                    ) {
                     return snapshot
                 }
             }
             try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        _ = try? await module
+            .chromeMV3PopupOptionsEvaluateJavaScriptForTesting(
+                profileID: profileID,
+                extensionID: extensionID,
+                script: """
+                (() => {
+                  const forceCheckpoint =
+                    globalThis.__sumiChromeMV3PopupOptionsDebugForceCheckpoint;
+                  if (typeof forceCheckpoint !== 'function') {
+                    return false;
+                  }
+                  forceCheckpoint('host-forced-final');
+                  return true;
+                })();
+                """
+            )
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        if let snapshot =
+            module
+            .chromeMV3PopupOptionsBridgeDiagnosticsSnapshotForTesting(
+                profileID: profileID,
+                extensionID: extensionID
+            )
+        {
+            latest = snapshot
         }
         return try XCTUnwrap(
             latest,
@@ -2723,7 +2789,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
     private func controlledBitwardenPopupSanitizedLogLines(
         _ snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
     ) -> [String] {
-        let eventLines = snapshot.jsDebugRouteEvents.prefix(80).map {
+        let eventLines = snapshot.jsDebugRouteEvents.prefix(180).map {
             event in
             [
                 "seq=\(event.sequence)",
@@ -2743,7 +2809,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             event in
             "pending api=\(event.apiName) ageMs=\(event.ageMilliseconds.map(String.init) ?? "na") classifier=\(event.resultClassifier ?? "unknown pending promise")"
         }
-        let routeLines = snapshot.sanitizedBridgeRouteRecords.prefix(40).map {
+        let routeLines = snapshot.sanitizedBridgeRouteRecords.prefix(80).map {
             route in
             [
                 "swiftRoute",

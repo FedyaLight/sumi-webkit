@@ -1927,10 +1927,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             sanitizedBridgeRouteRecords: sanitizedBridgeRouteRecords,
             jsDebugRouteEvents: jsDebugRouteEvents,
             pendingUnresolvedJSDebugRoutes:
-                jsDebugRouteEvents.filter {
-                    $0.eventKind == "pendingTimeout"
-                        || $0.resultClassifier == "unknown pending promise"
-                },
+                unresolvedPendingJSDebugRoutes(),
             blockedAPIs:
                 uniqueBlockedDiagnostics(
                     blocked.map {
@@ -2285,7 +2282,28 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         }
     }
 
+    private func unresolvedPendingJSDebugRoutes()
+        -> [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
+    {
+        let completedBridgeCallIDs = Set(
+            jsDebugRouteEvents.compactMap { event -> String? in
+                guard [
+                    "bridgeCallResolved",
+                    "bridgeCallRejected",
+                ].contains(event.eventKind) else { return nil }
+                return event.bridgeCallID
+            }
+        )
+        return jsDebugRouteEvents.filter { event in
+            guard event.eventKind == "pendingTimeout",
+                  let bridgeCallID = event.bridgeCallID
+            else { return false }
+            return completedBridgeCallIDs.contains(bridgeCallID) == false
+        }
+    }
+
     private nonisolated static let allowedJSDebugEventKinds: Set<String> = [
+        "bootstrapResourceObserved",
         "bridgeCallStarted",
         "bridgeCallResolved",
         "bridgeCallRejected",
@@ -2294,12 +2312,15 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         "extensionNamespaceAccessed",
         "missingAPIAccess",
         "pendingTimeout",
+        "pendingRouteAgeMarker",
+        "portHostIDAssigned",
         "portDisconnected",
         "portListenerAdded",
         "portListenerRemoved",
         "portMessageBridgeFailed",
         "portMessageCalled",
         "portMessageDelivered",
+        "portObjectReturned",
         "portMessageQueued",
         "portOnDisconnectDispatched",
         "portOnMessageDispatched",
@@ -7404,6 +7425,15 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 disconnect: "port.disconnect"
               });
               const state = portState.get(port);
+              debugPortEvent("portObjectReturned", {
+                apiName: "runtime.connect",
+                portName: debugSafePortName(state.name),
+                resultClassifier: "Port object returned to JS",
+                diagnostics: [
+                  "runtime.connect returned a Port object synchronously to popup JavaScript.",
+                  "Host-side Port ID assignment and service-worker onConnect delivery are tracked separately."
+                ]
+              });
               bridgePost("runtime", "connect", "fireAndForget", args.map(toJSONCompatible))
                 .then((response) => {
                   if (!response.succeeded) {
@@ -7413,6 +7443,17 @@ enum ChromeMV3PopupOptionsJSShimSource {
                   const payload = response.resultPayload || {};
                   state.id = payload.portID || state.id;
                   state.sender = payload.sender || null;
+                  debugPortEvent("portHostIDAssigned", {
+                    apiName: "runtime.connect",
+                    portName: debugSafePortName(state.name),
+                    resultClassifier: state.id
+                      ? "host Port ID assigned"
+                      : "host Port ID missing",
+                    diagnostics: [
+                      "runtime.connect host response assigned the real Port ID used by later Port.postMessage delivery.",
+                      "Port ID value omitted from diagnostics."
+                    ]
+                  });
                   state.flushPendingMessages();
                 })
                 .catch(() => state.markDisconnected(null));
@@ -7443,6 +7484,15 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 disconnect: "nativePort.disconnect"
               });
               const state = portState.get(port);
+              debugPortEvent("portObjectReturned", {
+                apiName: "runtime.connectNative",
+                portName: debugSafePortName(state.name),
+                resultClassifier: "Port object returned to JS",
+                diagnostics: [
+                  "runtime.connectNative returned a Port object synchronously to popup JavaScript.",
+                  "Native messaging remains Chrome-compatible unavailable unless the host bridge succeeds."
+                ]
+              });
               bridgePost("runtime", nativeConnectMethod, "fireAndForget", [application])
                 .then((response) => {
                   if (!response.succeeded) {
@@ -7451,6 +7501,17 @@ enum ChromeMV3PopupOptionsJSShimSource {
                   }
                   const payload = response.resultPayload || {};
                   state.id = payload.portID || state.id;
+                  debugPortEvent("portHostIDAssigned", {
+                    apiName: "runtime.connectNative",
+                    portName: debugSafePortName(state.name),
+                    resultClassifier: state.id
+                      ? "host Port ID assigned"
+                      : "host Port ID missing",
+                    diagnostics: [
+                      "runtime.connectNative host response assigned a native Port ID.",
+                      "Port ID value omitted from diagnostics."
+                    ]
+                  });
                   state.flushPendingMessages();
                 })
                 .catch(() => state.markDisconnected("Native messaging port is closed."));
@@ -7820,6 +7881,15 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 disconnect: "port.disconnect"
               });
               const state = portState.get(port);
+              debugPortEvent("portObjectReturned", {
+                apiName: "tabs.connect",
+                portName: debugSafePortName(state.name),
+                resultClassifier: "Port object returned to JS",
+                diagnostics: [
+                  "tabs.connect returned a Port object synchronously to popup JavaScript.",
+                  "Content-script Port delivery is tracked separately."
+                ]
+              });
               bridgePost("tabs", "connect", "fireAndForget", [tabId, connectInfo || {}])
                 .then((response) => {
                   if (!response.succeeded) {
@@ -7829,6 +7899,17 @@ enum ChromeMV3PopupOptionsJSShimSource {
                   const payload = response.resultPayload || {};
                   state.id = payload.portID || state.id;
                   state.sender = payload.sender || null;
+                  debugPortEvent("portHostIDAssigned", {
+                    apiName: "tabs.connect",
+                    portName: debugSafePortName(state.name),
+                    resultClassifier: state.id
+                      ? "host Port ID assigned"
+                      : "host Port ID missing",
+                    diagnostics: [
+                      "tabs.connect host response assigned the real Port ID.",
+                      "Port ID value omitted from diagnostics."
+                    ]
+                  });
                   state.flushPendingMessages();
                 })
                 .catch(state.markDisconnected);
@@ -8001,12 +8082,15 @@ enum ChromeMV3PopupOptionsJSShimSource {
           const __sumiDebugEvents = [];
           const __sumiPendingBridgeCalls = new Map();
           const __sumiDebugStartedAt = Date.now();
-          const __sumiPendingTimeoutMS = 900;
-          const __sumiPostBootstrapCheckpointMS = [250, 900, 1800, 3500];
+          const __sumiPendingAgeMarkerMS = 900;
+          const __sumiPendingTimeoutMS = 5200;
+          const __sumiPostBootstrapCheckpointMS = [250, 900, 1800, 3500, 6500];
+          const __sumiBootstrapResourceFollowupMS = 5000;
           const __sumiPostBootstrapState = {
             manifestReturnedAt: null,
             scheduled: false
           };
+          const __sumiBootstrapResourceFollowups = new Set();
           const __sumiSafeFieldNames = new Set([
             "action", "command", "kind", "messageType", "method", "name",
             "operation", "requestType", "type"
@@ -8430,6 +8514,51 @@ enum ChromeMV3PopupOptionsJSShimSource {
             return { tag, resource, type, rel, asValue, diagnostics };
           }
 
+          function debugBootstrapResourceClass(details) {
+            const resource = String(details && details.resource || "").toLowerCase();
+            const tag = String(details && details.tag || "");
+            if (/\\.wasm$/.test(resource)) {
+              return "wasm";
+            }
+            if (tag === "script" || /\\.js$/.test(resource)) {
+              return "script";
+            }
+            return null;
+          }
+
+          function debugRecordBootstrapResourceObserved(details, reason) {
+            const resourceClass = debugBootstrapResourceClass(details);
+            if (!resourceClass) {
+              return;
+            }
+            const followupKey = resourceClass + ":" + String(reason || "resource");
+            if (__sumiBootstrapResourceFollowups.has(followupKey)) {
+              return;
+            }
+            __sumiBootstrapResourceFollowups.add(followupKey);
+            debugRecord("bootstrapResourceObserved", {
+              apiName: "resource.bootstrap",
+              targetContext: "resource",
+              resultClassifier: resourceClass + " load/timing observed",
+              safeMessageShapeClassification: "resourceClass=" + resourceClass,
+              diagnostics: [
+                "resourceClass=" + resourceClass,
+                "reason=" + String(reason || "resource"),
+                details && details.resource
+                  ? "resource=" + details.resource
+                  : "resource=unknown",
+                "followupCheckpointDelayMs="
+                  + String(__sumiBootstrapResourceFollowupMS),
+                "No raw resource bodies, storage values, message bodies, URLs, or private payloads were recorded."
+              ].concat(details && Array.isArray(details.diagnostics)
+                ? details.diagnostics
+                : [])
+            });
+            globalThis.setTimeout(() => {
+              debugPostBootstrapCheckpoint("resource-final-" + resourceClass);
+            }, __sumiBootstrapResourceFollowupMS);
+          }
+
           const __sumiResourceEventCounters = {
             load: 0,
             error: 0,
@@ -8443,6 +8572,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
             }
             __sumiResourceEventCounters[key] += 1;
             const details = debugResourceDiagnostics(target);
+            if (eventKind === "resourceLoaded") {
+              debugRecordBootstrapResourceObserved(details, "element-load");
+            }
             debugRecord(eventKind, {
               apiName: "resource." + details.tag,
               targetContext: "resource",
@@ -8465,7 +8597,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
           }
 
           function debugRecordResourceTiming(reason) {
-            if (__sumiResourceEventCounters.timing >= 6) {
+            if (__sumiResourceEventCounters.timing >= 10) {
               return;
             }
             __sumiResourceEventCounters.timing += 1;
@@ -8488,6 +8620,14 @@ enum ChromeMV3PopupOptionsJSShimSource {
               if (!descriptor) {
                 return;
               }
+              debugRecordBootstrapResourceObserved({
+                tag: initiator,
+                resource: descriptor,
+                diagnostics: [
+                  "resource=" + descriptor,
+                  "initiator=" + initiator
+                ]
+              }, "performance-timing");
               let line = "resource=" + descriptor + ";initiator=" + initiator;
               if (duration) {
                 line += ";durationMs=" + duration;
@@ -8605,12 +8745,28 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 return;
               }
               const age = debugNowMS() - current.startedAt;
+              debugRecord("pendingRouteAgeMarker", Object.assign({}, current, {
+                ageMilliseconds: Math.round(age),
+                resultClassifier: "early pending diagnostic",
+                firstMissingAPIOrPermissionOrLifecycleError: null,
+                diagnostics: [
+                  "Bridge call remained unresolved past the early DEBUG age marker.",
+                  "This marker is non-fatal unless the same bridge call remains unresolved through the extended pending-route timeout."
+                ]
+              }));
+            }, __sumiPendingAgeMarkerMS);
+            globalThis.setTimeout(() => {
+              const current = __sumiPendingBridgeCalls.get(bridgeCallID);
+              if (!current) {
+                return;
+              }
+              const age = debugNowMS() - current.startedAt;
               debugRecord("pendingTimeout", Object.assign({}, current, {
                 ageMilliseconds: Math.round(age),
                 resultClassifier: debugClassifier(namespace, methodName, null),
                 firstMissingAPIOrPermissionOrLifecycleError: debugClassifier(namespace, methodName, null),
                 diagnostics: [
-                  "Bridge call remained unresolved past the DEBUG pending-route timeout."
+                  "Bridge call remained unresolved past the extended DEBUG pending-route timeout."
                 ]
               }));
             }, __sumiPendingTimeoutMS);
@@ -9566,6 +9722,11 @@ enum ChromeMV3PopupOptionsJSShimSource {
           globalThis.setTimeout(() => {
             debugRecordResourceTiming("timer-250ms");
           }, 250);
+          [900, 1800, 3500, 6500].forEach((delay) => {
+            globalThis.setTimeout(() => {
+              debugRecordResourceTiming("timer-" + String(delay) + "ms");
+            }, delay);
+          });
 
           Object.defineProperty(globalThis, "__sumiChromeMV3PopupOptionsDebugSnapshot", {
             value() {
@@ -9580,6 +9741,16 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 pending,
                 events: __sumiDebugEvents.slice()
               };
+            },
+            configurable: false
+          });
+
+          Object.defineProperty(globalThis, "__sumiChromeMV3PopupOptionsDebugForceCheckpoint", {
+            value(phase) {
+              debugPostBootstrapCheckpoint(
+                debugSafeString(phase, 80) || "host-forced-final"
+              );
+              return globalThis.__sumiChromeMV3PopupOptionsDebugSnapshot();
             },
             configurable: false
           });
