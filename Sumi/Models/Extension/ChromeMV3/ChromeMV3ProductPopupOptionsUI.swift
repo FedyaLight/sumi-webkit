@@ -28,6 +28,16 @@ enum ChromeMV3ProductPopupOptionsLoadingMode:
     #if DEBUG
     case diagnosticCustomScheme
     #endif
+
+    static var controlledCompatibilityDefault:
+        ChromeMV3ProductPopupOptionsLoadingMode
+    {
+        #if DEBUG
+        return .diagnosticCustomScheme
+        #else
+        return .fileBacked
+        #endif
+    }
 }
 
 enum ChromeMV3ProductPopupOptionsSurface:
@@ -1361,6 +1371,8 @@ extension ChromeMV3PopupOptionsWebViewHandle {
 
 @MainActor
 protocol ChromeMV3PopupOptionsWebViewFactory: AnyObject {
+    var resourceLoadingDiagnostic: String? { get }
+
     func createWebView(
         loadFileURL: URL,
         allowingReadAccessTo readAccessURL: URL
@@ -1397,6 +1409,8 @@ protocol ChromeMV3PopupOptionsWebViewFactory: AnyObject {
 
 @MainActor
 extension ChromeMV3PopupOptionsWebViewFactory {
+    var resourceLoadingDiagnostic: String? { nil }
+
     func createWebView(
         loadFileURL: URL,
         allowingReadAccessTo readAccessURL: URL,
@@ -1629,6 +1643,18 @@ final class ChromeMV3ProductPopupOptionsHostController {
                 handle: handle,
                 sharedLifecycleSession: sharedLifecycleSession
             )
+            var diagnostics = [
+                "Popup/options WebView was created only after explicit developer-preview launch gates passed.",
+                bridgeInstallation.bridgeAvailable
+                    ? "Popup/options JS bridge was installed only in the extension-owned WebView."
+                    : "Popup/options JS bridge was not installed because launch gates did not allow it.",
+                "No normal tab was attached and no content scripts were injected.",
+            ]
+            if let resourceLoadingDiagnostic =
+                factory.resourceLoadingDiagnostic
+            {
+                diagnostics.append(resourceLoadingDiagnostic)
+            }
             return ChromeMV3ProductPopupOptionsRunResult(
                 status: .succeeded,
                 requestedSurface: opened.surface,
@@ -1651,13 +1677,7 @@ final class ChromeMV3ProductPopupOptionsHostController {
                 popupOptionsBlockedAPIs:
                     bridgeInstallation.allowlist.blockedDiagnostics,
                 popupOptionsLastAPIErrorSummary: nil,
-                diagnostics: [
-                    "Popup/options WebView was created only after explicit developer-preview launch gates passed.",
-                    bridgeInstallation.bridgeAvailable
-                        ? "Popup/options JS bridge was installed only in the extension-owned WebView."
-                        : "Popup/options JS bridge was not installed because launch gates did not allow it.",
-                    "No normal tab was attached and no content scripts were injected.",
-                ]
+                diagnostics: diagnostics
             )
         } catch {
             var failed = launchRecord
@@ -1901,9 +1921,21 @@ final class ChromeMV3ProductPopupOptionsWKWebViewFactory:
     private let loadingMode: ChromeMV3ProductPopupOptionsLoadingMode
 
     init(
-        loadingMode: ChromeMV3ProductPopupOptionsLoadingMode = .fileBacked
+        loadingMode: ChromeMV3ProductPopupOptionsLoadingMode =
+            .controlledCompatibilityDefault
     ) {
         self.loadingMode = loadingMode
+    }
+
+    var resourceLoadingDiagnostic: String? {
+        switch loadingMode {
+        case .fileBacked:
+            return "URL-hub opened the extension action.default_popup through the controlled file-backed compatibility popup host."
+        #if DEBUG
+        case .diagnosticCustomScheme:
+            return "URL-hub opened the extension action.default_popup through the DEBUG-only controlled custom-scheme diagnostic popup host."
+        #endif
+        }
     }
 
     func createWebView(

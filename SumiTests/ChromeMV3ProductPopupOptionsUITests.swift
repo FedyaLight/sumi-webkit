@@ -898,8 +898,8 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
             )
         )
         XCTAssertTrue(
-            moduleSource.contains(
-                "controlledCompatibilityActionPopupDiagnosticSchemeDefaultsKey"
+            hostSource.contains(
+                "controlledCompatibilityDefault"
             )
         )
     }

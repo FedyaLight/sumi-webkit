@@ -440,7 +440,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         )
         XCTAssertFalse(module.hasLoadedWebExtensionController)
         XCTAssertTrue(result.sanitizedBridgeSnapshotDiagnostics.contains {
-            $0.contains("controlled file-backed compatibility popup host")
+            $0.contains("controlled MV3 compatibility host")
         })
 
         let close = module.chromeMV3ClosePopupOptionsThroughManager(
@@ -736,10 +736,6 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
 
         let nativeHostWasRunning =
             bitwardenNativeHostRunningApplicationIdentifiers()
-        UserDefaults.standard.removeObject(
-            forKey: ExtensionManager
-                .controlledCompatibilityActionPopupDiagnosticSchemeDefaultsKey
-        )
         UserDefaults.standard.set(
             true,
             forKey: ExtensionManager
@@ -749,10 +745,6 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             UserDefaults.standard.removeObject(
                 forKey: ExtensionManager
                     .controlledCompatibilityActionPopupDefaultsKey
-            )
-            UserDefaults.standard.removeObject(
-                forKey: ExtensionManager
-                    .controlledCompatibilityActionPopupDiagnosticSchemeDefaultsKey
             )
         }
         XCTAssertTrue(
@@ -764,7 +756,15 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
 
         let root = try makeTemporaryDirectory()
         let profileID = UUID()
-        let module = try makeModule(enabled: true, includesModelContext: true)
+        let module = try makeModule(
+            enabled: true,
+            includesModelContext: true,
+            popupOptionsWebViewFactory: {
+                ChromeMV3ProductPopupOptionsWKWebViewFactory(
+                    loadingMode: .fileBacked
+                )
+            }
+        )
         let install = module.chromeMV3InstallUnpackedThroughManager(
             rootURL: root,
             sourceURL: bitwardenRoot,
@@ -884,19 +884,10 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             forKey: ExtensionManager
                 .controlledCompatibilityActionPopupDefaultsKey
         )
-        UserDefaults.standard.set(
-            true,
-            forKey: ExtensionManager
-                .controlledCompatibilityActionPopupDiagnosticSchemeDefaultsKey
-        )
         defer {
             UserDefaults.standard.removeObject(
                 forKey: ExtensionManager
                     .controlledCompatibilityActionPopupDefaultsKey
-            )
-            UserDefaults.standard.removeObject(
-                forKey: ExtensionManager
-                    .controlledCompatibilityActionPopupDiagnosticSchemeDefaultsKey
             )
         }
         XCTAssertTrue(
@@ -905,24 +896,10 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                     .controlledCompatibilityActionPopupDefaultsKey
             )
         )
-        XCTAssertTrue(
-            RuntimeDiagnostics.debugDefaultBool(
-                forKey: ExtensionManager
-                    .controlledCompatibilityActionPopupDiagnosticSchemeDefaultsKey
-            )
-        )
 
         let root = try makeTemporaryDirectory()
         let profileID = UUID()
-        let module = try makeModule(
-            enabled: true,
-            includesModelContext: true,
-            popupOptionsWebViewFactory: {
-                ChromeMV3ProductPopupOptionsWKWebViewFactory(
-                    loadingMode: .diagnosticCustomScheme
-                )
-            }
-        )
+        let module = try makeModule(enabled: true, includesModelContext: true)
         let install = module.chromeMV3InstallUnpackedThroughManager(
             rootURL: root,
             sourceURL: bitwardenRoot,
@@ -1792,8 +1769,8 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             )
         )
         XCTAssertTrue(
-            moduleSource.contains(
-                "controlledCompatibilityActionPopupDiagnosticSchemeDefaultsKey"
+            popupOptionsSource.contains(
+                "controlledCompatibilityDefault"
             )
         )
         XCTAssertTrue(popupOptionsSource.contains("case diagnosticCustomScheme"))
