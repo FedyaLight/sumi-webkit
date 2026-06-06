@@ -256,6 +256,7 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
                 ]
                 #if DEBUG
                 methods.append("extension.getBackgroundPage")
+                methods.append("runtime.onMessage")
                 methods.append("tabs.getCurrent")
                 #endif
                 return methods
@@ -2334,6 +2335,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         "console",
         "csp",
         "dom",
+        "extensionPage",
         "host",
         "i18n",
         "manifest",
@@ -6305,6 +6307,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
             controlledNavigatorCompatibilitySurface
             && configuration.allowlist.allowedMethods
                 .contains("extension.getBackgroundPage")
+        let controlledRuntimeOnMessageCompatibilitySurface =
+            configuration.allowlist.allowedMethods
+                .contains("runtime.onMessage")
         let tabsGetCurrentSource =
             controlledTabsGetCurrentCompatibilitySurface
                 ? """
@@ -6317,11 +6322,28 @@ enum ChromeMV3PopupOptionsJSShimSource {
           });
         """
                 : ""
+        let runtimeOnMessageSource =
+            controlledRuntimeOnMessageCompatibilitySurface
+                ? """
+          const runtimeOnMessage = makeEvent("runtime.onMessage", {
+            runtimeOnMessage: true
+          });
+          Object.defineProperty(runtime, "onMessage", {
+            get() {
+              runtimeOnMessage.__sumiDebugAccess();
+              return runtimeOnMessage;
+            },
+            enumerable: true
+          });
+        """
+                : ""
         #else
         let controlledNavigatorCompatibilitySurface = false
         let controlledTabsGetCurrentCompatibilitySurface = false
         let controlledExtensionGetBackgroundPageCompatibilitySurface = false
+        let controlledRuntimeOnMessageCompatibilitySurface = false
         let tabsGetCurrentSource = ""
+        let runtimeOnMessageSource = ""
         #endif
         let configJSON = jsonString([
             "extensionID": configuration.extensionID,
@@ -6334,6 +6356,8 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 controlledTabsGetCurrentCompatibilitySurface,
             "controlledExtensionGetBackgroundPageCompatibilitySurface":
                 controlledExtensionGetBackgroundPageCompatibilitySurface,
+            "controlledRuntimeOnMessageCompatibilitySurface":
+                controlledRuntimeOnMessageCompatibilitySurface,
             "extensionBaseURLString": configuration.extensionBaseURLString,
             "runtimeManifest":
                 configuration.runtimeManifest?.manifestPayload
@@ -6870,8 +6894,24 @@ enum ChromeMV3PopupOptionsJSShimSource {
             const eventOptions = options || {};
             const storageAreaName = eventOptions.storageAreaName || null;
             const isStorageAreaEvent = !!storageAreaName;
+            const isRuntimeOnMessageEvent =
+              eventOptions.runtimeOnMessage === true;
+            let accessLogged = false;
             function notifyListenerCountChanged(resultClassifier) {
               notifyPermissionListenerCount(eventName, listeners.length);
+              if (isRuntimeOnMessageEvent) {
+                debugRuntimeOnMessageEvent(resultClassifier, listeners.length, [
+                  "eventObjectPresent=true",
+                  "listenerCount=" + String(listeners.length),
+                  "listenerRegistryScope=pageSession;profile;extension",
+                  "sourceContext=" + config.sourceContext,
+                  "targetContext=extensionPage",
+                  "senderMetadataShape=none",
+                  "responseClassifier=registrationOnly",
+                  "inboundRoute=notWired",
+                  "No raw message bodies, storage values, form values, URLs, or private payloads are recorded."
+                ]);
+              }
               if (isStorageAreaEvent) {
                 debugStorageEvent("extensionMethodCalled", {
                   apiName: "chrome.storage." + storageAreaName + ".onChanged",
@@ -6912,6 +6952,23 @@ enum ChromeMV3PopupOptionsJSShimSource {
               },
               __sumiListenerCount() {
                 return listeners.length;
+              },
+              __sumiDebugAccess() {
+                if (!isRuntimeOnMessageEvent || accessLogged) {
+                  return;
+                }
+                accessLogged = true;
+                debugRuntimeOnMessageEvent("event object present", listeners.length, [
+                  "eventObjectPresent=true",
+                  "listenerCount=" + String(listeners.length),
+                  "listenerRegistryScope=pageSession;profile;extension",
+                  "sourceContext=" + config.sourceContext,
+                  "targetContext=extensionPage",
+                  "senderMetadataShape=none",
+                  "responseClassifier=registrationOnly",
+                  "inboundRoute=notWired",
+                  "No raw message bodies, storage values, form values, URLs, or private payloads are recorded."
+                ]);
               },
               __sumiDispatch() {
                 const args = Array.prototype.slice.call(arguments);
@@ -7337,6 +7394,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
             },
             enumerable: true
           });
+          \(runtimeOnMessageSource)
 
           Object.defineProperty(runtime, "connect", {
             value() {
@@ -7929,6 +7987,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
           function debugCallbackLastError(namespace, methodName, message) {}
           function debugPromiseRejected(namespace, methodName, message) {}
           function debugMissingAPI(apiName, resultClassifier, targetContext) {}
+          function debugRuntimeOnMessageEvent(resultClassifier, listenerCount, diagnostics) {}
           function debugStorageEvent(eventKind, record) {}
           function debugStorageChangeValueShape(changes) { return "none"; }
           function debugPortEvent(eventKind, record) {}
@@ -8645,6 +8704,30 @@ enum ChromeMV3PopupOptionsJSShimSource {
               diagnostics: [
                 "Missing or unsupported chrome.* namespace/property was accessed by the popup."
               ]
+            });
+          }
+
+          function debugRuntimeOnMessageEvent(resultClassifier, listenerCount, diagnostics) {
+            debugRecord("extensionMethodCalled", {
+              apiName: "chrome.runtime.onMessage",
+              targetContext: "extensionPage",
+              resultClassifier: resultClassifier || "runtime.onMessage event observed",
+              firstMissingAPIOrPermissionOrLifecycleError: null,
+              safeMessageShapeClassification: "runtimeOnMessageEvent",
+              safeCommandTypeActionFieldNames: [],
+              diagnostics: Array.isArray(diagnostics)
+                ? diagnostics
+                : [
+                    "eventObjectPresent=true",
+                    "listenerCount=" + String(listenerCount || 0),
+                    "listenerRegistryScope=pageSession;profile;extension",
+                    "sourceContext=" + config.sourceContext,
+                    "targetContext=extensionPage",
+                    "senderMetadataShape=none",
+                    "responseClassifier=registrationOnly",
+                    "inboundRoute=notWired",
+                    "No raw message bodies, storage values, form values, URLs, or private payloads are recorded."
+                  ]
             });
           }
 

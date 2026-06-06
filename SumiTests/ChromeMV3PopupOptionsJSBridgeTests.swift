@@ -534,6 +534,14 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             controlledPolicy.allowedMethods.contains("runtime.getManifest")
         )
         XCTAssertTrue(
+            controlledPolicy.allowedMethods.contains("runtime.onMessage")
+        )
+        XCTAssertFalse(
+            ChromeMV3PopupOptionsAPIMethodPolicy.defaultPolicy
+                .allowedMethods
+                .contains("runtime.onMessage")
+        )
+        XCTAssertTrue(
             controlledPolicy.allowedMethods.contains("storage.session.get")
         )
         XCTAssertTrue(
@@ -676,6 +684,24 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         )
         XCTAssertTrue(
             source.contains("runtimeManifestTemplate")
+        )
+        XCTAssertTrue(
+            source.contains(
+                "\"controlledRuntimeOnMessageCompatibilitySurface\""
+            )
+        )
+        XCTAssertTrue(
+            source.contains("Object.defineProperty(runtime, \"onMessage\"")
+        )
+        XCTAssertTrue(source.contains("makeEvent(\"runtime.onMessage\""))
+        XCTAssertTrue(source.contains("debugRuntimeOnMessageEvent"))
+        XCTAssertTrue(source.contains("targetContext=extensionPage"))
+        XCTAssertTrue(source.contains("responseClassifier=registrationOnly"))
+        XCTAssertTrue(source.contains("inboundRoute=notWired"))
+        XCTAssertTrue(
+            source.contains(
+                "No raw message bodies, storage values, form values, URLs, or private payloads are recorded."
+            )
         )
         XCTAssertTrue(
             source.contains("deepCloneJSONCompatible(runtimeManifestTemplate)")
@@ -881,6 +907,16 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         )
         XCTAssertTrue(
             controlledActionPopupSource.contains(
+                "\"controlledRuntimeOnMessageCompatibilitySurface\":true"
+            )
+        )
+        XCTAssertTrue(
+            controlledActionPopupSource.contains(
+                "Object.defineProperty(runtime, \"onMessage\""
+            )
+        )
+        XCTAssertTrue(
+            controlledActionPopupSource.contains(
                 "Object.defineProperty(target, \"extension\""
             )
         )
@@ -905,6 +941,16 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
                 "\"controlledExtensionGetBackgroundPageCompatibilitySurface\":false"
             )
         )
+        XCTAssertTrue(
+            defaultActionPopupSource.contains(
+                "\"controlledRuntimeOnMessageCompatibilitySurface\":false"
+            )
+        )
+        XCTAssertFalse(
+            defaultActionPopupSource.contains(
+                "Object.defineProperty(runtime, \"onMessage\""
+            )
+        )
         XCTAssertFalse(
             controlledOptionsPageSource.contains(
                 "Object.defineProperty(tabs, \"getCurrent\""
@@ -913,6 +959,16 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(
             controlledOptionsPageSource.contains(
                 "\"controlledExtensionGetBackgroundPageCompatibilitySurface\":false"
+            )
+        )
+        XCTAssertTrue(
+            controlledOptionsPageSource.contains(
+                "\"controlledRuntimeOnMessageCompatibilitySurface\":true"
+            )
+        )
+        XCTAssertTrue(
+            controlledOptionsPageSource.contains(
+                "Object.defineProperty(runtime, \"onMessage\""
             )
         )
     }
@@ -2708,6 +2764,32 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             const sessionChanges = [];
             const syncChanges = [];
             const browserLocalChanges = [];
+            const runtimeMessages = [];
+            const runtimeListener = function(message, sender, sendResponse) {
+              runtimeMessages.push({
+                argCount: arguments.length,
+                hasSender: !!sender,
+                sendResponseType: typeof sendResponse
+              });
+            };
+            const removedRuntimeListener = function() {};
+            const hasRuntimeOnMessageMethods =
+              !!chrome.runtime.onMessage
+              && typeof chrome.runtime.onMessage.addListener === "function"
+              && typeof chrome.runtime.onMessage.removeListener === "function"
+              && typeof chrome.runtime.onMessage.hasListener === "function"
+              && typeof chrome.runtime.onMessage.hasListeners === "function";
+            const browserRuntimeOnMessageSameObject =
+              browser.runtime.onMessage === chrome.runtime.onMessage;
+            chrome.runtime.onMessage.addListener(runtimeListener);
+            chrome.runtime.onMessage.addListener(removedRuntimeListener);
+            const runtimeHasListenerBeforeRemove =
+              chrome.runtime.onMessage.hasListener(runtimeListener);
+            const runtimeHasListenersBeforeRemove =
+              chrome.runtime.onMessage.hasListeners();
+            chrome.runtime.onMessage.removeListener(removedRuntimeListener);
+            const runtimeRemovedHasListenerAfterRemove =
+              chrome.runtime.onMessage.hasListener(removedRuntimeListener);
             chrome.storage.onChanged.addListener((changesObject, areaName) => {
               changes.push({
                 areaName,
@@ -2844,6 +2926,12 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
               hasBrowserLocalAreaOnChanged:
                 !!browser.storage.local.onChanged
                 && typeof browser.storage.local.onChanged.addListener === "function",
+              hasRuntimeOnMessageMethods,
+              browserRuntimeOnMessageSameObject,
+              runtimeHasListenerBeforeRemove,
+              runtimeHasListenersBeforeRemove,
+              runtimeRemovedHasListenerAfterRemove,
+              runtimeMessageDispatchCount: runtimeMessages.length,
               localHasListenerBeforeRemove,
               localHasListenersBeforeRemove,
               removedLocalHasListenerAfterRemove,
@@ -2901,6 +2989,24 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertEqual(object["hasSessionAreaOnChanged"] as? Bool, true)
         XCTAssertEqual(object["hasSyncAreaOnChanged"] as? Bool, true)
         XCTAssertEqual(object["hasBrowserLocalAreaOnChanged"] as? Bool, true)
+        XCTAssertEqual(object["hasRuntimeOnMessageMethods"] as? Bool, true)
+        XCTAssertEqual(
+            object["browserRuntimeOnMessageSameObject"] as? Bool,
+            true
+        )
+        XCTAssertEqual(
+            object["runtimeHasListenerBeforeRemove"] as? Bool,
+            true
+        )
+        XCTAssertEqual(
+            object["runtimeHasListenersBeforeRemove"] as? Bool,
+            true
+        )
+        XCTAssertEqual(
+            object["runtimeRemovedHasListenerAfterRemove"] as? Bool,
+            false
+        )
+        XCTAssertEqual(object["runtimeMessageDispatchCount"] as? Int, 0)
         XCTAssertEqual(object["localHasListenerBeforeRemove"] as? Bool, true)
         XCTAssertEqual(
             object["localHasListenersBeforeRemove"] as? Bool,
@@ -2964,7 +3070,39 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(snapshot.observedMethods.contains("storage.session.set"))
         XCTAssertTrue(snapshot.observedMethods.contains("storage.sync.set"))
         XCTAssertTrue(snapshot.observedMethods.contains("tabs.getCurrent"))
-        XCTAssertTrue(snapshot.observedMethods.contains("tabs.sendMessage"))
+        XCTAssertTrue(
+            snapshot.observedMethods.contains("tabs.sendMessage"),
+            "observedMethods=\(snapshot.observedMethods)"
+        )
+        XCTAssertTrue(snapshot.jsDebugRouteEvents.contains {
+            $0.apiName == "chrome.runtime.onMessage"
+                && $0.targetContext == "extensionPage"
+                && $0.resultClassifier == "event object present"
+                && $0.diagnostics.contains("eventObjectPresent=true")
+                && $0.diagnostics.contains("listenerCount=0")
+                && $0.diagnostics.contains(
+                    "listenerRegistryScope=pageSession;profile;extension"
+                )
+                && $0.diagnostics.contains("sourceContext=actionPopup")
+                && $0.diagnostics.contains("targetContext=extensionPage")
+                && $0.diagnostics.contains("senderMetadataShape=none")
+                && $0.diagnostics.contains("responseClassifier=registrationOnly")
+                && $0.diagnostics.contains("inboundRoute=notWired")
+        })
+        XCTAssertTrue(snapshot.jsDebugRouteEvents.contains {
+            $0.apiName == "chrome.runtime.onMessage"
+                && $0.resultClassifier == "listener added"
+                && $0.diagnostics.contains("listenerCount=2")
+                && $0.diagnostics.contains("responseClassifier=registrationOnly")
+                && $0.diagnostics.contains("inboundRoute=notWired")
+        })
+        XCTAssertTrue(snapshot.jsDebugRouteEvents.contains {
+            $0.apiName == "chrome.runtime.onMessage"
+                && $0.resultClassifier == "listener removed"
+                && $0.diagnostics.contains("listenerCount=1")
+                && $0.diagnostics.contains("responseClassifier=registrationOnly")
+                && $0.diagnostics.contains("inboundRoute=notWired")
+        })
         XCTAssertTrue(snapshot.jsDebugRouteEvents.contains {
             $0.apiName == "chrome.storage.local.onChanged"
                 && $0.targetContext == "storage.local"
@@ -3008,6 +3146,8 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(encodedSnapshot.contains("syncAlpha"))
         XCTAssertFalse(encodedSnapshot.contains("session-beta"))
         XCTAssertFalse(encodedSnapshot.contains("sync-beta"))
+        XCTAssertFalse(encodedSnapshot.contains("runtimeMessages"))
+        XCTAssertFalse(encodedSnapshot.contains("sendResponseType"))
     }
 
     @MainActor
