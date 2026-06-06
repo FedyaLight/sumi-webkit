@@ -2070,7 +2070,7 @@ struct SpacesSideBarView: View {
             }
 
         return makeSidebarShellContextMenuEntries(
-            isCompactModeEnabled: sumiSettings.sidebarCompactSpaces,
+            isCompactModeEnabled: !windowState.isSidebarVisible,
             actions: .init(
                 newTab: {
                     browserManager.showNewTabFloatingBar(in: windowState)
@@ -2078,7 +2078,7 @@ struct SpacesSideBarView: View {
                 newFolder: newFolderAction,
                 changeTheme: changeThemeAction,
                 toggleCompactMode: {
-                    sumiSettings.sidebarCompactSpaces.toggle()
+                    browserManager.toggleSidebar(for: windowState)
                 },
                 openSettings: {
                     browserManager.openSettingsTab(selecting: .appearance, in: windowState)
