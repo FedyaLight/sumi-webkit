@@ -553,6 +553,36 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             controlledPolicy.allowedMethods.contains("storage.sync.get")
         )
         XCTAssertTrue(
+            controlledPolicy.allowedMethods.contains(
+                "storage.local.onChanged"
+            )
+        )
+        XCTAssertTrue(
+            controlledPolicy.allowedMethods.contains(
+                "storage.session.onChanged"
+            )
+        )
+        XCTAssertTrue(
+            controlledPolicy.allowedMethods.contains(
+                "storage.sync.onChanged"
+            )
+        )
+        XCTAssertFalse(
+            ChromeMV3PopupOptionsAPIMethodPolicy.defaultPolicy
+                .allowedMethods
+                .contains("storage.local.onChanged")
+        )
+        XCTAssertFalse(
+            ChromeMV3PopupOptionsAPIMethodPolicy.defaultPolicy
+                .allowedMethods
+                .contains("storage.session.onChanged")
+        )
+        XCTAssertFalse(
+            ChromeMV3PopupOptionsAPIMethodPolicy.defaultPolicy
+                .allowedMethods
+                .contains("storage.sync.onChanged")
+        )
+        XCTAssertTrue(
             controlledPolicy.allowedMethods.contains("i18n.getMessage")
         )
         XCTAssertTrue(
@@ -745,6 +775,24 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(
             source.contains("[\"local\", \"session\", \"sync\"]")
         )
+        XCTAssertTrue(source.contains("storageAreaOnChanged"))
+        XCTAssertTrue(source.contains("storageLocalOnChangedExposed"))
+        XCTAssertTrue(source.contains("storageSessionOnChangedExposed"))
+        XCTAssertTrue(source.contains("storageSyncOnChangedExposed"))
+        XCTAssertTrue(
+            source.contains("Object.defineProperty(local, \"onChanged\"")
+        )
+        XCTAssertTrue(
+            source.contains("Object.defineProperty(session, \"onChanged\"")
+        )
+        XCTAssertTrue(
+            source.contains("Object.defineProperty(sync, \"onChanged\"")
+        )
+        XCTAssertTrue(source.contains("debugStorageEvent"))
+        XCTAssertTrue(source.contains("eventObjectPresent=true"))
+        XCTAssertTrue(source.contains("listenerCount="))
+        XCTAssertTrue(source.contains("changedKeyCount="))
+        XCTAssertTrue(source.contains("debugStorageChangeValueShape"))
         XCTAssertTrue(
             source.contains("debugPostGetManifestBootstrapSentinel(true)")
         )
@@ -2655,10 +2703,85 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         let raw = try await handle.callAsyncJavaScriptForTesting(
             """
             const changes = [];
+            const localChanges = [];
+            const localRemovedChanges = [];
+            const sessionChanges = [];
+            const syncChanges = [];
+            const browserLocalChanges = [];
             chrome.storage.onChanged.addListener((changesObject, areaName) => {
-              changes.push({ areaName, value: changesObject.alpha.newValue });
+              changes.push({
+                areaName,
+                hasAlpha: Object.prototype.hasOwnProperty.call(changesObject, "alpha"),
+                changedKeyCount: Object.keys(changesObject).length
+              });
+            });
+            const localListener = (changesObject, areaName) => {
+              localChanges.push({
+                areaName,
+                hasOldValue: Object.prototype.hasOwnProperty.call(
+                  changesObject.alpha || {},
+                  "oldValue"
+                ),
+                oldValue: changesObject.alpha && changesObject.alpha.oldValue,
+                hasNewValue: Object.prototype.hasOwnProperty.call(
+                  changesObject.alpha || {},
+                  "newValue"
+                ),
+                newValue: changesObject.alpha && changesObject.alpha.newValue
+              });
+            };
+            const removedLocalListener = (changesObject, areaName) => {
+              localRemovedChanges.push({ areaName });
+            };
+            chrome.storage.local.onChanged.addListener(localListener);
+            chrome.storage.local.onChanged.addListener(removedLocalListener);
+            const localHasListenerBeforeRemove =
+              chrome.storage.local.onChanged.hasListener(localListener);
+            const localHasListenersBeforeRemove =
+              chrome.storage.local.onChanged.hasListeners();
+            chrome.storage.local.onChanged.removeListener(removedLocalListener);
+            const removedLocalHasListenerAfterRemove =
+              chrome.storage.local.onChanged.hasListener(removedLocalListener);
+            browser.storage.local.onChanged.addListener((changesObject, areaName) => {
+              browserLocalChanges.push({
+                areaName,
+                hasAlpha: Object.prototype.hasOwnProperty.call(changesObject, "alpha")
+              });
+            });
+            chrome.storage.session.onChanged.addListener((changesObject, areaName) => {
+              sessionChanges.push({
+                areaName,
+                changedKeyCount: Object.keys(changesObject).length,
+                hasSessionAlpha:
+                  Object.prototype.hasOwnProperty.call(changesObject, "sessionAlpha"),
+                setNewValue:
+                  changesObject.sessionAlpha
+                  && changesObject.sessionAlpha.newValue,
+                clearOldValue:
+                  changesObject.sessionAlpha
+                  && changesObject.sessionAlpha.oldValue,
+                clearHasNewValue:
+                  Object.prototype.hasOwnProperty.call(
+                    changesObject.sessionAlpha || {},
+                    "newValue"
+                  )
+              });
+            });
+            browser.storage.sync.onChanged.addListener((changesObject, areaName) => {
+              syncChanges.push({
+                areaName,
+                hasSyncAlpha:
+                  Object.prototype.hasOwnProperty.call(changesObject, "syncAlpha"),
+                newValue:
+                  changesObject.syncAlpha
+                  && changesObject.syncAlpha.newValue
+              });
             });
             await chrome.storage.local.set({ alpha: "beta" });
+            await chrome.storage.session.set({ sessionAlpha: "session-beta" });
+            await chrome.storage.sync.set({ syncAlpha: "sync-beta" });
+            await chrome.storage.local.remove("alpha");
+            await chrome.storage.session.clear();
             const stored = await chrome.storage.local.get("alpha");
             const tabs = await chrome.tabs.query({ active: true });
             const chromeCurrent = await chrome.tabs.getCurrent();
@@ -2702,9 +2825,49 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             await new Promise((resolve) => setTimeout(resolve, 60));
             return {
               hasChrome: !!chrome.runtime && !!browser.runtime,
-              stored: stored.alpha,
+              storedHasAlpha: Object.prototype.hasOwnProperty.call(stored, "alpha"),
               changeCount: changes.length,
               changeArea: changes[0] && changes[0].areaName,
+              globalAreas: changes.map((entry) => entry.areaName).sort(),
+              hasLocalAreaOnChanged:
+                !!chrome.storage.local.onChanged
+                && typeof chrome.storage.local.onChanged.addListener === "function"
+                && typeof chrome.storage.local.onChanged.removeListener === "function"
+                && typeof chrome.storage.local.onChanged.hasListener === "function"
+                && typeof chrome.storage.local.onChanged.hasListeners === "function",
+              hasSessionAreaOnChanged:
+                !!chrome.storage.session.onChanged
+                && typeof chrome.storage.session.onChanged.addListener === "function",
+              hasSyncAreaOnChanged:
+                !!chrome.storage.sync.onChanged
+                && typeof chrome.storage.sync.onChanged.addListener === "function",
+              hasBrowserLocalAreaOnChanged:
+                !!browser.storage.local.onChanged
+                && typeof browser.storage.local.onChanged.addListener === "function",
+              localHasListenerBeforeRemove,
+              localHasListenersBeforeRemove,
+              removedLocalHasListenerAfterRemove,
+              localChangeCount: localChanges.length,
+              localAreas: localChanges.map((entry) => entry.areaName).sort(),
+              localSetHasOldValue: localChanges[0] && localChanges[0].hasOldValue,
+              localSetHasNewValue: localChanges[0] && localChanges[0].hasNewValue,
+              localSetNewValue: localChanges[0] && localChanges[0].newValue,
+              localRemoveOldValue: localChanges[1] && localChanges[1].oldValue,
+              localRemoveHasNewValue: localChanges[1] && localChanges[1].hasNewValue,
+              localRemovedListenerCount: localRemovedChanges.length,
+              browserLocalChangeCount: browserLocalChanges.length,
+              browserLocalAreas:
+                browserLocalChanges.map((entry) => entry.areaName).sort(),
+              sessionChangeCount: sessionChanges.length,
+              sessionAreas: sessionChanges.map((entry) => entry.areaName).sort(),
+              sessionSetNewValue: sessionChanges[0] && sessionChanges[0].setNewValue,
+              sessionClearOldValue:
+                sessionChanges[1] && sessionChanges[1].clearOldValue,
+              sessionClearHasNewValue:
+                sessionChanges[1] && sessionChanges[1].clearHasNewValue,
+              syncChangeCount: syncChanges.length,
+              syncAreas: syncChanges.map((entry) => entry.areaName).sort(),
+              syncSetNewValue: syncChanges[0] && syncChanges[0].newValue,
               tabURL: tabs[0] && tabs[0].url,
               chromeCurrentIsUndefined: chromeCurrent === undefined,
               browserCurrentIsUndefined: browserCurrent === undefined,
@@ -2727,9 +2890,56 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         let object = try XCTUnwrap(raw as? [String: Any])
 
         XCTAssertEqual(object["hasChrome"] as? Bool, true)
-        XCTAssertEqual(object["stored"] as? String, "beta")
-        XCTAssertEqual(object["changeCount"] as? Int, 1)
+        XCTAssertEqual(object["storedHasAlpha"] as? Bool, false)
+        XCTAssertEqual(object["changeCount"] as? Int, 5)
         XCTAssertEqual(object["changeArea"] as? String, "local")
+        XCTAssertEqual(
+            object["globalAreas"] as? [String],
+            ["local", "local", "session", "session", "sync"]
+        )
+        XCTAssertEqual(object["hasLocalAreaOnChanged"] as? Bool, true)
+        XCTAssertEqual(object["hasSessionAreaOnChanged"] as? Bool, true)
+        XCTAssertEqual(object["hasSyncAreaOnChanged"] as? Bool, true)
+        XCTAssertEqual(object["hasBrowserLocalAreaOnChanged"] as? Bool, true)
+        XCTAssertEqual(object["localHasListenerBeforeRemove"] as? Bool, true)
+        XCTAssertEqual(
+            object["localHasListenersBeforeRemove"] as? Bool,
+            true
+        )
+        XCTAssertEqual(
+            object["removedLocalHasListenerAfterRemove"] as? Bool,
+            false
+        )
+        XCTAssertEqual(object["localChangeCount"] as? Int, 2)
+        XCTAssertEqual(object["localAreas"] as? [String], ["local", "local"])
+        XCTAssertEqual(object["localSetHasOldValue"] as? Bool, false)
+        XCTAssertEqual(object["localSetHasNewValue"] as? Bool, true)
+        XCTAssertEqual(object["localSetNewValue"] as? String, "beta")
+        XCTAssertEqual(object["localRemoveOldValue"] as? String, "beta")
+        XCTAssertEqual(object["localRemoveHasNewValue"] as? Bool, false)
+        XCTAssertEqual(object["localRemovedListenerCount"] as? Int, 0)
+        XCTAssertEqual(object["browserLocalChangeCount"] as? Int, 2)
+        XCTAssertEqual(
+            object["browserLocalAreas"] as? [String],
+            ["local", "local"]
+        )
+        XCTAssertEqual(object["sessionChangeCount"] as? Int, 2)
+        XCTAssertEqual(
+            object["sessionAreas"] as? [String],
+            ["session", "session"]
+        )
+        XCTAssertEqual(
+            object["sessionSetNewValue"] as? String,
+            "session-beta"
+        )
+        XCTAssertEqual(
+            object["sessionClearOldValue"] as? String,
+            "session-beta"
+        )
+        XCTAssertEqual(object["sessionClearHasNewValue"] as? Bool, false)
+        XCTAssertEqual(object["syncChangeCount"] as? Int, 1)
+        XCTAssertEqual(object["syncAreas"] as? [String], ["sync"])
+        XCTAssertEqual(object["syncSetNewValue"] as? String, "sync-beta")
         XCTAssertEqual(object["tabURL"] as? String, "https://example.com/login")
         XCTAssertEqual(object["chromeCurrentIsUndefined"] as? Bool, true)
         XCTAssertEqual(object["browserCurrentIsUndefined"] as? Bool, true)
@@ -2751,8 +2961,34 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         )
         XCTAssertTrue(snapshot.observedMethods.contains("runtime.getManifest"))
         XCTAssertTrue(snapshot.observedMethods.contains("storage.local.set"))
+        XCTAssertTrue(snapshot.observedMethods.contains("storage.session.set"))
+        XCTAssertTrue(snapshot.observedMethods.contains("storage.sync.set"))
         XCTAssertTrue(snapshot.observedMethods.contains("tabs.getCurrent"))
         XCTAssertTrue(snapshot.observedMethods.contains("tabs.sendMessage"))
+        XCTAssertTrue(snapshot.jsDebugRouteEvents.contains {
+            $0.apiName == "chrome.storage.local.onChanged"
+                && $0.targetContext == "storage.local"
+                && $0.resultClassifier == "storage area onChanged dispatched"
+                && $0.diagnostics.contains("area=local")
+                && $0.diagnostics.contains("eventObjectPresent=true")
+                && $0.diagnostics.contains("listenerCount=2")
+                && $0.diagnostics.contains("globalListenerCount=1")
+                && $0.diagnostics.contains("changedKeyCount=1")
+        })
+        XCTAssertTrue(snapshot.jsDebugRouteEvents.contains {
+            $0.apiName == "chrome.storage.session.onChanged"
+                && $0.targetContext == "storage.session"
+                && $0.resultClassifier == "storage area onChanged dispatched"
+                && $0.diagnostics.contains("listenerCount=1")
+                && $0.diagnostics.contains("changedKeyCount=1")
+        })
+        XCTAssertTrue(snapshot.jsDebugRouteEvents.contains {
+            $0.apiName == "chrome.storage.sync.onChanged"
+                && $0.targetContext == "storage.sync"
+                && $0.resultClassifier == "storage area onChanged dispatched"
+                && $0.diagnostics.contains("listenerCount=1")
+                && $0.diagnostics.contains("changedKeyCount=1")
+        })
         XCTAssertTrue(snapshot.callRecords.contains {
             $0.namespace == "tabs"
                 && $0.methodName == "getCurrent"
@@ -2764,6 +3000,14 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(snapshot.callRecords.allSatisfy {
             $0.nativeHostLaunchAttempted == false
         })
+        let encodedSnapshot = String(
+            data: try JSONEncoder().encode(snapshot),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertFalse(encodedSnapshot.contains("sessionAlpha"))
+        XCTAssertFalse(encodedSnapshot.contains("syncAlpha"))
+        XCTAssertFalse(encodedSnapshot.contains("session-beta"))
+        XCTAssertFalse(encodedSnapshot.contains("sync-beta"))
     }
 
     @MainActor

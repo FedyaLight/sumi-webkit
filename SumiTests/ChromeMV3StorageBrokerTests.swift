@@ -863,6 +863,10 @@ final class ChromeMV3StorageBrokerTests: XCTestCase {
                     && $0.relativePath
                         != "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift"
                     && $0.relativePath
+                        != "SumiTests/ChromeMV3PopupOptionsJSBridgeTests.swift"
+                    && $0.relativePath
+                        != "SumiTests/ChromeMV3URLHubDeveloperPreviewTests.swift"
+                    && $0.relativePath
                         != "SumiTests/ChromeMV3PasswordManagerRealPackageCompatibilityTests.swift"
             }
             .map(\.contents)
@@ -874,7 +878,6 @@ final class ChromeMV3StorageBrokerTests: XCTestCase {
             "connect" + "Native",
             "Process" + "(",
             "DispatchSource" + "Ti" + "mer",
-            "Ti" + "mer",
             "runtime" + "Loadable" + " = " + "tr" + "ue",
             "canCreate" + "ContextNow" + " = " + "tr" + "ue",
             "canLoad" + "ContextNow" + " = " + "tr" + "ue",

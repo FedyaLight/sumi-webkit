@@ -235,17 +235,20 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
                     "storage.local.clear",
                     "storage.local.get",
                     "storage.local.getBytesInUse",
+                    "storage.local.onChanged",
                     "storage.local.remove",
                     "storage.local.set",
                     "storage.onChanged",
                     "storage.session.clear",
                     "storage.session.get",
                     "storage.session.getBytesInUse",
+                    "storage.session.onChanged",
                     "storage.session.remove",
                     "storage.session.set",
                     "storage.sync.clear",
                     "storage.sync.get",
                     "storage.sync.getBytesInUse",
+                    "storage.sync.onChanged",
                     "storage.sync.remove",
                     "storage.sync.set",
                     "tabs.query",
@@ -6355,6 +6358,15 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 .contains("storage.sync")
                 && configuration.allowlist.allowedMethods
                 .contains("storage.sync.get"),
+            "storageLocalOnChangedExposed":
+                configuration.allowlist.allowedMethods
+                .contains("storage.local.onChanged"),
+            "storageSessionOnChangedExposed":
+                configuration.allowlist.allowedMethods
+                .contains("storage.session.onChanged"),
+            "storageSyncOnChangedExposed":
+                configuration.allowlist.allowedMethods
+                .contains("storage.sync.onChanged"),
             "bridgeMessageHandlerName": bridgeMessageHandlerName,
         ])
         #if DEBUG
@@ -6853,20 +6865,43 @@ enum ChromeMV3PopupOptionsJSShimSource {
             ).catch(() => {});
           }
 
-          function makeEvent(eventName) {
+          function makeEvent(eventName, options) {
             const listeners = [];
+            const eventOptions = options || {};
+            const storageAreaName = eventOptions.storageAreaName || null;
+            const isStorageAreaEvent = !!storageAreaName;
+            function notifyListenerCountChanged(resultClassifier) {
+              notifyPermissionListenerCount(eventName, listeners.length);
+              if (isStorageAreaEvent) {
+                debugStorageEvent("extensionMethodCalled", {
+                  apiName: "chrome.storage." + storageAreaName + ".onChanged",
+                  targetContext: "storage." + storageAreaName,
+                  safeMessageShapeClassification: "storageEventListener",
+                  resultClassifier,
+                  diagnostics: [
+                    "area=" + storageAreaName,
+                    "eventObjectPresent=true",
+                    "listenerCount=" + String(listeners.length),
+                    "changedKeyCount=0",
+                    "valueShape=none",
+                    "resultClassifier=" + resultClassifier,
+                    "No raw storage keys or values are recorded."
+                  ]
+                });
+              }
+            }
             return Object.freeze({
               addListener(listener) {
                 if (typeof listener === "function" && !listeners.includes(listener)) {
                   listeners.push(listener);
-                  notifyPermissionListenerCount(eventName, listeners.length);
+                  notifyListenerCountChanged("listener added");
                 }
               },
               removeListener(listener) {
                 const index = listeners.indexOf(listener);
                 if (index >= 0) {
                   listeners.splice(index, 1);
-                  notifyPermissionListenerCount(eventName, listeners.length);
+                  notifyListenerCountChanged("listener removed");
                 }
               },
               hasListener(listener) {
@@ -6875,14 +6910,33 @@ enum ChromeMV3PopupOptionsJSShimSource {
               hasListeners() {
                 return listeners.length > 0;
               },
+              __sumiListenerCount() {
+                return listeners.length;
+              },
               __sumiDispatch() {
                 const args = Array.prototype.slice.call(arguments);
-                listeners.slice().forEach((listener) => listener.apply(undefined, args));
+                const snapshot = listeners.slice();
+                snapshot.forEach((listener) => listener.apply(undefined, args));
+                return {
+                  listenerCount: snapshot.length,
+                  listenerInvoked: snapshot.length > 0
+                };
               }
             });
           }
 
           const storageOnChanged = makeEvent("storage.onChanged");
+          const storageAreaOnChanged = {
+            local: config.storageLocalOnChangedExposed
+              ? makeEvent("storage.local.onChanged", { storageAreaName: "local" })
+              : null,
+            session: config.storageSessionOnChangedExposed
+              ? makeEvent("storage.session.onChanged", { storageAreaName: "session" })
+              : null,
+            sync: config.storageSyncOnChangedExposed
+              ? makeEvent("storage.sync.onChanged", { storageAreaName: "sync" })
+              : null
+          };
           const permissionsOnAdded = makeEvent("onAdded");
           const permissionsOnRemoved = makeEvent("onRemoved");
 
@@ -6914,7 +6968,35 @@ enum ChromeMV3PopupOptionsJSShimSource {
           function dispatchSyntheticStorageEvent(response) {
             const payload = normalizeOnChangedPayload(response && response.onChangedPayload);
             if (payload && Object.keys(payload.changes).length > 0) {
-              storageOnChanged.__sumiDispatch(payload.changes, payload.areaName);
+              const changedKeyCount = Object.keys(payload.changes).length;
+              const globalDispatch =
+                storageOnChanged.__sumiDispatch(payload.changes, payload.areaName);
+              const areaEvent = storageAreaOnChanged[payload.areaName] || null;
+              const areaDispatch = areaEvent
+                ? areaEvent.__sumiDispatch(payload.changes, payload.areaName)
+                : { listenerCount: 0, listenerInvoked: false };
+              debugStorageEvent("extensionMethodCalled", {
+                apiName: "chrome.storage." + payload.areaName + ".onChanged",
+                targetContext: "storage." + payload.areaName,
+                safeMessageShapeClassification: "storageEventDispatch",
+                resultClassifier: areaEvent
+                  ? "storage area onChanged dispatched"
+                  : "storage area onChanged unavailable",
+                diagnostics: [
+                  "area=" + payload.areaName,
+                  "eventObjectPresent=" + String(!!areaEvent),
+                  "listenerCount=" + String(areaDispatch.listenerCount),
+                  "globalListenerCount=" + String(globalDispatch.listenerCount),
+                  "changedKeyCount=" + String(changedKeyCount),
+                  "valueShape=" + debugStorageChangeValueShape(payload.changes),
+                  "resultClassifier=" + (
+                    areaEvent
+                      ? "storage area onChanged dispatched"
+                      : "storage area onChanged unavailable"
+                  ),
+                  "No raw storage keys or values are recorded."
+                ]
+              });
             }
           }
 
@@ -7369,7 +7451,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
           function storageAreaObject(areaName, areaObject) {
             return new Proxy(Object.freeze(areaObject), {
               get(target, prop, receiver) {
-                if (prop === "onChanged") {
+                if (prop === "onChanged" && !Reflect.has(target, prop)) {
                   debugMissingAPI(
                     "chrome.storage." + areaName + ".onChanged",
                     "missing storage." + areaName + ".onChanged",
@@ -7403,11 +7485,29 @@ enum ChromeMV3PopupOptionsJSShimSource {
           }
 
           defineStorageArea(local, "local");
+          if (storageAreaOnChanged.local) {
+            Object.defineProperty(local, "onChanged", {
+              value: storageAreaOnChanged.local,
+              enumerable: true
+            });
+          }
           if (config.storageSessionExposed) {
             defineStorageArea(session, "session");
+            if (storageAreaOnChanged.session) {
+              Object.defineProperty(session, "onChanged", {
+                value: storageAreaOnChanged.session,
+                enumerable: true
+              });
+            }
           }
           if (config.storageSyncExposed) {
             defineStorageArea(sync, "sync");
+            if (storageAreaOnChanged.sync) {
+              Object.defineProperty(sync, "onChanged", {
+                value: storageAreaOnChanged.sync,
+                enumerable: true
+              });
+            }
           }
           const runtimeObject = namespaceObject("runtime", runtime);
           Object.defineProperty(storage, "local", {
@@ -7829,6 +7929,8 @@ enum ChromeMV3PopupOptionsJSShimSource {
           function debugCallbackLastError(namespace, methodName, message) {}
           function debugPromiseRejected(namespace, methodName, message) {}
           function debugMissingAPI(apiName, resultClassifier, targetContext) {}
+          function debugStorageEvent(eventKind, record) {}
+          function debugStorageChangeValueShape(changes) { return "none"; }
           function debugPortEvent(eventKind, record) {}
           function debugRuntimeGetManifest(manifest, succeeded) {}
           function debugI18nCall(methodName, record) {}
@@ -7938,6 +8040,31 @@ enum ChromeMV3PopupOptionsJSShimSource {
               return "function";
             }
             return "value:" + type;
+          }
+
+          function debugStorageChangeValueShape(changes) {
+            if (!changes || typeof changes !== "object" || Array.isArray(changes)) {
+              return "none";
+            }
+            const shapes = [];
+            Object.keys(changes).forEach((key) => {
+              const change = changes[key];
+              if (!change || typeof change !== "object") {
+                shapes.push("change:nonObject");
+                return;
+              }
+              if (Object.prototype.hasOwnProperty.call(change, "oldValue")) {
+                shapes.push("oldValue=" + debugValueShape(change.oldValue, 0));
+              } else {
+                shapes.push("oldValue=absent");
+              }
+              if (Object.prototype.hasOwnProperty.call(change, "newValue")) {
+                shapes.push("newValue=" + debugValueShape(change.newValue, 0));
+              } else {
+                shapes.push("newValue=absent");
+              }
+            });
+            return shapes.sort().slice(0, 12).join(",");
           }
 
           function debugArgsShape(args) {
@@ -9148,6 +9275,26 @@ enum ChromeMV3PopupOptionsJSShimSource {
                     : String(delay) + "ms"
                 );
               }, delay);
+            });
+          }
+
+          function debugStorageEvent(eventKind, record) {
+            debugRecord(eventKind || "extensionMethodCalled", {
+              apiName: record && record.apiName || "chrome.storage.onChanged",
+              targetContext: record && record.targetContext || "storage.local",
+              safeMessageShapeClassification:
+                record && record.safeMessageShapeClassification || "storageEvent",
+              resultClassifier:
+                record && record.resultClassifier || "storage event observed",
+              diagnostics: record && Array.isArray(record.diagnostics)
+                ? record.diagnostics
+                : [
+                    "eventObjectPresent=true",
+                    "listenerCount=0",
+                    "changedKeyCount=0",
+                    "valueShape=none",
+                    "No raw storage keys or values are recorded."
+                  ]
             });
           }
 
