@@ -274,6 +274,30 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
                     "keyShape=objectDefaults"
                 )
         })
+        XCTAssertTrue(snapshot.appStateDependencyTrace.enabled)
+        XCTAssertEqual(
+            snapshot.appStateDependencyTrace.storageOperations.filter {
+                $0.context == "popup"
+            }.count,
+            4
+        )
+        XCTAssertTrue(
+            snapshot.appStateDependencyTrace.storageOperations.allSatisfy {
+                $0.keyHashes.allSatisfy {
+                    $0.hasPrefix("redacted-key:length=")
+                        && $0.contains(":saltedHash=")
+                }
+            }
+        )
+        XCTAssertEqual(
+            snapshot.appStateDependencyTrace.correlationSummary
+                .popupReadKeyHashesNeverWritten,
+            []
+        )
+        XCTAssertFalse(
+            snapshot.appStateDependencyTrace.correlationSummary
+                .serviceWorkerStorageWritesAfterConnect
+        )
         XCTAssertTrue(snapshot.blockedAPIs.contains {
             $0.namespace == "runtime"
                 && $0.methodName == "sendNativeMessage"
@@ -286,6 +310,71 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(encoded.contains("authToken"))
         XCTAssertFalse(encoded.contains("sessionSecret"))
         XCTAssertFalse(encoded.contains("com.bitwarden.desktop"))
+    }
+
+    func testAppStateDependencyTraceClassifiesRepeatedEmptyPopupReadsWithoutWriter()
+        throws
+    {
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                allowlist: .controlledActionPopupPolicy
+            )
+        )
+
+        let sensitiveStorageKey = "authTokenVaultSecretMustNotAppear"
+        let first = handler.handle(request(
+            namespace: "storage",
+            methodName: "local.get",
+            arguments: [.string(sensitiveStorageKey)]
+        ))
+        let second = handler.handle(request(
+            namespace: "storage",
+            methodName: "local.get",
+            arguments: [.string(sensitiveStorageKey)]
+        ))
+
+        XCTAssertTrue(first.succeeded)
+        XCTAssertEqual(first.resultPayload, .object([:]))
+        XCTAssertTrue(second.succeeded)
+        XCTAssertEqual(second.resultPayload, .object([:]))
+
+        let trace = handler.diagnosticsSnapshot.appStateDependencyTrace
+        XCTAssertEqual(
+            trace.correlationSummary.classification,
+            "appStateWaitWithNoWriter"
+        )
+        XCTAssertEqual(trace.storageOperations.count, 2)
+        XCTAssertEqual(
+            trace.correlationSummary.popupReadKeyHashesNeverWritten.count,
+            1
+        )
+        XCTAssertEqual(
+            trace.correlationSummary.repeatedEmptyReadKeyHashes,
+            trace.correlationSummary.popupReadKeyHashesNeverWritten
+        )
+        XCTAssertFalse(
+            trace.correlationSummary.serviceWorkerStorageWritesAfterConnect
+        )
+        XCTAssertFalse(
+            trace.correlationSummary
+                .storageOnChangedReachedRegisteredListeners
+        )
+
+        let encoded = String(
+            data: try JSONEncoder().encode(trace),
+            encoding: .utf8
+        ) ?? ""
+        XCTAssertFalse(encoded.contains(sensitiveStorageKey))
+        XCTAssertFalse(encoded.contains("authToken"))
+        XCTAssertFalse(encoded.contains("Vault"))
+        XCTAssertFalse(encoded.contains("Secret"))
+        XCTAssertTrue(encoded.contains("redacted-key:length="))
+        XCTAssertTrue(encoded.contains(":saltedHash="))
+        XCTAssertTrue(
+            encoded.contains(
+                "No raw storage keys or values are recorded by the app-state dependency tracer."
+            )
+        )
     }
 
     func testControlledActionPopupStorageSessionIsMemoryScopedAndLocalPersists()
@@ -827,6 +916,40 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         )
         XCTAssertTrue(
             source.contains("debugCoarseDOMState")
+        )
+        XCTAssertTrue(
+            source.contains("ChromeMV3AppStateDependencyTraceSnapshot")
+        )
+        XCTAssertTrue(
+            source.contains("appStateDependencyTraceSnapshot")
+        )
+        XCTAssertTrue(
+            source.contains("appStateWaitWithNoWriter")
+        )
+        XCTAssertTrue(
+            source.contains("appStateWaitWithMissingAPI")
+        )
+        XCTAssertTrue(
+            source.contains("appStateWaitWithSuppressedEvent")
+        )
+        XCTAssertTrue(
+            source.contains("appStateWaitWithNetworkOrAuthDependency")
+        )
+        XCTAssertTrue(
+            source.contains("sumi-mv3-app-state-v1")
+        )
+        XCTAssertTrue(
+            source.contains(":saltedHash=")
+        )
+        XCTAssertTrue(
+            source.contains(
+                "No raw storage keys or values are recorded by the app-state dependency tracer."
+            )
+        )
+        XCTAssertTrue(
+            source.contains(
+                "No product/default exposure, extension-specific branches, fake storage, fake app state, fake runtime response, or native host launch is introduced by this tracer."
+            )
         )
         XCTAssertTrue(
             source.contains("No raw storage values, message bodies, form values, manifest bodies, URLs, or private payloads were recorded.")

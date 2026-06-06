@@ -131,6 +131,7 @@ private final class ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore {
                 clearingExisting: true
             )
         }
+        session.recordAppStateServiceWorkerSnapshot(harness.snapshot)
         let onConnectCaptured = harness.capturedListener(
             for: .runtimeOnConnect
         )

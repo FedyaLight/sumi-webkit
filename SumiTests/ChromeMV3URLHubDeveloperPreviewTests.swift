@@ -2743,6 +2743,14 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 "callRecords=\(snapshot.callRecords.count)",
                 "tabsConnectActuallyFatal=\(tabsConnectFatal)",
                 "nativeHostLaunched=false",
+                "appStateClassification=\(snapshot.appStateDependencyTrace.correlationSummary.classification)",
+                "appStateServiceWorkerState=\(snapshot.appStateDependencyTrace.correlationSummary.serviceWorkerState)",
+                "appStatePopupReadsNeverWritten=\(snapshot.appStateDependencyTrace.correlationSummary.popupReadKeyHashesNeverWritten.count)",
+                "appStatePopupReadsWrittenByServiceWorker=\(snapshot.appStateDependencyTrace.correlationSummary.popupReadKeyHashesWrittenByServiceWorker.count)",
+                "appStateRepeatedEmptyReads=\(snapshot.appStateDependencyTrace.correlationSummary.repeatedEmptyReadKeyHashes.count)",
+                "appStateServiceWorkerStorageWritesAfterConnect=\(snapshot.appStateDependencyTrace.correlationSummary.serviceWorkerStorageWritesAfterConnect)",
+                "appStateStorageOnChangedReachedRegisteredListeners=\(snapshot.appStateDependencyTrace.correlationSummary.storageOnChangedReachedRegisteredListeners)",
+                "appStateUsableOnboardingLoginUI=\(snapshot.appStateDependencyTrace.correlationSummary.popupReachedUsableOnboardingOrLoginUI)",
             ]
             + extraLines
             + controlledBitwardenPopupSanitizedLogLines(snapshot)
@@ -2825,7 +2833,77 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 "diagnostics=\(route.diagnostics.joined(separator: "|"))",
             ].joined(separator: " ")
         }
+        let appStateStorageLines =
+            snapshot.appStateDependencyTrace.storageOperations.prefix(160).map {
+                record in
+                [
+                    "appStateStorage",
+                    "seq=\(record.sequence)",
+                    "context=\(record.context)",
+                    "area=\(record.area)",
+                    "op=\(record.operation)",
+                    "keyShape=\(record.keyShape)",
+                    "keyCount=\(record.keyCount)",
+                    "keyHashes=\(record.keyHashes.joined(separator: ","))",
+                    "valueShape=\(record.valueShape)",
+                    "resultShape=\(record.resultShape)",
+                    "classifier=\(record.resultClassifier)",
+                    "empty=\(record.emptyResult)",
+                    "populated=\(record.populatedResult)",
+                    "elapsedMs=\(record.elapsedMilliseconds)",
+                ].joined(separator: " ")
+            }
+        let appStateChangeLines =
+            snapshot.appStateDependencyTrace.storageChangeDispatches
+            .prefix(80).map { record in
+                [
+                    "appStateStorageChange",
+                    "seq=\(record.sequence)",
+                    "area=\(record.area)",
+                    "changedKeyCount=\(record.changedKeyCount)",
+                    "changedKeyHashes=\(record.changedKeyHashes.joined(separator: ","))",
+                    "listenerCounts=\(record.listenerCountByContext.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: ","))",
+                    "listenerReceived=\(record.listenerReceivedByContext.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: ","))",
+                    "dispatched=\(record.dispatched)",
+                    "elapsedMs=\(record.elapsedMilliseconds)",
+                ].joined(separator: " ")
+            }
+        let appStatePortLines =
+            snapshot.appStateDependencyTrace.portLifecycle.prefix(120).map {
+                record in
+                [
+                    "appStatePort",
+                    "seq=\(record.sequence)",
+                    "event=\(record.eventKind)",
+                    "api=\(record.apiName)",
+                    "source=\(record.sourceContext)",
+                    "target=\(record.targetContext)",
+                    "direction=\(record.direction)",
+                    "listenerCount=\(record.listenerCount)",
+                    "postMessageCount=\(record.postMessageCount)",
+                    "messageShape=\(record.messageShape)",
+                    "classifier=\(record.responseClassifier)",
+                    "ageMs=\(record.ageMilliseconds.map(String.init) ?? "na")",
+                ].joined(separator: " ")
+            }
+        let appStateDOMLines =
+            snapshot.appStateDependencyTrace.domCheckpoints.prefix(20).map {
+                record in
+                [
+                    "appStateDOM",
+                    "seq=\(record.sequence)",
+                    "phase=\(record.phase)",
+                    "readyState=\(record.readyState)",
+                    "controls=\(record.controlsCount)",
+                    "visibleTextLength=\(record.visibleTextLength)",
+                    "rootApp=\(record.rootAppElementExists)",
+                    "coarse=\(record.coarseStatus)",
+                    "pending=\(record.pendingRouteCount)",
+                ].joined(separator: " ")
+            }
         return pendingLines + eventLines + routeLines
+            + appStateStorageLines + appStateChangeLines
+            + appStatePortLines + appStateDOMLines
     }
 
     @available(macOS 15.5, *)

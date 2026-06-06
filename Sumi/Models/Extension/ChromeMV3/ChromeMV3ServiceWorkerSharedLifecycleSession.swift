@@ -211,6 +211,12 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
     private var nextAttachSequence = 1
     private var nextJSListenerDispatchSequence = 1
     private var nextRuntimePortDeliverySequence = 1
+    #if DEBUG
+        private var initialAppStateServiceWorkerSnapshot:
+            ChromeMV3ServiceWorkerJSExecutionSnapshot?
+        private var latestAppStateServiceWorkerSnapshot:
+            ChromeMV3ServiceWorkerJSExecutionSnapshot?
+    #endif
 
     init(
         key: ChromeMV3ServiceWorkerSharedLifecycleSessionKey,
@@ -535,6 +541,10 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
         let result = runtimeOwner.triggerHardTimeout(reason: reason)
         detachAll(reason: .hardTimeout)
         runtimeOwner.listenerRegistry.tearDown()
+        #if DEBUG
+            initialAppStateServiceWorkerSnapshot = nil
+            latestAppStateServiceWorkerSnapshot = nil
+        #endif
         return result
     }
 
@@ -542,18 +552,30 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
         clearJSListenerDispatchers()
         detachAll(reason: .extensionDisabled)
         runtimeOwner.tearDownForExtensionDisable()
+        #if DEBUG
+            initialAppStateServiceWorkerSnapshot = nil
+            latestAppStateServiceWorkerSnapshot = nil
+        #endif
     }
 
     func tearDownForExtensionUninstall() {
         clearJSListenerDispatchers()
         detachAll(reason: .extensionUninstalled)
         runtimeOwner.tearDownForExtensionUninstall()
+        #if DEBUG
+            initialAppStateServiceWorkerSnapshot = nil
+            latestAppStateServiceWorkerSnapshot = nil
+        #endif
     }
 
     func tearDownForProfileClose() {
         clearJSListenerDispatchers()
         detachAll(reason: .profileClosed)
         runtimeOwner.tearDownForProfileClose()
+        #if DEBUG
+            initialAppStateServiceWorkerSnapshot = nil
+            latestAppStateServiceWorkerSnapshot = nil
+        #endif
     }
 
     func reset() {
@@ -561,10 +583,37 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
         detachAll(reason: .reset)
         runtimeOwner.reset()
         componentRecords.removeAll()
+        #if DEBUG
+            initialAppStateServiceWorkerSnapshot = nil
+            latestAppStateServiceWorkerSnapshot = nil
+        #endif
         nextAttachSequence = 1
         nextJSListenerDispatchSequence = 1
         nextRuntimePortDeliverySequence = 1
     }
+
+    #if DEBUG
+        func recordAppStateServiceWorkerSnapshot(
+            _ snapshot: ChromeMV3ServiceWorkerJSExecutionSnapshot
+        ) {
+            if initialAppStateServiceWorkerSnapshot == nil {
+                initialAppStateServiceWorkerSnapshot = snapshot
+            }
+            latestAppStateServiceWorkerSnapshot = snapshot
+        }
+
+        var appStateInitialServiceWorkerSnapshot:
+            ChromeMV3ServiceWorkerJSExecutionSnapshot?
+        {
+            initialAppStateServiceWorkerSnapshot
+        }
+
+        var appStateServiceWorkerSnapshot:
+            ChromeMV3ServiceWorkerJSExecutionSnapshot?
+        {
+            latestAppStateServiceWorkerSnapshot
+        }
+    #endif
 
     var summary: ChromeMV3ServiceWorkerSharedLifecycleSessionSummary {
         let records = componentRecords.values.sorted {

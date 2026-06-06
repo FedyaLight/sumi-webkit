@@ -3527,16 +3527,22 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
                 && $0.callbackProvided
                 && $0.promiseReturned
                 && !$0.valuesRecorded
+                && $0.resultShape == "object:keyCount=0"
+                && $0.emptyResult
+                && !$0.populatedResult
         })
         XCTAssertTrue(snapshot.storageOperationRecords.contains {
             $0.area == "session"
                 && $0.operation == "get"
                 && $0.keySelectorKind == "defaultsObject"
                 && !$0.valuesRecorded
+                && $0.resultShape == "object:keyCount=1"
+                && $0.populatedResult
         })
         XCTAssertTrue(snapshot.storageOperationRecords.allSatisfy {
             $0.keyFingerprints.allSatisfy {
                 $0.hasPrefix("redacted-key:length=")
+                    && $0.contains(":saltedHash=")
             }
         })
         let encoded = try JSONEncoder().encode(snapshot)

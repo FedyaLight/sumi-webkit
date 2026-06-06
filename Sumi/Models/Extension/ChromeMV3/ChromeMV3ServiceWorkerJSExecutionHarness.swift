@@ -2253,6 +2253,12 @@ struct ChromeMV3ServiceWorkerJSStorageOperationRecord:
     var keySelectorKind: String
     var keyCount: Int
     var keyFingerprints: [String]
+    var valueShape: String
+    var resultShape: String
+    var resultClassifier: String
+    var emptyResult: Bool
+    var populatedResult: Bool
+    var elapsedMilliseconds: Int
     var callbackProvided: Bool
     var promiseReturned: Bool
     var valuesRecorded: Bool
@@ -3644,6 +3650,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                     keepaliveKind: input.keepaliveKind,
                     sharedLifecycleSession: session
                 )
+                #if DEBUG
+                    session.recordAppStateServiceWorkerSnapshot(self.snapshot)
+                #endif
                 let lifecycleDiagnostics =
                     record.lifecycleRoutingRecord?.diagnostics ?? []
                 return ChromeMV3ServiceWorkerJSListenerDispatchResult(
@@ -3717,6 +3726,11 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                         sourceContext: input.source.sourceContext,
                         portID: input.portID
                     )
+                    #if DEBUG
+                        session.recordAppStateServiceWorkerSnapshot(
+                            self.snapshot
+                        )
+                    #endif
                     return ChromeMV3ServiceWorkerRuntimePortDeliveryResult(
                         portID: input.portID,
                         delivered: true,
@@ -3741,7 +3755,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 }
                 session.registerRuntimePortDisconnectDispatcher(
                     dispatcherID: "js-captured-runtime-port-disconnect"
-                ) { [weak self] input in
+                ) { [weak self, weak session] input in
                     guard let self else {
                         return ChromeMV3ServiceWorkerRuntimePortDeliveryResult(
                             portID: input.portID,
@@ -3767,6 +3781,11 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                         lastErrorMessage: input.lastErrorMessage
                     )
                     let port = self.ports[input.portID]
+                    #if DEBUG
+                        session?.recordAppStateServiceWorkerSnapshot(
+                            self.snapshot
+                        )
+                    #endif
                     return ChromeMV3ServiceWorkerRuntimePortDeliveryResult(
                         portID: input.portID,
                         delivered: existed,
@@ -3965,6 +3984,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                     "manifest": workerManifestSnapshotServiceWorkerJS(
                         request.manifest
                     ),
+                    "profileID": request.profileID,
                     "uiLanguage": uiLanguage.language,
                     "uiLanguageSource": uiLanguage.source,
                     "userAgent": chromeMV3ServiceWorkerJSHarnessUserAgent,
@@ -6646,14 +6666,61 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         try { return new TextEncoder().encode(JSON.stringify(selected)).length; }
         catch (_) { return 0; }
       };
-      const storageKeyFingerprint = (key) => {
+      const storageValueShape = (value) => {
+        if (value === null) return 'null';
+        if (value === undefined) return 'undefined';
+        if (Array.isArray(value)) return `array:length=${value.length}`;
+        const type = typeof value;
+        if (type === 'object') return `object:keyCount=${Object.keys(value).length}`;
+        if (type === 'string') return `string:length=${value.length}`;
+        if (type === 'number') return 'number';
+        if (type === 'boolean') return 'boolean';
+        return `value:${type}`;
+      };
+      const storageResultClassifier = (areaName, operation, result, error) => {
+        if (error) return 'storageError';
+        if (operation === 'get') {
+          return result && typeof result === 'object' && !Array.isArray(result)
+            && Object.keys(result).length === 0
+            ? `storage.${areaName}.get.empty`
+            : `storage.${areaName}.get.populated`;
+        }
+        if (operation === 'getBytesInUse') {
+          return result === 0
+            ? `storage.${areaName}.getBytesInUse.empty`
+            : `storage.${areaName}.getBytesInUse.populated`;
+        }
+        return `storage.${areaName}.${operation}.succeeded`;
+      };
+      const storageResultFlags = (operation, result) => {
+        if (operation === 'get' && result && typeof result === 'object' && !Array.isArray(result)) {
+          const empty = Object.keys(result).length === 0;
+          return { emptyResult: empty, populatedResult: !empty };
+        }
+        if (operation === 'getBytesInUse' && typeof result === 'number') {
+          return { emptyResult: result === 0, populatedResult: result > 0 };
+        }
+        if (operation === 'getKeys' && Array.isArray(result)) {
+          return { emptyResult: result.length === 0, populatedResult: result.length > 0 };
+        }
+        return { emptyResult: false, populatedResult: false };
+      };
+      const storageKeyFingerprint = (areaName, key) => {
         const value = String(key);
+        const saltInput = [
+          'sumi-mv3-app-state-v1',
+          String(__sumiWorkerGlobalConfig.profileID || ''),
+          String(__sumiWorkerGlobalConfig.extensionID || ''),
+          String(areaName || ''),
+          value
+        ].join('\\u001f');
         let hash = 2166136261;
-        for (let index = 0; index < value.length; index += 1) {
-          hash ^= value.charCodeAt(index);
+        const bytes = new TextEncoder().encode(saltInput);
+        for (let index = 0; index < bytes.length; index += 1) {
+          hash ^= bytes[index];
           hash = Math.imul(hash, 16777619);
         }
-        return `redacted-key:length=${value.length}:fnv1a=${(hash >>> 0).toString(16).padStart(8, '0')}`;
+        return `redacted-key:length=${value.length}:saltedHash=${(hash >>> 0).toString(16).padStart(8, '0')}`;
       };
       const storageSelectorKind = (keys) => {
         if (keys == null) return 'all';
@@ -6662,21 +6729,30 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         if (typeof keys === 'object') return 'defaultsObject';
         return typeof keys;
       };
-      const recordStorageOperation = (areaName, operation, keys, store, callback) => {
+      const recordStorageOperation = (areaName, operation, keys, store, callback, details = {}) => {
         const selectedKeys = storageKeys(keys, store);
         noteChromeAPICall(`chrome.storage.${areaName}.${operation}`);
         if (storageOperations.length >= 128) return;
+        const result = details.result;
+        const flags = storageResultFlags(operation, result);
         storageOperations.push({
           area: String(areaName),
           operation: String(operation),
           keySelectorKind: storageSelectorKind(keys),
           keyCount: selectedKeys.length,
-          keyFingerprints: selectedKeys.map(storageKeyFingerprint).sort(),
+          keyFingerprints: selectedKeys.map((key) => storageKeyFingerprint(areaName, key)).sort(),
+          valueShape: operation === 'set' ? storageValueShape(keys) : 'none',
+          resultShape: storageValueShape(result),
+          resultClassifier: storageResultClassifier(areaName, operation, result, details.error || null),
+          emptyResult: flags.emptyResult,
+          populatedResult: flags.populatedResult,
+          elapsedMilliseconds: Math.max(0, Date.now() - (details.startedAt || Date.now())),
           callbackProvided: typeof callback === 'function',
           promiseReturned: true,
           valuesRecorded: false,
           diagnostics: [
             'Storage operation diagnostics intentionally omit values and plaintext key names.',
+            'Storage key fingerprints are stable salted hashes scoped to profile, extension, and area.',
             'Storage remains scoped in-memory harness state only.'
           ]
         });
@@ -6685,27 +6761,31 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         const store = storageStores[areaName];
         return {
           get(keys, callback) {
-            recordStorageOperation(areaName, 'get', keys, store, callback);
+            const startedAt = Date.now();
             const result = storageGet(keys, store);
+            recordStorageOperation(areaName, 'get', keys, store, callback, { startedAt, result });
             callbackLater(callback, clone(result));
             return Promise.resolve(clone(result));
           },
           getBytesInUse(keys, callback) {
-            recordStorageOperation(areaName, 'getBytesInUse', keys, store, callback);
+            const startedAt = Date.now();
             const result = storageBytes(keys, store);
+            recordStorageOperation(areaName, 'getBytesInUse', keys, store, callback, { startedAt, result });
             callbackLater(callback, result);
             return Promise.resolve(result);
           },
           getKeys(callback) {
-            recordStorageOperation(areaName, 'getKeys', null, store, callback);
+            const startedAt = Date.now();
             const result = Object.keys(store);
+            recordStorageOperation(areaName, 'getKeys', null, store, callback, { startedAt, result });
             callbackLater(callback, result.slice());
             return Promise.resolve(result.slice());
           },
           set(items, callback) {
-            recordStorageOperation(areaName, 'set', items, store, callback);
+            const startedAt = Date.now();
             if (readOnly) {
               const error = new Error('chrome.storage.managed is read-only.');
+              recordStorageOperation(areaName, 'set', items, store, callback, { startedAt, error });
               callbackErrorLater(callback, error.message);
               return Promise.reject(error);
             }
@@ -6714,28 +6794,33 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 store[key] = clone(items[key]);
               }
             }
+            recordStorageOperation(areaName, 'set', items, store, callback, { startedAt, result: undefined });
             callbackLater(callback);
             return Promise.resolve();
           },
           remove(keys, callback) {
-            recordStorageOperation(areaName, 'remove', keys, store, callback);
+            const startedAt = Date.now();
             if (readOnly) {
               const error = new Error('chrome.storage.managed is read-only.');
+              recordStorageOperation(areaName, 'remove', keys, store, callback, { startedAt, error });
               callbackErrorLater(callback, error.message);
               return Promise.reject(error);
             }
             for (const key of storageKeys(keys, store)) delete store[key];
+            recordStorageOperation(areaName, 'remove', keys, store, callback, { startedAt, result: undefined });
             callbackLater(callback);
             return Promise.resolve();
           },
           clear(callback) {
-            recordStorageOperation(areaName, 'clear', null, store, callback);
+            const startedAt = Date.now();
             if (readOnly) {
               const error = new Error('chrome.storage.managed is read-only.');
+              recordStorageOperation(areaName, 'clear', null, store, callback, { startedAt, error });
               callbackErrorLater(callback, error.message);
               return Promise.reject(error);
             }
             for (const key of Object.keys(store)) delete store[key];
+            recordStorageOperation(areaName, 'clear', null, store, callback, { startedAt, result: undefined });
             callbackLater(callback);
             return Promise.resolve();
           },

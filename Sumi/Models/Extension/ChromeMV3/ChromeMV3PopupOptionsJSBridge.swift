@@ -1189,6 +1189,167 @@ struct ChromeMV3PopupOptionsJSDebugRouteEventRecord:
     var diagnostics: [String]
 }
 
+struct ChromeMV3AppStateStorageOperationTraceRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var sequence: Int
+    var context: String
+    var area: String
+    var operation: String
+    var keyShape: String
+    var keyCount: Int
+    var keyHashes: [String]
+    var valueShape: String
+    var resultShape: String
+    var resultClassifier: String
+    var emptyResult: Bool
+    var populatedResult: Bool
+    var elapsedMilliseconds: Int
+    var diagnostics: [String]
+}
+
+struct ChromeMV3AppStateStorageChangeDispatchTraceRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var sequence: Int
+    var area: String
+    var changedKeyCount: Int
+    var changedKeyHashes: [String]
+    var listenerCountByContext: [String: Int]
+    var listenerReceivedByContext: [String: Bool]
+    var dispatched: Bool
+    var elapsedMilliseconds: Int
+    var diagnostics: [String]
+}
+
+struct ChromeMV3AppStatePortLifecycleTraceRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var sequence: Int
+    var eventKind: String
+    var apiName: String
+    var sourceContext: String
+    var targetContext: String
+    var direction: String
+    var portNameHash: String?
+    var listenerCount: Int
+    var postMessageCount: Int
+    var messageShape: String
+    var responseClassifier: String
+    var ageMilliseconds: Int?
+    var diagnostics: [String]
+}
+
+struct ChromeMV3AppStateDOMCheckpointTraceRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var sequence: Int
+    var phase: String
+    var readyState: String
+    var controlsCount: Int
+    var visibleTextLength: Int
+    var rootAppElementExists: Bool
+    var coarseStatus: String
+    var pendingRouteCount: Int
+    var diagnostics: [String]
+}
+
+struct ChromeMV3AppStateDependencyCorrelationSummary:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var classification: String
+    var serviceWorkerState: String
+    var popupReadKeyHashesNeverWritten: [String]
+    var popupReadKeyHashesWrittenByServiceWorker: [String]
+    var writtenKeyHashesWithoutObservedOnChangedDelivery: [String]
+    var repeatedEmptyReadKeyHashes: [String]
+    var serviceWorkerStorageWritesAfterConnect: Bool
+    var serviceWorkerStorageWriteCountAfterConnect: Int
+    var storageOnChangedReachedRegisteredListeners: Bool
+    var missingAPIsObserved: [String]
+    var networkOrAuthDependencyObserved: Bool
+    var pendingRouteCount: Int
+    var popupReachedUsableOnboardingOrLoginUI: Bool
+    var domUsable: Bool
+    var diagnostics: [String]
+}
+
+struct ChromeMV3AppStateDependencyTraceSnapshot:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var enabled: Bool
+    var sessionSaltVersion: String
+    var storageOperations:
+        [ChromeMV3AppStateStorageOperationTraceRecord]
+    var storageChangeDispatches:
+        [ChromeMV3AppStateStorageChangeDispatchTraceRecord]
+    var portLifecycle:
+        [ChromeMV3AppStatePortLifecycleTraceRecord]
+    var domCheckpoints:
+        [ChromeMV3AppStateDOMCheckpointTraceRecord]
+    var serviceWorkerCapturedListenerCount: Int
+    var serviceWorkerDispatchRecordCount: Int
+    var serviceWorkerStorageOperationCount: Int
+    var serviceWorkerPortCount: Int
+    var correlationSummary:
+        ChromeMV3AppStateDependencyCorrelationSummary
+    var diagnostics: [String]
+
+    static func empty(enabled: Bool) -> ChromeMV3AppStateDependencyTraceSnapshot {
+        ChromeMV3AppStateDependencyTraceSnapshot(
+            enabled: enabled,
+            sessionSaltVersion: "sumi-mv3-app-state-v1",
+            storageOperations: [],
+            storageChangeDispatches: [],
+            portLifecycle: [],
+            domCheckpoints: [],
+            serviceWorkerCapturedListenerCount: 0,
+            serviceWorkerDispatchRecordCount: 0,
+            serviceWorkerStorageOperationCount: 0,
+            serviceWorkerPortCount: 0,
+            correlationSummary:
+                ChromeMV3AppStateDependencyCorrelationSummary(
+                    classification: "notClassified",
+                    serviceWorkerState: "notObserved",
+                    popupReadKeyHashesNeverWritten: [],
+                    popupReadKeyHashesWrittenByServiceWorker: [],
+                    writtenKeyHashesWithoutObservedOnChangedDelivery: [],
+                    repeatedEmptyReadKeyHashes: [],
+                    serviceWorkerStorageWritesAfterConnect: false,
+                    serviceWorkerStorageWriteCountAfterConnect: 0,
+                    storageOnChangedReachedRegisteredListeners: false,
+                    missingAPIsObserved: [],
+                    networkOrAuthDependencyObserved: false,
+                    pendingRouteCount: 0,
+                    popupReachedUsableOnboardingOrLoginUI: false,
+                    domUsable: false,
+                    diagnostics: [
+                        enabled
+                            ? "No app-state dependency observations were recorded."
+                            : "DEBUG app-state dependency tracer is disabled in this build."
+                    ]
+                ),
+            diagnostics: [
+                enabled
+                    ? "App-state dependency tracer collected no records."
+                    : "App-state dependency tracer is DEBUG/local-experimental diagnostics only."
+            ]
+        )
+    }
+}
+
 #if DEBUG
 struct ChromeMV3PopupOptionsHostDiagnosticEvent:
     Codable,
@@ -1527,6 +1688,8 @@ struct ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot:
     var listenerRegistryClearedOnTeardown: Bool
     var storageListenersClearedOnTeardown: Bool
     var portStateClearedOnTeardown: Bool
+    var appStateDependencyTrace:
+        ChromeMV3AppStateDependencyTraceSnapshot
     var diagnostics: [String]
 }
 
@@ -1657,6 +1820,13 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     private var jsDebugRouteEvents:
         [ChromeMV3PopupOptionsJSDebugRouteEventRecord] = []
     private var nextJSDebugRouteEventSequence = 0
+    #if DEBUG
+        private var appStateStorageOperationRecords:
+            [ChromeMV3AppStateStorageOperationTraceRecord] = []
+        private var appStateStorageChangeDispatchRecords:
+            [ChromeMV3AppStateStorageChangeDispatchTraceRecord] = []
+        private var nextAppStateTraceSequence = 0
+    #endif
     private var onChangedPayloads: [ChromeMV3StorageOnChangedEventPayload] = []
     private var syntheticPortIDs: Set<String> = []
     private var serviceWorkerLifecyclePortIDs: Set<String> = []
@@ -1914,6 +2084,14 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         } else {
             lastAPIErrorSummary = nil
         }
+        #if DEBUG
+            let appStateDependencyTrace = appStateDependencyTraceSnapshot()
+        #else
+            let appStateDependencyTrace =
+                ChromeMV3AppStateDependencyTraceSnapshot.empty(
+                    enabled: false
+                )
+        #endif
         return ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot(
             handledRequestCount: callRecords.count,
             succeededRequestCount:
@@ -1956,6 +2134,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             listenerRegistryClearedOnTeardown: tornDown,
             storageListenersClearedOnTeardown: tornDown,
             portStateClearedOnTeardown: tornDown,
+            appStateDependencyTrace: appStateDependencyTrace,
             diagnostics:
                 uniqueSortedPopupOptionsBridge(
                     configuration.diagnostics
@@ -2301,6 +2480,844 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             return completedBridgeCallIDs.contains(bridgeCallID) == false
         }
     }
+
+    #if DEBUG
+        private func appStateTraceNextSequence() -> Int {
+            nextAppStateTraceSequence += 1
+            return nextAppStateTraceSequence
+        }
+
+        private func appStateElapsedMilliseconds(
+            startedAt: UInt64
+        ) -> Int {
+            let elapsed =
+                (DispatchTime.now().uptimeNanoseconds - startedAt)
+                / 1_000_000
+            return Int(min(elapsed, UInt64(Int.max)))
+        }
+
+        private func appStateSaltedFingerprint(
+            _ value: String,
+            area: String,
+            prefix: String = "redacted-key"
+        ) -> String {
+            let saltInput =
+                "sumi-mv3-app-state-v1\u{1f}\(configuration.profileID)\u{1f}\(configuration.extensionID)\u{1f}\(area)\u{1f}\(value)"
+            var hash: UInt32 = 2_166_136_261
+            for byte in saltInput.utf8 {
+                hash ^= UInt32(byte)
+                hash = hash &* 16_777_619
+            }
+            let hex = String(hash, radix: 16)
+            let padded =
+                String(repeating: "0", count: max(0, 8 - hex.count)) + hex
+            return "\(prefix):length=\(value.count):saltedHash=\(padded)"
+        }
+
+        private func appStateStorageKeyHashes(
+            request: ChromeMV3RuntimeJSBridgeHostRequest,
+            areaName: String
+        ) -> [String] {
+            let operation = storageOperationName(methodName: request.methodName)
+            let keys: [String]
+            switch operation {
+            case "set":
+                keys = request.arguments.first?.objectValue?.keys
+                    .map { $0 } ?? []
+            case "clear":
+                keys = []
+            case "get", "getBytesInUse", "remove":
+                keys = appStateStorageKeyStrings(
+                    request.arguments.first
+                )
+            default:
+                keys = []
+            }
+            return uniqueSortedPopupOptionsBridge(
+                keys.map {
+                    appStateSaltedFingerprint($0, area: areaName)
+                }
+            )
+        }
+
+        private func appStateStorageKeyStrings(
+            _ value: ChromeMV3StorageValue?
+        ) -> [String] {
+            guard let value else { return [] }
+            switch value {
+            case .null:
+                return []
+            case .string(let key):
+                return [key]
+            case .array(let values):
+                return values.compactMap(\.stringValue)
+            case .object(let object):
+                return object.keys.map { $0 }
+            case .bool, .number:
+                return []
+            }
+        }
+
+        private func appStateStorageResultFlags(
+            operation: String,
+            resultPayload: ChromeMV3StorageValue?
+        ) -> (empty: Bool, populated: Bool) {
+            switch operation {
+            case "get":
+                if case .object(let object)? = resultPayload {
+                    return (object.isEmpty, object.isEmpty == false)
+                }
+                return (resultPayload == nil, false)
+            case "getBytesInUse":
+                if case .number(let number)? = resultPayload {
+                    return (number == 0, number > 0)
+                }
+                return (false, false)
+            case "getKeys":
+                if case .array(let values)? = resultPayload {
+                    return (values.isEmpty, values.isEmpty == false)
+                }
+                return (false, false)
+            default:
+                return (false, false)
+            }
+        }
+
+        private func recordAppStateStorageOperation(
+            request: ChromeMV3RuntimeJSBridgeHostRequest,
+            area: ChromeMV3StorageAreaKind,
+            envelope: ChromeMV3StorageAPIOperationResultEnvelope,
+            resultPayload: ChromeMV3StorageValue?,
+            elapsedMilliseconds: Int,
+            diagnostics: [String]
+        ) {
+            let areaName = area.chromeAreaName
+            let operation = storageOperationName(methodName: request.methodName)
+            let flags = appStateStorageResultFlags(
+                operation: operation,
+                resultPayload: resultPayload
+            )
+            appStateStorageOperationRecords.append(
+                ChromeMV3AppStateStorageOperationTraceRecord(
+                    sequence: appStateTraceNextSequence(),
+                    context: "popup",
+                    area: areaName,
+                    operation: operation,
+                    keyShape: storageKeySelectorShape(request: request),
+                    keyCount: storageKeyCount(request: request),
+                    keyHashes:
+                        appStateStorageKeyHashes(
+                            request: request,
+                            areaName: areaName
+                        ),
+                    valueShape: storageMutationValueShape(request: request),
+                    resultShape: storageDiagnosticValueShape(resultPayload),
+                    resultClassifier:
+                        storageResultClassifier(envelope: envelope),
+                    emptyResult: flags.empty,
+                    populatedResult: flags.populated,
+                    elapsedMilliseconds: elapsedMilliseconds,
+                    diagnostics:
+                        uniqueSortedPopupOptionsBridge(
+                            diagnostics
+                                + [
+                                    "context=popup",
+                                    "No raw storage keys or values are recorded by the app-state dependency tracer.",
+                                ]
+                        )
+                )
+            )
+            if appStateStorageOperationRecords.count > 400 {
+                appStateStorageOperationRecords.removeFirst(
+                    appStateStorageOperationRecords.count - 400
+                )
+            }
+        }
+
+        private func recordAppStateStorageChangeDispatch(
+            payload: ChromeMV3StorageOnChangedEventPayload,
+            elapsedMilliseconds: Int,
+            lifecycleResult: ChromeMV3ServiceWorkerInternalWakeResult?
+        ) {
+            var listenerCounts: [String: Int] = [
+                "popupArea": 0,
+                "popupGlobal": 0,
+                "serviceWorker": 0,
+            ]
+            if let sharedLifecycleSession {
+                listenerCounts["serviceWorker"] =
+                    sharedLifecycleSession.runtimeOwner.listenerRegistry
+                    .summary.listenerCountsByEvent[
+                        ChromeMV3ServiceWorkerSyntheticListenerEvent
+                            .storageOnChanged.rawValue
+                    ] ?? 0
+            }
+            let serviceWorkerReceived =
+                lifecycleResult?.dispatched == true
+            appStateStorageChangeDispatchRecords.append(
+                ChromeMV3AppStateStorageChangeDispatchTraceRecord(
+                    sequence: appStateTraceNextSequence(),
+                    area: payload.areaName,
+                    changedKeyCount: payload.changedKeys.count,
+                    changedKeyHashes:
+                        uniqueSortedPopupOptionsBridge(
+                            payload.changedKeys.map {
+                                appStateSaltedFingerprint(
+                                    $0,
+                                    area: payload.areaName
+                                )
+                            }
+                        ),
+                    listenerCountByContext: listenerCounts,
+                    listenerReceivedByContext: [
+                        "popupArea": false,
+                        "popupGlobal": false,
+                        "serviceWorker": serviceWorkerReceived,
+                    ],
+                    dispatched: serviceWorkerReceived,
+                    elapsedMilliseconds: elapsedMilliseconds,
+                    diagnostics:
+                        uniqueSortedPopupOptionsBridge(
+                            (lifecycleResult?.diagnostics ?? [])
+                                + [
+                                    "area=\(payload.areaName)",
+                                    "changedKeyCount=\(payload.changedKeys.count)",
+                                    "storage.onChanged dispatch trace contains only salted key hashes and value shapes.",
+                                    "No raw storage keys or values are recorded by the app-state dependency tracer.",
+                                ]
+                        )
+                )
+            )
+            if appStateStorageChangeDispatchRecords.count > 200 {
+                appStateStorageChangeDispatchRecords.removeFirst(
+                    appStateStorageChangeDispatchRecords.count - 200
+                )
+            }
+        }
+
+        private func appStateDependencyTraceSnapshot()
+            -> ChromeMV3AppStateDependencyTraceSnapshot
+        {
+            let serviceWorkerSnapshot =
+                sharedLifecycleSession?.appStateServiceWorkerSnapshot
+            let initialServiceWorkerSnapshot =
+                sharedLifecycleSession?.appStateInitialServiceWorkerSnapshot
+            let serviceWorkerStorageOperations =
+                appStateServiceWorkerStorageOperations(serviceWorkerSnapshot)
+            let storageOperations =
+                appStateStorageOperationRecords + serviceWorkerStorageOperations
+            let portLifecycle = appStatePortLifecycleRecords(
+                serviceWorkerSnapshot
+            )
+            let storageChangeDispatches =
+                appStateAugmentedStorageChangeDispatches()
+            let domCheckpoints = appStateDOMCheckpoints()
+            let summary = appStateCorrelationSummary(
+                storageOperations: storageOperations,
+                storageChangeDispatches: storageChangeDispatches,
+                portLifecycle: portLifecycle,
+                domCheckpoints: domCheckpoints,
+                serviceWorkerSnapshot: serviceWorkerSnapshot,
+                initialServiceWorkerSnapshot: initialServiceWorkerSnapshot
+            )
+            return ChromeMV3AppStateDependencyTraceSnapshot(
+                enabled: true,
+                sessionSaltVersion: "sumi-mv3-app-state-v1",
+                storageOperations: storageOperations,
+                storageChangeDispatches: storageChangeDispatches,
+                portLifecycle: portLifecycle,
+                domCheckpoints: domCheckpoints,
+                serviceWorkerCapturedListenerCount:
+                    serviceWorkerSnapshot?.capturedListeners.count ?? 0,
+                serviceWorkerDispatchRecordCount:
+                    serviceWorkerSnapshot?.dispatchRecords.count ?? 0,
+                serviceWorkerStorageOperationCount:
+                    serviceWorkerSnapshot?.storageOperationRecords.count ?? 0,
+                serviceWorkerPortCount:
+                    serviceWorkerSnapshot?.ports.count ?? 0,
+                correlationSummary: summary,
+                diagnostics: [
+                    "DEBUG/local-experimental app-state dependency tracer is passive and records sanitized metadata only.",
+                    "No product/default exposure, extension-specific branches, fake storage, fake app state, fake runtime response, or native host launch is introduced by this tracer.",
+                    "No raw storage keys, storage values, messages, credentials, vault data, tokens, cookies, auth payloads, form values, full manifests, localized values, or sensitive resource contents are logged.",
+                    "Native WebKit popup behavior remains the default when the controlled popup gate is off.",
+                ]
+            )
+        }
+
+        private func appStateServiceWorkerStorageOperations(
+            _ snapshot: ChromeMV3ServiceWorkerJSExecutionSnapshot?
+        ) -> [ChromeMV3AppStateStorageOperationTraceRecord] {
+            guard let snapshot else { return [] }
+            return snapshot.storageOperationRecords.enumerated().map {
+                index,
+                record in
+                ChromeMV3AppStateStorageOperationTraceRecord(
+                    sequence: 10_000 + index,
+                    context: "serviceWorker",
+                    area: record.area,
+                    operation: record.operation,
+                    keyShape: record.keySelectorKind,
+                    keyCount: record.keyCount,
+                    keyHashes: record.keyFingerprints,
+                    valueShape: record.valueShape,
+                    resultShape: record.resultShape,
+                    resultClassifier: record.resultClassifier,
+                    emptyResult: record.emptyResult,
+                    populatedResult: record.populatedResult,
+                    elapsedMilliseconds: record.elapsedMilliseconds,
+                    diagnostics:
+                        uniqueSortedPopupOptionsBridge(
+                            record.diagnostics
+                                + [
+                                    "context=serviceWorker",
+                                    "Service-worker storage trace was captured from the paired lifecycle harness.",
+                                    "No raw storage keys or values are recorded by the app-state dependency tracer.",
+                                ]
+                        )
+                )
+            }
+        }
+
+        private func appStateAugmentedStorageChangeDispatches()
+            -> [ChromeMV3AppStateStorageChangeDispatchTraceRecord]
+        {
+            appStateStorageChangeDispatchRecords.map { record in
+                var updated = record
+                let eventCounts = appStateObservedStorageListenerCounts(
+                    area: record.area
+                )
+                updated.listenerCountByContext["popupArea"] =
+                    max(
+                        updated.listenerCountByContext["popupArea"] ?? 0,
+                        eventCounts.area
+                    )
+                updated.listenerCountByContext["popupGlobal"] =
+                    max(
+                        updated.listenerCountByContext["popupGlobal"] ?? 0,
+                        eventCounts.global
+                    )
+                updated.listenerReceivedByContext["popupArea"] =
+                    eventCounts.area > 0
+                updated.listenerReceivedByContext["popupGlobal"] =
+                    eventCounts.global > 0
+                updated.dispatched =
+                    updated.listenerReceivedByContext.values.contains(true)
+                return updated
+            }
+        }
+
+        private func appStateObservedStorageListenerCounts(
+            area: String
+        ) -> (area: Int, global: Int) {
+            var areaCount = 0
+            var globalCount = 0
+            for event in jsDebugRouteEvents
+            where event.apiName == "chrome.storage.\(area).onChanged" {
+                areaCount = max(
+                    areaCount,
+                    appStateDiagnosticInt("listenerCount", in: event.diagnostics)
+                        ?? 0
+                )
+                globalCount = max(
+                    globalCount,
+                    appStateDiagnosticInt(
+                        "globalListenerCount",
+                        in: event.diagnostics
+                    ) ?? 0
+                )
+            }
+            return (areaCount, globalCount)
+        }
+
+        private func appStateDOMCheckpoints()
+            -> [ChromeMV3AppStateDOMCheckpointTraceRecord]
+        {
+            jsDebugRouteEvents.compactMap { event in
+                guard event.eventKind == "postBootstrapCheckpoint" else {
+                    return nil
+                }
+                let phase =
+                    appStateDiagnosticString("phase", in: event.diagnostics)
+                    ?? "unknown"
+                let readyState =
+                    appStateDiagnosticString(
+                        "readyState",
+                        in: event.diagnostics
+                    )
+                    ?? appStateDiagnosticString(
+                        "readyState",
+                        in: [event.safeMessageShapeClassification]
+                    )
+                    ?? "unknown"
+                let controlsCount =
+                    appStateDiagnosticInt(
+                        "controlCount",
+                        in: [event.safeMessageShapeClassification]
+                    )
+                    ?? 0
+                let visibleTextLength =
+                    appStateDiagnosticInt(
+                        "visibleTextLength",
+                        in: event.diagnostics
+                    )
+                    ?? 0
+                let appRootCount =
+                    appStateDiagnosticInt("appRootCount", in: event.diagnostics)
+                    ?? 0
+                return ChromeMV3AppStateDOMCheckpointTraceRecord(
+                    sequence: event.sequence,
+                    phase: phase,
+                    readyState: readyState,
+                    controlsCount: controlsCount,
+                    visibleTextLength: visibleTextLength,
+                    rootAppElementExists: appRootCount > 0,
+                    coarseStatus: event.resultClassifier ?? "unknown",
+                    pendingRouteCount:
+                        appStateDiagnosticInt(
+                            "pendingRouteCount",
+                            in: event.diagnostics
+                        )
+                        ?? 0,
+                    diagnostics:
+                        uniqueSortedPopupOptionsBridge(
+                            event.diagnostics.filter {
+                                Self.containsSensitiveJSDebugFragment($0)
+                                    == false
+                            }
+                            + [
+                                "DOM checkpoint is coarse only; form values are not recorded.",
+                            ]
+                        )
+                )
+            }
+        }
+
+        private func appStatePortLifecycleRecords(
+            _ serviceWorkerSnapshot:
+                ChromeMV3ServiceWorkerJSExecutionSnapshot?
+        ) -> [ChromeMV3AppStatePortLifecycleTraceRecord] {
+            var records: [ChromeMV3AppStatePortLifecycleTraceRecord] =
+                jsDebugRouteEvents.compactMap { event in
+                    guard event.eventKind.hasPrefix("port") else {
+                        return nil
+                    }
+                    return ChromeMV3AppStatePortLifecycleTraceRecord(
+                        sequence: event.sequence,
+                        eventKind: event.eventKind,
+                        apiName: event.apiName,
+                        sourceContext: event.sourceContext,
+                        targetContext: event.targetContext ?? "unknown",
+                        direction:
+                            appStatePortDirection(eventKind: event.eventKind),
+                        portNameHash:
+                            event.portName.map {
+                                appStateSaltedFingerprint(
+                                    $0,
+                                    area: "port",
+                                    prefix: "redacted-port-name"
+                                )
+                            },
+                        listenerCount:
+                            appStateDiagnosticInt(
+                                "listenerCount",
+                                in: event.diagnostics
+                            )
+                            ?? 0,
+                        postMessageCount:
+                            event.eventKind == "portMessageCalled" ? 1 : 0,
+                        messageShape: event.safeMessageShapeClassification,
+                        responseClassifier:
+                            event.resultClassifier ?? "unknown",
+                        ageMilliseconds: event.ageMilliseconds,
+                        diagnostics:
+                            uniqueSortedPopupOptionsBridge(
+                                event.diagnostics
+                                    + [
+                                        "Port trace records message shape and listener counts only.",
+                                        "No raw Port message, Port payload, or Port name is recorded in the app-state dependency tracer.",
+                                    ]
+                            )
+                    )
+                }
+            if let serviceWorkerSnapshot {
+                records += serviceWorkerSnapshot.ports.enumerated().map {
+                    index,
+                    port in
+                    ChromeMV3AppStatePortLifecycleTraceRecord(
+                        sequence: 20_000 + index,
+                        eventKind: port.connected
+                            ? "serviceWorkerPortOpen"
+                            : "serviceWorkerPortClosed",
+                        apiName: "chrome.runtime.Port",
+                        sourceContext: "serviceWorker",
+                        targetContext: "popup",
+                        direction: "serviceWorkerLifecycle",
+                        portNameHash:
+                            appStateSaltedFingerprint(
+                                port.name,
+                                area: "port",
+                                prefix: "redacted-port-name"
+                            ),
+                        listenerCount:
+                            port.onMessageListenerCount
+                                + port.onDisconnectListenerCount,
+                        postMessageCount: port.postedMessages.count,
+                        messageShape:
+                            "postedMessages:length=\(port.postedMessages.count)",
+                        responseClassifier:
+                            port.connected ? "connected" : "disconnected",
+                        ageMilliseconds: nil,
+                        diagnostics:
+                            uniqueSortedPopupOptionsBridge(
+                                port.diagnostics
+                                    + [
+                                        "Service-worker Port trace records listener counts and message counts only.",
+                                        "No raw Port messages or Port names are recorded by the app-state dependency tracer.",
+                                    ]
+                            )
+                    )
+                }
+            }
+            return records.sorted {
+                if $0.sequence != $1.sequence { return $0.sequence < $1.sequence }
+                return $0.eventKind < $1.eventKind
+            }
+        }
+
+        private func appStatePortDirection(eventKind: String) -> String {
+            switch eventKind {
+            case "portMessageCalled", "portMessageQueued",
+                "portMessageDelivered", "portMessageBridgeFailed":
+                return "popupToServiceWorker"
+            case "portOnMessageDispatched":
+                return "serviceWorkerToPopup"
+            case "portOnDisconnectDispatched", "portDisconnected":
+                return "disconnect"
+            default:
+                return "lifecycle"
+            }
+        }
+
+        private func appStateCorrelationSummary(
+            storageOperations:
+                [ChromeMV3AppStateStorageOperationTraceRecord],
+            storageChangeDispatches:
+                [ChromeMV3AppStateStorageChangeDispatchTraceRecord],
+            portLifecycle: [ChromeMV3AppStatePortLifecycleTraceRecord],
+            domCheckpoints: [ChromeMV3AppStateDOMCheckpointTraceRecord],
+            serviceWorkerSnapshot:
+                ChromeMV3ServiceWorkerJSExecutionSnapshot?,
+            initialServiceWorkerSnapshot:
+                ChromeMV3ServiceWorkerJSExecutionSnapshot?
+        ) -> ChromeMV3AppStateDependencyCorrelationSummary {
+            let popupGetOperations = storageOperations.filter {
+                $0.context == "popup" && $0.operation == "get"
+            }
+            let popupReadHashes =
+                Set(popupGetOperations.flatMap(\.keyHashes))
+            let allWriteHashes = Set(
+                storageOperations
+                    .filter {
+                        ["set", "remove", "clear"].contains($0.operation)
+                    }
+                    .flatMap(\.keyHashes)
+            )
+            let serviceWorkerWriteHashes = Set(
+                storageOperations
+                    .filter {
+                        $0.context == "serviceWorker"
+                            && ["set", "remove", "clear"].contains($0.operation)
+                    }
+                    .flatMap(\.keyHashes)
+            )
+            let popupReadNeverWritten =
+                uniqueSortedPopupOptionsBridge(
+                    popupReadHashes.subtracting(allWriteHashes).map { $0 }
+                )
+            let popupReadWrittenByServiceWorker =
+                uniqueSortedPopupOptionsBridge(
+                    popupReadHashes.intersection(serviceWorkerWriteHashes)
+                        .map { $0 }
+                )
+            let hasRuntimeConnect =
+                portLifecycle.contains {
+                    $0.apiName.contains("runtime.connect")
+                        || $0.eventKind == "serviceWorkerPortOpen"
+                        || $0.eventKind == "portHostIDAssigned"
+                }
+            let currentServiceWorkerStorageRecords =
+                serviceWorkerSnapshot?.storageOperationRecords ?? []
+            let initialServiceWorkerStorageRecordCount =
+                min(
+                    initialServiceWorkerSnapshot?.storageOperationRecords
+                        .count ?? 0,
+                    currentServiceWorkerStorageRecords.count
+                )
+            let postConnectServiceWorkerWriteRecords =
+                hasRuntimeConnect
+                    ? currentServiceWorkerStorageRecords
+                        .dropFirst(initialServiceWorkerStorageRecordCount)
+                        .filter {
+                            ["set", "remove", "clear"].contains($0.operation)
+                        }
+                    : []
+            let serviceWorkerStorageWriteCountAfterConnect =
+                postConnectServiceWorkerWriteRecords.count
+            let postConnectServiceWorkerWriteHashes =
+                Set(
+                    postConnectServiceWorkerWriteRecords
+                        .flatMap(\.keyFingerprints)
+                )
+            let popupWriteHashes =
+                Set(
+                    storageOperations
+                        .filter {
+                            $0.context == "popup"
+                                && ["set", "remove", "clear"]
+                                    .contains($0.operation)
+                        }
+                        .flatMap(\.keyHashes)
+                )
+            let observableWriteHashes =
+                popupWriteHashes.union(postConnectServiceWorkerWriteHashes)
+            let repeatedEmptyReads = appStateRepeatedEmptyReadHashes(
+                popupGetOperations
+            )
+            let storageOnChangedReachedRegisteredListeners =
+                storageChangeDispatches.contains { dispatch in
+                    dispatch.listenerReceivedByContext.values.contains(true)
+                }
+            let registeredStorageListenerObserved =
+                jsDebugRouteEvents.contains { event in
+                    event.safeMessageShapeClassification
+                        == "storageEventListener"
+                        && (
+                            appStateDiagnosticInt(
+                                "listenerCount",
+                                in: event.diagnostics
+                            ) ?? 0
+                        ) > 0
+                }
+            let writtenWithoutObservedDelivery =
+                registeredStorageListenerObserved
+                    && storageOnChangedReachedRegisteredListeners == false
+                    ? uniqueSortedPopupOptionsBridge(
+                        observableWriteHashes.map { $0 }
+                    )
+                    : []
+            let writtenDependencyWithoutObservedDelivery =
+                uniqueSortedPopupOptionsBridge(
+                    observableWriteHashes.intersection(popupReadHashes)
+                        .map { $0 }
+                )
+            let missingAPIs =
+                uniqueSortedPopupOptionsBridge(
+                    jsDebugRouteEvents.compactMap { event in
+                        guard event.eventKind == "missingAPIAccess" else {
+                            return nil
+                        }
+                        return event.apiName
+                    }
+                )
+            let networkOrAuthDependencyObserved =
+                jsDebugRouteEvents.contains { event in
+                    event.eventKind == "resourceLoadError"
+                        || event.resultClassifier?
+                        .localizedCaseInsensitiveContains("network") == true
+                        || event.resultClassifier?
+                        .localizedCaseInsensitiveContains("auth") == true
+                }
+            let pendingRouteCount = unresolvedPendingJSDebugRoutes().count
+            let domUsable = domCheckpoints.contains {
+                $0.coarseStatus == "usable onboarding/login UI reached"
+            }
+            let serviceWorkerState =
+                appStateServiceWorkerState(serviceWorkerSnapshot)
+            let classification = appStateClassification(
+                domCheckpoints: domCheckpoints,
+                domUsable: domUsable,
+                pendingRouteCount: pendingRouteCount,
+                missingAPIs: missingAPIs,
+                popupReadNeverWritten: popupReadNeverWritten,
+                popupReadWrittenByServiceWorker:
+                    popupReadWrittenByServiceWorker,
+                writtenWithoutObservedDelivery:
+                    writtenDependencyWithoutObservedDelivery,
+                repeatedEmptyReads: repeatedEmptyReads,
+                serviceWorkerStorageWriteCountAfterConnect:
+                    serviceWorkerStorageWriteCountAfterConnect,
+                networkOrAuthDependencyObserved:
+                    networkOrAuthDependencyObserved
+            )
+            return ChromeMV3AppStateDependencyCorrelationSummary(
+                classification: classification,
+                serviceWorkerState: serviceWorkerState,
+                popupReadKeyHashesNeverWritten: popupReadNeverWritten,
+                popupReadKeyHashesWrittenByServiceWorker:
+                    popupReadWrittenByServiceWorker,
+                writtenKeyHashesWithoutObservedOnChangedDelivery:
+                    writtenWithoutObservedDelivery,
+                repeatedEmptyReadKeyHashes: repeatedEmptyReads,
+                serviceWorkerStorageWritesAfterConnect:
+                    serviceWorkerStorageWriteCountAfterConnect > 0,
+                serviceWorkerStorageWriteCountAfterConnect:
+                    serviceWorkerStorageWriteCountAfterConnect,
+                storageOnChangedReachedRegisteredListeners:
+                    storageOnChangedReachedRegisteredListeners,
+                missingAPIsObserved: missingAPIs,
+                networkOrAuthDependencyObserved:
+                    networkOrAuthDependencyObserved,
+                pendingRouteCount: pendingRouteCount,
+                popupReachedUsableOnboardingOrLoginUI: domUsable,
+                domUsable: domUsable,
+                diagnostics:
+                    uniqueSortedPopupOptionsBridge([
+                        "classification=\(classification)",
+                        "serviceWorkerState=\(serviceWorkerState)",
+                        "popupReadNeverWrittenCount=\(popupReadNeverWritten.count)",
+                        "popupReadWrittenByServiceWorkerCount=\(popupReadWrittenByServiceWorker.count)",
+                        "repeatedEmptyReadCount=\(repeatedEmptyReads.count)",
+                        "serviceWorkerStorageWriteCountAfterConnect=\(serviceWorkerStorageWriteCountAfterConnect)",
+                        "storageOnChangedReachedRegisteredListeners=\(storageOnChangedReachedRegisteredListeners)",
+                        "pendingRouteCount=\(pendingRouteCount)",
+                        "No raw storage keys or values are recorded by the app-state dependency tracer.",
+                    ])
+            )
+        }
+
+        private func appStateRepeatedEmptyReadHashes(
+            _ popupGetOperations:
+                [ChromeMV3AppStateStorageOperationTraceRecord]
+        ) -> [String] {
+            var counts: [String: Int] = [:]
+            for operation in popupGetOperations where operation.emptyResult {
+                for hash in operation.keyHashes {
+                    counts[hash, default: 0] += 1
+                }
+            }
+            return uniqueSortedPopupOptionsBridge(
+                counts.compactMap { key, count in
+                    count > 1 ? key : nil
+                }
+            )
+        }
+
+        private func appStateServiceWorkerState(
+            _ snapshot: ChromeMV3ServiceWorkerJSExecutionSnapshot?
+        ) -> String {
+            guard let snapshot else { return "notObserved" }
+            guard snapshot.startRecord.status == .running else {
+                return "loadedFailed:\(snapshot.startRecord.status.rawValue)"
+            }
+            let writeCount = snapshot.storageOperationRecords.filter {
+                ["set", "remove", "clear"].contains($0.operation)
+            }.count
+            if writeCount > 0 {
+                return "loadedAndWroteStorage"
+            }
+            let hasConnectDispatch = snapshot.dispatchRecords.contains {
+                $0.event == .runtimeOnConnect
+            }
+            let postedMessageCount =
+                snapshot.ports.reduce(0) {
+                    $0 + $1.postedMessages.count
+                }
+            if hasConnectDispatch && postedMessageCount == 0 {
+                return "loadedIdleAfterConnect"
+            }
+            if snapshot.timers.contains(where: { $0.active }) {
+                return "loadedWaitingOnTimers"
+            }
+            if snapshot.dispatchRecords.isEmpty {
+                return "loadedIdle"
+            }
+            return "loadedNoObservableWriter"
+        }
+
+        private func appStateClassification(
+            domCheckpoints: [ChromeMV3AppStateDOMCheckpointTraceRecord],
+            domUsable: Bool,
+            pendingRouteCount: Int,
+            missingAPIs: [String],
+            popupReadNeverWritten: [String],
+            popupReadWrittenByServiceWorker: [String],
+            writtenWithoutObservedDelivery: [String],
+            repeatedEmptyReads: [String],
+            serviceWorkerStorageWriteCountAfterConnect: Int,
+            networkOrAuthDependencyObserved: Bool
+        ) -> String {
+            if domUsable { return "usableOnboardingOrLoginUIReached" }
+            if pendingRouteCount > 0 {
+                return "appStateWaitWithUnresolvedBridgeRoute"
+            }
+            if missingAPIs.isEmpty == false {
+                return "appStateWaitWithMissingAPI"
+            }
+            if writtenWithoutObservedDelivery.isEmpty == false {
+                return "appStateWaitWithSuppressedEvent"
+            }
+            if serviceWorkerStorageWriteCountAfterConnect > 0
+                && popupReadWrittenByServiceWorker.isEmpty == false
+            {
+                return "appStateWaitWithDelayedWriter"
+            }
+            if repeatedEmptyReads.isEmpty == false
+                && popupReadNeverWritten.isEmpty == false
+            {
+                return "appStateWaitWithNoWriter"
+            }
+            if networkOrAuthDependencyObserved {
+                return "appStateWaitWithNetworkOrAuthDependency"
+            }
+            let lastCoarseStatus = domCheckpoints.last?.coarseStatus ?? ""
+            if [
+                "waits on app state",
+                "blank",
+                "spinner/loading",
+                "no further route emitted within timeout",
+            ].contains(lastCoarseStatus) {
+                if popupReadNeverWritten.isEmpty == false {
+                    return "appStateWaitWithNoWriter"
+                }
+                return "appStateWaitWithNoObservableDependency"
+            }
+            if popupReadNeverWritten.isEmpty == false {
+                return "appStateWaitWithNoWriter"
+            }
+            return "notClassified"
+        }
+
+        private func appStateDiagnosticInt(
+            _ key: String,
+            in diagnostics: [String]
+        ) -> Int? {
+            appStateDiagnosticString(key, in: diagnostics).flatMap(Int.init)
+        }
+
+        private func appStateDiagnosticString(
+            _ key: String,
+            in diagnostics: [String]
+        ) -> String? {
+            for diagnostic in diagnostics {
+                guard let range = diagnostic.range(of: "\(key)=") else {
+                    continue
+                }
+                let suffix = diagnostic[range.upperBound...]
+                let value = suffix.prefix { character in
+                    character != ";"
+                        && character != "|"
+                        && character != ","
+                        && character != " "
+                }
+                let string = String(value)
+                if string.isEmpty == false {
+                    return string
+                }
+            }
+            return nil
+        }
+    #endif
 
     private nonisolated static let allowedJSDebugEventKinds: Set<String> = [
         "bootstrapResourceObserved",
@@ -2689,6 +3706,11 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         callRecords.removeAll()
         jsDebugRouteEvents.removeAll()
         nextJSDebugRouteEventSequence = 0
+        #if DEBUG
+            appStateStorageOperationRecords.removeAll()
+            appStateStorageChangeDispatchRecords.removeAll()
+            nextAppStateTraceSequence = 0
+        #endif
         onChangedPayloads.removeAll()
         for portID in serviceWorkerLifecyclePortIDs {
             sharedLifecycleSession?.disconnectKeepalive(
@@ -3716,6 +4738,10 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             let area = input.area
             let areaName = area.chromeAreaName
             let envelope: ChromeMV3StorageAPIOperationResultEnvelope
+            #if DEBUG
+                let appStateStorageStartedAt =
+                    DispatchTime.now().uptimeNanoseconds
+            #endif
             switch area {
             case .local:
                 envelope = storageOperationHandler.handle(
@@ -3748,6 +4774,22 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 )
             }
             if envelope.succeeded == false {
+                #if DEBUG
+                    let elapsedMilliseconds =
+                        appStateElapsedMilliseconds(
+                            startedAt: appStateStorageStartedAt
+                        )
+                    recordAppStateStorageOperation(
+                        request: request,
+                        area: area,
+                        envelope: envelope,
+                        resultPayload: nil,
+                        elapsedMilliseconds: elapsedMilliseconds,
+                        diagnostics: [
+                            "Popup storage operation failed before result payload was produced.",
+                        ]
+                    )
+                #endif
                 return response(
                     request: request,
                     succeeded: false,
@@ -3784,6 +4826,29 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     sourceContext: configuration.sourceContext.runtimeContext
                 )
             }
+            #if DEBUG
+                let elapsedMilliseconds =
+                    appStateElapsedMilliseconds(
+                        startedAt: appStateStorageStartedAt
+                    )
+                recordAppStateStorageOperation(
+                    request: request,
+                    area: area,
+                    envelope: envelope,
+                    resultPayload: resultPayload,
+                    elapsedMilliseconds: elapsedMilliseconds,
+                    diagnostics: [
+                        "Popup storage operation completed through the existing storage operation handler.",
+                    ]
+                )
+                if let onChanged {
+                    recordAppStateStorageChangeDispatch(
+                        payload: onChanged,
+                        elapsedMilliseconds: elapsedMilliseconds,
+                        lifecycleResult: lifecycleResult
+                    )
+                }
+            #endif
             return response(
                 request: request,
                 succeeded: true,
