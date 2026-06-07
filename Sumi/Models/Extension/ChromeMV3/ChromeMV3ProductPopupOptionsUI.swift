@@ -1702,7 +1702,11 @@ final class ChromeMV3ProductPopupOptionsHostController {
             )
         }
 
-        let fileURL = URL(fileURLWithPath: resourcePath)
+        let fileURL = ChromeMV3ExtensionPageResourcePath
+            .applyingExtensionPageURLSuffix(
+                from: launchRecord.declaredPath,
+                to: URL(fileURLWithPath: resourcePath)
+            )
         let readAccessURL = URL(fileURLWithPath: rootPath, isDirectory: true)
         let key = sessionKey(for: launchRecord)
         if sessions[key] != nil {
@@ -2696,10 +2700,30 @@ final class ChromeMV3PopupOptionsDiagnosticURLSchemeHandler:
         let rootPrefix = root.hasSuffix("/") ? root : root + "/"
         guard file.hasPrefix(rootPrefix) else { return nil }
         let relativePath = String(file.dropFirst(rootPrefix.count))
-        return diagnosticURL(relativePath: relativePath)
+        let components = URLComponents(
+            url: fileURL,
+            resolvingAgainstBaseURL: false
+        )
+        return diagnosticURL(
+            relativePath: relativePath,
+            percentEncodedQuery: components?.percentEncodedQuery,
+            percentEncodedFragment: components?.percentEncodedFragment
+        )
     }
 
     static func diagnosticURL(relativePath: String) -> URL? {
+        diagnosticURL(
+            relativePath: relativePath,
+            percentEncodedQuery: nil,
+            percentEncodedFragment: nil
+        )
+    }
+
+    private static func diagnosticURL(
+        relativePath: String,
+        percentEncodedQuery: String?,
+        percentEncodedFragment: String?
+    ) -> URL? {
         switch ChromeMV3ExtensionPageResourcePath.normalize(relativePath) {
         case .failure:
             return nil
@@ -2708,6 +2732,8 @@ final class ChromeMV3PopupOptionsDiagnosticURLSchemeHandler:
             components.scheme = scheme
             components.host = host
             components.path = "/" + normalizedPath
+            components.percentEncodedQuery = percentEncodedQuery
+            components.percentEncodedFragment = percentEncodedFragment
             return components.url
         }
     }

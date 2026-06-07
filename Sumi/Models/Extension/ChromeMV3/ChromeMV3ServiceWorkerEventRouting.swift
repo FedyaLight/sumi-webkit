@@ -246,6 +246,7 @@ enum ChromeMV3ServiceWorkerDeclarationReadinessEvaluator {
             .storageOnChanged,
             .permissionsOnAdded,
             .permissionsOnRemoved,
+            .tabsOnActivated,
             .tabsOnRemoved,
             .tabsOnUpdated,
             .contextMenusOnClicked,
@@ -381,6 +382,8 @@ enum ChromeMV3ServiceWorkerDeclarationReadinessEvaluator {
                 "browser.commands.onCommand.addListener",
                 "commands.onCommand.addListener",
             ]
+        case .tabsOnActivated:
+            return tabsPatterns("onActivated")
         case .tabsOnRemoved:
             return tabsPatterns("onRemoved")
         case .tabsOnUpdated:

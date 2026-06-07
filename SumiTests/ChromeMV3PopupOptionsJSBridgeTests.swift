@@ -312,6 +312,170 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(encoded.contains("com.bitwarden.desktop"))
     }
 
+    func testControlledActionPopupRejectsPackagedFileExecuteScriptWithoutRealExecutor()
+        throws
+    {
+        let root = try makeTemporaryDirectory()
+        let assets = root.appendingPathComponent("assets", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: assets,
+            withIntermediateDirectories: true
+        )
+        try "/* packaged fixture */".write(
+            to: assets.appendingPathComponent("parse.js"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let extensionID = "popup-options-extension"
+        let profileID = "popup-options-profile"
+        let activeTabGrant = ChromeMV3ActiveTabGrant(
+            extensionID: extensionID,
+            profileID: profileID,
+            tabID: 1,
+            scope: .origin("https://example.com"),
+            reason: .actionClick,
+            userGestureModeled: true,
+            createdSequence: 1,
+            diagnostics: ["test activeTab grant"]
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                extensionID: extensionID,
+                profileID: profileID,
+                manifestPermissions: ["activeTab", "scripting"],
+                activeTabGrants: [activeTabGrant],
+                allowlist: .controlledActionPopupPolicy,
+                generatedBundleRootPath: root.path
+            )
+        )
+
+        let packaged = handler.handle(request(
+            namespace: "scripting",
+            methodName: "executeScript",
+            arguments: [
+                .object([
+                    "target": .object(["tabId": .number(1)]),
+                    "files": .array([.string("assets/parse.js")]),
+                    "injectImmediately": .bool(true),
+                ]),
+            ]
+        ))
+        let remote = handler.handle(request(
+            namespace: "scripting",
+            methodName: "executeScript",
+            arguments: [
+                .object([
+                    "target": .object(["tabId": .number(1)]),
+                    "files": .array([
+                        .string("https://cdn.example.test/remote.js"),
+                    ]),
+                ]),
+            ]
+        ))
+        let inlineFunction = handler.handle(request(
+            namespace: "scripting",
+            methodName: "executeScript",
+            arguments: [
+                .object([
+                    "target": .object(["tabId": .number(1)]),
+                    "functionSource": .string("() => 1"),
+                ]),
+            ]
+        ))
+        let mainWorld = handler.handle(request(
+            namespace: "scripting",
+            methodName: "executeScript",
+            arguments: [
+                .object([
+                    "target": .object(["tabId": .number(1)]),
+                    "files": .array([.string("assets/parse.js")]),
+                    "world": .string("MAIN"),
+                ]),
+            ]
+        ))
+        let conflictingFrames = handler.handle(request(
+            namespace: "scripting",
+            methodName: "executeScript",
+            arguments: [
+                .object([
+                    "target": .object([
+                        "tabId": .number(1),
+                        "allFrames": .bool(true),
+                        "frameIds": .array([.number(0)]),
+                    ]),
+                    "files": .array([.string("assets/parse.js")]),
+                ]),
+            ]
+        ))
+
+        XCTAssertFalse(packaged.succeeded)
+        XCTAssertEqual(packaged.lastErrorCode, "unsupportedAPI")
+        XCTAssertNil(packaged.resultPayload)
+        XCTAssertTrue(
+            packaged.diagnostics.contains {
+                $0.contains("validated package-local files[]")
+                    && $0.contains("no real tab/frame execution executor")
+            }
+        )
+        XCTAssertTrue(
+            packaged.diagnostics.contains {
+                $0.contains("modeled no-op success is blocked")
+            }
+        )
+        XCTAssertTrue(
+            packaged.diagnostics.contains {
+                $0.contains("No fake executeScript success")
+            }
+        )
+        XCTAssertTrue(
+            packaged.diagnostics.contains("scripting.executeScript allFrames=false.")
+        )
+        XCTAssertTrue(
+            packaged.diagnostics.contains("scripting.executeScript frameIds=0")
+        )
+        XCTAssertTrue(
+            packaged.diagnostics.contains(
+                "scripting.executeScript world=ISOLATED(default)."
+            )
+        )
+        XCTAssertTrue(
+            packaged.diagnostics.contains(
+                "scripting.executeScript injectImmediately=true."
+            )
+        )
+        XCTAssertFalse(packaged.nativeHostLaunchAttempted)
+        XCTAssertFalse(packaged.contentScriptAttachmentAvailableInProduct)
+        XCTAssertFalse(packaged.normalTabRuntimeBridgeAvailable)
+
+        XCTAssertFalse(remote.succeeded)
+        XCTAssertEqual(remote.lastErrorCode, "unsupportedAPI")
+        XCTAssertTrue(
+            remote.diagnostics.contains("No remote executable code was allowed.")
+        )
+
+        XCTAssertFalse(inlineFunction.succeeded)
+        XCTAssertEqual(inlineFunction.lastErrorCode, "unsupportedAPI")
+        XCTAssertTrue(
+            inlineFunction.diagnostics.contains {
+                $0.contains("function/inline execution is not exposed")
+            }
+        )
+
+        XCTAssertFalse(mainWorld.succeeded)
+        XCTAssertEqual(mainWorld.lastErrorCode, "unsupportedAPI")
+        XCTAssertTrue(
+            mainWorld.diagnostics.contains {
+                $0.contains("MAIN-world execution is not exposed")
+            }
+        )
+
+        XCTAssertFalse(conflictingFrames.succeeded)
+        XCTAssertEqual(
+            conflictingFrames.lastErrorMessage,
+            "scripting.executeScript target.frameIds and target.allFrames cannot both be specified."
+        )
+    }
+
     func testAppStateDependencyTraceClassifiesRepeatedEmptyPopupReadsWithoutWriter()
         throws
     {
@@ -709,6 +873,9 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(
             controlledPolicy.exposedNamespaces.contains("extension")
         )
+        XCTAssertTrue(
+            controlledPolicy.exposedNamespaces.contains("scripting")
+        )
         XCTAssertFalse(
             ChromeMV3PopupOptionsAPIMethodPolicy.defaultPolicy
                 .exposedNamespaces
@@ -750,9 +917,25 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(
             controlledPolicy.allowedMethods.contains("contextMenus.create")
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             controlledPolicy.allowedMethods.contains("scripting.executeScript")
         )
+        XCTAssertFalse(
+            source.contains(
+                "scripting.executeScript accepted package-local files[] only."
+            )
+        )
+        XCTAssertFalse(
+            source.contains(
+                "scripting.executeScript returned one modeled result envelope per frame."
+            )
+        )
+        XCTAssertTrue(
+            source.contains(
+                "Chrome-compatible executeScript must execute in an eligible target frame or reject; modeled no-op success is blocked."
+            )
+        )
+        XCTAssertFalse(source.contains("executeScriptModeled"))
         XCTAssertFalse(
             controlledPolicy.allowedMethods.contains("runtime.getPlatformInfo")
         )
@@ -3542,7 +3725,8 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         activeTabGrants: [ChromeMV3ActiveTabGrant] = [],
         allowlist: ChromeMV3PopupOptionsAPIMethodPolicy = .defaultPolicy,
         storageLocalRootPath: String? = nil,
-        storageSyncRootPath: String? = nil
+        storageSyncRootPath: String? = nil,
+        generatedBundleRootPath: String? = nil
     ) -> ChromeMV3PopupOptionsJSBridgeConfiguration {
         ChromeMV3PopupOptionsJSBridgeConfiguration(
             extensionID: extensionID,
@@ -3550,6 +3734,7 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             surfaceID: "\(profileID):\(extensionID):\(surface.rawValue)",
             surface: surface,
             extensionBaseURLString: "chrome-extension://\(extensionID)/",
+            generatedBundleRootPath: generatedBundleRootPath,
             permissionStateRootPath: nil,
             storageLocalRootPath: storageLocalRootPath,
             storageSyncRootPath: storageSyncRootPath,

@@ -200,6 +200,7 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
                 var namespaces = [
                     "i18n",
                     "runtime",
+                    "scripting",
                     "storage.local",
                     "storage.session",
                     "storage.sync",
@@ -218,7 +219,6 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
                 "offscreen",
                 "permissions",
                 "sidePanel",
-                "scripting",
                 "webRequest",
             ],
             allowedMethods: {
@@ -251,6 +251,7 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
                     "storage.sync.onChanged",
                     "storage.sync.remove",
                     "storage.sync.set",
+                    "scripting.executeScript",
                     "tabs.query",
                     "tabs.sendMessage",
                 ]
@@ -294,10 +295,10 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
                         namespace: "scripting",
                         methodName: "*",
                         reason:
-                            "scripting.* is not exposed by the controlled action popup host.",
+                            "scripting.executeScript is exposed only to return Chrome-like errors until a real eligible tab injection executor is wired.",
                         remediation:
-                            "Add scripting only after a safe target policy exists.",
-                        roadmapOwner: "Future scripting product prompt"
+                            "Keep remote, inline/function, fake modeled results, and product-normal-tab script injection blocked.",
+                        roadmapOwner: "MV3 bridge owner"
                     ),
                     blocked(
                         namespace: "contextMenus",
@@ -880,6 +881,7 @@ struct ChromeMV3PopupOptionsJSBridgeConfiguration:
     var surfaceID: String
     var surface: ChromeMV3ProductPopupOptionsSurface
     var extensionBaseURLString: String
+    var generatedBundleRootPath: String? = nil
     var permissionStateRootPath: String?
     var storageLocalRootPath: String? = nil
     var storageSyncRootPath: String? = nil
@@ -950,6 +952,7 @@ struct ChromeMV3PopupOptionsJSBridgeConfiguration:
             surface: launchRecord.surface,
             extensionBaseURLString:
                 "chrome-extension://\(launchRecord.extensionID)/",
+            generatedBundleRootPath: launchRecord.generatedRewrittenBundlePath,
             permissionStateRootPath: launchRecord.managerStoreRootPath,
             storageLocalRootPath:
                 launchRecord.managerStoreRootPath.map {
@@ -3541,7 +3544,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         case ("tabs", "port.disconnect"):
             return tabsPortDisconnect(request)
         case ("scripting", "executeScript"):
-            return blocked(request, namespace: "scripting")
+            return scriptingExecuteScript(request)
         case ("nativeMessaging", _),
              ("declarativeNetRequest", _),
              ("webRequest", _),
@@ -5410,6 +5413,374 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         )
     }
 
+    private func scriptingExecuteScript(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        switch normalizePopupExecuteScript(request) {
+        case .failure(let error):
+            return invalidArguments(request, error.message)
+        case .success(let input):
+            guard input.injectionKind == "files",
+                  input.functionSource == nil,
+                  input.files.isEmpty == false
+            else {
+                return runtimeLastErrorResponse(
+                    request,
+                    error: .unsupportedAPI,
+                    diagnostics: [
+                        "scripting.executeScript function/inline execution is not exposed by the controlled popup/options bridge.",
+                        "Only package-local files[] are accepted in this developer-preview surface.",
+                        "No inline script, remote module, or product normal-tab injection occurred.",
+                    ]
+                )
+            }
+            guard input.world == "ISOLATED" else {
+                return runtimeLastErrorResponse(
+                    request,
+                    error: .unsupportedAPI,
+                    diagnostics: [
+                        "scripting.executeScript MAIN-world execution is not exposed by the controlled popup/options bridge.",
+                        "Only default ISOLATED world package-local files[] can reach the controlled validation path.",
+                        "No MAIN-world injection occurred.",
+                    ]
+                )
+            }
+            guard permissionRuntimeOwner.permissionBroker
+                .hasAPIPermission("scripting")
+            else {
+                return runtimeLastErrorResponse(
+                    request,
+                    error: .permissionDenied,
+                    diagnostics: [
+                        "scripting.executeScript requires the scripting API permission.",
+                    ]
+                )
+            }
+            guard let rootURL = generatedBundleRootURL() else {
+                return runtimeLastErrorResponse(
+                    request,
+                    error: .contextNotLoaded,
+                    diagnostics: [
+                        "scripting.executeScript package-local file validation requires a generated bundle root.",
+                    ]
+                )
+            }
+            let resolvedFiles = input.files.compactMap {
+                resolveExecuteScriptPackageFile($0, rootURL: rootURL)
+            }
+            guard resolvedFiles.count == input.files.count else {
+                return runtimeLastErrorResponse(
+                    request,
+                    error: .unsupportedAPI,
+                    diagnostics: [
+                        "scripting.executeScript files[] must reference package-local JavaScript resources inside the generated bundle.",
+                        "Remote URLs, absolute paths, traversal paths, non-JavaScript files, symlinks, and missing files are rejected.",
+                        "No remote executable code was allowed.",
+                    ]
+                )
+            }
+            let fileShapes = resolvedFiles.map(\.relativePath).sorted()
+            guard let tab = tabRegistry.tab(id: input.target.tabID) else {
+                return runtimeLastErrorResponse(
+                    request,
+                    error: .targetTabMissing,
+                    diagnostics: [
+                        "scripting.executeScript target tab is missing from the controlled synthetic registry.",
+                    ]
+                )
+            }
+            guard tab.controlledSyntheticSurface,
+                  tab.productNormalTab == false,
+                  tab.sameControllerConfigurationStatus
+                    == .controlledSyntheticSameController
+            else {
+                return runtimeLastErrorResponse(
+                    request,
+                    error: .unsupportedAPI,
+                    diagnostics: [
+                        "scripting.executeScript is blocked outside controlled synthetic tabs.",
+                        "No product normal-tab script injection is performed.",
+                    ]
+                )
+            }
+            if let permissionFailure = tabPermissionFailure(
+                request: request,
+                tabID: tab.id,
+                requestName: "scripting.executeScript"
+            ) {
+                return permissionFailure
+            }
+            let selectedFrames: [ChromeMV3SyntheticTabFrameRecord]
+            if input.allFrames {
+                selectedFrames = tab.frames
+            } else if let frameIDs = input.frameIDs {
+                selectedFrames = frameIDs.compactMap {
+                    tab.frame(frameID: $0, documentID: nil)
+                }
+                guard selectedFrames.count == frameIDs.count else {
+                    return runtimeLastErrorResponse(
+                        request,
+                        error: .targetFrameMissing,
+                        diagnostics: [
+                            "scripting.executeScript requested a frame not modeled in the controlled synthetic tab.",
+                        ]
+                    )
+                }
+            } else {
+                guard let frame = tab.frame(
+                    frameID: input.target.frameID,
+                    documentID: input.target.documentID
+                ) else {
+                    return runtimeLastErrorResponse(
+                        request,
+                        error: .targetFrameMissing,
+                        diagnostics: [
+                            "scripting.executeScript target frame is missing.",
+                        ]
+                    )
+                }
+                selectedFrames = [frame]
+            }
+            guard selectedFrames.allSatisfy(\.controlledSyntheticExecutionAllowed)
+            else {
+                return runtimeLastErrorResponse(
+                    request,
+                    error: .unsupportedAPI,
+                    diagnostics: [
+                        "scripting.executeScript frame is not eligible for controlled synthetic execution.",
+                    ]
+                )
+            }
+            return runtimeLastErrorResponse(
+                request,
+                error: .unsupportedAPI,
+                diagnostics: [
+                    "scripting.executeScript validated package-local files[] but did not report success because no real tab/frame execution executor is wired for the controlled popup/options bridge.",
+                    "scripting.executeScript fileCount=\(fileShapes.count).",
+                    "scripting.executeScript fileShapes=\(fileShapes.joined(separator: ","))",
+                    "scripting.executeScript target.tabId=\(input.target.tabID).",
+                    "scripting.executeScript allFrames=\(input.allFrames).",
+                    "scripting.executeScript frameIds=\(selectedFrames.map(\.frameID).sorted().map(String.init).joined(separator: ","))",
+                    "scripting.executeScript world=\(input.world)\(input.world == "ISOLATED" ? "(default)" : "").",
+                    "scripting.executeScript injectImmediately=\(input.injectImmediately).",
+                    "Chrome-compatible executeScript must execute in an eligible target frame or reject; modeled no-op success is blocked.",
+                    "No fake executeScript success, fake content-script listener, fake runtime response, remote script, remote module, inline function, MAIN-world injection, product normal-tab injection, or native host launch occurred.",
+                ]
+            )
+        }
+    }
+
+    private func normalizePopupExecuteScript(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> Result<
+        ChromeMV3ScriptingExecuteScriptNormalizedRequest,
+        ChromeMV3TabsScriptingArgumentError
+    > {
+        guard request.arguments.count == 1,
+              let details = request.arguments[0].objectValue
+        else {
+            return .failure(
+                ChromeMV3TabsScriptingArgumentError(
+                    message: "scripting.executeScript requires one details object."
+                )
+            )
+        }
+        guard let target = details["target"]?.objectValue,
+              let tabID = target["tabId"]?.intValue
+        else {
+            return .failure(
+                ChromeMV3TabsScriptingArgumentError(
+                    message: "scripting.executeScript details.target.tabId is required."
+                )
+            )
+        }
+        let frameIDs: [Int]?
+        if let value = target["frameIds"] {
+            guard case .array(let values) = value else {
+                return .failure(
+                    ChromeMV3TabsScriptingArgumentError(
+                        message: "scripting.executeScript target.frameIds must be an array."
+                    )
+                )
+            }
+            frameIDs = values.compactMap(\.intValue)
+            if frameIDs?.count != values.count {
+                return .failure(
+                    ChromeMV3TabsScriptingArgumentError(
+                        message: "scripting.executeScript target.frameIds entries must be integers."
+                    )
+                )
+            }
+        } else {
+            frameIDs = nil
+        }
+        let allFrames = target["allFrames"]?.boolValue ?? false
+        guard allFrames == false || frameIDs == nil else {
+            return .failure(
+                ChromeMV3TabsScriptingArgumentError(
+                    message: "scripting.executeScript target.frameIds and target.allFrames cannot both be specified."
+                )
+            )
+        }
+        let files: [String]
+        if let value = details["files"] {
+            guard case .array(let values) = value else {
+                return .failure(
+                    ChromeMV3TabsScriptingArgumentError(
+                        message: "scripting.executeScript files must be a string array."
+                    )
+                )
+            }
+            files = values.compactMap(\.stringValue)
+            if files.count != values.count {
+                return .failure(
+                    ChromeMV3TabsScriptingArgumentError(
+                        message: "scripting.executeScript files entries must be strings."
+                    )
+                )
+            }
+        } else {
+            files = []
+        }
+        let functionSource = details["functionSource"]?.stringValue
+            ?? details["func"]?.stringValue
+        let hasFunction = functionSource?.isEmpty == false
+        let hasFiles = files.isEmpty == false
+        guard hasFiles != hasFunction else {
+            return .failure(
+                ChromeMV3TabsScriptingArgumentError(
+                    message: "scripting.executeScript requires exactly one of files or functionSource."
+                )
+            )
+        }
+        let arguments: [ChromeMV3StorageValue]
+        if let value = details["args"] {
+            guard case .array(let values) = value else {
+                return .failure(
+                    ChromeMV3TabsScriptingArgumentError(
+                        message: "scripting.executeScript args must be an array."
+                    )
+                )
+            }
+            arguments = values
+        } else {
+            arguments = []
+        }
+        let world = details["world"]?.stringValue ?? "ISOLATED"
+        guard world == "ISOLATED" || world == "MAIN" else {
+            return .failure(
+                ChromeMV3TabsScriptingArgumentError(
+                    message: "scripting.executeScript world must be ISOLATED or MAIN."
+                )
+            )
+        }
+        return .success(
+            ChromeMV3ScriptingExecuteScriptNormalizedRequest(
+                target:
+                    ChromeMV3TabsScriptingNormalizedTabTarget(
+                        tabID: tabID,
+                        frameID: target["frameId"]?.intValue ?? 0,
+                        documentID: target["documentId"]?.stringValue
+                    ),
+                frameIDs: frameIDs,
+                allFrames: allFrames,
+                world: world,
+                injectImmediately:
+                    details["injectImmediately"]?.boolValue ?? false,
+                injectionKind: hasFunction ? "function" : "files",
+                files: files,
+                functionSource: functionSource,
+                arguments: arguments
+            )
+        )
+    }
+
+    private func generatedBundleRootURL() -> URL? {
+        guard let rootPath = configuration.generatedBundleRootPath,
+              rootPath.isEmpty == false
+        else { return nil }
+        let rootURL = URL(fileURLWithPath: rootPath, isDirectory: true)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+        let values = try? rootURL.resourceValues(forKeys: [
+            .isDirectoryKey,
+            .isSymbolicLinkKey,
+        ])
+        guard values?.isDirectory == true,
+              values?.isSymbolicLink != true
+        else { return nil }
+        return rootURL
+    }
+
+    private func resolveExecuteScriptPackageFile(
+        _ rawPath: String,
+        rootURL: URL
+    ) -> (relativePath: String, fileURL: URL)? {
+        guard let relativePath = normalizedExecuteScriptRelativePath(rawPath)
+        else { return nil }
+        let fileURL = rootURL
+            .appendingPathComponent(relativePath, isDirectory: false)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+        guard fileURL.path == rootURL.path
+                || fileURL.path.hasPrefix(rootURL.path + "/")
+        else { return nil }
+        let values = try? fileURL.resourceValues(forKeys: [
+            .fileSizeKey,
+            .isRegularFileKey,
+            .isSymbolicLinkKey,
+        ])
+        guard values?.isRegularFile == true,
+              values?.isSymbolicLink != true,
+              (values?.fileSize ?? 0) <= 10_000_000
+        else { return nil }
+        return (relativePath, fileURL)
+    }
+
+    private func normalizedExecuteScriptRelativePath(
+        _ rawPath: String
+    ) -> String? {
+        let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return nil }
+        let relativeCandidate: String
+        if let url = URL(string: trimmed),
+           let scheme = url.scheme,
+           scheme.isEmpty == false {
+            guard scheme == "chrome-extension",
+                  url.host == configuration.extensionID
+            else { return nil }
+            relativeCandidate = String(url.path.drop(while: { $0 == "/" }))
+        } else if trimmed.hasPrefix(configuration.extensionBaseURLString) {
+            relativeCandidate = String(
+                trimmed.dropFirst(configuration.extensionBaseURLString.count)
+            )
+        } else {
+            relativeCandidate = String(trimmed.drop(while: { $0 == "/" }))
+        }
+        let relativePath = relativeCandidate
+            .removingPercentEncoding?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? relativeCandidate
+        let lowercasedRelativePath = relativePath.lowercased()
+        guard relativePath.isEmpty == false,
+              relativePath.range(
+                of: #"^[A-Za-z0-9_./@+\-]{1,240}$"#,
+                options: .regularExpression
+              ) != nil,
+              relativePath.contains("\\") == false,
+              relativePath.contains("//") == false,
+              (
+                lowercasedRelativePath.hasSuffix(".js")
+                    || lowercasedRelativePath.hasSuffix(".mjs")
+              )
+        else { return nil }
+        let components = relativePath.split(separator: "/", omittingEmptySubsequences: false)
+        guard components.allSatisfy({
+            $0.isEmpty == false && $0 != "." && $0 != ".."
+        }) else { return nil }
+        return relativePath
+    }
+
     private func tabsSendMessage(
         _ request: ChromeMV3RuntimeJSBridgeHostRequest,
         sourceContextOverride: ChromeMV3JSBridgeSourceContext? = nil
@@ -6672,6 +7043,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             return "tabs"
         case ("tabs", "sendMessage"), ("tabs", "connect"),
              ("tabs", "port.postMessage"), ("tabs", "port.disconnect"):
+            return "contentScript"
+        case ("scripting", "executeScript"):
             return "contentScript"
         default:
             return "unknown"
@@ -9347,6 +9720,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
             if (namespace === "tabs") {
               return "contentScript";
             }
+            if (namespace === "scripting" && methodName === "executeScript") {
+              return "contentScript";
+            }
             if (methodName === "sendNativeMessage") {
               return "nativeApplication";
             }
@@ -9423,6 +9799,11 @@ enum ChromeMV3PopupOptionsJSShimSource {
             }
             if (namespace === "runtime" && methodName === "getManifest") {
               return response && response.succeeded ? "manifestReturned" : "manifestUnavailable";
+            }
+            if (namespace === "scripting" && methodName === "executeScript") {
+              return response && response.succeeded
+                ? "executeScriptSucceeded"
+                : (response && response.lastErrorCode ? response.lastErrorCode : "scripting.executeScript error");
             }
             if (namespace === "runtime" && methodName === "port.postMessage") {
               return response && response.succeeded ? "Port response delivered" : "Port message not delivered";
@@ -10336,6 +10717,10 @@ enum ChromeMV3PopupOptionsJSShimSource {
             const text = body && typeof body.innerText === "string"
               ? body.innerText
               : "";
+            const title = globalThis.document
+              && typeof globalThis.document.title === "string"
+              ? globalThis.document.title
+              : "";
             const trimmedTextLength = text.trim().length;
             const queryCount = (selector) => {
               try {
@@ -10348,13 +10733,15 @@ enum ChromeMV3PopupOptionsJSShimSource {
             const buttonCount = queryCount("button,[role='button'],input[type='button'],input[type='submit']");
             const linkCount = queryCount("a[href]");
             const formCount = queryCount("form");
-            const appRootCount = queryCount("app-root,[data-app-root],main,#app,#root");
+            const appRootCount = queryCount("app-root,[data-app-root],main,#app,#root,#react");
             const elementCount = body && typeof body.querySelectorAll === "function"
               ? body.querySelectorAll("*").length
               : 0;
             const hasBusyIndicator =
               queryCount("[role='progressbar'],[aria-busy='true'],.spinner,.loading,.loader,[data-loading='true']") > 0;
             const hasLoadingText = /\\b(loading|please wait|initializing|syncing)\\b/i.test(text);
+            const titleHasLoadingText =
+              /\\b(loading|please wait|initializing|syncing)\\b/i.test(title);
             const controlCount = inputCount + buttonCount + linkCount;
             const blankCandidate =
               trimmedTextLength === 0
@@ -10374,6 +10761,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
               elementCount,
               hasBusyIndicator,
               hasLoadingText,
+              titleHasLoadingText,
               controlCount,
               blankCandidate,
               usableFormCandidate
@@ -10382,12 +10770,12 @@ enum ChromeMV3PopupOptionsJSShimSource {
 
           function debugPostBootstrapEventsSinceManifest() {
             const manifestAt = __sumiPostBootstrapState.manifestReturnedAt;
-            if (manifestAt === null) {
-              return [];
-            }
+            const baselineAt = manifestAt === null
+              ? 0
+              : manifestAt;
             return __sumiDebugEvents.filter((event) => {
               return event
-                && event.atMs >= manifestAt
+                && event.atMs >= baselineAt
                 && event.eventKind !== "postBootstrapCheckpoint"
                 && !(event.apiName === "runtime.getManifest"
                   && event.resultClassifier === "manifestReturned");
@@ -10482,7 +10870,11 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 firstError: null
               };
             }
-            if (dom.hasBusyIndicator || dom.hasLoadingText) {
+            if (
+              dom.hasBusyIndicator
+                || dom.hasLoadingText
+                || dom.titleHasLoadingText
+            ) {
               return {
                 resultClassifier: "spinner/loading",
                 firstError: null
@@ -10501,9 +10893,6 @@ enum ChromeMV3PopupOptionsJSShimSource {
           }
 
           function debugPostBootstrapCheckpoint(phase) {
-            if (__sumiPostBootstrapState.manifestReturnedAt === null) {
-              return;
-            }
             const dom = debugCoarseDOMState();
             const routeEvents = debugPostBootstrapEventsSinceManifest();
             const pending = debugPostBootstrapPendingRoutes();
@@ -10552,9 +10941,14 @@ enum ChromeMV3PopupOptionsJSShimSource {
               ].join(";"),
               diagnostics: [
                 "phase=" + phase,
-                "sinceGetManifestMs=" + String(Math.round(
-                  debugNowMS() - __sumiPostBootstrapState.manifestReturnedAt
-                )),
+                __sumiPostBootstrapState.manifestReturnedAt === null
+                  ? "baseline=debugStart"
+                  : "baseline=runtime.getManifest",
+                __sumiPostBootstrapState.manifestReturnedAt === null
+                  ? "sinceDebugStartMs=" + String(Math.round(debugNowMS()))
+                  : "sinceGetManifestMs=" + String(Math.round(
+                      debugNowMS() - __sumiPostBootstrapState.manifestReturnedAt
+                    )),
                 "readyState=" + dom.readyState,
                 "visibleTextLength=" + String(dom.trimmedTextLength),
                 "inputCount=" + String(dom.inputCount),
@@ -10565,9 +10959,12 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 "elementCount=" + String(dom.elementCount),
                 "hasBusyIndicator=" + String(dom.hasBusyIndicator),
                 "hasLoadingText=" + String(dom.hasLoadingText),
+                "titleHasLoadingText=" + String(dom.titleHasLoadingText),
                 "blankCandidate=" + String(dom.blankCandidate),
                 "usableFormCandidate=" + String(dom.usableFormCandidate),
-                "routesAfterGetManifest=" + String(routeCountExcludingSentinel),
+                __sumiPostBootstrapState.manifestReturnedAt === null
+                  ? "routesAfterDebugStart=" + String(routeCountExcludingSentinel)
+                  : "routesAfterGetManifest=" + String(routeCountExcludingSentinel),
                 "pendingRouteCount=" + String(pending.length),
                 "serviceWorkerRouteEvents=" + String(serviceWorkerRouteCount),
                 "contentScriptRouteEvents=" + String(contentScriptRouteCount),

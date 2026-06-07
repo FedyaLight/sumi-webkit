@@ -5810,6 +5810,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             .alarmsOnAlarm,
             .commandsOnCommand,
             .contextMenusOnClicked,
+            .tabsOnActivated,
             .tabsOnRemoved,
             .tabsOnUpdated,
             .webNavigationOnBeforeNavigate,
@@ -6976,6 +6977,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             return [normalizeAlarm(args[0])];
           case 'contextMenusOnClicked':
             return [clone(args[0] || {}), clone(args[1])];
+          case 'tabsOnActivated':
+            return [clone(args[0] || { tabId: -1, windowId: -1 })];
           case 'webNavigationOnBeforeNavigate':
           case 'webNavigationOnCommitted':
           case 'webNavigationOnCompleted':
@@ -7566,6 +7569,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         onClicked: event('contextMenusOnClicked')
       }, 'chrome.contextMenus');
       const tabs = proxiedNamespace({
+        onActivated: event('tabsOnActivated'),
         onRemoved: event('tabsOnRemoved'),
         onUpdated: event('tabsOnUpdated')
       }, 'chrome.tabs');

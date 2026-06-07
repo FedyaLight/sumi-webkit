@@ -2341,6 +2341,75 @@ enum ChromeMV3ExtensionPageResourcePath {
         return url
     }
 
+    static func applyingExtensionPageURLSuffix(
+        from declaredPath: String?,
+        to fileURL: URL
+    ) -> URL {
+        guard let suffix = urlSuffix(from: declaredPath),
+              suffix.query != nil || suffix.fragment != nil,
+              var components = URLComponents(
+                url: fileURL,
+                resolvingAgainstBaseURL: false
+              )
+        else { return fileURL }
+        components.percentEncodedQuery = suffix.query
+        components.percentEncodedFragment = suffix.fragment
+        return components.url ?? fileURL
+    }
+
+    private static func urlSuffix(
+        from declaredPath: String?
+    ) -> (query: String?, fragment: String?)? {
+        guard let declaredPath else { return nil }
+        let trimmed = declaredPath
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false,
+              isRemote(trimmed) == false
+        else { return nil }
+
+        let pathAndQuery: String
+        let fragment: String?
+        if let hashIndex = trimmed.firstIndex(of: "#") {
+            pathAndQuery = String(trimmed[..<hashIndex])
+            let fragmentStart = trimmed.index(after: hashIndex)
+            fragment = safePercentEncodedURLComponent(
+                String(trimmed[fragmentStart...]),
+                allowedCharacters: .urlFragmentAllowed
+            )
+        } else {
+            pathAndQuery = trimmed
+            fragment = nil
+        }
+
+        let query: String?
+        if let queryIndex = pathAndQuery.firstIndex(of: "?") {
+            let queryStart = pathAndQuery.index(after: queryIndex)
+            query = safePercentEncodedURLComponent(
+                String(pathAndQuery[queryStart...]),
+                allowedCharacters: .urlQueryAllowed
+            )
+        } else {
+            query = nil
+        }
+
+        return (query, fragment)
+    }
+
+    private static func safePercentEncodedURLComponent(
+        _ value: String,
+        allowedCharacters: CharacterSet
+    ) -> String? {
+        guard value.contains("\0") == false,
+              value.unicodeScalars.allSatisfy({
+                CharacterSet.controlCharacters.contains($0) == false
+              })
+        else { return nil }
+        if value.removingPercentEncoding != nil {
+            return value
+        }
+        return value.addingPercentEncoding(withAllowedCharacters: allowedCharacters)
+    }
+
     static func isRemote(_ value: String) -> Bool {
         let lowered = value
             .trimmingCharacters(in: .whitespacesAndNewlines)

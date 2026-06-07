@@ -1003,6 +1003,9 @@ struct ChromeMV3ScriptingExecuteScriptNormalizedRequest:
 {
     var target: ChromeMV3TabsScriptingNormalizedTabTarget
     var frameIDs: [Int]?
+    var allFrames: Bool
+    var world: String
+    var injectImmediately: Bool
     var injectionKind: String
     var files: [String]
     var functionSource: String?
@@ -1876,7 +1879,9 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
                 )
             }
             let selectedFrames: [ChromeMV3SyntheticTabFrameRecord]
-            if let frameIDs = input.frameIDs {
+            if input.allFrames {
+                selectedFrames = tab.frames
+            } else if let frameIDs = input.frameIDs {
                 selectedFrames = frameIDs.compactMap {
                     tab.frame(frameID: $0, documentID: Optional<String>.none)
                 }
@@ -1942,6 +1947,9 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
                         record.diagnostics
                             + [
                                 "scripting.executeScript returned one modeled result envelope per frame.",
+                                "scripting.executeScript allFrames=\(input.allFrames).",
+                                "scripting.executeScript world=\(input.world).",
+                                "scripting.executeScript injectImmediately=\(input.injectImmediately).",
                                 "Function/file input was represented but not evaluated in a product tab.",
                             ]
                     )
@@ -2089,6 +2097,12 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
         } else {
             frameIDs = nil
         }
+        let allFrames = target["allFrames"]?.boolValue ?? false
+        guard allFrames == false || frameIDs == nil else {
+            return argumentFailure(
+                "scripting.executeScript target.frameIds and target.allFrames cannot both be specified."
+            )
+        }
         let files: [String]
         if let value = details["files"] {
             guard case .array(let values) = value else {
@@ -2125,6 +2139,12 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
         } else {
             arguments = []
         }
+        let world = details["world"]?.stringValue ?? "ISOLATED"
+        guard world == "ISOLATED" || world == "MAIN" else {
+            return argumentFailure(
+                "scripting.executeScript world must be ISOLATED or MAIN."
+            )
+        }
         return .success(
             ChromeMV3ScriptingExecuteScriptNormalizedRequest(
                 target:
@@ -2134,6 +2154,10 @@ final class ChromeMV3TabsScriptingJSBridgeHandler {
                         documentID: target["documentId"]?.stringValue
                     ),
                 frameIDs: frameIDs,
+                allFrames: allFrames,
+                world: world,
+                injectImmediately:
+                    details["injectImmediately"]?.boolValue ?? false,
                 injectionKind: hasFunction ? "function" : "files",
                 files: files,
                 functionSource: functionSource,

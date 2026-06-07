@@ -221,7 +221,7 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         XCTAssertTrue(launchRecord.apiSurface.storageLocalAvailable)
         XCTAssertTrue(launchRecord.apiSurface.storageSessionAvailable)
         XCTAssertFalse(launchRecord.apiSurface.permissionsAvailable)
-        XCTAssertFalse(launchRecord.apiSurface.scriptingAvailable)
+        XCTAssertTrue(launchRecord.apiSurface.scriptingAvailable)
         XCTAssertFalse(launchRecord.apiSurface.nativeMessagingAvailable)
         XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
             "runtime.sendMessage"
@@ -273,6 +273,9 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         ))
         XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
             "i18n.getUILanguage"
+        ))
+        XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
+            "scripting.executeScript"
         ))
         XCTAssertFalse(launchRecord.apiSurface.allowedMethods.contains(
             "tabs.connect"
@@ -420,6 +423,33 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         XCTAssertEqual(diagnosticURL.scheme, "sumi-extension-page-diagnostic")
         XCTAssertEqual(diagnosticURL.host, "extension")
         XCTAssertEqual(diagnosticURL.path, "/popup/index.html")
+
+        let suffixedPageURL = ChromeMV3ExtensionPageResourcePath
+            .applyingExtensionPageURLSuffix(
+                from: "popup/index.html?action#extension",
+                to: pageURL
+            )
+        let suffixedDiagnosticURL = try XCTUnwrap(
+            ChromeMV3PopupOptionsDiagnosticURLSchemeHandler.diagnosticURL(
+                forFileURL: suffixedPageURL,
+                rootURL: root
+            )
+        )
+        let suffixedDiagnosticComponents = try XCTUnwrap(
+            URLComponents(
+                url: suffixedDiagnosticURL,
+                resolvingAgainstBaseURL: false
+            )
+        )
+        XCTAssertEqual(suffixedDiagnosticURL.path, "/popup/index.html")
+        XCTAssertEqual(
+            suffixedDiagnosticComponents.percentEncodedQuery,
+            "action"
+        )
+        XCTAssertEqual(
+            suffixedDiagnosticComponents.percentEncodedFragment,
+            "extension"
+        )
 
         let htmlResolution = handler.resolveForTesting(diagnosticURL)
         XCTAssertEqual(htmlResolution.status, .served)

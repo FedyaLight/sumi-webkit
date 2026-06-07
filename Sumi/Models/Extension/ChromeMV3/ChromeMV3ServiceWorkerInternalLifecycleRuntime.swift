@@ -81,6 +81,7 @@ enum ChromeMV3ServiceWorkerSyntheticListenerEvent:
     case storageOnChanged
     case tabsOnConnect
     case tabsOnMessage
+    case tabsOnActivated
     case tabsOnRemoved
     case tabsOnUpdated
     case testFixture
@@ -126,7 +127,7 @@ enum ChromeMV3ServiceWorkerSyntheticListenerEvent:
              .runtimeOnInstalled, .runtimeOnMessageExternal,
              .runtimeOnStartup, .runtimeOnUpdateAvailable,
              .storageOnChanged, .testFixture, .webNavigationOnBeforeNavigate,
-             .tabsOnRemoved, .tabsOnUpdated,
+             .tabsOnActivated, .tabsOnRemoved, .tabsOnUpdated,
              .webNavigationOnCommitted, .webNavigationOnCompleted,
              .webNavigationOnDOMContentLoaded, .webNavigationOnErrorOccurred,
              .webNavigationOnHistoryStateUpdated,

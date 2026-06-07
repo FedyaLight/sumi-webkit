@@ -451,6 +451,75 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
     }
 
     @MainActor
+    func testControlledCompatibilityPopupPreservesManifestPageURLQuery()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        var manifest = genericActionPopupManifest(
+            name: "Controlled Query Popup",
+            permissions: ["activeTab"]
+        )
+        manifest["action"] = [
+            "default_title": "Controlled Query Popup",
+            "default_popup": "popup.html?action#extension",
+        ]
+        let source = try makeFixture(
+            named: "urlhub-controlled-query-popup",
+            manifest: manifest,
+            files: [
+                "popup.html": """
+                    <!doctype html>
+                    <html>
+                    <head><meta charset="utf-8"><title>Controlled Popup</title></head>
+                    <body data-api="chrome.runtime.sendMessage"></body>
+                    </html>
+                    """,
+            ]
+        )
+        let fakeFactory = FakeURLHubPopupOptionsWebViewFactory()
+        let profileID = UUID()
+        let module = try makeModule(
+            enabled: true,
+            includesModelContext: true,
+            popupOptionsWebViewFactory: { fakeFactory }
+        )
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: source,
+            profileID: profileID.uuidString,
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: record.extensionID
+        )
+
+        let currentTab = Tab(url: URL(string: "https://example.com/login")!)
+        currentTab.profileId = profileID
+        let result = await module.openActionPopupFromURLHub(
+            extensionId: record.extensionID,
+            currentTab: currentTab
+        )
+
+        XCTAssertTrue(result.opened)
+        let loadedURL = try XCTUnwrap(fakeFactory.loadedFileURLs.first)
+        XCTAssertEqual(loadedURL.lastPathComponent, "popup.html")
+        let loadedComponents = try XCTUnwrap(
+            URLComponents(url: loadedURL, resolvingAgainstBaseURL: false)
+        )
+        XCTAssertEqual(loadedComponents.percentEncodedQuery, "action")
+        XCTAssertEqual(loadedComponents.percentEncodedFragment, "extension")
+        XCTAssertEqual(fakeFactory.createCount, 1)
+        XCTAssertFalse(module.hasLoadedWebExtensionController)
+
+        _ = module.chromeMV3ClosePopupOptionsThroughManager(
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+    }
+
+    @MainActor
     func testURLHubActionClickLoadsNewlySyncedRecordIntoReadyRuntime()
         async throws
     {
@@ -2654,6 +2723,9 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
           const text = document.body && document.body.innerText
             ? document.body.innerText
             : "";
+          const title = typeof document.title === 'string'
+            ? document.title
+            : "";
           const debugSnapshot =
             globalThis.__sumiChromeMV3PopupOptionsDebugSnapshot
               ? globalThis.__sumiChromeMV3PopupOptionsDebugSnapshot()
@@ -2669,11 +2741,106 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
           const elementCount = document.body
             ? document.body.querySelectorAll('*').length
             : 0;
+          const appRoot = document.querySelector(
+            'app-root,[data-app-root],main,#app,#root,#react'
+          );
+          const appRootCount = document.querySelectorAll(
+            'app-root,[data-app-root],main,#app,#root,#react'
+          ).length;
+          const appRootChildCount = appRoot
+            ? appRoot.children.length
+            : 0;
+          const appRootElementCount = appRoot
+            ? appRoot.querySelectorAll('*').length
+            : 0;
+          const appRootTextLength = appRoot && appRoot.innerText
+            ? appRoot.innerText.trim().length
+            : 0;
+          const safeToken = (value) => {
+            const text = String(value || '').trim();
+            if (!text || text.length > 80) return null;
+            if (!/^[A-Za-z0-9_-]+$/.test(text)) return null;
+            if (/(auth|cookie|jwt|oauth|passwd|password|secret|session|token)/i
+                .test(text)) {
+              return 'redacted';
+            }
+            return text;
+          };
+          const classTokens = (node) => {
+            if (!node || !node.classList) return [];
+            return Array.from(node.classList)
+              .map(safeToken)
+              .filter(Boolean)
+              .slice(0, 12)
+              .sort();
+          };
+          const bodyChildTags = Array.from(
+            document.body ? document.body.children : []
+          ).slice(0, 8).map((node) => {
+            const id = node.id ? '#id' : '';
+            const klass = node.classList && node.classList.length
+              ? '.class'
+              : '';
+            return String(node.tagName || 'node').toLowerCase() + id + klass;
+          });
+          const appRootChildTags = Array.from(appRoot ? appRoot.children : [])
+            .slice(0, 8)
+            .map((node) => {
+              const id = node.id ? '#id' : '';
+              const klass = node.classList && node.classList.length
+                ? '.class'
+                : '';
+              return String(node.tagName || 'node').toLowerCase() + id + klass;
+            });
+          const appRootChildClassTokens =
+            Array.from(appRoot ? appRoot.children : [])
+              .slice(0, 4)
+              .map(classTokens);
+          const storageShape = (() => {
+            const shape = {
+              localStorageAvailable: false,
+              sessionStorageAvailable: false,
+              indexedDBAvailable: typeof indexedDB !== 'undefined',
+              localStorageKeyCount: -1,
+              sessionStorageKeyCount: -1,
+              hasPersistPrimary: false,
+              hasExtensionModeCache: false,
+              hasExtensionHeightCache: false
+            };
+            try {
+              shape.localStorageKeyCount = localStorage.length;
+              shape.localStorageAvailable = true;
+              shape.hasPersistPrimary =
+                localStorage.getItem('persist:primary') !== null;
+              shape.hasExtensionModeCache =
+                localStorage.getItem('_extension_mode_cached') !== null;
+              shape.hasExtensionHeightCache =
+                localStorage.getItem('_extension_height_cached') !== null;
+            } catch (_) {}
+            try {
+              shape.sessionStorageKeyCount = sessionStorage.length;
+              shape.sessionStorageAvailable = true;
+            } catch (_) {}
+            return shape;
+          })();
+          const locationShape = {
+            protocol: location.protocol,
+            pathnameDepth: location.pathname
+              ? location.pathname.split('/').filter(Boolean).length
+              : 0,
+            searchKeys: location.search
+              ? location.search.slice(1).split('&').filter(Boolean)
+                  .map((part) => part.split('=')[0]).sort().slice(0, 12)
+              : [],
+            hasHash: location.hash.length > 0
+          };
           const hasBusyIndicator = !!document.querySelector(
             '[role="progressbar"],[aria-busy="true"],.spinner,.loading,.loader,[data-loading="true"]'
           );
           const hasLoadingText =
             /\\b(loading|please wait|initializing|syncing)\\b/i.test(text);
+          const titleHasLoadingText =
+            /\\b(loading|please wait|initializing|syncing)\\b/i.test(title);
           const blankCandidate =
             text.trim().length === 0 && controlCount === 0 && elementCount <= 1;
           const usableFormCandidate =
@@ -2694,18 +2861,31 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             coarseClassification = 'usable onboarding/login UI reached';
           } else if (blankCandidate) {
             coarseClassification = 'blank';
-          } else if (hasBusyIndicator || hasLoadingText) {
+          } else if (hasBusyIndicator || hasLoadingText || titleHasLoadingText) {
             coarseClassification = 'spinner/loading';
           }
           return JSON.stringify({
             readyState: document.readyState,
             hasLoadingText,
+            titleHasLoadingText,
             hasBusyIndicator,
             inputCount,
             buttonCount,
             linkCount,
             controlCount,
             elementCount,
+            appRootCount,
+            appRootChildCount,
+            appRootElementCount,
+            appRootTextLength,
+            bodyChildTags,
+            appRootChildTags,
+            htmlClassTokens: classTokens(document.documentElement),
+            bodyClassTokens: classTokens(document.body),
+            appRootClassTokens: classTokens(appRoot),
+            appRootChildClassTokens,
+            locationShape,
+            storageShape,
             blankCandidate,
             usableFormCandidate,
             coarseClassification,

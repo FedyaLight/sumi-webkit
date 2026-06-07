@@ -14,6 +14,66 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         super.tearDown()
     }
 
+    func testDebugRaindropServiceWorkerHarnessDiagnostics() throws {
+        let raindropRoot = URL(
+            fileURLWithPath:
+                "/Users/fedaefimov/Downloads/Aura/mv3-test-extensions/raindrop",
+            isDirectory: true
+        )
+        try XCTSkipUnless(
+            FileManager.default.fileExists(
+                atPath: raindropRoot.appendingPathComponent("manifest.json").path
+            ),
+            "Local Raindrop package is not available."
+        )
+
+        let storeRoot = try temporaryDirectory()
+        let stage = try ChromeMV3OriginalBundleStore(
+            rootURL: storeRoot
+        ).stageUnpackedDirectory(at: raindropRoot)
+        let generated = try ChromeMV3GeneratedBundleWriter(
+            rootURL: storeRoot
+        ).writeGeneratedBundle(
+            originalBundleRecord: stage.originalBundleRecord,
+            manifestSnapshot: stage.manifestSnapshot,
+            planningRecord: stage.generatedBundlePlan
+        )
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: ChromeMV3ServiceWorkerJSExecutionRequest(
+                manifest: stage.manifestSnapshot.normalizedManifest,
+                generatedBundleRecord: generated.record,
+                extensionID: "debug-raindrop-service-worker-extension",
+                profileID: "debug-raindrop-service-worker-profile",
+                moduleState: .enabled,
+                extensionEnabled: true,
+                localExperimentalGateAllowed: true,
+                dynamicImportRewriteExperimentAllowed: true
+            )
+        )
+        let start = harness.start()
+        let exception = start.exceptionDetails
+        let diagnostic = [
+            "status=\(start.status.rawValue)",
+            "blockers=\(start.blockers.map(\.rawValue).joined(separator: ","))",
+            "capturedListeners=\(start.capturedListenerCount)",
+            "lastError=\(safeDebugToken(start.lastErrorMessage ?? "none"))",
+            "classification=\(exception?.classification.rawValue ?? "none")",
+            "missingGlobal=\(safeDebugToken(exception?.inferredMissingGlobal ?? "none"))",
+            "missingProperty=\(safeDebugToken(exception?.inferredMissingProperty ?? "none"))",
+            "line=\(exception?.line.map(String.init) ?? "none")",
+            "column=\(exception?.column.map(String.init) ?? "none")",
+        ].joined(separator: " ")
+        print("SumiRaindropServiceWorkerHarness \(diagnostic)")
+        let attachment = XCTAttachment(
+            string: "SumiRaindropServiceWorkerHarness \(diagnostic)"
+        )
+        attachment.name = "SumiRaindropServiceWorkerHarness-sanitized-diagnostics"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTAssertFalse(diagnostic.contains("token"))
+        XCTAssertFalse(diagnostic.contains("password"))
+    }
+
     func testDisabledModuleAndExtensionBlockExecutionBeforeResourceLoad() throws {
         let fixture = try makeHarness(
             source: "chrome.runtime.onMessage.addListener(() => 'ok');\n",
@@ -1488,6 +1548,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             chrome.runtime.onMessageExternal.addListener(() => {});
             chrome.runtime.onStartup.addListener(() => {});
             chrome.runtime.onUpdateAvailable.addListener(() => {});
+            chrome.tabs.onActivated.addListener(() => {});
             chrome.tabs.onUpdated.addListener(() => {});
             chrome.tabs.onRemoved.addListener(() => {});
             chrome.commands.onCommand.addListener(() => {});
@@ -1501,6 +1562,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertTrue(captured.contains(.runtimeOnMessageExternal))
         XCTAssertTrue(captured.contains(.runtimeOnStartup))
         XCTAssertTrue(captured.contains(.runtimeOnUpdateAvailable))
+        XCTAssertTrue(captured.contains(.tabsOnActivated))
         XCTAssertTrue(captured.contains(.tabsOnUpdated))
         XCTAssertTrue(captured.contains(.tabsOnRemoved))
         XCTAssertTrue(captured.contains(.commandsOnCommand))
@@ -1510,6 +1572,45 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             harness.snapshot.blockedUnsupportedCalls.contains {
                 $0.hasPrefix("chrome.")
             }
+        )
+    }
+
+    func testTabsOnActivatedEventObjectSupportsRemoveAndHasListener() throws {
+        let harness = try startedHarness(
+            source: """
+            function retained(activeInfo) {}
+            function removed(activeInfo) {}
+            chrome.tabs.onActivated.addListener(retained);
+            chrome.tabs.onActivated.addListener(removed);
+            const hadRemoved = chrome.tabs.onActivated.hasListener(removed);
+            chrome.tabs.onActivated.removeListener(removed);
+            const hasRemoved = chrome.tabs.onActivated.hasListener(removed);
+            chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+                sendResponse({ hadRemoved, hasRemoved });
+            });
+            """
+        )
+        let captured = Set(harness.snapshot.capturedListeners.map(\.event))
+
+        XCTAssertTrue(captured.contains(.tabsOnActivated))
+        XCTAssertFalse(
+            harness.snapshot.blockedUnsupportedCalls.contains {
+                $0.hasPrefix("chrome.tabs.onActivated")
+            }
+        )
+
+        let result = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            arguments: [.object([:])],
+            payloadSummary: "tabs.onActivated listener state"
+        )
+
+        XCTAssertEqual(
+            result.responsePayload,
+            .object([
+                "hadRemoved": .bool(true),
+                "hasRemoved": .bool(false),
+            ])
         )
     }
 
@@ -3917,6 +4018,20 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         )
         temporaryDirectories.append(url)
         return url
+    }
+
+    private func safeDebugToken(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false,
+              trimmed.count <= 220,
+              trimmed.lowercased().contains("token") == false,
+              trimmed.lowercased().contains("password") == false,
+              trimmed.range(
+                of: #"^[A-Za-z0-9._+/\-:=,() ]+$"#,
+                options: .regularExpression
+              ) != nil
+        else { return "redacted" }
+        return trimmed
     }
 
 }
