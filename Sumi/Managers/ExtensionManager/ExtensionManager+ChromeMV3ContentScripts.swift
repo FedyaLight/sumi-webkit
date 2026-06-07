@@ -258,7 +258,7 @@ import WebKit
             var navigationSequence: Int
             var urlString: String
             var webViewIdentifier: ObjectIdentifier
-            weak var webView: WKWebView?
+            var webView: WKWebView?
             var handlesByExtensionID:
                 [String: ChromeMV3ContentScriptWKAttachmentHandle]
         }
@@ -530,7 +530,7 @@ import WebKit
             trace: (String) -> Void
         ) {
             switch entrypoint {
-            case .initialPageLoadEligibility:
+            case .initialPageLoadEligibility, .urlHubActionClickScriptingTarget:
                 break
             case .navigationStarted:
                 guard let state = tabStates[tab.id] else { return }
@@ -768,6 +768,97 @@ import WebKit
             )
         }
 
+        func localTabIDIfBound(tabID: UUID) -> Int? {
+            tabStates[tabID]?.localTabID
+        }
+
+        @discardableResult
+        func bindScriptingExecuteScriptWebViewTargetIfAllowed(
+            tab: Tab,
+            webView: WKWebView,
+            url: URL,
+            currentProfileID: UUID?,
+            browserManager: BrowserManager?,
+            localExperimentalGateAllowed: Bool,
+            trace: @escaping (String) -> Void
+        ) -> Int? {
+            guard localExperimentalGateAllowed else {
+                trace(
+                    "[content-script-bind] blocked tab=\(tab.id.uuidString) because=localExperimentalGateClosed entrypoint=urlHubActionClickScriptingTarget"
+                )
+                return nil
+            }
+            guard webView.configuration.sumiIsNormalTabWebViewConfiguration else {
+                trace(
+                    "[content-script-bind] blocked tab=\(tab.id.uuidString) because=notNormalTabConfiguration entrypoint=urlHubActionClickScriptingTarget"
+                )
+                return nil
+            }
+            guard tab.existingWebView === webView else {
+                trace(
+                    "[content-script-bind] blocked tab=\(tab.id.uuidString) because=webViewOwnershipMismatch entrypoint=urlHubActionClickScriptingTarget"
+                )
+                return nil
+            }
+            guard let profile = tab.resolveProfile(),
+                  profile.isEphemeral == false,
+                  currentProfileID == profile.id
+            else {
+                trace(
+                    "[content-script-bind] blocked tab=\(tab.id.uuidString) because=profileOrPrivateMismatch entrypoint=urlHubActionClickScriptingTarget"
+                )
+                return nil
+            }
+            guard let windowID = tab.primaryWindowId,
+                  browserManager?.windowRegistry?.windows[windowID] != nil
+            else {
+                trace(
+                    "[content-script-bind] blocked tab=\(tab.id.uuidString) because=windowMismatch entrypoint=urlHubActionClickScriptingTarget"
+                )
+                return nil
+            }
+            guard ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+            else {
+                trace(
+                    "[content-script-bind] blocked tab=\(tab.id.uuidString) because=unsupportedURLScheme url=\(url.absoluteString) entrypoint=urlHubActionClickScriptingTarget"
+                )
+                return nil
+            }
+
+            let profileID = profile.id.uuidString
+            let localTabID = localTabID(for: tab.id)
+            if var existing = tabStates[tab.id] {
+                existing.webView = webView
+                existing.webViewIdentifier = ObjectIdentifier(webView)
+                existing.urlString = url.absoluteString
+                tabStates[tab.id] = existing
+                trace(
+                    "[content-script-bind] entrypoint=urlHubActionClickScriptingTarget tab=\(localTabID) frame=0 url=\(url.absoluteString) endpointBindingResult=scriptingExecuteScriptTargetRefreshed contentScriptAttachments=\(existing.handlesByExtensionID.count)"
+                )
+                return localTabID
+            }
+
+            let navigationSequence =
+                (nextNavigationSequenceByTabID[tab.id] ?? 0) + 1
+            nextNavigationSequenceByTabID[tab.id] = navigationSequence
+            let documentID =
+                "normal-tab-\(tab.id.uuidString)-document-\(navigationSequence)"
+            tabStates[tab.id] = TabState(
+                profileID: profileID,
+                localTabID: localTabID,
+                documentID: documentID,
+                navigationSequence: navigationSequence,
+                urlString: url.absoluteString,
+                webViewIdentifier: ObjectIdentifier(webView),
+                webView: webView,
+                handlesByExtensionID: [:]
+            )
+            trace(
+                "[content-script-bind] entrypoint=urlHubActionClickScriptingTarget tab=\(localTabID) frame=0 document=\(documentID) url=\(url.absoluteString) endpointBindingResult=scriptingExecuteScriptTargetOnly contentScriptAttachments=0"
+            )
+            return localTabID
+        }
+
         private func traceSummary(
             reason: String,
             trace: (String) -> Void
@@ -924,6 +1015,37 @@ extension ExtensionManager {
                 )
                 return
             }
+            if entrypoint == .urlHubActionClickScriptingTarget {
+                guard localExperimentalGateAllowed,
+                      let webView,
+                      let url,
+                      canCreateChromeMV3LivePreparedContentScriptRuntime(
+                        tab: tab,
+                        webView: webView,
+                        url: url
+                      )
+                else {
+                    extensionRuntimeTrace(
+                        "[content-script-bind] blocked tab=\(tab.id.uuidString) entrypoint=urlHubActionClickScriptingTarget reason=\(reason)"
+                    )
+                    return
+                }
+                let runtime =
+                    chromeMV3LivePreparedContentScriptRuntime
+                    ?? ChromeMV3LivePreparedContentScriptRuntime()
+                chromeMV3LivePreparedContentScriptRuntime = runtime
+                runtime.bindScriptingExecuteScriptWebViewTargetIfAllowed(
+                    tab: tab,
+                    webView: webView,
+                    url: url,
+                    currentProfileID: currentProfileId,
+                    browserManager: browserManager,
+                    localExperimentalGateAllowed:
+                        localExperimentalGateAllowed,
+                    trace: trace
+                )
+                return
+            }
             chromeMV3LivePreparedContentScriptRuntime?.noteLifecycle(
                 tab: tab,
                 webView: webView,
@@ -954,6 +1076,70 @@ extension ExtensionManager {
                     tabID: tabID,
                     frameID: frameID
                 )
+        }
+
+        func chromeMV3ScriptingExecuteScriptLocalTabIDIfLoaded(
+            for tabID: UUID
+        ) -> Int? {
+            chromeMV3LivePreparedContentScriptRuntime?
+                .localTabIDIfBound(tabID: tabID)
+        }
+
+        func bindChromeMV3ScriptingExecuteScriptTargetForURLHubActionClickIfAllowed(
+            currentTab: Tab,
+            localExperimentalGateAllowed: Bool
+        ) -> (localTabID: Int, url: URL)? {
+            guard let webView = materializedNormalTabWebView(for: currentTab),
+                  let url = webView.url ?? Optional(currentTab.url),
+                  ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+            else {
+                extensionRuntimeTrace(
+                    "urlHubAction click scripting target bind skipped tab=\(currentTab.id.uuidString) materializedWebView=false"
+                )
+                return nil
+            }
+            noteChromeMV3ContentScriptLifecycleEntrypoint(
+                tab: currentTab,
+                webView: webView,
+                url: url,
+                entrypoint: .urlHubActionClickScriptingTarget,
+                localExperimentalGateAllowed:
+                    localExperimentalGateAllowed,
+                reason:
+                    "ExtensionManager.bindChromeMV3ScriptingExecuteScriptTargetForURLHubActionClick"
+            )
+            guard let localTabID =
+                chromeMV3ScriptingExecuteScriptLocalTabIDIfLoaded(
+                    for: currentTab.id
+                )
+            else {
+                extensionRuntimeTrace(
+                    "urlHubAction click scripting target bind failed tab=\(currentTab.id.uuidString) localTabID=nil"
+                )
+                return nil
+            }
+            extensionRuntimeTrace(
+                "urlHubAction click scripting target bound tab=\(currentTab.id.uuidString) localTabID=\(localTabID) url=\(url.absoluteString)"
+            )
+            return (localTabID, url)
+        }
+
+        private func materializedNormalTabWebView(for tab: Tab) -> WKWebView? {
+            if let webView = tab.existingWebView,
+               webView.configuration.sumiIsNormalTabWebViewConfiguration
+            {
+                return webView
+            }
+            if let windowID = tab.primaryWindowId,
+               let webView = browserManager?.webViewCoordinator?.getWebView(
+                   for: tab.id,
+                   in: windowID
+               ),
+               webView.configuration.sumiIsNormalTabWebViewConfiguration
+            {
+                return webView
+            }
+            return nil
         }
 
         func tearDownChromeMV3LivePreparedContentScripts(

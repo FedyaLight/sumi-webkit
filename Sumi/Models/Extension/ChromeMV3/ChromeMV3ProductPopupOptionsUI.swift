@@ -556,6 +556,8 @@ struct ChromeMV3ProductPopupOptionsLaunchRecord:
     var blockers: [ChromeMV3PopupOptionsBlocker]
     var blockingReasons: [String]
     var diagnostics: [String]
+    var explicitActionClickLocalTabID: Int? = nil
+    var explicitActionClickTabURLString: String? = nil
 
     var canOpen: Bool {
         blockers.isEmpty

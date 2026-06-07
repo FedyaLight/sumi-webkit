@@ -402,6 +402,86 @@ final class ChromeMV3NormalTabConfigurationAttachmentTests: XCTestCase {
     }
 
     @MainActor
+    func testURLHubActionClickBindingRegistersScriptingExecuteScriptTarget()
+        throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Chrome MV3 WebKit attachment APIs require macOS 15.5.")
+        }
+
+        let fixture = try makeLiveTabFixture(extensionsEnabled: true)
+        defer { fixture.tearDown() }
+        fixture.module.chromeMV3InternalNormalTabConfigurationAttachmentAllowed = true
+        _ = try XCTUnwrap(
+            fixture.module.createChromeMV3EmptyControllerOwnerIfEnabled(
+                explicitControllerCreationAllowed: true
+            )
+        )
+
+        let windowState = BrowserWindowState()
+        let windowRegistry = WindowRegistry()
+        windowRegistry.register(windowState)
+        fixture.browserManager.windowRegistry = windowRegistry
+        fixture.browserManager.webViewCoordinator = WebViewCoordinator()
+
+        let manager = try XCTUnwrap(fixture.module.managerIfEnabled())
+        let tab = fixture.makeTab(
+            url: URL(string: "https://example.com/article")!
+        )
+        tab.primaryWindowId = windowState.id
+        let webView = try XCTUnwrap(
+            tab.makeNormalTabWebView(
+                reason: "test.urlHubActionClick.scriptingTargetBind"
+            )
+        )
+        tab._webView = webView
+        guard webView.configuration.sumiIsNormalTabWebViewConfiguration else {
+            return XCTFail(
+                "Expected normal-tab configuration marker on materialized WebView."
+            )
+        }
+        try XCTUnwrap(fixture.browserManager.webViewCoordinator).setWebView(
+            webView,
+            for: tab.id,
+            in: windowState.id
+        )
+
+        XCTAssertNil(
+            manager.bindChromeMV3ScriptingExecuteScriptTargetForURLHubActionClickIfAllowed(
+                currentTab: tab,
+                localExperimentalGateAllowed: false
+            ),
+            "URL-hub scripting bind must stay blocked when the local gate is closed."
+        )
+
+        let binding = try XCTUnwrap(
+            manager.bindChromeMV3ScriptingExecuteScriptTargetForURLHubActionClickIfAllowed(
+                currentTab: tab,
+                localExperimentalGateAllowed: true
+            ),
+            "URL-hub scripting bind should succeed for a materialized normal tab."
+        )
+        let target = try XCTUnwrap(
+            manager.chromeMV3ScriptingExecuteScriptTargetIfLoaded(
+                extensionID: "any-extension-id",
+                profileID: fixture.profile.id.uuidString,
+                tabID: binding.localTabID
+            ),
+            "Bound scripting target should be discoverable by local tab ID."
+        )
+        let resolvedTargetWebView = try XCTUnwrap(
+            target.webView,
+            "Bound scripting target WebView should remain materialized."
+        )
+        XCTAssertTrue(
+            resolvedTargetWebView === webView,
+            "Scripting target WebView should match the bound normal-tab WebView."
+        )
+        XCTAssertEqual(target.localTabID, binding.localTabID)
+        XCTAssertEqual(target.frameID, 0)
+    }
+
+    @MainActor
     func testGateOffMarksExistingAttachedWebViewStaleAndFutureTabsUnattached()
         throws
     {

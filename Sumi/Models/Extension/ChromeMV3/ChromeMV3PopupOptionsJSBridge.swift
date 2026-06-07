@@ -915,6 +915,8 @@ struct ChromeMV3PopupOptionsJSBridgeConfiguration:
     var manifestHostPermissions: [String]
     var manifestOptionalHostPermissions: [String]
     var activeTabGrants: [ChromeMV3ActiveTabGrant]
+    var explicitActionClickLocalTabID: Int? = nil
+    var explicitActionClickTabURLString: String? = nil
     var allowlist: ChromeMV3PopupOptionsAPIMethodPolicy
     var diagnostics: [String]
 
@@ -1027,6 +1029,10 @@ struct ChromeMV3PopupOptionsJSBridgeConfiguration:
                     launchRecord: launchRecord,
                     bridgeAvailable: bridgeAvailable
                 ),
+            explicitActionClickLocalTabID:
+                launchRecord.explicitActionClickLocalTabID,
+            explicitActionClickTabURLString:
+                launchRecord.explicitActionClickTabURLString,
             allowlist: launchRecord.apiMethodPolicy,
             diagnostics:
                 uniqueSortedPopupOptionsBridge(
@@ -1057,18 +1063,27 @@ struct ChromeMV3PopupOptionsJSBridgeConfiguration:
               launchRecord.surface == .actionPopup,
               launchRecord.manifestPermissions.contains("activeTab")
         else { return [] }
+        let tabID = launchRecord.explicitActionClickLocalTabID ?? 1
+        let urlString =
+            launchRecord.explicitActionClickTabURLString
+                ?? "https://example.com/login"
+        let origin =
+            ChromeMV3PermissionBrokerURL.origin(from: urlString)
+                ?? "https://example.com"
         return [
             ChromeMV3ActiveTabGrant(
                 extensionID: launchRecord.extensionID,
                 profileID: launchRecord.profileID,
-                tabID: 1,
-                scope: .origin("https://example.com"),
+                tabID: tabID,
+                scope: .origin(origin),
                 reason: .actionClick,
                 userGestureModeled: true,
                 createdSequence: 1,
                 diagnostics: [
-                    "Developer-preview activeTab grant created from explicit action popup open.",
-                    "Grant is scoped to the controlled synthetic active tab fixture and expires through lifecycle events.",
+                    launchRecord.explicitActionClickLocalTabID == nil
+                        ? "Developer-preview activeTab grant created from explicit action popup open without a bound normal-tab WebView."
+                        : "Developer-preview activeTab grant created from explicit URL-hub action click with a bound normal-tab WebView.",
+                    "Grant is scoped to the explicit action-click active tab identity and expires through lifecycle events.",
                 ]
             ),
         ]
@@ -2030,10 +2045,14 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 )
         }
         self.tabRegistry =
-            ChromeMV3SyntheticTabRegistry.passwordManagerFixture(
+            ChromeMV3SyntheticTabRegistry
+            .forExplicitActionPopupOpen(
                 extensionID: configuration.extensionID,
                 profileID: configuration.profileID,
-                includeProductNormalTab: false
+                explicitActionClickLocalTabID:
+                    configuration.explicitActionClickLocalTabID,
+                explicitActionClickTabURLString:
+                    configuration.explicitActionClickTabURLString
             )
         permissionEventDispatcher?.registerChromeMV3PermissionEventPage(
             surfaceID: configuration.surfaceID,

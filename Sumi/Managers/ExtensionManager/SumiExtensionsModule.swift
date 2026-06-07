@@ -5088,12 +5088,27 @@ final class SumiExtensionsModule {
                 ).sorted()
             return blocked
         }
-        guard let launchRecord = preflight.launchRecord else {
+        guard var launchRecord = preflight.launchRecord else {
             return .blocked(
                 .contextUnavailable,
                 message:
                     "The controlled compatibility action popup launch record was unavailable."
             )
+        }
+        if let currentTab {
+            if let binding =
+                manager
+                .bindChromeMV3ScriptingExecuteScriptTargetForURLHubActionClickIfAllowed(
+                    currentTab: currentTab,
+                    localExperimentalGateAllowed:
+                        chromeMV3InternalNormalTabConfigurationAttachmentAllowed
+                )
+            {
+                launchRecord.explicitActionClickLocalTabID =
+                    binding.localTabID
+                launchRecord.explicitActionClickTabURLString =
+                    binding.url.absoluteString
+            }
         }
         let anchorView = controlledActionPopupAnchorView(
             extensionId: extensionId,

@@ -504,6 +504,53 @@ final class ChromeMV3SyntheticTabRegistry {
         )
     }
 
+    static func forExplicitActionPopupOpen(
+        extensionID: String,
+        profileID: String,
+        explicitActionClickLocalTabID: Int?,
+        explicitActionClickTabURLString: String?
+    ) -> ChromeMV3SyntheticTabRegistry {
+        guard let tabID = explicitActionClickLocalTabID,
+              let urlString = explicitActionClickTabURLString
+        else {
+            return passwordManagerFixture(
+                extensionID: extensionID,
+                profileID: profileID,
+                includeProductNormalTab: false
+            )
+        }
+        let activeTab = ChromeMV3SyntheticTabRecord(
+            id: tabID,
+            windowID: 1,
+            profileID: profileID,
+            url: urlString,
+            title: "Active Normal Tab",
+            active: true,
+            highlighted: true,
+            pinned: false,
+            index: 0,
+            frames: [
+                ChromeMV3SyntheticTabFrameRecord(
+                    frameID: 0,
+                    documentID: "document-\(tabID)",
+                    url: urlString,
+                    modeledExecuteScriptResult: nil,
+                    diagnostics: [
+                        "Explicit URL-hub action-click active tab uses the bound normal-tab identity.",
+                    ]
+                ),
+            ],
+            diagnostics: [
+                "Explicit URL-hub action-click active tab registry does not reference TabManager.",
+            ]
+        )
+        return ChromeMV3SyntheticTabRegistry(
+            extensionID: extensionID,
+            profileID: profileID,
+            tabs: [activeTab]
+        )
+    }
+
     func register(_ tab: ChromeMV3SyntheticTabRecord) {
         tabsByID[tab.id] = tab
     }

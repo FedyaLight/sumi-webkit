@@ -459,6 +459,7 @@ enum ChromeMV3ContentScriptLifecycleEntrypoint:
     Sendable
 {
     case initialPageLoadEligibility
+    case urlHubActionClickScriptingTarget
     case navigationStarted
     case navigationCommitted
     case navigationFinished

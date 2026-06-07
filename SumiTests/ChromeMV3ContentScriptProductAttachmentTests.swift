@@ -110,6 +110,18 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         XCTAssertTrue(managerSource.contains(
             "injectionTiming=shim:document_start,declared:manifest_run_at"
         ))
+        XCTAssertTrue(managerSource.contains(
+            "entrypoint=urlHubActionClickScriptingTarget"
+        ))
+        XCTAssertTrue(managerSource.contains(
+            "bindScriptingExecuteScriptWebViewTargetIfAllowed"
+        ))
+        XCTAssertTrue(moduleSource.contains(
+            "bindChromeMV3ScriptingExecuteScriptTargetForURLHubActionClickIfAllowed"
+        ))
+        XCTAssertTrue(moduleSource.contains(
+            "explicitActionClickLocalTabID"
+        ))
         XCTAssertTrue(moduleSource.contains(
             "chromeMV3InternalNormalTabConfigurationAttachmentAllowed"
         ))
