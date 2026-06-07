@@ -3405,6 +3405,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         "portOnDisconnectDispatched",
         "portOnMessageDispatched",
         "postBootstrapCheckpoint",
+        "executeScriptContinuationCheckpoint",
         "promiseRejected",
         "consoleError",
         "consoleWarn",
@@ -3444,6 +3445,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         "nativeApplicationPort",
         "navigation",
         "platform",
+        "popup",
         "resource",
         "serviceWorker",
         "storage.local",
@@ -5648,6 +5650,10 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     input.target.tabID,
                     targetFrameID
                 )
+            let continuationDiagnostics = [
+                "executeScriptContinuationPhase=nativeExecutorStart",
+                "executeScriptContinuationBridgeCallID=\(request.bridgeCallID)",
+            ]
             let execution = await ChromeMV3ScriptingExecuteScriptExecutor.execute(
                 request:
                     ChromeMV3ScriptingExecuteScriptExecutorRequest(
@@ -5669,12 +5675,20 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     ),
                 target: target
             )
+            let completionDiagnostics =
+                continuationDiagnostics
+                + [
+                    "executeScriptContinuationPhase=nativeExecutorComplete",
+                    "executeScriptContinuationSucceeded=\(execution.succeeded)",
+                    "executeScriptContinuationResultFrameCount=\(execution.resultFrameCount)",
+                ]
             if let error = execution.lastError {
                 return runtimeLastErrorResponse(
                     request,
                     error: error,
                     diagnostics:
                         execution.diagnostics
+                        + completionDiagnostics
                         + [
                             "permissionClassifier=\(permissionClassifier)",
                             "executionClassifier=\(execution.executionClassifier)",
@@ -5688,6 +5702,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 payload: .array(execution.injectionResults),
                 diagnostics:
                     execution.diagnostics
+                    + completionDiagnostics
                     + [
                         "permissionClassifier=\(permissionClassifier)",
                         "executionClassifier=\(execution.executionClassifier)",
@@ -9522,7 +9537,21 @@ enum ChromeMV3PopupOptionsJSShimSource {
           Object.defineProperty(scripting, "executeScript", {
             value(details, callback) {
               const cb = typeof callback === "function" ? callback : null;
-              return callbackOrPromise("scripting", "executeScript", [details || {}], cb);
+              debugBeginExecuteScriptContinuation(
+                [details || {}],
+                cb ? "callback" : "promise"
+              );
+              if (cb) {
+                return callbackOrPromise(
+                  "scripting",
+                  "executeScript",
+                  [details || {}],
+                  debugWrapExecuteScriptCallback(cb)
+                );
+              }
+              return debugTrackExecuteScriptPopupPromise(
+                callbackOrPromise("scripting", "executeScript", [details || {}], null)
+              );
             },
             enumerable: true
           });
@@ -9672,6 +9701,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
           function debugExtensionGetBackgroundPage(rootName, resultClassifier, args) {}
           function debugPlatformEnvironmentProbe(phase, extras) {}
           function debugPostGetManifestBootstrapSentinel(succeeded) {}
+          function debugBeginExecuteScriptContinuation(args, invocationMode) {}
+          function debugWrapExecuteScriptCallback(callback) { return callback; }
+          function debugTrackExecuteScriptPopupPromise(promise) { return promise; }
 
           function installControlledNavigatorCompatibilitySurface() {}
         """
@@ -9692,6 +9724,34 @@ enum ChromeMV3PopupOptionsJSShimSource {
             scheduled: false
           };
           const __sumiBootstrapResourceFollowups = new Set();
+          const __sumiExecuteScriptContinuationState = {
+            active: false,
+            bridgeCallID: null,
+            invocationMode: null,
+            popupCallAt: null,
+            nativeBridgeReceiveAt: null,
+            nativeBridgeResolvedAt: null,
+            popupPromiseResolved: false,
+            popupPromiseRejected: false,
+            popupCallbackInvoked: false,
+            firstMicrotaskObserved: false,
+            firstTimerObserved: false,
+            firstAnimationFrameObserved: false,
+            renderTransitionObserved: false,
+            continuationExceptionObserved: false,
+            continuationUnhandledRejectionObserved: false,
+            followupsScheduled: false,
+            domAtResolve: null,
+            resultShapeSummary: null,
+            bridgeResultShapeSummary: null,
+            localBranchClassifier: null
+          };
+          const __sumiExecuteScriptContinuationCheckpointMS = [0, 16, 50, 250, 900, 1800, 3500, 6500];
+          const __sumiSourceMapState = {
+            availability: "notAttempted",
+            mappedScriptCount: 0,
+            originalFileNames: []
+          };
           const __sumiSafeFieldNames = new Set([
             "action", "command", "kind", "messageType", "method", "name",
             "operation", "requestType", "type"
@@ -10059,6 +10119,531 @@ enum ChromeMV3PopupOptionsJSShimSource {
             return "stackFrame" + frameIndex + "=" + parts.join(";");
           }
 
+          function debugCaptureContinuationStack(label) {
+            const diagnostics = [];
+            if (label) {
+              diagnostics.push("stackPhase=" + label);
+            }
+            diagnostics.push("sourceMapAvailability=" + __sumiSourceMapState.availability);
+            if (__sumiSourceMapState.mappedScriptCount > 0) {
+              diagnostics.push(
+                "sourceMapMappedScriptCount=" + String(__sumiSourceMapState.mappedScriptCount)
+              );
+              const originalFiles = Array.isArray(__sumiSourceMapState.originalFileNames)
+                ? __sumiSourceMapState.originalFileNames.slice(0, 8)
+                : [];
+              if (originalFiles.length > 0) {
+                diagnostics.push("sourceMapOriginalFiles=" + originalFiles.join(","));
+              }
+            }
+            try {
+              const stack = new Error().stack;
+              if (typeof stack === "string" && !debugIsSensitiveName(stack)) {
+                stack.split("\\n")
+                  .slice(1, 8)
+                  .map((line, frameIndex) => debugStackFrameDiagnostics(line, frameIndex))
+                  .filter(Boolean)
+                  .forEach((line) => diagnostics.push(line));
+              }
+            } catch (_) {
+            }
+            return diagnostics;
+          }
+
+          function debugExecuteScriptInjectionResultShape(value) {
+            if (value === null) {
+              return {
+                success: true,
+                arrayLength: 0,
+                frameResultPresent: false,
+                documentResultPresent: false,
+                resultTypeCategory: "null",
+                emptyLike: true
+              };
+            }
+            if (value === undefined) {
+              return {
+                success: true,
+                arrayLength: 0,
+                frameResultPresent: false,
+                documentResultPresent: false,
+                resultTypeCategory: "undefined",
+                emptyLike: true
+              };
+            }
+            if (!Array.isArray(value)) {
+              return {
+                success: true,
+                arrayLength: 0,
+                frameResultPresent: false,
+                documentResultPresent: false,
+                resultTypeCategory: typeof value,
+                emptyLike: value === null || value === undefined
+              };
+            }
+            const first = value[0];
+            const frameObject =
+              first && typeof first === "object" && !Array.isArray(first)
+                ? first
+                : null;
+            const frameResultPresent =
+              !!frameObject && Object.prototype.hasOwnProperty.call(frameObject, "result");
+            const documentResultPresent =
+              !!frameObject
+                && (
+                  Object.prototype.hasOwnProperty.call(frameObject, "documentId")
+                    || Object.prototype.hasOwnProperty.call(frameObject, "frameId")
+                );
+            let resultTypeCategory = "array";
+            let emptyLike = value.length === 0;
+            if (frameResultPresent) {
+              const frameResult = frameObject.result;
+              if (frameResult === null || frameResult === undefined) {
+                resultTypeCategory = "undefined";
+                emptyLike = true;
+              } else if (Array.isArray(frameResult)) {
+                resultTypeCategory = "array";
+                emptyLike = frameResult.length === 0;
+              } else if (typeof frameResult === "object") {
+                resultTypeCategory = "object";
+                emptyLike = Object.keys(frameResult).length === 0;
+              } else if (typeof frameResult === "string") {
+                resultTypeCategory = "string";
+                emptyLike = frameResult.length === 0;
+              } else {
+                resultTypeCategory = typeof frameResult;
+                emptyLike = false;
+              }
+            }
+            return {
+              success: true,
+              arrayLength: value.length,
+              frameResultPresent,
+              documentResultPresent,
+              resultTypeCategory,
+              emptyLike
+            };
+          }
+
+          function debugExecuteScriptBridgeResultShape(response) {
+            if (!response || response.succeeded !== true) {
+              return {
+                success: false,
+                arrayLength: 0,
+                frameResultPresent: false,
+                documentResultPresent: false,
+                resultTypeCategory: "failure",
+                emptyLike: true
+              };
+            }
+            return debugExecuteScriptInjectionResultShape(response.resultPayload);
+          }
+
+          function debugExecuteScriptResultShapeSummary(shape) {
+            if (!shape || typeof shape !== "object") {
+              return "shape=unknown";
+            }
+            return [
+              "success=" + String(!!shape.success),
+              "arrayLength=" + String(shape.arrayLength || 0),
+              "frameResultPresent=" + String(!!shape.frameResultPresent),
+              "documentResultPresent=" + String(!!shape.documentResultPresent),
+              "resultTypeCategory=" + String(shape.resultTypeCategory || "unknown"),
+              "emptyLike=" + String(!!shape.emptyLike)
+            ].join(";");
+          }
+
+          function debugResetExecuteScriptContinuationState() {
+            __sumiExecuteScriptContinuationState.active = true;
+            __sumiExecuteScriptContinuationState.bridgeCallID = null;
+            __sumiExecuteScriptContinuationState.invocationMode = null;
+            __sumiExecuteScriptContinuationState.popupCallAt = debugNowMS();
+            __sumiExecuteScriptContinuationState.nativeBridgeReceiveAt = null;
+            __sumiExecuteScriptContinuationState.nativeBridgeResolvedAt = null;
+            __sumiExecuteScriptContinuationState.popupPromiseResolved = false;
+            __sumiExecuteScriptContinuationState.popupPromiseRejected = false;
+            __sumiExecuteScriptContinuationState.popupCallbackInvoked = false;
+            __sumiExecuteScriptContinuationState.firstMicrotaskObserved = false;
+            __sumiExecuteScriptContinuationState.firstTimerObserved = false;
+            __sumiExecuteScriptContinuationState.firstAnimationFrameObserved = false;
+            __sumiExecuteScriptContinuationState.renderTransitionObserved = false;
+            __sumiExecuteScriptContinuationState.continuationExceptionObserved = false;
+            __sumiExecuteScriptContinuationState.continuationUnhandledRejectionObserved = false;
+            __sumiExecuteScriptContinuationState.followupsScheduled = false;
+            __sumiExecuteScriptContinuationState.domAtResolve = null;
+            __sumiExecuteScriptContinuationState.resultShapeSummary = null;
+            __sumiExecuteScriptContinuationState.bridgeResultShapeSummary = null;
+            __sumiExecuteScriptContinuationState.localBranchClassifier = null;
+          }
+
+          function debugRecordExecuteScriptContinuationCheckpoint(phase, extras) {
+            const payload = Object.assign({
+              apiName: "scripting.executeScript",
+              targetContext: "popup",
+              resultClassifier: phase,
+              safeMessageShapeClassification: "executeScriptContinuation",
+              diagnostics: [
+                "phase=" + phase,
+                "sourceMapAvailability=" + __sumiSourceMapState.availability
+              ]
+            }, extras || {});
+            if (
+              __sumiExecuteScriptContinuationState.resultShapeSummary
+                && (
+                  phase === "popupPromiseResolved"
+                    || phase === "popupCallbackInvoked"
+                    || phase === "nativeBridgeResolved"
+                )
+            ) {
+              payload.diagnostics.push(
+                "executeScriptResultShape=" + __sumiExecuteScriptContinuationState.resultShapeSummary
+              );
+            }
+            if (__sumiExecuteScriptContinuationState.bridgeResultShapeSummary) {
+              payload.diagnostics.push(
+                "executeScriptBridgeResultShape="
+                  + __sumiExecuteScriptContinuationState.bridgeResultShapeSummary
+              );
+            }
+            if (__sumiExecuteScriptContinuationState.localBranchClassifier) {
+              payload.diagnostics.push(
+                "localBranchClassifier="
+                  + __sumiExecuteScriptContinuationState.localBranchClassifier
+              );
+            }
+            if (Array.isArray(payload.stackDiagnostics)) {
+              payload.diagnostics = payload.diagnostics.concat(payload.stackDiagnostics);
+              delete payload.stackDiagnostics;
+            }
+            debugRecord("executeScriptContinuationCheckpoint", payload);
+          }
+
+          function debugObserveExecuteScriptRenderTransition(dom) {
+            const baseline = __sumiExecuteScriptContinuationState.domAtResolve;
+            if (!baseline || !dom) {
+              return false;
+            }
+            if (
+              dom.usableFormCandidate && !baseline.usableFormCandidate
+            ) {
+              return true;
+            }
+            if (
+              dom.trimmedTextLength > baseline.trimmedTextLength
+                && dom.trimmedTextLength > 0
+            ) {
+              return true;
+            }
+            if (
+              dom.controlCount > baseline.controlCount
+                && dom.controlCount > 0
+            ) {
+              return true;
+            }
+            if (
+              dom.appRootCount > baseline.appRootCount
+                && dom.appRootCount > 0
+            ) {
+              return true;
+            }
+            return false;
+          }
+
+          function debugClassifyExecuteScriptLocalBranch(routeEvents) {
+            const events = Array.isArray(routeEvents) ? routeEvents : [];
+            const hasNetwork = events.some((event) => {
+              return event.eventKind === "resourceLoadError"
+                || (event.resultClassifier || "").toLowerCase().indexOf("network") !== -1
+                || (event.resultClassifier || "").toLowerCase().indexOf("auth") !== -1;
+            });
+            if (hasNetwork) {
+              return "networkOrAuth";
+            }
+            const hasStorage = events.some((event) => {
+              const apiName = event.apiName || "";
+              return apiName.indexOf("storage.") === 0
+                || event.targetContext === "storage.local"
+                || event.targetContext === "storage.session"
+                || event.targetContext === "storage.sync";
+            });
+            if (hasStorage) {
+              return "appState";
+            }
+            return null;
+          }
+
+          function debugScheduleExecuteScriptContinuationFollowups() {
+            if (__sumiExecuteScriptContinuationState.followupsScheduled) {
+              return;
+            }
+            __sumiExecuteScriptContinuationState.followupsScheduled = true;
+            try {
+              globalThis.requestAnimationFrame(() => {
+                if (!__sumiExecuteScriptContinuationState.firstAnimationFrameObserved) {
+                  __sumiExecuteScriptContinuationState.firstAnimationFrameObserved = true;
+                  debugRecordExecuteScriptContinuationCheckpoint(
+                    "firstAnimationFrameAfterResolve",
+                    { stackDiagnostics: debugCaptureContinuationStack("animationFrame") }
+                  );
+                }
+              });
+            } catch (_) {
+            }
+            __sumiExecuteScriptContinuationCheckpointMS.forEach((delay) => {
+              globalThis.setTimeout(() => {
+                const dom = debugCoarseDOMState();
+                if (delay === 0 && !__sumiExecuteScriptContinuationState.firstTimerObserved) {
+                  __sumiExecuteScriptContinuationState.firstTimerObserved = true;
+                  debugRecordExecuteScriptContinuationCheckpoint(
+                    "firstTimerAfterResolve",
+                    { stackDiagnostics: debugCaptureContinuationStack("timer0") }
+                  );
+                }
+                if (debugObserveExecuteScriptRenderTransition(dom)) {
+                  __sumiExecuteScriptContinuationState.renderTransitionObserved = true;
+                }
+                const routeEvents = debugPostBootstrapEventsSinceManifest();
+                const localBranch = debugClassifyExecuteScriptLocalBranch(routeEvents);
+                if (localBranch) {
+                  __sumiExecuteScriptContinuationState.localBranchClassifier = localBranch;
+                }
+                const phase =
+                  delay === __sumiExecuteScriptContinuationCheckpointMS[
+                    __sumiExecuteScriptContinuationCheckpointMS.length - 1
+                  ]
+                    ? "finalDOMCheckpoint"
+                    : "domCheckpoint" + String(delay) + "ms";
+                debugRecordExecuteScriptContinuationCheckpoint(phase, {
+                  safeMessageShapeClassification: [
+                    "dom",
+                    "readyState=" + dom.readyState,
+                    "visibleTextLength=" + String(dom.trimmedTextLength),
+                    "usableFormCandidate=" + String(dom.usableFormCandidate)
+                  ].join(";"),
+                  diagnostics: [
+                    "readyState=" + dom.readyState,
+                    "visibleTextLength=" + String(dom.trimmedTextLength),
+                    "usableFormCandidate=" + String(dom.usableFormCandidate),
+                    "blankCandidate=" + String(dom.blankCandidate),
+                    "renderTransitionObserved="
+                      + String(__sumiExecuteScriptContinuationState.renderTransitionObserved),
+                    "pendingRouteCount="
+                      + String(debugPostBootstrapPendingRoutes().length)
+                  ],
+                  stackDiagnostics:
+                    phase === "finalDOMCheckpoint"
+                      ? debugCaptureContinuationStack("finalDOM")
+                      : []
+                });
+              }, delay);
+            });
+          }
+
+          function debugBeginExecuteScriptContinuation(args, invocationMode) {
+            debugResetExecuteScriptContinuationState();
+            __sumiExecuteScriptContinuationState.invocationMode = invocationMode;
+            debugRecordExecuteScriptContinuationCheckpoint("popupCallStarted", {
+              safeMessageShapeClassification: debugArgsShape(args || []),
+              diagnostics: [
+                "invocationMode=" + invocationMode,
+                "popupObservedCall=true"
+              ]
+            });
+          }
+
+          function debugExecuteScriptBridgeStarted(namespace, methodName, bridgeCallID) {
+            if (namespace !== "scripting" || methodName !== "executeScript") {
+              return;
+            }
+            if (!__sumiExecuteScriptContinuationState.active) {
+              debugBeginExecuteScriptContinuation([], "promise");
+            }
+            __sumiExecuteScriptContinuationState.bridgeCallID = bridgeCallID;
+            __sumiExecuteScriptContinuationState.nativeBridgeReceiveAt = debugNowMS();
+            debugRecordExecuteScriptContinuationCheckpoint("nativeBridgeReceive", {
+              bridgeCallID,
+              diagnostics: [
+                "bridgeCallID=" + bridgeCallID,
+                "executeScriptContinuationPhase=nativeBridgeReceive"
+              ]
+            });
+          }
+
+          function debugExecuteScriptBridgeCompleted(response) {
+            if (!__sumiExecuteScriptContinuationState.active) {
+              return;
+            }
+            if (
+              response
+                && response.bridgeCallID
+                && __sumiExecuteScriptContinuationState.bridgeCallID
+                && response.bridgeCallID
+                  !== __sumiExecuteScriptContinuationState.bridgeCallID
+            ) {
+              return;
+            }
+            const shape = debugExecuteScriptBridgeResultShape(response);
+            __sumiExecuteScriptContinuationState.bridgeResultShapeSummary =
+              debugExecuteScriptResultShapeSummary(shape);
+            __sumiExecuteScriptContinuationState.nativeBridgeResolvedAt = debugNowMS();
+            debugRecordExecuteScriptContinuationCheckpoint("nativeBridgeResolved", {
+              bridgeCallID: response && response.bridgeCallID,
+              resultClassifier: response && response.succeeded
+                ? "nativeBridgeResolved"
+                : "nativeBridgeRejected",
+              firstMissingAPIOrPermissionOrLifecycleError:
+                response && response.succeeded
+                  ? null
+                  : debugSanitizedMessage(response && response.lastErrorMessage),
+              diagnostics: [
+                "executeScriptContinuationPhase=nativeBridgeResolved",
+                "bridgeSucceeded=" + String(!!(response && response.succeeded)),
+                "executeScriptBridgeResultShape="
+                  + __sumiExecuteScriptContinuationState.bridgeResultShapeSummary
+              ]
+            });
+          }
+
+          function debugTrackExecuteScriptPopupPromise(promise) {
+            return promise.then((value) => {
+              const shape = debugExecuteScriptInjectionResultShape(value);
+              __sumiExecuteScriptContinuationState.resultShapeSummary =
+                debugExecuteScriptResultShapeSummary(shape);
+              __sumiExecuteScriptContinuationState.popupPromiseResolved = true;
+              __sumiExecuteScriptContinuationState.domAtResolve = debugCoarseDOMState();
+              debugRecordExecuteScriptContinuationCheckpoint("popupPromiseResolved", {
+                diagnostics: [
+                  "popupObservedResolution=true",
+                  "executeScriptContinuationPhase=popupPromiseResolved"
+                ],
+                stackDiagnostics: debugCaptureContinuationStack("promiseResolve")
+              });
+              globalThis.queueMicrotask(() => {
+                if (__sumiExecuteScriptContinuationState.firstMicrotaskObserved) {
+                  return;
+                }
+                __sumiExecuteScriptContinuationState.firstMicrotaskObserved = true;
+                debugRecordExecuteScriptContinuationCheckpoint(
+                  "firstMicrotaskAfterResolve",
+                  { stackDiagnostics: debugCaptureContinuationStack("microtask") }
+                );
+                debugScheduleExecuteScriptContinuationFollowups();
+              });
+              return value;
+            }).catch((error) => {
+              __sumiExecuteScriptContinuationState.popupPromiseRejected = true;
+              debugRecordExecuteScriptContinuationCheckpoint("popupPromiseRejected", {
+                firstMissingAPIOrPermissionOrLifecycleError:
+                  debugSanitizedMessage(error && (error.message || String(error))),
+                diagnostics: [
+                  "popupObservedResolution=true",
+                  "executeScriptContinuationPhase=popupPromiseRejected"
+                ],
+                stackDiagnostics: debugCaptureContinuationStack("promiseReject")
+              });
+              throw error;
+            });
+          }
+
+          function debugWrapExecuteScriptCallback(callback) {
+            return function() {
+              const err = arguments[0];
+              const results = arguments[1];
+              __sumiExecuteScriptContinuationState.popupCallbackInvoked = true;
+              if (err) {
+                __sumiExecuteScriptContinuationState.popupPromiseRejected = true;
+                debugRecordExecuteScriptContinuationCheckpoint("popupPromiseRejected", {
+                  firstMissingAPIOrPermissionOrLifecycleError:
+                    debugSanitizedMessage(err),
+                  diagnostics: [
+                    "popupObservedResolution=true",
+                    "invocationMode=callback",
+                    "executeScriptContinuationPhase=popupCallbackRejected"
+                  ],
+                  stackDiagnostics: debugCaptureContinuationStack("callbackReject")
+                });
+              } else {
+                const shape = debugExecuteScriptInjectionResultShape(results);
+                __sumiExecuteScriptContinuationState.resultShapeSummary =
+                  debugExecuteScriptResultShapeSummary(shape);
+                __sumiExecuteScriptContinuationState.popupPromiseResolved = true;
+                __sumiExecuteScriptContinuationState.domAtResolve = debugCoarseDOMState();
+                debugRecordExecuteScriptContinuationCheckpoint("popupCallbackInvoked", {
+                  diagnostics: [
+                    "popupObservedResolution=true",
+                    "invocationMode=callback",
+                    "executeScriptContinuationPhase=popupCallbackResolved"
+                  ],
+                  stackDiagnostics: debugCaptureContinuationStack("callbackResolve")
+                });
+                globalThis.queueMicrotask(() => {
+                  if (__sumiExecuteScriptContinuationState.firstMicrotaskObserved) {
+                    return;
+                  }
+                  __sumiExecuteScriptContinuationState.firstMicrotaskObserved = true;
+                  debugRecordExecuteScriptContinuationCheckpoint(
+                    "firstMicrotaskAfterResolve",
+                    { stackDiagnostics: debugCaptureContinuationStack("microtask") }
+                  );
+                  debugScheduleExecuteScriptContinuationFollowups();
+                });
+              }
+              return callback.apply(this, arguments);
+            };
+          }
+
+          function debugDiscoverSourceMaps() {
+            if (__sumiSourceMapState.availability !== "notAttempted") {
+              return;
+            }
+            __sumiSourceMapState.availability = "unavailable";
+            const scripts = Array.from(
+              globalThis.document
+                ? globalThis.document.querySelectorAll("script[src]")
+                : []
+            ).slice(0, 24);
+            let mappedCount = 0;
+            const originalFiles = [];
+            scripts.forEach((script) => {
+              const src = script && script.src;
+              if (!src) {
+                return;
+              }
+              const descriptor = debugSafeResourceDescriptor(src);
+              if (!descriptor) {
+                return;
+              }
+              const mapURL = src.endsWith(".js") ? src + ".map" : src + ".map";
+              try {
+                const xhr = new XMLHttpRequest();
+                xhr.open("GET", mapURL, false);
+                xhr.send(null);
+                if (xhr.status < 200 || xhr.status >= 300 || !xhr.responseText) {
+                  return;
+                }
+                const parsed = JSON.parse(xhr.responseText);
+                if (!parsed || typeof parsed !== "object" || !parsed.mappings) {
+                  return;
+                }
+                const sources = Array.isArray(parsed.sources)
+                  ? parsed.sources
+                  : [];
+                sources.slice(0, 32).forEach((entry) => {
+                  const safeName = debugSafeResourceDescriptor(entry) || debugSafeString(entry, 120);
+                  if (safeName && originalFiles.indexOf(safeName) === -1) {
+                    originalFiles.push(safeName);
+                  }
+                });
+                mappedCount += 1;
+              } catch (_) {
+              }
+            });
+            __sumiSourceMapState.mappedScriptCount = mappedCount;
+            __sumiSourceMapState.originalFileNames = originalFiles.sort().slice(0, 24);
+            __sumiSourceMapState.availability =
+              mappedCount > 0 ? "available" : "unavailable";
+          }
+
           function debugConsoleErrorDiagnostics(args) {
             const diagnostics = [];
             const list = Array.isArray(args) ? args : [];
@@ -10345,6 +10930,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
               startedAt: debugNowMS()
             };
             __sumiPendingBridgeCalls.set(bridgeCallID, pending);
+            debugExecuteScriptBridgeStarted(namespace, methodName, bridgeCallID);
             debugRecord("bridgeCallStarted", Object.assign({}, pending, {
               resultClassifier: "pending"
             }));
@@ -10393,6 +10979,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
             const parts = pending.apiName.split(".");
             const namespace = parts.shift() || "unknown";
             const methodName = parts.join(".");
+            debugExecuteScriptBridgeCompleted(response);
             debugRecord("bridgeCallResolved", Object.assign({}, pending, {
               ageMilliseconds: Math.round(debugNowMS() - pending.startedAt),
               resultClassifier: debugClassifier(namespace, methodName, response),
@@ -11189,6 +11776,17 @@ enum ChromeMV3PopupOptionsJSShimSource {
             }
             __sumiLastScriptError.key = dedupeKey;
             __sumiLastScriptError.atMS = now;
+            if (__sumiExecuteScriptContinuationState.active) {
+              __sumiExecuteScriptContinuationState.continuationExceptionObserved = true;
+              debugRecordExecuteScriptContinuationCheckpoint("popupContinuationException", {
+                firstMissingAPIOrPermissionOrLifecycleError: message,
+                diagnostics: [
+                  "executeScriptContinuationPhase=popupContinuationException",
+                  "sourceLabel=" + sourceLabel
+                ],
+                stackDiagnostics: debugCaptureContinuationStack("scriptError")
+              });
+            }
             const diagnostics = [
               "Popup emitted a " + sourceLabel + " script error."
             ];
@@ -11238,6 +11836,16 @@ enum ChromeMV3PopupOptionsJSShimSource {
               reason && (reason.message || String(reason))
             );
             const errorName = debugSafeString(reason && reason.name, 80);
+            if (__sumiExecuteScriptContinuationState.active) {
+              __sumiExecuteScriptContinuationState.continuationUnhandledRejectionObserved = true;
+              debugRecordExecuteScriptContinuationCheckpoint("popupContinuationUnhandledRejection", {
+                firstMissingAPIOrPermissionOrLifecycleError: message,
+                diagnostics: [
+                  "executeScriptContinuationPhase=popupContinuationUnhandledRejection"
+                ],
+                stackDiagnostics: debugCaptureContinuationStack("unhandledRejection")
+              });
+            }
             const diagnostics = ["Popup emitted an unhandled Promise rejection."];
             if (message) {
               diagnostics.push("message=" + message);
@@ -11337,6 +11945,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
           }, true);
 
           globalThis.addEventListener("DOMContentLoaded", () => {
+            debugDiscoverSourceMaps();
             debugRecordResourceTiming("domcontentloaded");
           }, { once: true });
 
@@ -11375,6 +11984,16 @@ enum ChromeMV3PopupOptionsJSShimSource {
               debugPostBootstrapCheckpoint(
                 debugSafeString(phase, 80) || "host-forced-final"
               );
+              if (__sumiExecuteScriptContinuationState.active) {
+                debugRecordExecuteScriptContinuationCheckpoint("hostForcedFinalDOMCheckpoint", {
+                  diagnostics: [
+                    "phase=host-forced-final",
+                    "renderTransitionObserved="
+                      + String(__sumiExecuteScriptContinuationState.renderTransitionObserved)
+                  ],
+                  stackDiagnostics: debugCaptureContinuationStack("hostForcedFinal")
+                });
+              }
               return globalThis.__sumiChromeMV3PopupOptionsDebugSnapshot();
             },
             configurable: false

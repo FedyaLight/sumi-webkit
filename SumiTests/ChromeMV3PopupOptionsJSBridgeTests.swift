@@ -1076,6 +1076,12 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             source.contains("postBootstrapCheckpoint")
         )
         XCTAssertTrue(
+            source.contains("executeScriptContinuationCheckpoint")
+        )
+        XCTAssertTrue(
+            source.contains("debugTrackExecuteScriptPopupPromise")
+        )
+        XCTAssertTrue(
             source.contains("storageSessionExposed")
         )
         XCTAssertTrue(

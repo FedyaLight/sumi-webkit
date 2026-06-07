@@ -922,6 +922,11 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertFalse(snapshot.jsDebugRouteEvents.isEmpty)
         XCTAssertNotEqual(firstBlocker, "unknown")
         XCTAssertEqual(
+            snapshot.appStateDependencyTrace.correlationSummary.classification,
+            "appStateWaitWithNoWriter",
+            "Bitwarden controlled popup app-state classification should remain stable."
+        )
+        XCTAssertEqual(
             bitwardenNativeHostRunningApplicationIdentifiers(),
             nativeHostWasRunning,
             "The controlled Bitwarden popup diagnostics must not launch com.bitwarden.desktop."
@@ -1398,6 +1403,8 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 domStateJSON: domState
             )
         let firstPostParseBlocker = postParseDiagnostics.firstBlocker
+        let firstContinuationBlocker =
+            postParseDiagnostics.firstContinuationBlocker
         let bindingLogs = [
             "urlHubAction click scripting target bound tab=\(tab.id.uuidString) localTabID=\(boundLocalTabID) url=\(tab.url.absoluteString)",
             "entrypoint=urlHubActionClickScriptingTarget tab=\(boundLocalTabID) frame=0 url=\(tab.url.absoluteString)",
@@ -1408,7 +1415,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 || $0.contains("permissionClassifier=")
         }
         print(
-            "SumiControlledRaindropMaterializedTab actionClickPath=urlHubActionClick selectedPopupPath=controlledCompatibilityActionPopup boundLocalTabID=\(boundLocalTabID) executionClassifier=filesExecuted firstPostParseBlocker=\(firstPostParseBlocker)"
+            "SumiControlledRaindropMaterializedTab actionClickPath=urlHubActionClick selectedPopupPath=controlledCompatibilityActionPopup boundLocalTabID=\(boundLocalTabID) executionClassifier=filesExecuted firstPostParseBlocker=\(firstPostParseBlocker) firstContinuationBlocker=\(firstContinuationBlocker)"
         )
         for line in bindingLogs + scriptingLogs + postParseDiagnostics.lines {
             print("SumiControlledRaindropMaterializedTab \(line)")
@@ -1422,6 +1429,22 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             "unknown",
             "Post-parse diagnostics did not classify the first blocker after assets/parse.js filesExecuted."
         )
+        XCTAssertTrue(
+            chromeMV3ExecuteScriptContinuationBlockerCatalog.contains(
+                firstContinuationBlocker
+            ),
+            "Unexpected executeScript continuation blocker: \(firstContinuationBlocker)"
+        )
+        XCTAssertNotEqual(
+            firstContinuationBlocker,
+            "unknown",
+            "ExecuteScript continuation diagnostics did not classify the first popup-side blocker after assets/parse.js filesExecuted."
+        )
+        XCTAssertNotEqual(
+            firstContinuationBlocker,
+            "noPopupContinuationObserved",
+            "Expected popup bundled JS to observe scripting.executeScript continuation after assets/parse.js filesExecuted."
+        )
         recordControlledBitwardenPopupSanitizedDiagnostics(
             prefix: "SumiControlledRaindropMaterializedTab",
             snapshot: snapshot,
@@ -1429,6 +1452,9 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             firstBlocker: firstPostParseBlocker,
             tabsConnectFatal: controlledBitwardenTabsConnectActuallyFatal(snapshot),
             extraLines: postParseDiagnostics.lines
+                + [
+                    "firstContinuationBlocker=\(firstContinuationBlocker)",
+                ]
         )
 
         _ = context.module.chromeMV3ClosePopupOptionsThroughManager(
@@ -2972,8 +2998,25 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         "unknown",
     ]
 
+    private let chromeMV3ExecuteScriptContinuationBlockerCatalog: Set<String> = [
+        "executeScriptPromiseNotResolvedToPopup",
+        "executeScriptPromiseRejectedInPopup",
+        "executeScriptResultShapeUnexpected",
+        "popupContinuationException",
+        "popupContinuationUnhandledRejection",
+        "popupAwaitNeverResolved",
+        "popupTimerOrSchedulerGate",
+        "popupRenderGateNoStateTransition",
+        "popupLocalAuthOrNetworkBranch",
+        "popupLocalAppStateBranch",
+        "sourceMapUnavailable",
+        "noPopupContinuationObserved",
+        "unknown",
+    ]
+
     private struct ChromeMV3PostParseSanitizedDiagnostics {
         var firstBlocker: String
+        var firstContinuationBlocker: String
         var lines: [String]
     }
 
@@ -2998,6 +3041,14 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             {
                 snapshot = current
                 let postParseEvents = raindropPostParseEvents(in: current)
+                let continuationEvents =
+                    raindropExecuteScriptContinuationEvents(in: current)
+                if continuationEvents.contains(where: { event in
+                    event.resultClassifier == "finalDOMCheckpoint"
+                        || event.resultClassifier == "hostForcedFinalDOMCheckpoint"
+                }) {
+                    return current
+                }
                 if postParseEvents.contains(where: { event in
                     event.eventKind == "postBootstrapCheckpoint"
                         && event.diagnostics.contains("phase=final")
@@ -3006,6 +3057,13 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 }
                 if postParseEvents.contains(where: {
                     controlledBitwardenPopupIsBlockerEvent($0)
+                }) {
+                    return current
+                }
+                if continuationEvents.contains(where: {
+                    $0.resultClassifier == "popupContinuationException"
+                        || $0.resultClassifier == "popupContinuationUnhandledRejection"
+                        || $0.resultClassifier == "popupPromiseRejected"
                 }) {
                     return current
                 }
@@ -3119,6 +3177,255 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             raindropPostParseExecuteScriptEventSequence(in: snapshot)
         else { return [] }
         return snapshot.jsDebugRouteEvents.filter { $0.sequence > sequence }
+    }
+
+    private func continuationDiagnosticValue(
+        _ key: String,
+        in diagnostics: [String]
+    ) -> String? {
+        for diagnostic in diagnostics {
+            guard let range = diagnostic.range(of: "\(key)=") else { continue }
+            let suffix = diagnostic[range.upperBound...]
+            let value = suffix.prefix { character in
+                character != ";"
+                    && character != "|"
+                    && character != ","
+            }
+            if value.isEmpty == false { return String(value) }
+        }
+        return nil
+    }
+
+    private func raindropExecuteScriptContinuationEvents(
+        in snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
+    ) -> [ChromeMV3PopupOptionsJSDebugRouteEventRecord] {
+        snapshot.jsDebugRouteEvents.filter {
+            $0.eventKind == "executeScriptContinuationCheckpoint"
+        }
+    }
+
+    private func raindropExecuteScriptContinuationPhaseObserved(
+        _ phase: String,
+        in events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
+    ) -> Bool {
+        events.contains { event in
+            event.resultClassifier == phase
+                || event.diagnostics.contains("phase=\(phase)")
+        }
+    }
+
+    private func raindropExecuteScriptContinuationResultShape(
+        in events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
+    ) -> String? {
+        for event in events.reversed() {
+            if let shape = continuationDiagnosticValue(
+                "executeScriptResultShape",
+                in: event.diagnostics
+            ) {
+                return shape
+            }
+            if let shape = continuationDiagnosticValue(
+                "executeScriptBridgeResultShape",
+                in: event.diagnostics
+            ) {
+                return shape
+            }
+        }
+        return nil
+    }
+
+    private func raindropExecuteScriptContinuationSourceMapAvailability(
+        in events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
+    ) -> String {
+        for event in events.reversed() {
+            if let availability = continuationDiagnosticValue(
+                "sourceMapAvailability",
+                in: event.diagnostics
+            ) {
+                return availability
+            }
+        }
+        return "notObserved"
+    }
+
+    private func raindropExecuteScriptContinuationStackDiagnostics(
+        in events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
+    ) -> [String] {
+        var lines: [String] = []
+        for event in events.suffix(24) {
+            for diagnostic in event.diagnostics {
+                if diagnostic.hasPrefix("stackFrame")
+                    || diagnostic.hasPrefix("sourceMapOriginalFiles=")
+                {
+                    lines.append(diagnostic)
+                }
+            }
+        }
+        return Array(lines.suffix(12))
+    }
+
+    private func classifyFirstExecuteScriptContinuationBlocker(
+        snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot,
+        domStateJSON: String
+    ) -> String {
+        guard raindropParseJSExecuteScriptSucceeded(in: snapshot) else {
+            return "unknown"
+        }
+
+        let continuationEvents =
+            raindropExecuteScriptContinuationEvents(in: snapshot)
+        guard continuationEvents.isEmpty == false else {
+            return "noPopupContinuationObserved"
+        }
+
+        if continuationEvents.contains(where: {
+            $0.resultClassifier == "popupContinuationException"
+        }) {
+            return "popupContinuationException"
+        }
+        if continuationEvents.contains(where: {
+            $0.resultClassifier == "popupContinuationUnhandledRejection"
+        }) {
+            return "popupContinuationUnhandledRejection"
+        }
+        if raindropExecuteScriptContinuationPhaseObserved(
+            "popupPromiseRejected",
+            in: continuationEvents
+        ) {
+            return "executeScriptPromiseRejectedInPopup"
+        }
+
+        let nativeResolved = raindropExecuteScriptContinuationPhaseObserved(
+            "nativeBridgeResolved",
+            in: continuationEvents
+        )
+        let popupResolved =
+            raindropExecuteScriptContinuationPhaseObserved(
+                "popupPromiseResolved",
+                in: continuationEvents
+            )
+            || raindropExecuteScriptContinuationPhaseObserved(
+                "popupCallbackInvoked",
+                in: continuationEvents
+            )
+        if nativeResolved && popupResolved == false {
+            if snapshot.pendingUnresolvedJSDebugRoutes.contains(where: {
+                $0.apiName == "scripting.executeScript"
+            }) {
+                return "executeScriptPromiseNotResolvedToPopup"
+            }
+            if raindropExecuteScriptContinuationPhaseObserved(
+                "nativeBridgeReceive",
+                in: continuationEvents
+            ) {
+                return "executeScriptPromiseNotResolvedToPopup"
+            }
+        }
+
+        if let shape = raindropExecuteScriptContinuationResultShape(
+            in: continuationEvents
+        ) {
+            if shape.contains("success=false")
+                || shape.contains("frameResultPresent=false")
+                || shape.contains("arrayLength=0")
+            {
+                return "executeScriptResultShapeUnexpected"
+            }
+        }
+
+        if snapshot.pendingUnresolvedJSDebugRoutes.isEmpty == false,
+           popupResolved
+        {
+            return "popupAwaitNeverResolved"
+        }
+
+        let localBranch = continuationEvents.compactMap {
+            continuationDiagnosticValue("localBranchClassifier", in: $0.diagnostics)
+        }.last
+        if localBranch == "networkOrAuth" {
+            return "popupLocalAuthOrNetworkBranch"
+        }
+        if localBranch == "appState" {
+            return "popupLocalAppStateBranch"
+        }
+
+        let domObject =
+            domStateJSON.data(using: .utf8).flatMap {
+                try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+            } ?? [:]
+        let visibleTextLength = domObject["visibleTextLength"] as? Int ?? 0
+        let usableFormCandidate = domObject["usableFormCandidate"] as? Bool ?? false
+        let renderTransitionObserved = continuationEvents.contains {
+            $0.diagnostics.contains("renderTransitionObserved=true")
+        }
+        let finalCheckpointReached = continuationEvents.contains {
+            $0.resultClassifier == "finalDOMCheckpoint"
+                || $0.resultClassifier == "hostForcedFinalDOMCheckpoint"
+        }
+        let microtaskObserved = raindropExecuteScriptContinuationPhaseObserved(
+            "firstMicrotaskAfterResolve",
+            in: continuationEvents
+        )
+        let timerObserved = raindropExecuteScriptContinuationPhaseObserved(
+            "firstTimerAfterResolve",
+            in: continuationEvents
+        )
+
+        if popupResolved,
+           microtaskObserved,
+           timerObserved,
+           finalCheckpointReached,
+           renderTransitionObserved == false,
+           visibleTextLength == 0,
+           usableFormCandidate == false
+        {
+            if raindropExecuteScriptContinuationSourceMapAvailability(
+                in: continuationEvents
+            ) == "unavailable" {
+                return "popupRenderGateNoStateTransition"
+            }
+            return "popupRenderGateNoStateTransition"
+        }
+
+        if popupResolved,
+           microtaskObserved == false
+        {
+            return "popupTimerOrSchedulerGate"
+        }
+
+        if popupResolved,
+           microtaskObserved,
+           timerObserved == false,
+           finalCheckpointReached == false
+        {
+            return "popupTimerOrSchedulerGate"
+        }
+
+        let trace = snapshot.appStateDependencyTrace.correlationSummary
+        if popupResolved,
+           trace.networkOrAuthDependencyObserved
+        {
+            return "popupLocalAuthOrNetworkBranch"
+        }
+        if popupResolved,
+           trace.classification == "appStateWaitWithNoObservableDependency"
+            || trace.classification
+                == "appStateWaitWithNoObservableBrowserDependency"
+            || trace.popupReadKeyHashesNeverWritten.isEmpty == false
+        {
+            return "popupLocalAppStateBranch"
+        }
+
+        if raindropExecuteScriptContinuationSourceMapAvailability(
+            in: continuationEvents
+        ) == "unavailable",
+           popupResolved,
+           finalCheckpointReached
+        {
+            return "popupRenderGateNoStateTransition"
+        }
+
+        return "unknown"
     }
 
     private func postParseDiagnosticInt(
@@ -3456,6 +3763,13 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             snapshot: snapshot,
             domStateJSON: domStateJSON
         )
+        let firstContinuationBlocker =
+            classifyFirstExecuteScriptContinuationBlocker(
+                snapshot: snapshot,
+                domStateJSON: domStateJSON
+            )
+        let continuationEvents =
+            raindropExecuteScriptContinuationEvents(in: snapshot)
         let subsequentRoutes = raindropPostParseRoutes(in: snapshot)
         let subsequentEvents = raindropPostParseEvents(in: snapshot)
         let serviceWorkerListeners =
@@ -3469,6 +3783,11 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
 
         var lines: [String] = [
             "postParseClassifier=\(firstBlocker)",
+            "executeScriptContinuationClassifier=\(firstContinuationBlocker)",
+            "executeScriptContinuationEventCount=\(continuationEvents.count)",
+            "executeScriptPopupObservedResolution=\(raindropExecuteScriptContinuationPhaseObserved("popupPromiseResolved", in: continuationEvents) || raindropExecuteScriptContinuationPhaseObserved("popupCallbackInvoked", in: continuationEvents))",
+            "executeScriptResultShape=\(raindropExecuteScriptContinuationResultShape(in: continuationEvents) ?? "none")",
+            "executeScriptSourceMapAvailability=\(raindropExecuteScriptContinuationSourceMapAvailability(in: continuationEvents))",
             "postParseRouteCount=\(subsequentRoutes.count)",
             "postParseEventCount=\(subsequentEvents.count)",
             "postParsePendingCount=\(snapshot.pendingUnresolvedJSDebugRoutes.count)",
@@ -3634,8 +3953,27 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             )
         }
 
+        for event in continuationEvents.prefix(40) {
+            lines.append(
+                [
+                    "executeScriptContinuation",
+                    "seq=\(event.sequence)",
+                    "phase=\(event.resultClassifier ?? "none")",
+                    "classifier=\(event.resultClassifier ?? "none")",
+                    "firstError=\(event.firstMissingAPIOrPermissionOrLifecycleError ?? "none")",
+                    "diagnostics=\(event.diagnostics.joined(separator: "|"))",
+                ].joined(separator: " ")
+            )
+        }
+        for stackLine in raindropExecuteScriptContinuationStackDiagnostics(
+            in: continuationEvents
+        ) {
+            lines.append("executeScriptContinuationStack \(stackLine)")
+        }
+
         return ChromeMV3PostParseSanitizedDiagnostics(
             firstBlocker: firstBlocker,
+            firstContinuationBlocker: firstContinuationBlocker,
             lines: lines
         )
     }
