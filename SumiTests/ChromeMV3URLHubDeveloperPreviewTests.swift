@@ -1343,7 +1343,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             )
         }
 
-        let snapshot = try await waitForRaindropExecuteScriptBridgeSnapshot(
+        let snapshot = try await waitForRaindropPostParseBridgeSnapshot(
             module: context.module,
             profileID: record.profileID,
             extensionID: record.extensionID
@@ -1387,8 +1387,17 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             }
         )
 
-        let nextBlocker =
-            nextRaindropBlockerAfterSuccessfulParseJSExecution(snapshot)
+        let domState = try await controlledBitwardenPopupDOMState(
+            module: context.module,
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+        let postParseDiagnostics =
+            raindropPostParseSanitizedDiagnostics(
+                snapshot: snapshot,
+                domStateJSON: domState
+            )
+        let firstPostParseBlocker = postParseDiagnostics.firstBlocker
         let bindingLogs = [
             "urlHubAction click scripting target bound tab=\(tab.id.uuidString) localTabID=\(boundLocalTabID) url=\(tab.url.absoluteString)",
             "entrypoint=urlHubActionClickScriptingTarget tab=\(boundLocalTabID) frame=0 url=\(tab.url.absoluteString)",
@@ -1399,21 +1408,27 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 || $0.contains("permissionClassifier=")
         }
         print(
-            "SumiControlledRaindropMaterializedTab actionClickPath=urlHubActionClick selectedPopupPath=controlledCompatibilityActionPopup boundLocalTabID=\(boundLocalTabID) executionClassifier=filesExecuted nextBlocker=\(nextBlocker ?? "none")"
+            "SumiControlledRaindropMaterializedTab actionClickPath=urlHubActionClick selectedPopupPath=controlledCompatibilityActionPopup boundLocalTabID=\(boundLocalTabID) executionClassifier=filesExecuted firstPostParseBlocker=\(firstPostParseBlocker)"
         )
-        for line in bindingLogs + scriptingLogs {
+        for line in bindingLogs + scriptingLogs + postParseDiagnostics.lines {
             print("SumiControlledRaindropMaterializedTab \(line)")
         }
+        XCTAssertTrue(
+            chromeMV3PostParseBlockerCatalog.contains(firstPostParseBlocker),
+            "Unexpected post-parse blocker classification: \(firstPostParseBlocker)"
+        )
+        XCTAssertNotEqual(
+            firstPostParseBlocker,
+            "unknown",
+            "Post-parse diagnostics did not classify the first blocker after assets/parse.js filesExecuted."
+        )
         recordControlledBitwardenPopupSanitizedDiagnostics(
             prefix: "SumiControlledRaindropMaterializedTab",
             snapshot: snapshot,
-            domState: try await controlledBitwardenPopupDOMState(
-                module: context.module,
-                profileID: record.profileID,
-                extensionID: record.extensionID
-            ),
-            firstBlocker: nextBlocker ?? "none",
-            tabsConnectFatal: controlledBitwardenTabsConnectActuallyFatal(snapshot)
+            domState: domState,
+            firstBlocker: firstPostParseBlocker,
+            tabsConnectFatal: controlledBitwardenTabsConnectActuallyFatal(snapshot),
+            extraLines: postParseDiagnostics.lines
         )
 
         _ = context.module.chromeMV3ClosePopupOptionsThroughManager(
@@ -2938,15 +2953,102 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             }
     }
 
-    private func nextRaindropBlockerAfterSuccessfulParseJSExecution(
-        _ snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
-    ) -> String? {
-        guard raindropParseJSExecuteScriptSucceeded(in: snapshot) else {
-            return nil
-        }
+    private let chromeMV3PostParseBlockerCatalog: Set<String> = [
+        "contentScriptListenerMissing",
+        "messageBeforeContentScriptReady",
+        "serviceWorkerOnMessageMissing",
+        "serviceWorkerOnConnectMissing",
+        "popupToServiceWorkerRouteDropped",
+        "popupToContentScriptRouteDropped",
+        "contentScriptToServiceWorkerRouteDropped",
+        "tabsTargetMappingWrong",
+        "storageAppStateReadNoWriter",
+        "storageWriteNotVisibleToPopup",
+        "storageOnChangedMissed",
+        "permissionOrActiveTabDenied",
+        "missingNarrowChromeAPI",
+        "networkOrAuthWait",
+        "appStateWaitWithNoObservableBrowserDependency",
+        "unknown",
+    ]
 
-        let executeScriptRouteIndex =
-            snapshot.sanitizedBridgeRouteRecords.lastIndex { route in
+    private struct ChromeMV3PostParseSanitizedDiagnostics {
+        var firstBlocker: String
+        var lines: [String]
+    }
+
+    @MainActor
+    private func waitForRaindropPostParseBridgeSnapshot(
+        module: SumiExtensionsModule,
+        profileID: String,
+        extensionID: String
+    ) async throws -> ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot {
+        var snapshot = try await waitForRaindropExecuteScriptBridgeSnapshot(
+            module: module,
+            profileID: profileID,
+            extensionID: extensionID
+        )
+        for _ in 0..<200 {
+            if let current =
+                module
+                .chromeMV3PopupOptionsBridgeDiagnosticsSnapshotForTesting(
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+            {
+                snapshot = current
+                let postParseEvents = raindropPostParseEvents(in: current)
+                if postParseEvents.contains(where: { event in
+                    event.eventKind == "postBootstrapCheckpoint"
+                        && event.diagnostics.contains("phase=final")
+                }) {
+                    return current
+                }
+                if postParseEvents.contains(where: {
+                    controlledBitwardenPopupIsBlockerEvent($0)
+                }) {
+                    return current
+                }
+                if current.pendingUnresolvedJSDebugRoutes.isEmpty == false {
+                    return current
+                }
+            }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        _ = try? await module
+            .chromeMV3PopupOptionsEvaluateJavaScriptForTesting(
+                profileID: profileID,
+                extensionID: extensionID,
+                script: """
+                (() => {
+                  const forceCheckpoint =
+                    globalThis.__sumiChromeMV3PopupOptionsDebugForceCheckpoint;
+                  if (typeof forceCheckpoint !== 'function') {
+                    return false;
+                  }
+                  forceCheckpoint('host-forced-final');
+                  return true;
+                })();
+                """
+            )
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        if let current =
+            module
+            .chromeMV3PopupOptionsBridgeDiagnosticsSnapshotForTesting(
+                profileID: profileID,
+                extensionID: extensionID
+            )
+        {
+            snapshot = current
+        }
+        return snapshot
+    }
+
+    private func raindropPostParseExecuteScriptRouteIndex(
+        in snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
+    ) -> Int? {
+        if let parseRouteIndex =
+            snapshot.sanitizedBridgeRouteRecords.lastIndex(where: { route in
                 guard route.apiName == "scripting.executeScript" else {
                     return false
                 }
@@ -2955,42 +3057,587 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 }
                 let referencedParseJS = route.diagnostics.contains {
                     $0.contains("assets/parse.js")
+                        || $0.contains("fileShapes=parse.js")
                 }
                 return executedFiles && referencedParseJS
+            })
+        {
+            return parseRouteIndex
+        }
+        return snapshot.sanitizedBridgeRouteRecords.lastIndex { route in
+            guard route.apiName == "scripting.executeScript" else {
+                return false
             }
-        if let executeScriptRouteIndex {
-            let subsequentRoutes = snapshot.sanitizedBridgeRouteRecords[
-                (executeScriptRouteIndex + 1)...
-            ]
-            for route in subsequentRoutes {
-                if let missing = route.firstMissingAPIOrPermissionOrLifecycleError {
-                    return missing
+            return route.diagnostics.contains {
+                $0.contains("executionClassifier=filesExecuted")
+            } || route.resultClassifier.contains("executeScriptSucceeded")
+        }
+    }
+
+    private func raindropPostParseExecuteScriptEventSequence(
+        in snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
+    ) -> Int? {
+        if let executeScriptEvent = snapshot.jsDebugRouteEvents.last(where: {
+            event in
+            event.apiName == "scripting.executeScript"
+                && (
+                    event.resultClassifier?
+                        .contains("executeScriptSucceeded") == true
+                        || event.diagnostics.contains {
+                            $0.contains("executionClassifier=filesExecuted")
+                        }
+                )
+        }) {
+            return executeScriptEvent.sequence
+        }
+        if let bridgeResolved = snapshot.jsDebugRouteEvents.last(where: {
+            $0.apiName == "scripting.executeScript"
+                && $0.eventKind == "bridgeCallResolved"
+        }) {
+            return bridgeResolved.sequence
+        }
+        return snapshot.jsDebugRouteEvents.last { event in
+            event.diagnostics.contains { $0.contains("assets/parse.js") }
+                || event.diagnostics.contains {
+                    $0.contains("executionClassifier=filesExecuted")
                 }
-                let classifier = route.resultClassifier
-                if classifier != "pending",
-                   classifier.contains("filesExecuted") == false
-                {
-                    return classifier
+        }?.sequence
+    }
+
+    private func raindropPostParseRoutes(
+        in snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
+    ) -> [ChromeMV3PopupOptionsSanitizedBridgeRouteRecord] {
+        guard let index = raindropPostParseExecuteScriptRouteIndex(in: snapshot)
+        else { return [] }
+        return Array(snapshot.sanitizedBridgeRouteRecords[(index + 1)...])
+    }
+
+    private func raindropPostParseEvents(
+        in snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
+    ) -> [ChromeMV3PopupOptionsJSDebugRouteEventRecord] {
+        guard let sequence =
+            raindropPostParseExecuteScriptEventSequence(in: snapshot)
+        else { return [] }
+        return snapshot.jsDebugRouteEvents.filter { $0.sequence > sequence }
+    }
+
+    private func postParseDiagnosticInt(
+        _ key: String,
+        in diagnostics: [String]
+    ) -> Int? {
+        for diagnostic in diagnostics {
+            guard let range = diagnostic.range(of: "\(key)=") else { continue }
+            let suffix = diagnostic[range.upperBound...]
+            let value = suffix.prefix { character in
+                character != ";"
+                    && character != "|"
+                    && character != ","
+                    && character != " "
+            }
+            if let intValue = Int(value) { return intValue }
+        }
+        return nil
+    }
+
+    private func postParseServiceWorkerListenerCounts(
+        in snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
+    ) -> (onMessage: Int, onConnect: Int) {
+        var onMessage = 0
+        var onConnect = 0
+        for route in snapshot.sanitizedBridgeRouteRecords {
+            if route.apiName == "runtime.sendMessage" {
+                onMessage = max(
+                    onMessage,
+                    route.listenerCount,
+                    postParseDiagnosticInt(
+                        "onMessageListenerCount",
+                        in: route.diagnostics
+                    ) ?? 0
+                )
+            }
+            if route.apiName == "runtime.connect" {
+                onConnect = max(onConnect, route.listenerCount)
+                onMessage = max(
+                    onMessage,
+                    postParseDiagnosticInt(
+                        "onMessageListenerCount",
+                        in: route.diagnostics
+                    ) ?? 0
+                )
+            }
+        }
+        for event in snapshot.jsDebugRouteEvents {
+            if event.apiName.contains("runtime.onMessage") {
+                onMessage = max(
+                    onMessage,
+                    postParseDiagnosticInt("listenerCount", in: event.diagnostics)
+                        ?? 0
+                )
+            }
+            if event.apiName.contains("runtime.onConnect") {
+                onConnect = max(
+                    onConnect,
+                    postParseDiagnosticInt("listenerCount", in: event.diagnostics)
+                        ?? 0
+                )
+            }
+        }
+        for record in snapshot.appStateDependencyTrace.portLifecycle {
+            if record.apiName.contains("runtime.connect")
+                || record.eventKind.contains("runtime.connect")
+            {
+                onConnect = max(onConnect, record.listenerCount)
+            }
+        }
+        return (onMessage, onConnect)
+    }
+
+    private func postParseContentScriptListenerRegistered(
+        in snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
+    ) -> Bool {
+        if let summary = snapshot.contentScriptEndpointSummary,
+           summary.messageListenerEndpointCount > 0
+        {
+            return true
+        }
+        return snapshot.sanitizedBridgeRouteRecords.contains { route in
+            route.targetContext == "contentScript"
+                && (
+                    route.listenerCount > 0
+                        || route.listenerInvoked
+                        || route.diagnostics.contains {
+                            $0.localizedCaseInsensitiveContains(
+                                "runtime.onMessage listener registration observed"
+                            )
+                        }
+                )
+        }
+    }
+
+    private func postParseContentScriptListenerRegistrationObserved(
+        in snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
+    ) -> Bool {
+        if postParseContentScriptListenerRegistered(in: snapshot) {
+            return true
+        }
+        return raindropPostParseEvents(in: snapshot).contains { event in
+            event.targetContext == "contentScript"
+                && event.diagnostics.contains {
+                    $0.localizedCaseInsensitiveContains(
+                        "runtime.onMessage listener registration observed"
+                    )
                 }
+        }
+    }
+
+    private func postParseRouteFailed(
+        _ route: ChromeMV3PopupOptionsSanitizedBridgeRouteRecord
+    ) -> Bool {
+        if route.firstMissingAPIOrPermissionOrLifecycleError != nil {
+            return true
+        }
+        if route.resultClassifier == "permissionDenied" { return true }
+        if route.resultClassifier == "noReceivingEnd" { return true }
+        if route.resultClassifier == "noListener" { return true }
+        if route.resultClassifier == "blocked" { return true }
+        if route.resultClassifier == "listenerThrew" { return true }
+        if route.resultClassifier == "listenerPresentButNoResponse" {
+            return true
+        }
+        return false
+    }
+
+    private func classifyPostParseRouteBlocker(
+        _ route: ChromeMV3PopupOptionsSanitizedBridgeRouteRecord,
+        contentScriptListenerRegistered: Bool,
+        serviceWorkerOnMessageCount: Int,
+        serviceWorkerOnConnectCount: Int
+    ) -> String? {
+        guard postParseRouteFailed(route) else { return nil }
+        if route.resultClassifier == "permissionDenied"
+            || route.diagnostics.contains(where: {
+                $0.localizedCaseInsensitiveContains("permission denied")
+            })
+        {
+            return "permissionOrActiveTabDenied"
+        }
+        switch route.apiName {
+        case "runtime.sendMessage":
+            if route.sourceContext == "contentScript" {
+                return "contentScriptToServiceWorkerRouteDropped"
+            }
+            if serviceWorkerOnMessageCount == 0
+                && route.listenerCount == 0
+                && route.listenerInvoked == false
+            {
+                return "serviceWorkerOnMessageMissing"
+            }
+            return "popupToServiceWorkerRouteDropped"
+        case "runtime.connect":
+            if serviceWorkerOnConnectCount == 0
+                && route.listenerCount == 0
+                && route.listenerInvoked == false
+            {
+                return "serviceWorkerOnConnectMissing"
+            }
+            return "popupToServiceWorkerRouteDropped"
+        case "tabs.sendMessage":
+            if contentScriptListenerRegistered == false {
+                return "contentScriptListenerMissing"
+            }
+            return "popupToContentScriptRouteDropped"
+        case "tabs.query", "tabs.getCurrent":
+            return "tabsTargetMappingWrong"
+        default:
+            if route.targetContext == "contentScript" {
+                return "popupToContentScriptRouteDropped"
+            }
+            if route.targetContext == "serviceWorker" {
+                return "popupToServiceWorkerRouteDropped"
+            }
+            return nil
+        }
+    }
+
+    private func classifyPostParseEventBlocker(
+        _ event: ChromeMV3PopupOptionsJSDebugRouteEventRecord
+    ) -> String? {
+        if event.eventKind == "missingAPIAccess" {
+            return "missingNarrowChromeAPI"
+        }
+        if event.eventKind == "resourceLoadError"
+            || event.resultClassifier?
+                .localizedCaseInsensitiveContains("network") == true
+            || event.resultClassifier?
+                .localizedCaseInsensitiveContains("auth") == true
+        {
+            return "networkOrAuthWait"
+        }
+        if controlledBitwardenPopupIsBlockerEvent(event) {
+            let label = controlledBitwardenPopupBlockerLabel(event)
+            if label.localizedCaseInsensitiveContains("permission") {
+                return "permissionOrActiveTabDenied"
+            }
+            if label.localizedCaseInsensitiveContains("storage.session")
+                || label.localizedCaseInsensitiveContains("storage.sync")
+            {
+                return "missingNarrowChromeAPI"
+            }
+            if label == "Port message not delivered"
+                || label == "Port response not delivered"
+            {
+                return "popupToServiceWorkerRouteDropped"
+            }
+            if label == "unknown pending promise" {
+                return "popupToServiceWorkerRouteDropped"
+            }
+        }
+        return nil
+    }
+
+    private func classifyFirstPostParseBlocker(
+        snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot,
+        domStateJSON: String
+    ) -> String {
+        guard raindropParseJSExecuteScriptSucceeded(in: snapshot) else {
+            return "unknown"
+        }
+
+        let subsequentRoutes = raindropPostParseRoutes(in: snapshot)
+        let subsequentEvents = raindropPostParseEvents(in: snapshot)
+        let serviceWorkerListeners =
+            postParseServiceWorkerListenerCounts(in: snapshot)
+        let contentScriptListenerRegistered =
+            postParseContentScriptListenerRegistered(in: snapshot)
+        let contentScriptListenerObserved =
+            postParseContentScriptListenerRegistrationObserved(in: snapshot)
+        let trace = snapshot.appStateDependencyTrace.correlationSummary
+
+        if subsequentRoutes.contains(where: { $0.apiName == "tabs.sendMessage" }),
+           contentScriptListenerObserved == false
+        {
+            return "contentScriptListenerMissing"
+        }
+
+        let tabsSendMessageRoute = subsequentRoutes.first {
+            $0.apiName == "tabs.sendMessage"
+        }
+        if let tabsSendMessageRoute,
+           contentScriptListenerObserved,
+           tabsSendMessageRoute.listenerInvoked == false,
+           postParseRouteFailed(tabsSendMessageRoute)
+        {
+            return "messageBeforeContentScriptReady"
+        }
+
+        for route in subsequentRoutes {
+            if let blocker = classifyPostParseRouteBlocker(
+                route,
+                contentScriptListenerRegistered:
+                    contentScriptListenerRegistered,
+                serviceWorkerOnMessageCount: serviceWorkerListeners.onMessage,
+                serviceWorkerOnConnectCount: serviceWorkerListeners.onConnect
+            ) {
+                return blocker
             }
         }
 
-        let executeScriptEventSequence =
-            snapshot.jsDebugRouteEvents.last { event in
-                event.diagnostics.contains { $0.contains("assets/parse.js") }
-                    || event.diagnostics.contains {
-                        $0.contains("executionClassifier=filesExecuted")
-                    }
-            }?.sequence
-        if let executeScriptEventSequence {
-            for event in snapshot.jsDebugRouteEvents where event.sequence > executeScriptEventSequence {
-                if controlledBitwardenPopupIsBlockerEvent(event) {
-                    return controlledBitwardenPopupBlockerLabel(event)
-                }
+        for event in subsequentEvents {
+            if let blocker = classifyPostParseEventBlocker(event) {
+                return blocker
             }
         }
 
-        return controlledBitwardenPopupFirstFatalBlocker(snapshot)
+        if snapshot.pendingUnresolvedJSDebugRoutes.isEmpty == false {
+            if subsequentRoutes.contains(where: {
+                $0.apiName == "tabs.sendMessage"
+            }) {
+                return "popupToContentScriptRouteDropped"
+            }
+            return "popupToServiceWorkerRouteDropped"
+        }
+
+        if trace.classification == "appStateWaitWithNoWriter"
+            || (
+                trace.repeatedEmptyReadKeyHashes.isEmpty == false
+                    && trace.popupReadKeyHashesNeverWritten.isEmpty == false
+            )
+        {
+            return "storageAppStateReadNoWriter"
+        }
+        if trace.writtenKeyHashesWithoutObservedOnChangedDelivery.isEmpty
+            == false
+        {
+            return "storageOnChangedMissed"
+        }
+        if trace.popupReadKeyHashesWrittenByServiceWorker.isEmpty == false
+            && trace.popupReadKeyHashesNeverWritten.isEmpty == false
+        {
+            return "storageWriteNotVisibleToPopup"
+        }
+        if trace.missingAPIsObserved.isEmpty == false {
+            return "missingNarrowChromeAPI"
+        }
+        if trace.networkOrAuthDependencyObserved {
+            return "networkOrAuthWait"
+        }
+        if trace.classification == "appStateWaitWithNoObservableDependency"
+            || trace.classification
+                == "appStateWaitWithUnresolvedBridgeRoute"
+        {
+            return "appStateWaitWithNoObservableBrowserDependency"
+        }
+
+        if let domData = domStateJSON.data(using: .utf8),
+           let domObject = try? JSONSerialization.jsonObject(with: domData)
+            as? [String: Any]
+        {
+            let coarse =
+                domObject["coarseClassification"] as? String ?? ""
+            if coarse == "waits on app state"
+                || coarse == "blank"
+                || coarse == "spinner/loading"
+            {
+                if trace.popupReadKeyHashesNeverWritten.isEmpty == false {
+                    return "storageAppStateReadNoWriter"
+                }
+                return "appStateWaitWithNoObservableBrowserDependency"
+            }
+        }
+
+        return "unknown"
+    }
+
+    private func raindropPostParseSanitizedDiagnostics(
+        snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot,
+        domStateJSON: String
+    ) -> ChromeMV3PostParseSanitizedDiagnostics {
+        let firstBlocker = classifyFirstPostParseBlocker(
+            snapshot: snapshot,
+            domStateJSON: domStateJSON
+        )
+        let subsequentRoutes = raindropPostParseRoutes(in: snapshot)
+        let subsequentEvents = raindropPostParseEvents(in: snapshot)
+        let serviceWorkerListeners =
+            postParseServiceWorkerListenerCounts(in: snapshot)
+        let contentScriptSummary = snapshot.contentScriptEndpointSummary
+        let trace = snapshot.appStateDependencyTrace
+        let domObject =
+            domStateJSON.data(using: .utf8).flatMap {
+                try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+            } ?? [:]
+
+        var lines: [String] = [
+            "postParseClassifier=\(firstBlocker)",
+            "postParseRouteCount=\(subsequentRoutes.count)",
+            "postParseEventCount=\(subsequentEvents.count)",
+            "postParsePendingCount=\(snapshot.pendingUnresolvedJSDebugRoutes.count)",
+            "postParseServiceWorkerOnMessageListeners=\(serviceWorkerListeners.onMessage)",
+            "postParseServiceWorkerOnConnectListeners=\(serviceWorkerListeners.onConnect)",
+            "postParseServiceWorkerCapturedListeners=\(trace.serviceWorkerCapturedListenerCount)",
+            "postParseContentScriptListenerEndpoints=\(contentScriptSummary?.messageListenerEndpointCount ?? 0)",
+            "postParseContentScriptConnectEndpoints=\(contentScriptSummary?.connectListenerEndpointCount ?? 0)",
+            "postParseContentScriptListenerRegistered=\(postParseContentScriptListenerRegistrationObserved(in: snapshot))",
+            "postParseAppStateClassification=\(trace.correlationSummary.classification)",
+            "postParseStorageOnChangedReachedListeners=\(trace.correlationSummary.storageOnChangedReachedRegisteredListeners)",
+            "postParsePopupReadsNeverWritten=\(trace.correlationSummary.popupReadKeyHashesNeverWritten.count)",
+            "postParsePopupReadsWrittenByServiceWorker=\(trace.correlationSummary.popupReadKeyHashesWrittenByServiceWorker.count)",
+            "postParseRepeatedEmptyReads=\(trace.correlationSummary.repeatedEmptyReadKeyHashes.count)",
+            "postParseMissingAPIs=\(trace.correlationSummary.missingAPIsObserved.joined(separator: ","))",
+            "postParseNetworkOrAuthDependency=\(trace.correlationSummary.networkOrAuthDependencyObserved)",
+            "postParseVisibleTextLength=\(domObject["visibleTextLength"] ?? "na")",
+            "postParseUsableFormCandidate=\(domObject["usableFormCandidate"] ?? "na")",
+            "postParseCoarseClassification=\(domObject["coarseClassification"] ?? "na")",
+            "postParseNativeHostLaunched=false",
+        ]
+
+        let popupMessagingRoutes = subsequentRoutes.filter {
+            ["runtime.sendMessage", "runtime.connect"].contains($0.apiName)
+                && $0.sourceContext != "contentScript"
+        }
+        for route in popupMessagingRoutes.prefix(24) {
+            lines.append(
+                [
+                    "postParsePopupMessaging",
+                    "api=\(route.apiName)",
+                    "target=\(route.targetContext)",
+                    "classifier=\(route.resultClassifier)",
+                    "listeners=\(route.listenerCount)",
+                    "invoked=\(route.listenerInvoked)",
+                    "sendResponse=\(route.sendResponseCalled)",
+                    "shape=\(route.safeMessageShapeClassification)",
+                    "fields=\(route.safeCommandTypeActionFieldNames.joined(separator: ","))",
+                    "firstError=\(route.firstMissingAPIOrPermissionOrLifecycleError ?? "none")",
+                ].joined(separator: " ")
+            )
+        }
+
+        let tabsRoutes = subsequentRoutes.filter {
+            ["tabs.query", "tabs.sendMessage", "tabs.getCurrent", "tabs.connect"]
+                .contains($0.apiName)
+        }
+        for route in tabsRoutes.prefix(24) {
+            lines.append(
+                [
+                    "postParseTabsRoute",
+                    "api=\(route.apiName)",
+                    "target=\(route.targetContext)",
+                    "classifier=\(route.resultClassifier)",
+                    "listeners=\(route.listenerCount)",
+                    "invoked=\(route.listenerInvoked)",
+                    "shape=\(route.safeMessageShapeClassification)",
+                    "firstError=\(route.firstMissingAPIOrPermissionOrLifecycleError ?? "none")",
+                ].joined(separator: " ")
+            )
+        }
+
+        let contentScriptRoutes = subsequentRoutes.filter {
+            $0.sourceContext == "contentScript"
+                || $0.targetContext == "contentScript"
+        }
+        for route in contentScriptRoutes.prefix(16) {
+            lines.append(
+                [
+                    "postParseContentScriptRoute",
+                    "api=\(route.apiName)",
+                    "source=\(route.sourceContext)",
+                    "target=\(route.targetContext)",
+                    "classifier=\(route.resultClassifier)",
+                    "listeners=\(route.listenerCount)",
+                    "invoked=\(route.listenerInvoked)",
+                ].joined(separator: " ")
+            )
+        }
+
+        for record in trace.storageOperations.suffix(40) {
+            lines.append(
+                [
+                    "postParseStorage",
+                    "context=\(record.context)",
+                    "area=\(record.area)",
+                    "op=\(record.operation)",
+                    "keyShape=\(record.keyShape)",
+                    "keyCount=\(record.keyCount)",
+                    "empty=\(record.emptyResult)",
+                    "populated=\(record.populatedResult)",
+                    "classifier=\(record.resultClassifier)",
+                ].joined(separator: " ")
+            )
+        }
+        for record in trace.storageChangeDispatches.suffix(16) {
+            lines.append(
+                [
+                    "postParseStorageChange",
+                    "area=\(record.area)",
+                    "changedKeyCount=\(record.changedKeyCount)",
+                    "dispatched=\(record.dispatched)",
+                    "listenerCounts=\(record.listenerCountByContext.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: ","))",
+                    "listenerReceived=\(record.listenerReceivedByContext.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: ","))",
+                ].joined(separator: " ")
+            )
+        }
+
+        for event in subsequentEvents.filter({
+            [
+                "consoleError",
+                "consoleWarn",
+                "unhandledRejection",
+                "scriptError",
+                "cspViolation",
+                "resourceLoadError",
+                "missingAPIAccess",
+            ].contains($0.eventKind)
+        }).prefix(24) {
+            lines.append(
+                [
+                    "postParseConsole",
+                    "seq=\(event.sequence)",
+                    "event=\(event.eventKind)",
+                    "api=\(event.apiName)",
+                    "classifier=\(event.resultClassifier ?? "none")",
+                    "firstError=\(event.firstMissingAPIOrPermissionOrLifecycleError ?? "none")",
+                ].joined(separator: " ")
+            )
+        }
+
+        for event in subsequentEvents.prefix(40) {
+            lines.append(
+                [
+                    "postParseRouteEvent",
+                    "seq=\(event.sequence)",
+                    "event=\(event.eventKind)",
+                    "api=\(event.apiName)",
+                    "target=\(event.targetContext ?? "unknown")",
+                    "classifier=\(event.resultClassifier ?? "none")",
+                    "shape=\(event.safeMessageShapeClassification)",
+                    "firstError=\(event.firstMissingAPIOrPermissionOrLifecycleError ?? "none")",
+                ].joined(separator: " ")
+            )
+        }
+
+        for event in subsequentEvents.filter({
+            $0.eventKind == "postBootstrapCheckpoint"
+        }).suffix(6) {
+            lines.append(
+                [
+                    "postParseDOMCheckpoint",
+                    "seq=\(event.sequence)",
+                    "classifier=\(event.resultClassifier ?? "none")",
+                    "diagnostics=\(event.diagnostics.joined(separator: "|"))",
+                ].joined(separator: " ")
+            )
+        }
+
+        for pending in snapshot.pendingUnresolvedJSDebugRoutes.prefix(12) {
+            lines.append(
+                "postParsePending api=\(pending.apiName) classifier=\(pending.resultClassifier ?? "pending") ageMs=\(pending.ageMilliseconds.map(String.init) ?? "na")"
+            )
+        }
+
+        return ChromeMV3PostParseSanitizedDiagnostics(
+            firstBlocker: firstBlocker,
+            lines: lines
+        )
     }
 
     @MainActor
