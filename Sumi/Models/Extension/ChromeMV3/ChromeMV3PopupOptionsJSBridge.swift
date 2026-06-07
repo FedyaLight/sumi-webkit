@@ -1443,6 +1443,7 @@ enum ChromeMV3PopupOptionsHostDiagnostics {
                 resourceClassifier(resource: resource, insideRoot: insideRoot)
             let firstError =
                 classifier == "resource exists"
+                    || classifier == "remote resource referenced"
                     ? nil
                     : classifier
             var diagnostics = [
@@ -1450,7 +1451,9 @@ enum ChromeMV3PopupOptionsHostDiagnostics {
                 "attribute=\(safeToken(resource.attributeName ?? "none", fallback: "none"))",
                 "kind=\(resource.kind.rawValue)",
                 "type=\(safeToken(resource.resourceType ?? "none", fallback: "none"))",
+                "remoteRole=\(safeToken(resource.remoteRole?.rawValue ?? "none", fallback: "none"))",
                 "rawShape=\(safeURLShape(resource.rawValue))",
+                "remoteShape=\(safeToken(resource.remoteResourceShape ?? "none", fallback: "none"))",
                 "normalizedPath=\(normalized)",
                 "exists=\(resource.exists)",
                 "insideGeneratedRoot=\(insideRoot)",
@@ -1563,7 +1566,9 @@ enum ChromeMV3PopupOptionsHostDiagnostics {
         case .unsafeLocalPath:
             return "unsafe local resource path"
         case .remoteResource:
-            return "remote resource blocked"
+            return resource.blocked
+                ? "remote resource blocked"
+                : "remote resource referenced"
         case .inlineScript:
             return "inline script blocked by extension-page CSP"
         default:
@@ -1580,7 +1585,7 @@ enum ChromeMV3PopupOptionsHostDiagnostics {
               trimmed.count <= 80,
               containsSensitiveFragment(trimmed) == false,
               trimmed.range(
-                  of: #"^[A-Za-z0-9._+/\-;= ]+$"#,
+                  of: #"^[A-Za-z0-9._+/\-;=: ]+$"#,
                   options: .regularExpression
               ) != nil
         else { return fallback }

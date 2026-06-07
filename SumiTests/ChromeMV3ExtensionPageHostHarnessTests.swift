@@ -213,6 +213,86 @@ final class ChromeMV3ExtensionPageHostHarnessTests: XCTestCase {
         )
     }
 
+    func testRemotePreconnectIsRecordedButNotUnsafeHTML() throws {
+        let root = try makeExtensionPageRoot(
+            named: "remote-preconnect",
+            manifest: [
+                "manifest_version": 3,
+                "name": "Remote Preconnect",
+                "version": "1.0",
+                "action": ["default_popup": "popup.html"],
+            ],
+            resources: [
+                "popup.html": pageHTML(
+                    title: "Popup",
+                    body:
+                        #"<link rel="preconnect" href="https://api.example.com">"#
+                ),
+            ]
+        )
+
+        let model = ChromeMV3ExtensionPageDeclarationReader.read(
+            generatedRewrittenRootPath: root.path
+        )
+        let declaration = try XCTUnwrap(model.declarations.first)
+        let resolution = ChromeMV3ExtensionPageResourceResolver.resolve(
+            declaration: declaration
+        )
+        let resource = try XCTUnwrap(resolution.linkedResources.first)
+
+        XCTAssertTrue(resolution.resourceSafeForExtensionPageHost)
+        XCTAssertEqual(resource.kind, .remoteResource)
+        XCTAssertEqual(resource.remoteRole, .networkHint)
+        XCTAssertFalse(resource.blocked)
+        XCTAssertEqual(
+            resolution.remoteNonExecutableResourceShapes,
+            ["https://api.example.com/"]
+        )
+        XCTAssertEqual(resolution.remoteExecutableResourceShapes, [])
+    }
+
+    func testRemoteExecutableScriptRemainsUnsafeHTML() throws {
+        let root = try makeExtensionPageRoot(
+            named: "remote-script",
+            manifest: [
+                "manifest_version": 3,
+                "name": "Remote Script",
+                "version": "1.0",
+                "action": ["default_popup": "popup.html"],
+            ],
+            resources: [
+                "popup.html": pageHTML(
+                    title: "Popup",
+                    body:
+                        #"<script src="https://cdn.example.com/app.js"></script>"#
+                ),
+            ]
+        )
+
+        let model = ChromeMV3ExtensionPageDeclarationReader.read(
+            generatedRewrittenRootPath: root.path
+        )
+        let declaration = try XCTUnwrap(model.declarations.first)
+        let resolution = ChromeMV3ExtensionPageResourceResolver.resolve(
+            declaration: declaration
+        )
+        let resource = try XCTUnwrap(resolution.linkedResources.first)
+
+        XCTAssertFalse(resolution.resourceSafeForExtensionPageHost)
+        XCTAssertEqual(resource.kind, .remoteResource)
+        XCTAssertEqual(resource.remoteRole, .executableScript)
+        XCTAssertTrue(resource.blocked)
+        XCTAssertEqual(
+            resolution.remoteExecutableResourceShapes,
+            ["https://cdn.example.com/app.js"]
+        )
+        XCTAssertTrue(
+            resolution.blockingReasons.contains {
+                $0.contains("Remote executable")
+            }
+        )
+    }
+
     func testInertLocalScriptIsAllowedButDynamicScriptIsBlocked()
         throws
     {

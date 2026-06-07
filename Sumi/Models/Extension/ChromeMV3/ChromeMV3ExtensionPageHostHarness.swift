@@ -338,6 +338,36 @@ enum ChromeMV3ExtensionPageLinkedResourceKind:
     case missingLocalResource
 }
 
+enum ChromeMV3ExtensionPageRemoteResourceRole:
+    String,
+    Codable,
+    CaseIterable,
+    Sendable
+{
+    case executableScript
+    case executableModule
+    case executableScriptPreload
+    case stylesheet
+    case image
+    case icon
+    case fontPreload
+    case networkHint
+    case frameDocument
+    case nonExecutablePreload
+    case unknown
+
+    var blocksExtensionPagePreflight: Bool {
+        switch self {
+        case .executableScript, .executableModule,
+             .executableScriptPreload, .frameDocument, .unknown:
+            return true
+        case .stylesheet, .image, .icon, .fontPreload, .networkHint,
+             .nonExecutablePreload:
+            return false
+        }
+    }
+}
+
 struct ChromeMV3ExtensionPageLinkedResource:
     Codable,
     Equatable,
@@ -354,6 +384,8 @@ struct ChromeMV3ExtensionPageLinkedResource:
     var blocked: Bool
     var diagnostics: [String]
     var resourceType: String? = nil
+    var remoteRole: ChromeMV3ExtensionPageRemoteResourceRole? = nil
+    var remoteResourceShape: String? = nil
 }
 
 struct ChromeMV3ExtensionPageResourceResolution:
@@ -371,6 +403,10 @@ struct ChromeMV3ExtensionPageResourceResolution:
     var missingResourcePaths: [String]
     var unsafeResourcePaths: [String]
     var remoteResourceReferences: [String]
+    var remoteResourceShapes: [String]
+    var remoteExecutableResourceReferences: [String]
+    var remoteExecutableResourceShapes: [String]
+    var remoteNonExecutableResourceShapes: [String]
     var executableLocalScriptPaths: [String]
     var inertLocalScriptPaths: [String]
     var resourceSafeForExtensionPageHost: Bool
@@ -468,8 +504,21 @@ enum ChromeMV3ExtensionPageResourceResolver {
                 "Inline script is not allowed in the DEBUG/internal extension page host fixture."
             )
         }
-        if linked.contains(where: { $0.kind == .remoteResource }) {
-            blockers.append("Remote extension page resources are not loaded.")
+        let blockedRemoteResources = linked.filter {
+            $0.kind == .remoteResource && $0.blocked
+        }
+        let nonBlockingRemoteResources = linked.filter {
+            $0.kind == .remoteResource && $0.blocked == false
+        }
+        if blockedRemoteResources.isEmpty == false {
+            blockers.append(
+                "Remote executable or unsafe extension page resources are blocked."
+            )
+        }
+        if nonBlockingRemoteResources.isEmpty == false {
+            warnings.append(
+                "Remote non-executable extension page references are recorded for policy-specific handling."
+            )
         }
         if html.isEmpty {
             warnings.append("Extension page HTML decoded as an empty UTF-8 string.")
@@ -529,6 +578,36 @@ enum ChromeMV3ExtensionPageResourceResolver {
                     sortedLinked
                         .filter { $0.kind == .remoteResource }
                         .map(\.rawValue)
+                ),
+            remoteResourceShapes:
+                uniqueSorted(
+                    sortedLinked
+                        .filter { $0.kind == .remoteResource }
+                        .compactMap(\.remoteResourceShape)
+                ),
+            remoteExecutableResourceReferences:
+                uniqueSorted(
+                    sortedLinked
+                        .filter {
+                            $0.kind == .remoteResource && $0.blocked
+                        }
+                        .map(\.rawValue)
+                ),
+            remoteExecutableResourceShapes:
+                uniqueSorted(
+                    sortedLinked
+                        .filter {
+                            $0.kind == .remoteResource && $0.blocked
+                        }
+                        .compactMap(\.remoteResourceShape)
+                ),
+            remoteNonExecutableResourceShapes:
+                uniqueSorted(
+                    sortedLinked
+                        .filter {
+                            $0.kind == .remoteResource && $0.blocked == false
+                        }
+                        .compactMap(\.remoteResourceShape)
                 ),
             executableLocalScriptPaths:
                 uniqueSorted(
@@ -675,6 +754,12 @@ enum ChromeMV3ExtensionPageResourceResolver {
         explicitInert: Bool
     ) -> ChromeMV3ExtensionPageLinkedResource {
         if ChromeMV3ExtensionPageResourcePath.isRemote(rawValue) {
+            let remoteRole = remoteResourceRole(
+                tagName: tagName,
+                resourceType: resourceType
+            )
+            let blocked = remoteRole.blocksExtensionPagePreflight
+            let shape = safeRemoteResourceShape(rawValue)
             return ChromeMV3ExtensionPageLinkedResource(
                 tagName: tagName,
                 attributeName: attributeName,
@@ -684,11 +769,16 @@ enum ChromeMV3ExtensionPageResourceResolver {
                 exists: false,
                 kind: .remoteResource,
                 inertLocalScript: false,
-                blocked: true,
-                diagnostics: [
-                    "Remote resource is blocked: \(rawValue)",
-                ],
-                resourceType: resourceType
+                blocked: blocked,
+                diagnostics:
+                    blocked
+                        ? [
+                            "Remote \(remoteRole.rawValue) resource is blocked: \(shape)",
+                        ]
+                        : [],
+                resourceType: resourceType,
+                remoteRole: remoteRole,
+                remoteResourceShape: shape
             )
         }
 
@@ -792,12 +882,16 @@ enum ChromeMV3ExtensionPageResourceResolver {
             let rel = attribute("rel", in: tag)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .lowercased()
+            let asValue = attribute("as", in: tag)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
             let type = attribute("type", in: tag)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .lowercased()
             return safeResourceType(
                 [
                     rel.map { "rel=\($0)" },
+                    asValue.map { "as=\($0)" },
                     type.map { "type=\($0)" },
                 ]
                 .compactMap { $0 }
@@ -805,6 +899,111 @@ enum ChromeMV3ExtensionPageResourceResolver {
             )
         }
         return nil
+    }
+
+    private static func remoteResourceRole(
+        tagName: String,
+        resourceType: String?
+    ) -> ChromeMV3ExtensionPageRemoteResourceRole {
+        let tag = tagName.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let type = resourceType?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        switch tag {
+        case "script":
+            return type == "module" ? .executableModule : .executableScript
+        case "img":
+            return .image
+        case "iframe":
+            return .frameDocument
+        case "link":
+            if type.contains("rel=preconnect")
+                || type.contains("rel=dns-prefetch")
+            {
+                return .networkHint
+            }
+            if type.contains("rel=stylesheet") {
+                return .stylesheet
+            }
+            if type.contains("rel=icon")
+                || type.contains("rel=shortcut icon")
+                || type.contains("rel=apple-touch-icon")
+            {
+                return .icon
+            }
+            if type.contains("rel=modulepreload")
+                || type.contains("as=script")
+            {
+                return .executableScriptPreload
+            }
+            if type.contains("as=font") {
+                return .fontPreload
+            }
+            if type.contains("rel=preload")
+                || type.contains("rel=prefetch")
+                || type.contains("rel=prerender")
+            {
+                return .nonExecutablePreload
+            }
+            return .unknown
+        default:
+            return .unknown
+        }
+    }
+
+    private static func safeRemoteResourceShape(_ rawValue: String) -> String {
+        guard let components = URLComponents(string: rawValue),
+              let scheme = components.scheme?.lowercased(),
+              ChromeMV3ExtensionPageResourcePath.isRemote(rawValue),
+              let host = components.host?.lowercased()
+        else { return "remote" }
+
+        let safeHost = safeDiagnosticToken(host, fallback: "remote")
+        let path = components.path.isEmpty ? "/" : components.path
+        let safePath = safeRemotePathShape(path)
+        return "\(scheme)://\(safeHost)\(safePath)"
+    }
+
+    private static func safeRemotePathShape(_ path: String) -> String {
+        let pieces = path
+            .split(separator: "/")
+            .filter { $0.isEmpty == false }
+            .prefix(4)
+            .map(String.init)
+        let candidate = pieces.isEmpty ? "/" : "/" + pieces.joined(separator: "/")
+        return safeDiagnosticToken(candidate, fallback: "/redacted")
+    }
+
+    private static func safeDiagnosticToken(
+        _ value: String,
+        fallback: String
+    ) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false,
+              trimmed.count <= 160,
+              containsSensitiveFragment(trimmed) == false,
+              trimmed.range(
+                  of: #"^[A-Za-z0-9._+/\-:]+$"#,
+                  options: .regularExpression
+              ) != nil
+        else { return fallback }
+        return trimmed
+    }
+
+    private static func containsSensitiveFragment(_ value: String) -> Bool {
+        let lower = value.lowercased()
+        return [
+            "auth",
+            "cookie",
+            "jwt",
+            "oauth",
+            "passwd",
+            "password",
+            "secret",
+            "session",
+            "token",
+        ].contains { lower.contains($0) }
     }
 
     private static func safeResourceType(_ value: String) -> String? {

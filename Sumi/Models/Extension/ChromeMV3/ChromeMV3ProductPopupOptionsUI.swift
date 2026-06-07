@@ -848,7 +848,8 @@ enum ChromeMV3ProductPopupOptionsLaunchPlanner {
             "Controlled URL-hub action popup host is selected by default under the central enabled-local-unpacked-MV3 compatibility policy.",
             "The host resolves action.default_popup from the installed generated package and does not synthesize popup UI.",
             "Package-local popup JavaScript, CSS, image, locale, frame, and asset resources are preserved through file-backed read access to the generated package root.",
-            "Remote, missing, unsafe-path, and inline-script popup resources remain blocked in the controlled action popup host.",
+            "Remote executable, remote frame HTML, unknown remote, missing, unsafe-path, and inline-script popup resources remain blocked in the controlled action popup host.",
+            "Remote non-executable popup references such as preconnect, icons, images, stylesheets, fonts, and preload hints are classified for CSP/permission diagnostics instead of being treated as unsafe HTML by themselves.",
             "CSP is preserved only to the extent WebKit enforces it for the loaded file-backed HTML; chrome-extension:// origin semantics are approximated by bridge metadata and chrome.runtime.getURL, not by a custom extension URL scheme.",
             "storage.local get/set/remove/clear are routed through the developer-preview broker when the controlled bridge is installed.",
             "storage.session get/set/remove/clear are routed through a memory-only developer-preview broker when the controlled bridge is installed.",
@@ -911,6 +912,10 @@ enum ChromeMV3ProductPopupOptionsLaunchPlanner {
             gateRecord: gate,
             pageReferencesExtensionAPI: pageReferencesAPI,
             policy: policy
+        )
+        diagnostics += controlledActionPopupRemoteResourceDiagnostics(
+            resolution: resolution,
+            manifestFacts: manifestFacts
         )
         if pageReferencesAPI && gate.popupOptionsBridgeAllowed == false {
             blockers.append(.bridgeUnavailableForPageAPI)
@@ -1106,7 +1111,7 @@ enum ChromeMV3ProductPopupOptionsLaunchPlanner {
         if resolution.unsafeResourcePaths.isEmpty == false {
             return .unsafeHTML
         }
-        if resolution.remoteResourceReferences.isEmpty == false {
+        if resolution.remoteExecutableResourceReferences.isEmpty == false {
             return .unsafeHTML
         }
         if resolution.linkedResources.contains(where: {
@@ -1115,6 +1120,83 @@ enum ChromeMV3ProductPopupOptionsLaunchPlanner {
             return .unsafeHTML
         }
         return .valid
+    }
+
+    private static func controlledActionPopupRemoteResourceDiagnostics(
+        resolution: ChromeMV3ExtensionPageResourceResolution?,
+        manifestFacts: ChromeMV3PopupOptionsManifestFacts
+    ) -> [String] {
+        guard let resolution else { return [] }
+        return resolution.linkedResources.compactMap { resource in
+            guard resource.kind == .remoteResource else { return nil }
+            let role = resource.remoteRole?.rawValue ?? "unknown"
+            let shape = resource.remoteResourceShape ?? "remote"
+            let permissionState = remoteResourcePermissionState(
+                rawValue: resource.rawValue,
+                role: resource.remoteRole,
+                manifestFacts: manifestFacts
+            )
+            let cspState = remoteResourceCSPState(role: resource.remoteRole)
+            return [
+                "controlledRemoteResource",
+                "role=\(safePopupDiagnosticToken(role))",
+                "shape=\(safePopupDiagnosticToken(shape))",
+                "blocked=\(resource.blocked)",
+                "permission=\(permissionState)",
+                "csp=\(cspState)",
+            ].joined(separator: " ")
+        }
+    }
+
+    private static func remoteResourcePermissionState(
+        rawValue: String,
+        role: ChromeMV3ExtensionPageRemoteResourceRole?,
+        manifestFacts: ChromeMV3PopupOptionsManifestFacts
+    ) -> String {
+        if role == .networkHint {
+            return "notRequiredForNetworkHint"
+        }
+        if manifestFacts.hostPermissions.contains(where: {
+            ChromeMV3HostMatchPattern($0).matches(url: rawValue)
+        }) {
+            return "declaredHostPermission"
+        }
+        if manifestFacts.optionalHostPermissions.contains(where: {
+            ChromeMV3HostMatchPattern($0).matches(url: rawValue)
+        }) {
+            return "optionalHostPermissionAvailable"
+        }
+        return "hostPermissionNotDeclared"
+    }
+
+    private static func remoteResourceCSPState(
+        role: ChromeMV3ExtensionPageRemoteResourceRole?
+    ) -> String {
+        guard let role else { return "unknownRemoteBlocked" }
+        switch role {
+        case .executableScript, .executableModule,
+             .executableScriptPreload:
+            return "blockedByMV3ScriptSrcSelf"
+        case .frameDocument:
+            return "blockedAsRemoteFrameHTML"
+        case .unknown:
+            return "blockedAsUnknownRemote"
+        case .stylesheet, .image, .icon, .fontPreload, .networkHint,
+             .nonExecutablePreload:
+            return "notExecutableResource"
+        }
+    }
+
+    private static func safePopupDiagnosticToken(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false,
+              trimmed.count <= 180,
+              trimmed.range(
+                  of: #"^[A-Za-z0-9._+/\-:=]+$"#,
+                  options: .regularExpression
+              ) != nil
+        else { return "redacted" }
+        return trimmed
     }
 
     private static func activeGeneratedVersion(

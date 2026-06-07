@@ -1083,18 +1083,22 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
 
         guard result.opened else {
             XCTAssertEqual(result.blocker, .contextUnavailable)
-            XCTAssertTrue(result.message.contains("linked resources failed validation"))
-            XCTAssertTrue(preflightSummary.contains("validation=unsafeHTML"))
+            XCTAssertFalse(preflightSummary.contains("validation=unsafeHTML"))
             XCTAssertTrue(preflightSummary.contains("assets/app.js"))
-            XCTAssertTrue(preflightSummary.contains("https://api.raindrop.io"))
-            XCTAssertTrue(preflightSummary.contains("https://rdl.ink"))
+            XCTAssertTrue(
+                preflightSummary.contains("https://api.raindrop.io/")
+            )
+            XCTAssertTrue(preflightSummary.contains("https://rdl.ink/"))
+            XCTAssertTrue(
+                preflightSummary.contains("remoteExecutableResources=")
+            )
             XCTAssertTrue(result.sanitizedBridgeSnapshotDiagnostics.contains {
                 $0.contains(
                     "selectedPopupPath=controlledCompatibilityActionPopup"
                 )
             })
             print(
-                "SumiControlledRaindropPopup reachesUsableUI=false firstBlocker=reviewedResourcePreflight unsafeHTML"
+                "SumiControlledRaindropPopup reachesUsableUI=false firstBlocker=\(result.blocker?.rawValue ?? "unknown") message=\(result.message)"
             )
             return
         }
@@ -1998,6 +2002,11 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         )
         XCTAssertTrue(
             popupOptionsSource.contains(
+                "Remote non-executable popup references such as preconnect"
+            )
+        )
+        XCTAssertTrue(
+            popupOptionsSource.contains(
                 "chrome-extension:// origin semantics are approximated"
             )
         )
@@ -2508,7 +2517,9 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             "resourceBlockers=\((launchRecord.resourceResolution?.blockingReasons ?? []).joined(separator: "|"))",
             "missingResources=\((launchRecord.resourceResolution?.missingResourcePaths ?? []).joined(separator: ","))",
             "unsafeResources=\((launchRecord.resourceResolution?.unsafeResourcePaths ?? []).joined(separator: ","))",
-            "remoteResources=\((launchRecord.resourceResolution?.remoteResourceReferences ?? []).joined(separator: ","))",
+            "remoteResources=\((launchRecord.resourceResolution?.remoteResourceShapes ?? []).joined(separator: ","))",
+            "remoteExecutableResources=\((launchRecord.resourceResolution?.remoteExecutableResourceShapes ?? []).joined(separator: ","))",
+            "remoteNonExecutableResources=\((launchRecord.resourceResolution?.remoteNonExecutableResourceShapes ?? []).joined(separator: ","))",
             "linkedResourceKinds=\(linkedKinds)",
         ].joined(separator: " ")
     }
