@@ -30,6 +30,8 @@ class SumiSettingsService {
     private let showBrowserToastsKey = "settings.showBrowserToasts"
     private let searchEnginesKey = "settings.searchEngines"
     private let floatingBarEmptyStateModeKey = "settings.floatingBar.emptyStateMode"
+    private let newTabModeKey = "settings.newTabMode"
+    private let newTabPageURLStringKey = "settings.newTab.pageURL"
     private let didFinishOnboardingKey = "settings.didFinishOnboarding"
     private let memoryModeKey = "settings.memoryMode"
     private let memorySaverCustomDeactivationDelayKey = "settings.memorySaver.customDeactivationDelay"
@@ -191,6 +193,22 @@ class SumiSettingsService {
             userDefaults.set(floatingBarEmptyStateMode.rawValue, forKey: floatingBarEmptyStateModeKey)
         }
     }
+
+    var newTabMode: SumiNewTabMode {
+        didSet {
+            userDefaults.set(newTabMode.rawValue, forKey: newTabModeKey)
+        }
+    }
+
+    var newTabPageURLString: String {
+        didSet {
+            userDefaults.set(newTabPageURLString, forKey: newTabPageURLStringKey)
+        }
+    }
+
+    var resolvedNewTabPageURL: URL {
+        SumiNewTabPageURL.runtimeURL(from: newTabPageURLString)
+    }
     
     var didFinishOnboarding: Bool {
         didSet {
@@ -334,6 +352,8 @@ class SumiSettingsService {
             showLinkStatusBarKey: true,
             showBrowserToastsKey: true,
             floatingBarEmptyStateModeKey: FloatingBarEmptyStateMode.compact.rawValue,
+            newTabModeKey: SumiNewTabMode.floatingBar.rawValue,
+            newTabPageURLStringKey: SumiNewTabPageURL.defaultURLString,
             didFinishOnboardingKey: true,
             memoryModeKey: SumiMemoryMode.balanced.rawValue,
             memorySaverCustomDeactivationDelayKey: SumiMemorySaverCustomDelay.defaultDelay,
@@ -469,6 +489,16 @@ class SumiSettingsService {
         self.floatingBarEmptyStateMode = FloatingBarEmptyStateMode(
             rawValue: userDefaults.string(forKey: floatingBarEmptyStateModeKey) ?? FloatingBarEmptyStateMode.compact.rawValue
         ) ?? .compact
+
+        let storedNewTabMode = userDefaults.string(forKey: newTabModeKey)
+        let resolvedNewTabMode = SumiNewTabMode.persistedValue(storedNewTabMode)
+        self.newTabMode = resolvedNewTabMode
+        if storedNewTabMode != resolvedNewTabMode.rawValue {
+            userDefaults.set(resolvedNewTabMode.rawValue, forKey: newTabModeKey)
+        }
+        self.newTabPageURLString =
+            userDefaults.string(forKey: newTabPageURLStringKey)
+            ?? SumiNewTabPageURL.defaultURLString
 
         enforceSumiChromeDefaults()
         SumiNativeNowPlayingController.shared.setFeatureEnabled(sidebarMiniPlayerEnabled)
@@ -810,6 +840,101 @@ enum DarkThemeStyle: String, CaseIterable, Identifiable {
     case colorful = "colorful"
 
     var id: String { rawValue }
+}
+
+enum SumiNewTabMode: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
+    case floatingBar
+    case specificPage
+
+    var id: String { rawValue }
+
+    static func persistedValue(_ rawValue: String?) -> SumiNewTabMode {
+        switch rawValue {
+        case Self.floatingBar.rawValue:
+            return .floatingBar
+        case Self.specificPage.rawValue:
+            return .specificPage
+        default:
+            return .floatingBar
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .floatingBar:
+            return "Floating Bar"
+        case .specificPage:
+            return "Specific Page"
+        }
+    }
+}
+
+enum SumiNewTabPageURL {
+    static let defaultURLString = SumiSurface.emptyTabURL.absoluteString
+    static let allowedSchemes: Set<String> = ["http", "https", "file", "about", "sumi"]
+
+    static func normalizedURLString(from input: String) -> String? {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let url = URL(string: trimmed),
+           let scheme = url.scheme?.lowercased() {
+            guard allowedSchemes.contains(scheme) else { return nil }
+            if ["http", "https"].contains(scheme) {
+                guard hasHTTPHost(url) else {
+                    return nil
+                }
+            }
+            return trimmed
+        }
+
+        guard isBareDomain(trimmed) else { return nil }
+        let normalized = "https://\(trimmed)"
+        guard let url = URL(string: normalized),
+              hasHTTPHost(url)
+        else {
+            return nil
+        }
+        return normalized
+    }
+
+    static func validatedURL(from input: String) -> URL? {
+        normalizedURLString(from: input).flatMap(URL.init(string:))
+    }
+
+    static func runtimeURL(from input: String) -> URL {
+        validatedURL(from: input) ?? SumiSurface.emptyTabURL
+    }
+
+    static func validationMessage(for input: String) -> String? {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return "Sumi will open a blank page until you enter a URL."
+        }
+        return normalizedURLString(from: trimmed) == nil
+            ? "Enter a URL such as https://example.com or example.com."
+            : nil
+    }
+
+    private static func isBareDomain(_ value: String) -> Bool {
+        guard !value.contains(where: \.isWhitespace),
+              value.contains("."),
+              !value.hasPrefix("."),
+              !value.hasSuffix(".")
+        else {
+            return false
+        }
+
+        let labels = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard labels.count >= 2, labels.allSatisfy({ !$0.isEmpty }) else {
+            return false
+        }
+        return labels.last?.contains(where: { $0.isLetter || $0.isNumber }) == true
+    }
+
+    private static func hasHTTPHost(_ url: URL) -> Bool {
+        url.host(percentEncoded: false)?.isEmpty == false || url.host?.isEmpty == false
+    }
 }
 
 // MARK: - Notification Names

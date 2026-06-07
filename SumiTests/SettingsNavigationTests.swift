@@ -29,6 +29,23 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(reloaded.resolvedStartupPageURL.absoluteString, "https://example.com")
     }
 
+    func testNewTabSettingsDefaultAndPersistence() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        XCTAssertEqual(settings.newTabMode, .floatingBar)
+        XCTAssertEqual(settings.newTabPageURLString, SumiNewTabPageURL.defaultURLString)
+
+        settings.newTabMode = .specificPage
+        settings.newTabPageURLString = "example.com"
+
+        let reloaded = SumiSettingsService(userDefaults: harness.defaults)
+        XCTAssertEqual(reloaded.newTabMode, .specificPage)
+        XCTAssertEqual(reloaded.newTabPageURLString, "example.com")
+        XCTAssertEqual(reloaded.resolvedNewTabPageURL.absoluteString, "https://example.com")
+    }
+
     func testUnifiedSearchEnginesDefaultOrderAndTabSearchPriority() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }

@@ -41,6 +41,45 @@ struct SettingsGeneralTab: View {
             }
 
             SettingsSection(
+                title: "New Tabs",
+                subtitle: "Choose what opens when you create a new tab."
+            ) {
+                SettingsRow(
+                    title: "Open new tabs with",
+                    subtitle: "Choose between the floating bar or a specific page."
+                ) {
+                    Picker("", selection: $settings.newTabMode) {
+                        ForEach(SumiNewTabMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .settingsTrailingControl(width: 160)
+                }
+
+                if settings.newTabMode == .specificPage {
+                    SettingsDivider()
+
+                    SettingsRow(
+                        title: "New Tab URL",
+                        subtitle: "Use a full URL or a bare domain."
+                    ) {
+                        TextField("https://example.com", text: $settings.newTabPageURLString)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 260)
+                    }
+
+                    if let message = SumiNewTabPageURL.validationMessage(for: settings.newTabPageURLString) {
+                        SettingsDivider()
+
+                        Label(message, systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            SettingsSection(
                 title: "Search",
                 subtitle: "Choose the default web search and how the floating bar behaves before typing."
             ) {

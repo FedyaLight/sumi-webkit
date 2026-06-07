@@ -44,6 +44,14 @@ final class SumiURLNormalizationTests: XCTestCase {
         XCTAssertNil(SumiURLNormalization.normalizedStartupURLString(from: "plain search text"))
     }
 
+    func testNewTabPageAllowsBareDomain() {
+        XCTAssertEqual(
+            SumiURLNormalization.normalizedNewTabURLString(from: "example.com"),
+            "https://example.com"
+        )
+        XCTAssertNil(SumiURLNormalization.normalizedNewTabURLString(from: "plain search text"))
+    }
+
     func testShortcutEditorNormalizesBareDomain() {
         XCTAssertEqual(
             SumiURLNormalization.normalizedShortcutURLString(from: "example.com"),

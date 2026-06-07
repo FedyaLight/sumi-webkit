@@ -874,6 +874,16 @@ class BrowserManager: ObservableObject {
         persistWindowSession(for: windowState)
     }
 
+    func openNewTabOrFloatingBar(in windowState: BrowserWindowState) {
+        if let settings = sumiSettings,
+           settings.newTabMode == .specificPage {
+            let url = settings.resolvedNewTabPageURL.absoluteString
+            createNewTab(in: windowState, url: url)
+        } else {
+            showNewTabFloatingBar(in: windowState)
+        }
+    }
+
     func spaceForSidebarActions(in windowState: BrowserWindowState) -> Space? {
         windowState.currentSpaceId
             .flatMap { spaceId in tabManager.spaces.first(where: { $0.id == spaceId }) }

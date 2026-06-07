@@ -4,6 +4,7 @@ import URLPredictor
 enum SumiURLNormalizationContext: Equatable {
     case searchBar(queryTemplate: String)
     case startupPage
+    case newTabPage
     case shortcutEditor
     case searchEngineTemplate
 }
@@ -15,6 +16,8 @@ enum SumiURLNormalization {
             return normalizeSearchBarInput(input, queryTemplate: queryTemplate)
         case .startupPage:
             return normalizedStartupURLString(from: input) ?? input.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .newTabPage:
+            return normalizedNewTabURLString(from: input) ?? input.trimmingCharacters(in: .whitespacesAndNewlines)
         case .shortcutEditor:
             return normalizedShortcutURLString(from: input) ?? input.trimmingCharacters(in: .whitespacesAndNewlines)
         case .searchEngineTemplate:
@@ -24,6 +27,10 @@ enum SumiURLNormalization {
 
     static func normalizedStartupURLString(from input: String) -> String? {
         SumiStartupPageURL.normalizedURLString(from: input)
+    }
+
+    static func normalizedNewTabURLString(from input: String) -> String? {
+        SumiNewTabPageURL.normalizedURLString(from: input)
     }
 
     static func normalizedShortcutURL(from input: String) -> URL? {

@@ -16,7 +16,7 @@ extension BrowserManager {
             return
         }
 
-        showNewTabFloatingBar(in: activeWindow)
+        openNewTabOrFloatingBar(in: activeWindow)
     }
 
     func selectNextTabInActiveWindow() {

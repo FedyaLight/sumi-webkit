@@ -80,7 +80,7 @@ extension SpaceView {
 
     private func openNewTabFloatingBar() {
         guard isInteractive else { return }
-        browserManager.showNewTabFloatingBar(in: windowState)
+        browserManager.openNewTabOrFloatingBar(in: windowState)
     }
 
     private var topNewTabButtonSection: some View {

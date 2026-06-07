@@ -2073,7 +2073,7 @@ struct SpacesSideBarView: View {
             isCompactModeEnabled: !windowState.isSidebarVisible,
             actions: .init(
                 newTab: {
-                    browserManager.showNewTabFloatingBar(in: windowState)
+                    browserManager.openNewTabOrFloatingBar(in: windowState)
                 },
                 newFolder: newFolderAction,
                 changeTheme: changeThemeAction,
