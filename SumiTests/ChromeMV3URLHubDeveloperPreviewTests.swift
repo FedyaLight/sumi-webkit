@@ -1416,14 +1416,11 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 || $0.contains("executionClassifier=")
                 || $0.contains("permissionClassifier=")
         }
-        let resultDeliveryClassifier = postParseDiagnostics.lines.first {
-            $0.hasPrefix("executeScriptResultDeliveryClassifier=")
-        }?.replacingOccurrences(
-            of: "executeScriptResultDeliveryClassifier=",
-            with: ""
-        ) ?? "unknown"
+        let resultDeliveryClassifier =
+            postParseDiagnostics.resultDeliveryClassifier
+        let closingDecision = postParseDiagnostics.closingDecision
         print(
-            "SumiControlledRaindropMaterializedTab actionClickPath=urlHubActionClick selectedPopupPath=controlledCompatibilityActionPopup boundLocalTabID=\(boundLocalTabID) executionClassifier=filesExecuted firstPostParseBlocker=\(firstPostParseBlocker) firstContinuationBlocker=\(firstContinuationBlocker) firstUIDisappearanceBlocker=\(firstUIDisappearanceBlocker) executeScriptResultDeliveryClassifier=\(resultDeliveryClassifier)"
+            "SumiControlledRaindropMaterializedTab actionClickPath=urlHubActionClick selectedPopupPath=controlledCompatibilityActionPopup boundLocalTabID=\(boundLocalTabID) executionClassifier=filesExecuted firstPostParseBlocker=\(firstPostParseBlocker) firstContinuationBlocker=\(firstContinuationBlocker) firstUIDisappearanceBlocker=\(firstUIDisappearanceBlocker) executeScriptResultDeliveryClassifier=\(resultDeliveryClassifier) raindropClosingDecision=\(closingDecision)"
         )
         for line in bindingLogs + scriptingLogs + postParseDiagnostics.lines {
             print("SumiControlledRaindropMaterializedTab \(line)")
@@ -1475,6 +1472,19 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             "unknown",
             "ExecuteScript result-delivery diagnostics did not classify popup object-result delivery after assets/parse.js filesExecuted."
         )
+        XCTAssertTrue(
+            chromeMV3RaindropClosingDecisionCatalog.contains(closingDecision),
+            "Unexpected Raindrop closing decision: \(closingDecision)"
+        )
+        XCTAssertEqual(
+            closingDecision,
+            "closeRaindropAsExtensionLocalRenderState",
+            """
+            Raindrop closing pass expected extension-local render-state blanking after confirmed object-result delivery. \
+            firstPostParseBlocker=\(firstPostParseBlocker) firstContinuationBlocker=\(firstContinuationBlocker) \
+            firstUIDisappearanceBlocker=\(firstUIDisappearanceBlocker) resultDeliveryClassifier=\(resultDeliveryClassifier)
+            """
+        )
         recordControlledBitwardenPopupSanitizedDiagnostics(
             prefix: "SumiControlledRaindropMaterializedTab",
             snapshot: snapshot,
@@ -1486,6 +1496,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                     "firstContinuationBlocker=\(firstContinuationBlocker)",
                     "firstUIDisappearanceBlocker=\(firstUIDisappearanceBlocker)",
                     "executeScriptResultDeliveryClassifier=\(resultDeliveryClassifier)",
+                    "raindropClosingDecision=\(closingDecision)",
                 ]
         )
 
@@ -3066,6 +3077,8 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         var firstBlocker: String
         var firstContinuationBlocker: String
         var firstUIDisappearanceBlocker: String
+        var resultDeliveryClassifier: String
+        var closingDecision: String
         var lines: [String]
     }
 
@@ -3660,6 +3673,151 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         }
 
         return "unknown"
+    }
+
+    private let chromeMV3RaindropClosingDecisionCatalog: Set<String> = [
+        "fixGenericExecuteScriptDeliveryBug",
+        "fixGenericCallbackOrLastErrorBug",
+        "fixGenericRuntimeRouteBug",
+        "fixGenericTabsRouteBug",
+        "fixGenericStorageConsistencyBug",
+        "fixGenericStorageOnChangedBug",
+        "fixGenericPopupLifecycleBug",
+        "reportMissingNarrowChromeAPI",
+        "closeRaindropAsExtensionLocalRenderState",
+        "closeRaindropAsExtensionLocalAuthOrNetworkState",
+        "closeRaindropAsInsufficientSignalMoveOn",
+        "unknownButStopDiagnostics",
+    ]
+
+    private func classifyRaindropClosingDecision(
+        snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot,
+        domStateJSON: String,
+        firstPostParseBlocker: String,
+        firstContinuationBlocker: String,
+        firstUIDisappearanceBlocker: String,
+        resultDeliveryClassifier: String
+    ) -> String {
+        let trace = snapshot.appStateDependencyTrace.correlationSummary
+        let domObject =
+            domStateJSON.data(using: .utf8).flatMap {
+                try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+            } ?? [:]
+        let coarse = domObject["coarseClassification"] as? String ?? ""
+        let renderTimelineEvents =
+            raindropPopupRenderTimelineEvents(in: snapshot)
+        let dominantBlankingMechanism =
+            renderTimelineEvents.compactMap {
+                continuationDiagnosticValue(
+                    "dominantBlankingMechanism",
+                    in: $0.diagnostics
+                )
+            }.last ?? "none"
+        let objectDelivered =
+            resultDeliveryClassifier == "objectResultDeliveredThenRenderStateBlank"
+            || resultDeliveryClassifier
+                == "objectResultDeliveredThenLocalAppStateWait"
+            || resultDeliveryClassifier == "raindropReachesUsableUI"
+            || resultDeliveryClassifier
+                == "objectResultDeliveredThenUnhandledException"
+            || resultDeliveryClassifier
+                == "objectResultDeliveredThenUnhandledRejection"
+
+        if resultDeliveryClassifier == "lastErrorSemanticsWrong" {
+            return "fixGenericCallbackOrLastErrorBug"
+        }
+        if resultDeliveryClassifier == "objectResultNotDeliveredToPopup"
+            || resultDeliveryClassifier == "callbackResultShapeStillWrong"
+        {
+            return "fixGenericExecuteScriptDeliveryBug"
+        }
+        if firstContinuationBlocker == "executeScriptPromiseNotResolvedToPopup"
+            || firstContinuationBlocker == "executeScriptResultShapeUnexpected"
+            || firstContinuationBlocker == "executeScriptPromiseRejectedInPopup"
+        {
+            return "fixGenericExecuteScriptDeliveryBug"
+        }
+        if firstContinuationBlocker == "popupAwaitNeverResolved" {
+            return "fixGenericCallbackOrLastErrorBug"
+        }
+
+        if objectDelivered == false {
+            if resultDeliveryClassifier == "unknown" {
+                return "closeRaindropAsInsufficientSignalMoveOn"
+            }
+            return "unknownButStopDiagnostics"
+        }
+
+        switch firstPostParseBlocker {
+        case "popupToServiceWorkerRouteDropped",
+            "serviceWorkerOnMessageMissing",
+            "serviceWorkerOnConnectMissing",
+            "contentScriptToServiceWorkerRouteDropped":
+            return "fixGenericRuntimeRouteBug"
+        case "popupToContentScriptRouteDropped",
+            "contentScriptListenerMissing",
+            "messageBeforeContentScriptReady",
+            "tabsTargetMappingWrong":
+            return "fixGenericTabsRouteBug"
+        case "storageWriteNotVisibleToPopup", "storageAppStateReadNoWriter":
+            return "fixGenericStorageConsistencyBug"
+        case "storageOnChangedMissed":
+            return "fixGenericStorageOnChangedBug"
+        case "missingNarrowChromeAPI":
+            return "reportMissingNarrowChromeAPI"
+        case "networkOrAuthWait":
+            return "closeRaindropAsExtensionLocalAuthOrNetworkState"
+        default:
+            break
+        }
+
+        if firstUIDisappearanceBlocker == "transientUIThenNavigationReset"
+            || dominantBlankingMechanism == "navigationDocumentReset"
+        {
+            return "fixGenericPopupLifecycleBug"
+        }
+
+        if resultDeliveryClassifier == "objectResultDeliveredThenUnhandledException"
+            || resultDeliveryClassifier == "objectResultDeliveredThenUnhandledRejection"
+            || firstContinuationBlocker == "popupContinuationException"
+            || firstContinuationBlocker == "popupContinuationUnhandledRejection"
+        {
+            return "closeRaindropAsExtensionLocalRenderState"
+        }
+
+        if resultDeliveryClassifier == "raindropReachesUsableUI" {
+            return "closeRaindropAsInsufficientSignalMoveOn"
+        }
+
+        let renderStateBlankObserved =
+            resultDeliveryClassifier
+                == "objectResultDeliveredThenRenderStateBlank"
+            || firstUIDisappearanceBlocker == "transientUIThenRenderStateBlank"
+            || dominantBlankingMechanism == "renderStateBlank"
+            || dominantBlankingMechanism == "loadingContainerRemoved"
+        let appStateWaitObserved =
+            resultDeliveryClassifier
+                == "objectResultDeliveredThenLocalAppStateWait"
+            || firstContinuationBlocker == "popupLocalAppStateBranch"
+            || firstContinuationBlocker == "popupRenderGateNoStateTransition"
+            || firstPostParseBlocker
+                == "appStateWaitWithNoObservableBrowserDependency"
+            || coarse == "waits on app state"
+        if renderStateBlankObserved || appStateWaitObserved {
+            if trace.networkOrAuthDependencyObserved {
+                return "closeRaindropAsExtensionLocalAuthOrNetworkState"
+            }
+            if trace.missingAPIsObserved.isEmpty == false {
+                return "reportMissingNarrowChromeAPI"
+            }
+            return "closeRaindropAsExtensionLocalRenderState"
+        }
+
+        if firstUIDisappearanceBlocker == "transientUIThenMissingGenericBrowserSignal" {
+            return "closeRaindropAsInsufficientSignalMoveOn"
+        }
+
+        return "unknownButStopDiagnostics"
     }
 
     private func raindropExecuteScriptContinuationSourceMapAvailability(
@@ -4453,10 +4611,22 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             )
         }
 
+        let closingDecision = classifyRaindropClosingDecision(
+            snapshot: snapshot,
+            domStateJSON: domStateJSON,
+            firstPostParseBlocker: firstBlocker,
+            firstContinuationBlocker: firstContinuationBlocker,
+            firstUIDisappearanceBlocker: firstUIDisappearanceBlocker,
+            resultDeliveryClassifier: resultDeliveryClassifier
+        )
+        lines.append("raindropClosingDecision=\(closingDecision)")
+
         return ChromeMV3PostParseSanitizedDiagnostics(
             firstBlocker: firstBlocker,
             firstContinuationBlocker: firstContinuationBlocker,
             firstUIDisappearanceBlocker: firstUIDisappearanceBlocker,
+            resultDeliveryClassifier: resultDeliveryClassifier,
+            closingDecision: closingDecision,
             lines: lines
         )
     }
