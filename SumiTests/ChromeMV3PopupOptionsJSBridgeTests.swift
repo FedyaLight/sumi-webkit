@@ -1079,6 +1079,9 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             source.contains("executeScriptContinuationCheckpoint")
         )
         XCTAssertTrue(
+            source.contains("popupRenderTimelineCheckpoint")
+        )
+        XCTAssertTrue(
             source.contains("debugTrackExecuteScriptPopupPromise")
         )
         XCTAssertTrue(

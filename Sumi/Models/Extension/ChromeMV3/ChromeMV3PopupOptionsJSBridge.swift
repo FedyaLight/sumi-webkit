@@ -3405,6 +3405,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         "portOnDisconnectDispatched",
         "portOnMessageDispatched",
         "postBootstrapCheckpoint",
+        "popupRenderTimelineCheckpoint",
         "executeScriptContinuationCheckpoint",
         "promiseRejected",
         "consoleError",
@@ -9752,6 +9753,36 @@ enum ChromeMV3PopupOptionsJSShimSource {
             mappedScriptCount: 0,
             originalFileNames: []
           };
+          const __sumiPopupRenderTimelineState = {
+            installed: false,
+            firstBodyOrRootSeen: false,
+            firstNonEmptyVisibleDOMSeen: false,
+            firstPaintSeen: false,
+            transientUIObserved: false,
+            blankingDetected: false,
+            blankingRelativeToExecuteScript: null,
+            dominantBlankingMechanism: null,
+            previousRenderDOM: null,
+            appRootIdentity: null,
+            appRootElementRef: null,
+            mutationEventCount: 0,
+            mutationTypeCounts: {
+              childListAdded: 0,
+              childListRemoved: 0,
+              attributesChanged: 0,
+              textChanged: 0
+            },
+            executeScriptPhaseMarkers: {
+              callStarted: false,
+              pending: false,
+              resolved: false,
+              microtask: false,
+              timer: false,
+              animationFrame: false
+            },
+            finalCheckpointRecorded: false
+          };
+          const __sumiPopupRenderTimelineMutationCap = 80;
           const __sumiSafeFieldNames = new Set([
             "action", "command", "kind", "messageType", "method", "name",
             "operation", "requestType", "type"
@@ -10381,6 +10412,8 @@ enum ChromeMV3PopupOptionsJSShimSource {
               globalThis.requestAnimationFrame(() => {
                 if (!__sumiExecuteScriptContinuationState.firstAnimationFrameObserved) {
                   __sumiExecuteScriptContinuationState.firstAnimationFrameObserved = true;
+                  debugMarkExecuteScriptPhaseMarker("animationFrame");
+                  debugRecordExecuteScriptRenderTimelinePhase("firstAnimationFrameAfterResolve");
                   debugRecordExecuteScriptContinuationCheckpoint(
                     "firstAnimationFrameAfterResolve",
                     { stackDiagnostics: debugCaptureContinuationStack("animationFrame") }
@@ -10394,6 +10427,8 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 const dom = debugCoarseDOMState();
                 if (delay === 0 && !__sumiExecuteScriptContinuationState.firstTimerObserved) {
                   __sumiExecuteScriptContinuationState.firstTimerObserved = true;
+                  debugMarkExecuteScriptPhaseMarker("timer");
+                  debugRecordExecuteScriptRenderTimelinePhase("firstTimerAfterResolve");
                   debugRecordExecuteScriptContinuationCheckpoint(
                     "firstTimerAfterResolve",
                     { stackDiagnostics: debugCaptureContinuationStack("timer0") }
@@ -10442,6 +10477,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
           function debugBeginExecuteScriptContinuation(args, invocationMode) {
             debugResetExecuteScriptContinuationState();
             __sumiExecuteScriptContinuationState.invocationMode = invocationMode;
+            debugMarkExecuteScriptPhaseMarker("callStarted");
+            debugMarkExecuteScriptPhaseMarker("pending");
+            debugRecordExecuteScriptRenderTimelinePhase("beforeExecuteScriptCall");
             debugRecordExecuteScriptContinuationCheckpoint("popupCallStarted", {
               safeMessageShapeClassification: debugArgsShape(args || []),
               diagnostics: [
@@ -10511,6 +10549,8 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 debugExecuteScriptResultShapeSummary(shape);
               __sumiExecuteScriptContinuationState.popupPromiseResolved = true;
               __sumiExecuteScriptContinuationState.domAtResolve = debugCoarseDOMState();
+              debugMarkExecuteScriptPhaseMarker("resolved");
+              debugRecordExecuteScriptRenderTimelinePhase("afterExecuteScriptResolve");
               debugRecordExecuteScriptContinuationCheckpoint("popupPromiseResolved", {
                 diagnostics: [
                   "popupObservedResolution=true",
@@ -10523,6 +10563,8 @@ enum ChromeMV3PopupOptionsJSShimSource {
                   return;
                 }
                 __sumiExecuteScriptContinuationState.firstMicrotaskObserved = true;
+                debugMarkExecuteScriptPhaseMarker("microtask");
+                debugRecordExecuteScriptRenderTimelinePhase("firstMicrotaskAfterResolve");
                 debugRecordExecuteScriptContinuationCheckpoint(
                   "firstMicrotaskAfterResolve",
                   { stackDiagnostics: debugCaptureContinuationStack("microtask") }
@@ -10568,6 +10610,8 @@ enum ChromeMV3PopupOptionsJSShimSource {
                   debugExecuteScriptResultShapeSummary(shape);
                 __sumiExecuteScriptContinuationState.popupPromiseResolved = true;
                 __sumiExecuteScriptContinuationState.domAtResolve = debugCoarseDOMState();
+                debugMarkExecuteScriptPhaseMarker("resolved");
+                debugRecordExecuteScriptRenderTimelinePhase("afterExecuteScriptResolve");
                 debugRecordExecuteScriptContinuationCheckpoint("popupCallbackInvoked", {
                   diagnostics: [
                     "popupObservedResolution=true",
@@ -10581,6 +10625,8 @@ enum ChromeMV3PopupOptionsJSShimSource {
                     return;
                   }
                   __sumiExecuteScriptContinuationState.firstMicrotaskObserved = true;
+                  debugMarkExecuteScriptPhaseMarker("microtask");
+                  debugRecordExecuteScriptRenderTimelinePhase("firstMicrotaskAfterResolve");
                   debugRecordExecuteScriptContinuationCheckpoint(
                     "firstMicrotaskAfterResolve",
                     { stackDiagnostics: debugCaptureContinuationStack("microtask") }
@@ -11435,6 +11481,555 @@ enum ChromeMV3PopupOptionsJSShimSource {
             });
           }
 
+          function debugTextLengthBucket(length) {
+            const value = Number(length) || 0;
+            if (value <= 0) {
+              return "0";
+            }
+            if (value <= 9) {
+              return "1-9";
+            }
+            if (value <= 49) {
+              return "10-49";
+            }
+            if (value <= 199) {
+              return "50-199";
+            }
+            return "200+";
+          }
+
+          function debugFindAppRootElement() {
+            try {
+              return globalThis.document
+                && globalThis.document.querySelector(
+                  "app-root,[data-app-root],main,#app,#root,#react"
+                );
+            } catch (_) {
+              return null;
+            }
+          }
+
+          function debugAppRootIdentity(element) {
+            if (!element) {
+              return null;
+            }
+            const tag = debugSafeString(
+              String(element.tagName || "").toLowerCase(),
+              40
+            ) || "unknown";
+            const childCount = element.childNodes ? element.childNodes.length : 0;
+            return tag + ":children=" + String(childCount);
+          }
+
+          function debugRootVisibilityCategory(element) {
+            if (!element) {
+              return "detached";
+            }
+            try {
+              if (!element.isConnected) {
+                return "detached";
+              }
+              const childCount = element.childNodes ? element.childNodes.length : 0;
+              if (childCount === 0) {
+                const html = typeof element.innerHTML === "string"
+                  ? element.innerHTML.trim()
+                  : "";
+                if (!html) {
+                  return "emptied";
+                }
+              }
+              const style = globalThis.getComputedStyle
+                ? globalThis.getComputedStyle(element)
+                : null;
+              if (!style) {
+                return "unknown";
+              }
+              if (style.display === "none") {
+                return "displayNone";
+              }
+              if (
+                style.visibility === "hidden"
+                  || style.visibility === "collapse"
+              ) {
+                return "visibilityHidden";
+              }
+              if (parseFloat(style.opacity || "1") === 0) {
+                return "opacityZero";
+              }
+              const rect = element.getBoundingClientRect
+                ? element.getBoundingClientRect()
+                : null;
+              if (rect && rect.width === 0 && rect.height === 0) {
+                return "zeroSize";
+              }
+              return "visible";
+            } catch (_) {
+              return "unknown";
+            }
+          }
+
+          function debugAppRootPresenceCategory(appRoot, body) {
+            if (!appRoot) {
+              if (body && body.childNodes && body.childNodes.length > 0) {
+                return "bodyOnly";
+              }
+              return "absent";
+            }
+            const childCount = appRoot.childNodes ? appRoot.childNodes.length : 0;
+            if (childCount === 0) {
+              return "presentEmpty";
+            }
+            return "presentWithChildren";
+          }
+
+          function debugSanitizedRenderDOMState() {
+            const coarse = debugCoarseDOMState();
+            const doc = globalThis.document;
+            const rootElement = doc && doc.documentElement;
+            const body = doc && doc.body;
+            const appRoot = debugFindAppRootElement();
+            const rootChildCount = rootElement && rootElement.childNodes
+              ? rootElement.childNodes.length
+              : 0;
+            const bodyChildCount = body && body.childNodes
+              ? body.childNodes.length
+              : 0;
+            const appRootChildCount = appRoot && appRoot.childNodes
+              ? appRoot.childNodes.length
+              : 0;
+            const appRootPresence = debugAppRootPresenceCategory(appRoot, body);
+            const rootVisibility = debugRootVisibilityCategory(appRoot || body || rootElement);
+            const appRootVisibility = appRoot
+              ? debugRootVisibilityCategory(appRoot)
+              : "absent";
+            const formControlCandidateCount = coarse.controlCount;
+            const hadVisibleContent =
+              coarse.trimmedTextLength > 0
+                || coarse.usableFormCandidate
+                || formControlCandidateCount > 0;
+            return Object.assign({}, coarse, {
+              visibleTextLengthBucket: debugTextLengthBucket(coarse.trimmedTextLength),
+              formControlCandidateCount,
+              rootChildCount,
+              bodyChildCount,
+              appRootChildCount,
+              appRootPresence,
+              rootVisibility,
+              appRootVisibility,
+              hadVisibleContent,
+              appRootIdentity: debugAppRootIdentity(appRoot)
+            });
+          }
+
+          function debugExecuteScriptTimingPhase() {
+            const markers = __sumiPopupRenderTimelineState.executeScriptPhaseMarkers;
+            if (!markers.callStarted) {
+              return "beforeExecuteScriptCall";
+            }
+            if (!markers.resolved) {
+              return "whileExecuteScriptPending";
+            }
+            if (!markers.microtask) {
+              return "immediatelyAfterExecuteScriptResolve";
+            }
+            if (!markers.timer) {
+              return "afterFirstMicrotask";
+            }
+            if (!markers.animationFrame) {
+              return "afterFirstTimer";
+            }
+            return "afterFirstAnimationFrameOrLater";
+          }
+
+          function debugDetectDominantBlankingMechanism(previous, current) {
+            if (!previous || !current) {
+              return null;
+            }
+            const prevHadUI =
+              previous.hadVisibleContent
+                || previous.usableFormCandidate
+                || (previous.formControlCandidateCount || 0) > 0
+                || previous.visibleTextLengthBucket !== "0";
+            const nowBlank =
+              current.blankCandidate
+                || (
+                  current.visibleTextLengthBucket === "0"
+                    && (current.formControlCandidateCount || 0) === 0
+                    && !current.hasBusyIndicator
+                );
+            if (!prevHadUI || !nowBlank) {
+              return null;
+            }
+            if (
+              (previous.formControlCandidateCount || 0) > 0
+                && (current.formControlCandidateCount || 0) === 0
+                && previous.appRootChildCount === current.appRootChildCount
+                && previous.appRootVisibility === "visible"
+                && current.appRootVisibility === "visible"
+            ) {
+              return "renderStateBlank";
+            }
+            if (
+              previous.appRootIdentity
+                && current.appRootIdentity
+                && previous.appRootIdentity !== current.appRootIdentity
+            ) {
+              return "appRootReplaced";
+            }
+            if (
+              previous.appRootChildCount > 0
+                && current.appRootChildCount === 0
+            ) {
+              return "rootEmptied";
+            }
+            if (
+              previous.bodyChildCount > 0
+                && current.bodyChildCount === 0
+            ) {
+              return "bodyEmptied";
+            }
+            if (
+              previous.appRootVisibility === "visible"
+                && current.appRootVisibility !== "visible"
+                && current.appRootVisibility !== "absent"
+            ) {
+              if (
+                current.appRootVisibility === "displayNone"
+                  || current.appRootVisibility === "visibilityHidden"
+                  || current.appRootVisibility === "opacityZero"
+              ) {
+                return "cssHidden";
+              }
+              return "rootHidden";
+            }
+            if (
+              previous.hasBusyIndicator
+                && !current.hasBusyIndicator
+                && nowBlank
+            ) {
+              return "loadingContainerRemoved";
+            }
+            if (
+              previous.readyState !== current.readyState
+                && nowBlank
+            ) {
+              return "navigationDocumentReset";
+            }
+            if (nowBlank && prevHadUI) {
+              return "renderStateBlank";
+            }
+            return "unknown";
+          }
+
+          function debugUpdateTransientUIObservation(dom) {
+            if (!dom) {
+              return;
+            }
+            if (
+              dom.hadVisibleContent
+                || dom.usableFormCandidate
+                || (dom.formControlCandidateCount || 0) > 0
+                || dom.visibleTextLengthBucket !== "0"
+            ) {
+              __sumiPopupRenderTimelineState.transientUIObserved = true;
+            }
+          }
+
+          function debugPreviousHadVisibleUI(previous) {
+            if (!previous) {
+              return false;
+            }
+            return !!(
+              previous.hadVisibleContent
+                || previous.usableFormCandidate
+                || (previous.formControlCandidateCount || 0) > 0
+                || previous.visibleTextLengthBucket !== "0"
+            );
+          }
+
+          function debugTrackAppRootElementReference(dom) {
+            const appRoot = debugFindAppRootElement();
+            const previousRef = __sumiPopupRenderTimelineState.appRootElementRef;
+            if (appRoot) {
+              if (
+                previousRef
+                  && previousRef !== appRoot
+                  && dom
+                  && dom.blankCandidate
+              ) {
+                __sumiPopupRenderTimelineState.dominantBlankingMechanism =
+                  "appRootReplaced";
+              }
+              __sumiPopupRenderTimelineState.appRootElementRef = appRoot;
+              __sumiPopupRenderTimelineState.appRootIdentity =
+                debugAppRootIdentity(appRoot);
+            }
+          }
+
+          function debugObserveRenderBlanking(phase, dom) {
+            const previous = __sumiPopupRenderTimelineState.previousRenderDOM;
+            debugUpdateTransientUIObservation(dom);
+            debugTrackAppRootElementReference(dom);
+            if (__sumiPopupRenderTimelineState.blankingDetected) {
+              __sumiPopupRenderTimelineState.previousRenderDOM = dom;
+              return null;
+            }
+            if (!debugPreviousHadVisibleUI(previous)) {
+              __sumiPopupRenderTimelineState.previousRenderDOM = dom;
+              return null;
+            }
+            if (__sumiPopupRenderTimelineState.dominantBlankingMechanism === "appRootReplaced") {
+              __sumiPopupRenderTimelineState.blankingDetected = true;
+              __sumiPopupRenderTimelineState.blankingRelativeToExecuteScript =
+                debugExecuteScriptTimingPhase();
+              __sumiPopupRenderTimelineState.previousRenderDOM = dom;
+              return "appRootReplaced";
+            }
+            const mechanism = debugDetectDominantBlankingMechanism(previous, dom);
+            if (!mechanism) {
+              __sumiPopupRenderTimelineState.previousRenderDOM = dom;
+              return null;
+            }
+            __sumiPopupRenderTimelineState.blankingDetected = true;
+            __sumiPopupRenderTimelineState.dominantBlankingMechanism = mechanism;
+            __sumiPopupRenderTimelineState.blankingRelativeToExecuteScript =
+              debugExecuteScriptTimingPhase();
+            return mechanism;
+          }
+
+          function debugRenderTimelineDiagnostics(dom, phase, extras) {
+            const mutationCounts = __sumiPopupRenderTimelineState.mutationTypeCounts;
+            const diagnostics = [
+              "phase=" + phase,
+              "readyState=" + String(dom.readyState || "unknown"),
+              "visibleTextLengthBucket=" + String(dom.visibleTextLengthBucket || "0"),
+              "formControlCandidateCount=" + String(dom.formControlCandidateCount || 0),
+              "rootChildCount=" + String(dom.rootChildCount || 0),
+              "bodyChildCount=" + String(dom.bodyChildCount || 0),
+              "appRootPresence=" + String(dom.appRootPresence || "unknown"),
+              "rootVisibility=" + String(dom.rootVisibility || "unknown"),
+              "appRootVisibility=" + String(dom.appRootVisibility || "unknown"),
+              "usableFormCandidate=" + String(!!dom.usableFormCandidate),
+              "blankCandidate=" + String(!!dom.blankCandidate),
+              "transientUIObserved="
+                + String(__sumiPopupRenderTimelineState.transientUIObserved),
+              "blankingDetected="
+                + String(__sumiPopupRenderTimelineState.blankingDetected),
+              "mutationChildListAdded="
+                + String(mutationCounts.childListAdded || 0),
+              "mutationChildListRemoved="
+                + String(mutationCounts.childListRemoved || 0),
+              "mutationAttributesChanged="
+                + String(mutationCounts.attributesChanged || 0),
+              "mutationTextChanged=" + String(mutationCounts.textChanged || 0),
+              "No raw DOM text, HTML, storage values, or page content were recorded."
+            ];
+            if (__sumiPopupRenderTimelineState.dominantBlankingMechanism) {
+              diagnostics.push(
+                "dominantBlankingMechanism="
+                  + __sumiPopupRenderTimelineState.dominantBlankingMechanism
+              );
+            }
+            if (__sumiPopupRenderTimelineState.blankingRelativeToExecuteScript) {
+              diagnostics.push(
+                "blankingRelativeToExecuteScript="
+                  + __sumiPopupRenderTimelineState.blankingRelativeToExecuteScript
+              );
+            }
+            if (extras && Array.isArray(extras)) {
+              diagnostics.push.apply(diagnostics, extras);
+            }
+            return diagnostics;
+          }
+
+          function debugMutationTriggerStackCategory() {
+            const categories = [];
+            try {
+              const stack = new Error().stack;
+              if (typeof stack !== "string" || debugIsSensitiveName(stack)) {
+                return "unknown";
+              }
+              stack.split("\\n").slice(1, 8).forEach((line) => {
+                const frame = debugStackFrameDiagnostics(line, categories.length);
+                if (!frame) {
+                  return;
+                }
+                const functionMatch = frame.match(/function=([^;]+)/);
+                const resourceMatch = frame.match(/resource=([^;]+)/);
+                const functionName = functionMatch ? functionMatch[1] : null;
+                const resource = resourceMatch ? resourceMatch[1] : null;
+                if (!functionName && !resource) {
+                  return;
+                }
+                const category = [
+                  functionName ? "fn:" + functionName : null,
+                  resource ? "res:" + resource : null
+                ].filter(Boolean).join("/");
+                if (
+                  category
+                    && categories.indexOf(category) === -1
+                    && categories.length < 4
+                ) {
+                  categories.push(category);
+                }
+              });
+            } catch (_) {
+            }
+            return categories.length > 0 ? categories.join(",") : "unknown";
+          }
+
+          function debugRecordPopupRenderTimelineCheckpoint(phase, extras) {
+            const dom = debugSanitizedRenderDOMState();
+            const blankingMechanism = debugObserveRenderBlanking(phase, dom);
+            const payloadExtras = Array.isArray(extras) ? extras.slice() : [];
+            if (blankingMechanism) {
+              payloadExtras.push("blankingDetected=true");
+            }
+            debugRecord("popupRenderTimelineCheckpoint", {
+              apiName: "popup.renderTimeline",
+              targetContext: "dom",
+              resultClassifier: phase,
+              safeMessageShapeClassification: [
+                "renderTimeline",
+                "phase=" + phase,
+                "visibleTextLengthBucket=" + String(dom.visibleTextLengthBucket || "0"),
+                "appRootPresence=" + String(dom.appRootPresence || "unknown")
+              ].join(";"),
+              diagnostics: debugRenderTimelineDiagnostics(dom, phase, payloadExtras)
+            });
+            if (
+              phase === "popupRenderTimelineFinal"
+                || phase === "hostForcedFinalDOM"
+            ) {
+              __sumiPopupRenderTimelineState.finalCheckpointRecorded = true;
+            }
+          }
+
+          function debugMaybeRecordBodyOrRootCreation() {
+            const doc = globalThis.document;
+            const body = doc && doc.body;
+            const rootElement = doc && doc.documentElement;
+            if (!body && !rootElement) {
+              return;
+            }
+            if (__sumiPopupRenderTimelineState.firstBodyOrRootSeen) {
+              return;
+            }
+            __sumiPopupRenderTimelineState.firstBodyOrRootSeen = true;
+            debugRecordPopupRenderTimelineCheckpoint("firstBodyOrRootCreation");
+          }
+
+          function debugMaybeRecordFirstNonEmptyVisibleDOM() {
+            if (__sumiPopupRenderTimelineState.firstNonEmptyVisibleDOMSeen) {
+              return;
+            }
+            const dom = debugSanitizedRenderDOMState();
+            if (!dom.hadVisibleContent && !dom.usableFormCandidate) {
+              return;
+            }
+            __sumiPopupRenderTimelineState.firstNonEmptyVisibleDOMSeen = true;
+            debugRecordPopupRenderTimelineCheckpoint("firstNonEmptyVisibleDOM");
+          }
+
+          function debugMarkExecuteScriptPhaseMarker(marker) {
+            if (
+              marker
+                && Object.prototype.hasOwnProperty.call(
+                  __sumiPopupRenderTimelineState.executeScriptPhaseMarkers,
+                  marker
+                )
+            ) {
+              __sumiPopupRenderTimelineState.executeScriptPhaseMarkers[marker] = true;
+            }
+          }
+
+          function debugRecordExecuteScriptRenderTimelinePhase(phase, extras) {
+            debugRecordPopupRenderTimelineCheckpoint(phase, extras);
+          }
+
+          function debugHandleSignificantMutation(mutationRecord) {
+            if (
+              __sumiPopupRenderTimelineState.mutationEventCount
+                >= __sumiPopupRenderTimelineMutationCap
+            ) {
+              return;
+            }
+            const record = mutationRecord || {};
+            const type = record.type || "unknown";
+            if (type === "childList") {
+              __sumiPopupRenderTimelineState.mutationTypeCounts.childListAdded +=
+                record.addedNodes ? record.addedNodes.length : 0;
+              __sumiPopupRenderTimelineState.mutationTypeCounts.childListRemoved +=
+                record.removedNodes ? record.removedNodes.length : 0;
+            } else if (type === "attributes") {
+              __sumiPopupRenderTimelineState.mutationTypeCounts.attributesChanged += 1;
+            } else if (type === "characterData") {
+              __sumiPopupRenderTimelineState.mutationTypeCounts.textChanged += 1;
+            }
+            __sumiPopupRenderTimelineState.mutationEventCount += 1;
+            const stackCategory = debugMutationTriggerStackCategory();
+            debugMaybeRecordFirstNonEmptyVisibleDOM();
+            debugRecordPopupRenderTimelineCheckpoint(
+              "domMutation" + String(__sumiPopupRenderTimelineState.mutationEventCount),
+              [
+                "mutationType=" + type,
+                "mutationTriggerStackCategory=" + stackCategory
+              ]
+            );
+          }
+
+          function debugInstallPopupRenderTimelineObserver() {
+            if (__sumiPopupRenderTimelineState.installed) {
+              return;
+            }
+            __sumiPopupRenderTimelineState.installed = true;
+            debugRecordPopupRenderTimelineCheckpoint("popupDocumentStart", [
+              "documentReadyState="
+                + String(
+                  globalThis.document
+                    ? globalThis.document.readyState
+                    : "unknown"
+                )
+            ]);
+            debugMaybeRecordBodyOrRootCreation();
+            debugMaybeRecordFirstNonEmptyVisibleDOM();
+            try {
+              globalThis.requestAnimationFrame(() => {
+                if (__sumiPopupRenderTimelineState.firstPaintSeen) {
+                  return;
+                }
+                __sumiPopupRenderTimelineState.firstPaintSeen = true;
+                debugRecordPopupRenderTimelineCheckpoint("firstPaintLike");
+              });
+            } catch (_) {
+            }
+            try {
+              const doc = globalThis.document;
+              if (!doc || typeof MutationObserver !== "function") {
+                return;
+              }
+              const observer = new MutationObserver((records) => {
+                records.forEach((record) => {
+                  debugHandleSignificantMutation(record);
+                });
+                debugMaybeRecordBodyOrRootCreation();
+              });
+              const target = doc.documentElement || doc;
+              observer.observe(target, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                characterData: true
+              });
+            } catch (_) {
+            }
+            globalThis.setTimeout(() => {
+              if (!__sumiPopupRenderTimelineState.finalCheckpointRecorded) {
+                debugRecordPopupRenderTimelineCheckpoint("popupRenderTimelineFinal");
+              }
+            }, 6500);
+          }
+
           function debugCoarseDOMState() {
             const body = globalThis.document && globalThis.document.body;
             const text = body && typeof body.innerText === "string"
@@ -11962,6 +12557,8 @@ enum ChromeMV3PopupOptionsJSShimSource {
             }, delay);
           });
 
+          debugInstallPopupRenderTimelineObserver();
+
           Object.defineProperty(globalThis, "__sumiChromeMV3PopupOptionsDebugSnapshot", {
             value() {
               const pending = Array.from(__sumiPendingBridgeCalls.values()).map((entry) => {
@@ -11994,6 +12591,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
                   stackDiagnostics: debugCaptureContinuationStack("hostForcedFinal")
                 });
               }
+              debugRecordPopupRenderTimelineCheckpoint("hostForcedFinalDOM");
               return globalThis.__sumiChromeMV3PopupOptionsDebugSnapshot();
             },
             configurable: false

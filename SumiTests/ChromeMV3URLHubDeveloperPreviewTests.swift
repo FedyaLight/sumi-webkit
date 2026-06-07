@@ -1405,6 +1405,8 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         let firstPostParseBlocker = postParseDiagnostics.firstBlocker
         let firstContinuationBlocker =
             postParseDiagnostics.firstContinuationBlocker
+        let firstUIDisappearanceBlocker =
+            postParseDiagnostics.firstUIDisappearanceBlocker
         let bindingLogs = [
             "urlHubAction click scripting target bound tab=\(tab.id.uuidString) localTabID=\(boundLocalTabID) url=\(tab.url.absoluteString)",
             "entrypoint=urlHubActionClickScriptingTarget tab=\(boundLocalTabID) frame=0 url=\(tab.url.absoluteString)",
@@ -1415,7 +1417,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 || $0.contains("permissionClassifier=")
         }
         print(
-            "SumiControlledRaindropMaterializedTab actionClickPath=urlHubActionClick selectedPopupPath=controlledCompatibilityActionPopup boundLocalTabID=\(boundLocalTabID) executionClassifier=filesExecuted firstPostParseBlocker=\(firstPostParseBlocker) firstContinuationBlocker=\(firstContinuationBlocker)"
+            "SumiControlledRaindropMaterializedTab actionClickPath=urlHubActionClick selectedPopupPath=controlledCompatibilityActionPopup boundLocalTabID=\(boundLocalTabID) executionClassifier=filesExecuted firstPostParseBlocker=\(firstPostParseBlocker) firstContinuationBlocker=\(firstContinuationBlocker) firstUIDisappearanceBlocker=\(firstUIDisappearanceBlocker)"
         )
         for line in bindingLogs + scriptingLogs + postParseDiagnostics.lines {
             print("SumiControlledRaindropMaterializedTab \(line)")
@@ -1445,6 +1447,17 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             "noPopupContinuationObserved",
             "Expected popup bundled JS to observe scripting.executeScript continuation after assets/parse.js filesExecuted."
         )
+        XCTAssertTrue(
+            chromeMV3TransientUIDisappearanceBlockerCatalog.contains(
+                firstUIDisappearanceBlocker
+            ),
+            "Unexpected UI disappearance blocker classification: \(firstUIDisappearanceBlocker)"
+        )
+        XCTAssertNotEqual(
+            firstUIDisappearanceBlocker,
+            "unknown",
+            "Popup render timeline diagnostics did not classify the first UI disappearance blocker."
+        )
         recordControlledBitwardenPopupSanitizedDiagnostics(
             prefix: "SumiControlledRaindropMaterializedTab",
             snapshot: snapshot,
@@ -1454,6 +1467,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             extraLines: postParseDiagnostics.lines
                 + [
                     "firstContinuationBlocker=\(firstContinuationBlocker)",
+                    "firstUIDisappearanceBlocker=\(firstUIDisappearanceBlocker)",
                 ]
         )
 
@@ -3014,9 +3028,26 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         "unknown",
     ]
 
+    private let chromeMV3TransientUIDisappearanceBlockerCatalog: Set<String> = [
+        "transientUIThenRootEmptied",
+        "transientUIThenRootHidden",
+        "transientUIThenBodyEmptied",
+        "transientUIThenAppRootReplaced",
+        "transientUIThenNavigationReset",
+        "transientUIThenCSSHidden",
+        "transientUIThenRenderStateBlank",
+        "transientUIThenAwaitingLocalState",
+        "transientUIThenUnhandledException",
+        "transientUIThenUnhandledRejection",
+        "transientUIThenMissingGenericBrowserSignal",
+        "noTransientUIObservedInTest",
+        "unknown",
+    ]
+
     private struct ChromeMV3PostParseSanitizedDiagnostics {
         var firstBlocker: String
         var firstContinuationBlocker: String
+        var firstUIDisappearanceBlocker: String
         var lines: [String]
     }
 
@@ -3043,10 +3074,17 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 let postParseEvents = raindropPostParseEvents(in: current)
                 let continuationEvents =
                     raindropExecuteScriptContinuationEvents(in: current)
+                let renderTimelineEvents =
+                    raindropPopupRenderTimelineEvents(in: current)
                 if continuationEvents.contains(where: { event in
                     event.resultClassifier == "finalDOMCheckpoint"
                         || event.resultClassifier == "hostForcedFinalDOMCheckpoint"
-                }) {
+                }),
+                    renderTimelineEvents.contains(where: { event in
+                        event.resultClassifier == "popupRenderTimelineFinal"
+                            || event.resultClassifier == "hostForcedFinalDOM"
+                    })
+                {
                     return current
                 }
                 if postParseEvents.contains(where: { event in
@@ -3202,6 +3240,143 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         snapshot.jsDebugRouteEvents.filter {
             $0.eventKind == "executeScriptContinuationCheckpoint"
         }
+    }
+
+    private func raindropPopupRenderTimelineEvents(
+        in snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
+    ) -> [ChromeMV3PopupOptionsJSDebugRouteEventRecord] {
+        snapshot.jsDebugRouteEvents.filter {
+            $0.eventKind == "popupRenderTimelineCheckpoint"
+        }
+    }
+
+    private func renderTimelineTransientUIObserved(
+        in events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
+    ) -> Bool {
+        events.contains { event in
+            continuationDiagnosticValue("transientUIObserved", in: event.diagnostics)
+                == "true"
+                || (
+                    continuationDiagnosticValue(
+                        "visibleTextLengthBucket",
+                        in: event.diagnostics
+                    ) ?? "0"
+                ) != "0"
+                || continuationDiagnosticValue(
+                    "usableFormCandidate",
+                    in: event.diagnostics
+                ) == "true"
+                || (postParseDiagnosticInt(
+                    "formControlCandidateCount",
+                    in: event.diagnostics
+                ) ?? 0) > 0
+                || event.resultClassifier == "firstNonEmptyVisibleDOM"
+        }
+    }
+
+    private func classifyFirstUIDisappearanceBlocker(
+        snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot,
+        continuationEvents: [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
+    ) -> String {
+        let timelineEvents = raindropPopupRenderTimelineEvents(in: snapshot)
+        guard timelineEvents.isEmpty == false else {
+            return "unknown"
+        }
+
+        if continuationEvents.contains(where: {
+            $0.resultClassifier == "popupContinuationException"
+        }) {
+            return renderTimelineTransientUIObserved(in: timelineEvents)
+                ? "transientUIThenUnhandledException"
+                : "noTransientUIObservedInTest"
+        }
+        if continuationEvents.contains(where: {
+            $0.resultClassifier == "popupContinuationUnhandledRejection"
+        }) {
+            return renderTimelineTransientUIObserved(in: timelineEvents)
+                ? "transientUIThenUnhandledRejection"
+                : "noTransientUIObservedInTest"
+        }
+
+        guard renderTimelineTransientUIObserved(in: timelineEvents) else {
+            return "noTransientUIObservedInTest"
+        }
+
+        let transientSequence = timelineEvents.first { event in
+            event.resultClassifier == "firstNonEmptyVisibleDOM"
+                || continuationDiagnosticValue(
+                    "transientUIObserved",
+                    in: event.diagnostics
+                ) == "true"
+        }?.sequence
+        let blankingEvent = timelineEvents.first { event in
+            continuationDiagnosticValue("blankingDetected", in: event.diagnostics)
+                == "true"
+                && (
+                    transientSequence == nil
+                        || event.sequence > transientSequence!
+                )
+        }
+        let mechanism =
+            blankingEvent.flatMap {
+                continuationDiagnosticValue(
+                    "dominantBlankingMechanism",
+                    in: $0.diagnostics
+                )
+            }
+            ?? timelineEvents.compactMap {
+                continuationDiagnosticValue(
+                    "dominantBlankingMechanism",
+                    in: $0.diagnostics
+                )
+            }.last
+
+        switch mechanism {
+        case "rootEmptied":
+            return "transientUIThenRootEmptied"
+        case "rootHidden":
+            return "transientUIThenRootHidden"
+        case "bodyEmptied":
+            return "transientUIThenBodyEmptied"
+        case "appRootReplaced":
+            return "transientUIThenAppRootReplaced"
+        case "navigationDocumentReset":
+            return "transientUIThenNavigationReset"
+        case "cssHidden":
+            return "transientUIThenCSSHidden"
+        case "renderStateBlank", "loadingContainerRemoved":
+            return "transientUIThenRenderStateBlank"
+        default:
+            break
+        }
+
+        let localBranch = continuationEvents.compactMap {
+            continuationDiagnosticValue("localBranchClassifier", in: $0.diagnostics)
+        }.last
+        if localBranch == "appState" {
+            return "transientUIThenAwaitingLocalState"
+        }
+
+        let trace = snapshot.appStateDependencyTrace.correlationSummary
+        if trace.classification == "appStateWaitWithNoObservableDependency"
+            || trace.classification == "appStateWaitWithNoObservableBrowserDependency"
+            || trace.popupReadKeyHashesNeverWritten.isEmpty == false
+        {
+            return "transientUIThenAwaitingLocalState"
+        }
+
+        if blankingEvent != nil {
+            return "transientUIThenMissingGenericBrowserSignal"
+        }
+
+        let finalBlank = timelineEvents.last.flatMap { event in
+            continuationDiagnosticValue("blankCandidate", in: event.diagnostics)
+        } == "true"
+        if finalBlank {
+            return "transientUIThenRenderStateBlank"
+        }
+
+        return "unknown"
     }
 
     private func raindropExecuteScriptContinuationPhaseObserved(
@@ -3770,6 +3945,12 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             )
         let continuationEvents =
             raindropExecuteScriptContinuationEvents(in: snapshot)
+        let renderTimelineEvents =
+            raindropPopupRenderTimelineEvents(in: snapshot)
+        let firstUIDisappearanceBlocker = classifyFirstUIDisappearanceBlocker(
+            snapshot: snapshot,
+            continuationEvents: continuationEvents
+        )
         let subsequentRoutes = raindropPostParseRoutes(in: snapshot)
         let subsequentEvents = raindropPostParseEvents(in: snapshot)
         let serviceWorkerListeners =
@@ -3808,6 +3989,11 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             "postParseUsableFormCandidate=\(domObject["usableFormCandidate"] ?? "na")",
             "postParseCoarseClassification=\(domObject["coarseClassification"] ?? "na")",
             "postParseNativeHostLaunched=false",
+            "popupRenderTimelineEventCount=\(renderTimelineEvents.count)",
+            "popupRenderTimelineTransientUIObserved=\(renderTimelineTransientUIObserved(in: renderTimelineEvents))",
+            "firstUIDisappearanceBlocker=\(firstUIDisappearanceBlocker)",
+            "popupRenderTimelineBlankingRelativeToExecuteScript=\(renderTimelineEvents.compactMap { continuationDiagnosticValue("blankingRelativeToExecuteScript", in: $0.diagnostics) }.first ?? "none")",
+            "popupRenderTimelineDominantBlankingMechanism=\(renderTimelineEvents.compactMap { continuationDiagnosticValue("dominantBlankingMechanism", in: $0.diagnostics) }.first ?? "none")",
         ]
 
         let popupMessagingRoutes = subsequentRoutes.filter {
@@ -3971,9 +4157,21 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             lines.append("executeScriptContinuationStack \(stackLine)")
         }
 
+        for event in renderTimelineEvents.prefix(48) {
+            lines.append(
+                [
+                    "popupRenderTimeline",
+                    "seq=\(event.sequence)",
+                    "phase=\(event.resultClassifier ?? "none")",
+                    "diagnostics=\(event.diagnostics.joined(separator: "|"))",
+                ].joined(separator: " ")
+            )
+        }
+
         return ChromeMV3PostParseSanitizedDiagnostics(
             firstBlocker: firstBlocker,
             firstContinuationBlocker: firstContinuationBlocker,
+            firstUIDisappearanceBlocker: firstUIDisappearanceBlocker,
             lines: lines
         )
     }
