@@ -773,6 +773,15 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         )
         let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
         XCTAssertTrue(install.succeeded)
+        if let lifecycle =
+            module.chromeMV3LocalLifecycleDispatchResultForTesting
+        {
+            print(
+                "SumiControlledBitwardenPopupLifecycle event=\(lifecycle.event.rawValue) reason=\(lifecycle.reason) attempted=\(lifecycle.attempted) captured=\(lifecycle.captured) dispatched=\(lifecycle.dispatched) startStatus=\(lifecycle.startStatus.rawValue) dispatchResult=\(lifecycle.dispatchResultKind?.rawValue ?? "none") dispatchRecordCount=\(lifecycle.dispatchRecordCount) storageLocalLoaded=\(lifecycle.storageLocalLoadedExistingSnapshot) storageLocalSeeded=\(lifecycle.storageLocalSeededIntoWorker) storageLocalPersisted=\(lifecycle.storageLocalPersistedFromWorker) storageLocalInitialKeyCount=\(lifecycle.storageLocalInitialKeyCount) storageLocalFinalKeyCount=\(lifecycle.storageLocalFinalKeyCount) storageLocalWriteCount=\(lifecycle.storageLocalWriteCount) nativeHost=\(lifecycle.nativeHostLaunchAttempted) runtimeObjectsCreated=\(lifecycle.runtimeObjectsCreated)"
+            )
+        } else {
+            print("SumiControlledBitwardenPopupLifecycle result=none")
+        }
         _ = await waitForEnabledExtension(
             in: module,
             extensionId: record.extensionID

@@ -1166,7 +1166,11 @@ final class ChromeMV3ServiceWorkerInternalLifecycleRuntimeOwner {
             return .webNavigationOnCommitted
         case .webRequestEvent:
             return .webRequestOnBeforeRequest
-        case .installOrUpdateEvent, .testFixture:
+        case .installOrUpdateEvent:
+            return .runtimeOnInstalled
+        case .startupEvent:
+            return .runtimeOnStartup
+        case .testFixture:
             return .testFixture
         }
     }

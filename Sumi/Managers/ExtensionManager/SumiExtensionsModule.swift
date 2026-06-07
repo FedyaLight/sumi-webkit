@@ -245,6 +245,35 @@ private func stableIDControlledActionPopupLifecycle(
     let hex = digest.map { String(format: "%02x", $0) }.joined()
     return "\(prefix)-\(String(hex.prefix(16)))"
 }
+
+struct ChromeMV3LocalLifecycleDispatchResult:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var extensionID: String
+    var profileID: String
+    var generatedPackageID: String
+    var generatedBundleVersionID: String?
+    var event: ChromeMV3ServiceWorkerSyntheticListenerEvent
+    var reason: String
+    var attempted: Bool
+    var captured: Bool
+    var dispatched: Bool
+    var skippedReason: String?
+    var startStatus: ChromeMV3ServiceWorkerJSExecutionStartStatus
+    var dispatchResultKind: ChromeMV3ServiceWorkerJSDispatchResultKind?
+    var dispatchRecordCount: Int
+    var storageLocalLoadedExistingSnapshot: Bool
+    var storageLocalSeededIntoWorker: Bool
+    var storageLocalPersistedFromWorker: Bool
+    var storageLocalInitialKeyCount: Int
+    var storageLocalFinalKeyCount: Int
+    var storageLocalWriteCount: Int
+    var nativeHostLaunchAttempted: Bool
+    var runtimeObjectsCreated: Bool
+    var diagnostics: [String]
+}
 #endif
 
 @MainActor
@@ -353,6 +382,10 @@ final class SumiExtensionsModule {
             ChromeMV3SidePanelOffscreenIdentityCompatibilityReport?
         private var lastChromeMV3EndToEndInstallDiagnosticsReport:
             ChromeMV3EndToEndInstallDiagnosticsReport?
+        private var lastChromeMV3LocalLifecycleDispatchResult:
+            ChromeMV3LocalLifecycleDispatchResult?
+        private var chromeMV3LocalLifecycleManagerRootURLByExtensionID:
+            [String: URL] = [:]
         private let controlledActionPopupServiceWorkerLifecycleStore =
             ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore()
     #endif
@@ -485,6 +518,9 @@ final class SumiExtensionsModule {
                     lastChromeMV3NetworkCompatibilityReport = nil
                     lastChromeMV3SidePanelOffscreenIdentityReport = nil
                     lastChromeMV3EndToEndInstallDiagnosticsReport = nil
+                    lastChromeMV3LocalLifecycleDispatchResult = nil
+                    chromeMV3LocalLifecycleManagerRootURLByExtensionID
+                        .removeAll()
                 }
             #endif
             tearDownChromeMV3PopupOptionsHostController(reason: .moduleDisabled)
@@ -3673,6 +3709,17 @@ final class SumiExtensionsModule {
             lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
         #endif
         syncChromeMV3ActionSurface(after: result)
+        #if DEBUG
+            rememberChromeMV3LocalLifecycleManagerRoot(
+                rootURL: rootURL,
+                result: result
+            )
+            lastChromeMV3LocalLifecycleDispatchResult =
+                dispatchChromeMV3LocalLifecycleEventIfNeeded(
+                    rootURL: rootURL,
+                    result: result
+                )
+        #endif
         return result
     }
 
@@ -3768,6 +3815,17 @@ final class SumiExtensionsModule {
             lastChromeMV3EndToEndInstallDiagnosticsReport = result.report
         #endif
         syncChromeMV3ActionSurface(after: result)
+        #if DEBUG
+            rememberChromeMV3LocalLifecycleManagerRoot(
+                rootURL: rootURL,
+                result: result
+            )
+            lastChromeMV3LocalLifecycleDispatchResult =
+                dispatchChromeMV3LocalLifecycleEventIfNeeded(
+                    rootURL: rootURL,
+                    result: result
+                )
+        #endif
         return result
     }
 
@@ -4958,7 +5016,9 @@ final class SumiExtensionsModule {
         currentTab: Tab?,
         manager: ExtensionManager
     ) -> BrowserExtensionActionPopupRequestResult {
-        let rootURL = ChromeMV3ExtensionManagerStoreLocation.defaultRootURL()
+        let rootURL =
+            chromeMV3LocalLifecycleManagerRootURLByExtensionID[extensionId]
+            ?? ChromeMV3ExtensionManagerStoreLocation.defaultRootURL()
         let preflight =
             manager
             .controlledCompatibilityActionPopupLaunchRecordFromURLHub(
@@ -5109,6 +5169,12 @@ final class SumiExtensionsModule {
                 surface: surface,
                 script: script
             )
+    }
+
+    var chromeMV3LocalLifecycleDispatchResultForTesting:
+        ChromeMV3LocalLifecycleDispatchResult?
+    {
+        lastChromeMV3LocalLifecycleDispatchResult
     }
     #endif
 
@@ -5295,6 +5361,320 @@ final class SumiExtensionsModule {
             )
         }
     }
+
+    #if DEBUG
+        private func rememberChromeMV3LocalLifecycleManagerRoot(
+            rootURL: URL,
+            result: ChromeMV3ExtensionManagerActionResult
+        ) {
+            guard let record = result.lifecycleOperationResult?.record,
+                  result.lifecycleOperationResult?.succeeded == true
+            else { return }
+            chromeMV3LocalLifecycleManagerRootURLByExtensionID[
+                record.extensionID
+            ] = rootURL.standardizedFileURL
+        }
+
+        private func dispatchChromeMV3LocalLifecycleEventIfNeeded(
+            rootURL: URL,
+            result: ChromeMV3ExtensionManagerActionResult
+        ) -> ChromeMV3LocalLifecycleDispatchResult? {
+            guard let lifecycleResult = result.lifecycleOperationResult,
+                  lifecycleResult.succeeded,
+                  let record = lifecycleResult.record
+            else { return nil }
+            guard result.action == .installUnpacked
+                    || result.action == .updateFromUnpacked
+            else { return nil }
+
+            let reason: String
+            switch lifecycleResult.operation {
+            case .installImport:
+                reason = "install"
+            case .update:
+                guard lifecycleResult.previousRecord?.displayVersion
+                        != record.displayVersion
+                else {
+                    return skippedChromeMV3LocalLifecycleDispatchResult(
+                        record: record,
+                        generatedVersion: lifecycleResult.generatedVersion,
+                        reason: "update",
+                        skippedReason: "generatedPackageVersionUnchanged",
+                        diagnostics: [
+                            "runtime.onInstalled update dispatch skipped because the generated package manifest version did not change.",
+                        ]
+                    )
+                }
+                reason = "update"
+            default:
+                return nil
+            }
+
+            guard record.runtimeState.internalRuntimeEnabled else {
+                return skippedChromeMV3LocalLifecycleDispatchResult(
+                    record: record,
+                    generatedVersion: lifecycleResult.generatedVersion,
+                    reason: reason,
+                    skippedReason: "extensionNotEnabledForInternalRuntime",
+                    diagnostics: [
+                        "runtime.onInstalled dispatch skipped because the local MV3 extension is not enabled for the internal runtime.",
+                    ]
+                )
+            }
+            guard let generatedVersion =
+                    activeChromeMV3GeneratedVersion(in: record)
+            else {
+                return skippedChromeMV3LocalLifecycleDispatchResult(
+                    record: record,
+                    generatedVersion: lifecycleResult.generatedVersion,
+                    reason: reason,
+                    skippedReason: "activeGeneratedBundleMissing",
+                    diagnostics: [
+                        "runtime.onInstalled dispatch skipped because the lifecycle record has no active generated bundle.",
+                    ]
+                )
+            }
+
+            let generatedRootURL = URL(
+                fileURLWithPath: generatedVersion.generatedBundleRootPath,
+                isDirectory: true
+            ).standardizedFileURL
+            let manifest: ChromeMV3Manifest
+            do {
+                manifest = try ChromeMV3ManifestValidator.validateManifestFile(
+                    at: generatedRootURL.appendingPathComponent("manifest.json")
+                )
+            } catch {
+                return skippedChromeMV3LocalLifecycleDispatchResult(
+                    record: record,
+                    generatedVersion: generatedVersion,
+                    reason: reason,
+                    skippedReason: "manifestValidationFailed",
+                    diagnostics: [
+                        "runtime.onInstalled dispatch skipped because the generated manifest did not validate.",
+                    ]
+                )
+            }
+
+            let storageRootURL =
+                rootURL.standardizedFileURL.appendingPathComponent(
+                    "DeveloperPreviewStorageLocal",
+                    isDirectory: true
+                )
+            let storageNamespace = ChromeMV3StorageNamespace(
+                profileID: record.profileID,
+                extensionID: record.extensionID,
+                area: .local
+            )
+            var storageBroker = ChromeMV3StorageBroker(
+                namespace: storageNamespace,
+                persistenceMode: .hostBacked(rootURL: storageRootURL)
+            )
+            var storageLoaded = false
+            var storageDiagnostics: [String] = []
+            do {
+                storageLoaded = try storageBroker.loadHostSnapshotIfPresent()
+            } catch {
+                storageDiagnostics.append(
+                    "Existing storage.local snapshot load failed; lifecycle dispatch used an empty host-backed broker state."
+                )
+            }
+            let initialStorage = storageBroker.exportSnapshot()
+            let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+                request:
+                    ChromeMV3ServiceWorkerJSExecutionRequest(
+                        manifest: manifest,
+                        generatedBundleRecord:
+                            generatedVersion.generatedBundleRecord,
+                        extensionID: record.extensionID,
+                        profileID: record.profileID,
+                        moduleState: .enabled,
+                        extensionEnabled:
+                            record.runtimeState.internalRuntimeEnabled,
+                        localExperimentalGateAllowed: true,
+                        dynamicImportRewriteExperimentAllowed: true
+                    )
+            )
+            let start = harness.start()
+            let canDispatch =
+                start.status == .running
+                    || harness.canDispatchCapturedListeners
+            let captured = harness.capturedListener(for: .runtimeOnInstalled)
+            guard canDispatch, captured else {
+                harness.reset()
+                return ChromeMV3LocalLifecycleDispatchResult(
+                    extensionID: record.extensionID,
+                    profileID: record.profileID,
+                    generatedPackageID: generatedVersion.generatedBundleRecord.id,
+                    generatedBundleVersionID: generatedVersion.id,
+                    event: .runtimeOnInstalled,
+                    reason: reason,
+                    attempted: false,
+                    captured: captured,
+                    dispatched: false,
+                    skippedReason:
+                        captured
+                            ? "serviceWorkerDispatchUnavailable"
+                            : "runtimeOnInstalledListenerNotCaptured",
+                    startStatus: start.status,
+                    dispatchResultKind: nil,
+                    dispatchRecordCount: harness.snapshot.dispatchRecords.count,
+                    storageLocalLoadedExistingSnapshot: storageLoaded,
+                    storageLocalSeededIntoWorker: false,
+                    storageLocalPersistedFromWorker: false,
+                    storageLocalInitialKeyCount:
+                        initialStorage.values.count,
+                    storageLocalFinalKeyCount: initialStorage.values.count,
+                    storageLocalWriteCount: 0,
+                    nativeHostLaunchAttempted: false,
+                    runtimeObjectsCreated: false,
+                    diagnostics:
+                        localLifecycleDiagnostics(
+                            storageDiagnostics
+                                + [
+                                    "runtime.onInstalled dispatch did not run because no captured listener was available or the harness could not dispatch.",
+                                    "No native host was launched.",
+                                    "No WebKit extension runtime objects were created.",
+                                ]
+                        )
+                )
+            }
+
+            let seeded = harness.importStorageValues(
+                initialStorage.values,
+                area: .local
+            )
+            var details: [String: ChromeMV3StorageValue] = [
+                "reason": .string(reason),
+            ]
+            if reason == "update",
+               let previousVersion =
+                    lifecycleResult.previousRecord?.displayVersion
+            {
+                details["previousVersion"] = .string(previousVersion)
+            }
+            let dispatch = harness.dispatch(
+                source: .runtimeInstalled,
+                arguments: [.object(details)],
+                sender: .none,
+                payloadSummary: "runtime.onInstalled reason=\(reason)",
+                sourceComponentID: "local-unpacked-mv3-lifecycle",
+                sourceComponentKind: .runtimeJSHarness
+            )
+            let finalValues =
+                harness.exportStorageValues(area: .local)
+                    ?? initialStorage.values
+            let finalSnapshot = ChromeMV3StorageSnapshot(
+                namespace: storageNamespace,
+                values: finalValues
+            )
+            let persistResult = storageBroker.importSnapshot(finalSnapshot)
+            let finalSnapshotCount = finalSnapshot.values.count
+            let storageWriteCount =
+                harness.snapshot.storageOperationRecords.filter {
+                    $0.area == ChromeMV3StorageAreaKind.local.chromeAreaName
+                        && ["clear", "remove", "set"].contains($0.operation)
+                }.count
+            let dispatchRecordCount = harness.snapshot.dispatchRecords.count
+            let output = ChromeMV3LocalLifecycleDispatchResult(
+                extensionID: record.extensionID,
+                profileID: record.profileID,
+                generatedPackageID: generatedVersion.generatedBundleRecord.id,
+                generatedBundleVersionID: generatedVersion.id,
+                event: .runtimeOnInstalled,
+                reason: reason,
+                attempted: true,
+                captured: captured,
+                dispatched: dispatch.resultKind == .delivered,
+                skippedReason: nil,
+                startStatus: start.status,
+                dispatchResultKind: dispatch.resultKind,
+                dispatchRecordCount: dispatchRecordCount,
+                storageLocalLoadedExistingSnapshot: storageLoaded,
+                storageLocalSeededIntoWorker: seeded,
+                storageLocalPersistedFromWorker: persistResult.succeeded,
+                storageLocalInitialKeyCount: initialStorage.values.count,
+                storageLocalFinalKeyCount: finalSnapshotCount,
+                storageLocalWriteCount: storageWriteCount,
+                nativeHostLaunchAttempted: false,
+                runtimeObjectsCreated: false,
+                diagnostics:
+                    localLifecycleDiagnostics(
+                        storageDiagnostics
+                            + dispatch.diagnostics
+                            + persistResult.errorDiagnostics.map {
+                                $0.message
+                            }
+                            + [
+                                "runtime.onInstalled dispatched through the DEBUG/local-experimental local-unpacked MV3 lifecycle path.",
+                                "storage.local was loaded and persisted through the existing developer-preview host-backed storage broker.",
+                                "No raw storage keys, values, messages, credentials, vault data, tokens, cookies, auth payloads, or form values are logged.",
+                                "No native host was launched.",
+                                "No WebKit extension runtime objects were created.",
+                            ]
+                    )
+            )
+            harness.reset()
+            return output
+        }
+
+        private func skippedChromeMV3LocalLifecycleDispatchResult(
+            record: ChromeMV3ExtensionLifecycleRecord,
+            generatedVersion: ChromeMV3GeneratedBundleVersionRecord?,
+            reason: String,
+            skippedReason: String,
+            diagnostics: [String]
+        ) -> ChromeMV3LocalLifecycleDispatchResult {
+            ChromeMV3LocalLifecycleDispatchResult(
+                extensionID: record.extensionID,
+                profileID: record.profileID,
+                generatedPackageID:
+                    generatedVersion?.generatedBundleRecord.id ?? "none",
+                generatedBundleVersionID: generatedVersion?.id,
+                event: .runtimeOnInstalled,
+                reason: reason,
+                attempted: false,
+                captured: false,
+                dispatched: false,
+                skippedReason: skippedReason,
+                startStatus: .notStarted,
+                dispatchResultKind: nil,
+                dispatchRecordCount: 0,
+                storageLocalLoadedExistingSnapshot: false,
+                storageLocalSeededIntoWorker: false,
+                storageLocalPersistedFromWorker: false,
+                storageLocalInitialKeyCount: 0,
+                storageLocalFinalKeyCount: 0,
+                storageLocalWriteCount: 0,
+                nativeHostLaunchAttempted: false,
+                runtimeObjectsCreated: false,
+                diagnostics:
+                    localLifecycleDiagnostics(
+                        diagnostics
+                            + [
+                                "No service-worker JavaScript was started for this skipped lifecycle dispatch.",
+                                "No native host was launched.",
+                                "No WebKit extension runtime objects were created.",
+                            ]
+                    )
+            )
+        }
+
+        private func activeChromeMV3GeneratedVersion(
+            in record: ChromeMV3ExtensionLifecycleRecord
+        ) -> ChromeMV3GeneratedBundleVersionRecord? {
+            guard let activeID = record.activeGeneratedVersionID else {
+                return nil
+            }
+            return record.generatedBundleVersions.first { $0.id == activeID }
+        }
+
+        private func localLifecycleDiagnostics(
+            _ values: [String]
+        ) -> [String] {
+            Array(Set(values)).sorted()
+        }
+    #endif
 
     private func nativeMessagingPermissionStateForManager(
         rootURL: URL,

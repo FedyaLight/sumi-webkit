@@ -164,6 +164,7 @@ enum ChromeMV3ServiceWorkerWakeReason:
     case passwordManagerFillFields
     case runtimeConnect
     case runtimeMessage
+    case startupEvent
     case storageChanged
     case tabsConnect
     case tabsMessage

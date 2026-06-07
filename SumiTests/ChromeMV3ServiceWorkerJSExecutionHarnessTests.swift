@@ -1513,6 +1513,66 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         )
     }
 
+    func testRuntimeInstalledEventDispatchesDetailsAndExportsStorage()
+        throws
+    {
+        let harness = try startedHarness(
+            source: """
+            chrome.runtime.onInstalled.addListener((details) => {
+              globalThis.installReason = details.reason;
+              chrome.storage.local.set({
+                lifecycleReady: true,
+                lifecycleReason: details.reason
+              });
+            });
+            """
+        )
+
+        XCTAssertTrue(
+            harness.importStorageValues(
+                ["existing": .string("kept")],
+                area: .local
+            )
+        )
+        let dispatch = harness.dispatch(
+            source: .runtimeInstalled,
+            arguments: [
+                .object(["reason": .string("install")]),
+            ],
+            payloadSummary: "runtime.onInstalled reason=install"
+        )
+        let exported = try XCTUnwrap(
+            harness.exportStorageValues(area: .local)
+        )
+
+        XCTAssertEqual(dispatch.event, .runtimeOnInstalled)
+        XCTAssertEqual(dispatch.source, .runtimeInstalled)
+        XCTAssertEqual(dispatch.resultKind, .delivered)
+        XCTAssertEqual(
+            dispatch.lifecycleRoutingRecord?.wakeResult?.reason,
+            .installOrUpdateEvent
+        )
+        XCTAssertEqual(
+            dispatch.lifecycleRoutingRecord?.wakeResult?.listenerEvent,
+            .runtimeOnInstalled
+        )
+        XCTAssertEqual(exported["existing"], .string("kept"))
+        XCTAssertEqual(exported["lifecycleReady"], .bool(true))
+        XCTAssertEqual(exported["lifecycleReason"], .string("install"))
+        XCTAssertEqual(
+            harness.snapshot.dispatchRecords.filter {
+                $0.event == .runtimeOnInstalled
+            }.count,
+            1
+        )
+        XCTAssertEqual(
+            harness.snapshot.storageOperationRecords.filter {
+                $0.area == "local" && $0.operation == "set"
+            }.count,
+            1
+        )
+    }
+
     func testGeneratedBundleLocalFetchReturnsMinimalResponse() throws {
         var fixture = try makeHarness(
             source: """

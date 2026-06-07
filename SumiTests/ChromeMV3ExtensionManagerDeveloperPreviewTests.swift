@@ -114,6 +114,86 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
             )
         )
         XCTAssertFalse(module.hasLoadedRuntime)
+        XCTAssertNil(module.chromeMV3LocalLifecycleDispatchResultForTesting)
+    }
+
+    @MainActor
+    func testInstallUnpackedDispatchesRuntimeOnInstalledOnceAndPersistsStorage()
+        throws
+    {
+        let root = try makeTemporaryDirectory()
+        let source = try makeFixture(
+            named: "manager-install-lifecycle",
+            manifest: minimalManifest(version: "1.0.0"),
+            files: [
+                "background.js": """
+                chrome.runtime.onInstalled.addListener((details) => {
+                  chrome.storage.local.set({
+                    lifecycleInstallReady: true,
+                    lifecycleInstallReason: details.reason
+                  });
+                });
+                """,
+            ]
+        )
+        let module = try makeModule(enabled: true)
+
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: source,
+            profileID: "profile-lifecycle",
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+        let lifecycle = try XCTUnwrap(
+            module.chromeMV3LocalLifecycleDispatchResultForTesting
+        )
+
+        assertNoRuntimeSideEffects(install, module: module)
+        XCTAssertTrue(install.succeeded)
+        XCTAssertEqual(lifecycle.event, .runtimeOnInstalled)
+        XCTAssertEqual(lifecycle.reason, "install")
+        XCTAssertTrue(lifecycle.attempted)
+        XCTAssertTrue(lifecycle.captured)
+        XCTAssertTrue(lifecycle.dispatched)
+        XCTAssertNil(lifecycle.skippedReason)
+        XCTAssertEqual(lifecycle.startStatus, .running)
+        XCTAssertEqual(lifecycle.dispatchResultKind, .delivered)
+        XCTAssertEqual(lifecycle.dispatchRecordCount, 1)
+        XCTAssertTrue(lifecycle.storageLocalSeededIntoWorker)
+        XCTAssertTrue(lifecycle.storageLocalPersistedFromWorker)
+        XCTAssertEqual(lifecycle.storageLocalInitialKeyCount, 0)
+        XCTAssertEqual(lifecycle.storageLocalFinalKeyCount, 2)
+        XCTAssertEqual(lifecycle.storageLocalWriteCount, 1)
+        XCTAssertFalse(lifecycle.nativeHostLaunchAttempted)
+        XCTAssertFalse(lifecycle.runtimeObjectsCreated)
+
+        var broker = ChromeMV3StorageBroker(
+            namespace:
+                ChromeMV3StorageNamespace(
+                    profileID: record.profileID,
+                    extensionID: record.extensionID,
+                    area: .local
+                ),
+            persistenceMode:
+                .hostBacked(
+                    rootURL:
+                        root.appendingPathComponent(
+                            "DeveloperPreviewStorageLocal",
+                            isDirectory: true
+                        )
+                )
+        )
+        XCTAssertTrue(try broker.loadHostSnapshotIfPresent())
+        let snapshot = broker.exportSnapshot()
+        XCTAssertEqual(
+            boolValue(snapshot.values["lifecycleInstallReady"]),
+            true
+        )
+        XCTAssertEqual(
+            stringValue(snapshot.values["lifecycleInstallReason"]),
+            "install"
+        )
     }
 
     @MainActor
@@ -2403,6 +2483,11 @@ final class ChromeMV3ExtensionManagerDeveloperPreviewTests: XCTestCase {
     private func boolValue(_ value: ChromeMV3StorageValue?) -> Bool? {
         guard case .bool(let bool)? = value else { return nil }
         return bool
+    }
+
+    private func stringValue(_ value: ChromeMV3StorageValue?) -> String? {
+        guard case .string(let string)? = value else { return nil }
+        return string
     }
 
     private func makeTemporaryDirectory() throws -> URL {

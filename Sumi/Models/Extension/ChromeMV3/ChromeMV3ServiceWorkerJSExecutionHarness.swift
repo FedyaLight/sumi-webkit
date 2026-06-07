@@ -2962,6 +2962,41 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         capturedListeners.contains { $0.event == event }
     }
 
+    func importStorageValues(
+        _ values: [String: ChromeMV3StorageValue],
+        area: ChromeMV3StorageAreaKind
+    ) -> Bool {
+        #if canImport(JavaScriptCore)
+            guard startRecord.status == .running || virtualMachine != nil
+            else { return false }
+            let result: Bool? = callJSON(
+                "__sumiHarness.seedStorageArea(\(jsonStringServiceWorkerJS(area.chromeAreaName)), \(ChromeMV3StorageValue.object(values).serviceWorkerJSJSON))"
+            )
+            refreshJSSnapshot()
+            return result == true
+        #else
+            return false
+        #endif
+    }
+
+    func exportStorageValues(
+        area: ChromeMV3StorageAreaKind
+    ) -> [String: ChromeMV3StorageValue]? {
+        #if canImport(JavaScriptCore)
+            guard startRecord.status == .running || virtualMachine != nil
+            else { return nil }
+            guard
+                let exported: ChromeMV3StorageValue = callJSON(
+                    "__sumiHarness.exportStorageArea(\(jsonStringServiceWorkerJS(area.chromeAreaName)))"
+                ),
+                case .object(let values) = exported
+            else { return nil }
+            return values
+        #else
+            return nil
+        #endif
+    }
+
     func dispatch(
         source: ChromeMV3ServiceWorkerEventSource,
         arguments: [ChromeMV3StorageValue] = [],
@@ -6831,6 +6866,19 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           }
         };
       };
+      const seedStorageArea = (areaName, values) => {
+        const store = storageStores[areaName];
+        if (!store || !values || typeof values !== 'object' || Array.isArray(values)) {
+          return false;
+        }
+        for (const key of Object.keys(store)) delete store[key];
+        for (const key of Object.keys(values)) store[key] = clone(values[key]);
+        return true;
+      };
+      const exportStorageArea = (areaName) => {
+        const store = storageStores[areaName];
+        return clone(store || {});
+      };
       const proxiedNamespace = (known, path) => new Proxy(known, {
         has(target, property) {
           return Object.prototype.hasOwnProperty.call(target, property);
@@ -8477,7 +8525,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         deliverPortMessage,
         disconnectPort,
         drainTimeouts,
-        tickIntervals
+        tickIntervals,
+        seedStorageArea,
+        exportStorageArea
       };
     })();
     """#

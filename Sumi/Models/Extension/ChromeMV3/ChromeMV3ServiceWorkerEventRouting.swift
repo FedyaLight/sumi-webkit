@@ -505,6 +505,8 @@ enum ChromeMV3ServiceWorkerEventSource:
     case permissionsRemoved
     case popupOptionsRuntimeConnect
     case popupOptionsRuntimeMessage
+    case runtimeInstalled
+    case runtimeStartup
     case storageChanged
     case testFixtureEvent
     case webNavigationSyntheticEvent
@@ -536,6 +538,10 @@ enum ChromeMV3ServiceWorkerEventSource:
             return .nativeMessagingConnect
         case .nativeMessagingMessage:
             return .nativeMessagingMessage
+        case .runtimeInstalled:
+            return .installOrUpdateEvent
+        case .runtimeStartup:
+            return .startupEvent
         case .testFixtureEvent:
             return .testFixture
         }
@@ -561,6 +567,10 @@ enum ChromeMV3ServiceWorkerEventSource:
             return .webNavigationOnCommitted
         case .nativeMessagingConnect, .nativeMessagingMessage:
             return .nativePortOnMessage
+        case .runtimeInstalled:
+            return .runtimeOnInstalled
+        case .runtimeStartup:
+            return .runtimeOnStartup
         case .testFixtureEvent:
             return .testFixture
         }
@@ -575,7 +585,8 @@ enum ChromeMV3ServiceWorkerEventSource:
         case .storageChanged, .permissionsAdded, .permissionsRemoved,
              .contextMenuClicked, .alarmTriggered,
              .webNavigationSyntheticEvent, .nativeMessagingConnect,
-             .nativeMessagingMessage, .testFixtureEvent:
+             .nativeMessagingMessage, .runtimeInstalled, .runtimeStartup,
+             .testFixtureEvent:
             return .serviceWorker
         }
     }
