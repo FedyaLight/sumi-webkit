@@ -2,6 +2,9 @@ import AppKit
 import Foundation
 import SwiftData
 import XCTest
+#if canImport(WebKit)
+import WebKit
+#endif
 
 @testable import Sumi
 
@@ -1207,6 +1210,213 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         )
 
         _ = module.chromeMV3ClosePopupOptionsThroughManager(
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+    }
+
+    @MainActor
+    func testControlledRaindropURLHubActionClickExecutesParseJSWithMaterializedWebView()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Controlled popup WKWebView diagnostics require macOS 15.5.")
+        }
+
+        let raindropRoot = URL(
+            fileURLWithPath:
+                "/Users/fedaefimov/Downloads/Aura/mv3-test-extensions/raindrop",
+            isDirectory: true
+        )
+        try XCTSkipUnless(
+            FileManager.default.fileExists(
+                atPath: raindropRoot.appendingPathComponent("manifest.json").path
+            ),
+            "Local Raindrop package is not available."
+        )
+
+        let context = try makeURLHubLiveTabModuleFixture(
+            profileName: "URL Hub Raindrop Materialized Tab",
+            useFileBackedPopupHost: true
+        )
+        defer { context.tearDown() }
+        context.module.chromeMV3InternalNormalTabConfigurationAttachmentAllowed = true
+        _ = try XCTUnwrap(
+            context.module.createChromeMV3EmptyControllerOwnerIfEnabled(
+                explicitControllerCreationAllowed: true
+            )
+        )
+
+        let windowState = BrowserWindowState()
+        let windowRegistry = WindowRegistry()
+        windowRegistry.register(windowState)
+        context.browserManager.windowRegistry = windowRegistry
+        context.browserManager.webViewCoordinator = WebViewCoordinator()
+
+        let manager = try XCTUnwrap(context.module.managerIfEnabled())
+        let tab = context.makeTab(
+            url: URL(string: "https://example.com/article")!
+        )
+        tab.primaryWindowId = windowState.id
+        let webView = try XCTUnwrap(
+            tab.makeNormalTabWebView(
+                reason: "test.urlHubRaindrop.materializedNormalTab"
+            )
+        )
+        tab._webView = webView
+        guard webView.configuration.sumiIsNormalTabWebViewConfiguration else {
+            throw XCTSkip(
+                "Materialized WebView did not receive the normal-tab configuration marker."
+            )
+        }
+        try XCTUnwrap(context.browserManager.webViewCoordinator).setWebView(
+            webView,
+            for: tab.id,
+            in: windowState.id
+        )
+        let navigationObserver =
+            ChromeMV3URLHubMaterializedTabNavigationObserver()
+        webView.navigationDelegate = navigationObserver
+        let navigation = webView.loadHTMLString(
+            """
+            <!doctype html>
+            <html>
+              <head><title>Raindrop Materialized Tab Fixture</title></head>
+              <body><main><h1>Example article</h1><p>fixture</p></main></body>
+            </html>
+            """,
+            baseURL: tab.url
+        )
+        try await navigationObserver.wait(navigation: navigation)
+
+        let root = try makeTemporaryDirectory()
+        let install = context.module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: raindropRoot,
+            profileID: context.profile.id.uuidString,
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+        XCTAssertTrue(install.succeeded)
+        _ = await waitForEnabledExtension(
+            in: context.module,
+            extensionId: record.extensionID
+        )
+
+        let result = await context.module.openActionPopupFromURLHub(
+            extensionId: record.extensionID,
+            currentTab: tab
+        )
+
+        XCTAssertTrue(
+            result.sanitizedBridgeSnapshotDiagnostics.contains {
+                $0.contains(
+                    "selectedPopupPath=controlledCompatibilityActionPopup"
+                )
+            },
+            "Expected controlled URL-hub action popup path diagnostics: \(result.sanitizedBridgeSnapshotDiagnostics.joined(separator: " | "))"
+        )
+
+        let boundLocalTabID = try XCTUnwrap(
+            manager.chromeMV3ScriptingExecuteScriptLocalTabIDIfLoaded(
+                for: tab.id
+            ),
+            "URL-hub action click should bind the materialized normal-tab WebView."
+        )
+        XCTAssertGreaterThan(boundLocalTabID, 0)
+        let boundTarget = try XCTUnwrap(
+            manager.chromeMV3ScriptingExecuteScriptTargetIfLoaded(
+                extensionID: record.extensionID,
+                profileID: record.profileID,
+                tabID: boundLocalTabID
+            ),
+            "Bound scripting target should be discoverable by the real local tab ID."
+        )
+        XCTAssertTrue(
+            boundTarget.webView === webView,
+            "Scripting target WebView should match the materialized normal-tab WebView."
+        )
+
+        guard result.opened else {
+            return XCTFail(
+                "Controlled Raindrop popup should open with a materialized tab: \(result.message)"
+            )
+        }
+
+        let snapshot = try await waitForRaindropExecuteScriptBridgeSnapshot(
+            module: context.module,
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+        let executeScriptCall = try XCTUnwrap(
+            raindropParseJSExecuteScriptCallRecord(in: snapshot),
+            """
+            Expected Raindrop popup to reach scripting.executeScript for assets/parse.js. \
+            executeScriptCalls=\(raindropExecuteScriptCallSummary(in: snapshot))
+            """
+        )
+        XCTAssertTrue(executeScriptCall.succeeded)
+        XCTAssertNil(executeScriptCall.lastErrorCode)
+        XCTAssertNotEqual(executeScriptCall.lastErrorCode, "contextNotLoaded")
+        XCTAssertTrue(
+            executeScriptCall.diagnostics.contains {
+                $0.contains("executionClassifier=filesExecuted")
+            },
+            "executeScript diagnostics: \(executeScriptCall.diagnostics.joined(separator: " | "))"
+        )
+        XCTAssertTrue(
+            executeScriptCall.diagnostics.contains {
+                $0.contains("fileShapes=assets/parse.js")
+                    || $0.contains("assets/parse.js")
+            }
+        )
+        XCTAssertTrue(
+            executeScriptCall.diagnostics.contains {
+                $0.contains(
+                    "scripting.executeScript target.tabId=\(boundLocalTabID)."
+                )
+            },
+            "executeScript should target the bound local tab ID, not a hardcoded tab."
+        )
+        XCTAssertTrue(
+            executeScriptCall.diagnostics.contains {
+                $0.contains("No fake executeScript success")
+                    || $0.contains(
+                        "modeled no-op success is blocked"
+                    )
+            }
+        )
+
+        let nextBlocker =
+            nextRaindropBlockerAfterSuccessfulParseJSExecution(snapshot)
+        let bindingLogs = [
+            "urlHubAction click scripting target bound tab=\(tab.id.uuidString) localTabID=\(boundLocalTabID) url=\(tab.url.absoluteString)",
+            "entrypoint=urlHubActionClickScriptingTarget tab=\(boundLocalTabID) frame=0 url=\(tab.url.absoluteString)",
+        ]
+        let scriptingLogs = executeScriptCall.diagnostics.filter {
+            $0.contains("scripting.executeScript")
+                || $0.contains("executionClassifier=")
+                || $0.contains("permissionClassifier=")
+        }
+        print(
+            "SumiControlledRaindropMaterializedTab actionClickPath=urlHubActionClick selectedPopupPath=controlledCompatibilityActionPopup boundLocalTabID=\(boundLocalTabID) executionClassifier=filesExecuted nextBlocker=\(nextBlocker ?? "none")"
+        )
+        for line in bindingLogs + scriptingLogs {
+            print("SumiControlledRaindropMaterializedTab \(line)")
+        }
+        recordControlledBitwardenPopupSanitizedDiagnostics(
+            prefix: "SumiControlledRaindropMaterializedTab",
+            snapshot: snapshot,
+            domState: try await controlledBitwardenPopupDOMState(
+                module: context.module,
+                profileID: record.profileID,
+                extensionID: record.extensionID
+            ),
+            firstBlocker: nextBlocker ?? "none",
+            tabsConnectFatal: controlledBitwardenTabsConnectActuallyFatal(snapshot)
+        )
+
+        _ = context.module.chromeMV3ClosePopupOptionsThroughManager(
             profileID: record.profileID,
             extensionID: record.extensionID
         )
@@ -2594,6 +2804,196 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
     }
 
     @MainActor
+    private func makeURLHubLiveTabModuleFixture(
+        profileName: String,
+        useFileBackedPopupHost: Bool = false
+    ) throws -> ChromeMV3URLHubLiveTabModuleFixture {
+        let harness = TestDefaultsHarness()
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.extensions)
+        let container = try ModelContainer(
+            for: Schema([ExtensionEntity.self]),
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        let browserConfiguration = BrowserConfiguration()
+        let profile = Profile(name: profileName)
+        let popupOptionsWebViewFactory:
+            @MainActor @Sendable () -> ChromeMV3PopupOptionsWebViewFactory
+        if useFileBackedPopupHost {
+            popupOptionsWebViewFactory = {
+                ChromeMV3ProductPopupOptionsWKWebViewFactory(
+                    loadingMode: .fileBacked
+                )
+            }
+        } else {
+            popupOptionsWebViewFactory = {
+                ChromeMV3ProductPopupOptionsWKWebViewFactory()
+            }
+        }
+        let module = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: container.mainContext,
+            browserConfiguration: browserConfiguration,
+            initialProfileProvider: { profile },
+            managerFactory: { context, initialProfile, browserConfiguration in
+                ExtensionManager(
+                    context: context,
+                    initialProfile: initialProfile,
+                    browserConfiguration: browserConfiguration
+                )
+            },
+            chromeMV3EmptyControllerOwnerFactory: { decision, dataStore, identifier in
+                ChromeMV3EmptyControllerFactory.makeOwner(
+                    gateDecision: decision,
+                    defaultWebsiteDataStore: dataStore,
+                    controllerIdentifier: identifier
+                )
+            },
+            chromeMV3PopupOptionsWebViewFactory: popupOptionsWebViewFactory
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            extensionsModule: module
+        )
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+
+        return ChromeMV3URLHubLiveTabModuleFixture(
+            defaultsHarness: harness,
+            container: container,
+            browserConfiguration: browserConfiguration,
+            module: module,
+            browserManager: browserManager,
+            profile: profile
+        )
+    }
+
+    @MainActor
+    private func waitForRaindropExecuteScriptBridgeSnapshot(
+        module: SumiExtensionsModule,
+        profileID: String,
+        extensionID: String
+    ) async throws -> ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot {
+        for _ in 0..<280 {
+            if let snapshot =
+                module
+                .chromeMV3PopupOptionsBridgeDiagnosticsSnapshotForTesting(
+                    profileID: profileID,
+                    extensionID: extensionID
+                ),
+                raindropParseJSExecuteScriptCallRecord(in: snapshot) != nil
+            {
+                return snapshot
+            }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        return try await waitForControlledBitwardenPopupBridgeSnapshot(
+            module: module,
+            profileID: profileID,
+            extensionID: extensionID
+        )
+    }
+
+    private func raindropParseJSExecuteScriptCallRecord(
+        in snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
+    ) -> ChromeMV3PopupOptionsJSBridgeCallRecord? {
+        snapshot.callRecords.last { record in
+            guard record.namespace == "scripting",
+                  record.methodName == "executeScript"
+            else { return false }
+            return record.diagnostics.contains {
+                $0.contains("assets/parse.js")
+                    || $0.contains("fileShapes=parse.js")
+            }
+        }
+    }
+
+    private func raindropExecuteScriptCallSummary(
+        in snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
+    ) -> String {
+        snapshot.callRecords
+            .filter {
+                $0.namespace == "scripting" && $0.methodName == "executeScript"
+            }
+            .map { record in
+                [
+                    "succeeded=\(record.succeeded)",
+                    "lastError=\(record.lastErrorCode ?? "none")",
+                    "diagnostics=\(record.diagnostics.joined(separator: " | "))",
+                ].joined(separator: " ")
+            }
+            .joined(separator: " || ")
+    }
+
+    private func raindropParseJSExecuteScriptSucceeded(
+        in snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
+    ) -> Bool {
+        guard let record = raindropParseJSExecuteScriptCallRecord(in: snapshot)
+        else { return false }
+        return record.succeeded
+            && record.diagnostics.contains {
+                $0.contains("executionClassifier=filesExecuted")
+            }
+    }
+
+    private func nextRaindropBlockerAfterSuccessfulParseJSExecution(
+        _ snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
+    ) -> String? {
+        guard raindropParseJSExecuteScriptSucceeded(in: snapshot) else {
+            return nil
+        }
+
+        let executeScriptRouteIndex =
+            snapshot.sanitizedBridgeRouteRecords.lastIndex { route in
+                guard route.apiName == "scripting.executeScript" else {
+                    return false
+                }
+                let executedFiles = route.diagnostics.contains {
+                    $0.contains("executionClassifier=filesExecuted")
+                }
+                let referencedParseJS = route.diagnostics.contains {
+                    $0.contains("assets/parse.js")
+                }
+                return executedFiles && referencedParseJS
+            }
+        if let executeScriptRouteIndex {
+            let subsequentRoutes = snapshot.sanitizedBridgeRouteRecords[
+                (executeScriptRouteIndex + 1)...
+            ]
+            for route in subsequentRoutes {
+                if let missing = route.firstMissingAPIOrPermissionOrLifecycleError {
+                    return missing
+                }
+                let classifier = route.resultClassifier
+                if classifier != "pending",
+                   classifier.contains("filesExecuted") == false
+                {
+                    return classifier
+                }
+            }
+        }
+
+        let executeScriptEventSequence =
+            snapshot.jsDebugRouteEvents.last { event in
+                event.diagnostics.contains { $0.contains("assets/parse.js") }
+                    || event.diagnostics.contains {
+                        $0.contains("executionClassifier=filesExecuted")
+                    }
+            }?.sequence
+        if let executeScriptEventSequence {
+            for event in snapshot.jsDebugRouteEvents where event.sequence > executeScriptEventSequence {
+                if controlledBitwardenPopupIsBlockerEvent(event) {
+                    return controlledBitwardenPopupBlockerLabel(event)
+                }
+            }
+        }
+
+        return controlledBitwardenPopupFirstFatalBlocker(snapshot)
+    }
+
+    @MainActor
     private func waitForControlledBitwardenPopupBridgeSnapshot(
         module: SumiExtensionsModule,
         profileID: String,
@@ -3439,6 +3839,85 @@ private struct InstalledURLHubFixture {
     var root: URL
     var module: SumiExtensionsModule
     var record: ChromeMV3ExtensionLifecycleRecord
+}
+
+#if canImport(WebKit)
+@MainActor
+private final class ChromeMV3URLHubMaterializedTabNavigationObserver:
+    NSObject,
+    WKNavigationDelegate
+{
+    private var continuation: CheckedContinuation<Void, Error>?
+
+    func wait(navigation: WKNavigation?) async throws {
+        try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<Void, Error>) in
+            self.continuation = continuation
+            if navigation == nil {
+                continuation.resume()
+                self.continuation = nil
+            }
+        }
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFinish navigation: WKNavigation!
+    ) {
+        continuation?.resume()
+        continuation = nil
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFail navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        continuation?.resume(throwing: error)
+        continuation = nil
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        continuation?.resume(throwing: error)
+        continuation = nil
+    }
+}
+#endif
+
+@MainActor
+private struct ChromeMV3URLHubLiveTabModuleFixture {
+    let defaultsHarness: TestDefaultsHarness
+    let container: ModelContainer
+    let browserConfiguration: BrowserConfiguration
+    let module: SumiExtensionsModule
+    let browserManager: BrowserManager
+    let profile: Profile
+
+    func makeTab(
+        url: URL = URL(string: "https://example.com/article")!
+    ) -> Tab {
+        let tab = Tab(
+            url: url,
+            name: url.host ?? "URL Hub Materialized Tab",
+            favicon: "globe",
+            index: 0,
+            browserManager: browserManager
+        )
+        tab.profileId = profile.id
+        return tab
+    }
+
+    func tearDown() {
+        _ = module.tearDownChromeMV3EmptyControllerOwnerIfEnabled(
+            trigger: .explicitReset
+        )
+        module.setEnabled(false)
+        defaultsHarness.reset()
+    }
 }
 
 @MainActor

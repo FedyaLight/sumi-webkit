@@ -5063,6 +5063,15 @@ final class SumiExtensionsModule {
         let rootURL =
             chromeMV3LocalLifecycleManagerRootURLByExtensionID[extensionId]
             ?? ChromeMV3ExtensionManagerStoreLocation.defaultRootURL()
+        let actionClickBinding =
+            currentTab.flatMap { tab in
+                manager
+                    .bindChromeMV3ScriptingExecuteScriptTargetForURLHubActionClickIfAllowed(
+                        currentTab: tab,
+                        localExperimentalGateAllowed:
+                            chromeMV3InternalNormalTabConfigurationAttachmentAllowed
+                    )
+            }
         let preflight =
             manager
             .controlledCompatibilityActionPopupLaunchRecordFromURLHub(
@@ -5095,20 +5104,11 @@ final class SumiExtensionsModule {
                     "The controlled compatibility action popup launch record was unavailable."
             )
         }
-        if let currentTab {
-            if let binding =
-                manager
-                .bindChromeMV3ScriptingExecuteScriptTargetForURLHubActionClickIfAllowed(
-                    currentTab: currentTab,
-                    localExperimentalGateAllowed:
-                        chromeMV3InternalNormalTabConfigurationAttachmentAllowed
-                )
-            {
-                launchRecord.explicitActionClickLocalTabID =
-                    binding.localTabID
-                launchRecord.explicitActionClickTabURLString =
-                    binding.url.absoluteString
-            }
+        if let actionClickBinding {
+            launchRecord.explicitActionClickLocalTabID =
+                actionClickBinding.localTabID
+            launchRecord.explicitActionClickTabURLString =
+                actionClickBinding.url.absoluteString
         }
         let anchorView = controlledActionPopupAnchorView(
             extensionId: extensionId,

@@ -5417,9 +5417,31 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                         queryInfo: queryInfo,
                         permissionBroker:
                             permissionRuntimeOwner.permissionBroker,
-                        activeTabID: nil
+                        activeTabID: configuration.explicitActionClickLocalTabID
                     )
             )
+            if result.tabs.isEmpty,
+               let explicitTabID = configuration.explicitActionClickLocalTabID,
+               tabRegistry.tab(id: explicitTabID) != nil
+            {
+                let fallback = tabRegistry.query(
+                    queryInfo,
+                    permissionBroker: permissionRuntimeOwner.permissionBroker
+                )
+                return response(
+                    request: request,
+                    succeeded: true,
+                    payload: .array(fallback.tabs),
+                    sourceContext: sourceContextOverride,
+                    diagnostics:
+                        fallback.diagnostics
+                        + result.diagnostics
+                        + [
+                            "tabs.query fell back to the explicit URL-hub action-click tab registry because no content-script endpoint was available.",
+                            "No broad product tab enumeration occurred.",
+                        ]
+                )
+            }
             return response(
                 request: request,
                 succeeded: true,
