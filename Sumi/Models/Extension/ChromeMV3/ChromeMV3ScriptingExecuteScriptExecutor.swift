@@ -205,9 +205,9 @@ enum ChromeMV3ScriptingExecuteScriptExecutor {
         var lastResult: Any?
         do {
             for source in sources {
-                lastResult = try await webView.evaluateJavaScript(
+                lastResult = try await evaluatePackageFileSource(
                     source,
-                    in: nil,
+                    in: webView,
                     contentWorld: target.contentWorld
                 )
             }
@@ -259,6 +259,38 @@ enum ChromeMV3ScriptingExecuteScriptExecutor {
             executionClassifier: "filesExecuted",
             permissionClassifier: "validatedBeforeExecution",
             resultFrameCount: 1
+        )
+    }
+
+    private static let packageFileInjectionEvaluationScript = """
+    const result = eval(source);
+    if (
+      result !== null
+        && result !== undefined
+        && typeof result.then === "function"
+    ) {
+      return await result;
+    }
+    return result;
+    """
+
+    private static func evaluatePackageFileSource(
+        _ source: String,
+        in webView: WKWebView,
+        contentWorld: WKContentWorld
+    ) async throws -> Any? {
+        if #available(macOS 11.0, iOS 14.0, *) {
+            return try await webView.callAsyncJavaScript(
+                packageFileInjectionEvaluationScript,
+                arguments: ["source": source],
+                in: nil,
+                contentWorld: contentWorld
+            )
+        }
+        return try await webView.evaluateJavaScript(
+            source,
+            in: nil,
+            contentWorld: contentWorld
         )
     }
 

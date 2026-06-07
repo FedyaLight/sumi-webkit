@@ -8440,6 +8440,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
             if (namespace === "runtime" && methodName === "sendNativeMessage") {
               return [response.resultPayload];
             }
+            if (namespace === "scripting" && methodName === "executeScript") {
+              return [response.resultPayload];
+            }
             return [];
           }
 
@@ -10589,14 +10592,17 @@ enum ChromeMV3PopupOptionsJSShimSource {
 
           function debugWrapExecuteScriptCallback(callback) {
             return function() {
-              const err = arguments[0];
-              const results = arguments[1];
+              const lastErrorMessage =
+                lastErrorValue && lastErrorValue.message
+                  ? String(lastErrorValue.message)
+                  : "";
+              const results = lastErrorMessage ? undefined : arguments[0];
               __sumiExecuteScriptContinuationState.popupCallbackInvoked = true;
-              if (err) {
+              if (lastErrorMessage) {
                 __sumiExecuteScriptContinuationState.popupPromiseRejected = true;
                 debugRecordExecuteScriptContinuationCheckpoint("popupPromiseRejected", {
                   firstMissingAPIOrPermissionOrLifecycleError:
-                    debugSanitizedMessage(err),
+                    debugSanitizedMessage(lastErrorMessage),
                   diagnostics: [
                     "popupObservedResolution=true",
                     "invocationMode=callback",
