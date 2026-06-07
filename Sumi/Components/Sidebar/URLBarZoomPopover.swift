@@ -185,7 +185,7 @@ private struct URLBarZoomPopoverView: View {
             .buttonStyle(URLBarZoomPopoverButtonStyle(width: 37))
             .help("Zoom In")
             .disabled(zoomManager.isAtMaximumZoom(for: tabId))
-            .padding(.leading, 1)
+            .padding(.leading, 8)
             .padding(.trailing, 16)
         }
         .frame(height: 48)

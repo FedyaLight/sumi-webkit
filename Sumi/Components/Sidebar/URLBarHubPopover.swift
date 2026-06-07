@@ -288,7 +288,7 @@ struct URLBarHubPopover: View {
 
             if showsExtensionSection {
                 Divider()
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 9)
                 extensionSection
                     .padding(.horizontal, 9)
                     .padding(.top, 9)
@@ -297,7 +297,7 @@ struct URLBarHubPopover: View {
 
             if !snapshot.settingsRows.isEmpty || !currentSitePermissionsModel.rows.isEmpty {
                 Divider()
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 9)
                 settingsSection
                     .padding(.horizontal, 9)
                     .padding(.top, 9)
@@ -1086,11 +1086,8 @@ private struct SumiHubHeaderButton: View {
     }
 
     private var buttonScale: CGFloat {
-        if isPressed && isHovered {
+        if isPressed {
             return 0.97
-        }
-        if isHovered {
-            return 1.03
         }
         return 1
     }

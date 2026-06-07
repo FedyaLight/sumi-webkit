@@ -420,7 +420,7 @@ struct SidebarGlanceTrailingAccessory: View {
             SidebarTabFaviconView(
                 tab: session.previewTab,
                 size: SidebarRowLayout.faviconSize,
-                cornerRadius: 5
+                cornerRadius: 6
             )
             .frame(
                 width: SidebarRowLayout.trailingActionSize,
