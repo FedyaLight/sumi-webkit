@@ -5,6 +5,10 @@ import XCTest
 import AppKit
 #endif
 
+#if canImport(WebKit)
+import WebKit
+#endif
+
 @testable import Sumi
 
 final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
@@ -312,16 +316,20 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(encoded.contains("com.bitwarden.desktop"))
     }
 
-    func testControlledActionPopupRejectsPackagedFileExecuteScriptWithoutRealExecutor()
-        throws
+    @MainActor
+    func testControlledActionPopupExecutesPackagedFileExecuteScriptOrFailsPrecisely()
+        async throws
     {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Named WKContentWorld execution requires macOS 15.5.")
+        }
         let root = try makeTemporaryDirectory()
         let assets = root.appendingPathComponent("assets", isDirectory: true)
         try FileManager.default.createDirectory(
             at: assets,
             withIntermediateDirectories: true
         )
-        try "/* packaged fixture */".write(
+        try "globalThis.__sumiExecuteScriptFixture = 42; 42".write(
             to: assets.appendingPathComponent("parse.js"),
             atomically: true,
             encoding: .utf8
@@ -338,18 +346,18 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             createdSequence: 1,
             diagnostics: ["test activeTab grant"]
         )
-        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
-            configuration: configuration(
-                extensionID: extensionID,
-                profileID: profileID,
-                manifestPermissions: ["activeTab", "scripting"],
-                activeTabGrants: [activeTabGrant],
-                allowlist: .controlledActionPopupPolicy,
-                generatedBundleRootPath: root.path
-            )
+        let baseConfiguration = configuration(
+            extensionID: extensionID,
+            profileID: profileID,
+            manifestPermissions: ["activeTab", "scripting"],
+            activeTabGrants: [activeTabGrant],
+            allowlist: .controlledActionPopupPolicy,
+            generatedBundleRootPath: root.path
         )
-
-        let packaged = handler.handle(request(
+        let missingTargetHandler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: baseConfiguration
+        )
+        let executeRequest = request(
             namespace: "scripting",
             methodName: "executeScript",
             arguments: [
@@ -359,8 +367,94 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
                     "injectImmediately": .bool(true),
                 ]),
             ]
-        ))
-        let remote = handler.handle(request(
+        )
+
+        let missingTarget = await missingTargetHandler.handleAsync(
+            executeRequest
+        )
+        XCTAssertFalse(missingTarget.succeeded)
+        XCTAssertEqual(missingTarget.lastErrorCode, "contextNotLoaded")
+        XCTAssertNil(missingTarget.resultPayload)
+        XCTAssertTrue(
+            missingTarget.diagnostics.contains {
+                $0.contains("targetWebViewUnavailable")
+                    || $0.contains(
+                        "no eligible normal-tab WKWebView target"
+                    )
+            }
+        )
+        XCTAssertTrue(
+            missingTarget.diagnostics.contains("scripting.executeScript allFrames=false.")
+        )
+        XCTAssertTrue(
+            missingTarget.diagnostics.contains("scripting.executeScript frameIds=0")
+        )
+        XCTAssertTrue(
+            missingTarget.diagnostics.contains(
+                "scripting.executeScript world=ISOLATED(default)."
+            )
+        )
+        XCTAssertTrue(
+            missingTarget.diagnostics.contains(
+                "scripting.executeScript injectImmediately=true."
+            )
+        )
+        XCTAssertFalse(missingTarget.nativeHostLaunchAttempted)
+
+        let webViewConfiguration = WKWebViewConfiguration()
+        webViewConfiguration.websiteDataStore = .nonPersistent()
+        let webView = WKWebView(frame: .zero, configuration: webViewConfiguration)
+        let navigation = webView.loadHTMLString(
+            "<!doctype html><title>fixture</title>",
+            baseURL: URL(string: "https://example.com/")!
+        )
+        let navigationObserver = ChromeMV3PopupOptionsExecuteScriptTestNavigationObserver()
+        webView.navigationDelegate = navigationObserver
+        _ = try await navigationObserver.wait(navigation: navigation)
+        let contentWorldName =
+            "sumi.mv3.content.\(profileID).\(extensionID)"
+        let executingHandler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: baseConfiguration,
+            scriptingExecuteScriptTargetProvider: {
+                _, _, tabID, frameID in
+                guard tabID == 1, frameID == 0 else { return nil }
+                return ChromeMV3ScriptingExecuteScriptWebViewTarget(
+                    webView: webView,
+                    contentWorld: WKContentWorld.world(
+                        name: contentWorldName
+                    ),
+                    contentWorldName: contentWorldName,
+                    frameID: 0,
+                    localTabID: 1
+                )
+            }
+        )
+        let packaged = await executingHandler.handleAsync(executeRequest)
+
+        XCTAssertTrue(
+            packaged.succeeded,
+            "packaged executeScript failed: \(packaged.lastErrorCode ?? "nil") \(packaged.diagnostics.joined(separator: " | "))"
+        )
+        XCTAssertNil(packaged.lastErrorCode)
+        guard case .array(let results) = packaged.resultPayload else {
+            return XCTFail("Expected InjectionResult array payload.")
+        }
+        XCTAssertEqual(results.count, 1)
+        guard case .object(let first) = results[0] else {
+            return XCTFail("Expected object InjectionResult.")
+        }
+        XCTAssertEqual(first["frameId"], .number(0))
+        XCTAssertEqual(first["result"], .number(42))
+        XCTAssertTrue(
+            packaged.diagnostics.contains("executionClassifier=filesExecuted")
+        )
+        XCTAssertTrue(
+            packaged.diagnostics.contains {
+                $0.contains("No fake executeScript success")
+            }
+        )
+
+        let remote = await executingHandler.handleAsync(request(
             namespace: "scripting",
             methodName: "executeScript",
             arguments: [
@@ -372,7 +466,7 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
                 ]),
             ]
         ))
-        let inlineFunction = handler.handle(request(
+        let inlineFunction = await executingHandler.handleAsync(request(
             namespace: "scripting",
             methodName: "executeScript",
             arguments: [
@@ -382,7 +476,7 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
                 ]),
             ]
         ))
-        let mainWorld = handler.handle(request(
+        let mainWorld = await executingHandler.handleAsync(request(
             namespace: "scripting",
             methodName: "executeScript",
             arguments: [
@@ -393,7 +487,7 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
                 ]),
             ]
         ))
-        let conflictingFrames = handler.handle(request(
+        let conflictingFrames = await executingHandler.handleAsync(request(
             namespace: "scripting",
             methodName: "executeScript",
             arguments: [
@@ -407,45 +501,19 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
                 ]),
             ]
         ))
-
-        XCTAssertFalse(packaged.succeeded)
-        XCTAssertEqual(packaged.lastErrorCode, "unsupportedAPI")
-        XCTAssertNil(packaged.resultPayload)
-        XCTAssertTrue(
-            packaged.diagnostics.contains {
-                $0.contains("validated package-local files[]")
-                    && $0.contains("no real tab/frame execution executor")
-            }
-        )
-        XCTAssertTrue(
-            packaged.diagnostics.contains {
-                $0.contains("modeled no-op success is blocked")
-            }
-        )
-        XCTAssertTrue(
-            packaged.diagnostics.contains {
-                $0.contains("No fake executeScript success")
-            }
-        )
-        XCTAssertTrue(
-            packaged.diagnostics.contains("scripting.executeScript allFrames=false.")
-        )
-        XCTAssertTrue(
-            packaged.diagnostics.contains("scripting.executeScript frameIds=0")
-        )
-        XCTAssertTrue(
-            packaged.diagnostics.contains(
-                "scripting.executeScript world=ISOLATED(default)."
-            )
-        )
-        XCTAssertTrue(
-            packaged.diagnostics.contains(
-                "scripting.executeScript injectImmediately=true."
-            )
-        )
-        XCTAssertFalse(packaged.nativeHostLaunchAttempted)
-        XCTAssertFalse(packaged.contentScriptAttachmentAvailableInProduct)
-        XCTAssertFalse(packaged.normalTabRuntimeBridgeAvailable)
+        let allFramesOnly = await executingHandler.handleAsync(request(
+            namespace: "scripting",
+            methodName: "executeScript",
+            arguments: [
+                .object([
+                    "target": .object([
+                        "tabId": .number(1),
+                        "allFrames": .bool(true),
+                    ]),
+                    "files": .array([.string("assets/parse.js")]),
+                ]),
+            ]
+        ))
 
         XCTAssertFalse(remote.succeeded)
         XCTAssertEqual(remote.lastErrorCode, "unsupportedAPI")
@@ -473,6 +541,17 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertEqual(
             conflictingFrames.lastErrorMessage,
             "scripting.executeScript target.frameIds and target.allFrames cannot both be specified."
+        )
+        XCTAssertFalse(allFramesOnly.succeeded)
+        XCTAssertEqual(
+            allFramesOnly.lastErrorCode,
+            "unsupportedAPI",
+            "allFramesOnly diagnostics: \(allFramesOnly.diagnostics.joined(separator: " | "))"
+        )
+        XCTAssertTrue(
+            allFramesOnly.diagnostics.contains {
+                $0.contains("allFrames=true is not supported")
+            }
         )
     }
 
@@ -930,10 +1009,25 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
                 "scripting.executeScript returned one modeled result envelope per frame."
             )
         )
+        let executorSource = try String(
+            contentsOf: URL(
+                fileURLWithPath:
+                    #filePath
+            )
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent(
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3ScriptingExecuteScriptExecutor.swift"
+            ),
+            encoding: .utf8
+        )
         XCTAssertTrue(
-            source.contains(
+            executorSource.contains(
                 "Chrome-compatible executeScript must execute in an eligible target frame or reject; modeled no-op success is blocked."
             )
+                || source.contains(
+                    "Chrome-compatible executeScript must execute in an eligible target frame or reject; modeled no-op success is blocked."
+                )
         )
         XCTAssertFalse(source.contains("executeScriptModeled"))
         XCTAssertFalse(
@@ -3944,3 +4038,50 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         return directory
     }
 }
+
+#if canImport(WebKit)
+@MainActor
+private final class ChromeMV3PopupOptionsExecuteScriptTestNavigationObserver:
+    NSObject,
+    WKNavigationDelegate
+{
+    private var continuation: CheckedContinuation<Void, Error>?
+
+    func wait(navigation: WKNavigation?) async throws {
+        try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<Void, Error>) in
+            self.continuation = continuation
+            if navigation == nil {
+                continuation.resume()
+                self.continuation = nil
+            }
+        }
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFinish navigation: WKNavigation!
+    ) {
+        continuation?.resume()
+        continuation = nil
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFail navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        continuation?.resume(throwing: error)
+        continuation = nil
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        continuation?.resume(throwing: error)
+        continuation = nil
+    }
+}
+#endif

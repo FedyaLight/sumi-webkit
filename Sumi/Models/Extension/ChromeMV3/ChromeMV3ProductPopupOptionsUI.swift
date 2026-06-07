@@ -1490,6 +1490,15 @@ protocol ChromeMV3PopupOptionsWebViewFactory: AnyObject {
             ChromeMV3PopupOptionsJSBridgeInstallation,
         contentScriptEndpointRegistry:
             ChromeMV3ContentScriptEndpointRegistry?,
+        scriptingExecuteScriptTargetProvider:
+            (
+                (
+                    _ extensionID: String,
+                    _ profileID: String,
+                    _ tabID: Int,
+                    _ frameID: Int
+                ) -> ChromeMV3ScriptingExecuteScriptWebViewTarget?
+            )?,
         sharedLifecycleSession:
             ChromeMV3ServiceWorkerSharedLifecycleSession?,
         sharedLifecycleSessionProvider:
@@ -1533,6 +1542,15 @@ extension ChromeMV3PopupOptionsWebViewFactory {
             ChromeMV3PopupOptionsJSBridgeInstallation,
         contentScriptEndpointRegistry:
             ChromeMV3ContentScriptEndpointRegistry?,
+        scriptingExecuteScriptTargetProvider:
+            (
+                (
+                    _ extensionID: String,
+                    _ profileID: String,
+                    _ tabID: Int,
+                    _ frameID: Int
+                ) -> ChromeMV3ScriptingExecuteScriptWebViewTarget?
+            )? = nil,
         sharedLifecycleSession:
             ChromeMV3ServiceWorkerSharedLifecycleSession? = nil,
         sharedLifecycleSessionProvider:
@@ -1545,6 +1563,7 @@ extension ChromeMV3PopupOptionsWebViewFactory {
             ChromeMV3PermissionEventDispatching? = nil
     ) throws -> ChromeMV3PopupOptionsWebViewHandle {
         _ = contentScriptEndpointRegistry
+        _ = scriptingExecuteScriptTargetProvider
         _ = sharedLifecycleSession
         _ = sharedLifecycleSessionProvider
         _ = presentationContext
@@ -1574,6 +1593,13 @@ final class ChromeMV3ProductPopupOptionsHostController {
         ChromeMV3PermissionEventDispatching?
     private let contentScriptEndpointRegistryProvider:
         @MainActor () -> ChromeMV3ContentScriptEndpointRegistry?
+    private let scriptingExecuteScriptTargetProvider:
+        @MainActor (
+            _ extensionID: String,
+            _ profileID: String,
+            _ tabID: Int,
+            _ frameID: Int
+        ) -> ChromeMV3ScriptingExecuteScriptWebViewTarget?
     private let sharedLifecycleSessionProvider:
         @MainActor (ChromeMV3ProductPopupOptionsLaunchRecord)
             -> ChromeMV3ServiceWorkerSharedLifecycleSession?
@@ -1594,6 +1620,15 @@ final class ChromeMV3ProductPopupOptionsHostController {
         contentScriptEndpointRegistryProvider:
             @escaping @MainActor ()
                 -> ChromeMV3ContentScriptEndpointRegistry? = { nil },
+        scriptingExecuteScriptTargetProvider:
+            @escaping @MainActor (
+                _ extensionID: String,
+                _ profileID: String,
+                _ tabID: Int,
+                _ frameID: Int
+            ) -> ChromeMV3ScriptingExecuteScriptWebViewTarget? = { _, _, _, _ in
+                nil
+            },
         sharedLifecycleSessionProvider:
             @escaping @MainActor (ChromeMV3ProductPopupOptionsLaunchRecord)
                 -> ChromeMV3ServiceWorkerSharedLifecycleSession? = { _ in nil },
@@ -1609,6 +1644,8 @@ final class ChromeMV3ProductPopupOptionsHostController {
         self.permissionEventDispatcher = permissionEventDispatcher
         self.contentScriptEndpointRegistryProvider =
             contentScriptEndpointRegistryProvider
+        self.scriptingExecuteScriptTargetProvider =
+            scriptingExecuteScriptTargetProvider
         self.sharedLifecycleSessionProvider = sharedLifecycleSessionProvider
         self.sharedLifecycleSessionReleaseHandler =
             sharedLifecycleSessionReleaseHandler
@@ -1745,6 +1782,8 @@ final class ChromeMV3ProductPopupOptionsHostController {
                 bridgeInstallation: bridgeInstallation,
                 contentScriptEndpointRegistry:
                     contentScriptEndpointRegistryProvider(),
+                scriptingExecuteScriptTargetProvider:
+                    scriptingExecuteScriptTargetProvider,
                 sharedLifecycleSession:
                     nil,
                 sharedLifecycleSessionProvider:
@@ -2107,6 +2146,7 @@ final class ChromeMV3ProductPopupOptionsWKWebViewFactory:
             bridgeInstallation: bridgeInstallation,
             contentScriptEndpointRegistry:
                 contentScriptEndpointRegistry,
+            scriptingExecuteScriptTargetProvider: nil,
             sharedLifecycleSession: nil,
             sharedLifecycleSessionProvider: nil,
             presentationContext: nil,
@@ -2122,6 +2162,15 @@ final class ChromeMV3ProductPopupOptionsWKWebViewFactory:
             ChromeMV3PopupOptionsJSBridgeInstallation,
         contentScriptEndpointRegistry:
             ChromeMV3ContentScriptEndpointRegistry?,
+        scriptingExecuteScriptTargetProvider:
+            (
+                (
+                    _ extensionID: String,
+                    _ profileID: String,
+                    _ tabID: Int,
+                    _ frameID: Int
+                ) -> ChromeMV3ScriptingExecuteScriptWebViewTarget?
+            )?,
         sharedLifecycleSession:
             ChromeMV3ServiceWorkerSharedLifecycleSession?,
         sharedLifecycleSessionProvider:
@@ -2140,6 +2189,8 @@ final class ChromeMV3ProductPopupOptionsWKWebViewFactory:
             bridgeInstallation: bridgeInstallation,
             contentScriptEndpointRegistry:
                 contentScriptEndpointRegistry,
+            scriptingExecuteScriptTargetProvider:
+                scriptingExecuteScriptTargetProvider,
             sharedLifecycleSession: sharedLifecycleSession,
             sharedLifecycleSessionProvider:
                 sharedLifecycleSessionProvider,
@@ -2211,6 +2262,15 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
             ChromeMV3PopupOptionsJSBridgeInstallation,
         contentScriptEndpointRegistry:
             ChromeMV3ContentScriptEndpointRegistry? = nil,
+        scriptingExecuteScriptTargetProvider:
+            (
+                (
+                    _ extensionID: String,
+                    _ profileID: String,
+                    _ tabID: Int,
+                    _ frameID: Int
+                ) -> ChromeMV3ScriptingExecuteScriptWebViewTarget?
+            )? = nil,
         sharedLifecycleSession:
             ChromeMV3ServiceWorkerSharedLifecycleSession? = nil,
         sharedLifecycleSessionProvider:
@@ -2233,6 +2293,8 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
                 configuration: bridgeInstallation.configuration,
                 contentScriptEndpointRegistry:
                     contentScriptEndpointRegistry,
+                scriptingExecuteScriptTargetProvider:
+                    scriptingExecuteScriptTargetProvider,
                 permissionPromptPresenter: permissionPromptPresenter,
                 permissionEventDispatcher: permissionEventDispatcher,
                 sharedLifecycleSession: sharedLifecycleSession,

@@ -293,11 +293,20 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
                     ),
                     blocked(
                         namespace: "scripting",
-                        methodName: "*",
+                        methodName: "insertCSS",
                         reason:
-                            "scripting.executeScript is exposed only to return Chrome-like errors until a real eligible tab injection executor is wired.",
+                            "scripting.insertCSS is not exposed by the controlled action popup host.",
                         remediation:
-                            "Keep remote, inline/function, fake modeled results, and product-normal-tab script injection blocked.",
+                            "Keep CSS insertion blocked until a reviewed product policy exists.",
+                        roadmapOwner: "MV3 bridge owner"
+                    ),
+                    blocked(
+                        namespace: "scripting",
+                        methodName: "registerContentScripts",
+                        reason:
+                            "scripting.registerContentScripts is not exposed by the controlled action popup host.",
+                        remediation:
+                            "Keep dynamic content-script registration blocked in this increment.",
                         roadmapOwner: "MV3 bridge owner"
                     ),
                     blocked(
@@ -1804,6 +1813,15 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     private let tabRegistry: ChromeMV3SyntheticTabRegistry
     private let contentScriptEndpointRegistry:
         ChromeMV3ContentScriptEndpointRegistry?
+    private let scriptingExecuteScriptTargetProvider:
+        (
+            (
+                _ extensionID: String,
+                _ profileID: String,
+                _ tabID: Int,
+                _ frameID: Int
+            ) -> ChromeMV3ScriptingExecuteScriptWebViewTarget?
+        )?
     private let permissionPromptPresenter:
         ChromeMV3PermissionPromptPresenting?
     private let permissionPromptGate:
@@ -1852,6 +1870,15 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         configuration: ChromeMV3PopupOptionsJSBridgeConfiguration,
         contentScriptEndpointRegistry:
             ChromeMV3ContentScriptEndpointRegistry? = nil,
+        scriptingExecuteScriptTargetProvider:
+            (
+                (
+                    _ extensionID: String,
+                    _ profileID: String,
+                    _ tabID: Int,
+                    _ frameID: Int
+                ) -> ChromeMV3ScriptingExecuteScriptWebViewTarget?
+            )? = nil,
         permissionPromptPresenter:
             ChromeMV3PermissionPromptPresenting? = nil,
         permissionStateStore:
@@ -1865,6 +1892,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     ) {
         self.configuration = configuration
         self.contentScriptEndpointRegistry = contentScriptEndpointRegistry
+        self.scriptingExecuteScriptTargetProvider =
+            scriptingExecuteScriptTargetProvider
         self.permissionPromptPresenter = permissionPromptPresenter
         self.sharedLifecycleSession = sharedLifecycleSession
         self.sharedLifecycleSessionProvider = sharedLifecycleSessionProvider
@@ -3456,6 +3485,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         switch (request.namespace, request.methodName) {
         case ("tabs", "sendMessage"):
             return await tabsSendMessageAsync(request)
+        case ("scripting", "executeScript"):
+            return await scriptingExecuteScriptAsync(request)
         default:
             return handle(request)
         }
@@ -3544,7 +3575,14 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         case ("tabs", "port.disconnect"):
             return tabsPortDisconnect(request)
         case ("scripting", "executeScript"):
-            return scriptingExecuteScript(request)
+            return runtimeLastErrorResponse(
+                request,
+                error: .contextNotLoaded,
+                diagnostics: [
+                    "scripting.executeScript requires the async popup/options bridge path.",
+                    "Use the WKScriptMessageHandlerWithReply route so execution can await real tab/frame evaluation.",
+                ]
+            )
         case ("nativeMessaging", _),
              ("declarativeNetRequest", _),
              ("webRequest", _),
@@ -5413,9 +5451,10 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         )
     }
 
-    private func scriptingExecuteScript(
+    @MainActor
+    private func scriptingExecuteScriptAsync(
         _ request: ChromeMV3RuntimeJSBridgeHostRequest
-    ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+    ) async -> ChromeMV3PopupOptionsJSBridgeHostResponse {
         switch normalizePopupExecuteScript(request) {
         case .failure(let error):
             return invalidArguments(request, error.message)
@@ -5453,6 +5492,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     error: .permissionDenied,
                     diagnostics: [
                         "scripting.executeScript requires the scripting API permission.",
+                        "permissionClassifier=scriptingPermissionMissing",
                     ]
                 )
             }
@@ -5479,7 +5519,6 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     ]
                 )
             }
-            let fileShapes = resolvedFiles.map(\.relativePath).sorted()
             guard let tab = tabRegistry.tab(id: input.target.tabID) else {
                 return runtimeLastErrorResponse(
                     request,
@@ -5551,22 +5590,78 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     ]
                 )
             }
+            let hostAccess = permissionRuntimeOwner.permissionBroker
+                .hostAccessDecision(url: tab.url, tabID: tab.id)
+            let permissionClassifier =
+                hostAccess.hasHostAccess
+                    ? (hostAccess.allowedByActiveTab
+                        ? "activeTabGranted"
+                        : "hostPermissionGranted")
+                    : hostAccess.missingReason.rawValue
+            #if canImport(WebKit)
+            let targetFrameID = selectedFrames.map(\.frameID).sorted().first ?? 0
+            let target =
+                scriptingExecuteScriptTargetProvider?(
+                    configuration.extensionID,
+                    configuration.profileID,
+                    input.target.tabID,
+                    targetFrameID
+                )
+            let execution = await ChromeMV3ScriptingExecuteScriptExecutor.execute(
+                request:
+                    ChromeMV3ScriptingExecuteScriptExecutorRequest(
+                        extensionID: configuration.extensionID,
+                        profileID: configuration.profileID,
+                        tabID: input.target.tabID,
+                        frameID: input.target.frameID ?? 0,
+                        documentID: input.target.documentID,
+                        allFrames: input.allFrames,
+                        frameIDs: input.frameIDs,
+                        world: input.world,
+                        injectImmediately: input.injectImmediately,
+                        files: resolvedFiles.map {
+                            ChromeMV3ScriptingExecuteScriptResolvedFile(
+                                relativePath: $0.relativePath,
+                                fileURL: $0.fileURL
+                            )
+                        }
+                    ),
+                target: target
+            )
+            if let error = execution.lastError {
+                return runtimeLastErrorResponse(
+                    request,
+                    error: error,
+                    diagnostics:
+                        execution.diagnostics
+                        + [
+                            "permissionClassifier=\(permissionClassifier)",
+                            "executionClassifier=\(execution.executionClassifier)",
+                            "resultFrameCount=\(execution.resultFrameCount)",
+                        ]
+                )
+            }
+            return response(
+                request: request,
+                succeeded: true,
+                payload: .array(execution.injectionResults),
+                diagnostics:
+                    execution.diagnostics
+                    + [
+                        "permissionClassifier=\(permissionClassifier)",
+                        "executionClassifier=\(execution.executionClassifier)",
+                        "resultFrameCount=\(execution.resultFrameCount)",
+                    ]
+            )
+            #else
             return runtimeLastErrorResponse(
                 request,
                 error: .unsupportedAPI,
                 diagnostics: [
-                    "scripting.executeScript validated package-local files[] but did not report success because no real tab/frame execution executor is wired for the controlled popup/options bridge.",
-                    "scripting.executeScript fileCount=\(fileShapes.count).",
-                    "scripting.executeScript fileShapes=\(fileShapes.joined(separator: ","))",
-                    "scripting.executeScript target.tabId=\(input.target.tabID).",
-                    "scripting.executeScript allFrames=\(input.allFrames).",
-                    "scripting.executeScript frameIds=\(selectedFrames.map(\.frameID).sorted().map(String.init).joined(separator: ","))",
-                    "scripting.executeScript world=\(input.world)\(input.world == "ISOLATED" ? "(default)" : "").",
-                    "scripting.executeScript injectImmediately=\(input.injectImmediately).",
-                    "Chrome-compatible executeScript must execute in an eligible target frame or reject; modeled no-op success is blocked.",
-                    "No fake executeScript success, fake content-script listener, fake runtime response, remote script, remote module, inline function, MAIN-world injection, product normal-tab injection, or native host launch occurred.",
+                    "scripting.executeScript requires WebKit execution support.",
                 ]
             )
+            #endif
         }
     }
 

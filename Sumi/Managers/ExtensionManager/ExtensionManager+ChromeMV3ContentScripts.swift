@@ -258,6 +258,7 @@ import WebKit
             var navigationSequence: Int
             var urlString: String
             var webViewIdentifier: ObjectIdentifier
+            weak var webView: WKWebView?
             var handlesByExtensionID:
                 [String: ChromeMV3ContentScriptWKAttachmentHandle]
         }
@@ -515,6 +516,7 @@ import WebKit
                 navigationSequence: navigationSequence,
                 urlString: url.absoluteString,
                 webViewIdentifier: ObjectIdentifier(webView),
+                webView: webView,
                 handlesByExtensionID: handlesByExtensionID
             )
             traceSummary(reason: "attachment complete", trace: trace)
@@ -744,6 +746,28 @@ import WebKit
             )
         }
 
+        func scriptingExecuteScriptTarget(
+            extensionID: String,
+            profileID: String,
+            tabID: Int,
+            frameID: Int = 0
+        ) -> ChromeMV3ScriptingExecuteScriptWebViewTarget? {
+            guard frameID == 0 else { return nil }
+            guard let state = tabStates.values.first(where: {
+                $0.profileID == profileID
+                    && $0.localTabID == tabID
+            }) else { return nil }
+            let contentWorldName =
+                "sumi.mv3.content.\(profileID).\(extensionID)"
+            return ChromeMV3ScriptingExecuteScriptWebViewTarget(
+                webView: state.webView,
+                contentWorld: WKContentWorld.world(name: contentWorldName),
+                contentWorldName: contentWorldName,
+                frameID: 0,
+                localTabID: state.localTabID
+            )
+        }
+
         private func traceSummary(
             reason: String,
             trace: (String) -> Void
@@ -915,6 +939,21 @@ extension ExtensionManager {
             -> ChromeMV3ContentScriptEndpointRegistry?
         {
             chromeMV3LivePreparedContentScriptRuntime?.endpointRegistry
+        }
+
+        func chromeMV3ScriptingExecuteScriptTargetIfLoaded(
+            extensionID: String,
+            profileID: String,
+            tabID: Int,
+            frameID: Int = 0
+        ) -> ChromeMV3ScriptingExecuteScriptWebViewTarget? {
+            chromeMV3LivePreparedContentScriptRuntime?
+                .scriptingExecuteScriptTarget(
+                    extensionID: extensionID,
+                    profileID: profileID,
+                    tabID: tabID,
+                    frameID: frameID
+                )
         }
 
         func tearDownChromeMV3LivePreparedContentScripts(

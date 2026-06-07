@@ -5308,6 +5308,25 @@ final class SumiExtensionsModule {
                 #endif
                 return nil
             },
+            scriptingExecuteScriptTargetProvider: {
+                [weak self] extensionID, profileID, tabID, frameID in
+                #if DEBUG
+                    if #available(macOS 15.5, *) {
+                        return self?.cachedManager?
+                            .chromeMV3ScriptingExecuteScriptTargetIfLoaded(
+                                extensionID: extensionID,
+                                profileID: profileID,
+                                tabID: tabID,
+                                frameID: frameID
+                            )
+                    }
+                #endif
+                _ = extensionID
+                _ = profileID
+                _ = tabID
+                _ = frameID
+                return nil
+            },
             sharedLifecycleSessionProvider: { [weak self] launchRecord in
                 #if DEBUG
                     guard let self else { return nil }
