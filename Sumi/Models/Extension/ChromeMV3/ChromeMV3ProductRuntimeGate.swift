@@ -11,6 +11,300 @@
 import CryptoKit
 import Foundation
 
+enum ChromeMV3CompatibilityPolicyState:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case allowed
+    case blocked
+
+    static func < (
+        lhs: ChromeMV3CompatibilityPolicyState,
+        rhs: ChromeMV3CompatibilityPolicyState
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3CompatibilityActionPopupPath:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case controlledCompatibilityActionPopup
+    case nativeWebKitActionPopup
+
+    static func < (
+        lhs: ChromeMV3CompatibilityActionPopupPath,
+        rhs: ChromeMV3CompatibilityActionPopupPath
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+enum ChromeMV3CompatibilityPolicyBlocker:
+    String,
+    Codable,
+    CaseIterable,
+    Comparable,
+    Sendable
+{
+    case moduleDisabled
+    case developerPreviewLocalMV3FlowUnavailable
+    case notLocalUnpackedMV3
+    case extensionDisabled
+    case profileBlocked
+    case privateContext
+    case actionDefaultPopupMissing
+
+    static func < (
+        lhs: ChromeMV3CompatibilityPolicyBlocker,
+        rhs: ChromeMV3CompatibilityPolicyBlocker
+    ) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+
+    var reason: String {
+        switch self {
+        case .moduleDisabled:
+            return "extensionsModuleDisabled"
+        case .developerPreviewLocalMV3FlowUnavailable:
+            return "developerPreviewLocalMV3FlowUnavailable"
+        case .notLocalUnpackedMV3:
+            return "notLocalUnpackedMV3"
+        case .extensionDisabled:
+            return "extensionDisabled"
+        case .profileBlocked:
+            return "profileBlocked"
+        case .privateContext:
+            return "privateContext"
+        case .actionDefaultPopupMissing:
+            return "actionDefaultPopupMissing"
+        }
+    }
+}
+
+struct ChromeMV3CompatibilityPolicyDecision:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var state: ChromeMV3CompatibilityPolicyState
+    var selectedPopupPath: ChromeMV3CompatibilityActionPopupPath?
+    var reason: String
+    var blockers: [ChromeMV3CompatibilityPolicyBlocker]
+    var extensionIDHash: String
+    var profileIDHash: String
+    var actionDefaultPopupPresent: Bool
+    var forceNativeActionPopup: Bool
+    var forceControlledCompatibilityActionPopupOff: Bool
+    var diagnostics: [String]
+
+    var allowsControlledCompatibilityActionPopup: Bool {
+        state == .allowed
+            && selectedPopupPath == .controlledCompatibilityActionPopup
+    }
+
+    var selectsNativeWebKitActionPopup: Bool {
+        state == .allowed && selectedPopupPath == .nativeWebKitActionPopup
+    }
+
+    func logLine(
+        activation: String,
+        serviceWorkerWakeReason: String = "none",
+        contentScriptAttachReason: String = "none"
+    ) -> String {
+        ChromeMV3CompatibilityPolicyLog.activationLine(
+            activation: activation,
+            selectedPopupPath: selectedPopupPath?.rawValue ?? "none",
+            compatibilityPolicy: state.rawValue,
+            reason: reason,
+            extensionIDHash: extensionIDHash,
+            profileIDHash: profileIDHash,
+            actionDefaultPopupPresent: actionDefaultPopupPresent,
+            serviceWorkerWakeReason: serviceWorkerWakeReason,
+            contentScriptAttachReason: contentScriptAttachReason,
+            forceNativeActionPopup: forceNativeActionPopup,
+            forceControlledCompatibilityActionPopupOff:
+                forceControlledCompatibilityActionPopupOff
+        )
+    }
+}
+
+struct ChromeMV3CompatibilityPolicyInput:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var moduleEnabled: Bool
+    var developerPreviewLocalMV3FlowAvailable: Bool
+    var extensionID: String?
+    var profileID: String?
+    var manifestVersion: Int
+    var sourceKind: WebExtensionSourceKind
+    var extensionEnabled: Bool
+    var profileAllowed: Bool
+    var normalNonPrivateContext: Bool
+    var actionDefaultPopupPresent: Bool
+    var forceNativeActionPopup: Bool
+    var forceControlledCompatibilityActionPopupOff: Bool
+}
+
+enum ChromeMV3LocalMV3CompatibilityPolicy {
+    static func evaluateActionPopup(
+        _ input: ChromeMV3CompatibilityPolicyInput
+    ) -> ChromeMV3CompatibilityPolicyDecision {
+        var blockers: [ChromeMV3CompatibilityPolicyBlocker] = []
+        if input.moduleEnabled == false {
+            blockers.append(.moduleDisabled)
+        }
+        if input.developerPreviewLocalMV3FlowAvailable == false {
+            blockers.append(.developerPreviewLocalMV3FlowUnavailable)
+        }
+        if input.manifestVersion != 3 || input.sourceKind != .directory {
+            blockers.append(.notLocalUnpackedMV3)
+        }
+        if input.extensionEnabled == false {
+            blockers.append(.extensionDisabled)
+        }
+        if input.profileAllowed == false {
+            blockers.append(.profileBlocked)
+        }
+        if input.normalNonPrivateContext == false {
+            blockers.append(.privateContext)
+        }
+        if input.actionDefaultPopupPresent == false {
+            blockers.append(.actionDefaultPopupMissing)
+        }
+
+        blockers = Array(Set(blockers)).sorted()
+        let selectedPopupPath:
+            ChromeMV3CompatibilityActionPopupPath?
+        let state: ChromeMV3CompatibilityPolicyState
+        let reason: String
+        if blockers.isEmpty == false {
+            state = .blocked
+            selectedPopupPath = nil
+            reason = blockers.map(\.reason).joined(separator: ",")
+        } else if input.forceNativeActionPopup {
+            state = .allowed
+            selectedPopupPath = .nativeWebKitActionPopup
+            reason = "debugForceNativeActionPopup"
+        } else if input.forceControlledCompatibilityActionPopupOff {
+            state = .allowed
+            selectedPopupPath = .nativeWebKitActionPopup
+            reason = "debugForceControlledCompatibilityActionPopupOff"
+        } else {
+            state = .allowed
+            selectedPopupPath = .controlledCompatibilityActionPopup
+            reason = "enabledLocalUnpackedMV3DeveloperPreview"
+        }
+
+        let extensionIDHash = stablePolicyHash(
+            input.extensionID,
+            fallback: "none"
+        )
+        let profileIDHash = stablePolicyHash(
+            input.profileID,
+            fallback: "none"
+        )
+        let decision = ChromeMV3CompatibilityPolicyDecision(
+            state: state,
+            selectedPopupPath: selectedPopupPath,
+            reason: reason,
+            blockers: blockers,
+            extensionIDHash: extensionIDHash,
+            profileIDHash: profileIDHash,
+            actionDefaultPopupPresent: input.actionDefaultPopupPresent,
+            forceNativeActionPopup: input.forceNativeActionPopup,
+            forceControlledCompatibilityActionPopupOff:
+                input.forceControlledCompatibilityActionPopupOff,
+            diagnostics: []
+        )
+        var diagnostics = [
+            "Central MV3 compatibility policy evaluated for the URL-hub action popup.",
+            "The policy enables generic compatibility only for enabled local unpacked MV3 developer-preview extensions in an eligible non-private context.",
+            "The policy does not create popup, service-worker, storage, content-script, or native-host runtime state.",
+            decision.logLine(activation: "urlHubActionClick"),
+        ]
+        if blockers.isEmpty == false {
+            diagnostics.append(
+                "Compatibility policy blockers: \(blockers.map(\.rawValue).joined(separator: ","))."
+            )
+        }
+        return ChromeMV3CompatibilityPolicyDecision(
+            state: decision.state,
+            selectedPopupPath: decision.selectedPopupPath,
+            reason: decision.reason,
+            blockers: decision.blockers,
+            extensionIDHash: decision.extensionIDHash,
+            profileIDHash: decision.profileIDHash,
+            actionDefaultPopupPresent: decision.actionDefaultPopupPresent,
+            forceNativeActionPopup: decision.forceNativeActionPopup,
+            forceControlledCompatibilityActionPopupOff:
+                decision.forceControlledCompatibilityActionPopupOff,
+            diagnostics: uniqueSortedCompatibilityPolicy(diagnostics)
+        )
+    }
+
+    private static func stablePolicyHash(
+        _ value: String?,
+        fallback: String
+    ) -> String {
+        ChromeMV3CompatibilityPolicyLog.hashID(value, fallback: fallback)
+    }
+}
+
+enum ChromeMV3CompatibilityPolicyLog {
+    static func hashID(_ value: String?, fallback: String = "none") -> String {
+        guard let value, value.isEmpty == false else {
+            return "sha256:\(fallback)"
+        }
+        let digest = SHA256.hash(data: Data(value.utf8))
+        let hex = digest.map { String(format: "%02x", $0) }.joined()
+        return "sha256:\(String(hex.prefix(12)))"
+    }
+
+    static func activationLine(
+        activation: String,
+        selectedPopupPath: String,
+        compatibilityPolicy: String,
+        reason: String,
+        extensionIDHash: String,
+        profileIDHash: String,
+        actionDefaultPopupPresent: Bool,
+        serviceWorkerWakeReason: String = "none",
+        contentScriptAttachReason: String = "none",
+        forceNativeActionPopup: Bool = false,
+        forceControlledCompatibilityActionPopupOff: Bool = false
+    ) -> String {
+        [
+            "activation=\(activation)",
+            "selectedPopupPath=\(selectedPopupPath)",
+            "compatibilityPolicy=\(compatibilityPolicy)",
+            "reason=\(reason)",
+            "extensionIDHash=\(extensionIDHash)",
+            "profileIDHash=\(profileIDHash)",
+            "action.default_popup=\(actionDefaultPopupPresent ? "present" : "absent")",
+            "serviceWorkerWakeReason=\(serviceWorkerWakeReason)",
+            "contentScriptAttachReason=\(contentScriptAttachReason)",
+            "forceNativeActionPopup=\(forceNativeActionPopup)",
+            "forceControlledCompatibilityActionPopupOff=\(forceControlledCompatibilityActionPopupOff)",
+        ].joined(separator: " ")
+    }
+}
+
+private func uniqueSortedCompatibilityPolicy(
+    _ values: [String]
+) -> [String] {
+    Array(Set(values)).sorted()
+}
+
 enum ChromeMV3ProductRuntimeGateState:
     String,
     Codable,

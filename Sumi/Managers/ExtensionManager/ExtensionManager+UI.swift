@@ -812,6 +812,52 @@ extension ExtensionManager: NSPopoverDelegate {
         #endif
     }
 
+    func compatibilityPolicyForURLHubActionPopup(
+        extensionId: String,
+        currentTab: Tab?,
+        managerGate: ChromeMV3ExtensionManagerGate,
+        moduleEnabled: Bool,
+        forceNativeActionPopup: Bool,
+        forceControlledCompatibilityActionPopupOff: Bool
+    ) -> ChromeMV3CompatibilityPolicyDecision {
+        let installedExtension = installedExtensions.first {
+            $0.id == extensionId
+        }
+        let tabProfileID = currentTab?.profileId
+        let profileAllowed =
+            currentProfileId == nil
+                || tabProfileID == nil
+                || currentProfileId == tabProfileID
+        let profileID =
+            currentProfileId?.uuidString
+                ?? tabProfileID?.uuidString
+                ?? "local-action-popup-profile"
+        return ChromeMV3LocalMV3CompatibilityPolicy
+            .evaluateActionPopup(
+                ChromeMV3CompatibilityPolicyInput(
+                    moduleEnabled: moduleEnabled,
+                    developerPreviewLocalMV3FlowAvailable:
+                        managerGate.managerAvailableInDeveloperPreview,
+                    extensionID: installedExtension?.id ?? extensionId,
+                    profileID: profileID,
+                    manifestVersion:
+                        installedExtension?.manifestVersion ?? 0,
+                    sourceKind:
+                        installedExtension?.sourceKind ?? .directory,
+                    extensionEnabled:
+                        installedExtension?.isEnabled ?? false,
+                    profileAllowed: profileAllowed,
+                    normalNonPrivateContext:
+                        currentTab?.isEphemeral == false,
+                    actionDefaultPopupPresent:
+                        installedExtension?.defaultPopupPath != nil,
+                    forceNativeActionPopup: forceNativeActionPopup,
+                    forceControlledCompatibilityActionPopupOff:
+                        forceControlledCompatibilityActionPopupOff
+                )
+            )
+    }
+
     func controlledCompatibilityActionPopupLaunchRecordFromURLHub(
         extensionId: String,
         currentTab: Tab?,

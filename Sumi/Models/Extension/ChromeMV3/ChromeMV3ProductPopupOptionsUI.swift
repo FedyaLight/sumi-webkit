@@ -469,9 +469,21 @@ struct ChromeMV3PopupOptionsAPISurfaceAvailability:
                     : "The page references extension APIs; bridge exposure is blocked by launch gates."
             )
         }
+        let serviceWorkerWakeAllowed =
+            gateRecord.popupOptionsBridgeAllowed
+                && policy == .controlledActionPopupPolicy
+                && (
+                    policy.allowedMethods.contains("runtime.sendMessage")
+                        || policy.allowedMethods.contains("runtime.connect")
+                )
         diagnostics.append(
             "Popup/options bridge exposes only the developer-preview allowlist; unsupported methods return deterministic lastError diagnostics."
         )
+        if serviceWorkerWakeAllowed {
+            diagnostics.append(
+                "Controlled action popup runtime messaging may lazily wake the shared MV3 service-worker lifecycle session on sendMessage/connect only."
+            )
+        }
 
         return ChromeMV3PopupOptionsAPISurfaceAvailability(
             implementedNamespaces: uniqueSortedPopupOptions(implemented),
@@ -489,7 +501,7 @@ struct ChromeMV3PopupOptionsAPISurfaceAvailability:
             tabsAvailable: exposed.contains("tabs"),
             scriptingAvailable: exposed.contains("scripting"),
             nativeMessagingAvailable: false,
-            serviceWorkerWakeAllowed: false,
+            serviceWorkerWakeAllowed: serviceWorkerWakeAllowed,
             diagnostics: uniqueSortedPopupOptions(diagnostics)
         )
     }
@@ -833,7 +845,7 @@ enum ChromeMV3ProductPopupOptionsLaunchPlanner {
         )
         var blockers: [ChromeMV3PopupOptionsBlocker] = []
         var diagnostics = gate.diagnostics + [
-            "Controlled URL-hub action popup host is selected only by the explicit local experimental developer-preview gate.",
+            "Controlled URL-hub action popup host is selected by default under the central enabled-local-unpacked-MV3 compatibility policy.",
             "The host resolves action.default_popup from the installed generated package and does not synthesize popup UI.",
             "Package-local popup JavaScript, CSS, image, locale, frame, and asset resources are preserved through file-backed read access to the generated package root.",
             "Remote, missing, unsafe-path, and inline-script popup resources remain blocked in the controlled action popup host.",
@@ -1398,6 +1410,8 @@ protocol ChromeMV3PopupOptionsWebViewFactory: AnyObject {
             ChromeMV3ContentScriptEndpointRegistry?,
         sharedLifecycleSession:
             ChromeMV3ServiceWorkerSharedLifecycleSession?,
+        sharedLifecycleSessionProvider:
+            (() -> ChromeMV3ServiceWorkerSharedLifecycleSession?)?,
         presentationContext:
             ChromeMV3PopupOptionsPresentationContext?,
         permissionPromptPresenter:
@@ -1439,6 +1453,8 @@ extension ChromeMV3PopupOptionsWebViewFactory {
             ChromeMV3ContentScriptEndpointRegistry?,
         sharedLifecycleSession:
             ChromeMV3ServiceWorkerSharedLifecycleSession? = nil,
+        sharedLifecycleSessionProvider:
+            (() -> ChromeMV3ServiceWorkerSharedLifecycleSession?)? = nil,
         presentationContext:
             ChromeMV3PopupOptionsPresentationContext? = nil,
         permissionPromptPresenter:
@@ -1448,6 +1464,7 @@ extension ChromeMV3PopupOptionsWebViewFactory {
     ) throws -> ChromeMV3PopupOptionsWebViewHandle {
         _ = contentScriptEndpointRegistry
         _ = sharedLifecycleSession
+        _ = sharedLifecycleSessionProvider
         _ = presentationContext
         return try createWebView(
             loadFileURL: loadFileURL,
@@ -1464,8 +1481,8 @@ final class ChromeMV3ProductPopupOptionsHostController {
     private struct ActiveSession {
         var launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord
         var handle: ChromeMV3PopupOptionsWebViewHandle
-        var sharedLifecycleSession:
-            ChromeMV3ServiceWorkerSharedLifecycleSession?
+        var sharedLifecycleSessionIfCreated:
+            () -> ChromeMV3ServiceWorkerSharedLifecycleSession?
     }
 
     private let factory: ChromeMV3PopupOptionsWebViewFactory
@@ -1620,8 +1637,22 @@ final class ChromeMV3ProductPopupOptionsHostController {
                 ChromeMV3PopupOptionsJSBridgeInstallation.make(
                     launchRecord: launchRecord
                 )
-            let sharedLifecycleSession =
-                sharedLifecycleSessionProvider(launchRecord)
+            var lazySharedLifecycleSession:
+                ChromeMV3ServiceWorkerSharedLifecycleSession?
+            let lazySharedLifecycleSessionProvider:
+                () -> ChromeMV3ServiceWorkerSharedLifecycleSession? =
+            {
+                [sharedLifecycleSessionProvider] in
+                if let lazySharedLifecycleSession {
+                    return lazySharedLifecycleSession
+                }
+                lazySharedLifecycleSession =
+                    sharedLifecycleSessionProvider(launchRecord)
+                return lazySharedLifecycleSession
+            }
+            let lazySharedLifecycleSessionIfCreated = {
+                lazySharedLifecycleSession
+            }
             let handle = try factory.createWebView(
                 loadFileURL: fileURL,
                 allowingReadAccessTo: readAccessURL,
@@ -1629,7 +1660,9 @@ final class ChromeMV3ProductPopupOptionsHostController {
                 contentScriptEndpointRegistry:
                     contentScriptEndpointRegistryProvider(),
                 sharedLifecycleSession:
-                    sharedLifecycleSession,
+                    nil,
+                sharedLifecycleSessionProvider:
+                    lazySharedLifecycleSessionProvider,
                 presentationContext: presentationContext,
                 permissionPromptPresenter: permissionPromptPresenter,
                 permissionEventDispatcher: permissionEventDispatcher
@@ -1641,7 +1674,8 @@ final class ChromeMV3ProductPopupOptionsHostController {
             sessions[key] = ActiveSession(
                 launchRecord: opened,
                 handle: handle,
-                sharedLifecycleSession: sharedLifecycleSession
+                sharedLifecycleSessionIfCreated:
+                    lazySharedLifecycleSessionIfCreated
             )
             var diagnostics = [
                 "Popup/options WebView was created only after explicit developer-preview launch gates passed.",
@@ -1765,7 +1799,7 @@ final class ChromeMV3ProductPopupOptionsHostController {
                 session.handle.popupOptionsBridgeDiagnosticsSnapshot
             session.handle.tearDown()
             if let sharedLifecycleSession =
-                session.sharedLifecycleSession
+                session.sharedLifecycleSessionIfCreated()
             {
                 sharedLifecycleSessionReleaseHandler(
                     session.launchRecord,
@@ -1988,6 +2022,7 @@ final class ChromeMV3ProductPopupOptionsWKWebViewFactory:
             contentScriptEndpointRegistry:
                 contentScriptEndpointRegistry,
             sharedLifecycleSession: nil,
+            sharedLifecycleSessionProvider: nil,
             presentationContext: nil,
             permissionPromptPresenter: permissionPromptPresenter,
             permissionEventDispatcher: permissionEventDispatcher
@@ -2003,6 +2038,8 @@ final class ChromeMV3ProductPopupOptionsWKWebViewFactory:
             ChromeMV3ContentScriptEndpointRegistry?,
         sharedLifecycleSession:
             ChromeMV3ServiceWorkerSharedLifecycleSession?,
+        sharedLifecycleSessionProvider:
+            (() -> ChromeMV3ServiceWorkerSharedLifecycleSession?)?,
         presentationContext:
             ChromeMV3PopupOptionsPresentationContext?,
         permissionPromptPresenter:
@@ -2018,6 +2055,8 @@ final class ChromeMV3ProductPopupOptionsWKWebViewFactory:
             contentScriptEndpointRegistry:
                 contentScriptEndpointRegistry,
             sharedLifecycleSession: sharedLifecycleSession,
+            sharedLifecycleSessionProvider:
+                sharedLifecycleSessionProvider,
             presentationContext: presentationContext,
             permissionPromptPresenter: permissionPromptPresenter,
             permissionEventDispatcher: permissionEventDispatcher
@@ -2088,6 +2127,8 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
             ChromeMV3ContentScriptEndpointRegistry? = nil,
         sharedLifecycleSession:
             ChromeMV3ServiceWorkerSharedLifecycleSession? = nil,
+        sharedLifecycleSessionProvider:
+            (() -> ChromeMV3ServiceWorkerSharedLifecycleSession?)? = nil,
         presentationContext:
             ChromeMV3PopupOptionsPresentationContext? = nil,
         permissionPromptPresenter:
@@ -2108,7 +2149,9 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
                     contentScriptEndpointRegistry,
                 permissionPromptPresenter: permissionPromptPresenter,
                 permissionEventDispatcher: permissionEventDispatcher,
-                sharedLifecycleSession: sharedLifecycleSession
+                sharedLifecycleSession: sharedLifecycleSession,
+                sharedLifecycleSessionProvider:
+                    sharedLifecycleSessionProvider
             )
             let scriptHandler =
                 ChromeMV3PopupOptionsWKScriptMessageHandler(

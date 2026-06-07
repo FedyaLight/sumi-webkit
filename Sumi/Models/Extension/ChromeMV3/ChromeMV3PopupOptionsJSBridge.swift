@@ -1830,8 +1830,10 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     private var onChangedPayloads: [ChromeMV3StorageOnChangedEventPayload] = []
     private var syntheticPortIDs: Set<String> = []
     private var serviceWorkerLifecyclePortIDs: Set<String> = []
-    private let sharedLifecycleSession:
+    private var sharedLifecycleSession:
         ChromeMV3ServiceWorkerSharedLifecycleSession?
+    private let sharedLifecycleSessionProvider:
+        (() -> ChromeMV3ServiceWorkerSharedLifecycleSession?)?
     private let lifecycleComponentID: String
     private let nativeMessagingLifecycleComponentID: String
     private var nativeMessagingRuntimeOwner:
@@ -1849,12 +1851,15 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         permissionEventDispatcher:
             ChromeMV3PermissionEventDispatching? = nil,
         sharedLifecycleSession:
-            ChromeMV3ServiceWorkerSharedLifecycleSession? = nil
+            ChromeMV3ServiceWorkerSharedLifecycleSession? = nil,
+        sharedLifecycleSessionProvider:
+            (() -> ChromeMV3ServiceWorkerSharedLifecycleSession?)? = nil
     ) {
         self.configuration = configuration
         self.contentScriptEndpointRegistry = contentScriptEndpointRegistry
         self.permissionPromptPresenter = permissionPromptPresenter
         self.sharedLifecycleSession = sharedLifecycleSession
+        self.sharedLifecycleSessionProvider = sharedLifecycleSessionProvider
         self.lifecycleComponentID =
             stableIDPopupOptionsBridge(
                 prefix: "popup-options-extension-page-host",
@@ -2000,7 +2005,9 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             surface: configuration.surface,
             dispatchHandler: nil
         )
-        attachSharedLifecycleComponentsIfNeeded()
+        if sharedLifecycleSession != nil {
+            attachSharedLifecycleComponentsIfNeeded()
+        }
     }
 
     private static func storagePersistenceMode(
@@ -3776,6 +3783,21 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         )
     }
 
+    private func sharedLifecycleSessionForRuntimeWake()
+        -> ChromeMV3ServiceWorkerSharedLifecycleSession?
+    {
+        if let sharedLifecycleSession {
+            return sharedLifecycleSession
+        }
+        guard let sharedLifecycleSessionProvider else { return nil }
+        guard let resolved = sharedLifecycleSessionProvider() else {
+            return nil
+        }
+        sharedLifecycleSession = resolved
+        attachSharedLifecycleComponentsIfNeeded()
+        return resolved
+    }
+
     private func routeServiceWorkerLifecycleEvent(
         source: ChromeMV3ServiceWorkerEventSource,
         payload: ChromeMV3StorageValue?,
@@ -3822,7 +3844,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         keepaliveKind: ChromeMV3ServiceWorkerInternalKeepaliveKind? = nil,
         portID: String? = nil
     ) -> ChromeMV3ServiceWorkerJSListenerDispatchResult? {
-        sharedLifecycleSession?.dispatchRegisteredJSListener(
+        sharedLifecycleSessionForRuntimeWake()?.dispatchRegisteredJSListener(
             source: source,
             arguments: arguments,
             sender: popupServiceWorkerSenderMetadata(),

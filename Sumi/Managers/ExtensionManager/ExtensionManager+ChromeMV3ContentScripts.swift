@@ -455,6 +455,45 @@ import WebKit
                 if let handle = attachment.handle, attachment.result.attached {
                     handlesByExtensionID[installedExtension.id] = handle
                 }
+                let compatibilityReason =
+                    attachment.result.attached
+                        ? "declaredContentScriptMatched"
+                        : (
+                            attachment.result.blockers.isEmpty
+                                ? "contentScriptAttachmentBlocked"
+                                : attachment.result.blockers
+                                    .map(\.rawValue)
+                                    .joined(separator: ",")
+                        )
+                trace(
+                    ChromeMV3CompatibilityPolicyLog.activationLine(
+                        activation: "contentScriptAttach",
+                        selectedPopupPath: "none",
+                        compatibilityPolicy:
+                            attachment.result.attached
+                                ? ChromeMV3CompatibilityPolicyState.allowed
+                                    .rawValue
+                                : ChromeMV3CompatibilityPolicyState.blocked
+                                    .rawValue,
+                        reason: compatibilityReason,
+                        extensionIDHash:
+                            ChromeMV3CompatibilityPolicyLog.hashID(
+                                installedExtension.id
+                            ),
+                        profileIDHash:
+                            ChromeMV3CompatibilityPolicyLog.hashID(
+                                profileID
+                            ),
+                        actionDefaultPopupPresent:
+                            installedExtension.defaultPopupPath != nil,
+                        serviceWorkerWakeReason:
+                            "contentScriptRuntimeMessageOrPortOnDemand",
+                        contentScriptAttachReason:
+                            attachment.result.attached
+                                ? "declaredContentScriptMatched"
+                                : "blocked"
+                    )
+                )
                 let preparedScriptPaths = preflight.matchedScripts
                     .flatMap(\.validatedJSFilePaths)
                     .joined(separator: ",")

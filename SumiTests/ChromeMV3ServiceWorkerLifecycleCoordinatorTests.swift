@@ -895,6 +895,36 @@ final class ChromeMV3ServiceWorkerLifecycleCoordinatorTests: XCTestCase {
                 "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift"
             )
             .path
+        let popupOptionsBridgeTestsPath =
+            root
+            .appendingPathComponent(
+                "SumiTests/ChromeMV3PopupOptionsJSBridgeTests.swift"
+            )
+            .path
+        let extensionManagerDeveloperPreviewPath =
+            root
+            .appendingPathComponent(
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionManagerDeveloperPreview.swift"
+            )
+            .path
+        let serviceWorkerJSExecutionHarnessPath =
+            root
+            .appendingPathComponent(
+                "Sumi/Models/Extension/ChromeMV3/ChromeMV3ServiceWorkerJSExecutionHarness.swift"
+            )
+            .path
+        let serviceWorkerJSExecutionHarnessTestsPath =
+            root
+            .appendingPathComponent(
+                "SumiTests/ChromeMV3ServiceWorkerJSExecutionHarnessTests.swift"
+            )
+            .path
+        let urlHubDeveloperPreviewTestsPath =
+            root
+            .appendingPathComponent(
+                "SumiTests/ChromeMV3URLHubDeveloperPreviewTests.swift"
+            )
+            .path
         let contentScriptProductAttachmentPath =
             root
             .appendingPathComponent(
@@ -924,11 +954,23 @@ final class ChromeMV3ServiceWorkerLifecycleCoordinatorTests: XCTestCase {
                     passwordManagerRealPackageCompatibilityPath,
                     passwordManagerRealPackageCompatibilityTestsPath,
                     popupOptionsBridgePath,
+                    popupOptionsBridgeTestsPath,
+                    urlHubDeveloperPreviewTestsPath,
                 ]
             } else if pattern == "Pro" + "cess" + "(" {
                 allowedPaths = [
                     nativeMessagingInternalRuntimePath,
                     nativeMessagingInternalRuntimeTestsPath,
+                ]
+            } else if pattern == "Ti" + "mer" {
+                allowedPaths = [
+                    popupOptionsBridgePath,
+                    passwordManagerRealPackageCompatibilityPath,
+                    extensionManagerDeveloperPreviewPath,
+                    serviceWorkerJSExecutionHarnessPath,
+                    serviceWorkerJSExecutionHarnessTestsPath,
+                    urlHubDeveloperPreviewTestsPath,
+                    passwordManagerRealPackageCompatibilityTestsPath,
                 ]
             } else {
                 allowedPaths = []

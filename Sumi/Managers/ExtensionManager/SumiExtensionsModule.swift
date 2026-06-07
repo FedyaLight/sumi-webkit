@@ -393,7 +393,9 @@ final class SumiExtensionsModule {
     #if DEBUG
         private var lastChromeMV3LiveNormalTabAttachmentSnapshot:
             ChromeMV3LiveNormalTabAttachmentRecorderSnapshot?
-        var chromeMV3InternalNormalTabConfigurationAttachmentAllowed = false {
+        var chromeMV3InternalNormalTabConfigurationAttachmentAllowed =
+            ChromeMV3InternalDiagnosticsGate.uiAvailable
+        {
             didSet {
                 guard oldValue,
                       chromeMV3InternalNormalTabConfigurationAttachmentAllowed == false
@@ -4992,29 +4994,71 @@ final class SumiExtensionsModule {
             )
         }
         transferPendingActionAnchors(to: manager)
+        let managerGate = chromeMV3ExtensionManagerGate()
         #if DEBUG
-            if RuntimeDiagnostics.debugDefaultBool(
+            let forceNativeActionPopup = RuntimeDiagnostics.debugDefaultBool(
                 forKey: ExtensionManager
-                    .controlledCompatibilityActionPopupDefaultsKey
-            ) {
+                    .forceNativeCompatibilityActionPopupDefaultsKey
+            )
+            let forceControlledCompatibilityActionPopupOff =
+                RuntimeDiagnostics.debugDefaultBool(
+                    forKey: ExtensionManager
+                        .forceControlledCompatibilityActionPopupOffDefaultsKey
+                )
+        #else
+            let forceNativeActionPopup = false
+            let forceControlledCompatibilityActionPopupOff = false
+        #endif
+        let compatibilityPolicy =
+            manager.compatibilityPolicyForURLHubActionPopup(
+                extensionId: extensionId,
+                currentTab: currentTab,
+                managerGate: managerGate,
+                moduleEnabled: isEnabled,
+                forceNativeActionPopup: forceNativeActionPopup,
+                forceControlledCompatibilityActionPopupOff:
+                    forceControlledCompatibilityActionPopupOff
+            )
+        manager.extensionRuntimeTrace(
+            compatibilityPolicy.logLine(activation: "urlHubActionClick")
+        )
+        #if DEBUG
+            if compatibilityPolicy.allowsControlledCompatibilityActionPopup {
                 return openControlledCompatibilityActionPopupFromURLHub(
                     extensionId: extensionId,
                     currentTab: currentTab,
-                    manager: manager
+                    manager: manager,
+                    managerGate: managerGate,
+                    compatibilityPolicy: compatibilityPolicy
                 )
             }
         #endif
-        return await manager.openActionPopupFromURLHub(
+        var result = await manager.openActionPopupFromURLHub(
             extensionId: extensionId,
             currentTab: currentTab
         )
+        result.sanitizedBridgeSnapshotDiagnostics =
+            Array(
+                Set(
+                    result.sanitizedBridgeSnapshotDiagnostics
+                        + compatibilityPolicy.diagnostics
+                        + [
+                            compatibilityPolicy.logLine(
+                                activation: "urlHubActionClick"
+                            ),
+                        ]
+                )
+            ).sorted()
+        return result
     }
 
     #if DEBUG
     private func openControlledCompatibilityActionPopupFromURLHub(
         extensionId: String,
         currentTab: Tab?,
-        manager: ExtensionManager
+        manager: ExtensionManager,
+        managerGate: ChromeMV3ExtensionManagerGate,
+        compatibilityPolicy: ChromeMV3CompatibilityPolicyDecision
     ) -> BrowserExtensionActionPopupRequestResult {
         let rootURL =
             chromeMV3LocalLifecycleManagerRootURLByExtensionID[extensionId]
@@ -5025,10 +5069,23 @@ final class SumiExtensionsModule {
                 extensionId: extensionId,
                 currentTab: currentTab,
                 managerStoreRootURL: rootURL,
-                managerGate: chromeMV3ExtensionManagerGate(),
+                managerGate: managerGate,
                 moduleEnabled: isEnabled
             )
-        if let blocked = preflight.blockedResult {
+        if var blocked = preflight.blockedResult {
+            blocked.sanitizedBridgeSnapshotDiagnostics =
+                Array(
+                    Set(
+                        blocked.sanitizedBridgeSnapshotDiagnostics
+                            + compatibilityPolicy.diagnostics
+                            + [
+                                compatibilityPolicy.logLine(
+                                    activation: "urlHubActionClick"
+                                ),
+                                "URL-hub selected the controlled MV3 compatibility host, but popup resource preflight blocked host creation.",
+                            ]
+                    )
+                ).sorted()
             return blocked
         }
         guard let launchRecord = preflight.launchRecord else {
@@ -5078,13 +5135,24 @@ final class SumiExtensionsModule {
                 "Extension action popup opened through Sumi's controlled MV3 compatibility host.",
             nativePopupBoundarySnapshot: nil,
             sanitizedBridgeSnapshot: nil,
-            diagnostics: result.diagnostics + [
-                "URL-hub opened the extension action.default_popup through the controlled MV3 compatibility host.",
-                anchorView == nil
-                    ? "No live URL-hub action tile anchor was available; the WebView was created without presenting an NSPopover."
-                    : "Controlled compatibility popup was anchored to the URL-hub action tile.",
-                "WebKit native action.popupWebView remains the default path when the controlled compatibility popup gate is off.",
-            ]
+            diagnostics: Array(
+                Set(
+                    result.diagnostics
+                        + compatibilityPolicy.diagnostics
+                        + [
+                            "URL-hub opened the extension action.default_popup through the controlled MV3 compatibility host.",
+                            anchorView == nil
+                                ? "No live URL-hub action tile anchor was available; the WebView was created without presenting an NSPopover."
+                                : "Controlled compatibility popup was anchored to the URL-hub action tile.",
+                            "WebKit native action.popupWebView remains available only through explicit force-native or force-controlled-off debug overrides.",
+                            compatibilityPolicy.logLine(
+                                activation: "urlHubActionClick",
+                                serviceWorkerWakeReason:
+                                    "popupRuntimeMessageOrPortOnDemand"
+                            ),
+                        ]
+                )
+            ).sorted()
         )
     }
 
@@ -5275,10 +5343,10 @@ final class SumiExtensionsModule {
         for launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord
     ) -> ChromeMV3ServiceWorkerSharedLifecycleSession? {
         let localExperimentalGateAllowed =
-            RuntimeDiagnostics.debugDefaultBool(
-                forKey: ExtensionManager
-                    .controlledCompatibilityActionPopupDefaultsKey
-            )
+            launchRecord.gateRecord.popupOptionsRuntimeAllowed
+                && launchRecord.apiMethodPolicy
+                    == ChromeMV3PopupOptionsAPIMethodPolicy
+                    .controlledActionPopupPolicy
         let installedExtension = cachedManager?.installedExtensions.first {
             $0.id == launchRecord.extensionID
         }

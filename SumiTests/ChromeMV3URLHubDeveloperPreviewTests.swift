@@ -335,31 +335,9 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
     }
 
     @MainActor
-    func testControlledCompatibilityPopupGateOpensGeneratedActionPopupWithoutNativeRuntime()
+    func testControlledCompatibilityPopupDefaultOpensGeneratedActionPopupWithoutNativeRuntime()
         async throws
     {
-        UserDefaults.standard.removeObject(
-            forKey: ExtensionManager
-                .controlledCompatibilityActionPopupDefaultsKey
-        )
-        XCTAssertFalse(
-            RuntimeDiagnostics.debugDefaultBool(
-                forKey: ExtensionManager
-                    .controlledCompatibilityActionPopupDefaultsKey
-            )
-        )
-        UserDefaults.standard.set(
-            true,
-            forKey: ExtensionManager
-                .controlledCompatibilityActionPopupDefaultsKey
-        )
-        defer {
-            UserDefaults.standard.removeObject(
-                forKey: ExtensionManager
-                    .controlledCompatibilityActionPopupDefaultsKey
-            )
-        }
-
         let root = try makeTemporaryDirectory()
         let source = try makeFixture(
             named: "urlhub-controlled-action-popup",
@@ -442,6 +420,17 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertTrue(result.sanitizedBridgeSnapshotDiagnostics.contains {
             $0.contains("controlled MV3 compatibility host")
         })
+        XCTAssertTrue(result.sanitizedBridgeSnapshotDiagnostics.contains {
+            $0.contains(
+                "selectedPopupPath=controlledCompatibilityActionPopup"
+            )
+        })
+        XCTAssertTrue(result.sanitizedBridgeSnapshotDiagnostics.contains {
+            $0.contains("compatibilityPolicy=allowed")
+                && $0.contains(
+                    "reason=enabledLocalUnpackedMV3DeveloperPreview"
+                )
+        })
 
         let close = module.chromeMV3ClosePopupOptionsThroughManager(
             profileID: record.profileID,
@@ -491,10 +480,19 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             forKey: ExtensionManager
                 .nativeActionPopupBoundaryObservationDefaultsKey
         )
+        UserDefaults.standard.set(
+            true,
+            forKey: ExtensionManager
+                .forceNativeCompatibilityActionPopupDefaultsKey
+        )
         defer {
             UserDefaults.standard.removeObject(
                 forKey: ExtensionManager
                     .nativeActionPopupBoundaryObservationDefaultsKey
+            )
+            UserDefaults.standard.removeObject(
+                forKey: ExtensionManager
+                    .forceNativeCompatibilityActionPopupDefaultsKey
             )
         }
         let module = try makeModule(enabled: true, includesModelContext: true)
@@ -544,6 +542,10 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
 
         XCTAssertTrue(result.opened)
         XCTAssertNil(result.blocker)
+        XCTAssertTrue(result.sanitizedBridgeSnapshotDiagnostics.contains {
+            $0.contains("selectedPopupPath=nativeWebKitActionPopup")
+                && $0.contains("reason=debugForceNativeActionPopup")
+        })
         let nativeSnapshot = try XCTUnwrap(result.nativePopupBoundarySnapshot)
         XCTAssertEqual(nativeSnapshot.extensionID, secondRecord.extensionID)
         XCTAssertFalse(nativeSnapshot.popupWebViewAccessedBeforePerformAction)
@@ -597,10 +599,19 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             forKey: ExtensionManager
                 .nativeActionPopupBoundaryObservationDefaultsKey
         )
+        UserDefaults.standard.set(
+            true,
+            forKey: ExtensionManager
+                .forceNativeCompatibilityActionPopupDefaultsKey
+        )
         defer {
             UserDefaults.standard.removeObject(
                 forKey: ExtensionManager
                     .nativeActionPopupBoundaryObservationDefaultsKey
+            )
+            UserDefaults.standard.removeObject(
+                forKey: ExtensionManager
+                    .forceNativeCompatibilityActionPopupDefaultsKey
             )
         }
         XCTAssertTrue(
@@ -633,6 +644,10 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
 
         XCTAssertTrue(result.opened, result.message)
         XCTAssertNil(result.blocker)
+        XCTAssertTrue(result.sanitizedBridgeSnapshotDiagnostics.contains {
+            $0.contains("selectedPopupPath=nativeWebKitActionPopup")
+                && $0.contains("reason=debugForceNativeActionPopup")
+        })
 
         let snapshot = try await waitForNativeBitwardenPopupPreludeSnapshot(
             manager: manager,
@@ -736,23 +751,6 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
 
         let nativeHostWasRunning =
             bitwardenNativeHostRunningApplicationIdentifiers()
-        UserDefaults.standard.set(
-            true,
-            forKey: ExtensionManager
-                .controlledCompatibilityActionPopupDefaultsKey
-        )
-        defer {
-            UserDefaults.standard.removeObject(
-                forKey: ExtensionManager
-                    .controlledCompatibilityActionPopupDefaultsKey
-            )
-        }
-        XCTAssertTrue(
-            RuntimeDiagnostics.debugDefaultBool(
-                forKey: ExtensionManager
-                    .controlledCompatibilityActionPopupDefaultsKey
-            )
-        )
 
         let root = try makeTemporaryDirectory()
         let profileID = UUID()
@@ -828,6 +826,11 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertTrue(result.sanitizedBridgeSnapshotDiagnostics.contains {
             $0.contains("controlled file-backed compatibility popup host")
         })
+        XCTAssertTrue(result.sanitizedBridgeSnapshotDiagnostics.contains {
+            $0.contains(
+                "selectedPopupPath=controlledCompatibilityActionPopup"
+            )
+        })
 
         let snapshot = try await waitForControlledBitwardenPopupBridgeSnapshot(
             module: module,
@@ -888,23 +891,6 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
 
         let nativeHostWasRunning =
             bitwardenNativeHostRunningApplicationIdentifiers()
-        UserDefaults.standard.set(
-            true,
-            forKey: ExtensionManager
-                .controlledCompatibilityActionPopupDefaultsKey
-        )
-        defer {
-            UserDefaults.standard.removeObject(
-                forKey: ExtensionManager
-                    .controlledCompatibilityActionPopupDefaultsKey
-            )
-        }
-        XCTAssertTrue(
-            RuntimeDiagnostics.debugDefaultBool(
-                forKey: ExtensionManager
-                    .controlledCompatibilityActionPopupDefaultsKey
-            )
-        )
 
         let root = try makeTemporaryDirectory()
         let profileID = UUID()
@@ -963,6 +949,11 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertTrue(result.sanitizedBridgeSnapshotDiagnostics.contains {
             $0.contains("DEBUG-only controlled custom-scheme diagnostic popup host")
         })
+        XCTAssertTrue(result.sanitizedBridgeSnapshotDiagnostics.contains {
+            $0.contains(
+                "selectedPopupPath=controlledCompatibilityActionPopup"
+            )
+        })
 
         let snapshot = try await waitForControlledBitwardenPopupBridgeSnapshot(
             module: module,
@@ -1020,9 +1011,149 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
     }
 
     @MainActor
+    func testDebugControlledRaindropURLHubActionPopupDefaultDiagnostics()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Controlled popup WKWebView diagnostics require macOS 15.5.")
+        }
+
+        let raindropRoot = URL(
+            fileURLWithPath:
+                "/Users/fedaefimov/Downloads/Aura/mv3-test-extensions/raindrop",
+            isDirectory: true
+        )
+        try XCTSkipUnless(
+            FileManager.default.fileExists(
+                atPath: raindropRoot.appendingPathComponent("manifest.json").path
+            ),
+            "Local Raindrop package is not available."
+        )
+
+        let root = try makeTemporaryDirectory()
+        let profileID = UUID()
+        let module = try makeModule(
+            enabled: true,
+            includesModelContext: true,
+            popupOptionsWebViewFactory: {
+                ChromeMV3ProductPopupOptionsWKWebViewFactory(
+                    loadingMode: .fileBacked
+                )
+            }
+        )
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: raindropRoot,
+            profileID: profileID.uuidString,
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+        XCTAssertTrue(install.succeeded)
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: record.extensionID
+        )
+
+        let currentTab = Tab(url: URL(string: "https://example.com/article")!)
+        currentTab.profileId = profileID
+        let installedAction = try XCTUnwrap(
+            module.surfaceStore.enabledExtensions.first {
+                $0.id == record.extensionID
+            }
+        )
+        let preflightLaunchRecord =
+            ChromeMV3ProductPopupOptionsLaunchPlanner
+            .controlledActionPopupLaunchRecord(
+                rootURL: ChromeMV3ExtensionManagerStoreLocation
+                    .defaultRootURL(),
+                profileID: profileID.uuidString,
+                installedExtension: installedAction,
+                managerGate: module.chromeMV3ExtensionManagerGate(),
+                moduleEnabled: true
+            )
+        let preflightSummary =
+            controlledBitwardenPopupPreflightSummary(
+                preflightLaunchRecord
+            )
+        print("SumiControlledRaindropPopup \(preflightSummary)")
+        let result = await module.openActionPopupFromURLHub(
+            extensionId: record.extensionID,
+            currentTab: currentTab
+        )
+
+        guard result.opened else {
+            XCTAssertEqual(result.blocker, .contextUnavailable)
+            XCTAssertTrue(result.message.contains("linked resources failed validation"))
+            XCTAssertTrue(preflightSummary.contains("validation=unsafeHTML"))
+            XCTAssertTrue(preflightSummary.contains("assets/app.js"))
+            XCTAssertTrue(preflightSummary.contains("https://api.raindrop.io"))
+            XCTAssertTrue(preflightSummary.contains("https://rdl.ink"))
+            XCTAssertTrue(result.sanitizedBridgeSnapshotDiagnostics.contains {
+                $0.contains(
+                    "selectedPopupPath=controlledCompatibilityActionPopup"
+                )
+            })
+            print(
+                "SumiControlledRaindropPopup reachesUsableUI=false firstBlocker=reviewedResourcePreflight unsafeHTML"
+            )
+            return
+        }
+        XCTAssertNil(result.blocker)
+        XCTAssertNil(result.nativePopupBoundarySnapshot)
+        XCTAssertTrue(result.sanitizedBridgeSnapshotDiagnostics.contains {
+            $0.contains("controlled file-backed compatibility popup host")
+        })
+        XCTAssertTrue(result.sanitizedBridgeSnapshotDiagnostics.contains {
+            $0.contains(
+                "selectedPopupPath=controlledCompatibilityActionPopup"
+            )
+        })
+
+        let snapshot = try await waitForControlledBitwardenPopupBridgeSnapshot(
+            module: module,
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+        let domState = try await controlledBitwardenPopupDOMState(
+            module: module,
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+        let firstBlocker =
+            controlledBitwardenPopupFirstFatalBlocker(snapshot)
+        let tabsConnectFatal =
+            controlledBitwardenTabsConnectActuallyFatal(snapshot)
+
+        XCTAssertFalse(snapshot.jsDebugRouteEvents.isEmpty)
+        recordControlledBitwardenPopupSanitizedDiagnostics(
+            prefix: "SumiControlledRaindropPopup",
+            snapshot: snapshot,
+            domState: domState,
+            firstBlocker: firstBlocker,
+            tabsConnectFatal: tabsConnectFatal
+        )
+
+        _ = module.chromeMV3ClosePopupOptionsThroughManager(
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+    }
+
+    @MainActor
     func testURLHubActionClickReportsSelectedPackageContextLoadFailurePrecisely()
         async throws
     {
+        UserDefaults.standard.set(
+            true,
+            forKey: ExtensionManager
+                .forceNativeCompatibilityActionPopupDefaultsKey
+        )
+        defer {
+            UserDefaults.standard.removeObject(
+                forKey: ExtensionManager
+                    .forceNativeCompatibilityActionPopupDefaultsKey
+            )
+        }
         let root = try makeTemporaryDirectory()
         let firstSource = try makeFixture(
             named: "urlhub-ready-runtime-valid-popup",
@@ -1720,6 +1851,9 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         let popupOptionsBridgeSource = try source(
             "Sumi/Models/Extension/ChromeMV3/ChromeMV3PopupOptionsJSBridge.swift"
         )
+        let runtimeGateSource = try source(
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductRuntimeGate.swift"
+        )
         let combined = modelSource + "\n" + hubSource + "\n" + actionViewSource
         let nativePopupBoundarySources =
             managerUISource + "\n" + controllerDelegateSource + "\n"
@@ -1774,7 +1908,38 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertTrue(actionViewSource.contains("openActionPopupFromURLHub"))
         XCTAssertTrue(
             moduleSource.contains(
-                "controlledCompatibilityActionPopupDefaultsKey"
+                "forceNativeCompatibilityActionPopupDefaultsKey"
+            )
+        )
+        XCTAssertTrue(
+            moduleSource.contains(
+                "forceControlledCompatibilityActionPopupOffDefaultsKey"
+            )
+        )
+        XCTAssertFalse(
+            moduleSource.contains(
+                "controlledCompatibility" + "ActionPopupDefaultsKey"
+            )
+        )
+        XCTAssertTrue(
+            runtimeGateSource.contains(
+                "ChromeMV3LocalMV3CompatibilityPolicy"
+            )
+        )
+        XCTAssertTrue(
+            runtimeGateSource.contains(
+                "enabledLocalUnpackedMV3DeveloperPreview"
+            )
+        )
+        XCTAssertTrue(
+            runtimeGateSource.contains(
+                "selectedPopupPath=\\(selectedPopupPath)"
+            )
+                || runtimeGateSource.contains("selectedPopupPath=")
+        )
+        XCTAssertTrue(
+            runtimeGateSource.contains(
+                "case controlledCompatibilityActionPopup"
             )
         )
         XCTAssertTrue(
