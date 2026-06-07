@@ -13,4 +13,7 @@ enum URLBarHubNativeStyle {
     static let accentText = Color(nsColor: .alternateSelectedControlTextColor)
     static let destructiveText = Color(nsColor: .systemRed)
     static let destructiveBackground = Color(nsColor: .systemRed)
+    /// Mirror of `ChromeThemeTokens.popoverActionDisabledAlpha` for popover action-button disabled foreground alpha.
+    /// The URL hub popover uses raw `NSColor` chrome (not `ChromeThemeTokens`) by design, so the value lives here as a named constant.
+    static let popoverActionDisabledAlpha: CGFloat = 0.45
 }

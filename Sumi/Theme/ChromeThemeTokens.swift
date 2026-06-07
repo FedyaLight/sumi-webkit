@@ -10,6 +10,8 @@ struct ChromeThemeTokens {
     let tertiaryText: Color
     let chromeControlHoverBackground: Color
     let chromeControlPressedBackground: Color
+    let chromeNavigationControlDisabledAlpha: CGFloat
+    let popoverActionDisabledAlpha: CGFloat
     let sidebarRowActive: Color
     let sidebarRowHover: Color
     let sidebarSelectionShadow: Color

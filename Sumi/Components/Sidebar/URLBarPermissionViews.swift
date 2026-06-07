@@ -353,7 +353,7 @@ private struct SumiPermissionIndicatorFooterButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(backgroundColor(isPressed: configuration.isPressed))
             )
-            .opacity(isEnabled ? 1 : 0.45)
+            .opacity(isEnabled ? 1 : tokens.popoverActionDisabledAlpha)
             .onHover { hovering in
                 isHovered = hovering
             }

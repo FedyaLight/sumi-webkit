@@ -223,6 +223,8 @@ private struct ThemeChromePalette {
     let tertiaryText: Color
     let chromeControlHoverBackground: Color
     let chromeControlPressedBackground: Color
+    let chromeNavigationControlDisabledAlpha: CGFloat
+    let popoverActionDisabledAlpha: CGFloat
     let sidebarRowActive: Color
     let sidebarRowHover: Color
     let sidebarSelectionShadow: Color
@@ -273,6 +275,8 @@ private struct ThemeChromePalette {
         let tertiaryText = ThemeContrastResolver.tertiaryText(for: scheme)
         let chromeControlHoverBackground = primaryText.opacity(scheme == .dark ? 0.20 : 0.10)
         let chromeControlPressedBackground = primaryText.opacity(scheme == .dark ? 0.24 : 0.16)
+        let chromeNavigationControlDisabledAlpha: CGFloat = 0.34
+        let popoverActionDisabledAlpha: CGFloat = 0.45
         let buttonPrimaryText = ThemeContrastResolver.preferredForeground(on: accent)
         let fieldBackground = ThemeChromeRecipeBuilder.zenToolbarElementBackground(scheme: scheme)
         let fieldBackgroundHover = ThemeChromeRecipeBuilder.zenToolbarElementHoverBackground(
@@ -334,6 +338,8 @@ private struct ThemeChromePalette {
             tertiaryText: tertiaryText,
             chromeControlHoverBackground: chromeControlHoverBackground,
             chromeControlPressedBackground: chromeControlPressedBackground,
+            chromeNavigationControlDisabledAlpha: chromeNavigationControlDisabledAlpha,
+            popoverActionDisabledAlpha: popoverActionDisabledAlpha,
             sidebarRowActive: sidebarRowActive,
             sidebarRowHover: sidebarRowHover,
             sidebarSelectionShadow: sidebarSelectionShadow,
@@ -386,6 +392,8 @@ private struct ThemeChromePalette {
             tertiaryText: mix(tertiaryText, other.tertiaryText),
             chromeControlHoverBackground: mix(chromeControlHoverBackground, other.chromeControlHoverBackground),
             chromeControlPressedBackground: mix(chromeControlPressedBackground, other.chromeControlPressedBackground),
+            chromeNavigationControlDisabledAlpha: chromeNavigationControlDisabledAlpha + (other.chromeNavigationControlDisabledAlpha - chromeNavigationControlDisabledAlpha) * CGFloat(clamped),
+            popoverActionDisabledAlpha: popoverActionDisabledAlpha + (other.popoverActionDisabledAlpha - popoverActionDisabledAlpha) * CGFloat(clamped),
             sidebarRowActive: mix(sidebarRowActive, other.sidebarRowActive),
             sidebarRowHover: mix(sidebarRowHover, other.sidebarRowHover),
             sidebarSelectionShadow: mix(sidebarSelectionShadow, other.sidebarSelectionShadow),
@@ -422,6 +430,8 @@ private struct ThemeChromePalette {
             tertiaryText: tertiaryText,
             chromeControlHoverBackground: chromeControlHoverBackground,
             chromeControlPressedBackground: chromeControlPressedBackground,
+            chromeNavigationControlDisabledAlpha: chromeNavigationControlDisabledAlpha,
+            popoverActionDisabledAlpha: popoverActionDisabledAlpha,
             sidebarRowActive: sidebarRowActive,
             sidebarRowHover: sidebarRowHover,
             sidebarSelectionShadow: sidebarSelectionShadow,

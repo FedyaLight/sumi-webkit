@@ -35,7 +35,7 @@ struct SumiNavigationToolbarTheme {
         tintColor = tint
         hoverColor = Self.nsColor(tokens.chromeControlHoverBackground)
         mouseDownColor = Self.nsColor(tokens.chromeControlPressedBackground)
-        disabledAlpha = 0.34
+        disabledAlpha = tokens.chromeNavigationControlDisabledAlpha
     }
 
     private static func nsColor(_ color: Color) -> NSColor {

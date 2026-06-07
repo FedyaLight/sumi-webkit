@@ -1055,7 +1055,7 @@ private struct SumiHubHeaderButton: View {
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
-        .opacity(isEnabled ? 1 : 0.45)
+        .opacity(isEnabled ? 1 : URLBarHubNativeStyle.popoverActionDisabledAlpha)
         .help(help)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.12)) {

@@ -128,6 +128,39 @@ final class ThemeChromeRecipeBuilderTests: XCTestCase {
         XCTAssertEqual(token.alpha, expectedAlpha, accuracy: 0.02)
     }
 
+    func testPopoverActionDisabledAlphaIsCanonicalZeroPointFourFive() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        var context = ResolvedThemeContext.default
+        context.globalColorScheme = .light
+        context.chromeColorScheme = .light
+        context.transitionProgress = 1.0
+
+        let token = context.tokens(settings: settings).popoverActionDisabledAlpha
+        XCTAssertEqual(token, 0.45, accuracy: 0.0001)
+    }
+
+    func testPopoverActionDisabledAlphaMirrorsURLBarHubNativeStyle() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        var context = ResolvedThemeContext.default
+        context.globalColorScheme = .light
+        context.chromeColorScheme = .light
+        context.transitionProgress = 1.0
+
+        let token = context.tokens(settings: settings).popoverActionDisabledAlpha
+        XCTAssertEqual(
+            token,
+            URLBarHubNativeStyle.popoverActionDisabledAlpha,
+            accuracy: 0.0001,
+            "Native-style mirror must stay in lockstep with the chrome theme token"
+        )
+    }
+
     func testFindInPagePaintUsesOpaqueSurfacesInLightRecipe() {
         let paint = findInPagePaint(scheme: .light)
 

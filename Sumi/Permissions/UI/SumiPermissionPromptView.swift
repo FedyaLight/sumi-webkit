@@ -137,7 +137,7 @@ struct SumiPermissionPromptButtonStyle: ButtonStyle {
                     .fill(backgroundColor(isPressed: configuration.isPressed))
             )
             .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .opacity(isEnabled ? 1 : 0.45)
+            .opacity(isEnabled ? 1 : tokens.popoverActionDisabledAlpha)
             .scaleEffect(configuration.isPressed && isEnabled ? 0.98 : 1)
             .animation(.easeInOut(duration: 0.12), value: configuration.isPressed)
             .onHover { hovering in

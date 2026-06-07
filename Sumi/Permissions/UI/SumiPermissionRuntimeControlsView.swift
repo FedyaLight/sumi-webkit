@@ -153,7 +153,7 @@ private struct SumiPermissionRuntimeActionButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(backgroundColor(isPressed: configuration.isPressed))
             )
-            .opacity(isEnabled ? 1 : 0.45)
+            .opacity(isEnabled ? 1 : tokens.popoverActionDisabledAlpha)
             .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .onHover { hovering in
                 isHovered = hovering
