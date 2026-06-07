@@ -292,7 +292,7 @@ struct HubSettingRow: View {
                     iconName: model.chromeIconName,
                     fallbackSystemName: model.fallbackSystemName,
                     size: 16,
-                    tint: iconTint
+                    tint: URLBarHubNativeStyle.primaryText
                 )
             }
             .frame(width: 34, height: 34)
@@ -326,10 +326,6 @@ struct HubSettingRow: View {
 
     private var capsuleFill: Color {
         isHovered ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubNativeStyle.controlBackground
-    }
-
-    private var iconTint: Color {
-        URLBarHubNativeStyle.primaryText
     }
 
     private var capsuleScale: CGFloat {

@@ -226,7 +226,7 @@ struct URLBarSiteDataDeleteConfirmationView: View {
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 48, height: 48)
-                    .background(destructiveColor)
+                    .background(URLBarHubNativeStyle.destructiveBackground)
                     .clipShape(Circle())
 
                 VStack(spacing: 6) {
@@ -260,10 +260,6 @@ struct URLBarSiteDataDeleteConfirmationView: View {
             .shadow(color: .black.opacity(colorScheme == .dark ? 0.45 : 0.18), radius: 18, x: 0, y: 8)
             .padding(16)
         }
-    }
-
-    private var destructiveColor: Color {
-        URLBarHubNativeStyle.destructiveBackground
     }
 }
 

@@ -1041,7 +1041,7 @@ private struct SumiHubHeaderButton: View {
                 iconName: iconName,
                 fallbackSystemName: fallbackSystemName,
                 size: 18,
-                tint: iconTint
+                tint: URLBarHubNativeStyle.primaryText
             )
             .frame(maxWidth: .infinity)
             .frame(height: 36)
@@ -1079,10 +1079,6 @@ private struct SumiHubHeaderButton: View {
             return URLBarHubNativeStyle.hoveredControlBackground
         }
         return URLBarHubNativeStyle.controlBackground
-    }
-
-    private var iconTint: Color {
-        URLBarHubNativeStyle.primaryText
     }
 
     private var buttonScale: CGFloat {
