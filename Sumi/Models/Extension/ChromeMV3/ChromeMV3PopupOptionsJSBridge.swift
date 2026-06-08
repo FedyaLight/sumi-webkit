@@ -9558,6 +9558,11 @@ enum ChromeMV3PopupOptionsJSShimSource {
             return "";
           }
 
+          Object.defineProperty(runtime, "id", {
+            value: config.extensionID,
+            enumerable: true
+          });
+
           Object.defineProperty(runtime, "lastError", {
             get() {
               return lastErrorValue;

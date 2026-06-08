@@ -14,11 +14,18 @@ enum ChromeMV3ControlledPopupBaselineOutcome: String, CaseIterable, Sendable {
     case usableUI
     case staticPopupHostFailure
     case popupLocalScriptFailure
+    case popupUnhandledException
+    case popupUnhandledRejection
     case resourceLoadFailure
     case moduleScriptFailure
     case CSPFailure
     case popupBridgeFailure
+    case popupBridgeBootstrapFailure
     case storageFailure
+    case storageLocalFailure
+    case storageSessionFailure
+    case storageSyncFailure
+    case storageOnChangedFailure
     case runtimeSendMessageFailure
     case runtimeConnectFailure
     case tabsQueryFailure
@@ -28,14 +35,66 @@ enum ChromeMV3ControlledPopupBaselineOutcome: String, CaseIterable, Sendable {
     case contentScriptAttachFailure
     case nativeMessagingRequired
     case moduleWorkerUnsupported
+    case missingNarrowChromeAPI
     case authOrNetworkRequired
     case extensionLocalAppState
     case extensionLocalRenderState
     case unknown
+    case unknownButStop
 
     static let catalog: Set<String> = Set(
         allCases.map(\.rawValue)
     )
+}
+
+enum ChromeMV3ControlledPopupPostResourceBlocker: String, CaseIterable, Sendable {
+    case popupLocalScriptFailure
+    case popupUnhandledException
+    case popupUnhandledRejection
+    case popupBridgeBootstrapFailure
+    case missingNarrowChromeAPI
+    case runtimeSendMessageFailure
+    case runtimeConnectFailure
+    case serviceWorkerLifecycleFailure
+    case storageLocalFailure
+    case storageSessionFailure
+    case storageSyncFailure
+    case storageOnChangedFailure
+    case tabsQueryFailure
+    case tabsSendMessageFailure
+    case scriptingExecuteScriptFailure
+    case nativeMessagingRequired
+    case authOrNetworkRequired
+    case extensionLocalAppState
+    case extensionLocalRenderState
+    case usableUI
+    case unknownButStop
+
+    var baselineOutcome: ChromeMV3ControlledPopupBaselineOutcome {
+        switch self {
+        case .popupLocalScriptFailure: .popupLocalScriptFailure
+        case .popupUnhandledException: .popupUnhandledException
+        case .popupUnhandledRejection: .popupUnhandledRejection
+        case .popupBridgeBootstrapFailure: .popupBridgeBootstrapFailure
+        case .missingNarrowChromeAPI: .missingNarrowChromeAPI
+        case .runtimeSendMessageFailure: .runtimeSendMessageFailure
+        case .runtimeConnectFailure: .runtimeConnectFailure
+        case .serviceWorkerLifecycleFailure: .serviceWorkerLifecycleFailure
+        case .storageLocalFailure: .storageLocalFailure
+        case .storageSessionFailure: .storageSessionFailure
+        case .storageSyncFailure: .storageSyncFailure
+        case .storageOnChangedFailure: .storageOnChangedFailure
+        case .tabsQueryFailure: .tabsQueryFailure
+        case .tabsSendMessageFailure: .tabsSendMessageFailure
+        case .scriptingExecuteScriptFailure: .scriptingExecuteScriptFailure
+        case .nativeMessagingRequired: .nativeMessagingRequired
+        case .authOrNetworkRequired: .authOrNetworkRequired
+        case .extensionLocalAppState: .extensionLocalAppState
+        case .extensionLocalRenderState: .extensionLocalRenderState
+        case .usableUI: .usableUI
+        case .unknownButStop: .unknownButStop
+        }
+    }
 }
 
 enum ChromeMV3ControlledPopupBaselineFixtureID: String, CaseIterable, Sendable {
@@ -513,20 +572,11 @@ enum ChromeMV3ControlledPopupBaselineClassifier {
             if let hostOutcome = classifyPopupHostBootstrapFailure(snapshot) {
                 return hostOutcome
             }
-            let trace = snapshot.appStateDependencyTrace.correlationSummary
-            if trace.networkOrAuthDependencyObserved {
-                return .authOrNetworkRequired
-            }
-            if trace.classification == "appStateWaitWithNoWriter"
-                || trace.classification == "appStateWaitWithNoObservableDependency"
-            {
-                return .extensionLocalAppState
-            }
-            if trace.popupReachedUsableOnboardingOrLoginUI {
-                return .usableUI
-            }
+            return ChromeMV3ControlledPopupPostResourceClassifier
+                .classify(snapshot: snapshot, domProbe: domProbe)
+                .baselineOutcome
         }
-        return .unknown
+        return .unknownButStop
     }
 
     static func classifyOnePasswordPreflight(
@@ -660,5 +710,487 @@ enum ChromeMV3ControlledPopupBaselineClassifier {
             }
         }
         return nil
+    }
+}
+
+enum ChromeMV3ControlledPopupPostResourceClassifier {
+    struct SanitizedSummary: Sendable {
+        var blocker: ChromeMV3ControlledPopupPostResourceBlocker
+        var scriptsExecuted: Bool
+        var bridgeBootstrapSucceeded: Bool
+        var lines: [String]
+    }
+
+    static func classify(
+        snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot,
+        domProbe: ChromeMV3ControlledPopupBaselineDOMProbe?
+    ) -> ChromeMV3ControlledPopupPostResourceBlocker {
+        classifyWithSummary(snapshot: snapshot, domProbe: domProbe).blocker
+    }
+
+    static func classifyWithSummary(
+        snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot,
+        domProbe: ChromeMV3ControlledPopupBaselineDOMProbe?
+    ) -> SanitizedSummary {
+        let events = postResourceEvents(in: snapshot)
+        let routes = postResourceRoutes(in: snapshot)
+        let pending = snapshot.pendingUnresolvedJSDebugRoutes
+        let trace = snapshot.appStateDependencyTrace.correlationSummary
+        let bridgeInstalled =
+            snapshot.observedMethods.isEmpty == false
+                || snapshot.blockedAPIs.isEmpty == false
+        let scriptsExecuted =
+            events.contains { $0.apiName == "runtime.getManifest" }
+                && events.contains { $0.eventKind == "postBootstrapCheckpoint" }
+        let lines = sanitizedLines(
+            events: events,
+            routes: routes,
+            pending: pending,
+            trace: trace,
+            domProbe: domProbe,
+            bridgeInstalled: bridgeInstalled,
+            scriptsExecuted: scriptsExecuted
+        )
+
+        if domProbe?.coarseUsable == true
+            || trace.popupReachedUsableOnboardingOrLoginUI
+        {
+            return SanitizedSummary(
+                blocker: .usableUI,
+                scriptsExecuted: scriptsExecuted,
+                bridgeBootstrapSucceeded: bridgeInstalled,
+                lines: lines
+            )
+        }
+
+        if let blocker = classifyScriptFailure(events) {
+            return summary(
+                blocker,
+                scriptsExecuted: scriptsExecuted,
+                bridgeInstalled: bridgeInstalled,
+                lines: lines
+            )
+        }
+
+        if bridgeInstalled == false {
+            return summary(
+                .popupBridgeBootstrapFailure,
+                scriptsExecuted: scriptsExecuted,
+                bridgeInstalled: bridgeInstalled,
+                lines: lines
+            )
+        }
+
+        if let blocker = classifyMissingAPI(events, routes: routes, trace: trace) {
+            return summary(
+                blocker,
+                scriptsExecuted: scriptsExecuted,
+                bridgeInstalled: bridgeInstalled,
+                lines: lines
+            )
+        }
+
+        if let blocker = classifyNativeMessaging(events, routes: routes) {
+            return summary(
+                blocker,
+                scriptsExecuted: scriptsExecuted,
+                bridgeInstalled: bridgeInstalled,
+                lines: lines
+            )
+        }
+
+        if let blocker = classifyRuntimeFailure(
+            events: events,
+            routes: routes,
+            pending: pending
+        ) {
+            return summary(
+                blocker,
+                scriptsExecuted: scriptsExecuted,
+                bridgeInstalled: bridgeInstalled,
+                lines: lines
+            )
+        }
+
+        if let blocker = classifyServiceWorkerFailure(events) {
+            return summary(
+                blocker,
+                scriptsExecuted: scriptsExecuted,
+                bridgeInstalled: bridgeInstalled,
+                lines: lines
+            )
+        }
+
+        if let blocker = classifyStorageFailure(
+            events: events,
+            routes: routes,
+            pending: pending,
+            trace: trace
+        ) {
+            return summary(
+                blocker,
+                scriptsExecuted: scriptsExecuted,
+                bridgeInstalled: bridgeInstalled,
+                lines: lines
+            )
+        }
+
+        if let blocker = classifyTabsFailure(routes: routes, pending: pending) {
+            return summary(
+                blocker,
+                scriptsExecuted: scriptsExecuted,
+                bridgeInstalled: bridgeInstalled,
+                lines: lines
+            )
+        }
+
+        if let record = snapshot.callRecords.last(where: {
+            $0.namespace == "scripting" && $0.methodName == "executeScript"
+        }), record.succeeded == false {
+            return summary(
+                .scriptingExecuteScriptFailure,
+                scriptsExecuted: scriptsExecuted,
+                bridgeInstalled: bridgeInstalled,
+                lines: lines
+            )
+        }
+
+        if trace.networkOrAuthDependencyObserved {
+            return summary(
+                .authOrNetworkRequired,
+                scriptsExecuted: scriptsExecuted,
+                bridgeInstalled: bridgeInstalled,
+                lines: lines
+            )
+        }
+
+        if let blocker = classifyExtensionLocalState(
+            trace: trace,
+            domProbe: domProbe,
+            events: events
+        ) {
+            return summary(
+                blocker,
+                scriptsExecuted: scriptsExecuted,
+                bridgeInstalled: bridgeInstalled,
+                lines: lines
+            )
+        }
+
+        return summary(
+            .unknownButStop,
+            scriptsExecuted: scriptsExecuted,
+            bridgeInstalled: bridgeInstalled,
+            lines: lines
+        )
+    }
+
+    private static func summary(
+        _ blocker: ChromeMV3ControlledPopupPostResourceBlocker,
+        scriptsExecuted: Bool,
+        bridgeInstalled: Bool,
+        lines: [String]
+    ) -> SanitizedSummary {
+        SanitizedSummary(
+            blocker: blocker,
+            scriptsExecuted: scriptsExecuted,
+            bridgeBootstrapSucceeded: bridgeInstalled,
+            lines: lines
+        )
+    }
+
+    private static func postResourceManifestSequence(
+        _ snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
+    ) -> Int? {
+        snapshot.jsDebugRouteEvents
+            .filter {
+                $0.apiName == "runtime.getManifest"
+                    && $0.resultClassifier == "manifestReturned"
+            }
+            .map(\.sequence)
+            .min()
+    }
+
+    private static func postResourceEvents(
+        in snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
+    ) -> [ChromeMV3PopupOptionsJSDebugRouteEventRecord] {
+        guard let manifestSequence = postResourceManifestSequence(snapshot)
+        else {
+            return snapshot.jsDebugRouteEvents
+        }
+        return snapshot.jsDebugRouteEvents.filter {
+            $0.sequence > manifestSequence
+                && ChromeMV3PopupOptionsHostResourceLoadDiagnostics
+                    .isOptionalSourceMapProbeEvent($0) == false
+        }
+    }
+
+    private static func postResourceRoutes(
+        in snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
+    ) -> [ChromeMV3PopupOptionsSanitizedBridgeRouteRecord] {
+        snapshot.sanitizedBridgeRouteRecords
+    }
+
+    private static func classifyScriptFailure(
+        _ events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
+    ) -> ChromeMV3ControlledPopupPostResourceBlocker? {
+        if events.contains(where: { $0.eventKind == "scriptError" }) {
+            return .popupLocalScriptFailure
+        }
+        if events.contains(where: {
+            $0.resultClassifier == "popupContinuationException"
+                || $0.resultClassifier == "crashed after script error"
+        }) {
+            return .popupUnhandledException
+        }
+        if events.contains(where: { $0.eventKind == "unhandledRejection" }) {
+            return .popupUnhandledRejection
+        }
+        if events.contains(where: {
+            $0.resultClassifier == "popupContinuationUnhandledRejection"
+                || $0.resultClassifier == "Promise rejection"
+        }) {
+            return .popupUnhandledRejection
+        }
+        return nil
+    }
+
+    private static func classifyMissingAPI(
+        _ events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord],
+        routes: [ChromeMV3PopupOptionsSanitizedBridgeRouteRecord],
+        trace: ChromeMV3AppStateDependencyCorrelationSummary
+    ) -> ChromeMV3ControlledPopupPostResourceBlocker? {
+        if events.contains(where: { $0.eventKind == "missingAPIAccess" }) {
+            return missingAPIBlocker(from: events)
+        }
+        if trace.missingAPIsObserved.isEmpty == false {
+            return missingAPIBlocker(from: events, trace: trace)
+        }
+        if routes.contains(where: {
+            ($0.resultClassifier ?? "").hasPrefix("missing ")
+        }) {
+            return missingAPIBlocker(from: events)
+        }
+        return nil
+    }
+
+    private static func missingAPIBlocker(
+        from events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord],
+        trace: ChromeMV3AppStateDependencyCorrelationSummary? = nil
+    ) -> ChromeMV3ControlledPopupPostResourceBlocker {
+        let labels =
+            events.compactMap(\.apiName)
+            + events.compactMap(\.resultClassifier)
+            + (trace?.missingAPIsObserved ?? [])
+        if labels.contains(where: { $0.contains("storage.session") }) {
+            return .storageSessionFailure
+        }
+        if labels.contains(where: { $0.contains("storage.sync") }) {
+            return .storageSyncFailure
+        }
+        return .missingNarrowChromeAPI
+    }
+
+    private static func classifyNativeMessaging(
+        _ events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord],
+        routes: [ChromeMV3PopupOptionsSanitizedBridgeRouteRecord]
+    ) -> ChromeMV3ControlledPopupPostResourceBlocker? {
+        let nativeLabels = events.compactMap(\.apiName)
+            + routes.map(\.apiName)
+            + events.compactMap(\.resultClassifier)
+        if nativeLabels.contains(where: {
+            $0.contains("nativeMessaging")
+                || $0.contains("connectNative")
+                || $0.contains("sendNativeMessage")
+        }) {
+            return .nativeMessagingRequired
+        }
+        return nil
+    }
+
+    private static func classifyRuntimeFailure(
+        events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord],
+        routes: [ChromeMV3PopupOptionsSanitizedBridgeRouteRecord],
+        pending: [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
+    ) -> ChromeMV3ControlledPopupPostResourceBlocker? {
+        if routes.contains(where: {
+            $0.apiName == "runtime.sendMessage"
+                && [
+                    "noReceivingEnd",
+                    "noListener",
+                    "blocked",
+                    "permissionDenied",
+                ].contains($0.resultClassifier)
+        }) || pending.contains(where: { $0.apiName == "runtime.sendMessage" }) {
+            return .runtimeSendMessageFailure
+        }
+        if routes.contains(where: {
+            $0.apiName == "runtime.connect"
+                && [
+                    "Port message not delivered",
+                    "Port response not delivered",
+                    "blocked",
+                ].contains($0.resultClassifier ?? "")
+        }) || pending.contains(where: { $0.apiName == "runtime.connect" })
+            || events.contains(where: {
+                [
+                    "Port message not delivered",
+                    "Port response not delivered",
+                    "unknown pending promise",
+                ].contains($0.resultClassifier ?? "")
+            })
+        {
+            return .runtimeConnectFailure
+        }
+        return nil
+    }
+
+    private static func classifyServiceWorkerFailure(
+        _ events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
+    ) -> ChromeMV3ControlledPopupPostResourceBlocker? {
+        if events.contains(where: {
+            $0.resultClassifier == "service worker not waking"
+        }) {
+            return .serviceWorkerLifecycleFailure
+        }
+        return nil
+    }
+
+    private static func classifyStorageFailure(
+        events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord],
+        routes: [ChromeMV3PopupOptionsSanitizedBridgeRouteRecord],
+        pending: [ChromeMV3PopupOptionsJSDebugRouteEventRecord],
+        trace: ChromeMV3AppStateDependencyCorrelationSummary
+    ) -> ChromeMV3ControlledPopupPostResourceBlocker? {
+        if trace.writtenKeyHashesWithoutObservedOnChangedDelivery.isEmpty
+            == false
+        {
+            return .storageOnChangedFailure
+        }
+        if routes.contains(where: {
+            $0.apiName.hasPrefix("storage.local")
+                && ["permissionDenied", "blocked"].contains($0.resultClassifier)
+        }) || pending.contains(where: { $0.apiName.hasPrefix("storage.local") })
+        {
+            return .storageLocalFailure
+        }
+        if routes.contains(where: {
+            $0.apiName.hasPrefix("storage.session")
+                && ["permissionDenied", "blocked", "missing storage.session"]
+                    .contains($0.resultClassifier)
+        }) {
+            return .storageSessionFailure
+        }
+        if routes.contains(where: {
+            $0.apiName.hasPrefix("storage.sync")
+                && ["permissionDenied", "blocked", "missing storage.sync"]
+                    .contains($0.resultClassifier)
+        }) {
+            return .storageSyncFailure
+        }
+        if trace.classification == "appStateWaitWithSuppressedEvent" {
+            return .storageOnChangedFailure
+        }
+        if trace.classification == "appStateWaitWithNoWriter"
+            || trace.repeatedEmptyReadKeyHashes.isEmpty == false
+        {
+            return .storageLocalFailure
+        }
+        return nil
+    }
+
+    private static func classifyTabsFailure(
+        routes: [ChromeMV3PopupOptionsSanitizedBridgeRouteRecord],
+        pending: [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
+    ) -> ChromeMV3ControlledPopupPostResourceBlocker? {
+        if routes.contains(where: {
+            $0.apiName == "tabs.query"
+                && ["permissionDenied", "blocked", "noEligibleTab"]
+                    .contains($0.resultClassifier)
+        }) {
+            return .tabsQueryFailure
+        }
+        if routes.contains(where: {
+            $0.apiName == "tabs.sendMessage"
+                && ["noReceivingEnd", "noListener", "blocked"]
+                    .contains($0.resultClassifier)
+        }) || pending.contains(where: { $0.apiName == "tabs.sendMessage" }) {
+            return .tabsSendMessageFailure
+        }
+        return nil
+    }
+
+    private static func classifyExtensionLocalState(
+        trace: ChromeMV3AppStateDependencyCorrelationSummary,
+        domProbe: ChromeMV3ControlledPopupBaselineDOMProbe?,
+        events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
+    ) -> ChromeMV3ControlledPopupPostResourceBlocker? {
+        let finalCheckpoint = events.last(where: {
+            $0.eventKind == "postBootstrapCheckpoint"
+                && $0.diagnostics.contains("phase=final")
+        })
+        let coarseStatus = finalCheckpoint?.resultClassifier ?? ""
+        let domBlank =
+            domProbe.map {
+                $0.visibleTextLength == 0 && $0.controlCount == 0
+            } ?? false
+        if coarseStatus == "blank"
+            || coarseStatus == "spinner/loading"
+            || domBlank
+        {
+            return .extensionLocalRenderState
+        }
+        if trace.classification == "appStateWaitWithNoWriter"
+            || trace.classification == "appStateWaitWithNoObservableDependency"
+            || trace.classification == "appStateWaitWithUnresolvedBridgeRoute"
+            || trace.classification == "appStateWaitWithDelayedWriter"
+            || coarseStatus == "waits on app state"
+            || coarseStatus == "waits on unresolved bridge call"
+        {
+            return .extensionLocalAppState
+        }
+        return nil
+    }
+
+    private static func sanitizedLines(
+        events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord],
+        routes: [ChromeMV3PopupOptionsSanitizedBridgeRouteRecord],
+        pending: [ChromeMV3PopupOptionsJSDebugRouteEventRecord],
+        trace: ChromeMV3AppStateDependencyCorrelationSummary,
+        domProbe: ChromeMV3ControlledPopupBaselineDOMProbe?,
+        bridgeInstalled: Bool,
+        scriptsExecuted: Bool
+    ) -> [String] {
+        var lines: [String] = [
+            "scriptsExecuted=\(scriptsExecuted)",
+            "bridgeBootstrapSucceeded=\(bridgeInstalled)",
+            "postResourceEventCount=\(events.count)",
+            "postResourceRouteCount=\(routes.count)",
+            "pendingRouteCount=\(pending.count)",
+            "appStateClassification=\(trace.classification)",
+            "networkOrAuthDependencyObserved=\(trace.networkOrAuthDependencyObserved)",
+            "missingAPIsObserved=\(trace.missingAPIsObserved.joined(separator: ","))",
+            "popupReadNeverWrittenCount=\(trace.popupReadKeyHashesNeverWritten.count)",
+            "storageOnChangedReachedListeners=\(trace.storageOnChangedReachedRegisteredListeners)",
+        ]
+        if let domProbe {
+            lines.append("domOutcome=\(domProbe.outcome)")
+            lines.append("domVisibleTextLength=\(domProbe.visibleTextLength)")
+            lines.append("domControlCount=\(domProbe.controlCount)")
+            lines.append("domCoarseUsable=\(domProbe.coarseUsable)")
+        }
+        for event in events.suffix(24) {
+            lines.append(
+                [
+                    "event",
+                    "kind=\(event.eventKind)",
+                    "api=\(event.apiName)",
+                    "target=\(event.targetContext ?? "unknown")",
+                    "classifier=\(event.resultClassifier ?? "none")",
+                    "firstError=\(event.firstMissingAPIOrPermissionOrLifecycleError ?? "none")",
+                ].joined(separator: " ")
+            )
+        }
+        return lines
     }
 }

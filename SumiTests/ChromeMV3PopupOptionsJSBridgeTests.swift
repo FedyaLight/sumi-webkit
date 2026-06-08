@@ -866,6 +866,9 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             controlledPolicy.allowedMethods.contains("runtime.getManifest")
         )
         XCTAssertTrue(
+            source.contains("Object.defineProperty(runtime, \"id\"")
+        )
+        XCTAssertTrue(
             controlledPolicy.allowedMethods.contains("runtime.onMessage")
         )
         XCTAssertFalse(
@@ -3106,6 +3109,64 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             "The controlled popup-host POC must not launch com.bitwarden.desktop."
         )
         #endif
+    }
+
+    @MainActor
+    func testControlledRuntimeIDSurvivesWebExtensionPolyfillGuard()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("WKWebView extension-page bridge requires macOS 15.5.")
+        }
+        let extensionID = "popup-options-runtime-id"
+        let root = try makeTemporaryDirectory()
+        let htmlURL = root.appendingPathComponent("popup.html")
+        try """
+        <!doctype html>
+        <meta charset="utf-8">
+        <title>Runtime ID</title>
+        """.write(to: htmlURL, atomically: true, encoding: .utf8)
+        let config = configuration(
+            extensionID: extensionID,
+            allowlist: .controlledActionPopupPolicy
+        )
+        let installation = ChromeMV3PopupOptionsJSBridgeInstallation(
+            configuration: config,
+            allowlist: config.allowlist,
+            bridgeAvailable: true,
+            scriptSource: ChromeMV3PopupOptionsJSShimSource.source(
+                configuration: config
+            ),
+            messageHandlerName:
+                ChromeMV3PopupOptionsJSShimSource.bridgeMessageHandlerName,
+            diagnostics: config.diagnostics
+        )
+        let handle = ChromeMV3ProductPopupOptionsWKWebViewHandle(
+            loadFileURL: htmlURL,
+            readAccessURL: root,
+            bridgeInstallation: installation,
+            permissionPromptPresenter: nil,
+            permissionEventDispatcher: nil
+        )
+        defer { handle.tearDown() }
+        try await handle.waitForLoadForTesting()
+        let runtimeID = try await handle.callAsyncJavaScriptForTesting(
+            """
+            if (
+              !(
+                globalThis.chrome
+                && globalThis.chrome.runtime
+                && globalThis.chrome.runtime.id
+              )
+            ) {
+              throw new Error(
+                "This script should only be loaded in a browser extension."
+              );
+            }
+            return chrome.runtime.id;
+            """
+        ) as? String
+        XCTAssertEqual(runtimeID, extensionID)
     }
 
     @MainActor

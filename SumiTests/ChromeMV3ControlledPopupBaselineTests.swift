@@ -814,6 +814,119 @@ final class ChromeMV3ControlledPopupBaselineTests: XCTestCase {
             )
         }
     }
+    @MainActor
+    func testProtonPassControlledPopupFirstPostResourceBlockerClassification()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Controlled popup baseline matrix requires macOS 15.5.")
+        }
+        let row = try await evaluateProtonPassExtensionRow()
+        XCTAssertNotEqual(
+            row.outcome,
+            .resourceLoadFailure,
+            "Required popup resources must load before post-resource classification."
+        )
+        let packageRoot = mv3TestExtensionsRoot.appendingPathComponent(
+            "Proton",
+            isDirectory: true
+        )
+        guard FileManager.default.fileExists(
+            atPath: packageRoot.appendingPathComponent("manifest.json").path
+        ) else {
+            throw XCTSkip("Proton Pass fixture package is unavailable.")
+        }
+        XCTAssertTrue(row.ranLivePopup, row.notes)
+
+        let root = try makeTemporaryDirectory()
+        let profileID = UUID()
+        let module = try makeModule(
+            enabled: true,
+            includesModelContext: true,
+            useFileBackedPopupHost: true
+        )
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: packageRoot,
+            profileID: profileID.uuidString,
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: record.extensionID
+        )
+        let currentTab = Tab(url: URL(string: "https://example.com/login")!)
+        currentTab.profileId = profileID
+        let result = await module.openActionPopupFromURLHub(
+            extensionId: record.extensionID,
+            currentTab: currentTab
+        )
+        defer {
+            _ = module.chromeMV3ClosePopupOptionsThroughManager(
+                profileID: record.profileID,
+                extensionID: record.extensionID
+            )
+        }
+        XCTAssertTrue(result.opened, result.message ?? "popup blocked")
+        let domProbe = try await waitForBaselineDOMProbe(
+            module: module,
+            profileID: record.profileID,
+            extensionID: record.extensionID,
+            allowMissingBaselineMarker: true
+        )
+        let snapshot = try await waitForPopupBridgeSnapshot(
+            module: module,
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+        let resourceLoadErrors = snapshot.jsDebugRouteEvents.filter {
+            $0.eventKind == "resourceLoadError"
+                && ChromeMV3PopupOptionsHostResourceLoadDiagnostics
+                    .isOptionalSourceMapProbeEvent($0) == false
+        }
+        XCTAssertTrue(
+            resourceLoadErrors.isEmpty,
+            "Required popup resources must load cleanly before post-resource triage."
+        )
+
+        let postResource = ChromeMV3ControlledPopupPostResourceClassifier
+            .classifyWithSummary(
+                snapshot: snapshot,
+                domProbe: domProbe
+            )
+        let attachment = XCTAttachment(
+            string: """
+            rowOutcome=\(row.outcome.rawValue)
+            rowNotes=\(row.notes)
+            postResourceBlocker=\(postResource.blocker.rawValue)
+            scriptsExecuted=\(postResource.scriptsExecuted)
+            bridgeBootstrapSucceeded=\(postResource.bridgeBootstrapSucceeded)
+            diagnostics:
+            \(postResource.lines.joined(separator: "\n"))
+            """
+        )
+        attachment.name = "proton-pass-first-post-resource-blocker"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTAssertEqual(
+            row.outcome,
+            postResource.blocker.baselineOutcome,
+            "Matrix row outcome should match post-resource classifier."
+        )
+        XCTAssertEqual(
+            postResource.blocker,
+            .popupLocalScriptFailure,
+            "Proton Pass first post-resource blocker after required resources load."
+        )
+        XCTAssertTrue(postResource.scriptsExecuted)
+        XCTAssertTrue(postResource.bridgeBootstrapSucceeded)
+        XCTAssertNotEqual(
+            row.outcome,
+            .usableUI,
+            "Proton Pass does not reach usable UI in this bounded pass."
+        )
+    }
     #endif
 
     @MainActor
