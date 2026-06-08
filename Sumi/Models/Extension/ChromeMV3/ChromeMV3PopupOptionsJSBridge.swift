@@ -8437,6 +8437,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
             if (namespace === "runtime" && methodName === "sendMessage") {
               return [response.resultPayload];
             }
+            if (namespace === "tabs" && methodName === "sendMessage") {
+              return [response.resultPayload];
+            }
             if (namespace === "runtime" && methodName === "sendNativeMessage") {
               return [response.resultPayload];
             }

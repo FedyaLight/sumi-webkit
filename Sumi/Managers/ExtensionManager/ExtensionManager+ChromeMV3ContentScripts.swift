@@ -287,6 +287,37 @@ import WebKit
             browserManager: BrowserManager?,
             managerStoreRootURL: URL,
             localExperimentalGateAllowed: Bool,
+            injectIntoLoadedDocument: Bool,
+            trace: @escaping (String) -> Void
+        ) async {
+            bindPreparedPackagesWithoutLoadedDocumentInjection(
+                tab: tab,
+                webView: webView,
+                url: url,
+                installedExtensions: installedExtensions,
+                currentProfileID: currentProfileID,
+                browserManager: browserManager,
+                managerStoreRootURL: managerStoreRootURL,
+                localExperimentalGateAllowed: localExperimentalGateAllowed,
+                trace: trace
+            )
+            guard injectIntoLoadedDocument else { return }
+            await injectBoundPreparedPackagesIntoLoadedDocumentIfNeeded(
+                tabID: tab.id,
+                webView: webView,
+                trace: trace
+            )
+        }
+
+        func bindPreparedPackagesWithoutLoadedDocumentInjection(
+            tab: Tab,
+            webView: WKWebView,
+            url: URL,
+            installedExtensions: [InstalledExtension],
+            currentProfileID: UUID?,
+            browserManager: BrowserManager?,
+            managerStoreRootURL: URL,
+            localExperimentalGateAllowed: Bool,
             trace: @escaping (String) -> Void
         ) {
             tearDownTab(
@@ -520,6 +551,65 @@ import WebKit
                 handlesByExtensionID: handlesByExtensionID
             )
             traceSummary(reason: "attachment complete", trace: trace)
+        }
+
+        func injectBoundPreparedPackagesIntoLoadedDocumentIfNeeded(
+            tabID: UUID,
+            webView: WKWebView,
+            trace: @escaping (String) -> Void
+        ) async {
+            guard let state = tabStates[tabID] else {
+                trace(
+                    "[content-script-bind] loadedDocumentInjection skipped tab=\(tabID.uuidString) because=noBoundTabState"
+                )
+                return
+            }
+            for handle in state.handlesByExtensionID.values {
+                let injectionDiagnostics =
+                    await handle
+                    .injectInstalledScriptsIntoLoadedDocumentIfNeeded(webView)
+                for line in injectionDiagnostics {
+                    trace("[content-script-bind] \(line)")
+                }
+            }
+            let extensionIDs = Array(state.handlesByExtensionID.keys).sorted()
+            var listenerRegistrationObserved = false
+            for attempt in 0..<100 {
+                for handle in state.handlesByExtensionID.values {
+                    if await handle
+                        .syncMessageListenerRegistrationFromContentWorldIfNeeded(
+                            webView
+                        )
+                    {
+                        trace(
+                            "[content-script-bind] loadedDocumentInjection listenerRegistration=syncedFromContentWorld attempt=\(attempt) tab=\(state.localTabID) document=\(state.documentID)"
+                        )
+                    }
+                }
+                listenerRegistrationObserved = extensionIDs.allSatisfy {
+                    extensionID in
+                    endpointRegistry.targetEndpoint(
+                        extensionID: extensionID,
+                        profileID: state.profileID,
+                        tabID: state.localTabID,
+                        frameID: 0,
+                        documentID: state.documentID
+                    )?.messageListenerRegistered == true
+                }
+                if listenerRegistrationObserved {
+                    trace(
+                        "[content-script-bind] loadedDocumentInjection listenerRegistration=observed attempt=\(attempt) extensionCount=\(extensionIDs.count) tab=\(state.localTabID) document=\(state.documentID)"
+                    )
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 10_000_000)
+            }
+            if listenerRegistrationObserved == false {
+                trace(
+                    "[content-script-bind] loadedDocumentInjection listenerRegistration=timeout extensionCount=\(extensionIDs.count) tab=\(state.localTabID) document=\(state.documentID) listenerEndpoints=\(endpointRegistry.summary.messageListenerEndpointCount)"
+                )
+            }
+            traceSummary(reason: "loaded document injection complete", trace: trace)
         }
 
         func noteLifecycle(
@@ -964,6 +1054,194 @@ extension ExtensionManager {
         localExperimentalGateAllowed: Bool = false,
         reason: String
     ) {
+        #if DEBUG
+            if entrypoint == .initialPageLoadEligibility {
+                noteChromeMV3ContentScriptLifecycleEntrypointForPreparedBinding(
+                    tab: tab,
+                    webView: webView,
+                    url: url,
+                    entrypoint: entrypoint,
+                    localExperimentalGateAllowed:
+                        localExperimentalGateAllowed,
+                    reason: reason
+                )
+                return
+            }
+            if entrypoint == .urlHubActionClickScriptingTarget {
+                extensionRuntimeTrace(
+                    "[content-script-bind] blocked tab=\(tab.id.uuidString) entrypoint=urlHubActionClickScriptingTarget reason=syncEntrypointRequiresAsyncBinding"
+                )
+                return
+            }
+        #endif
+        noteChromeMV3ContentScriptLifecycleEntrypointWithoutPreparedBinding(
+            tab: tab,
+            webView: webView,
+            url: url,
+            entrypoint: entrypoint,
+            localExperimentalGateAllowed: localExperimentalGateAllowed,
+            reason: reason
+        )
+    }
+
+    func noteChromeMV3ContentScriptLifecycleEntrypointAsync(
+        tab: Tab,
+        webView: WKWebView?,
+        url: URL?,
+        entrypoint: ChromeMV3ContentScriptLifecycleEntrypoint,
+        localExperimentalGateAllowed: Bool = false,
+        reason: String
+    ) async {
+        #if DEBUG
+            if entrypoint == .initialPageLoadEligibility
+                || entrypoint == .urlHubActionClickScriptingTarget
+            {
+                let trace: (String) -> Void = { [weak self] message in
+                    self?.extensionRuntimeTrace(message)
+                }
+                let profileID =
+                    tab.resolveProfile()?.id.uuidString ?? "unknown-profile"
+                let surface: ChromeMV3WebViewSurface =
+                    webView?.configuration.sumiIsNormalTabWebViewConfiguration
+                        == true
+                        ? .normalTab
+                        : .helperWebView
+                extensionRuntimeTrace(
+                    "[content-script-lifecycle] entrypoint=\(entrypoint.rawValue) tab=\(tab.id.uuidString) profile=\(profileID) url=\((url ?? webView?.url)?.absoluteString ?? "nil") surface=\(surface.rawValue) normalTabConfig=\(webView?.configuration.sumiIsNormalTabWebViewConfiguration == true) developerPreviewOnly=true extensionScoped=true explicitProfileTabGateRequired=true localGate=\(localExperimentalGateAllowed) noGlobalRuntime=true reason=\(reason)"
+                )
+                guard localExperimentalGateAllowed,
+                      let webView,
+                      let url,
+                      canCreateChromeMV3LivePreparedContentScriptRuntime(
+                        tab: tab,
+                        webView: webView,
+                        url: url
+                      )
+                else {
+                    if entrypoint == .initialPageLoadEligibility {
+                        chromeMV3LivePreparedContentScriptRuntime?.noteLifecycle(
+                            tab: tab,
+                            webView: webView,
+                            url: url,
+                            entrypoint: .webViewDiscarded,
+                            trace: trace
+                        )
+                    } else {
+                        extensionRuntimeTrace(
+                            "[content-script-bind] blocked tab=\(tab.id.uuidString) entrypoint=\(entrypoint.rawValue) reason=\(reason)"
+                        )
+                    }
+                    return
+                }
+                let runtime =
+                    chromeMV3LivePreparedContentScriptRuntime
+                    ?? ChromeMV3LivePreparedContentScriptRuntime()
+                chromeMV3LivePreparedContentScriptRuntime = runtime
+                await runtime.bindPreparedPackages(
+                    tab: tab,
+                    webView: webView,
+                    url: url,
+                    installedExtensions: installedExtensions,
+                    currentProfileID: currentProfileId,
+                    browserManager: browserManager,
+                    managerStoreRootURL:
+                        ChromeMV3ExtensionManagerStoreLocation.defaultRootURL(),
+                    localExperimentalGateAllowed:
+                        localExperimentalGateAllowed,
+                    injectIntoLoadedDocument: true,
+                    trace: trace
+                )
+                if entrypoint == .urlHubActionClickScriptingTarget {
+                    runtime.bindScriptingExecuteScriptWebViewTargetIfAllowed(
+                        tab: tab,
+                        webView: webView,
+                        url: url,
+                        currentProfileID: currentProfileId,
+                        browserManager: browserManager,
+                        localExperimentalGateAllowed:
+                            localExperimentalGateAllowed,
+                        trace: trace
+                    )
+                }
+                return
+            }
+        #endif
+        noteChromeMV3ContentScriptLifecycleEntrypointWithoutPreparedBinding(
+            tab: tab,
+            webView: webView,
+            url: url,
+            entrypoint: entrypoint,
+            localExperimentalGateAllowed: localExperimentalGateAllowed,
+            reason: reason
+        )
+    }
+
+    private func noteChromeMV3ContentScriptLifecycleEntrypointForPreparedBinding(
+        tab: Tab,
+        webView: WKWebView?,
+        url: URL?,
+        entrypoint: ChromeMV3ContentScriptLifecycleEntrypoint,
+        localExperimentalGateAllowed: Bool,
+        reason: String
+    ) {
+        #if DEBUG
+            let trace: (String) -> Void = { [weak self] message in
+                self?.extensionRuntimeTrace(message)
+            }
+            let profileID =
+                tab.resolveProfile()?.id.uuidString ?? "unknown-profile"
+            let surface: ChromeMV3WebViewSurface =
+                webView?.configuration.sumiIsNormalTabWebViewConfiguration == true
+                    ? .normalTab
+                    : .helperWebView
+            extensionRuntimeTrace(
+                "[content-script-lifecycle] entrypoint=\(entrypoint.rawValue) tab=\(tab.id.uuidString) profile=\(profileID) url=\((url ?? webView?.url)?.absoluteString ?? "nil") surface=\(surface.rawValue) normalTabConfig=\(webView?.configuration.sumiIsNormalTabWebViewConfiguration == true) developerPreviewOnly=true extensionScoped=true explicitProfileTabGateRequired=true localGate=\(localExperimentalGateAllowed) noGlobalRuntime=true reason=\(reason)"
+            )
+            guard localExperimentalGateAllowed,
+                  let webView,
+                  let url,
+                  canCreateChromeMV3LivePreparedContentScriptRuntime(
+                    tab: tab,
+                    webView: webView,
+                    url: url
+                  )
+            else {
+                chromeMV3LivePreparedContentScriptRuntime?.noteLifecycle(
+                    tab: tab,
+                    webView: webView,
+                    url: url,
+                    entrypoint: .webViewDiscarded,
+                    trace: trace
+                )
+                return
+            }
+            let runtime =
+                chromeMV3LivePreparedContentScriptRuntime
+                ?? ChromeMV3LivePreparedContentScriptRuntime()
+            chromeMV3LivePreparedContentScriptRuntime = runtime
+            runtime.bindPreparedPackagesWithoutLoadedDocumentInjection(
+                tab: tab,
+                webView: webView,
+                url: url,
+                installedExtensions: installedExtensions,
+                currentProfileID: currentProfileId,
+                browserManager: browserManager,
+                managerStoreRootURL:
+                    ChromeMV3ExtensionManagerStoreLocation.defaultRootURL(),
+                localExperimentalGateAllowed: localExperimentalGateAllowed,
+                trace: trace
+            )
+        #endif
+    }
+
+    private func noteChromeMV3ContentScriptLifecycleEntrypointWithoutPreparedBinding(
+        tab: Tab,
+        webView: WKWebView?,
+        url: URL?,
+        entrypoint: ChromeMV3ContentScriptLifecycleEntrypoint,
+        localExperimentalGateAllowed: Bool,
+        reason: String
+    ) {
         let profileID = tab.resolveProfile()?.id.uuidString ?? "unknown-profile"
         let surface: ChromeMV3WebViewSurface =
             webView?.configuration.sumiIsNormalTabWebViewConfiguration == true
@@ -976,88 +1254,6 @@ extension ExtensionManager {
         #if DEBUG
             let trace: (String) -> Void = { [weak self] message in
                 self?.extensionRuntimeTrace(message)
-            }
-            if entrypoint == .initialPageLoadEligibility {
-                guard localExperimentalGateAllowed,
-                      let webView,
-                      let url,
-                      canCreateChromeMV3LivePreparedContentScriptRuntime(
-                        tab: tab,
-                        webView: webView,
-                        url: url
-                      )
-                else {
-                    chromeMV3LivePreparedContentScriptRuntime?.noteLifecycle(
-                        tab: tab,
-                        webView: webView,
-                        url: url,
-                        entrypoint: .webViewDiscarded,
-                        trace: trace
-                    )
-                    return
-                }
-                let runtime =
-                    chromeMV3LivePreparedContentScriptRuntime
-                    ?? ChromeMV3LivePreparedContentScriptRuntime()
-                chromeMV3LivePreparedContentScriptRuntime = runtime
-                runtime.bindPreparedPackages(
-                    tab: tab,
-                    webView: webView,
-                    url: url,
-                    installedExtensions: installedExtensions,
-                    currentProfileID: currentProfileId,
-                    browserManager: browserManager,
-                    managerStoreRootURL:
-                        ChromeMV3ExtensionManagerStoreLocation.defaultRootURL(),
-                    localExperimentalGateAllowed:
-                        localExperimentalGateAllowed,
-                    trace: trace
-                )
-                return
-            }
-            if entrypoint == .urlHubActionClickScriptingTarget {
-                guard localExperimentalGateAllowed,
-                      let webView,
-                      let url,
-                      canCreateChromeMV3LivePreparedContentScriptRuntime(
-                        tab: tab,
-                        webView: webView,
-                        url: url
-                      )
-                else {
-                    extensionRuntimeTrace(
-                        "[content-script-bind] blocked tab=\(tab.id.uuidString) entrypoint=urlHubActionClickScriptingTarget reason=\(reason)"
-                    )
-                    return
-                }
-                let runtime =
-                    chromeMV3LivePreparedContentScriptRuntime
-                    ?? ChromeMV3LivePreparedContentScriptRuntime()
-                chromeMV3LivePreparedContentScriptRuntime = runtime
-                runtime.bindPreparedPackages(
-                    tab: tab,
-                    webView: webView,
-                    url: url,
-                    installedExtensions: installedExtensions,
-                    currentProfileID: currentProfileId,
-                    browserManager: browserManager,
-                    managerStoreRootURL:
-                        ChromeMV3ExtensionManagerStoreLocation.defaultRootURL(),
-                    localExperimentalGateAllowed:
-                        localExperimentalGateAllowed,
-                    trace: trace
-                )
-                runtime.bindScriptingExecuteScriptWebViewTargetIfAllowed(
-                    tab: tab,
-                    webView: webView,
-                    url: url,
-                    currentProfileID: currentProfileId,
-                    browserManager: browserManager,
-                    localExperimentalGateAllowed:
-                        localExperimentalGateAllowed,
-                    trace: trace
-                )
-                return
             }
             chromeMV3LivePreparedContentScriptRuntime?.noteLifecycle(
                 tab: tab,
@@ -1101,7 +1297,7 @@ extension ExtensionManager {
         func bindChromeMV3ScriptingExecuteScriptTargetForURLHubActionClickIfAllowed(
             currentTab: Tab,
             localExperimentalGateAllowed: Bool
-        ) -> (localTabID: Int, url: URL)? {
+        ) async -> (localTabID: Int, url: URL)? {
             guard let webView = materializedNormalTabWebView(for: currentTab),
                   let url = webView.url ?? Optional(currentTab.url),
                   ["http", "https"].contains(url.scheme?.lowercased() ?? "")
@@ -1111,7 +1307,7 @@ extension ExtensionManager {
                 )
                 return nil
             }
-            noteChromeMV3ContentScriptLifecycleEntrypoint(
+            await noteChromeMV3ContentScriptLifecycleEntrypointAsync(
                 tab: currentTab,
                 webView: webView,
                 url: url,

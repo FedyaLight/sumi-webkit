@@ -57,6 +57,17 @@ final class ChromeMV3ControlledPopupBaselineTests: XCTestCase {
         XCTAssertEqual(staticRow?.outcome, .usableUI)
         XCTAssertTrue(staticRow?.ranLivePopup == true)
 
+        let tabsSendMessageRow = rows.first {
+            $0.rowID
+                == ChromeMV3ControlledPopupBaselineFixtureID.minimalTabsSendMessage
+                .rawValue
+        }
+        XCTAssertEqual(
+            tabsSendMessageRow?.outcome,
+            .usableUI,
+            "minimal-tabs-sendMessage must reach usableUI through the generic popup/content-script path."
+        )
+
         let bitwardenRow = rows.first {
             $0.rowID == ChromeMV3ControlledPopupBaselineExtensionID.bitwarden.rawValue
         }
@@ -101,6 +112,123 @@ final class ChromeMV3ControlledPopupBaselineTests: XCTestCase {
                 )
             }
         }
+    }
+
+    @MainActor
+    func testMinimalTabsSendMessageBindRegistersListener() async throws {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Controlled popup baseline matrix requires macOS 15.5.")
+        }
+        let context = try makeLiveTabModuleFixture(
+            profileName: "Baseline Tabs SendMessage Bind"
+        )
+        defer { context.tearDown() }
+        context.module.chromeMV3InternalNormalTabConfigurationAttachmentAllowed =
+            true
+        _ = try XCTUnwrap(
+            context.module.createChromeMV3EmptyControllerOwnerIfEnabled(
+                explicitControllerCreationAllowed: true
+            )
+        )
+        let windowState = BrowserWindowState()
+        let windowRegistry = WindowRegistry()
+        windowRegistry.register(windowState)
+        context.browserManager.windowRegistry = windowRegistry
+        context.browserManager.webViewCoordinator = WebViewCoordinator()
+        let root = try makeTemporaryDirectory()
+        let fixtureID = ChromeMV3ControlledPopupBaselineFixtureID.minimalTabsSendMessage
+        let source = try makeFixtureDirectory(
+            named: "baseline-\(fixtureID.rawValue)-bind",
+            manifest: ChromeMV3ControlledPopupBaselineFixtureFactory.manifest(
+                for: fixtureID
+            ),
+            files: ChromeMV3ControlledPopupBaselineFixtureFactory.files(
+                for: fixtureID
+            )
+        )
+        let install = context.module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: source,
+            profileID: context.profile.id.uuidString,
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+        _ = await waitForEnabledExtension(
+            in: context.module,
+            extensionId: record.extensionID
+        )
+        let tab = context.makeTab(
+            url: URL(string: "https://example.com/article")!
+        )
+        tab.primaryWindowId = windowState.id
+        let webView = try XCTUnwrap(
+            tab.makeNormalTabWebView(reason: "test.baseline.tabsSendMessage.bind")
+        )
+        tab._webView = webView
+        try XCTUnwrap(context.browserManager.webViewCoordinator).setWebView(
+            webView,
+            for: tab.id,
+            in: windowState.id
+        )
+        let navigationObserver = BaselineMaterializedTabNavigationObserver()
+        webView.navigationDelegate = navigationObserver
+        let navigation = webView.loadHTMLString(
+            """
+            <!doctype html>
+            <html>
+              <head><title>Baseline Materialized Tab</title></head>
+              <body><main><h1>Fixture</h1></main></body>
+            </html>
+            """,
+            baseURL: tab.url
+        )
+        try await navigationObserver.wait(navigation: navigation)
+        context.module.noteChromeMV3ContentScriptLifecycleEntrypointIfLoaded(
+            tab,
+            webView: webView,
+            url: tab.url,
+            entrypoint: .initialPageLoadEligibility,
+            reason: "baseline.fixture.tabsSendMessage.bind"
+        )
+        let manager = try XCTUnwrap(context.module.managerIfEnabled())
+        _ = await manager
+            .bindChromeMV3ScriptingExecuteScriptTargetForURLHubActionClickIfAllowed(
+                currentTab: tab,
+                localExperimentalGateAllowed: true
+            )
+        let registry = manager.chromeMV3ContentScriptEndpointRegistryIfLoaded()
+        let contentWorld = WKContentWorld.world(
+            name: "sumi.mv3.content.\(record.profileID).\(record.extensionID)"
+        )
+        let pageReadyState = try await webView.callAsyncJavaScript(
+            "return document.readyState",
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        )
+        let listenerCount = try await webView.callAsyncJavaScript(
+            """
+            return (typeof chrome !== "undefined"
+              && chrome.runtime
+              && chrome.runtime.onMessage
+              && typeof chrome.runtime.onMessage.listenerCount === "function")
+              ? chrome.runtime.onMessage.listenerCount()
+              : 0;
+            """,
+            arguments: [:],
+            in: nil,
+            contentWorld: contentWorld
+        )
+        let summary = [
+            "pageReadyState=\(String(describing: pageReadyState ?? "nil"))",
+            "jsListenerCount=\(String(describing: listenerCount ?? "nil"))",
+            "nativeListenerEndpoints=\(registry?.summary.messageListenerEndpointCount ?? -1)",
+        ].joined(separator: " | ")
+        XCTAssertGreaterThan(
+            registry?.summary.messageListenerEndpointCount ?? 0,
+            0,
+            summary
+        )
     }
 
     @MainActor

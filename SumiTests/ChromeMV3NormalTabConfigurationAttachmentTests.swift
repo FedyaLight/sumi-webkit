@@ -403,7 +403,7 @@ final class ChromeMV3NormalTabConfigurationAttachmentTests: XCTestCase {
 
     @MainActor
     func testURLHubActionClickBindingRegistersScriptingExecuteScriptTarget()
-        throws
+        async throws
     {
         guard #available(macOS 15.5, *) else {
             throw XCTSkip("Chrome MV3 WebKit attachment APIs require macOS 15.5.")
@@ -446,19 +446,23 @@ final class ChromeMV3NormalTabConfigurationAttachmentTests: XCTestCase {
             in: windowState.id
         )
 
-        XCTAssertNil(
-            manager.bindChromeMV3ScriptingExecuteScriptTargetForURLHubActionClickIfAllowed(
+        let blockedBinding = await manager
+            .bindChromeMV3ScriptingExecuteScriptTargetForURLHubActionClickIfAllowed(
                 currentTab: tab,
                 localExperimentalGateAllowed: false
-            ),
+            )
+        XCTAssertNil(
+            blockedBinding,
             "URL-hub scripting bind must stay blocked when the local gate is closed."
         )
 
-        let binding = try XCTUnwrap(
-            manager.bindChromeMV3ScriptingExecuteScriptTargetForURLHubActionClickIfAllowed(
+        let allowedBinding = await manager
+            .bindChromeMV3ScriptingExecuteScriptTargetForURLHubActionClickIfAllowed(
                 currentTab: tab,
                 localExperimentalGateAllowed: true
-            ),
+            )
+        let binding = try XCTUnwrap(
+            allowedBinding,
             "URL-hub scripting bind should succeed for a materialized normal tab."
         )
         let target = try XCTUnwrap(

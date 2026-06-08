@@ -5041,31 +5041,48 @@ final class ChromeMV3ContentScriptWKScriptMessageHandler:
 final class ChromeMV3ContentScriptWKAttachmentHandle {
     private weak var configuration: WKWebViewConfiguration?
     private var installedScripts: [WKUserScript]
+    private let injectionSources: [String]
+    private let loadedDocumentInjectionDocumentID: String
     private var installedCSSStyleSheetCount: Int
     private var messageHandlerName: String?
     private var contentWorld: WKContentWorld
     private var scriptHandler: ChromeMV3ContentScriptWKScriptMessageHandler?
     private let endpointRegistry: ChromeMV3ContentScriptEndpointRegistry
+    private let extensionID: String
+    private let profileID: String
+    private let tabID: Int
+    private let frameID: Int
     private var endpointID: String?
     private var tornDown = false
 
     init(
         configuration: WKWebViewConfiguration,
         installedScripts: [WKUserScript],
+        loadedDocumentInjectionDocumentID: String,
         installedCSSStyleSheetCount: Int,
         messageHandlerName: String?,
         contentWorld: WKContentWorld,
         scriptHandler: ChromeMV3ContentScriptWKScriptMessageHandler?,
         endpointRegistry: ChromeMV3ContentScriptEndpointRegistry,
+        extensionID: String,
+        profileID: String,
+        tabID: Int,
+        frameID: Int,
         endpointID: String?
     ) {
         self.configuration = configuration
         self.installedScripts = installedScripts
+        self.injectionSources = installedScripts.map(\.source)
+        self.loadedDocumentInjectionDocumentID = loadedDocumentInjectionDocumentID
         self.installedCSSStyleSheetCount = installedCSSStyleSheetCount
         self.messageHandlerName = messageHandlerName
         self.contentWorld = contentWorld
         self.scriptHandler = scriptHandler
         self.endpointRegistry = endpointRegistry
+        self.extensionID = extensionID
+        self.profileID = profileID
+        self.tabID = tabID
+        self.frameID = frameID
         self.endpointID = endpointID
     }
 
@@ -5135,6 +5152,153 @@ final class ChromeMV3ContentScriptWKAttachmentHandle {
                 contentWorldName: contentWorldName
             )
         }
+    }
+
+    func injectInstalledScriptsIntoLoadedDocumentIfNeeded(
+        _ webView: WKWebView
+    ) async -> [String] {
+        guard tornDown == false,
+              injectionSources.isEmpty == false
+        else {
+            return [
+                "loadedDocumentInjection skipped because attachment handle is torn down or has no injectable sources."
+            ]
+        }
+        let readyState = await documentReadyStateForLoadedDocumentInjection(
+            webView
+        )
+        guard let readyState else {
+            return [
+                "loadedDocumentInjection skipped because document.readyState could not be read from the page or content world."
+            ]
+        }
+        guard readyState != "loading" else {
+            return [
+                "loadedDocumentInjection deferred because document.readyState=loading; WKUserScript injection will run on the next navigation commit."
+            ]
+        }
+        var diagnostics = [
+            "loadedDocumentInjection document.readyState=\(readyState) documentID=\(loadedDocumentInjectionDocumentID) scriptCount=\(injectionSources.count)."
+        ]
+        for (index, source) in injectionSources.enumerated() {
+            let marker =
+                "sumi.mv3.loadedDocument.\(loadedDocumentInjectionDocumentID).\(index)"
+            let wrappedSource = """
+            return (() => {
+              const marker = "\(marker)";
+              if (globalThis[marker]) {
+                return { injected: false, reason: "alreadyInjected" };
+              }
+              globalThis[marker] = true;
+            \(source)
+              return { injected: true, reason: "executed" };
+            })();
+            """
+            do {
+                let result = try await webView.callAsyncJavaScript(
+                    wrappedSource,
+                    arguments: [:],
+                    in: nil,
+                    contentWorld: contentWorld
+                )
+                if let object = result as? [String: Any],
+                   object["injected"] as? Bool == false
+                {
+                    diagnostics.append(
+                        "loadedDocumentInjection scriptIndex=\(index) result=alreadyInjected."
+                    )
+                } else if let object = result as? [String: Any],
+                          object["injected"] as? Bool == true
+                {
+                    diagnostics.append(
+                        "loadedDocumentInjection scriptIndex=\(index) result=executed."
+                    )
+                } else {
+                    diagnostics.append(
+                        "loadedDocumentInjection scriptIndex=\(index) result=unexpectedReturn."
+                    )
+                }
+            } catch {
+                diagnostics.append(
+                    "loadedDocumentInjection scriptIndex=\(index) result=failed error=\(error.localizedDescription)."
+                )
+            }
+        }
+        return diagnostics
+    }
+
+    private func documentReadyStateForLoadedDocumentInjection(
+        _ webView: WKWebView
+    ) async -> String? {
+        for world in [WKContentWorld.page, contentWorld] {
+            do {
+                let result = try await webView.callAsyncJavaScript(
+                    "return document.readyState",
+                    arguments: [:],
+                    in: nil,
+                    contentWorld: world
+                )
+                if let readyState = result as? String,
+                   readyState.isEmpty == false
+                {
+                    return readyState
+                }
+            } catch {
+                continue
+            }
+        }
+        return nil
+    }
+
+    func syncMessageListenerRegistrationFromContentWorldIfNeeded(
+        _ webView: WKWebView
+    ) async -> Bool {
+        guard tornDown == false,
+              endpointID != nil,
+              endpointRegistry.targetEndpoint(
+                  extensionID: extensionID,
+                  profileID: profileID,
+                  tabID: tabID,
+                  frameID: frameID,
+                  documentID: loadedDocumentInjectionDocumentID
+              )?.messageListenerRegistered != true
+        else { return false }
+        let listenerCount: Int
+        do {
+            let result = try await webView.callAsyncJavaScript(
+                """
+                return (typeof chrome !== "undefined"
+                  && chrome.runtime
+                  && chrome.runtime.onMessage
+                  && typeof chrome.runtime.onMessage.listenerCount === "function")
+                  ? chrome.runtime.onMessage.listenerCount()
+                  : 0;
+                """,
+                arguments: [:],
+                in: nil,
+                contentWorld: contentWorld
+            )
+            if let count = result as? Int {
+                listenerCount = count
+            } else if let count = result as? Double {
+                listenerCount = Int(count)
+            } else if let count = result as? NSNumber {
+                listenerCount = count.intValue
+            } else {
+                listenerCount = 0
+            }
+        } catch {
+            return false
+        }
+        guard listenerCount > 0 else { return false }
+        endpointRegistry.registerRuntimeOnMessageListener(
+            extensionID: extensionID,
+            profileID: profileID,
+            tabID: tabID,
+            frameID: frameID,
+            documentID: loadedDocumentInjectionDocumentID
+        )
+        return true
     }
 
     private func removeInstalledUserScripts(
@@ -5364,6 +5528,7 @@ enum ChromeMV3ContentScriptWKAttachmentExecutor {
         let handle = ChromeMV3ContentScriptWKAttachmentHandle(
             configuration: configuration,
             installedScripts: installedScripts,
+            loadedDocumentInjectionDocumentID: preflight.documentID,
             installedCSSStyleSheetCount: installedCSSStyleSheetCount,
             messageHandlerName:
                 installedScriptMessageHandlerCount == 0
@@ -5372,6 +5537,10 @@ enum ChromeMV3ContentScriptWKAttachmentExecutor {
             contentWorld: contentWorld,
             scriptHandler: handler,
             endpointRegistry: endpointRegistry,
+            extensionID: preflight.extensionID,
+            profileID: preflight.profileID,
+            tabID: preflight.tabID,
+            frameID: preflight.frameID,
             endpointID: endpoint?.endpointID
         )
         return (

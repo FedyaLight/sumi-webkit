@@ -5024,7 +5024,7 @@ final class SumiExtensionsModule {
         )
         #if DEBUG
             if compatibilityPolicy.allowsControlledCompatibilityActionPopup {
-                return openControlledCompatibilityActionPopupFromURLHub(
+                return await openControlledCompatibilityActionPopupFromURLHub(
                     extensionId: extensionId,
                     currentTab: currentTab,
                     manager: manager,
@@ -5059,19 +5059,21 @@ final class SumiExtensionsModule {
         manager: ExtensionManager,
         managerGate: ChromeMV3ExtensionManagerGate,
         compatibilityPolicy: ChromeMV3CompatibilityPolicyDecision
-    ) -> BrowserExtensionActionPopupRequestResult {
+    ) async -> BrowserExtensionActionPopupRequestResult {
         let rootURL =
             chromeMV3LocalLifecycleManagerRootURLByExtensionID[extensionId]
             ?? ChromeMV3ExtensionManagerStoreLocation.defaultRootURL()
-        let actionClickBinding =
-            currentTab.flatMap { tab in
-                manager
-                    .bindChromeMV3ScriptingExecuteScriptTargetForURLHubActionClickIfAllowed(
-                        currentTab: tab,
-                        localExperimentalGateAllowed:
-                            chromeMV3InternalNormalTabConfigurationAttachmentAllowed
-                    )
-            }
+        let actionClickBinding: (localTabID: Int, url: URL)?
+        if let currentTab {
+            actionClickBinding = await manager
+                .bindChromeMV3ScriptingExecuteScriptTargetForURLHubActionClickIfAllowed(
+                    currentTab: currentTab,
+                    localExperimentalGateAllowed:
+                        chromeMV3InternalNormalTabConfigurationAttachmentAllowed
+                )
+        } else {
+            actionClickBinding = nil
+        }
         let preflight =
             manager
             .controlledCompatibilityActionPopupLaunchRecordFromURLHub(
