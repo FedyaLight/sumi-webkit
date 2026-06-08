@@ -1034,6 +1034,19 @@ extension ExtensionManager {
                     chromeMV3LivePreparedContentScriptRuntime
                     ?? ChromeMV3LivePreparedContentScriptRuntime()
                 chromeMV3LivePreparedContentScriptRuntime = runtime
+                runtime.bindPreparedPackages(
+                    tab: tab,
+                    webView: webView,
+                    url: url,
+                    installedExtensions: installedExtensions,
+                    currentProfileID: currentProfileId,
+                    browserManager: browserManager,
+                    managerStoreRootURL:
+                        ChromeMV3ExtensionManagerStoreLocation.defaultRootURL(),
+                    localExperimentalGateAllowed:
+                        localExperimentalGateAllowed,
+                    trace: trace
+                )
                 runtime.bindScriptingExecuteScriptWebViewTargetIfAllowed(
                     tab: tab,
                     webView: webView,
