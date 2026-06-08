@@ -3875,6 +3875,377 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         )
     }
 
+    func testControlledPermissionsRequestTrustedClickPropagatesGesture()
+        throws
+    {
+        let controlledConfig = configuration(
+            manifestOptionalPermissions: ["history"],
+            allowlist: .controlledActionPopupPolicy
+        )
+        let presenter = ChromeMV3TestPermissionPromptPresenter(
+            disposition: .accepted
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: controlledConfig,
+            permissionPromptPresenter: presenter
+        )
+        handler.recordTrustedPopupUserGesture(kind: "mouseDown")
+
+        let response = handler.handle(
+            permissionsRequest(permissions: ["history"])
+        )
+
+        XCTAssertTrue(response.succeeded)
+        XCTAssertEqual(boolValue(response.resultPayload), true)
+        XCTAssertEqual(presenter.presentedRequests.count, 1)
+    }
+
+    func testControlledPermissionsRequestTrustedKeydownPropagatesGesture()
+        throws
+    {
+        let controlledConfig = configuration(
+            manifestOptionalPermissions: ["history"],
+            allowlist: .controlledActionPopupPolicy
+        )
+        let presenter = ChromeMV3TestPermissionPromptPresenter(
+            disposition: .accepted
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: controlledConfig,
+            permissionPromptPresenter: presenter
+        )
+        handler.recordTrustedPopupUserGesture(kind: "keyDown")
+
+        let response = handler.handle(
+            permissionsRequest(permissions: ["history"])
+        )
+
+        XCTAssertTrue(response.succeeded)
+        XCTAssertEqual(boolValue(response.resultPayload), true)
+        XCTAssertEqual(presenter.presentedRequests.count, 1)
+    }
+
+    func testControlledPermissionsRequestDelayedAfterGestureDenied() throws {
+        var now: TimeInterval = 1_000
+        let tracker = ChromeMV3PopupUserGestureTracker(
+            transientActivationWindow: 1,
+            currentTime: { now }
+        )
+        let controlledConfig = configuration(
+            manifestOptionalPermissions: ["history"],
+            allowlist: .controlledActionPopupPolicy
+        )
+        let presenter = ChromeMV3TestPermissionPromptPresenter(
+            disposition: .accepted
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: controlledConfig,
+            permissionPromptPresenter: presenter,
+            popupUserGestureTracker: tracker
+        )
+        handler.recordTrustedPopupUserGesture(kind: "mouseDown")
+        now += 2
+
+        let response = handler.handle(
+            permissionsRequest(permissions: ["history"])
+        )
+
+        XCTAssertFalse(response.succeeded)
+        XCTAssertEqual(response.lastErrorCode, "promptRequiredUserGestureMissing")
+        XCTAssertEqual(presenter.presentedRequests.count, 0)
+    }
+
+    func testControlledPermissionsRequestGestureConsumedAfterUse() throws {
+        let controlledConfig = configuration(
+            manifestOptionalPermissions: ["history", "bookmarks"],
+            allowlist: .controlledActionPopupPolicy
+        )
+        let presenter = ChromeMV3TestPermissionPromptPresenter(
+            disposition: .accepted
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: controlledConfig,
+            permissionPromptPresenter: presenter
+        )
+        handler.recordTrustedPopupUserGesture(kind: "mouseDown")
+
+        let first = handler.handle(
+            permissionsRequest(permissions: ["history"])
+        )
+        let second = handler.handle(
+            permissionsRequest(permissions: ["bookmarks"])
+        )
+
+        XCTAssertTrue(first.succeeded)
+        XCTAssertEqual(boolValue(first.resultPayload), true)
+        XCTAssertFalse(second.succeeded)
+        XCTAssertEqual(second.lastErrorCode, "promptRequiredUserGestureMissing")
+        XCTAssertEqual(presenter.presentedRequests.count, 1)
+    }
+
+    @MainActor
+    func testEndToEndNativeWebViewClickPropagatesGestureToPermissionsRequest()
+        async throws
+    {
+        #if !canImport(AppKit) || !canImport(WebKit)
+        throw XCTSkip("Native popup gesture E2E requires AppKit and WebKit.")
+        #else
+        let root = try makeTemporaryDirectory()
+        let htmlURL = root.appendingPathComponent("popup.html")
+        try gesturePropagationPopupHTML().write(
+            to: htmlURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        let presenter = ChromeMV3TestPermissionPromptPresenter(
+            disposition: .accepted
+        )
+        let config = configuration(
+            manifestOptionalPermissions: ["history", "bookmarks"],
+            allowlist: .controlledActionPopupPolicy
+        )
+        let installation = ChromeMV3PopupOptionsJSBridgeInstallation(
+            configuration: config,
+            allowlist: config.allowlist,
+            bridgeAvailable: true,
+            scriptSource: ChromeMV3PopupOptionsJSShimSource.source(
+                configuration: config
+            ),
+            messageHandlerName:
+                ChromeMV3PopupOptionsJSShimSource.bridgeMessageHandlerName,
+            diagnostics: config.diagnostics
+        )
+        let handle = ChromeMV3ProductPopupOptionsWKWebViewHandle(
+            loadFileURL: htmlURL,
+            readAccessURL: root,
+            bridgeInstallation: installation,
+            permissionPromptPresenter: presenter,
+            permissionEventDispatcher: nil
+        )
+        defer { handle.tearDown() }
+
+        let webView = try XCTUnwrap(handle.popupWebViewForTesting)
+        XCTAssertTrue(webView is ChromeMV3PopupOptionsWKWebView)
+        let window = mountPopupWebViewForNativeEventTesting(webView)
+        defer { window.orderOut(nil) }
+
+        try await handle.waitForLoadForTesting()
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        let startup = try await waitForGestureE2ERecord(
+            handle: handle,
+            key: "startup"
+        )
+        XCTAssertEqual(startup["granted"] as? Bool, false)
+
+        let bypass = try await handle.callAsyncJavaScriptForTesting(
+            """
+            const record = (key, value) => {
+              globalThis.__sumiGestureE2E = globalThis.__sumiGestureE2E || {};
+              globalThis.__sumiGestureE2E[key] = value;
+            };
+            try {
+              const granted = await chrome.permissions.request({
+                permissions: ["history"],
+                __sumiUserGestureModeled: true
+              });
+              record("bypass", { granted });
+            } catch (error) {
+              record("bypass", {
+                granted: false,
+                error: error && (error.message || String(error))
+              });
+            }
+            return globalThis.__sumiGestureE2E.bypass;
+            """
+        ) as? [String: Any]
+        XCTAssertEqual(bypass?["granted"] as? Bool, false)
+        XCTAssertEqual(presenter.presentedRequests.count, 0)
+
+        simulateNativeClick(
+            on: webView,
+            at: NSPoint(x: webView.bounds.midX, y: webView.bounds.midY)
+        )
+
+        let click = try await waitForGestureE2ERecord(handle: handle, key: "click")
+        XCTAssertEqual(click["granted"] as? Bool, true)
+        XCTAssertEqual(presenter.presentedRequests.count, 1)
+
+        let contains = try await handle.callAsyncJavaScriptForTesting(
+            """
+            return chrome.permissions.contains({
+              permissions: ["history"]
+            });
+            """
+        )
+        XCTAssertEqual(contains as? Bool, true)
+
+        let all = try await handle.callAsyncJavaScriptForTesting(
+            """
+            return chrome.permissions.getAll();
+            """
+        ) as? [String: Any]
+        let permissions = (all?["permissions"] as? [String]) ?? []
+        XCTAssertTrue(permissions.contains("history"))
+
+        let secondWithoutGesture = try await handle.callAsyncJavaScriptForTesting(
+            """
+            const record = (key, value) => {
+              globalThis.__sumiGestureE2E = globalThis.__sumiGestureE2E || {};
+              globalThis.__sumiGestureE2E[key] = value;
+            };
+            try {
+              const granted = await chrome.permissions.request({
+                permissions: ["bookmarks"]
+              });
+              record("secondWithoutGesture", { granted });
+            } catch (error) {
+              record("secondWithoutGesture", {
+                granted: false,
+                error: error && (error.message || String(error))
+              });
+            }
+            return globalThis.__sumiGestureE2E.secondWithoutGesture;
+            """
+        ) as? [String: Any]
+        XCTAssertEqual(secondWithoutGesture?["granted"] as? Bool, false)
+        XCTAssertEqual(presenter.presentedRequests.count, 1)
+
+        let remove = try await handle.callAsyncJavaScriptForTesting(
+            """
+            const record = (key, value) => {
+              globalThis.__sumiGestureE2E = globalThis.__sumiGestureE2E || {};
+              globalThis.__sumiGestureE2E[key] = value;
+            };
+            try {
+              const removed = await chrome.permissions.remove({
+                permissions: ["history"]
+              });
+              record("remove", { removed });
+            } catch (error) {
+              record("remove", {
+                removed: false,
+                error: error && (error.message || String(error))
+              });
+            }
+            return globalThis.__sumiGestureE2E.remove;
+            """
+        ) as? [String: Any]
+        XCTAssertEqual(remove?["removed"] as? Bool, false)
+        XCTAssertNotNil(remove?["error"])
+
+        setenv("POPUP_TIMEOUT_OVERRIDE", "0.01", 1)
+        defer { unsetenv("POPUP_TIMEOUT_OVERRIDE") }
+        let delayedHandle = ChromeMV3ProductPopupOptionsWKWebViewHandle(
+            loadFileURL: htmlURL,
+            readAccessURL: root,
+            bridgeInstallation: installation,
+            permissionPromptPresenter: presenter,
+            permissionEventDispatcher: nil
+        )
+        defer { delayedHandle.tearDown() }
+        let delayedWebView = try XCTUnwrap(delayedHandle.popupWebViewForTesting)
+        let delayedWindow = mountPopupWebViewForNativeEventTesting(
+            delayedWebView
+        )
+        defer { delayedWindow.orderOut(nil) }
+        try await delayedHandle.waitForLoadForTesting()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        simulateNativeClick(
+            on: delayedWebView,
+            at: NSPoint(
+                x: delayedWebView.bounds.midX,
+                y: delayedWebView.bounds.midY
+            )
+        )
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let delayed = try await delayedHandle.callAsyncJavaScriptForTesting(
+            """
+            const record = (key, value) => {
+              globalThis.__sumiGestureE2E = globalThis.__sumiGestureE2E || {};
+              globalThis.__sumiGestureE2E[key] = value;
+            };
+            try {
+              const granted = await chrome.permissions.request({
+                permissions: ["bookmarks"]
+              });
+              record("delayed", { granted });
+            } catch (error) {
+              record("delayed", {
+                granted: false,
+                error: error && (error.message || String(error))
+              });
+            }
+            return globalThis.__sumiGestureE2E.delayed;
+            """
+        ) as? [String: Any]
+        XCTAssertEqual(delayed?["granted"] as? Bool, false)
+        #endif
+    }
+
+    @MainActor
+    func testEndToEndNativeWebViewKeydownPropagatesGestureToPermissionsRequest()
+        async throws
+    {
+        #if !canImport(AppKit) || !canImport(WebKit)
+        throw XCTSkip("Native popup gesture E2E requires AppKit and WebKit.")
+        #else
+        let root = try makeTemporaryDirectory()
+        let htmlURL = root.appendingPathComponent("popup.html")
+        try keydownGesturePropagationPopupHTML().write(
+            to: htmlURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        let presenter = ChromeMV3TestPermissionPromptPresenter(
+            disposition: .accepted
+        )
+        let config = configuration(
+            manifestOptionalPermissions: ["history"],
+            allowlist: .controlledActionPopupPolicy
+        )
+        let installation = ChromeMV3PopupOptionsJSBridgeInstallation(
+            configuration: config,
+            allowlist: config.allowlist,
+            bridgeAvailable: true,
+            scriptSource: ChromeMV3PopupOptionsJSShimSource.source(
+                configuration: config
+            ),
+            messageHandlerName:
+                ChromeMV3PopupOptionsJSShimSource.bridgeMessageHandlerName,
+            diagnostics: config.diagnostics
+        )
+        let handle = ChromeMV3ProductPopupOptionsWKWebViewHandle(
+            loadFileURL: htmlURL,
+            readAccessURL: root,
+            bridgeInstallation: installation,
+            permissionPromptPresenter: presenter,
+            permissionEventDispatcher: nil
+        )
+        defer { handle.tearDown() }
+
+        let webView = try XCTUnwrap(handle.popupWebViewForTesting)
+        XCTAssertTrue(webView is ChromeMV3PopupOptionsWKWebView)
+        let window = mountPopupWebViewForNativeEventTesting(webView)
+        defer { window.orderOut(nil) }
+
+        try await handle.waitForLoadForTesting()
+        _ = try await handle.evaluateJavaScriptForTesting(
+            "document.body.focus();"
+        )
+        window.makeFirstResponder(webView)
+
+        simulateNativeKeyDown(on: webView, keyCode: 36, characters: "\r")
+
+        let keydown = try await waitForGestureE2ERecord(
+            handle: handle,
+            key: "keydown"
+        )
+        XCTAssertEqual(keydown["granted"] as? Bool, true)
+        XCTAssertEqual(presenter.presentedRequests.count, 1)
+        #endif
+    }
+
     @MainActor
     private func makeControlledRuntimeIDBridgeHandle(
         extensionID: String
@@ -4888,6 +5259,200 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         temporaryDirectories.append(directory)
         return directory
     }
+
+    private func gesturePropagationPopupHTML() -> String {
+        """
+        <!doctype html>
+        <html>
+        <head>
+        <meta charset="utf-8">
+        <title>Gesture E2E</title>
+        <style>
+          html, body { margin: 0; width: 100%; height: 100%; }
+          #grant {
+            display: block;
+            width: 100%;
+            height: 100%;
+            border: 0;
+            margin: 0;
+            padding: 0;
+          }
+        </style>
+        </head>
+        <body>
+        <button id="grant" type="button">Grant</button>
+        <script>
+        (function () {
+          const record = (key, value) => {
+            globalThis.__sumiGestureE2E = globalThis.__sumiGestureE2E || {};
+            globalThis.__sumiGestureE2E[key] = value;
+          };
+          chrome.permissions.request({ permissions: ["history"] })
+            .then((granted) => record("startup", { granted }))
+            .catch((error) => record("startup", {
+              granted: false,
+              error: error && (error.message || String(error))
+            }));
+          document.getElementById("grant").addEventListener("click", () => {
+            chrome.permissions.request({ permissions: ["history"] })
+              .then((granted) => record("click", { granted }))
+              .catch((error) => record("click", {
+                granted: false,
+                error: error && (error.message || String(error))
+              }));
+          });
+        })();
+        </script>
+        </body>
+        </html>
+        """
+    }
+
+    private func keydownGesturePropagationPopupHTML() -> String {
+        """
+        <!doctype html>
+        <html>
+        <head>
+        <meta charset="utf-8">
+        <title>Gesture Keydown E2E</title>
+        </head>
+        <body tabindex="0">
+        <button id="grant" type="button">Grant</button>
+        <script>
+        (function () {
+          const record = (key, value) => {
+            globalThis.__sumiGestureE2E = globalThis.__sumiGestureE2E || {};
+            globalThis.__sumiGestureE2E[key] = value;
+          };
+          const requestFromKeydown = () => {
+            chrome.permissions.request({ permissions: ["history"] })
+              .then((granted) => record("keydown", { granted }))
+              .catch((error) => record("keydown", {
+                granted: false,
+                error: error && (error.message || String(error))
+              }));
+          };
+          document.body.addEventListener("keydown", (event) => {
+            if (event.key !== "Enter" && event.key !== " ") {
+              return;
+            }
+            requestFromKeydown();
+          });
+          document.body.focus();
+        })();
+        </script>
+        </body>
+        </html>
+        """
+    }
+
+    #if canImport(AppKit) && canImport(WebKit)
+    @MainActor
+    private func mountPopupWebViewForNativeEventTesting(
+        _ webView: WKWebView
+    ) -> NSWindow {
+        webView.frame = NSRect(x: 0, y: 0, width: 320, height: 240)
+        let window = NSWindow(
+            contentRect: webView.frame,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = webView
+        window.makeKeyAndOrderFront(nil)
+        return window
+    }
+
+    @MainActor
+    private func simulateNativeClick(on webView: WKWebView, at location: NSPoint) {
+        let windowNumber = webView.window?.windowNumber ?? 0
+        let timestamp = ProcessInfo.processInfo.systemUptime
+        let mouseDown = NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: location,
+            modifierFlags: [],
+            timestamp: timestamp,
+            windowNumber: windowNumber,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        )
+        let mouseUp = NSEvent.mouseEvent(
+            with: .leftMouseUp,
+            location: location,
+            modifierFlags: [],
+            timestamp: timestamp + 0.01,
+            windowNumber: windowNumber,
+            context: nil,
+            eventNumber: 2,
+            clickCount: 1,
+            pressure: 0
+        )
+        guard let mouseDown, let mouseUp else {
+            XCTFail("Failed to create native mouse events.")
+            return
+        }
+        if let popupWebView = webView as? ChromeMV3PopupOptionsWKWebView {
+            popupWebView.mouseDown(with: mouseDown)
+            popupWebView.mouseUp(with: mouseUp)
+        } else {
+            webView.mouseDown(with: mouseDown)
+            webView.mouseUp(with: mouseUp)
+        }
+    }
+
+    @MainActor
+    private func simulateNativeKeyDown(
+        on webView: WKWebView,
+        keyCode: UInt16,
+        characters: String = ""
+    ) {
+        let windowNumber = webView.window?.windowNumber ?? 0
+        let keyDown = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: windowNumber,
+            context: nil,
+            characters: characters,
+            charactersIgnoringModifiers: characters,
+            isARepeat: false,
+            keyCode: keyCode
+        )
+        guard let keyDown else {
+            XCTFail("Failed to create native keydown event.")
+            return
+        }
+        if let popupWebView = webView as? ChromeMV3PopupOptionsWKWebView {
+            popupWebView.keyDown(with: keyDown)
+        } else {
+            webView.keyDown(with: keyDown)
+        }
+    }
+
+    @MainActor
+    private func waitForGestureE2ERecord(
+        handle: ChromeMV3ProductPopupOptionsWKWebViewHandle,
+        key: String,
+        timeout: TimeInterval = 5
+    ) async throws -> [String: Any] {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let raw = try await handle.evaluateJavaScriptForTesting(
+                "globalThis.__sumiGestureE2E && globalThis.__sumiGestureE2E['\(key)']"
+            ),
+               let object = raw as? [String: Any]
+            {
+                return object
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTFail("Timed out waiting for gesture E2E record \(key).")
+        return [:]
+    }
+    #endif
 }
 
 #if canImport(WebKit)

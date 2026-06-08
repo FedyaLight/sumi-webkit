@@ -2393,6 +2393,7 @@ private struct ChromeMV3PopupOptionsBridgeInputError: Error, Equatable {
 
 final class ChromeMV3PopupOptionsJSBridgeHandler {
     let configuration: ChromeMV3PopupOptionsJSBridgeConfiguration
+    let popupUserGestureTracker: ChromeMV3PopupUserGestureTracker
     private var localStorageBroker: ChromeMV3StorageBroker
     private var sessionStorageBroker: ChromeMV3StorageBroker
     private var syncStorageBroker: ChromeMV3StorageBroker?
@@ -2476,9 +2477,13 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         sharedLifecycleSession:
             ChromeMV3ServiceWorkerSharedLifecycleSession? = nil,
         sharedLifecycleSessionProvider:
-            (() -> ChromeMV3ServiceWorkerSharedLifecycleSession?)? = nil
+            (() -> ChromeMV3ServiceWorkerSharedLifecycleSession?)? = nil,
+        popupUserGestureTracker:
+            ChromeMV3PopupUserGestureTracker? = nil
     ) {
         self.configuration = configuration
+        self.popupUserGestureTracker =
+            popupUserGestureTracker ?? ChromeMV3PopupUserGestureTracker()
         self.contentScriptEndpointRegistry = contentScriptEndpointRegistry
         self.scriptingExecuteScriptTargetProvider =
             scriptingExecuteScriptTargetProvider
@@ -2846,7 +2851,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         #endif
         switch ChromeMV3RuntimeJSBridgeHostRequest.parse(body) {
         case .success(let request):
-            return handle(request)
+            return handle(resolveHostRequestUserGesture(request))
         case .failure(let error):
             return response(
                 request: nil,
@@ -2872,7 +2877,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         #endif
         switch ChromeMV3RuntimeJSBridgeHostRequest.parse(body) {
         case .success(let request):
-            return await handleAsync(request)
+            return await handleAsync(resolveHostRequestUserGesture(request))
         case .failure(let error):
             return response(
                 request: nil,
@@ -4058,6 +4063,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     func handleAsync(
         _ request: ChromeMV3RuntimeJSBridgeHostRequest
     ) async -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        let request = resolveHostRequestUserGesture(request)
         guard configuration.moduleState == .enabled,
               configuration.bridgeAvailable
         else {
@@ -4087,9 +4093,27 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         }
     }
 
+    func recordTrustedPopupUserGesture(kind: String) {
+        popupUserGestureTracker.recordTrustedActivation(kind: kind)
+    }
+
+    func resolveHostRequestUserGesture(
+        _ request: ChromeMV3RuntimeJSBridgeHostRequest
+    ) -> ChromeMV3RuntimeJSBridgeHostRequest {
+        guard request.namespace == "permissions",
+              request.methodName == "request",
+              request.internalModeledUserGesture == false,
+              popupUserGestureTracker.consumeIfAvailable()
+        else { return request }
+        var resolved = request
+        resolved.internalModeledUserGesture = true
+        return resolved
+    }
+
     func handle(
         _ request: ChromeMV3RuntimeJSBridgeHostRequest
     ) -> ChromeMV3PopupOptionsJSBridgeHostResponse {
+        let request = resolveHostRequestUserGesture(request)
         guard configuration.moduleState == .enabled,
               configuration.bridgeAvailable
         else {
@@ -8355,7 +8379,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 [
                     "Request was blocked because no modeled user gesture was supplied.",
                     "Popup load and startup permissions.request calls are not treated as user gestures.",
-                    "TODO: propagate popup UI event-gesture context when the bridge can classify handler-triggered permissions.request calls.",
+                    "permissions.request requires a recent trusted popup click or keydown that has not expired or already been consumed.",
                 ]
             )
         }

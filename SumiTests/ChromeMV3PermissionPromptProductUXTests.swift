@@ -647,6 +647,26 @@ final class ChromeMV3PermissionPromptProductUXTests: XCTestCase {
         )
     }
 
+    func testTrustedPopupClickPropagatesGestureForPermissionsRequest() {
+        let presenter = ChromeMV3TestPermissionPromptPresenter(
+            disposition: .accepted
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration:
+                configuration(manifestOptionalPermissions: ["history"]),
+            permissionPromptPresenter: presenter
+        )
+        handler.recordTrustedPopupUserGesture(kind: "mouseDown")
+
+        let response = handler.handle(
+            permissionsRequest(permissions: ["history"])
+        )
+
+        XCTAssertTrue(response.succeeded)
+        XCTAssertEqual(boolValue(response.resultPayload), true)
+        XCTAssertEqual(presenter.presentedRequests.count, 1)
+    }
+
     func testExtensionControlledUserGestureBypassIsIgnored() {
         let presenter = ChromeMV3TestPermissionPromptPresenter(
             disposition: .accepted

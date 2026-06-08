@@ -2203,6 +2203,73 @@ final class ChromeMV3ProductPopupOptionsWKWebViewFactory:
     }
 }
 
+final class ChromeMV3PopupUserGestureTracker {
+    struct RecordedActivation: Equatable {
+        let kind: String
+        let timestamp: TimeInterval
+    }
+
+    private let transientActivationWindow: TimeInterval
+    private let currentTime: () -> TimeInterval
+    private var lastActivation: RecordedActivation?
+
+    init(
+        transientActivationWindow: TimeInterval = 5,
+        currentTime: @escaping () -> TimeInterval = {
+            ProcessInfo.processInfo.systemUptime
+        }
+    ) {
+        if let override = ProcessInfo.processInfo.environment[
+            "POPUP_TIMEOUT_OVERRIDE"
+        ],
+           let overrideValue = TimeInterval(override),
+           overrideValue > 0
+        {
+            self.transientActivationWindow = overrideValue
+        } else {
+            self.transientActivationWindow = transientActivationWindow
+        }
+        self.currentTime = currentTime
+    }
+
+    func recordTrustedActivation(kind: String) {
+        lastActivation = RecordedActivation(
+            kind: kind,
+            timestamp: currentTime()
+        )
+    }
+
+    var hasConsumableActivation: Bool {
+        guard let lastActivation else { return false }
+        let elapsed = currentTime() - lastActivation.timestamp
+        return (0...transientActivationWindow).contains(elapsed)
+    }
+
+    @discardableResult
+    func consumeIfAvailable() -> Bool {
+        guard hasConsumableActivation else { return false }
+        lastActivation = nil
+        return true
+    }
+}
+
+#if canImport(AppKit) && canImport(WebKit)
+@MainActor
+final class ChromeMV3PopupOptionsWKWebView: WKWebView {
+    weak var gestureBridgeHandler: ChromeMV3PopupOptionsJSBridgeHandler?
+
+    override func mouseDown(with event: NSEvent) {
+        gestureBridgeHandler?.recordTrustedPopupUserGesture(kind: "mouseDown")
+        super.mouseDown(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        gestureBridgeHandler?.recordTrustedPopupUserGesture(kind: "keyDown")
+        super.keyDown(with: event)
+    }
+}
+#endif
+
 @MainActor
 final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
     ChromeMV3PopupOptionsWebViewHandle
@@ -2345,7 +2412,21 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         #endif
         self.userContentController = userContentController
         self.messageHandlerName = messageHandlerName
+        #if canImport(AppKit) && canImport(WebKit)
+        let webView: WKWebView
+        if let bridgeHandler {
+            let popupWebView = ChromeMV3PopupOptionsWKWebView(
+                frame: .zero,
+                configuration: configuration
+            )
+            popupWebView.gestureBridgeHandler = bridgeHandler
+            webView = popupWebView
+        } else {
+            webView = WKWebView(frame: .zero, configuration: configuration)
+        }
+        #else
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        #endif
         #if DEBUG
         if let bridgeHandler {
             let diagnosticsDelegate =
@@ -2532,6 +2613,16 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
     #if DEBUG
     private var loadWaiter:
         ChromeMV3ProductPopupOptionsWKLoadWaiter?
+
+    var popupWebViewForTesting: WKWebView? {
+        webView
+    }
+
+    var popupOptionsBridgeHandlerForTesting:
+        ChromeMV3PopupOptionsJSBridgeHandler?
+    {
+        bridgeHandler
+    }
 
     func waitForLoadForTesting() async throws {
         guard let webView else { return }
