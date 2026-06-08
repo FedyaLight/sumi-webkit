@@ -2577,7 +2577,7 @@ final class ChromeMV3PasswordManagerRealPackageCompatibilityTests:
         XCTAssertTrue(inventory.dynamicImportExpressions.contains {
             $0.specifierPreview == "'./literal.js'"
                 && $0.dependencyCandidatePath == "literal.js"
-                && $0.generatedRootContained == false
+                && $0.generatedRootContained == true
         })
         XCTAssertFalse(
             report.rows.first?.serviceWorkerEventReadiness
