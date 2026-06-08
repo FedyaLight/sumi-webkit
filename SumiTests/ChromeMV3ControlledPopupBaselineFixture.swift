@@ -112,6 +112,7 @@ enum ChromeMV3ControlledPopupBaselineExtensionID: String, CaseIterable, Sendable
     case raindropReference = "raindrop-reference"
     case protonPass = "proton-pass"
     case onePassword = "1password"
+    case sumiUsablePopup = "sumi-usable-popup"
 }
 
 struct ChromeMV3ControlledPopupBaselineMatrixRow: Sendable {
@@ -585,6 +586,40 @@ enum ChromeMV3ControlledPopupBaselineClassifier {
         blocker == .moduleWorkerUnsupported
             ? .moduleWorkerUnsupported
             : .unknown
+    }
+
+    static func classifyRealPackageUsablePopup(
+        opened: Bool,
+        preflightBlocker: BrowserExtensionActionPopupBlocker?,
+        domProbe: ChromeMV3ControlledPopupBaselineDOMProbe?,
+        snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?
+    ) -> ChromeMV3ControlledPopupBaselineOutcome {
+        if let preflightBlocker {
+            switch preflightBlocker {
+            case .moduleWorkerUnsupported:
+                return .moduleWorkerUnsupported
+            default:
+                break
+            }
+        }
+        guard opened else {
+            if preflightBlocker == .contextUnavailable {
+                return .staticPopupHostFailure
+            }
+            return .unknown
+        }
+        if let domProbe, domProbe.coarseUsable {
+            return .usableUI
+        }
+        if let snapshot {
+            if let hostOutcome = classifyPopupHostBootstrapFailure(snapshot) {
+                return hostOutcome
+            }
+            return ChromeMV3ControlledPopupPostResourceClassifier
+                .classify(snapshot: snapshot, domProbe: domProbe)
+                .baselineOutcome
+        }
+        return .unknownButStop
     }
 
     private static func fixturePrimaryOrHostFailure(

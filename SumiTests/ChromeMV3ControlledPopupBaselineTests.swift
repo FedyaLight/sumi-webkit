@@ -40,6 +40,7 @@ final class ChromeMV3ControlledPopupBaselineTests: XCTestCase {
         rows.append(raindropReferenceRow())
         rows.append(try await evaluateProtonPassExtensionRow())
         rows.append(try await evaluateOnePasswordPreflightRow())
+        rows.append(try await evaluateSumiUsablePopupExtensionRow())
 
         for row in rows {
             print(
@@ -94,6 +95,19 @@ final class ChromeMV3ControlledPopupBaselineTests: XCTestCase {
         }
         if let onePasswordRow, onePasswordRow.ranLivePopup == false {
             XCTAssertEqual(onePasswordRow.outcome, .moduleWorkerUnsupported)
+        }
+
+        let sumiUsablePopupRow = rows.first {
+            $0.rowID
+                == ChromeMV3ControlledPopupBaselineExtensionID.sumiUsablePopup
+                .rawValue
+        }
+        if let sumiUsablePopupRow, sumiUsablePopupRow.ranLivePopup {
+            XCTAssertEqual(
+                sumiUsablePopupRow.outcome,
+                .usableUI,
+                "Real-package usable popup fixture should reach usableUI through the local unpacked flow."
+            )
         }
 
         if let firstGenericFailure = firstFailingMinimalFixtureLayer(in: rows) {
@@ -930,6 +944,91 @@ final class ChromeMV3ControlledPopupBaselineTests: XCTestCase {
     #endif
 
     @MainActor
+    private func evaluateSumiUsablePopupExtensionRow() async throws
+        -> ChromeMV3ControlledPopupBaselineMatrixRow
+    {
+        guard let packageRoot =
+            ChromeMV3RealPackageUsablePopupFixtureLocation.packageRoot()
+        else {
+            return ChromeMV3ControlledPopupBaselineMatrixRow(
+                rowID: ChromeMV3ControlledPopupBaselineExtensionID.sumiUsablePopup
+                    .rawValue,
+                layer: .realExtensionAppSpecific,
+                outcome: .unknown,
+                ranLivePopup: false,
+                notes: "packageUnavailable"
+            )
+        }
+
+        let root = try makeTemporaryDirectory()
+        let profileID = UUID()
+        let module = try makeModule(
+            enabled: true,
+            includesModelContext: true,
+            useFileBackedPopupHost: true
+        )
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: packageRoot,
+            profileID: profileID.uuidString,
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: record.extensionID
+        )
+
+        let currentTab = Tab(url: URL(string: "https://example.com/login")!)
+        currentTab.profileId = profileID
+        let result = await module.openActionPopupFromURLHub(
+            extensionId: record.extensionID,
+            currentTab: currentTab
+        )
+
+        defer {
+            _ = module.chromeMV3ClosePopupOptionsThroughManager(
+                profileID: record.profileID,
+                extensionID: record.extensionID
+            )
+        }
+
+        var domProbe: ChromeMV3ControlledPopupBaselineDOMProbe?
+        var snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?
+        if result.opened {
+            domProbe = try await waitForBaselineDOMProbe(
+                module: module,
+                profileID: record.profileID,
+                extensionID: record.extensionID
+            )
+            snapshot = try await waitForPopupBridgeSnapshot(
+                module: module,
+                profileID: record.profileID,
+                extensionID: record.extensionID
+            )
+        }
+
+        let outcome = ChromeMV3ControlledPopupBaselineClassifier
+            .classifyRealPackageUsablePopup(
+                opened: result.opened,
+                preflightBlocker: result.blocker,
+                domProbe: domProbe,
+                snapshot: snapshot
+            )
+
+        return ChromeMV3ControlledPopupBaselineMatrixRow(
+            rowID: ChromeMV3ControlledPopupBaselineExtensionID.sumiUsablePopup
+                .rawValue,
+            layer: .realExtensionAppSpecific,
+            outcome: outcome,
+            ranLivePopup: result.opened,
+            notes: result.opened
+                ? "localUnpackedRealPackageFixture controlledCompatibilityActionPopup"
+                : (result.blocker?.rawValue ?? "blocked")
+        )
+    }
+
+    @MainActor
     private func evaluateOnePasswordPreflightRow() async throws
         -> ChromeMV3ControlledPopupBaselineMatrixRow
     {
@@ -1079,7 +1178,7 @@ final class ChromeMV3ControlledPopupBaselineTests: XCTestCase {
                     controlCount: object["controlCount"] as? Int ?? 0,
                     coarseUsable: object["coarseUsable"] as? Bool ?? false
                 )
-                if probe.outcome != "pending" {
+                if probe.outcome == "ok" || probe.outcome == "fail" {
                     return probe
                 }
                 if allowMissingBaselineMarker,
