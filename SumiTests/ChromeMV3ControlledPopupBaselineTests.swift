@@ -664,6 +664,12 @@ final class ChromeMV3ControlledPopupBaselineTests: XCTestCase {
             )
         }
 
+        let resourceDiagnostics = snapshot.map {
+            ChromeMV3PopupOptionsHostResourceLoadDiagnostics.summarize(
+                events: $0.jsDebugRouteEvents
+            )
+        }
+
         let outcome = ChromeMV3ControlledPopupBaselineClassifier.classifyProtonPass(
             opened: result.opened,
             preflightBlocker: result.blocker,
@@ -671,14 +677,144 @@ final class ChromeMV3ControlledPopupBaselineTests: XCTestCase {
             domProbe: domProbe
         )
 
+        var notes = "observed classification only; no product support claim"
+        if let resourceDiagnostics {
+            notes +=
+                " firstResourceBlocker=\(resourceDiagnostics.firstBlocker.rawValue)"
+            if let first = resourceDiagnostics.firstFailingResource {
+                notes +=
+                    " firstResourceCategory=\(first.resourceCategory)"
+                notes += " urlOriginClass=\(first.urlOriginClass)"
+            }
+        }
+
         return ChromeMV3ControlledPopupBaselineMatrixRow(
             rowID: ChromeMV3ControlledPopupBaselineExtensionID.protonPass.rawValue,
             layer: .realExtensionAppSpecific,
             outcome: outcome,
             ranLivePopup: result.opened,
-            notes: "observed classification only; no product support claim"
+            notes: notes
         )
     }
+
+    #if DEBUG
+    @MainActor
+    func testProtonPassControlledPopupFirstResourceLoadBlockerClassification()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Controlled popup baseline matrix requires macOS 15.5.")
+        }
+        let row = try await evaluateProtonPassExtensionRow()
+        XCTAssertNotEqual(
+            row.outcome,
+            .resourceLoadFailure,
+            "Proton Pass package-local popup resources should not be classified as generic resourceLoadFailure after optional source map probe filtering."
+        )
+        let packageRoot = mv3TestExtensionsRoot.appendingPathComponent(
+            "Proton",
+            isDirectory: true
+        )
+        guard FileManager.default.fileExists(
+            atPath: packageRoot.appendingPathComponent("manifest.json").path
+        ) else {
+            throw XCTSkip("Proton Pass fixture package is unavailable.")
+        }
+
+        XCTAssertTrue(row.ranLivePopup, row.notes)
+
+        let root = try makeTemporaryDirectory()
+        let profileID = UUID()
+        let module = try makeModule(
+            enabled: true,
+            includesModelContext: true,
+            useFileBackedPopupHost: true
+        )
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: packageRoot,
+            profileID: profileID.uuidString,
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: record.extensionID
+        )
+        let currentTab = Tab(url: URL(string: "https://example.com/login")!)
+        currentTab.profileId = profileID
+        let result = await module.openActionPopupFromURLHub(
+            extensionId: record.extensionID,
+            currentTab: currentTab
+        )
+        defer {
+            _ = module.chromeMV3ClosePopupOptionsThroughManager(
+                profileID: record.profileID,
+                extensionID: record.extensionID
+            )
+        }
+        XCTAssertTrue(result.opened, result.message ?? "popup blocked")
+        let snapshot = try await waitForPopupBridgeSnapshot(
+            module: module,
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+        let summary = ChromeMV3PopupOptionsHostResourceLoadDiagnostics.summarize(
+            events: snapshot.jsDebugRouteEvents
+        )
+        let attachment = XCTAttachment(
+            string: """
+            rowOutcome=\(row.outcome.rawValue)
+            rowNotes=\(row.notes)
+            firstBlocker=\(summary.firstBlocker.rawValue)
+            firstCategory=\(summary.firstFailingResource?.resourceCategory ?? "none")
+            urlOriginClass=\(summary.firstFailingResource?.urlOriginClass ?? "none")
+            mimeCategory=\(summary.firstFailingResource?.mimeCategory ?? "none")
+            counts=\(summary.countsByCategory)
+            """
+        )
+        attachment.name = "proton-pass-first-resource-load-blocker"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let resourceErrors = snapshot.jsDebugRouteEvents
+            .filter { $0.eventKind == "resourceLoadError" }
+            .map { event in
+                [
+                    "seq=\(event.sequence)",
+                    "api=\(event.apiName)",
+                    "classifier=\(event.resultClassifier ?? "nil")",
+                    "diagnostics=\(event.diagnostics.joined(separator: ";"))",
+                ].joined(separator: " ")
+            }
+            .joined(separator: "\n")
+        let classificationLine =
+            """
+            firstBlocker=\(summary.firstBlocker.rawValue)
+            category=\(summary.firstFailingResource?.resourceCategory ?? "none")
+            origin=\(summary.firstFailingResource?.urlOriginClass ?? "none")
+            mime=\(summary.firstFailingResource?.mimeCategory ?? "none")
+            counts=\(summary.countsByCategory)
+            resourceErrors:
+            \(resourceErrors)
+            """
+        let resourceLoadErrors = snapshot.jsDebugRouteEvents.filter {
+            $0.eventKind == "resourceLoadError"
+                && ChromeMV3PopupOptionsHostResourceLoadDiagnostics
+                    .isOptionalSourceMapProbeEvent($0) == false
+        }
+        XCTAssertTrue(
+            resourceLoadErrors.isEmpty,
+            "Non-optional popup resources should load without resourceLoadError.\n\(classificationLine)"
+        )
+        if summary.firstFailingResource != nil {
+            XCTAssertNotEqual(
+                summary.firstBlocker,
+                .unknown,
+                classificationLine
+            )
+        }
+    }
+    #endif
 
     @MainActor
     private func evaluateOnePasswordPreflightRow() async throws

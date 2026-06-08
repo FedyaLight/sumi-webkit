@@ -3022,6 +3022,28 @@ final class ChromeMV3PopupOptionsDiagnosticURLSchemeHandler:
             .isSymbolicLink) == true
     }
 
+    private func inferredResourceTag(for relativePath: String) -> String {
+        let lower = relativePath.lowercased()
+        if lower.hasSuffix(".css") { return "link" }
+        if lower.hasSuffix(".js") || lower.hasSuffix(".mjs") { return "script" }
+        if lower.hasSuffix(".html") || lower.hasSuffix(".htm") { return "html" }
+        if [".woff", ".woff2", ".ttf", ".otf", ".eot"].contains(where: {
+            lower.hasSuffix($0)
+        }) {
+            return "font"
+        }
+        return "unknown"
+    }
+
+    private func isOptionalSourceMapProbe(
+        _ resolution: ChromeMV3PopupOptionsDiagnosticURLSchemeResolution
+    ) -> Bool {
+        resolution.relativePath.lowercased().hasSuffix(".map")
+            && resolution.status == .failed
+            && resolution.failureReason?
+                .localizedCaseInsensitiveContains("missing") == true
+    }
+
     private func record(
         resolution: ChromeMV3PopupOptionsDiagnosticURLSchemeResolution
     ) {
@@ -3031,7 +3053,31 @@ final class ChromeMV3PopupOptionsDiagnosticURLSchemeHandler:
                 $0,
                 rootURL: rootURL
             )
-        } ?? false
+        }
+        ?? ChromeMV3PopupOptionsHostDiagnostics
+            .diagnosticSchemeURLInsideGeneratedRoot(
+                resolution.url,
+                rootURL: rootURL
+            )
+        let resourceCategory =
+            ChromeMV3PopupOptionsHostResourceLoadDiagnostics.resourceCategory(
+                tag: inferredResourceTag(for: resolution.relativePath),
+                type: nil,
+                rel: nil,
+                path: resolution.relativePath
+            )
+        let urlOriginClass = ChromeMV3PopupOptionsHostResourceLoadDiagnostics
+            .urlOriginClass(
+                from: ChromeMV3PopupOptionsHostDiagnostics.safeURLShape(
+                    resolution.url?.absoluteString ?? ""
+                )
+            )
+        let queryFragmentPreserved =
+            ChromeMV3PopupOptionsHostResourceLoadDiagnostics
+            .queryFragmentPreserved(
+                urlShape: resolution.url?.absoluteString,
+                resourcePath: resolution.relativePath
+            )
         var diagnostics = [
             served
                 ? "Diagnostic custom scheme served a generated package resource."
@@ -3040,9 +3086,22 @@ final class ChromeMV3PopupOptionsDiagnosticURLSchemeHandler:
             "resource=\(ChromeMV3PopupOptionsHostDiagnostics.safeRelativePath(resolution.relativePath))",
             "urlShape=\(ChromeMV3PopupOptionsHostDiagnostics.safeURLShape(resolution.url?.absoluteString ?? ""))",
             "insideReadAccessRoot=\(insideReadAccessRoot)",
+            "resourceCategory=\(resourceCategory)",
+            "urlOriginClass=\(urlOriginClass)",
+            "status=\(served ? "loaded" : "blocked")",
         ]
         if let mimeType = resolution.mimeType {
             diagnostics.append("mimeType=\(mimeType)")
+            diagnostics.append(
+                "mimeCategory=\(mimeType)"
+            )
+        } else {
+            diagnostics.append("mimeCategory=unknown")
+        }
+        if let queryFragmentPreserved {
+            diagnostics.append(
+                "queryFragmentPreserved=\(queryFragmentPreserved)"
+            )
         }
         let safeFailure = resolution.failureReason.map {
             ChromeMV3PopupOptionsHostDiagnostics.safeDiagnosticToken($0)
@@ -3052,17 +3111,28 @@ final class ChromeMV3PopupOptionsDiagnosticURLSchemeHandler:
                 "failure=\(ChromeMV3PopupOptionsHostDiagnostics.safeDiagnosticToken(reason))"
             )
         }
+        let optionalSourceMapProbe = isOptionalSourceMapProbe(resolution)
         bridgeHandler?.recordHostDiagnosticEvent(
             ChromeMV3PopupOptionsHostDiagnosticEvent(
-                eventKind: served ? "resourceLoaded" : "resourceLoadError",
-                apiName: "customScheme.resource",
+                eventKind: served
+                    ? "resourceLoaded"
+                    : optionalSourceMapProbe
+                        ? "hostPreloadResource"
+                        : "resourceLoadError",
+                apiName: optionalSourceMapProbe
+                    ? "host.optionalSourceMapProbe"
+                    : "customScheme.resource",
                 targetContext: "resource",
-                safeMessageShapeClassification: "customSchemeResource",
-                resultClassifier:
-                    served ? "custom scheme resource served"
+                safeMessageShapeClassification: optionalSourceMapProbe
+                    ? "optionalSourceMapProbe"
+                    : "customSchemeResource",
+                resultClassifier: served
+                    ? "custom scheme resource served"
+                    : optionalSourceMapProbe
+                        ? "optional source map absent"
                         : "custom scheme resource blocked",
                 firstMissingAPIOrPermissionOrLifecycleError:
-                    served ? nil : safeFailure,
+                    served || optionalSourceMapProbe ? nil : safeFailure,
                 diagnostics: diagnostics
             )
         )

@@ -566,6 +566,8 @@ enum ChromeMV3ControlledPopupBaselineClassifier {
             $0.eventKind == "resourceLoadError"
                 && ($0.apiName == "host.popupLoad"
                     || $0.apiName == "customScheme.resource")
+                && ChromeMV3PopupOptionsHostResourceLoadDiagnostics
+                    .isOptionalSourceMapProbeEvent($0) == false
         }) {
             return .resourceLoadFailure
         }

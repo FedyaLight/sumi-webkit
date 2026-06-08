@@ -1525,9 +1525,9 @@ enum ChromeMV3PopupOptionsHostDiagnostics {
             diagnostics:
                 [
                     "urlShape=\(safeURLShape(url?.absoluteString ?? ""))",
-                    "relativePath=\(relativePath(url, rootURL: readAccessURL))",
+                    "relativePath=\(diagnosticSchemeRelativePath(url, rootURL: readAccessURL))",
                     "readAccessRoot=generatedPackageRoot",
-                    "insideReadAccessRoot=\(urlInsideRoot(url, rootURL: readAccessURL))",
+                    "insideReadAccessRoot=\(diagnosticSchemeURLInsideGeneratedRoot(url, rootURL: readAccessURL))",
                 ]
                 + extraDiagnostics
         )
@@ -1682,6 +1682,576 @@ enum ChromeMV3PopupOptionsHostDiagnostics {
             "token",
             "vault",
         ].contains { lower.contains($0) }
+    }
+
+    private static let diagnosticPopupResourceScheme =
+        "sumi-extension-page-diagnostic"
+
+    static func diagnosticSchemeURLInsideGeneratedRoot(
+        _ url: URL?,
+        rootURL: URL
+    ) -> Bool {
+        guard let url else { return false }
+        if url.isFileURL {
+            return urlInsideRoot(url, rootURL: rootURL)
+        }
+        guard url.scheme?.lowercased() == diagnosticPopupResourceScheme
+        else { return false }
+        let requestPath = String(url.path.drop(while: { $0 == "/" }))
+        switch ChromeMV3ExtensionPageResourcePath.normalize(requestPath) {
+        case .failure:
+            return false
+        case .success(let relativePath):
+            return ChromeMV3ExtensionPageResourcePath.resourceURL(
+                normalizedRelativePath: relativePath,
+                rootURL: rootURL
+            ) != nil
+        }
+    }
+
+    static func diagnosticSchemeRelativePath(
+        _ url: URL?,
+        rootURL: URL
+    ) -> String {
+        guard let url else { return "none" }
+        if url.isFileURL {
+            return relativePath(url, rootURL: rootURL)
+        }
+        guard url.scheme?.lowercased() == diagnosticPopupResourceScheme
+        else { return "none" }
+        let requestPath = String(url.path.drop(while: { $0 == "/" }))
+        switch ChromeMV3ExtensionPageResourcePath.normalize(requestPath) {
+        case .failure:
+            return "outsideReadAccessRoot"
+        case .success(let relativePath):
+            guard diagnosticSchemeURLInsideGeneratedRoot(url, rootURL: rootURL)
+            else { return "outsideReadAccessRoot" }
+            return safeRelativePath(relativePath)
+        }
+    }
+}
+
+enum ChromeMV3PopupOptionsHostResourceLoadBlocker:
+    String,
+    Codable,
+    Equatable,
+    Sendable,
+    CaseIterable
+{
+    case generatedRootResourceMissing
+    case generatedRootPathMappingWrong
+    case queryOrFragmentDropped
+    case relativeURLResolutionWrong
+    case moduleScriptLoadFailure
+    case classicScriptLoadFailure
+    case stylesheetLoadFailure
+    case fontLoadFailure
+    case imageIconLoadFailure
+    case wasmLoadFailure
+    case mimeTypeWrong
+    case CSPBlockedLocalResource
+    case remoteExecutableBlocked
+    case remoteNetworkAuthDependency
+    case extensionPackageResourceAbsent
+    case unsupportedResourceType
+    case popupNavigationReset
+    case resourceLoadFailureExtensionLocal
+    case unknown
+}
+
+struct ChromeMV3PopupOptionsHostResourceLoadDiagnosticRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var resourceCategory: String
+    var safeRelativePathCategory: String
+    var status: String
+    var mimeCategory: String
+    var urlOriginClass: String
+    var queryFragmentPreserved: Bool?
+    var blocker: ChromeMV3PopupOptionsHostResourceLoadBlocker
+}
+
+struct ChromeMV3PopupOptionsHostResourceLoadDiagnosticsSummary:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var firstFailingResource:
+        ChromeMV3PopupOptionsHostResourceLoadDiagnosticRecord?
+    var firstBlocker: ChromeMV3PopupOptionsHostResourceLoadBlocker
+    var countsByCategory: [String: Int]
+    var diagnostics: [String]
+}
+
+enum ChromeMV3PopupOptionsHostResourceLoadDiagnostics {
+    static func summarize(
+        events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord],
+        launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord? = nil
+    ) -> ChromeMV3PopupOptionsHostResourceLoadDiagnosticsSummary {
+        var countsByCategory: [String: Int] = [:]
+        var firstFailing: ChromeMV3PopupOptionsHostResourceLoadDiagnosticRecord?
+        var firstBlocker: ChromeMV3PopupOptionsHostResourceLoadBlocker = .unknown
+        var extraDiagnostics: [String] = []
+
+        let sorted = events.sorted {
+            if $0.sequence != $1.sequence { return $0.sequence < $1.sequence }
+            return $0.eventKind < $1.eventKind
+        }
+
+        if let launchRecord,
+           launchRecord.generatedResourcePath == nil
+        {
+            let record = ChromeMV3PopupOptionsHostResourceLoadDiagnosticRecord(
+                resourceCategory: "html",
+                safeRelativePathCategory: ChromeMV3PopupOptionsHostDiagnostics
+                    .safeRelativePath(
+                        launchRecord.declaredPath ?? "popup.html"
+                    ),
+                status: "missing",
+                mimeCategory: "text/html",
+                urlOriginClass: "generatedRootLocal",
+                queryFragmentPreserved: nil,
+                blocker: .generatedRootResourceMissing
+            )
+            return ChromeMV3PopupOptionsHostResourceLoadDiagnosticsSummary(
+                firstFailingResource: record,
+                firstBlocker: .generatedRootResourceMissing,
+                countsByCategory: ["html": 1],
+                diagnostics: [
+                    "popup main resource was unavailable in the generated package root.",
+                    "No raw resource bodies or sensitive paths were recorded.",
+                ]
+            )
+        }
+
+        for event in sorted {
+            if isOptionalSourceMapProbeEvent(event) {
+                continue
+            }
+            guard let parsed = parseFailureEvent(
+                event,
+                launchRecord: launchRecord
+            ) else { continue }
+            countsByCategory[parsed.resourceCategory, default: 0] += 1
+            if firstFailing == nil {
+                firstFailing = parsed
+                firstBlocker = parsed.blocker
+                extraDiagnostics = [
+                    "firstFailureEventKind=\(event.eventKind)",
+                    "firstFailureApiName=\(event.apiName)",
+                    "No raw resource bodies, credentials, or sensitive paths were recorded.",
+                ]
+            }
+        }
+
+        return ChromeMV3PopupOptionsHostResourceLoadDiagnosticsSummary(
+            firstFailingResource: firstFailing,
+            firstBlocker: firstBlocker,
+            countsByCategory: countsByCategory,
+            diagnostics: extraDiagnostics
+        )
+    }
+
+    private static func parseFailureEvent(
+        _ event: ChromeMV3PopupOptionsJSDebugRouteEventRecord,
+        launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord?
+    ) -> ChromeMV3PopupOptionsHostResourceLoadDiagnosticRecord? {
+        switch event.eventKind {
+        case "hostPreloadResource":
+            guard event.firstMissingAPIOrPermissionOrLifecycleError != nil
+            else { return nil }
+            let resourcePath = diagnosticValue("normalizedPath", in: event.diagnostics)
+                ?? diagnosticValue("mainResource", in: event.diagnostics)
+                ?? "unknown"
+            let existsPreflight =
+                event.resultClassifier == "resource exists"
+            let blocker: ChromeMV3PopupOptionsHostResourceLoadBlocker
+            if event.resultClassifier == "resource path escaped package root" {
+                blocker = .generatedRootPathMappingWrong
+            } else if event.resultClassifier == "missing local resource" {
+                blocker = existsPreflight
+                    ? .extensionPackageResourceAbsent
+                    : .generatedRootResourceMissing
+            } else if event.resultClassifier == "popup main resource unavailable" {
+                blocker = .generatedRootResourceMissing
+            } else {
+                blocker = .unknown
+            }
+            return record(
+                resourcePath: resourcePath,
+                tag: event.apiName == "host.popupLoad" ? "html" : tagName(from: event),
+                type: diagnosticValue("type", in: event.diagnostics),
+                rel: diagnosticValue("rel", in: event.diagnostics),
+                status: "missing",
+                mimeType: nil,
+                urlShape: diagnosticValue("rawShape", in: event.diagnostics),
+                queryFragmentPreserved: nil,
+                blocker: blocker
+            )
+        case "hostNavigationFailure":
+            return ChromeMV3PopupOptionsHostResourceLoadDiagnosticRecord(
+                resourceCategory: "html",
+                safeRelativePathCategory: diagnosticValue(
+                    "relativePath",
+                    in: event.diagnostics
+                ) ?? "unknown",
+                status: "blocked",
+                mimeCategory: "unknown",
+                urlOriginClass: urlOriginClass(
+                    from: diagnosticValue("urlShape", in: event.diagnostics)
+                ),
+                queryFragmentPreserved: nil,
+                blocker: .popupNavigationReset
+            )
+        case "resourceLoadError":
+            if event.apiName == "customScheme.resource" {
+                return parseCustomSchemeFailure(event)
+            }
+            if event.apiName.hasPrefix("resource.") {
+                return parseDOMResourceFailure(event)
+            }
+            if event.apiName == "host.popupLoad" {
+                return record(
+                    resourcePath: diagnosticValue(
+                        "resource",
+                        in: event.diagnostics
+                    ) ?? "unknown",
+                    tag: "html",
+                    type: nil,
+                    rel: nil,
+                    status: "blocked",
+                    mimeType: nil,
+                    urlShape: nil,
+                    queryFragmentPreserved: nil,
+                    blocker: .generatedRootResourceMissing
+                )
+            }
+            return nil
+        case "cspViolation":
+            let blockedPath = diagnosticValue(
+                "blockedResource",
+                in: event.diagnostics
+            ) ?? "unknown"
+            return record(
+                resourcePath: blockedPath,
+                tag: "csp",
+                type: nil,
+                rel: nil,
+                status: "blocked",
+                mimeType: nil,
+                urlShape: blockedPath,
+                queryFragmentPreserved: nil,
+                blocker: blockedResourceBlocker(
+                    path: blockedPath,
+                    event: event
+                )
+            )
+        default:
+            return nil
+        }
+    }
+
+    private static func parseCustomSchemeFailure(
+        _ event: ChromeMV3PopupOptionsJSDebugRouteEventRecord
+    ) -> ChromeMV3PopupOptionsHostResourceLoadDiagnosticRecord? {
+        let failure = diagnosticValue("failure", in: event.diagnostics) ?? ""
+        let resourcePath =
+            diagnosticValue("resource", in: event.diagnostics) ?? "unknown"
+        let mimeType = diagnosticValue("mimeType", in: event.diagnostics)
+        let urlShape = diagnosticValue("urlShape", in: event.diagnostics)
+        let blocker: ChromeMV3PopupOptionsHostResourceLoadBlocker
+        if failure.localizedCaseInsensitiveContains("mime type is unsupported") {
+            blocker = .mimeTypeWrong
+        } else if failure.localizedCaseInsensitiveContains("escaped") {
+            blocker = .generatedRootPathMappingWrong
+        } else if failure.localizedCaseInsensitiveContains("missing") {
+            blocker = .extensionPackageResourceAbsent
+        } else if failure.localizedCaseInsensitiveContains("symlink") {
+            blocker = .extensionPackageResourceAbsent
+        } else {
+            blocker = .unknown
+        }
+        return record(
+            resourcePath: resourcePath,
+            tag: inferredTag(forPath: resourcePath),
+            type: nil,
+            rel: nil,
+            status: "blocked",
+            mimeType: mimeType,
+            urlShape: urlShape,
+            queryFragmentPreserved: queryFragmentPreserved(
+                urlShape: urlShape,
+                resourcePath: resourcePath
+            ),
+            blocker: blocker
+        )
+    }
+
+    private static func parseDOMResourceFailure(
+        _ event: ChromeMV3PopupOptionsJSDebugRouteEventRecord
+    ) -> ChromeMV3PopupOptionsHostResourceLoadDiagnosticRecord? {
+        let tag = tagName(from: event)
+        let resourcePath =
+            diagnosticValue("resource", in: event.diagnostics) ?? "unknown"
+        let type = diagnosticValue("type", in: event.diagnostics)
+        let rel = diagnosticValue("rel", in: event.diagnostics)
+        let urlShape = resourcePath
+        let origin = urlOriginClass(from: urlShape)
+        let blocker: ChromeMV3PopupOptionsHostResourceLoadBlocker
+        if origin == "remote" {
+            if resourcePath.localizedCaseInsensitiveContains("auth")
+                || (event.firstMissingAPIOrPermissionOrLifecycleError?
+                    .localizedCaseInsensitiveContains("auth") == true)
+            {
+                blocker = .remoteNetworkAuthDependency
+            } else {
+                blocker = .remoteExecutableBlocked
+            }
+        } else if tag == "link" && rel?.localizedCaseInsensitiveContains("stylesheet") != false {
+            blocker = .stylesheetLoadFailure
+        } else if tag == "script" {
+            blocker = type?.localizedCaseInsensitiveContains("module") == true
+                ? .moduleScriptLoadFailure
+                : .classicScriptLoadFailure
+        } else {
+            blocker = categoryBlocker(
+                forPath: resourcePath,
+                tag: tag,
+                type: type
+            )
+        }
+        return record(
+            resourcePath: resourcePath,
+            tag: tag,
+            type: type,
+            rel: rel,
+            status: "blocked",
+            mimeType: nil,
+            urlShape: urlShape,
+            queryFragmentPreserved: nil,
+            blocker: blocker
+        )
+    }
+
+    private static func record(
+        resourcePath: String,
+        tag: String,
+        type: String?,
+        rel: String?,
+        status: String,
+        mimeType: String?,
+        urlShape: String?,
+        queryFragmentPreserved: Bool?,
+        blocker: ChromeMV3PopupOptionsHostResourceLoadBlocker
+    ) -> ChromeMV3PopupOptionsHostResourceLoadDiagnosticRecord {
+        let category = resourceCategory(
+            tag: tag,
+            type: type,
+            rel: rel,
+            path: resourcePath
+        )
+        return ChromeMV3PopupOptionsHostResourceLoadDiagnosticRecord(
+            resourceCategory: category,
+            safeRelativePathCategory:
+                ChromeMV3PopupOptionsHostDiagnostics.safeRelativePath(
+                    resourcePath
+                ),
+            status: status,
+            mimeCategory: mimeCategory(
+                forPath: resourcePath,
+                explicitMIME: mimeType
+            ),
+            urlOriginClass: urlOriginClass(from: urlShape ?? resourcePath),
+            queryFragmentPreserved: queryFragmentPreserved,
+            blocker: blocker
+        )
+    }
+
+    private static func tagName(
+        from event: ChromeMV3PopupOptionsJSDebugRouteEventRecord
+    ) -> String {
+        if let tag = diagnosticValue("tag", in: event.diagnostics) {
+            return tag
+        }
+        if event.apiName.hasPrefix("resource.") {
+            return String(event.apiName.dropFirst("resource.".count))
+        }
+        return "unknown"
+    }
+
+    private static func diagnosticValue(
+        _ key: String,
+        in diagnostics: [String]
+    ) -> String? {
+        let prefix = key + "="
+        for diagnostic in diagnostics {
+            guard diagnostic.hasPrefix(prefix) else { continue }
+            let value = String(diagnostic.dropFirst(prefix.count))
+            return value.isEmpty ? nil : value
+        }
+        return nil
+    }
+
+    static func resourceCategory(
+        tag: String,
+        type: String?,
+        rel: String?,
+        path: String
+    ) -> String {
+        let lowerPath = path.lowercased()
+        if tag == "html" { return "html" }
+        if tag == "link" {
+            if rel?.localizedCaseInsensitiveContains("icon") == true {
+                return "imageIcon"
+            }
+            return "stylesheet"
+        }
+        if tag == "script" {
+            return type?.localizedCaseInsensitiveContains("module") == true
+                ? "moduleScript"
+                : "classicScript"
+        }
+        if lowerPath.hasSuffix(".wasm") { return "wasm" }
+        if [".woff", ".woff2", ".ttf", ".otf", ".eot"].contains(where: {
+            lowerPath.hasSuffix($0)
+        }) {
+            return "font"
+        }
+        if [".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".svg"].contains(
+            where: { lowerPath.hasSuffix($0) }
+        ) {
+            return "imageIcon"
+        }
+        if lowerPath.hasSuffix(".json") || lowerPath.hasSuffix(".map") {
+            return "jsonData"
+        }
+        if [".css"].contains(where: { lowerPath.hasSuffix($0) }) {
+            return "stylesheet"
+        }
+        if [".js", ".mjs", ".cjs"].contains(where: { lowerPath.hasSuffix($0) }) {
+            return type?.localizedCaseInsensitiveContains("module") == true
+                ? "moduleScript"
+                : "classicScript"
+        }
+        return "other"
+    }
+
+    private static func mimeCategory(
+        forPath path: String,
+        explicitMIME: String?
+    ) -> String {
+        if let explicitMIME, explicitMIME.isEmpty == false {
+            return explicitMIME
+        }
+        let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
+        return ChromeMV3PopupOptionsDiagnosticMIME.mimeType(for: ext)
+            ?? "unknown"
+    }
+
+    static func urlOriginClass(from shape: String?) -> String {
+        guard let shape, shape.isEmpty == false else { return "unknown" }
+        if shape.hasPrefix("remote:") { return "remote" }
+        if shape.hasPrefix("file:") { return "packageLocal" }
+        if shape.hasPrefix("extension:") { return "generatedRootLocal" }
+        if shape.hasPrefix("diagnostic-extension:") {
+            return "generatedRootLocal"
+        }
+        if shape == "redacted" || shape == "none" || shape == "unknown" {
+            return "unknown"
+        }
+        return "generatedRootLocal"
+    }
+
+    static func queryFragmentPreserved(
+        urlShape: String?,
+        resourcePath: String
+    ) -> Bool? {
+        guard let urlShape else { return nil }
+        let shapeHasQuery = urlShape.contains("?") || urlShape.contains("#")
+        let pathHasQuery = resourcePath.contains("?") || resourcePath.contains("#")
+        if shapeHasQuery || pathHasQuery {
+            return shapeHasQuery
+        }
+        return nil
+    }
+
+    private static func categoryBlocker(
+        forPath path: String,
+        tag: String,
+        type: String?
+    ) -> ChromeMV3PopupOptionsHostResourceLoadBlocker {
+        switch resourceCategory(
+            tag: tag,
+            type: type,
+            rel: nil,
+            path: path
+        ) {
+        case "font":
+            return .fontLoadFailure
+        case "wasm":
+            return .wasmLoadFailure
+        case "imageIcon":
+            return .imageIconLoadFailure
+        case "stylesheet":
+            return .stylesheetLoadFailure
+        case "moduleScript":
+            return .moduleScriptLoadFailure
+        case "classicScript":
+            return .classicScriptLoadFailure
+        default:
+            return .unsupportedResourceType
+        }
+    }
+
+    private static func blockedResourceBlocker(
+        path: String,
+        event: ChromeMV3PopupOptionsJSDebugRouteEventRecord
+    ) -> ChromeMV3PopupOptionsHostResourceLoadBlocker {
+        let origin = urlOriginClass(from: path)
+        if origin == "remote" {
+            return .remoteExecutableBlocked
+        }
+        let directive = diagnosticValue(
+            "effectiveDirective",
+            in: event.diagnostics
+        ) ?? ""
+        if directive.localizedCaseInsensitiveContains("script") {
+            return categoryBlocker(forPath: path, tag: "script", type: nil)
+        }
+        if directive.localizedCaseInsensitiveContains("style") {
+            return .stylesheetLoadFailure
+        }
+        if directive.localizedCaseInsensitiveContains("font") {
+            return .fontLoadFailure
+        }
+        return .CSPBlockedLocalResource
+    }
+
+    private static func inferredTag(forPath path: String) -> String {
+        let lower = path.lowercased()
+        if lower.hasSuffix(".css") { return "link" }
+        if lower.hasSuffix(".js") || lower.hasSuffix(".mjs") { return "script" }
+        if lower.hasSuffix(".html") || lower.hasSuffix(".htm") { return "html" }
+        return "unknown"
+    }
+
+    static func isOptionalSourceMapProbeEvent(
+        _ event: ChromeMV3PopupOptionsJSDebugRouteEventRecord
+    ) -> Bool {
+        if event.apiName == "host.optionalSourceMapProbe" {
+            return true
+        }
+        guard event.eventKind == "resourceLoadError",
+              event.apiName == "customScheme.resource"
+        else { return false }
+        let resource = diagnosticValue("resource", in: event.diagnostics) ?? ""
+        return resource.lowercased().hasSuffix(".map")
+            && (event.firstMissingAPIOrPermissionOrLifecycleError?
+                .localizedCaseInsensitiveContains("missing") == true
+                || diagnosticValue("failure", in: event.diagnostics)?
+                    .localizedCaseInsensitiveContains("missing") == true)
     }
 }
 #endif
