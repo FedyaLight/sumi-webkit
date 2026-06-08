@@ -141,6 +141,7 @@ struct ChromeMV3ServiceWorkerJSListenerDispatchResult {
     var responsePayload: ChromeMV3StorageValue?
     var lastErrorMessage: String?
     var lifecycleWakeResult: ChromeMV3ServiceWorkerInternalWakeResult?
+    var serviceWorkerPortOutbox: [ChromeMV3StorageValue] = []
     var diagnostics: [String]
 
     var dispatched: Bool {

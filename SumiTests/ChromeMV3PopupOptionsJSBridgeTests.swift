@@ -1727,6 +1727,303 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         ))
     }
 
+    func testRuntimeConnectIncludesServiceWorkerPortOutboxPostedDuringOnConnect()
+        throws
+    {
+        let extensionID = "popup-options-extension"
+        let profileID = "popup-options-profile"
+        let session = try makeSharedLifecycleSession(
+            profileID: profileID,
+            extensionID: extensionID
+        )
+        let harness = try makeServiceWorkerHarnessPostingOnConnect(
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        harness.attachCapturedListenerDispatchers(
+            to: session,
+            clearingExisting: true
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                extensionID: extensionID,
+                profileID: profileID
+            ),
+            sharedLifecycleSession: session
+        )
+
+        let connect = handler.handle(request(
+            namespace: "runtime",
+            methodName: "connect",
+            arguments: [.object(["name": .string("sw-greeting")])],
+            invocationMode: .fireAndForget
+        ))
+        let connectPayload = try XCTUnwrap(objectValue(connect.resultPayload))
+        let postedMessages = try XCTUnwrap(connectPayload["postedMessages"])
+        guard case .array(let messages) = postedMessages,
+              case .object(let firstMessage)? = messages.first
+        else {
+            XCTFail("Expected service-worker Port outbox in runtime.connect response.")
+            return
+        }
+
+        XCTAssertTrue(connect.succeeded)
+        XCTAssertEqual(messages.count, 1)
+        XCTAssertEqual(stringValue(firstMessage["type"]), "sw-greeting")
+        XCTAssertTrue(
+            connect.diagnostics.contains {
+                $0.contains("serviceWorkerPortOutboxCount=1")
+            }
+        )
+        XCTAssertTrue(
+            connect.diagnostics.contains {
+                $0.contains(
+                    "serviceWorkerPortOutboxDelivery=includedInConnectResponse"
+                )
+            }
+        )
+    }
+
+    #if canImport(WebKit)
+    @MainActor
+    func testRealPopupOptionsWKWebViewDeliversServiceWorkerPortOutboxOnConnect()
+        async throws
+    {
+        let extensionID = "popup-options-extension"
+        let profileID = "popup-options-profile"
+        let root = try makeTemporaryDirectory()
+        let htmlURL = root.appendingPathComponent("popup.html")
+        try """
+        <!doctype html>
+        <meta charset="utf-8">
+        <title>Runtime Port OnConnect Outbox</title>
+        <main data-sumi-extension-page-fixture-marker="safe">Popup</main>
+        """.write(to: htmlURL, atomically: true, encoding: .utf8)
+        let session = try makeSharedLifecycleSession(
+            profileID: profileID,
+            extensionID: extensionID
+        )
+        let harness = try makeServiceWorkerHarnessPostingOnConnect(
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        harness.attachCapturedListenerDispatchers(
+            to: session,
+            clearingExisting: true
+        )
+        let config = configuration(
+            extensionID: extensionID,
+            profileID: profileID,
+            allowlist: .controlledActionPopupPolicy
+        )
+        let installation = ChromeMV3PopupOptionsJSBridgeInstallation(
+            configuration: config,
+            allowlist: config.allowlist,
+            bridgeAvailable: true,
+            scriptSource: ChromeMV3PopupOptionsJSShimSource.source(
+                configuration: config
+            ),
+            messageHandlerName:
+                ChromeMV3PopupOptionsJSShimSource.bridgeMessageHandlerName,
+            diagnostics: config.diagnostics
+        )
+        let handle = ChromeMV3ProductPopupOptionsWKWebViewHandle(
+            loadFileURL: htmlURL,
+            readAccessURL: root,
+            bridgeInstallation: installation,
+            sharedLifecycleSession: session,
+            permissionPromptPresenter: nil,
+            permissionEventDispatcher: nil
+        )
+        defer { handle.tearDown() }
+
+        try await handle.waitForLoadForTesting()
+        let raw = try await handle.callAsyncJavaScriptForTesting(
+            """
+            const messages = [];
+            const port = chrome.runtime.connect({ name: "sw-greeting" });
+            port.onMessage.addListener((message) => {
+              messages.push({
+                type: message && message.type ? message.type : null
+              });
+            });
+            await new Promise((resolve) => setTimeout(resolve, 120));
+            const debug = globalThis.__sumiChromeMV3PopupOptionsDebugSnapshot();
+            return {
+              messageCount: messages.length,
+              firstType: messages[0] && messages[0].type,
+              deliveredEventCount: debug.events.filter((event) => {
+                return event.eventKind === "portSwOutboxDelivered";
+              }).length,
+              queuedEventCount: debug.events.filter((event) => {
+                return event.eventKind === "portSwOutboxQueued";
+              }).length
+            };
+            """
+        )
+        let object = try XCTUnwrap(raw as? [String: Any])
+
+        XCTAssertEqual(object["messageCount"] as? Int, 1)
+        XCTAssertEqual(object["firstType"] as? String, "sw-greeting")
+        XCTAssertEqual(object["deliveredEventCount"] as? Int, 1)
+        XCTAssertEqual(object["queuedEventCount"] as? Int, 0)
+    }
+
+    @MainActor
+    func testRealPopupOptionsWKWebViewDeliversQueuedServiceWorkerPortOutboxAfterListenerRegistration()
+        async throws
+    {
+        let extensionID = "popup-options-extension"
+        let profileID = "popup-options-profile"
+        let root = try makeTemporaryDirectory()
+        let htmlURL = root.appendingPathComponent("popup.html")
+        try """
+        <!doctype html>
+        <meta charset="utf-8">
+        <title>Runtime Port Deferred Listener</title>
+        <main data-sumi-extension-page-fixture-marker="safe">Popup</main>
+        """.write(to: htmlURL, atomically: true, encoding: .utf8)
+        let session = try makeSharedLifecycleSession(
+            profileID: profileID,
+            extensionID: extensionID
+        )
+        let harness = try makeServiceWorkerHarnessPostingOnConnect(
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        harness.attachCapturedListenerDispatchers(
+            to: session,
+            clearingExisting: true
+        )
+        let config = configuration(
+            extensionID: extensionID,
+            profileID: profileID,
+            allowlist: .controlledActionPopupPolicy
+        )
+        let installation = ChromeMV3PopupOptionsJSBridgeInstallation(
+            configuration: config,
+            allowlist: config.allowlist,
+            bridgeAvailable: true,
+            scriptSource: ChromeMV3PopupOptionsJSShimSource.source(
+                configuration: config
+            ),
+            messageHandlerName:
+                ChromeMV3PopupOptionsJSShimSource.bridgeMessageHandlerName,
+            diagnostics: config.diagnostics
+        )
+        let handle = ChromeMV3ProductPopupOptionsWKWebViewHandle(
+            loadFileURL: htmlURL,
+            readAccessURL: root,
+            bridgeInstallation: installation,
+            sharedLifecycleSession: session,
+            permissionPromptPresenter: nil,
+            permissionEventDispatcher: nil
+        )
+        defer { handle.tearDown() }
+
+        try await handle.waitForLoadForTesting()
+        let raw = try await handle.callAsyncJavaScriptForTesting(
+            """
+            const messages = [];
+            const port = chrome.runtime.connect({ name: "sw-greeting" });
+            await new Promise((resolve) => setTimeout(resolve, 80));
+            port.onMessage.addListener((message) => {
+              messages.push({
+                type: message && message.type ? message.type : null
+              });
+            });
+            await new Promise((resolve) => setTimeout(resolve, 80));
+            const debug = globalThis.__sumiChromeMV3PopupOptionsDebugSnapshot();
+            return {
+              messageCount: messages.length,
+              firstType: messages[0] && messages[0].type,
+              deliveredEventCount: debug.events.filter((event) => {
+                return event.eventKind === "portSwOutboxDelivered";
+              }).length,
+              queuedEventCount: debug.events.filter((event) => {
+                return event.eventKind === "portSwOutboxQueued";
+              }).length
+            };
+            """
+        )
+        let object = try XCTUnwrap(raw as? [String: Any])
+
+        XCTAssertEqual(object["messageCount"] as? Int, 1)
+        XCTAssertEqual(object["firstType"] as? String, "sw-greeting")
+        XCTAssertGreaterThanOrEqual(object["deliveredEventCount"] as? Int ?? 0, 1)
+        XCTAssertEqual(object["queuedEventCount"] as? Int, 1)
+    }
+
+    @MainActor
+    func testRealPopupOptionsWKWebViewDoesNotDeliverServiceWorkerPortOutboxAfterDisconnect()
+        async throws
+    {
+        let extensionID = "popup-options-extension"
+        let profileID = "popup-options-profile"
+        let root = try makeTemporaryDirectory()
+        let htmlURL = root.appendingPathComponent("popup.html")
+        try """
+        <!doctype html>
+        <meta charset="utf-8">
+        <title>Runtime Port Disconnect Outbox</title>
+        <main data-sumi-extension-page-fixture-marker="safe">Popup</main>
+        """.write(to: htmlURL, atomically: true, encoding: .utf8)
+        let session = try makeSharedLifecycleSession(
+            profileID: profileID,
+            extensionID: extensionID
+        )
+        let harness = try makeServiceWorkerHarnessPostingOnConnect(
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        harness.attachCapturedListenerDispatchers(
+            to: session,
+            clearingExisting: true
+        )
+        let config = configuration(
+            extensionID: extensionID,
+            profileID: profileID,
+            allowlist: .controlledActionPopupPolicy
+        )
+        let installation = ChromeMV3PopupOptionsJSBridgeInstallation(
+            configuration: config,
+            allowlist: config.allowlist,
+            bridgeAvailable: true,
+            scriptSource: ChromeMV3PopupOptionsJSShimSource.source(
+                configuration: config
+            ),
+            messageHandlerName:
+                ChromeMV3PopupOptionsJSShimSource.bridgeMessageHandlerName,
+            diagnostics: config.diagnostics
+        )
+        let handle = ChromeMV3ProductPopupOptionsWKWebViewHandle(
+            loadFileURL: htmlURL,
+            readAccessURL: root,
+            bridgeInstallation: installation,
+            sharedLifecycleSession: session,
+            permissionPromptPresenter: nil,
+            permissionEventDispatcher: nil
+        )
+        defer { handle.tearDown() }
+
+        try await handle.waitForLoadForTesting()
+        let raw = try await handle.callAsyncJavaScriptForTesting(
+            """
+            const messages = [];
+            const port = chrome.runtime.connect({ name: "sw-greeting" });
+            port.disconnect();
+            port.onMessage.addListener((message) => {
+              messages.push(message);
+            });
+            await new Promise((resolve) => setTimeout(resolve, 120));
+            return { messageCount: messages.length };
+            """
+        )
+        let object = try XCTUnwrap(raw as? [String: Any])
+        XCTAssertEqual(object["messageCount"] as? Int, 0)
+    }
+    #endif
+
     func testStorageAndPermissionEventsRouteThroughSharedLifecycleWhenProvided()
         throws
     {
@@ -5110,6 +5407,72 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             ChromeMV3ServiceWorkerSharedLifecycleSessionRegistry()
                 .session(profileID: profileID, extensionID: extensionID)
         )
+    }
+
+    private func makeServiceWorkerHarnessPostingOnConnect(
+        extensionID: String,
+        profileID: String
+    ) throws -> ChromeMV3ServiceWorkerJSExecutionHarness {
+        let fixtureDirectory = try makeTemporaryDirectory()
+            .appendingPathComponent("extension", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: fixtureDirectory,
+            withIntermediateDirectories: true
+        )
+        let manifest: [String: Any] = [
+            "manifest_version": 3,
+            "name": "Popup Port Outbox Fixture",
+            "version": "1.0.0",
+            "background": [
+                "service_worker": "background.js",
+            ],
+        ]
+        try JSONSerialization.data(
+            withJSONObject: manifest,
+            options: [.prettyPrinted, .sortedKeys]
+        ).write(
+            to: fixtureDirectory.appendingPathComponent("manifest.json"),
+            options: [.atomic]
+        )
+        try """
+        chrome.runtime.onConnect.addListener((port) => {
+          port.postMessage({ type: port.name || "sw-greeting" });
+        });
+        """.write(
+            to: fixtureDirectory.appendingPathComponent("background.js"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let storeRoot = try makeTemporaryDirectory()
+        let stage = try ChromeMV3OriginalBundleStore(
+            rootURL: storeRoot
+        ).stageUnpackedDirectory(at: fixtureDirectory)
+        let generated = try ChromeMV3GeneratedBundleWriter(
+            rootURL: storeRoot
+        ).writeGeneratedBundle(
+            originalBundleRecord: stage.originalBundleRecord,
+            manifestSnapshot: stage.manifestSnapshot,
+            planningRecord: stage.generatedBundlePlan
+        )
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: ChromeMV3ServiceWorkerJSExecutionRequest(
+                manifest: stage.manifestSnapshot.normalizedManifest,
+                generatedBundleRecord: generated.record,
+                extensionID: extensionID,
+                profileID: profileID,
+                moduleState: .enabled,
+                extensionEnabled: true,
+                localExperimentalGateAllowed: true,
+                dynamicImportRewriteExperimentAllowed: true
+            )
+        )
+        let start = harness.start()
+        XCTAssertTrue(
+            start.status == .running || harness.canDispatchCapturedListeners,
+            start.diagnostics.joined(separator: "\n")
+        )
+        XCTAssertTrue(harness.capturedListener(for: .runtimeOnConnect))
+        return harness
     }
 
     private func registerRuntimePortEchoDispatchers(

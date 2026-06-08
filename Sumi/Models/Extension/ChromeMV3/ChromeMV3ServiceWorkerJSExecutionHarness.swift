@@ -3690,6 +3690,15 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 #endif
                 let lifecycleDiagnostics =
                     record.lifecycleRoutingRecord?.diagnostics ?? []
+                let serviceWorkerPortOutbox: [ChromeMV3StorageValue]
+                if input.event == .runtimeOnConnect,
+                   let portID = record.portID
+                {
+                    serviceWorkerPortOutbox =
+                        self.ports[portID]?.postedMessages ?? []
+                } else {
+                    serviceWorkerPortOutbox = []
+                }
                 return ChromeMV3ServiceWorkerJSListenerDispatchResult(
                     event: record.event,
                     listenerID: record.respondingListenerID,
@@ -3698,6 +3707,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                     lastErrorMessage: record.lastErrorMessage,
                     lifecycleWakeResult:
                         record.lifecycleRoutingRecord?.wakeResult,
+                    serviceWorkerPortOutbox: serviceWorkerPortOutbox,
                     diagnostics:
                         uniqueSortedServiceWorkerJS(
                             record.diagnostics
@@ -3705,6 +3715,16 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                                 + [
                                     "Captured service-worker JavaScript listener dispatched through shared lifecycle session.",
                                 ]
+                                + (
+                                    serviceWorkerPortOutbox.isEmpty
+                                        ? [
+                                            "serviceWorkerPortOutboxCount=0",
+                                        ]
+                                        : [
+                                            "serviceWorkerPortOutboxCount=\(serviceWorkerPortOutbox.count)",
+                                            "serviceWorkerPortOutboxCapturedAtConnect=true",
+                                        ]
+                                )
                         )
                 )
             }

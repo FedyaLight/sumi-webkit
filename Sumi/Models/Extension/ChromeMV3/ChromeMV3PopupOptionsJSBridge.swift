@@ -3631,7 +3631,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             case "portMessageCalled", "portMessageQueued",
                 "portMessageDelivered", "portMessageBridgeFailed":
                 return "popupToServiceWorker"
-            case "portOnMessageDispatched":
+            case "portOnMessageDispatched", "portSwOutboxReceived",
+                "portSwOutboxQueued", "portSwOutboxDelivered":
                 return "serviceWorkerToPopup"
             case "portOnDisconnectDispatched", "portDisconnected":
                 return "disconnect"
@@ -4752,17 +4753,16 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             }
             syntheticPortIDs.insert(portID)
             serviceWorkerLifecyclePortIDs.insert(portID)
+            let serviceWorkerPortOutbox = jsResult.serviceWorkerPortOutbox
             return response(
                 request: request,
                 succeeded: true,
-                payload: .object([
-                    "portID": .string(portID),
-                    "portKind": .string("serviceWorkerRuntimePort"),
-                    "name": .string(connectName),
-                    "canOpenRuntimePortNow": .bool(true),
-                    "canWakeServiceWorkerNow": .bool(true),
-                    "runtimeLoadable": .bool(false),
-                ]),
+                payload: runtimeConnectSuccessPayload(
+                    portID: portID,
+                    portKind: "serviceWorkerRuntimePort",
+                    name: connectName,
+                    serviceWorkerPortOutbox: serviceWorkerPortOutbox
+                ),
                 serviceWorkerLifecycleWakeResult:
                     jsResult.lifecycleWakeResult,
                 diagnostics:
@@ -4776,6 +4776,9 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                             runtimeOnConnectListenerCount(),
                         onMessageListenerCount:
                             runtimeOnMessageListenerCount()
+                    )
+                    + runtimeConnectOutboxDiagnostics(
+                        serviceWorkerPortOutbox
                     )
                     + [
                         "runtime.connect delivered a named Port to captured service-worker runtime.onConnect JavaScript listener(s).",
@@ -4868,6 +4871,35 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 "No service-worker wake or real runtime Port was opened.",
             ]
         )
+    }
+
+    private func runtimeConnectSuccessPayload(
+        portID: String,
+        portKind: String,
+        name: String,
+        serviceWorkerPortOutbox: [ChromeMV3StorageValue]
+    ) -> ChromeMV3StorageValue {
+        .object([
+            "portID": .string(portID),
+            "portKind": .string(portKind),
+            "name": .string(name),
+            "postedMessages": .array(serviceWorkerPortOutbox),
+            "connected": .bool(true),
+            "canOpenRuntimePortNow": .bool(true),
+            "canWakeServiceWorkerNow": .bool(true),
+            "runtimeLoadable": .bool(false),
+        ])
+    }
+
+    private func runtimeConnectOutboxDiagnostics(
+        _ outbox: [ChromeMV3StorageValue]
+    ) -> [String] {
+        [
+            "serviceWorkerPortOutboxCount=\(outbox.count)",
+            outbox.isEmpty
+                ? "serviceWorkerPortOutboxDelivery=none"
+                : "serviceWorkerPortOutboxDelivery=includedInConnectResponse",
+        ]
     }
 
     private func runtimePortLifecycleDiagnostics(
@@ -9404,11 +9436,22 @@ enum ChromeMV3PopupOptionsJSShimSource {
             };
           }
 
+          function debugSwOutboxCountBucket(count) {
+            if (count <= 0) {
+              return "0";
+            }
+            if (count === 1) {
+              return "1";
+            }
+            return "2plus";
+          }
+
           function makePortEvent(eventName, stateProvider) {
             const listeners = [];
             return Object.freeze({
               addListener(listener) {
                 if (typeof listener === "function" && !listeners.includes(listener)) {
+                  const hadListeners = listeners.length > 0;
                   listeners.push(listener);
                   const state = stateProvider ? stateProvider() : null;
                   debugPortEvent("portListenerAdded", {
@@ -9416,9 +9459,21 @@ enum ChromeMV3PopupOptionsJSShimSource {
                     portName: state ? debugSafePortName(state.name) : null,
                     resultClassifier: "listener added",
                     diagnostics: [
-                      "Port event listener added; listenerCount=" + String(listeners.length)
+                      "Port event listener added; listenerCount=" + String(listeners.length),
+                      eventName === "Port.onMessage"
+                        ? "listenerRegistrationCategory="
+                          + (hadListeners ? "additionalListener" : "firstListener")
+                        : "listenerRegistrationCategory=notApplicable"
                     ]
                   });
+                  if (
+                    eventName === "Port.onMessage"
+                    && state
+                    && !hadListeners
+                    && state.pendingInboundMessages.length > 0
+                  ) {
+                    state.scheduleInboundFlush();
+                  }
                 }
               },
               removeListener(listener) {
@@ -9438,6 +9493,12 @@ enum ChromeMV3PopupOptionsJSShimSource {
               },
               hasListener(listener) {
                 return listeners.includes(listener);
+              },
+              hasListeners() {
+                return listeners.length > 0;
+              },
+              __sumiListenerCount() {
+                return listeners.length;
               },
               dispatch() {
                 const args = Array.prototype.slice.call(arguments);
@@ -9473,18 +9534,101 @@ enum ChromeMV3PopupOptionsJSShimSource {
               delivery: delivery || null,
               sender: null,
               pendingMessages: [],
+              pendingInboundMessages: [],
+              inboundFlushScheduled: false,
               deliveredMessageCount: 0,
               onMessage: null,
               onDisconnect: null
             };
             state.onMessage = makePortEvent("Port.onMessage", () => state);
             state.onDisconnect = makePortEvent("Port.onDisconnect", () => state);
+            function flushPendingInboundMessages() {
+              if (state.disconnected) {
+                state.pendingInboundMessages = [];
+                return;
+              }
+              const messages = state.pendingInboundMessages.splice(0);
+              if (!messages.length) {
+                return;
+              }
+              messages.forEach((postedMessage) => {
+                state.onMessage.dispatch(postedMessage, port);
+              });
+              debugPortEvent("portSwOutboxDelivered", {
+                apiName: "Port.onMessage",
+                portName: debugSafePortName(state.name),
+                resultClassifier: "Port response delivered",
+                diagnostics: [
+                  "listenerRegistrationCategory=listenerRegisteredAfterQueue",
+                  "queuedSwOutboxCountBucket=0",
+                  "deliveredSwToPopupCountBucket="
+                    + debugSwOutboxCountBucket(messages.length)
+                ]
+              });
+            }
+            function scheduleInboundFlush() {
+              if (state.disconnected || state.inboundFlushScheduled) {
+                return;
+              }
+              state.inboundFlushScheduled = true;
+              setTimeout(() => {
+                state.inboundFlushScheduled = false;
+                flushPendingInboundMessages();
+              }, 0);
+            }
+            function deliverInboundMessages(messages) {
+              if (!messages.length || state.disconnected) {
+                return;
+              }
+              const listenerCount = state.onMessage.__sumiListenerCount();
+              const listenerCategory =
+                listenerCount > 0 ? "listenerRegistered" : "listenerAbsent";
+              let queuedCount = 0;
+              let deliveredCount = 0;
+              messages.forEach((postedMessage) => {
+                if (listenerCount > 0) {
+                  state.onMessage.dispatch(postedMessage, port);
+                  deliveredCount += 1;
+                } else {
+                  state.pendingInboundMessages.push(postedMessage);
+                  queuedCount += 1;
+                }
+              });
+              if (queuedCount > 0) {
+                debugPortEvent("portSwOutboxQueued", {
+                  apiName: "Port.onMessage",
+                  portName: debugSafePortName(state.name),
+                  resultClassifier: "queued pending inbound delivery",
+                  diagnostics: [
+                    "listenerRegistrationCategory=" + listenerCategory,
+                    "queuedSwOutboxCountBucket="
+                      + debugSwOutboxCountBucket(queuedCount),
+                    "deliveredSwToPopupCountBucket=0"
+                  ]
+                });
+              }
+              if (deliveredCount > 0) {
+                debugPortEvent("portSwOutboxDelivered", {
+                  apiName: "Port.onMessage",
+                  portName: debugSafePortName(state.name),
+                  resultClassifier: "Port response delivered",
+                  diagnostics: [
+                    "listenerRegistrationCategory=" + listenerCategory,
+                    "queuedSwOutboxCountBucket=0",
+                    "deliveredSwToPopupCountBucket="
+                      + debugSwOutboxCountBucket(deliveredCount)
+                  ]
+                });
+              }
+            }
             function markDisconnected(message) {
               if (state.disconnected) {
                 return;
               }
               state.disconnected = true;
               state.pendingMessages = [];
+              state.pendingInboundMessages = [];
+              state.inboundFlushScheduled = false;
               debugPortEvent("portDisconnected", {
                 apiName: "Port.disconnect",
                 portName: debugSafePortName(state.name),
@@ -9505,9 +9649,22 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 : [];
               const nextMessages = messages.slice(state.deliveredMessageCount);
               state.deliveredMessageCount = messages.length;
-              nextMessages.forEach((postedMessage) => {
-                state.onMessage.dispatch(postedMessage, port);
-              });
+              if (nextMessages.length > 0) {
+                debugPortEvent("portSwOutboxReceived", {
+                  apiName: "Port.onMessage",
+                  portName: debugSafePortName(state.name),
+                  resultClassifier: "service worker outbox captured",
+                  diagnostics: [
+                    "queuedSwOutboxCountBucket="
+                      + debugSwOutboxCountBucket(nextMessages.length),
+                    "listenerRegistrationCategory="
+                      + (state.onMessage.__sumiListenerCount() > 0
+                        ? "listenerRegistered"
+                        : "listenerAbsent")
+                  ]
+                });
+                deliverInboundMessages(nextMessages);
+              }
               if (payload && payload.connected === false) {
                 markDisconnected(null);
               }
@@ -9559,7 +9716,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
                   resultClassifier: "Port message delivered",
                   diagnostics: ["Port.postMessage bridge response succeeded."]
                 });
-                dispatchPostedMessages(response.resultPayload || {});
+                state.dispatchPostedMessages(response.resultPayload || {});
               }).catch(() => markDisconnected("Native messaging port is closed."));
             }
             function flushPendingMessages() {
@@ -9614,7 +9771,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
               enumerable: true
             });
             portState.set(port, state);
+            state.dispatchPostedMessages = dispatchPostedMessages;
             state.flushPendingMessages = flushPendingMessages;
+            state.scheduleInboundFlush = scheduleInboundFlush;
             state.markDisconnected = markDisconnected;
             return port;
           }
@@ -9724,6 +9883,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
                       "Port ID value omitted from diagnostics."
                     ]
                   });
+                  state.dispatchPostedMessages(response.resultPayload || {});
                   state.flushPendingMessages();
                 })
                 .catch(() => state.markDisconnected(null));
