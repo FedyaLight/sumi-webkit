@@ -2212,6 +2212,208 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
     }
 
     @MainActor
+    func testWKLoadHTMLStringAlreadyCompleteDocumentInjectsDeclaredContentScriptAndListener()
+        async throws
+    {
+        let fixture = try makePreflightFixture(
+            contentScriptSource: """
+            chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+              if (message && message.type === "loaded-document-probe") {
+                sendResponse({
+                  ok: true,
+                  mode: "loadedDocumentInjection",
+                  readyState: document.readyState
+                });
+              }
+            });
+            globalThis.__sumiLoadedDocumentInjectionMarker = true;
+            """
+        )
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+        let configuration = WKWebViewConfiguration()
+        configuration.sumiIsNormalTabWebViewConfiguration = true
+        let webView = WKWebView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 240),
+            configuration: configuration
+        )
+
+        let pageURL = URL(string: "https://example.com/login")!
+        try await loadHTMLStringComplete(
+            pageURL,
+            html: contentScriptLoginHTML,
+            into: webView
+        )
+
+        let attachment =
+            ChromeMV3ContentScriptWKAttachmentExecutor.attachIfAllowed(
+                configuration: configuration,
+                preflight: fixture.preflight,
+                permissionBroker:
+                    permissionBroker(hostPermissions: ["https://example.com/*"]),
+                endpointRegistry: registry
+            )
+        XCTAssertTrue(attachment.result.attached)
+        XCTAssertTrue(attachment.result.endpointRegistered)
+
+        let handle = try XCTUnwrap(attachment.handle)
+        handle.bindWebViewForMessageDispatch(webView)
+
+        let pageReadyState = try await documentReadyState(
+            in: webView,
+            contentWorld: .page
+        )
+        XCTAssertEqual(pageReadyState, "complete")
+
+        let contentWorldName =
+            "sumi.mv3.content.\(profileID).\(extensionID)"
+        let contentWorld = WKContentWorld.world(name: contentWorldName)
+        let preInjectionListenerCount = try await onMessageListenerCount(
+            in: webView,
+            contentWorld: contentWorld
+        )
+        XCTAssertEqual(preInjectionListenerCount, 0)
+
+        let firstInjectionDiagnostics =
+            await handle.injectInstalledScriptsIntoLoadedDocumentIfNeeded(webView)
+        let injectionSummary = firstInjectionDiagnostics.joined(separator: "\n")
+        XCTAssertTrue(
+            injectionSummary.contains("document.readyState=complete"),
+            injectionSummary
+        )
+        XCTAssertFalse(
+            injectionSummary.contains("document.readyState=loading"),
+            injectionSummary
+        )
+        XCTAssertFalse(
+            injectionSummary.contains(
+                "loadedDocumentInjection skipped because document.readyState could not be read"
+            ),
+            injectionSummary
+        )
+        XCTAssertTrue(
+            injectionSummary.contains("result=executed"),
+            injectionSummary
+        )
+
+        let postInjectionListenerCount = try await onMessageListenerCount(
+            in: webView,
+            contentWorld: contentWorld
+        )
+        XCTAssertGreaterThan(postInjectionListenerCount, 0)
+        let contentWorldMarkerPresent =
+            try await loadedDocumentInjectionMarkerPresent(
+                in: webView,
+                contentWorld: contentWorld
+            )
+        let pageWorldMarkerPresent =
+            try await loadedDocumentInjectionMarkerPresent(
+                in: webView,
+                contentWorld: .page
+            )
+        XCTAssertTrue(contentWorldMarkerPresent)
+        XCTAssertFalse(pageWorldMarkerPresent)
+
+        var listenerRegistrationObserved = false
+        for _ in 0..<100 {
+            _ = await handle.syncMessageListenerRegistrationFromContentWorldIfNeeded(
+                webView
+            )
+            if registry.targetEndpoint(
+                extensionID: extensionID,
+                profileID: profileID,
+                tabID: 7,
+                frameID: 0,
+                documentID: "document-1"
+            )?.messageListenerRegistered == true {
+                listenerRegistrationObserved = true
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(listenerRegistrationObserved)
+        let endpoint = try XCTUnwrap(
+            registry.targetEndpoint(
+                extensionID: extensionID,
+                profileID: profileID,
+                tabID: 7,
+                frameID: 0,
+                documentID: "document-1"
+            )
+        )
+        XCTAssertTrue(endpoint.messageListenerRegistered)
+        XCTAssertEqual(registry.summary.endpointCount, 1)
+        XCTAssertEqual(registry.summary.messageListenerEndpointCount, 1)
+        XCTAssertEqual(registry.summary.activeJSDispatcherCount, 1)
+
+        let popupHandler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration:
+                popupConfiguration(hostPermissions: ["https://example.com/*"]),
+            contentScriptEndpointRegistry: registry
+        )
+        let response = await popupHandler.handleAsync(request(
+            namespace: "tabs",
+            methodName: "sendMessage",
+            arguments: [
+                .number(7),
+                .object([
+                    "type": .string("loaded-document-probe"),
+                ]),
+                .object([
+                    "frameId": .number(0),
+                    "documentId": .string("document-1"),
+                ]),
+            ]
+        ))
+        let payload = try XCTUnwrap(objectValue(response.resultPayload))
+        XCTAssertTrue(response.succeeded)
+        XCTAssertEqual(stringValue(payload["mode"]), "loadedDocumentInjection")
+        XCTAssertEqual(stringValue(payload["readyState"]), "complete")
+        XCTAssertTrue(
+            response.diagnostics.joined(separator: "\n")
+                .contains("dispatchResult=sendResponse")
+        )
+
+        let endpointCountBefore = registry.summary.endpointCount
+        let listenerEndpointCountBefore =
+            registry.summary.messageListenerEndpointCount
+        let dispatcherCountBefore = registry.summary.activeJSDispatcherCount
+        let listenerCountBefore = postInjectionListenerCount
+
+        handle.bindWebViewForMessageDispatch(webView)
+        let secondInjectionDiagnostics =
+            await handle.injectInstalledScriptsIntoLoadedDocumentIfNeeded(webView)
+        let secondInjectionSummary =
+            secondInjectionDiagnostics.joined(separator: "\n")
+        XCTAssertTrue(
+            secondInjectionSummary.contains("result=alreadyInjected"),
+            secondInjectionSummary
+        )
+        let secondSync =
+            await handle.syncMessageListenerRegistrationFromContentWorldIfNeeded(
+                webView
+            )
+        XCTAssertFalse(secondSync)
+        XCTAssertEqual(registry.summary.endpointCount, endpointCountBefore)
+        XCTAssertEqual(
+            registry.summary.messageListenerEndpointCount,
+            listenerEndpointCountBefore
+        )
+        XCTAssertEqual(
+            registry.summary.activeJSDispatcherCount,
+            dispatcherCountBefore
+        )
+        let listenerCountAfter = try await onMessageListenerCount(
+            in: webView,
+            contentWorld: contentWorld
+        )
+        XCTAssertEqual(listenerCountAfter, listenerCountBefore)
+
+        handle.tearDown(
+            reason: "loaded HTMLString complete document injection teardown"
+        )
+    }
+
+    @MainActor
     func testWKPreparedBitwardenDeclaredContentScriptKeepsListenerAfterRuntimePortConnect()
         async throws
     {
@@ -2794,6 +2996,83 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         await fulfillment(of: [didFinish], timeout: 5)
         webView.navigationDelegate = nil
         _ = delegate
+    }
+
+    @MainActor
+    private func loadHTMLStringComplete(
+        _ url: URL,
+        html: String,
+        into webView: WKWebView
+    ) async throws {
+        let didFinish = expectation(
+            description: "loadHTMLString complete document loaded"
+        )
+        let delegate = ContentScriptCSSNavigationDelegate {
+            didFinish.fulfill()
+        }
+        webView.navigationDelegate = delegate
+        webView.loadHTMLString(html, baseURL: url)
+        await fulfillment(of: [didFinish], timeout: 5)
+        webView.navigationDelegate = nil
+        _ = delegate
+    }
+
+    @MainActor
+    private func documentReadyState(
+        in webView: WKWebView,
+        contentWorld: WKContentWorld
+    ) async throws -> String {
+        let result = try await webView.callAsyncJavaScript(
+            "return document.readyState",
+            arguments: [:],
+            in: nil,
+            contentWorld: contentWorld
+        )
+        return result as? String ?? ""
+    }
+
+    @MainActor
+    private func onMessageListenerCount(
+        in webView: WKWebView,
+        contentWorld: WKContentWorld
+    ) async throws -> Int {
+        let result = try await webView.callAsyncJavaScript(
+            """
+            return (typeof chrome !== "undefined"
+              && chrome.runtime
+              && chrome.runtime.onMessage
+              && typeof chrome.runtime.onMessage.listenerCount === "function")
+              ? chrome.runtime.onMessage.listenerCount()
+              : 0;
+            """,
+            arguments: [:],
+            in: nil,
+            contentWorld: contentWorld
+        )
+        if let count = result as? Int {
+            return count
+        }
+        if let count = result as? Double {
+            return Int(count)
+        }
+        if let count = result as? NSNumber {
+            return count.intValue
+        }
+        return 0
+    }
+
+    @MainActor
+    private func loadedDocumentInjectionMarkerPresent(
+        in webView: WKWebView,
+        contentWorld: WKContentWorld
+    ) async throws -> Bool {
+        let result = try await webView.callAsyncJavaScript(
+            "return globalThis.__sumiLoadedDocumentInjectionMarker === true",
+            arguments: [:],
+            in: nil,
+            contentWorld: contentWorld
+        )
+        return result as? Bool == true
     }
 
     @MainActor
