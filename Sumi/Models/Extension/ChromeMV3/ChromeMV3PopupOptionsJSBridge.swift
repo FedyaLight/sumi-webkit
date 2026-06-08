@@ -227,6 +227,7 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
                     "i18n.getUILanguage",
                     "permissions.contains",
                     "permissions.getAll",
+                    "permissions.request",
                     "runtime.connect",
                     "runtime.getManifest",
                     "runtime.getURL",
@@ -283,15 +284,6 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
                         remediation:
                             "Keep native messaging unavailable until a separate trusted-host product policy exists.",
                         roadmapOwner: "Native messaging product policy"
-                    ),
-                    blocked(
-                        namespace: "permissions",
-                        methodName: "request",
-                        reason:
-                            "permissions.request is not exposed by the controlled action popup host.",
-                        remediation:
-                            "Keep optional permission prompts outside the controlled action popup increment.",
-                        roadmapOwner: "Permissions product prompt"
                     ),
                     blocked(
                         namespace: "permissions",
@@ -8296,17 +8288,16 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             return .failure(.init(message: error))
         }
         return .success(
-            ChromeMV3PermissionsAPIRequestInput(
+            ChromeMV3PermissionsAPIRequestInputAssembly.make(
                 extensionID: configuration.extensionID,
                 profileID: configuration.profileID,
                 sourceContext: configuration.sourceContext.permissionsContext,
-                userGestureModeled:
-                    object["__sumiUserGestureModeled"]?.boolValue
-                    ?? (configuration.sourceContext == .actionPopup),
-                extensionModuleEnabled:
-                    configuration.moduleState == .enabled,
+                extensionModuleEnabled: configuration.moduleState == .enabled,
                 permissions: permissions.values,
-                origins: origins.values
+                origins: origins.values,
+                internalModeledUserGesture: request.internalModeledUserGesture,
+                extensionControlledPermissionsObject: object,
+                allowSyntheticHarnessGesturePromotion: false
             )
         )
     }
@@ -8361,7 +8352,11 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             return (
                 "promptRequiredUserGestureMissing",
                 "chrome.permissions.request requires a modeled user gesture.",
-                ["Request was blocked because no modeled user gesture was supplied."]
+                [
+                    "Request was blocked because no modeled user gesture was supplied.",
+                    "Popup load and startup permissions.request calls are not treated as user gestures.",
+                    "TODO: propagate popup UI event-gesture context when the bridge can classify handler-triggered permissions.request calls.",
+                ]
             )
         }
         if classifications.contains(.notDeclaredOptional) {
@@ -8620,11 +8615,16 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 .contains("permissions")
                 && configuration.allowlist.allowedMethods
                 .contains("permissions.getAll"),
-            "permissionsFullExposed":
+            "permissionsRequestExposed":
                 configuration.allowlist.exposedNamespaces
                 .contains("permissions")
                 && configuration.allowlist.allowedMethods
                 .contains("permissions.request"),
+            "permissionsRemoveExposed":
+                configuration.allowlist.exposedNamespaces
+                .contains("permissions")
+                && configuration.allowlist.allowedMethods
+                .contains("permissions.remove"),
             "bridgeMessageHandlerName": bridgeMessageHandlerName,
         ])
         #if DEBUG
@@ -10056,7 +10056,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
               enumerable: true
             });
           }
-          if (config.permissionsGetAllExposed || config.permissionsFullExposed) {
+          if (config.permissionsGetAllExposed || config.permissionsRequestExposed) {
             Object.defineProperty(permissions, "getAll", {
               value(callback) {
                 const cb = typeof callback === "function" ? callback : null;
@@ -10065,23 +10065,35 @@ enum ChromeMV3PopupOptionsJSShimSource {
               enumerable: true
             });
           }
-          if (config.permissionsFullExposed) {
-            ["request", "remove"].forEach((methodName) => {
-              Object.defineProperty(permissions, methodName, {
-                value(permissionsObject, callback) {
-                  const cb = typeof callback === "function" ? callback : null;
-                  return callbackOrPromise(
-                    "permissions",
-                    methodName,
-                    [permissionsObject || {}],
-                    cb
-                  );
-                },
-                enumerable: true
-              });
+          if (config.permissionsRequestExposed) {
+            Object.defineProperty(permissions, "request", {
+              value(permissionsObject, callback) {
+                const cb = typeof callback === "function" ? callback : null;
+                return callbackOrPromise(
+                  "permissions",
+                  "request",
+                  [permissionsObject || {}],
+                  cb
+                );
+              },
+              enumerable: true
             });
             Object.defineProperty(permissions, "onAdded", {
               value: permissionsOnAdded,
+              enumerable: true
+            });
+          }
+          if (config.permissionsRemoveExposed) {
+            Object.defineProperty(permissions, "remove", {
+              value(permissionsObject, callback) {
+                const cb = typeof callback === "function" ? callback : null;
+                return callbackOrPromise(
+                  "permissions",
+                  "remove",
+                  [permissionsObject || {}],
+                  cb
+                );
+              },
               enumerable: true
             });
             Object.defineProperty(permissions, "onRemoved", {
@@ -10237,7 +10249,11 @@ enum ChromeMV3PopupOptionsJSShimSource {
               enumerable: true
             });
           }
-          if (config.permissionsContainsExposed || config.permissionsFullExposed) {
+          if (
+            config.permissionsContainsExposed
+            || config.permissionsRequestExposed
+            || config.permissionsRemoveExposed
+          ) {
             Object.defineProperty(chromeObject, "permissions", {
               value: Object.freeze(permissions),
               enumerable: true

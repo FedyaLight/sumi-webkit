@@ -890,18 +890,19 @@ final class ChromeMV3PermissionsJSBridgeHandler {
             return argumentFailure(message)
         }
         return .success(
-            ChromeMV3PermissionsAPIRequestInput(
+            ChromeMV3PermissionsAPIRequestInputAssembly.make(
                 extensionID: configuration.extensionID,
                 profileID: configuration.profileID,
                 sourceContext:
                     configuration.sourceContext.permissionsContext,
-                userGestureModeled:
-                    object?["__sumiUserGestureModeled"]?.boolValue
-                    ?? (configuration.sourceContext == .actionPopup),
-                extensionModuleEnabled:
-                    configuration.moduleState == .enabled,
+                extensionModuleEnabled: configuration.moduleState == .enabled,
                 permissions: permissions.values,
-                origins: origins.values
+                origins: origins.values,
+                internalModeledUserGesture: request.internalModeledUserGesture,
+                extensionControlledPermissionsObject: object,
+                allowSyntheticHarnessGesturePromotion:
+                    configuration
+                    .permissionsJSBridgeAvailableInSyntheticHarness
             )
         )
     }

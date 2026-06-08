@@ -420,6 +420,31 @@ struct ChromeMV3RuntimeJSBridgeHostRequest:
     var eventName: ChromeMV3RuntimeJSBridgeEventName?
     var portID: String?
     var diagnostics: [String]
+    var internalModeledUserGesture: Bool
+
+    init(
+        bridgeCallID: String,
+        namespace: String,
+        methodName: String,
+        invocationMode: ChromeMV3JSBridgeInvocationMode,
+        arguments: [ChromeMV3StorageValue],
+        listenerID: String? = nil,
+        eventName: ChromeMV3RuntimeJSBridgeEventName? = nil,
+        portID: String? = nil,
+        diagnostics: [String] = [],
+        internalModeledUserGesture: Bool = false
+    ) {
+        self.bridgeCallID = bridgeCallID
+        self.namespace = namespace
+        self.methodName = methodName
+        self.invocationMode = invocationMode
+        self.arguments = arguments
+        self.listenerID = listenerID
+        self.eventName = eventName
+        self.portID = portID
+        self.diagnostics = diagnostics
+        self.internalModeledUserGesture = internalModeledUserGesture
+    }
 
     static func parse(_ body: Any) -> Result<
         ChromeMV3RuntimeJSBridgeHostRequest,
@@ -486,7 +511,9 @@ struct ChromeMV3RuntimeJSBridgeHostRequest:
                 portID: string(object["portID"]),
                 diagnostics: [
                     "Runtime JS bridge request parsed from WebKit reply message body.",
-                ]
+                    "Extension-controlled bridge bodies cannot set internalModeledUserGesture.",
+                ],
+                internalModeledUserGesture: false
             )
         )
     }

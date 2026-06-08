@@ -408,7 +408,8 @@ final class ChromeMV3JSBridgeContractTests: XCTestCase {
                         "permissions": .array([.string("history")]),
                     ]),
                 ],
-                mode: .promise
+                mode: .promise,
+                internalModeledUserGesture: true
             ),
             environment: &environment
         )
@@ -418,6 +419,33 @@ final class ChromeMV3JSBridgeContractTests: XCTestCase {
         XCTAssertTrue(result?.wouldRequirePrompt ?? false)
         XCTAssertFalse(result?.canPromptUserNow ?? true)
         XCTAssertFalse(result?.canDispatchPermissionEventNow ?? true)
+    }
+
+    func testPermissionsRequestWithoutUserGestureDoesNotRequirePrompt() {
+        var environment = environment()
+        let response = ChromeMV3JSBridgeContractRouter.route(
+            request(
+                sourceContext: .actionPopup,
+                namespace: .permissions,
+                methodName: "request",
+                arguments: [
+                    .object([
+                        "permissions": .array([.string("history")]),
+                    ]),
+                ],
+                mode: .promise
+            ),
+            environment: &environment
+        )
+        let result = response.routeResult?.permissionsRequestResult
+
+        XCTAssertTrue(response.succeeded)
+        XCTAssertFalse(result?.wouldRequirePrompt ?? true)
+        XCTAssertEqual(
+            result?.itemDecisions.first?.classification,
+            .missingUserGesture
+        )
+        XCTAssertFalse(result?.canPromptUserNow ?? true)
     }
 
     func testPermissionsGetAllAndRemoveRouteToAPIContract() {
@@ -785,7 +813,8 @@ final class ChromeMV3JSBridgeContractTests: XCTestCase {
         namespace: ChromeMV3JSBridgeNamespace,
         methodName: String,
         arguments: [ChromeMV3StorageValue] = [],
-        mode: ChromeMV3JSBridgeInvocationMode
+        mode: ChromeMV3JSBridgeInvocationMode,
+        internalModeledUserGesture: Bool = false
     ) -> ChromeMV3JSBridgeRequestEnvelope {
         ChromeMV3JSBridgeRequestEnvelope(
             extensionID: extensionID,
@@ -794,7 +823,8 @@ final class ChromeMV3JSBridgeContractTests: XCTestCase {
             namespace: namespace,
             methodName: methodName,
             rawArguments: arguments,
-            invocationMode: mode
+            invocationMode: mode,
+            internalModeledUserGesture: internalModeledUserGesture
         )
     }
 

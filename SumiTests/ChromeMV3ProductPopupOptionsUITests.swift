@@ -283,7 +283,7 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
             "permissions.getAll"
         ))
-        XCTAssertFalse(launchRecord.apiSurface.allowedMethods.contains(
+        XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
             "permissions.request"
         ))
         XCTAssertFalse(launchRecord.apiSurface.allowedMethods.contains(

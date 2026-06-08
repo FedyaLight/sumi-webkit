@@ -145,6 +145,7 @@ struct ChromeMV3JSBridgeRequestEnvelope:
     var rawArguments: [ChromeMV3StorageValue]
     var invocationMode: ChromeMV3JSBridgeInvocationMode
     var diagnosticTraceID: String
+    var internalModeledUserGesture: Bool
 
     init(
         bridgeCallID: String? = nil,
@@ -155,7 +156,8 @@ struct ChromeMV3JSBridgeRequestEnvelope:
         methodName: String,
         rawArguments: [ChromeMV3StorageValue] = [],
         invocationMode: ChromeMV3JSBridgeInvocationMode,
-        diagnosticTraceID: String? = nil
+        diagnosticTraceID: String? = nil,
+        internalModeledUserGesture: Bool = false
     ) {
         let normalizedExtensionID = extensionID.isEmpty
             ? "unknown-extension"
@@ -186,6 +188,7 @@ struct ChromeMV3JSBridgeRequestEnvelope:
         self.invocationMode = invocationMode
         self.diagnosticTraceID = diagnosticTraceID
             ?? stableID(prefix: "js-bridge-trace", parts: [callID])
+        self.internalModeledUserGesture = internalModeledUserGesture
     }
 
     private static func makeBridgeCallID(
@@ -917,16 +920,16 @@ enum ChromeMV3JSBridgeArgumentNormalizer {
             guard issues.isEmpty else {
                 return invalid(target: target, issues: issues)
             }
-            let input = ChromeMV3PermissionsAPIRequestInput(
+            let input = ChromeMV3PermissionsAPIRequestInputAssembly.make(
                 extensionID: request.extensionID,
                 profileID: request.profileID,
                 sourceContext: request.sourceContext.permissionsContext,
-                userGestureModeled:
-                    object["__sumiUserGestureModeled"]?.boolValue
-                    ?? (request.sourceContext == .actionPopup),
                 extensionModuleEnabled: true,
                 permissions: permissions.values,
-                origins: origins.values
+                origins: origins.values,
+                internalModeledUserGesture: request.internalModeledUserGesture,
+                extensionControlledPermissionsObject: object,
+                allowSyntheticHarnessGesturePromotion: false
             )
             return normalized(
                 target: target,

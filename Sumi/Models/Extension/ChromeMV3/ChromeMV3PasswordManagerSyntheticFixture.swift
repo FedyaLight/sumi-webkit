@@ -3867,7 +3867,8 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
                     origins: origins,
                     modeledPromptResult: modeledPromptResult
                 ),
-            ]
+            ],
+            internalModeledUserGesture: true
         )
     }
 
@@ -3893,9 +3894,7 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
         origins: [String],
         modeledPromptResult: String?
     ) -> ChromeMV3StorageValue {
-        var object: [String: ChromeMV3StorageValue] = [
-            "__sumiUserGestureModeled": .bool(true),
-        ]
+        var object: [String: ChromeMV3StorageValue] = [:]
         if permissions.isEmpty == false {
             object["permissions"] = .array(
                 permissions.map(ChromeMV3StorageValue.string)
@@ -3949,7 +3948,8 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
         namespace: String,
         methodName: String,
         arguments: [ChromeMV3StorageValue] = [],
-        invocationMode: ChromeMV3JSBridgeInvocationMode = .promise
+        invocationMode: ChromeMV3JSBridgeInvocationMode = .promise,
+        internalModeledUserGesture: Bool = false
     ) -> ChromeMV3RuntimeJSBridgeHostRequest {
         ChromeMV3RuntimeJSBridgeHostRequest(
             bridgeCallID:
@@ -3971,7 +3971,8 @@ enum ChromeMV3PasswordManagerFixtureReportGenerator {
             listenerID: nil,
             eventName: nil,
             portID: nil,
-            diagnostics: []
+            diagnostics: [],
+            internalModeledUserGesture: internalModeledUserGesture
         )
     }
 

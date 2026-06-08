@@ -1011,7 +1011,7 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(
             controlledPolicy.allowedMethods.contains("permissions.getAll")
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             controlledPolicy.allowedMethods.contains("permissions.request")
         )
         XCTAssertFalse(
@@ -1755,13 +1755,12 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             methodName: "local.set",
             arguments: [.object(["alpha": .string("beta")])]
         ))
-        let permission = handler.handle(request(
-            namespace: "permissions",
-            methodName: "request",
-            arguments: [.object([
-                "permissions": .array([.string("history")]),
-            ])]
-        ))
+        let permission = handler.handle(
+            permissionsRequest(
+                permissions: ["history"],
+                internalModeledUserGesture: true
+            )
+        )
 
         XCTAssertTrue(storage.succeeded)
         XCTAssertTrue(storage.serviceWorkerWakeAttempted)
@@ -2089,20 +2088,18 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             methodName: "contains",
             arguments: [.object(["permissions": .array([.string("history")])])]
         ))
-        let requestPermission = handler.handle(request(
-            namespace: "permissions",
-            methodName: "request",
-            arguments: [.object([
-                "permissions": .array([.string("history")]),
-            ])]
-        ))
-        let requestOrigin = handler.handle(request(
-            namespace: "permissions",
-            methodName: "request",
-            arguments: [.object([
-                "origins": .array([.string("https://example.com/*")]),
-            ])]
-        ))
+        let requestPermission = handler.handle(
+            permissionsRequest(
+                permissions: ["history"],
+                internalModeledUserGesture: true
+            )
+        )
+        let requestOrigin = handler.handle(
+            permissionsRequest(
+                origins: ["https://example.com/*"],
+                internalModeledUserGesture: true
+            )
+        )
         let allAfterGrant = handler.handle(request(
             namespace: "permissions",
             methodName: "getAll"
@@ -2114,11 +2111,12 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         ))
         let missingPrompt = ChromeMV3PopupOptionsJSBridgeHandler(
             configuration: configuration(manifestOptionalPermissions: ["bookmarks"])
-        ).handle(request(
-            namespace: "permissions",
-            methodName: "request",
-            arguments: [.object(["permissions": .array([.string("bookmarks")])])]
-        ))
+        ).handle(
+            permissionsRequest(
+                permissions: ["bookmarks"],
+                internalModeledUserGesture: true
+            )
+        )
 
         XCTAssertEqual(boolValue(containsBefore.resultPayload), false)
         XCTAssertTrue(requestPermission.succeeded)
@@ -3366,9 +3364,14 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             arguments: [.object(["permissions": .string("storage")])],
             invocationMode: .promise
         ))
-        let blockedRequest = handler.handle(request(
+        let requestWithoutPresenter = handler.handle(request(
             namespace: "permissions",
             methodName: "request",
+            arguments: [.object(["permissions": .array([.string("history")])])]
+        ))
+        let blockedRemove = handler.handle(request(
+            namespace: "permissions",
+            methodName: "remove",
             arguments: [.object(["permissions": .array([.string("history")])])]
         ))
         let disabledModule = ChromeMV3PopupOptionsJSBridgeHandler(
@@ -3399,8 +3402,13 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertFalse(invalid.succeeded)
         XCTAssertEqual(invalid.lastErrorCode, "invalidArguments")
         XCTAssertTrue(invalid.promiseWouldReject)
-        XCTAssertFalse(blockedRequest.succeeded)
-        XCTAssertEqual(blockedRequest.lastErrorCode, "productBlocked")
+        XCTAssertFalse(requestWithoutPresenter.succeeded)
+        XCTAssertEqual(
+            requestWithoutPresenter.lastErrorCode,
+            "promptRequiredUserGestureMissing"
+        )
+        XCTAssertFalse(blockedRemove.succeeded)
+        XCTAssertEqual(blockedRemove.lastErrorCode, "productBlocked")
         XCTAssertFalse(disabledModule.succeeded)
         XCTAssertEqual(disabledModule.lastErrorCode, "extensionDisabled")
 
@@ -3418,8 +3426,11 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(
             controlledSource.contains("\"permissionsGetAllExposed\":true")
         )
+        XCTAssertTrue(
+            controlledSource.contains("\"permissionsRequestExposed\":true")
+        )
         XCTAssertFalse(
-            controlledSource.contains("\"permissionsFullExposed\":true")
+            controlledSource.contains("\"permissionsRemoveExposed\":true")
         )
         XCTAssertTrue(
             controlledSource.contains(
@@ -3431,12 +3442,18 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
                 "Object.defineProperty(permissions, \"getAll\""
             )
         )
-        XCTAssertFalse(
-            controlledSource.contains(
-                "Object.defineProperty(permissions, \"request\""
-            )
+        XCTAssertTrue(
+            controlledSource.contains("\"permissionsRequestExposed\":true")
         )
-        XCTAssertTrue(defaultSource.contains("\"permissionsFullExposed\":true"))
+        XCTAssertFalse(
+            controlledSource.contains("\"permissionsRemoveExposed\":true")
+        )
+        XCTAssertTrue(
+            defaultSource.contains("\"permissionsRequestExposed\":true")
+        )
+        XCTAssertTrue(
+            defaultSource.contains("\"permissionsRemoveExposed\":true")
+        )
 
         let privateContextDecision =
             ChromeMV3LocalMV3CompatibilityPolicy.evaluateActionPopup(
@@ -3487,7 +3504,7 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             arguments: [.object([:])],
             invocationMode: .promise
         ))
-        let blockedRequest = handler.handle(request(
+        let requestWithoutPresenter = handler.handle(request(
             namespace: "permissions",
             methodName: "request",
             arguments: [.object(["permissions": .array([.string("history")])])]
@@ -3528,8 +3545,11 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
 
         XCTAssertFalse(invalidArgs.succeeded)
         XCTAssertEqual(invalidArgs.lastErrorCode, "invalidArguments")
-        XCTAssertFalse(blockedRequest.succeeded)
-        XCTAssertEqual(blockedRequest.lastErrorCode, "productBlocked")
+        XCTAssertFalse(requestWithoutPresenter.succeeded)
+        XCTAssertEqual(
+            requestWithoutPresenter.lastErrorCode,
+            "promptRequiredUserGestureMissing"
+        )
         XCTAssertFalse(disabledModule.succeeded)
         XCTAssertEqual(disabledModule.lastErrorCode, "extensionDisabled")
 
@@ -3610,6 +3630,248 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             controlledSource.contains(
                 "Object.defineProperty(permissions, \"getAll\""
             )
+        )
+    }
+
+    func testControlledPermissionsRequestCompatibility() throws {
+        let controlledConfig = configuration(
+            manifestPermissions: ["tabs"],
+            manifestOptionalPermissions: ["history"],
+            manifestHostPermissions: ["https://example.com/*"],
+            manifestOptionalHostPermissions: ["https://optional.example/*"],
+            allowlist: .controlledActionPopupPolicy
+        )
+        let acceptedPresenter = ChromeMV3TestPermissionPromptPresenter(
+            disposition: .accepted
+        )
+        let deniedPresenter = ChromeMV3TestPermissionPromptPresenter(
+            disposition: .denied
+        )
+        let noGesturePresenter = ChromeMV3TestPermissionPromptPresenter(
+            disposition: .accepted
+        )
+        let noGestureHandler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: controlledConfig,
+            permissionPromptPresenter: noGesturePresenter
+        )
+        let grantingHandler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: controlledConfig,
+            permissionPromptPresenter: acceptedPresenter
+        )
+
+        let alreadyGrantedPromise = grantingHandler.handle(request(
+            namespace: "permissions",
+            methodName: "request",
+            arguments: [.object(["permissions": .array([.string("tabs")])])],
+            invocationMode: .promise
+        ))
+        let alreadyGrantedCallback = grantingHandler.handle(request(
+            namespace: "permissions",
+            methodName: "request",
+            arguments: [.object(["permissions": .array([.string("tabs")])])],
+            invocationMode: .callback
+        ))
+
+        let startupWithoutGesture = noGestureHandler.handle(
+            permissionsRequest(permissions: ["history"])
+        )
+        let extensionBypassAttempt = noGestureHandler.handle(request(
+            namespace: "permissions",
+            methodName: "request",
+            arguments: [.object([
+                "permissions": .array([.string("history")]),
+                "__sumiUserGestureModeled": .bool(true),
+            ])]
+        ))
+        let startupContains = noGestureHandler.handle(request(
+            namespace: "permissions",
+            methodName: "contains",
+            arguments: [.object(["permissions": .array([.string("history")])])]
+        ))
+        let startupGetAll = noGestureHandler.handle(request(
+            namespace: "permissions",
+            methodName: "getAll"
+        ))
+        let optionalPermissionPromise = grantingHandler.handle(
+            permissionsRequest(
+                permissions: ["history"],
+                internalModeledUserGesture: true
+            )
+        )
+        let optionalOriginPromise = grantingHandler.handle(
+            permissionsRequest(
+                origins: ["https://optional.example/*"],
+                internalModeledUserGesture: true
+            )
+        )
+        let containsAfterGrant = grantingHandler.handle(request(
+            namespace: "permissions",
+            methodName: "contains",
+            arguments: [.object([
+                "permissions": .array([.string("history")]),
+                "origins": .array([.string("https://optional.example/*")]),
+            ])]
+        ))
+        let allAfterGrant = grantingHandler.handle(request(
+            namespace: "permissions",
+            methodName: "getAll"
+        ))
+
+        let deniedHandler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: controlledConfig,
+            permissionPromptPresenter: deniedPresenter
+        )
+        let deniedResponse = deniedHandler.handle(
+            permissionsRequest(
+                permissions: ["history"],
+                internalModeledUserGesture: true
+            )
+        )
+        let containsAfterDenial = deniedHandler.handle(request(
+            namespace: "permissions",
+            methodName: "contains",
+            arguments: [.object(["permissions": .array([.string("history")])])]
+        ))
+
+        let undeclaredPermission = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: controlledConfig,
+            permissionPromptPresenter: acceptedPresenter
+        ).handle(
+            permissionsRequest(
+                permissions: ["bookmarks"],
+                internalModeledUserGesture: true
+            )
+        )
+        let undeclaredOrigin = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: controlledConfig,
+            permissionPromptPresenter: acceptedPresenter
+        ).handle(
+            permissionsRequest(
+                origins: ["https://undeclared.example/*"],
+                internalModeledUserGesture: true
+            )
+        )
+        let unsupportedOrigin = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                manifestOptionalHostPermissions: ["file:///tmp/*"],
+                allowlist: .controlledActionPopupPolicy
+            ),
+            permissionPromptPresenter: ChromeMV3TestPermissionPromptPresenter(
+                disposition: .accepted
+            )
+        ).handle(
+            permissionsRequest(
+                origins: ["file:///tmp/*"],
+                internalModeledUserGesture: true
+            )
+        )
+        let missingGesture = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: controlledConfig,
+            permissionPromptPresenter: acceptedPresenter
+        ).handle(permissionsRequest(permissions: ["history"]))
+        let blockedRemove = grantingHandler.handle(request(
+            namespace: "permissions",
+            methodName: "remove",
+            arguments: [.object(["permissions": .array([.string("history")])])]
+        ))
+        let disabledModule = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                moduleState: .disabled,
+                allowlist: .controlledActionPopupPolicy
+            )
+        )
+
+        XCTAssertTrue(alreadyGrantedPromise.succeeded)
+        XCTAssertEqual(boolValue(alreadyGrantedPromise.resultPayload), true)
+        XCTAssertNil(alreadyGrantedPromise.lastErrorCode)
+        XCTAssertTrue(alreadyGrantedCallback.succeeded)
+        XCTAssertEqual(boolValue(alreadyGrantedCallback.resultPayload), true)
+        XCTAssertFalse(alreadyGrantedCallback.callbackWouldSetLastError)
+
+        XCTAssertFalse(startupWithoutGesture.succeeded)
+        XCTAssertEqual(
+            startupWithoutGesture.lastErrorCode,
+            "promptRequiredUserGestureMissing"
+        )
+        XCTAssertFalse(extensionBypassAttempt.succeeded)
+        XCTAssertEqual(
+            extensionBypassAttempt.lastErrorCode,
+            "promptRequiredUserGestureMissing"
+        )
+        XCTAssertEqual(noGesturePresenter.presentedRequests.count, 0)
+        XCTAssertEqual(boolValue(startupContains.resultPayload), false)
+        XCTAssertFalse(
+            stringArrayValue(
+                objectValue(startupGetAll.resultPayload)?["permissions"]
+            ).contains("history")
+        )
+
+        XCTAssertTrue(optionalPermissionPromise.succeeded)
+        XCTAssertEqual(boolValue(optionalPermissionPromise.resultPayload), true)
+        XCTAssertTrue(optionalOriginPromise.succeeded)
+        XCTAssertEqual(boolValue(optionalOriginPromise.resultPayload), true)
+        XCTAssertEqual(acceptedPresenter.presentedRequests.count, 2)
+        XCTAssertEqual(boolValue(containsAfterGrant.resultPayload), true)
+        let allObject = try XCTUnwrap(objectValue(allAfterGrant.resultPayload))
+        XCTAssertTrue(stringArrayValue(allObject["permissions"]).contains("history"))
+        XCTAssertTrue(
+            stringArrayValue(allObject["origins"])
+                .contains("https://optional.example/*")
+        )
+
+        XCTAssertTrue(deniedResponse.succeeded)
+        XCTAssertEqual(boolValue(deniedResponse.resultPayload), false)
+        XCTAssertNil(deniedResponse.lastErrorCode)
+        XCTAssertEqual(boolValue(containsAfterDenial.resultPayload), false)
+
+        XCTAssertFalse(undeclaredPermission.succeeded)
+        XCTAssertEqual(
+            undeclaredPermission.lastErrorCode,
+            "permissionNotDeclaredOptional"
+        )
+        XCTAssertEqual(boolValue(undeclaredPermission.resultPayload), false)
+        XCTAssertFalse(undeclaredOrigin.succeeded)
+        XCTAssertEqual(
+            undeclaredOrigin.lastErrorCode,
+            "permissionNotDeclaredOptional"
+        )
+        XCTAssertFalse(unsupportedOrigin.succeeded)
+        XCTAssertEqual(unsupportedOrigin.lastErrorCode, "permissionDenied")
+        XCTAssertFalse(missingGesture.succeeded)
+        XCTAssertEqual(
+            missingGesture.lastErrorCode,
+            "promptRequiredUserGestureMissing"
+        )
+        XCTAssertFalse(blockedRemove.succeeded)
+        XCTAssertEqual(blockedRemove.lastErrorCode, "productBlocked")
+        let disabledResponse = disabledModule.handle(request(
+            namespace: "permissions",
+            methodName: "request",
+            arguments: [.object(["permissions": .array([.string("history")])])]
+        ))
+        XCTAssertFalse(disabledResponse.succeeded)
+        XCTAssertEqual(disabledResponse.lastErrorCode, "extensionDisabled")
+        XCTAssertFalse(disabledResponse.nativeHostLaunchAttempted)
+
+        let privateContextDecision =
+            ChromeMV3LocalMV3CompatibilityPolicy.evaluateActionPopup(
+                ChromeMV3CompatibilityPolicyInput(
+                    moduleEnabled: true,
+                    developerPreviewLocalMV3FlowAvailable: true,
+                    extensionID: "permissions-private-context",
+                    profileID: "permissions-private-profile",
+                    manifestVersion: 3,
+                    sourceKind: .directory,
+                    extensionEnabled: true,
+                    profileAllowed: true,
+                    normalNonPrivateContext: false,
+                    actionDefaultPopupPresent: true,
+                    forceNativeActionPopup: false,
+                    forceControlledCompatibilityActionPopupOff: false
+                )
+            )
+        XCTAssertTrue(
+            privateContextDecision.blockers.contains(.privateContext)
         )
     }
 
@@ -4408,11 +4670,48 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         )
     }
 
+    private func permissionsRequestArguments(
+        permissions: [String] = [],
+        origins: [String] = []
+    ) -> [ChromeMV3StorageValue] {
+        var object: [String: ChromeMV3StorageValue] = [:]
+        if permissions.isEmpty == false {
+            object["permissions"] = .array(
+                permissions.map(ChromeMV3StorageValue.string)
+            )
+        }
+        if origins.isEmpty == false {
+            object["origins"] = .array(
+                origins.map(ChromeMV3StorageValue.string)
+            )
+        }
+        return [.object(object)]
+    }
+
+    private func permissionsRequest(
+        permissions: [String] = [],
+        origins: [String] = [],
+        internalModeledUserGesture: Bool = false,
+        invocationMode: ChromeMV3JSBridgeInvocationMode = .promise
+    ) -> ChromeMV3RuntimeJSBridgeHostRequest {
+        request(
+            namespace: "permissions",
+            methodName: "request",
+            arguments: permissionsRequestArguments(
+                permissions: permissions,
+                origins: origins
+            ),
+            invocationMode: invocationMode,
+            internalModeledUserGesture: internalModeledUserGesture
+        )
+    }
+
     private func request(
         namespace: String,
         methodName: String,
         arguments: [ChromeMV3StorageValue] = [],
-        invocationMode: ChromeMV3JSBridgeInvocationMode = .promise
+        invocationMode: ChromeMV3JSBridgeInvocationMode = .promise,
+        internalModeledUserGesture: Bool = false
     ) -> ChromeMV3RuntimeJSBridgeHostRequest {
         ChromeMV3RuntimeJSBridgeHostRequest(
             bridgeCallID: UUID().uuidString,
@@ -4423,7 +4722,8 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             listenerID: nil,
             eventName: nil,
             portID: nil,
-            diagnostics: []
+            diagnostics: [],
+            internalModeledUserGesture: internalModeledUserGesture
         )
     }
 

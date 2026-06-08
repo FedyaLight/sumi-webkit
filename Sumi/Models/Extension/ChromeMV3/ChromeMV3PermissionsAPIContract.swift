@@ -126,6 +126,63 @@ struct ChromeMV3PermissionsAPIRequestInput:
     }
 }
 
+enum ChromeMV3PermissionsAPIRequestInputAssembly {
+    static let extensionControlledBypassKeys = [
+        "__sumiUserGestureModeled",
+        "__sumiModeledPromptResult",
+    ]
+
+    static func resolvedUserGestureModeled(
+        internalModeledUserGesture: Bool,
+        extensionControlledPermissionsObject:
+            [String: ChromeMV3StorageValue]?,
+        allowSyntheticHarnessGesturePromotion: Bool
+    ) -> Bool {
+        if internalModeledUserGesture {
+            return true
+        }
+        #if DEBUG
+        if allowSyntheticHarnessGesturePromotion,
+           case .bool(true) = extensionControlledPermissionsObject?[
+               "__sumiUserGestureModeled"
+           ]
+        {
+            return true
+        }
+        #endif
+        return false
+    }
+
+    static func make(
+        extensionID: String,
+        profileID: String,
+        sourceContext: ChromeMV3PermissionsAPIRequestSourceContext,
+        extensionModuleEnabled: Bool,
+        permissions: [String],
+        origins: [String],
+        internalModeledUserGesture: Bool,
+        extensionControlledPermissionsObject:
+            [String: ChromeMV3StorageValue]? = nil,
+        allowSyntheticHarnessGesturePromotion: Bool = false
+    ) -> ChromeMV3PermissionsAPIRequestInput {
+        ChromeMV3PermissionsAPIRequestInput(
+            extensionID: extensionID,
+            profileID: profileID,
+            sourceContext: sourceContext,
+            userGestureModeled: resolvedUserGestureModeled(
+                internalModeledUserGesture: internalModeledUserGesture,
+                extensionControlledPermissionsObject:
+                    extensionControlledPermissionsObject,
+                allowSyntheticHarnessGesturePromotion:
+                    allowSyntheticHarnessGesturePromotion
+            ),
+            extensionModuleEnabled: extensionModuleEnabled,
+            permissions: permissions,
+            origins: origins
+        )
+    }
+}
+
 struct ChromeMV3PermissionsAPINormalizedRequest:
     Codable,
     Equatable,
