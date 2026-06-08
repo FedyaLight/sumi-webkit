@@ -220,7 +220,7 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         XCTAssertTrue(launchRecord.apiSurface.tabsAvailable)
         XCTAssertTrue(launchRecord.apiSurface.storageLocalAvailable)
         XCTAssertTrue(launchRecord.apiSurface.storageSessionAvailable)
-        XCTAssertFalse(launchRecord.apiSurface.permissionsAvailable)
+        XCTAssertTrue(launchRecord.apiSurface.permissionsAvailable)
         XCTAssertTrue(launchRecord.apiSurface.scriptingAvailable)
         XCTAssertFalse(launchRecord.apiSurface.nativeMessagingAvailable)
         XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
@@ -276,6 +276,18 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         ))
         XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
             "scripting.executeScript"
+        ))
+        XCTAssertTrue(launchRecord.apiSurface.allowedMethods.contains(
+            "permissions.contains"
+        ))
+        XCTAssertFalse(launchRecord.apiSurface.allowedMethods.contains(
+            "permissions.request"
+        ))
+        XCTAssertFalse(launchRecord.apiSurface.allowedMethods.contains(
+            "permissions.getAll"
+        ))
+        XCTAssertFalse(launchRecord.apiSurface.allowedMethods.contains(
+            "permissions.remove"
         ))
         XCTAssertFalse(launchRecord.apiSurface.allowedMethods.contains(
             "tabs.connect"

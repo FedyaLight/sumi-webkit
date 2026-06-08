@@ -856,7 +856,7 @@ enum ChromeMV3ProductPopupOptionsLaunchPlanner {
             "storage.local get/set/remove/clear are routed through the developer-preview broker when the controlled bridge is installed.",
             "storage.session get/set/remove/clear are routed through a memory-only developer-preview broker when the controlled bridge is installed.",
             "storage.sync get/set/remove/clear are routed through a developer-preview local compatibility backend when the controlled bridge is installed; no cloud sync is claimed.",
-            "Native messaging, managed storage, scripting, permissions, DNR, webRequest, offscreen, contextMenus, and Web Store APIs remain outside this controlled action popup policy.",
+            "Native messaging, managed storage, permissions.request/remove/getAll, DNR, webRequest, offscreen, contextMenus, and Web Store APIs remain outside this controlled action popup policy; permissions.contains is available for narrow grant checks.",
         ]
         var declaration: ChromeMV3ExtensionPageDeclaration?
         var resolution: ChromeMV3ExtensionPageResourceResolution?

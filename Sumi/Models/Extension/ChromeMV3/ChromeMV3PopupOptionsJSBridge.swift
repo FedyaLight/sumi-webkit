@@ -199,6 +199,7 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
             exposedNamespaces: {
                 var namespaces = [
                     "i18n",
+                    "permissions",
                     "runtime",
                     "scripting",
                     "storage.local",
@@ -217,7 +218,6 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
                 "identity",
                 "nativeMessaging",
                 "offscreen",
-                "permissions",
                 "sidePanel",
                 "webRequest",
             ],
@@ -225,6 +225,7 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
                 var methods = [
                     "i18n.getMessage",
                     "i18n.getUILanguage",
+                    "permissions.contains",
                     "runtime.connect",
                     "runtime.getManifest",
                     "runtime.getURL",
@@ -284,11 +285,29 @@ struct ChromeMV3PopupOptionsAPIMethodPolicy:
                     ),
                     blocked(
                         namespace: "permissions",
-                        methodName: "*",
+                        methodName: "getAll",
                         reason:
-                            "permissions.* is not exposed by the controlled action popup host.",
+                            "permissions.getAll is not exposed by the controlled action popup host.",
                         remediation:
-                            "Add permissions UI/runtime support through a separate reviewed implementation prompt.",
+                            "Use permissions.contains for narrow grant checks in controlled popup contexts.",
+                        roadmapOwner: "Permissions product prompt"
+                    ),
+                    blocked(
+                        namespace: "permissions",
+                        methodName: "request",
+                        reason:
+                            "permissions.request is not exposed by the controlled action popup host.",
+                        remediation:
+                            "Keep optional permission prompts outside the controlled action popup increment.",
+                        roadmapOwner: "Permissions product prompt"
+                    ),
+                    blocked(
+                        namespace: "permissions",
+                        methodName: "remove",
+                        reason:
+                            "permissions.remove is not exposed by the controlled action popup host.",
+                        remediation:
+                            "Keep permission revocation outside the controlled action popup increment.",
                         roadmapOwner: "Permissions product prompt"
                     ),
                     blocked(
@@ -8599,6 +8618,16 @@ enum ChromeMV3PopupOptionsJSShimSource {
             "storageSyncOnChangedExposed":
                 configuration.allowlist.allowedMethods
                 .contains("storage.sync.onChanged"),
+            "permissionsContainsExposed":
+                configuration.allowlist.exposedNamespaces
+                .contains("permissions")
+                && configuration.allowlist.allowedMethods
+                .contains("permissions.contains"),
+            "permissionsFullExposed":
+                configuration.allowlist.exposedNamespaces
+                .contains("permissions")
+                && configuration.allowlist.allowedMethods
+                .contains("permissions.request"),
             "bridgeMessageHandlerName": bridgeMessageHandlerName,
         ])
         #if DEBUG
@@ -10016,35 +10045,51 @@ enum ChromeMV3PopupOptionsJSShimSource {
             enumerable: true
           });
 
-          ["contains", "request", "remove"].forEach((methodName) => {
-            Object.defineProperty(permissions, methodName, {
+          if (config.permissionsContainsExposed) {
+            Object.defineProperty(permissions, "contains", {
               value(permissionsObject, callback) {
                 const cb = typeof callback === "function" ? callback : null;
                 return callbackOrPromise(
                   "permissions",
-                  methodName,
+                  "contains",
                   [permissionsObject || {}],
                   cb
                 );
               },
               enumerable: true
             });
-          });
-          Object.defineProperty(permissions, "getAll", {
-            value(callback) {
-              const cb = typeof callback === "function" ? callback : null;
-              return callbackOrPromise("permissions", "getAll", [], cb);
-            },
-            enumerable: true
-          });
-          Object.defineProperty(permissions, "onAdded", {
-            value: permissionsOnAdded,
-            enumerable: true
-          });
-          Object.defineProperty(permissions, "onRemoved", {
-            value: permissionsOnRemoved,
-            enumerable: true
-          });
+          }
+          if (config.permissionsFullExposed) {
+            ["request", "remove"].forEach((methodName) => {
+              Object.defineProperty(permissions, methodName, {
+                value(permissionsObject, callback) {
+                  const cb = typeof callback === "function" ? callback : null;
+                  return callbackOrPromise(
+                    "permissions",
+                    methodName,
+                    [permissionsObject || {}],
+                    cb
+                  );
+                },
+                enumerable: true
+              });
+            });
+            Object.defineProperty(permissions, "getAll", {
+              value(callback) {
+                const cb = typeof callback === "function" ? callback : null;
+                return callbackOrPromise("permissions", "getAll", [], cb);
+              },
+              enumerable: true
+            });
+            Object.defineProperty(permissions, "onAdded", {
+              value: permissionsOnAdded,
+              enumerable: true
+            });
+            Object.defineProperty(permissions, "onRemoved", {
+              value: permissionsOnRemoved,
+              enumerable: true
+            });
+          }
 
           Object.defineProperty(tabs, "query", {
             value(queryInfo, callback) {
@@ -10193,10 +10238,12 @@ enum ChromeMV3PopupOptionsJSShimSource {
               enumerable: true
             });
           }
-          Object.defineProperty(chromeObject, "permissions", {
-            value: Object.freeze(permissions),
-            enumerable: true
-          });
+          if (config.permissionsContainsExposed || config.permissionsFullExposed) {
+            Object.defineProperty(chromeObject, "permissions", {
+              value: Object.freeze(permissions),
+              enumerable: true
+            });
+          }
           Object.defineProperty(chromeObject, "tabs", {
             value: tabsObject,
             enumerable: true
