@@ -1008,6 +1008,9 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(
             controlledPolicy.allowedMethods.contains("permissions.contains")
         )
+        XCTAssertTrue(
+            controlledPolicy.allowedMethods.contains("permissions.getAll")
+        )
         XCTAssertFalse(
             controlledPolicy.allowedMethods.contains("permissions.request")
         )
@@ -3412,12 +3415,20 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(
             controlledSource.contains("\"permissionsContainsExposed\":true")
         )
+        XCTAssertTrue(
+            controlledSource.contains("\"permissionsGetAllExposed\":true")
+        )
         XCTAssertFalse(
             controlledSource.contains("\"permissionsFullExposed\":true")
         )
         XCTAssertTrue(
             controlledSource.contains(
                 "Object.defineProperty(permissions, \"contains\""
+            )
+        )
+        XCTAssertTrue(
+            controlledSource.contains(
+                "Object.defineProperty(permissions, \"getAll\""
             )
         )
         XCTAssertFalse(
@@ -3446,6 +3457,159 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             )
         XCTAssertTrue(
             privateContextDecision.blockers.contains(.privateContext)
+        )
+    }
+
+    func testControlledPermissionsGetAllCompatibility() throws {
+        let config = configuration(
+            manifestPermissions: ["storage", "tabs"],
+            manifestOptionalPermissions: ["history", "bookmarks"],
+            manifestHostPermissions: ["https://example.com/*"],
+            manifestOptionalHostPermissions: ["https://optional.example/*"],
+            allowlist: .controlledActionPopupPolicy
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: config
+        )
+        let promise = handler.handle(request(
+            namespace: "permissions",
+            methodName: "getAll",
+            invocationMode: .promise
+        ))
+        let callback = handler.handle(request(
+            namespace: "permissions",
+            methodName: "getAll",
+            invocationMode: .callback
+        ))
+        let invalidArgs = handler.handle(request(
+            namespace: "permissions",
+            methodName: "getAll",
+            arguments: [.object([:])],
+            invocationMode: .promise
+        ))
+        let blockedRequest = handler.handle(request(
+            namespace: "permissions",
+            methodName: "request",
+            arguments: [.object(["permissions": .array([.string("history")])])]
+        ))
+        let disabledModule = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                moduleState: .disabled,
+                manifestPermissions: ["storage"],
+                allowlist: .controlledActionPopupPolicy
+            )
+        ).handle(request(
+            namespace: "permissions",
+            methodName: "getAll"
+        ))
+
+        XCTAssertTrue(promise.succeeded)
+        XCTAssertNil(promise.lastErrorCode)
+        XCTAssertFalse(promise.promiseWouldReject)
+        XCTAssertFalse(promise.callbackWouldSetLastError)
+        let promiseObject = try XCTUnwrap(objectValue(promise.resultPayload))
+        let permissions = stringArrayValue(promiseObject["permissions"])
+        let origins = stringArrayValue(promiseObject["origins"])
+        XCTAssertEqual(permissions, ["storage", "tabs"])
+        XCTAssertEqual(origins, ["https://example.com/*"])
+        XCTAssertFalse(permissions.contains("history"))
+        XCTAssertFalse(permissions.contains("bookmarks"))
+        XCTAssertFalse(origins.contains("https://optional.example/*"))
+
+        XCTAssertTrue(callback.succeeded)
+        XCTAssertNil(callback.lastErrorCode)
+        XCTAssertFalse(callback.callbackWouldSetLastError)
+        let callbackObject = try XCTUnwrap(objectValue(callback.resultPayload))
+        XCTAssertEqual(
+            stringArrayValue(callbackObject["permissions"]),
+            permissions
+        )
+        XCTAssertEqual(stringArrayValue(callbackObject["origins"]), origins)
+
+        XCTAssertFalse(invalidArgs.succeeded)
+        XCTAssertEqual(invalidArgs.lastErrorCode, "invalidArguments")
+        XCTAssertFalse(blockedRequest.succeeded)
+        XCTAssertEqual(blockedRequest.lastErrorCode, "productBlocked")
+        XCTAssertFalse(disabledModule.succeeded)
+        XCTAssertEqual(disabledModule.lastErrorCode, "extensionDisabled")
+
+        let root = try makeTemporaryDirectory()
+        let store = ChromeMV3DeveloperPreviewPermissionStateStore(
+            rootURL: root
+        )
+        let grantedOwner = ChromeMV3PermissionRuntimeStateOwner(
+            permissionStore:
+                ChromeMV3PermissionDecisionStore(
+                    snapshot:
+                        ChromeMV3PermissionDecisionStoreSnapshot(
+                            extensionID: config.extensionID,
+                            profileID: config.profileID,
+                            declaredAPIPermissions: ["storage", "tabs"],
+                            declaredHostPermissions: ["https://example.com/*"],
+                            optionalAPIPermissions: ["history"],
+                            optionalHostPermissions: [
+                                "https://optional.example/*",
+                            ],
+                            grantedOptionalAPIPermissions: ["history"],
+                            grantedOptionalHostPermissions: [
+                                "https://optional.example/*",
+                            ]
+                        )
+                )
+        )
+        try store.save(
+            owner: grantedOwner,
+            gateRecord: ChromeMV3PermissionPromptGateRecord.evaluate(
+                moduleEnabled: true,
+                extensionEnabled: true,
+                developerPreviewGate: true
+            )
+        )
+        let grantedHandler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                extensionID: config.extensionID,
+                profileID: config.profileID,
+                manifestPermissions: ["storage", "tabs"],
+                manifestOptionalPermissions: ["history"],
+                manifestHostPermissions: ["https://example.com/*"],
+                manifestOptionalHostPermissions: [
+                    "https://optional.example/*",
+                ],
+                allowlist: .controlledActionPopupPolicy
+            ),
+            permissionStateStore: store
+        )
+        let grantedAll = grantedHandler.handle(request(
+            namespace: "permissions",
+            methodName: "getAll"
+        ))
+        let grantedObject = try XCTUnwrap(objectValue(grantedAll.resultPayload))
+        XCTAssertTrue(
+            stringArrayValue(grantedObject["permissions"]).contains("history")
+        )
+        XCTAssertTrue(
+            stringArrayValue(grantedObject["origins"])
+                .contains("https://optional.example/*")
+        )
+
+        let containsAfterGetAll = handler.handle(request(
+            namespace: "permissions",
+            methodName: "contains",
+            arguments: [.object(["permissions": .array([.string("storage")])])]
+        ))
+        XCTAssertTrue(containsAfterGetAll.succeeded)
+        XCTAssertEqual(boolValue(containsAfterGetAll.resultPayload), true)
+
+        let controlledSource = ChromeMV3PopupOptionsJSShimSource.source(
+            configuration: config
+        )
+        XCTAssertTrue(
+            controlledSource.contains("const browserRoot = rootObject(\"browser\")")
+        )
+        XCTAssertTrue(
+            controlledSource.contains(
+                "Object.defineProperty(permissions, \"getAll\""
+            )
         )
     }
 
