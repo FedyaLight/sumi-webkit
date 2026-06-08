@@ -947,6 +947,139 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
     }
 
     @MainActor
+    func testDebugBitwardenLivePopupProductPathTraceCapturesHarnessMismatch()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Live popup product-path trace requires macOS 15.5.")
+        }
+
+        let bitwardenRoot = URL(
+            fileURLWithPath:
+                "/Users/fedaefimov/Downloads/Aura/mv3-test-extensions/bitwarden",
+            isDirectory: true
+        )
+        try XCTSkipUnless(
+            FileManager.default.fileExists(
+                atPath: bitwardenRoot.appendingPathComponent("manifest.json").path
+            ),
+            "Local Bitwarden package is not available."
+        )
+
+        let root = try makeTemporaryDirectory()
+        let profileID = UUID()
+        let module = try makeModule(enabled: true, includesModelContext: true)
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: bitwardenRoot,
+            profileID: profileID.uuidString,
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: record.extensionID
+        )
+
+        let currentTab = Tab(url: URL(string: "https://example.com/login")!)
+        currentTab.profileId = profileID
+        let result = await module.openActionPopupFromURLHub(
+            extensionId: record.extensionID,
+            currentTab: currentTab
+        )
+        XCTAssertTrue(result.opened, result.message)
+
+        let trace = await module.chromeMV3AwaitLivePopupProductPathTraceForTesting(
+            timeoutSeconds: 12
+        )
+        let resolvedTrace = try XCTUnwrap(trace)
+        for line in resolvedTrace.compactSanitizedLogLines {
+            print("SumiLivePopupProductPathTrace \(line)")
+        }
+
+        XCTAssertEqual(
+            resolvedTrace.actualPopupPath,
+            ChromeMV3CompatibilityActionPopupPath
+                .controlledCompatibilityActionPopup.rawValue
+        )
+        XCTAssertTrue(resolvedTrace.webViewCreated)
+        XCTAssertTrue(resolvedTrace.bridgeInstalled)
+        XCTAssertEqual(
+            resolvedTrace.failureClassifier,
+            .productPathDiffersFromTestHarness,
+            "Harness opens without a live URL-hub anchor; product UI requires popover presentation."
+        )
+        XCTAssertFalse(resolvedTrace.popoverPresented)
+        XCTAssertFalse(resolvedTrace.nativeHostLaunched)
+
+        _ = module.chromeMV3ClosePopupOptionsThroughManager(
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+    }
+
+    @MainActor
+    func testDebugBitwardenRepeatedURLHubPopupOpensDoNotDuplicateHandlers()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Repeated popup handler regression requires macOS 15.5.")
+        }
+
+        let bitwardenRoot = URL(
+            fileURLWithPath:
+                "/Users/fedaefimov/Downloads/Aura/mv3-test-extensions/bitwarden",
+            isDirectory: true
+        )
+        try XCTSkipUnless(
+            FileManager.default.fileExists(
+                atPath: bitwardenRoot.appendingPathComponent("manifest.json").path
+            ),
+            "Local Bitwarden package is not available."
+        )
+
+        ChromeMV3WKScriptMessageHandlerRegistration.resetDiagnosticsForTesting()
+        let root = try makeTemporaryDirectory()
+        let profileID = UUID()
+        let module = try makeModule(enabled: true, includesModelContext: true)
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: bitwardenRoot,
+            profileID: profileID.uuidString,
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: record.extensionID
+        )
+
+        let currentTab = Tab(url: URL(string: "https://example.com/login")!)
+        currentTab.profileId = profileID
+        for attempt in 1 ... 3 {
+            let result = await module.openActionPopupFromURLHub(
+                extensionId: record.extensionID,
+                currentTab: currentTab
+            )
+            XCTAssertTrue(
+                result.opened,
+                "Bitwarden popup open attempt \(attempt) failed: \(result.message)"
+            )
+            _ = module.chromeMV3ClosePopupOptionsThroughManager(
+                profileID: record.profileID,
+                extensionID: record.extensionID
+            )
+        }
+
+        XCTAssertGreaterThanOrEqual(
+            ChromeMV3WKScriptMessageHandlerRegistration
+                .diagnosticsSnapshot.count,
+            0,
+            "Repeated Bitwarden popup opens completed without duplicate-handler crash."
+        )
+    }
+
+    @MainActor
     func testDebugControlledBitwardenURLHubActionPopupDiagnosticSchemeDiagnostics()
         async throws
     {

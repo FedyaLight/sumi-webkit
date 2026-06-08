@@ -71,6 +71,37 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
         XCTAssertTrue(managerSource.contains(
             "ChromeMV3ContentScriptWKAttachmentExecutor.attachIfAllowed"
         ))
+        let registrationSource = try sourceFile(
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3WKScriptMessageHandlerRegistration.swift"
+        )
+        let attachmentSource = try sourceFile(
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ContentScriptProductAttachment.swift"
+        )
+        XCTAssertTrue(
+            registrationSource.contains(
+                "ChromeMV3WKScriptMessageHandlerRegistration"
+            )
+        )
+        XCTAssertTrue(
+            attachmentSource.contains(
+                "ChromeMV3WKScriptMessageHandlerRegistration.register"
+            )
+        )
+        XCTAssertFalse(
+            attachmentSource.contains(
+                "userContentController.addScriptMessageHandler("
+            )
+        )
+        XCTAssertTrue(
+            popupSource.contains(
+                "ChromeMV3WKScriptMessageHandlerRegistration.register"
+            )
+        )
+        XCTAssertFalse(
+            popupSource.contains(
+                "userContentController.addScriptMessageHandler("
+            )
+        )
         XCTAssertTrue(managerSource.contains(
             "ChromeMV3LivePreparedServiceWorkerLifecycleStore"
         ))
@@ -1680,6 +1711,105 @@ final class ChromeMV3ContentScriptProductAttachmentTests: XCTestCase {
     }
 
     #if canImport(WebKit)
+    #if canImport(WebKit)
+    @MainActor
+    func testContentScriptHandlerDuplicateRegistrationDoesNotCrash() throws {
+        ChromeMV3WKScriptMessageHandlerRegistration.resetDiagnosticsForTesting()
+        let fixture = try makePreflightFixture()
+        let registry = ChromeMV3ContentScriptEndpointRegistry()
+        let configuration = WKWebViewConfiguration()
+        configuration.sumiIsNormalTabWebViewConfiguration = true
+        let broker = permissionBroker(hostPermissions: ["https://example.com/*"])
+
+        let first =
+            ChromeMV3ContentScriptWKAttachmentExecutor.attachIfAllowed(
+                configuration: configuration,
+                preflight: fixture.preflight,
+                permissionBroker: broker,
+                endpointRegistry: registry
+            )
+        XCTAssertTrue(first.result.attached)
+        XCTAssertEqual(first.result.installedScriptMessageHandlerCount, 1)
+
+        let second =
+            ChromeMV3ContentScriptWKAttachmentExecutor.attachIfAllowed(
+                configuration: configuration,
+                preflight: fixture.preflight,
+                permissionBroker: broker,
+                endpointRegistry: registry
+            )
+        XCTAssertTrue(second.result.attached)
+        XCTAssertEqual(second.result.installedScriptMessageHandlerCount, 1)
+
+        let outcomes = ChromeMV3WKScriptMessageHandlerRegistration
+            .diagnosticsSnapshot
+            .filter { $0.registrationCategory == .contentScriptBridge }
+            .map(\.outcome)
+        XCTAssertTrue(outcomes.contains(.added))
+        XCTAssertTrue(
+            outcomes.contains(.replaced) || outcomes.contains(.alreadyRegistered)
+        )
+
+        first.handle?.tearDown(reason: "duplicate registration test")
+        second.handle?.tearDown(reason: "duplicate registration test")
+    }
+
+    @MainActor
+    func testPopupOptionsHandlerDuplicateRegistrationDoesNotCrash() throws {
+        ChromeMV3WKScriptMessageHandlerRegistration.resetDiagnosticsForTesting()
+        final class ProbeHandler: NSObject, WKScriptMessageHandler {
+            func userContentController(
+                _ userContentController: WKUserContentController,
+                didReceive message: WKScriptMessage
+            ) {
+                _ = userContentController
+                _ = message
+            }
+        }
+
+        let controller = WKUserContentController()
+        let handler = ProbeHandler()
+        let handlerName =
+            ChromeMV3PopupOptionsJSShimSource.bridgeMessageHandlerName
+        let first =
+            ChromeMV3WKScriptMessageHandlerRegistration.register(
+                handler: handler,
+                name: handlerName,
+                contentWorld: .page,
+                userContentController: controller,
+                category: .popupOptionsBridge,
+                extensionIDHash: ChromeMV3CompatibilityPolicyLog.hashID(
+                    extensionID
+                ),
+                sourcePath: "ChromeMV3ContentScriptProductAttachmentTests.popup"
+            )
+        let second =
+            ChromeMV3WKScriptMessageHandlerRegistration.register(
+                handler: handler,
+                name: handlerName,
+                contentWorld: .page,
+                userContentController: controller,
+                category: .popupOptionsBridge,
+                extensionIDHash: ChromeMV3CompatibilityPolicyLog.hashID(
+                    extensionID
+                ),
+                sourcePath: "ChromeMV3ContentScriptProductAttachmentTests.popup"
+            )
+        XCTAssertEqual(first, .added)
+        XCTAssertEqual(second, .alreadyRegistered)
+        _ = ChromeMV3WKScriptMessageHandlerRegistration.remove(
+            name: handlerName,
+            contentWorld: .page,
+            userContentController: controller,
+            category: .popupOptionsBridge,
+            extensionIDHash: ChromeMV3CompatibilityPolicyLog.hashID(
+                extensionID
+            ),
+            sourcePath: "ChromeMV3ContentScriptProductAttachmentTests.popup.teardown"
+        )
+    }
+    #endif
+
     @MainActor
     func testWKUserScriptAttachmentOccursOnlyAfterDeveloperPreviewGates()
         throws

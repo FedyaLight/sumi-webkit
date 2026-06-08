@@ -533,15 +533,11 @@ private struct ActionAnchorView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
-        DispatchQueue.main.async { [extensionsModule] in
-            extensionsModule.setActionAnchorIfLoaded(for: extensionId, anchorView: view)
-        }
+        extensionsModule.setActionAnchorIfLoaded(for: extensionId, anchorView: view)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async { [extensionsModule] in
-            extensionsModule.setActionAnchorIfLoaded(for: extensionId, anchorView: nsView)
-        }
+        extensionsModule.setActionAnchorIfLoaded(for: extensionId, anchorView: nsView)
     }
 }

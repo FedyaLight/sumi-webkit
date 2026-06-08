@@ -384,6 +384,8 @@ final class SumiExtensionsModule {
             ChromeMV3EndToEndInstallDiagnosticsReport?
         private var lastChromeMV3LocalLifecycleDispatchResult:
             ChromeMV3LocalLifecycleDispatchResult?
+        private var lastChromeMV3LivePopupProductPathTrace:
+            ChromeMV3LivePopupProductPathTrace?
         private var chromeMV3LocalLifecycleManagerRootURLByExtensionID:
             [String: URL] = [:]
         private let controlledActionPopupServiceWorkerLifecycleStore =
@@ -521,6 +523,7 @@ final class SumiExtensionsModule {
                     lastChromeMV3SidePanelOffscreenIdentityReport = nil
                     lastChromeMV3EndToEndInstallDiagnosticsReport = nil
                     lastChromeMV3LocalLifecycleDispatchResult = nil
+                    lastChromeMV3LivePopupProductPathTrace = nil
                     chromeMV3LocalLifecycleManagerRootURLByExtensionID
                         .removeAll()
                 }
@@ -5024,19 +5027,42 @@ final class SumiExtensionsModule {
         )
         #if DEBUG
             if compatibilityPolicy.allowsControlledCompatibilityActionPopup {
-                return await openControlledCompatibilityActionPopupFromURLHub(
+                let result = await openControlledCompatibilityActionPopupFromURLHub(
                     extensionId: extensionId,
                     currentTab: currentTab,
                     manager: manager,
                     managerGate: managerGate,
                     compatibilityPolicy: compatibilityPolicy
                 )
+                scheduleChromeMV3LivePopupProductPathTraceCapture(
+                    extensionId: extensionId,
+                    currentTab: currentTab,
+                    compatibilityPolicy: compatibilityPolicy,
+                    popupResult: result,
+                    productPath: .urlHubActionClick,
+                    forceNativeActionPopup: forceNativeActionPopup,
+                    forceControlledCompatibilityActionPopupOff:
+                        forceControlledCompatibilityActionPopupOff
+                )
+                return result
             }
         #endif
         var result = await manager.openActionPopupFromURLHub(
             extensionId: extensionId,
             currentTab: currentTab
         )
+        #if DEBUG
+        scheduleChromeMV3LivePopupProductPathTraceCapture(
+            extensionId: extensionId,
+            currentTab: currentTab,
+            compatibilityPolicy: compatibilityPolicy,
+            popupResult: result,
+            productPath: .nativeWebKitFallback,
+            forceNativeActionPopup: forceNativeActionPopup,
+            forceControlledCompatibilityActionPopupOff:
+                forceControlledCompatibilityActionPopupOff
+        )
+        #endif
         result.sanitizedBridgeSnapshotDiagnostics =
             Array(
                 Set(
@@ -5182,6 +5208,252 @@ final class SumiExtensionsModule {
         return (managerAnchors + pendingAnchors)
             .compactMap(\.view)
             .last { $0.window != nil }
+            ?? (managerAnchors + pendingAnchors)
+            .compactMap(\.view)
+            .last
+    }
+
+    private func scheduleChromeMV3LivePopupProductPathTraceCapture(
+        extensionId: String,
+        currentTab: Tab?,
+        compatibilityPolicy: ChromeMV3CompatibilityPolicyDecision,
+        popupResult: BrowserExtensionActionPopupRequestResult,
+        productPath: ChromeMV3LivePopupProductPathKind,
+        forceNativeActionPopup: Bool,
+        forceControlledCompatibilityActionPopupOff: Bool
+    ) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let trace = await self.buildChromeMV3LivePopupProductPathTrace(
+                extensionId: extensionId,
+                currentTab: currentTab,
+                compatibilityPolicy: compatibilityPolicy,
+                popupResult: popupResult,
+                productPath: productPath,
+                forceNativeActionPopup: forceNativeActionPopup,
+                forceControlledCompatibilityActionPopupOff:
+                    forceControlledCompatibilityActionPopupOff
+            )
+            self.lastChromeMV3LivePopupProductPathTrace = trace
+            for line in trace.compactSanitizedLogLines {
+                self.cachedManager?.extensionRuntimeTrace(
+                    "[live-popup-product-path] \(line)"
+                )
+            }
+        }
+    }
+
+    private func buildChromeMV3LivePopupProductPathTrace(
+        extensionId: String,
+        currentTab: Tab?,
+        compatibilityPolicy: ChromeMV3CompatibilityPolicyDecision,
+        popupResult: BrowserExtensionActionPopupRequestResult,
+        productPath: ChromeMV3LivePopupProductPathKind,
+        forceNativeActionPopup: Bool,
+        forceControlledCompatibilityActionPopupOff: Bool
+    ) async -> ChromeMV3LivePopupProductPathTrace {
+        let profileID =
+            currentTab?.profileId?.uuidString
+            ?? compatibilityPolicy.profileIDHash
+        let extensionIDHash = compatibilityPolicy.extensionIDHash
+        let profileIDHash = compatibilityPolicy.profileIDHash
+        let expectedPopupPath =
+            ChromeMV3CompatibilityActionPopupPath
+            .controlledCompatibilityActionPopup.rawValue
+        let actualPopupPath: String
+        if compatibilityPolicy.state == .blocked {
+            actualPopupPath = "blocked"
+        } else {
+            actualPopupPath =
+                compatibilityPolicy.selectedPopupPath?.rawValue ?? "none"
+        }
+        let loadingMode =
+            ChromeMV3ProductPopupOptionsLoadingMode
+            .controlledCompatibilityDefault.rawValue
+        let runResult = lastChromeMV3PopupOptionsRunResult
+        let launchRecord = runResult?.launchRecord
+        let presentation =
+            cachedChromeMV3PopupOptionsHostController?
+            .presentationLifecycleSnapshot(
+                profileID: launchRecord?.profileID ?? profileID,
+                extensionID: launchRecord?.extensionID ?? extensionId,
+                surface: .actionPopup
+            )
+        var bridgeSnapshot:
+            ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?
+        if popupResult.opened {
+            for _ in 0 ..< 24 {
+                bridgeSnapshot =
+                    cachedChromeMV3PopupOptionsHostController?
+                    .diagnosticsSnapshot(
+                        profileID: launchRecord?.profileID ?? profileID,
+                        extensionID: launchRecord?.extensionID ?? extensionId,
+                        surface: .actionPopup
+                    )
+                if bridgeSnapshot != nil { break }
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+        }
+        var firstDOM: ChromeMV3LivePopupDOMCheckpoint?
+        var finalDOM: ChromeMV3LivePopupDOMCheckpoint?
+        if popupResult.opened {
+            for attempt in 0 ..< 24 {
+                if let raw = try? await cachedChromeMV3PopupOptionsHostController?
+                    .evaluateJavaScriptForTesting(
+                        profileID: launchRecord?.profileID ?? profileID,
+                        extensionID: launchRecord?.extensionID ?? extensionId,
+                        surface: .actionPopup,
+                        script: ChromeMV3LivePopupProductPathTraceBuilder
+                            .domProbeScript
+                    ) as? String,
+                    let data = raw.data(using: .utf8),
+                    let object = try? JSONSerialization.jsonObject(with: data)
+                        as? [String: Any]
+                {
+                    let checkpoint =
+                        ChromeMV3LivePopupProductPathTraceBuilder
+                        .domCheckpoint(from: object)
+                    if firstDOM == nil,
+                       checkpoint.visibleTextLengthBucket != "0"
+                        || checkpoint.controlCountBucket != "0"
+                    {
+                        firstDOM = checkpoint
+                    }
+                    finalDOM = checkpoint
+                    if attempt > 8,
+                       checkpoint.navigationCommitted
+                    {
+                        break
+                    }
+                }
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+        }
+        let resourceSummary =
+            ChromeMV3PopupOptionsHostResourceLoadDiagnostics.summarize(
+                events: bridgeSnapshot?.jsDebugRouteEvents ?? [],
+                launchRecord: launchRecord
+            )
+        let extensionClassifier =
+            bridgeSnapshot?.appStateDependencyTrace.correlationSummary
+            .classification
+        var lifecycleCategories: [String] = []
+        if popupResult.opened {
+            lifecycleCategories.append("opened")
+        } else {
+            lifecycleCategories.append("blocked")
+        }
+        if presentation?.popoverPresented == true {
+            lifecycleCategories.append("popoverPresented")
+        }
+        if presentation?.popoverShown == true {
+            lifecycleCategories.append("popoverShown")
+        }
+        if runResult?.webViewCreated == true {
+            lifecycleCategories.append("webViewCreated")
+        }
+        if bridgeSnapshot != nil {
+            lifecycleCategories.append("bridgeSnapshotCaptured")
+        }
+        if firstDOM != nil {
+            lifecycleCategories.append("firstDOMObserved")
+        }
+        let trace = ChromeMV3LivePopupProductPathTrace(
+            productPath: productPath,
+            expectedPopupPath: expectedPopupPath,
+            actualPopupPath: actualPopupPath,
+            extensionIDHash: extensionIDHash,
+            profileIDHash: profileIDHash,
+            loadingMode: loadingMode,
+            forceNativeActionPopup: forceNativeActionPopup,
+            forceControlledCompatibilityActionPopupOff:
+                forceControlledCompatibilityActionPopupOff,
+            compatibilityPolicyState: compatibilityPolicy.state.rawValue,
+            compatibilityPolicyReason: compatibilityPolicy.reason,
+            selectedTabBound: currentTab != nil,
+            anchorKind: presentation?.anchorKind
+                ?? (launchRecord == nil ? "none" : "urlHubActionTileUnavailable"),
+            anchorViewAvailable: presentation?.anchorViewAvailable ?? false,
+            anchorInWindow: presentation?.anchorInWindow ?? false,
+            popupHostCreated: runResult?.status == .succeeded,
+            popoverPresented: presentation?.popoverPresented ?? false,
+            popoverShown: presentation?.popoverShown ?? false,
+            presentationAttempts: presentation?.presentationAttempts ?? 0,
+            presentationSkipReason: presentation?.presentationSkipReason,
+            webViewCreated: runResult?.webViewCreated ?? false,
+            webViewAttachedToHost:
+                presentation?.webViewAttachedToPopover ?? false,
+            webViewDeallocated: presentation?.webViewDeallocated ?? false,
+            urlLoadCommitted: finalDOM?.navigationCommitted
+                ?? (bridgeSnapshot?.jsDebugRouteEvents.contains {
+                    $0.eventKind.contains("navigation")
+                } ?? false),
+            generatedRootHandlerActive:
+                loadingMode.contains("diagnostic")
+                && (bridgeSnapshot?.jsDebugRouteEvents.contains {
+                    $0.eventKind == "customSchemeResource"
+                        || $0.apiName == "customScheme.resource"
+                } ?? false),
+            bridgeInstalled: runResult?.popupOptionsBridgeInstalled ?? false,
+            scriptsExecuted:
+                (bridgeSnapshot?.observedMethods.isEmpty == false)
+                || (bridgeSnapshot?.jsDebugRouteEvents.isEmpty == false),
+            firstDOMCheckpoint: firstDOM,
+            finalDOMCheckpoint: finalDOM,
+            dismissReason: presentation?.dismissReason,
+            nativeHostLaunched: false,
+            resourceLoadBlockerCategory: resourceSummary.firstBlocker.rawValue,
+            extensionClassifier: extensionClassifier,
+            failureClassifier: .unknown,
+            lifecycleEventCategories: lifecycleCategories,
+            diagnostics: Array(
+                Set(
+                    popupResult.sanitizedBridgeSnapshotDiagnostics
+                        + (runResult?.diagnostics ?? [])
+                        + compatibilityPolicy.diagnostics
+                )
+            ).sorted()
+        )
+        return ChromeMV3LivePopupProductPathTrace(
+            productPath: trace.productPath,
+            expectedPopupPath: trace.expectedPopupPath,
+            actualPopupPath: trace.actualPopupPath,
+            extensionIDHash: trace.extensionIDHash,
+            profileIDHash: trace.profileIDHash,
+            loadingMode: trace.loadingMode,
+            forceNativeActionPopup: trace.forceNativeActionPopup,
+            forceControlledCompatibilityActionPopupOff:
+                trace.forceControlledCompatibilityActionPopupOff,
+            compatibilityPolicyState: trace.compatibilityPolicyState,
+            compatibilityPolicyReason: trace.compatibilityPolicyReason,
+            selectedTabBound: trace.selectedTabBound,
+            anchorKind: trace.anchorKind,
+            anchorViewAvailable: trace.anchorViewAvailable,
+            anchorInWindow: trace.anchorInWindow,
+            popupHostCreated: trace.popupHostCreated,
+            popoverPresented: trace.popoverPresented,
+            popoverShown: trace.popoverShown,
+            presentationAttempts: trace.presentationAttempts,
+            presentationSkipReason: trace.presentationSkipReason,
+            webViewCreated: trace.webViewCreated,
+            webViewAttachedToHost: trace.webViewAttachedToHost,
+            webViewDeallocated: trace.webViewDeallocated,
+            urlLoadCommitted: trace.urlLoadCommitted,
+            generatedRootHandlerActive: trace.generatedRootHandlerActive,
+            bridgeInstalled: trace.bridgeInstalled,
+            scriptsExecuted: trace.scriptsExecuted,
+            firstDOMCheckpoint: trace.firstDOMCheckpoint,
+            finalDOMCheckpoint: trace.finalDOMCheckpoint,
+            dismissReason: trace.dismissReason,
+            nativeHostLaunched: trace.nativeHostLaunched,
+            resourceLoadBlockerCategory: trace.resourceLoadBlockerCategory,
+            extensionClassifier: trace.extensionClassifier,
+            failureClassifier: ChromeMV3LivePopupProductPathTraceBuilder.classify(
+                trace
+            ),
+            lifecycleEventCategories: trace.lifecycleEventCategories,
+            diagnostics: trace.diagnostics
+        )
     }
     #endif
 
@@ -5260,6 +5532,25 @@ final class SumiExtensionsModule {
         ChromeMV3LocalLifecycleDispatchResult?
     {
         lastChromeMV3LocalLifecycleDispatchResult
+    }
+
+    var chromeMV3LivePopupProductPathTraceForTesting:
+        ChromeMV3LivePopupProductPathTrace?
+    {
+        lastChromeMV3LivePopupProductPathTrace
+    }
+
+    func chromeMV3AwaitLivePopupProductPathTraceForTesting(
+        timeoutSeconds: Double = 3
+    ) async -> ChromeMV3LivePopupProductPathTrace? {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if let trace = self.lastChromeMV3LivePopupProductPathTrace {
+                return trace
+            }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        return self.lastChromeMV3LivePopupProductPathTrace
     }
     #endif
 

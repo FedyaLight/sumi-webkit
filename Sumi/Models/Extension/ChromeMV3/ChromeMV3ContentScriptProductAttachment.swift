@@ -5096,9 +5096,19 @@ final class ChromeMV3ContentScriptWKAttachmentHandle {
         }
         if let configuration {
             if let messageHandlerName {
-                configuration.userContentController.removeScriptMessageHandler(
-                    forName: messageHandlerName,
-                    contentWorld: contentWorld
+                ChromeMV3WKScriptMessageHandlerRegistration.remove(
+                    name: messageHandlerName,
+                    contentWorld: contentWorld,
+                    userContentController:
+                        configuration.userContentController,
+                    category: .contentScriptBridge,
+                    extensionIDHash:
+                        ChromeMV3CompatibilityPolicyLog.hashID(
+                            extensionID
+                        ),
+                    sourcePath:
+                        "ChromeMV3ContentScriptWKAttachmentHandle.tearDown",
+                    webViewConfiguration: configuration
                 )
             }
             if installedCSSStyleSheetCount > 0 {
@@ -5474,11 +5484,23 @@ enum ChromeMV3ContentScriptWKAttachmentExecutor {
             )
             let bridgeHandler =
                 ChromeMV3ContentScriptWKScriptMessageHandler(host: host)
-            configuration.userContentController.addScriptMessageHandler(
-                bridgeHandler,
-                contentWorld: contentWorld,
-                name: messageHandlerName
-            )
+            let registrationOutcome =
+                ChromeMV3WKScriptMessageHandlerRegistration.register(
+                    handler: bridgeHandler,
+                    name: messageHandlerName,
+                    contentWorld: contentWorld,
+                    userContentController:
+                        configuration.userContentController,
+                    category: .contentScriptBridge,
+                    extensionIDHash:
+                        ChromeMV3CompatibilityPolicyLog.hashID(
+                            preflight.extensionID
+                        ),
+                    sourcePath:
+                        "ChromeMV3ContentScriptWKAttachmentExecutor.attachIfAllowed",
+                    webViewConfiguration: configuration
+                )
+            _ = registrationOutcome
             let bridge = WKUserScript(
                 source:
                     ChromeMV3ContentScriptJSBridgeSource.source(

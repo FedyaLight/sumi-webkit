@@ -1438,12 +1438,34 @@ final class ChromeMV3PopupOptionsPresentationContext {
 final class ChromeMV3PopupOptionsPresentationContext {}
 #endif
 
+#if DEBUG
+struct ChromeMV3PopupOptionsPresentationLifecycleSnapshot:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var anchorKind: String
+    var anchorViewAvailable: Bool
+    var anchorInWindow: Bool
+    var popoverPresented: Bool
+    var popoverShown: Bool
+    var presentationAttempts: Int
+    var presentationSkipReason: String?
+    var webViewAttachedToPopover: Bool
+    var webViewDeallocated: Bool
+    var dismissReason: String?
+}
+#endif
+
 @MainActor
 protocol ChromeMV3PopupOptionsWebViewHandle: AnyObject {
     var popupOptionsBridgeDiagnosticsSnapshot:
         ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot? { get }
 
     #if DEBUG
+    var popupPresentationLifecycleSnapshot:
+        ChromeMV3PopupOptionsPresentationLifecycleSnapshot? { get }
+
     func evaluateJavaScriptForTesting(_ script: String) async throws -> Any?
     #endif
 
@@ -1458,6 +1480,11 @@ extension ChromeMV3PopupOptionsWebViewHandle {
     }
 
     #if DEBUG
+    var popupPresentationLifecycleSnapshot:
+        ChromeMV3PopupOptionsPresentationLifecycleSnapshot? {
+        nil
+    }
+
     func evaluateJavaScriptForTesting(_ script: String) async throws -> Any? {
         _ = script
         return nil
@@ -1708,6 +1735,23 @@ final class ChromeMV3ProductPopupOptionsHostController {
             return nil
         }
         return try await handle.evaluateJavaScriptForTesting(script)
+    }
+
+    func presentationLifecycleSnapshot(
+        profileID: String,
+        extensionID: String,
+        surface: ChromeMV3ProductPopupOptionsSurface? = nil
+    ) -> ChromeMV3PopupOptionsPresentationLifecycleSnapshot? {
+        let key = sessions.keys.first {
+            matchesSessionKey(
+                $0,
+                profileID: profileID,
+                extensionID: extensionID,
+                surface: surface
+            )
+        }
+        guard let key else { return nil }
+        return sessions[key]?.handle.popupPresentationLifecycleSnapshot
     }
     #endif
 
@@ -2279,6 +2323,7 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
     private var scriptHandler:
         ChromeMV3PopupOptionsWKScriptMessageHandler?
     private let messageHandlerName: String?
+    private let registeredExtensionIDHash: String?
     private var bridgeHandler: ChromeMV3PopupOptionsJSBridgeHandler?
     #if DEBUG
     private var diagnosticsDelegate:
@@ -2294,6 +2339,24 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         ChromeMV3ProductPopupOptionsPopoverDelegate?
     private var popoverContentViewController: NSViewController?
     private var isTearingDown = false
+    private var storedPresentationContext:
+        ChromeMV3PopupOptionsPresentationContext?
+    private var presentationRetryTask: DispatchWorkItem?
+    #endif
+    #if DEBUG
+    private var presentationLifecycle =
+        ChromeMV3PopupOptionsPresentationLifecycleSnapshot(
+            anchorKind: "none",
+            anchorViewAvailable: false,
+            anchorInWindow: false,
+            popoverPresented: false,
+            popoverShown: false,
+            presentationAttempts: 0,
+            presentationSkipReason: nil,
+            webViewAttachedToPopover: false,
+            webViewDeallocated: false,
+            dismissReason: nil
+        )
     #endif
 
     init(
@@ -2302,6 +2365,7 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         loadingMode: ChromeMV3ProductPopupOptionsLoadingMode = .fileBacked
     ) {
         self.messageHandlerName = nil
+        self.registeredExtensionIDHash = nil
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         #if DEBUG
@@ -2379,11 +2443,21 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
                 bridgeInstallation.hostDiagnosticEvents
             )
             #endif
-            userContentController.addScriptMessageHandler(
-                scriptHandler,
-                contentWorld: .page,
-                name: bridgeInstallation.messageHandlerName
-            )
+            let registrationOutcome =
+                ChromeMV3WKScriptMessageHandlerRegistration.register(
+                    handler: scriptHandler,
+                    name: bridgeInstallation.messageHandlerName,
+                    contentWorld: .page,
+                    userContentController: userContentController,
+                    category: .popupOptionsBridge,
+                    extensionIDHash:
+                        ChromeMV3CompatibilityPolicyLog.hashID(
+                            bridgeInstallation.configuration.extensionID
+                        ),
+                    sourcePath:
+                        "ChromeMV3ProductPopupOptionsWKWebViewHandle.init"
+                )
+            _ = registrationOutcome
             let userScript = WKUserScript(
                 source: scriptSource,
                 injectionTime: .atDocumentStart,
@@ -2396,9 +2470,14 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
             self.installedUserScriptCount = 1
             self.installedScriptMessageHandlerCount = 1
             messageHandlerName = bridgeInstallation.messageHandlerName
+            self.registeredExtensionIDHash =
+                ChromeMV3CompatibilityPolicyLog.hashID(
+                    bridgeInstallation.configuration.extensionID
+                )
         } else {
             self.scriptHandler = nil
             self.bridgeHandler = nil
+            self.registeredExtensionIDHash = nil
         }
         configuration.userContentController = userContentController
         #if DEBUG
@@ -2488,16 +2567,65 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         bridgeHandler?.diagnosticsSnapshot
     }
 
+    #if DEBUG
+    var popupPresentationLifecycleSnapshot:
+        ChromeMV3PopupOptionsPresentationLifecycleSnapshot? {
+        presentationLifecycle
+    }
+    #endif
+
     #if canImport(AppKit)
     private func presentIfNeeded(
         webView: WKWebView,
         context: ChromeMV3PopupOptionsPresentationContext?
     ) {
-        guard let context,
-              let anchorView = context.anchorView,
-              anchorView.window != nil
-        else { return }
+        storedPresentationContext = context
+        #if DEBUG
+        presentationLifecycle.anchorKind = context?.anchorKind ?? "none"
+        #endif
+        attemptPresentation(webView: webView)
+    }
 
+    private func attemptPresentation(webView: WKWebView) {
+        guard isTearingDown == false else { return }
+        guard popover == nil || popover?.isShown == false else {
+            #if DEBUG
+            presentationLifecycle.popoverPresented = true
+            presentationLifecycle.popoverShown = popover?.isShown == true
+            presentationLifecycle.webViewAttachedToPopover = true
+            #endif
+            return
+        }
+        guard let context = storedPresentationContext else {
+            #if DEBUG
+            presentationLifecycle.presentationSkipReason =
+                "presentationContextMissing"
+            #endif
+            return
+        }
+        #if DEBUG
+        presentationLifecycle.anchorKind = context.anchorKind
+        #endif
+        guard let anchorView = context.anchorView else {
+            #if DEBUG
+            presentationLifecycle.anchorViewAvailable = false
+            presentationLifecycle.presentationSkipReason = "anchorViewMissing"
+            #endif
+            return
+        }
+        #if DEBUG
+        presentationLifecycle.anchorViewAvailable = true
+        presentationLifecycle.anchorInWindow = anchorView.window != nil
+        #endif
+        guard anchorView.window != nil else {
+            #if DEBUG
+            presentationLifecycle.presentationSkipReason =
+                "anchorWindowUnavailable"
+            presentationLifecycle.presentationAttempts += 1
+            #endif
+            schedulePresentationRetry(webView: webView)
+            return
+        }
         let contentViewController = NSViewController()
         webView.frame = NSRect(
             origin: .zero,
@@ -2515,6 +2643,9 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         let delegate = ChromeMV3ProductPopupOptionsPopoverDelegate {
             [weak self, context] in
             guard let self, self.isTearingDown == false else { return }
+            #if DEBUG
+            self.presentationLifecycle.dismissReason = "popoverDidClose"
+            #endif
             context.onClosed()
             self.tearDown()
         }
@@ -2527,6 +2658,31 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
             of: anchorView,
             preferredEdge: context.preferredEdge
         )
+        #if DEBUG
+        presentationLifecycle.popoverPresented = true
+        presentationLifecycle.popoverShown = popover.isShown
+        presentationLifecycle.webViewAttachedToPopover = true
+        presentationLifecycle.presentationSkipReason = nil
+        #endif
+    }
+
+    private func schedulePresentationRetry(webView: WKWebView) {
+        #if DEBUG
+        guard presentationLifecycle.presentationAttempts < 24 else {
+            presentationLifecycle.presentationSkipReason =
+                "anchorWindowRetryExhausted"
+            return
+        }
+        #else
+        guard storedPresentationContext != nil else { return }
+        #endif
+        presentationRetryTask?.cancel()
+        let work = DispatchWorkItem { [weak self, weak webView] in
+            guard let self, let webView else { return }
+            self.attemptPresentation(webView: webView)
+        }
+        presentationRetryTask = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
     }
     #endif
 
@@ -2534,6 +2690,8 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         #if canImport(AppKit)
         if isTearingDown { return }
         isTearingDown = true
+        presentationRetryTask?.cancel()
+        presentationRetryTask = nil
         if let popover, popover.isShown {
             popover.close()
         }
@@ -2546,10 +2704,17 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         webView?.stopLoading()
         webView?.navigationDelegate = nil
         webView?.uiDelegate = nil
-        if let messageHandlerName {
-            userContentController?.removeScriptMessageHandler(
-                forName: messageHandlerName,
-                contentWorld: .page
+        if let messageHandlerName,
+           let userContentController
+        {
+            ChromeMV3WKScriptMessageHandlerRegistration.remove(
+                name: messageHandlerName,
+                contentWorld: .page,
+                userContentController: userContentController,
+                category: .popupOptionsBridge,
+                extensionIDHash: registeredExtensionIDHash,
+                sourcePath:
+                    "ChromeMV3ProductPopupOptionsWKWebViewHandle.tearDown"
             )
         }
         userContentController?.removeAllUserScripts()
@@ -2559,6 +2724,7 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         scriptHandler = nil
         bridgeHandler = nil
         #if DEBUG
+        presentationLifecycle.webViewDeallocated = true
         diagnosticsDelegate = nil
         diagnosticSchemeHandler = nil
         #endif
