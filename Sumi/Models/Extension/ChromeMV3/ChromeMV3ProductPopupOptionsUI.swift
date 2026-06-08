@@ -2429,6 +2429,12 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
             on: configuration,
             loadingMode: loadingMode
         )
+        let userContentController = WKUserContentController()
+        ChromeMV3PopupOptionsWebAssemblyStreamingCompatibilityShim.installIfNeeded(
+            into: userContentController,
+            loadingMode: loadingMode
+        )
+        configuration.userContentController = userContentController
         #if DEBUG
         let diagnosticSchemeHandler = Self.installDiagnosticSchemeHandlerIfNeeded(
             into: configuration,
@@ -2483,6 +2489,16 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
             loadingMode: loadingMode
         )
         let userContentController = WKUserContentController()
+        var installedUserScriptCount = 0
+        ChromeMV3PopupOptionsWebAssemblyStreamingCompatibilityShim.installIfNeeded(
+            into: userContentController,
+            loadingMode: loadingMode
+        )
+        if ChromeMV3PopupOptionsWebAssemblyStreamingCompatibilityShim.shouldInstall(
+            loadingMode: loadingMode
+        ) {
+            installedUserScriptCount += 1
+        }
         var messageHandlerName: String?
         if bridgeInstallation.bridgeAvailable,
            let scriptSource = bridgeInstallation.scriptSource
@@ -2530,9 +2546,10 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
                 in: .page
             )
             userContentController.addUserScript(userScript)
+            installedUserScriptCount += 1
             self.scriptHandler = scriptHandler
             self.bridgeHandler = handler
-            self.installedUserScriptCount = 1
+            self.installedUserScriptCount = installedUserScriptCount
             self.installedScriptMessageHandlerCount = 1
             messageHandlerName = bridgeInstallation.messageHandlerName
             self.registeredExtensionIDHash =
@@ -2543,6 +2560,7 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
             self.scriptHandler = nil
             self.bridgeHandler = nil
             self.registeredExtensionIDHash = nil
+            self.installedUserScriptCount = installedUserScriptCount
         }
         configuration.userContentController = userContentController
         #if DEBUG

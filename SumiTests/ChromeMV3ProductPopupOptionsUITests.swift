@@ -994,6 +994,11 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         )
         XCTAssertTrue(
             hostSource.contains(
+                "ChromeMV3PopupOptionsWebAssemblyStreamingCompatibilityShim"
+            )
+        )
+        XCTAssertTrue(
+            hostSource.contains(
                 "guard shouldEnableFileBackedLocalResourceFetch"
             )
         )
@@ -1041,6 +1046,107 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         )
         #endif
     }
+
+    func testFileBackedWasmStreamingCompatibilityShimScopePolicy() throws {
+        XCTAssertTrue(
+            ChromeMV3PopupOptionsWebAssemblyStreamingCompatibilityShim
+                .shouldInstall(loadingMode: .fileBacked)
+        )
+        #if DEBUG
+        XCTAssertFalse(
+            ChromeMV3PopupOptionsWebAssemblyStreamingCompatibilityShim
+                .shouldInstall(loadingMode: .diagnosticCustomScheme)
+        )
+        #endif
+
+        let shimSource =
+            ChromeMV3PopupOptionsWebAssemblyStreamingCompatibilityShim.source()
+        XCTAssertTrue(shimSource.contains("instantiateStreaming"))
+        XCTAssertTrue(
+            shimSource.contains(#"location.protocol || "") !== "file:""#)
+        )
+        XCTAssertTrue(shimSource.contains("Unexpected response MIME type"))
+        XCTAssertTrue(shimSource.contains("application/wasm"))
+        XCTAssertTrue(shimSource.contains("arrayBuffer"))
+        XCTAssertTrue(shimSource.contains("wasm.instantiate"))
+        XCTAssertFalse(shimSource.contains("allowUniversalAccessFromFileURLs"))
+
+        let hostSource = try source(
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift"
+        )
+        let wasmShimSource = try source(
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3PopupOptionsWebAssemblyStreamingCompatibilityShim.swift"
+        )
+        XCTAssertTrue(
+            hostSource.contains(
+                "ChromeMV3PopupOptionsWebAssemblyStreamingCompatibilityShim.installIfNeeded"
+            )
+        )
+        XCTAssertEqual(
+            hostSource.components(
+                separatedBy:
+                    "ChromeMV3PopupOptionsWebAssemblyStreamingCompatibilityShim.installIfNeeded"
+            ).count - 1,
+            2,
+            "Controlled popup WKWebView inits must install the WASM shim only through the scoped helper."
+        )
+        XCTAssertFalse(wasmShimSource.contains("bitwarden"))
+        XCTAssertFalse(wasmShimSource.contains("raindrop"))
+    }
+
+    #if canImport(WebKit)
+    @MainActor
+    func testFileBackedPopupLoadsLocalPackagedWasmThroughInstantiateStreaming()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip(
+                "Controlled file-backed WebAssembly streaming test requires macOS 15.5."
+            )
+        }
+        let packageRoot = try wasmStreamingFixtureRoot()
+        let popupURL = packageRoot.appendingPathComponent("popup.html")
+        let wasmURL = packageRoot
+            .appendingPathComponent("assets/test.wasm")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: wasmURL.path))
+
+        let handle = ChromeMV3ProductPopupOptionsWKWebViewHandle(
+            loadFileURL: popupURL,
+            readAccessURL: packageRoot,
+            loadingMode: .fileBacked
+        )
+        defer { handle.tearDown() }
+
+        try await handle.waitForLoadForTesting()
+        let outcome = try await waitForWasmStreamingFixtureOutcome(
+            handle: handle,
+            timeoutSeconds: 8
+        )
+        XCTAssertEqual(outcome["outcome"] as? String, "ok", outcome.description)
+        #if DEBUG
+        let diagnostics = try await handle.callAsyncJavaScriptForTesting(
+            """
+            return Array.isArray(globalThis.__sumiControlledPopupWasmShimDiagnostics)
+              ? globalThis.__sumiControlledPopupWasmShimDiagnostics
+              : [];
+            """
+        )
+        let entries = try XCTUnwrap(diagnostics as? [[String: String]])
+        XCTAssertTrue(
+            entries.contains {
+                $0["category"] == "mimeMismatch"
+                    && $0["scope"] == "localPackagedWasm"
+            }
+        )
+        XCTAssertTrue(
+            entries.contains {
+                $0["category"] == "fallbackSucceeded"
+                    && $0["scope"] == "localPackagedWasm"
+            }
+        )
+        #endif
+    }
+    #endif
 
     private func installFixture(
         named name: String,
@@ -1284,6 +1390,87 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
             "diagnostics=\(record.diagnostics.joined(separator: " | "))",
         ].joined(separator: " ")
     }
+
+    private func wasmStreamingFixtureRoot() throws -> URL {
+        let sourceRoot = projectRoot()
+            .appendingPathComponent(
+                "SumiTests/Fixtures/mv3-wasm-streaming-popup",
+                isDirectory: true
+            )
+            .standardizedFileURL
+        let manifestSource = sourceRoot
+            .appendingPathComponent("wasm-streaming-fixture-manifest.json")
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: manifestSource.path),
+            "mv3-wasm-streaming-popup fixture is unavailable."
+        )
+
+        let packageRoot = try makeTemporaryDirectory()
+        let assetsDirectory = packageRoot
+            .appendingPathComponent("assets", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: assetsDirectory,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.copyItem(
+            at: manifestSource,
+            to: packageRoot.appendingPathComponent("manifest.json")
+        )
+        try FileManager.default.copyItem(
+            at: sourceRoot.appendingPathComponent(
+                "wasm-streaming-fixture-popup.html"
+            ),
+            to: packageRoot.appendingPathComponent("popup.html")
+        )
+        try FileManager.default.copyItem(
+            at: sourceRoot.appendingPathComponent(
+                "wasm-streaming-fixture-popup.js"
+            ),
+            to: packageRoot.appendingPathComponent("popup.js")
+        )
+        try FileManager.default.copyItem(
+            at: sourceRoot.appendingPathComponent(
+                "wasm-streaming-fixture-background.js"
+            ),
+            to: packageRoot.appendingPathComponent("background.js")
+        )
+        try FileManager.default.copyItem(
+            at: sourceRoot.appendingPathComponent(
+                "assets/wasm-streaming-test.wasm"
+            ),
+            to: assetsDirectory.appendingPathComponent("test.wasm")
+        )
+        return packageRoot
+    }
+
+    #if canImport(WebKit)
+    @MainActor
+    private func waitForWasmStreamingFixtureOutcome(
+        handle: ChromeMV3ProductPopupOptionsWKWebViewHandle,
+        timeoutSeconds: TimeInterval
+    ) async throws -> [String: Any] {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            let raw = try await handle.callAsyncJavaScriptForTesting(
+                """
+                const node = document.getElementById("wasm-status");
+                return {
+                  outcome: node ? node.dataset.outcome || "pending" : "missing",
+                  detail: node ? node.dataset.detail || "" : ""
+                };
+                """
+            )
+            if let object = raw as? [String: Any],
+               let outcome = object["outcome"] as? String,
+               outcome != "pending"
+            {
+                return object
+            }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        throw XCTSkip("Timed out waiting for WASM streaming fixture outcome.")
+    }
+    #endif
 }
 
 @MainActor

@@ -3023,7 +3023,11 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertTrue(object["getCurrentCallbackLastError"] is NSNull)
         XCTAssertTrue(object["getCurrentLastErrorAfterCallback"] is NSNull)
         try await Task.sleep(nanoseconds: 3_800_000_000)
-        XCTAssertEqual(handle.installedUserScriptCount, 1)
+        XCTAssertEqual(
+            handle.installedUserScriptCount,
+            2,
+            "Controlled file-backed popups install the WASM streaming shim before the bridge user script."
+        )
         XCTAssertEqual(handle.installedScriptMessageHandlerCount, 1)
         let snapshot = try XCTUnwrap(
             handle.popupOptionsBridgeDiagnosticsSnapshot
