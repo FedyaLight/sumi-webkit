@@ -2425,6 +2425,10 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         self.registeredExtensionIDHash = nil
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
+        Self.enableFileBackedLocalResourceFetch(
+            on: configuration,
+            loadingMode: loadingMode
+        )
         #if DEBUG
         let diagnosticSchemeHandler = Self.installDiagnosticSchemeHandlerIfNeeded(
             into: configuration,
@@ -2474,6 +2478,10 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
     ) {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
+        Self.enableFileBackedLocalResourceFetch(
+            on: configuration,
+            loadingMode: loadingMode
+        )
         let userContentController = WKUserContentController()
         var messageHandlerName: String?
         if bridgeInstallation.bridgeAvailable,
@@ -2892,6 +2900,41 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         userContentController = nil
         installedUserScriptCount = 0
         installedScriptMessageHandlerCount = 0
+    }
+
+    // In Chrome an extension popup runs on a `chrome-extension://` origin, so
+    // script-initiated `fetch()`/`XMLHttpRequest`/WebAssembly module loading of
+    // the extension's own packaged resources (for example webpack
+    // `asyncWebAssembly` `assets/<modulehash>.wasm` chunks) resolves
+    // same-origin. The controlled popup host loads file-backed through
+    // `loadFileURL(_:allowingReadAccessTo:)`, giving the document a `file:`
+    // origin. WebKit grants navigation/subresource read access to the package
+    // root but still rejects script-initiated `fetch()`/XHR of sibling `file:`
+    // resources unless `allowFileAccessFromFileURLs` is enabled, which surfaces
+    // to the page as a `TypeError: Load failed`. Enabling it restores
+    // Chrome-compatible access to the extension's own packaged local resources
+    // without granting cross-origin (`allowUniversalAccessFromFileURLs`)
+    // access. Scoped to file-backed mode only; the DEBUG diagnostic custom
+    // scheme serves resources through its own scheme handler instead.
+    static func shouldEnableFileBackedLocalResourceFetch(
+        loadingMode: ChromeMV3ProductPopupOptionsLoadingMode
+    ) -> Bool {
+        loadingMode == .fileBacked
+    }
+
+    private static func enableFileBackedLocalResourceFetch(
+        on configuration: WKWebViewConfiguration,
+        loadingMode: ChromeMV3ProductPopupOptionsLoadingMode
+    ) {
+        guard shouldEnableFileBackedLocalResourceFetch(
+            loadingMode: loadingMode
+        ) else {
+            return
+        }
+        configuration.preferences.setValue(
+            true,
+            forKey: "allowFileAccessFromFileURLs"
+        )
     }
 
     private static func load(

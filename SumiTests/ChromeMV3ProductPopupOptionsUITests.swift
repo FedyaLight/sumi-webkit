@@ -988,6 +988,58 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         XCTAssertTrue(hostSource.contains("livePopupStagedSnapshots"))
         XCTAssertFalse(traceSource.contains("document.body.innerHTML"))
         XCTAssertFalse(traceSource.contains("localStorage.getItem("))
+        XCTAssertTrue(hostSource.contains("enableFileBackedLocalResourceFetch"))
+        XCTAssertTrue(
+            hostSource.contains("shouldEnableFileBackedLocalResourceFetch")
+        )
+        XCTAssertTrue(
+            hostSource.contains(
+                "guard shouldEnableFileBackedLocalResourceFetch"
+            )
+        )
+        XCTAssertEqual(
+            hostSource.components(
+                separatedBy: "Self.enableFileBackedLocalResourceFetch("
+            ).count - 1,
+            2,
+            "Controlled popup WKWebView inits must call the scoped helper only."
+        )
+        XCTAssertEqual(
+            hostSource.components(
+                separatedBy: #"forKey: "allowFileAccessFromFileURLs""#
+            ).count - 1,
+            1,
+            "allowFileAccessFromFileURLs must be set only through the scoped helper."
+        )
+        XCTAssertFalse(
+            combined.contains(#"forKey: "allowUniversalAccessFromFileURLs""#)
+        )
+        XCTAssertFalse(bridgeSource.contains("allowFileAccessFromFileURLs"))
+        XCTAssertFalse(managerSource.contains("allowFileAccessFromFileURLs"))
+        XCTAssertFalse(moduleSource.contains("allowFileAccessFromFileURLs"))
+        XCTAssertFalse(
+            normalTabGateSource.contains("allowFileAccessFromFileURLs")
+        )
+        XCTAssertFalse(
+            normalTabBrowserSource.contains("allowFileAccessFromFileURLs")
+        )
+    }
+
+    func testFileBackedPopupLocalResourceFetchScopePolicy() {
+        XCTAssertTrue(
+            ChromeMV3ProductPopupOptionsWKWebViewHandle
+                .shouldEnableFileBackedLocalResourceFetch(
+                    loadingMode: .fileBacked
+                )
+        )
+        #if DEBUG
+        XCTAssertFalse(
+            ChromeMV3ProductPopupOptionsWKWebViewHandle
+                .shouldEnableFileBackedLocalResourceFetch(
+                    loadingMode: .diagnosticCustomScheme
+                )
+        )
+        #endif
     }
 
     private func installFixture(
