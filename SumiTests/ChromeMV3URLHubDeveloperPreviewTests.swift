@@ -1006,15 +1006,530 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertTrue(resolvedTrace.bridgeInstalled)
         XCTAssertEqual(
             resolvedTrace.failureClassifier,
-            .productPathDiffersFromTestHarness,
-            "Harness opens without a live URL-hub anchor; product UI requires popover presentation."
+            .unknown,
+            "Harness opens without a live URL-hub anchor; popover presentation is unavailable in tests."
         )
         XCTAssertFalse(resolvedTrace.popoverPresented)
+        XCTAssertTrue(
+            resolvedTrace.presentationSkipReason == "anchorViewMissing"
+                || resolvedTrace.presentationSkipReason
+                    == "anchorWindowUnavailable"
+                || resolvedTrace.presentationSkipReason
+                    == "anchorWindowRetryExhausted"
+                || resolvedTrace.presentationSkipReason == "none"
+        )
         XCTAssertFalse(resolvedTrace.nativeHostLaunched)
 
         _ = module.chromeMV3ClosePopupOptionsThroughManager(
             profileID: record.profileID,
             extensionID: record.extensionID
+        )
+    }
+
+    @MainActor
+    func testDebugLivePopupProductPathClassifierDetectsPresentationMismatch()
+    {
+        let domVisible = ChromeMV3LivePopupDOMCheckpoint(
+            readyState: "complete",
+            visibleTextLengthBucket: "21-100",
+            controlCountBucket: "4-10",
+            bodyChildCount: 3,
+            appRootPresent: true,
+            navigationCommitted: true,
+            visibilityCategory: "visible",
+            backgroundCategory: "white"
+        )
+        let trace = ChromeMV3LivePopupProductPathTrace(
+            productPath: .urlHubActionClick,
+            expectedPopupPath: "controlledCompatibilityActionPopup",
+            actualPopupPath: "controlledCompatibilityActionPopup",
+            extensionIDHash: "abc",
+            profileIDHash: "def",
+            loadingMode: "fileBacked",
+            forceNativeActionPopup: false,
+            forceControlledCompatibilityActionPopupOff: false,
+            compatibilityPolicyState: "allowed",
+            compatibilityPolicyReason: "test",
+            selectedTabBound: true,
+            anchorKind: "urlHubActionTile",
+            anchorViewAvailable: true,
+            anchorInWindow: true,
+            anchorBoundsSizeBucket: "medium",
+            popupHostCreated: true,
+            popoverPresented: true,
+            popoverShown: true,
+            presentationAttempts: 1,
+            presentationSkipReason: nil,
+            contentViewAttachedToWindow: true,
+            contentViewSizeBucket: "large",
+            popoverContentSizeBucket: "large",
+            webViewCreated: true,
+            webViewAttachedToHost: true,
+            webViewFrameSizeBucket: "zero",
+            webViewHidden: false,
+            webViewAlphaBucket: "opaque",
+            webViewInWindowHierarchy: true,
+            webViewDeallocated: false,
+            loadedURLCategory: "file",
+            navigationStarted: true,
+            navigationFinished: true,
+            navigationFailed: false,
+            urlLoadCommitted: true,
+            generatedRootHandlerActive: false,
+            bridgeInstalled: true,
+            scriptsExecuted: true,
+            firstJSCheckpointReached: true,
+            runtimeErrorCategory: nil,
+            firstDOMCheckpoint: domVisible,
+            finalDOMCheckpoint: domVisible,
+            dismissReason: nil,
+            nativeHostLaunched: false,
+            selectedPopupPath: "controlledCompatibilityActionPopup",
+            requiredResourceLoadFailure: false,
+            resourceFailureCategory: nil,
+            resourceLoadBlockerCategory: nil,
+            extensionClassifier: nil,
+            extensionBlankedDOM: false,
+            popupHostSessionIdentityHash: "session",
+            webViewIdentityHash: "webview",
+            bridgeHandlerIdentityHash: "bridge",
+            popoverDisplaysSameWebViewAsLoaded: true,
+            contentViewReplacedWebView: false,
+            failureClassifier: .unknown,
+            stagedSnapshots: [],
+            lifecycleEventCategories: [],
+            diagnostics: []
+        )
+
+        XCTAssertEqual(
+            ChromeMV3LivePopupProductPathTraceBuilder.classify(trace),
+            .popoverPresentedButWebViewZeroSize
+        )
+
+        var domProbeMismatch = trace
+        domProbeMismatch.webViewFrameSizeBucket = "large"
+        domProbeMismatch.contentViewAttachedToWindow = false
+        XCTAssertEqual(
+            ChromeMV3LivePopupProductPathTraceBuilder.classify(domProbeMismatch),
+            .popoverPresentedButDOMVisibleInProbeButNotOnScreen
+        )
+    }
+
+    @MainActor
+    func testDebugLivePopupProductPathClassifierDetectsEmptyAppRootBootstrapGap()
+    {
+        let emptyDOM = ChromeMV3LivePopupDOMCheckpoint(
+            readyState: "complete",
+            visibleTextLengthBucket: "0",
+            controlCountBucket: "0",
+            bodyChildCount: 1,
+            appRootPresent: true,
+            navigationCommitted: true,
+            visibilityCategory: "unknown",
+            backgroundCategory: "white"
+        )
+        let staged = ChromeMV3LivePopupStagedSnapshot(
+            stage: "after3000ms",
+            readyState: "complete",
+            navigationStarted: true,
+            navigationFinished: true,
+            urlLoaded: true,
+            firstJSCheckpoint: false,
+            bridgeInstalled: true,
+            scriptsExecuted: true,
+            runtimeErrorCategory: "none",
+            consoleErrorCategory: "none",
+            unhandledRejectionCategory: "none",
+            appRootPresent: true,
+            bodyChildCountBucket: "1-3",
+            appRootChildCountBucket: "0",
+            visibleTextBucket: "0",
+            formControlCountBucket: "0",
+            buttonCountBucket: "0",
+            ariaBusyOrLoadingCategory: "none",
+            storageReadCountBucket: "0",
+            storageWriteCountBucket: "0",
+            runtimeSendMessageCountBucket: "0",
+            runtimeConnectCountBucket: "0",
+            portMessageCountBucket: "0",
+            tabsQueryCountBucket: "0",
+            tabsSendMessageCountBucket: "0",
+            scriptingExecuteScriptCountBucket: "0",
+            pendingBridgeRoutesBucket: "0",
+            serviceWorkerOnMessageListenerCountBucket: "0",
+            serviceWorkerOnConnectListenerCountBucket: "0"
+        )
+        let trace = ChromeMV3LivePopupProductPathTrace(
+            productPath: .urlHubActionClick,
+            expectedPopupPath: "controlledCompatibilityActionPopup",
+            actualPopupPath: "controlledCompatibilityActionPopup",
+            extensionIDHash: "abc",
+            profileIDHash: "def",
+            loadingMode: "fileBacked",
+            forceNativeActionPopup: false,
+            forceControlledCompatibilityActionPopupOff: false,
+            compatibilityPolicyState: "allowed",
+            compatibilityPolicyReason: "test",
+            selectedTabBound: true,
+            anchorKind: "urlHubActionTile",
+            anchorViewAvailable: true,
+            anchorInWindow: true,
+            anchorBoundsSizeBucket: "large",
+            popupHostCreated: true,
+            popoverPresented: true,
+            popoverShown: true,
+            presentationAttempts: 1,
+            presentationSkipReason: nil,
+            contentViewAttachedToWindow: true,
+            contentViewSizeBucket: "large",
+            popoverContentSizeBucket: "large",
+            webViewCreated: true,
+            webViewAttachedToHost: true,
+            webViewFrameSizeBucket: "large",
+            webViewHidden: false,
+            webViewAlphaBucket: "opaque",
+            webViewInWindowHierarchy: true,
+            webViewDeallocated: false,
+            loadedURLCategory: "file",
+            navigationStarted: true,
+            navigationFinished: true,
+            navigationFailed: false,
+            urlLoadCommitted: true,
+            generatedRootHandlerActive: false,
+            bridgeInstalled: true,
+            scriptsExecuted: true,
+            firstJSCheckpointReached: false,
+            runtimeErrorCategory: nil,
+            firstDOMCheckpoint: emptyDOM,
+            finalDOMCheckpoint: emptyDOM,
+            dismissReason: nil,
+            nativeHostLaunched: false,
+            selectedPopupPath: "controlledCompatibilityActionPopup",
+            requiredResourceLoadFailure: false,
+            resourceFailureCategory: nil,
+            resourceLoadBlockerCategory: nil,
+            extensionClassifier: nil,
+            extensionBlankedDOM: false,
+            popupHostSessionIdentityHash: "session",
+            webViewIdentityHash: "webview",
+            bridgeHandlerIdentityHash: "bridge",
+            popoverDisplaysSameWebViewAsLoaded: true,
+            contentViewReplacedWebView: false,
+            failureClassifier: .unknown,
+            stagedSnapshots: [staged],
+            lifecycleEventCategories: [],
+            diagnostics: []
+        )
+
+        XCTAssertEqual(
+            ChromeMV3LivePopupProductPathTraceBuilder.classify(trace),
+            .popupBootstrapCheckpointMissing
+        )
+    }
+
+    @MainActor
+    func testDebugLiveUsablePopupFixtureLocationResolvesRepositoryFixture() {
+        XCTAssertNotNil(ChromeMV3LiveUsablePopupFixtureLocation.packageRoot())
+        XCTAssertTrue(
+            ChromeMV3LiveUsablePopupFixtureLocation.resolvedPathDescription()
+                .contains("mv3-sumi-usable-popup")
+        )
+    }
+
+    @MainActor
+    func testDebugLivePopupStagedSummaryGroupsOrderedStages() {
+        let trace = makeLivePopupBootstrapGapTrace()
+        let lines =
+            ChromeMV3LivePopupProductPathTraceBuilder.stagedSummaryLogLines(
+                trace: trace,
+                extensionLabel: "bitwarden-extension-id"
+            )
+        XCTAssertEqual(lines.first, lines.first(where: {
+            $0.hasPrefix(
+                "BEGIN live-popup-staged-summary extension=bitwarden-extension-id"
+            )
+        }))
+        XCTAssertEqual(lines.last, "END live-popup-staged-summary")
+        XCTAssertTrue(
+            lines.contains(where: { $0.hasPrefix("stage=after3000ms") })
+        )
+    }
+
+    @MainActor
+    func testDebugLivePopupProductPathClassifierReconcilesLatestStagedSnapshot()
+    {
+        let staged = ChromeMV3LivePopupStagedSnapshot(
+            stage: "after3000ms",
+            readyState: "complete",
+            navigationStarted: true,
+            navigationFinished: true,
+            urlLoaded: true,
+            firstJSCheckpoint: true,
+            bridgeInstalled: true,
+            scriptsExecuted: true,
+            runtimeErrorCategory: "none",
+            consoleErrorCategory: "none",
+            unhandledRejectionCategory: "none",
+            appRootPresent: true,
+            bodyChildCountBucket: "4-10",
+            appRootChildCountBucket: "1-3",
+            visibleTextBucket: "21-100",
+            formControlCountBucket: "1-3",
+            buttonCountBucket: "1-3",
+            ariaBusyOrLoadingCategory: "none",
+            storageReadCountBucket: "0",
+            storageWriteCountBucket: "0",
+            runtimeSendMessageCountBucket: "1-3",
+            runtimeConnectCountBucket: "0",
+            portMessageCountBucket: "0",
+            tabsQueryCountBucket: "0",
+            tabsSendMessageCountBucket: "0",
+            scriptingExecuteScriptCountBucket: "0",
+            pendingBridgeRoutesBucket: "0",
+            serviceWorkerOnMessageListenerCountBucket: "0",
+            serviceWorkerOnConnectListenerCountBucket: "0"
+        )
+        var trace = makeLivePopupBootstrapGapTrace()
+        trace.loadingMode = "fileBacked"
+        trace.scriptsExecuted = false
+        trace.firstJSCheckpointReached = false
+        trace.requiredResourceLoadFailure = false
+        trace.stagedSnapshots = [staged]
+        trace.failureClassifier = .unknown
+
+        let reconciled =
+            ChromeMV3LivePopupProductPathTraceBuilder
+            .reconcileTraceWithStagedSnapshots(trace)
+        XCTAssertTrue(reconciled.scriptsExecuted)
+        XCTAssertTrue(reconciled.firstJSCheckpointReached)
+        XCTAssertEqual(
+            ChromeMV3LivePopupProductPathTraceBuilder.classify(reconciled),
+            .livePopupVisible
+        )
+        XCTAssertNotEqual(
+            ChromeMV3LivePopupProductPathTraceBuilder.classify(reconciled),
+            .popoverPresentedButScriptsNotExecuted
+        )
+    }
+
+    @MainActor
+    func testDebugLivePopupProductPathClassifierDetectsBridgeJSNotInjected() {
+        var trace = makeLivePopupBootstrapGapTrace()
+        let routeEvents = [
+            ChromeMV3PopupOptionsJSDebugRouteEventRecord(
+                sequence: 1,
+                eventKind: "extensionMethodCalled",
+                apiName: "runtime.sendMessage",
+                sourceContext: "actionPopup",
+                targetContext: "serviceWorker",
+                safeMessageShapeClassification: "shape=unknown",
+                safeCommandTypeActionFieldNames: [],
+                diagnostics: []
+            ),
+        ]
+        XCTAssertEqual(
+            ChromeMV3LivePopupProductPathTraceBuilder.classify(
+                trace,
+                routeEvents: routeEvents
+            ),
+            .popupBridgeJSNotInjected
+        )
+
+        trace.bridgeInstalled = false
+        XCTAssertEqual(
+            ChromeMV3LivePopupProductPathTraceBuilder.classify(
+                trace,
+                routeEvents: routeEvents
+            ),
+            .popoverPresentedButBridgeMissing
+        )
+    }
+
+    @MainActor
+    func testDebugLivePopupProductPathClassifierDetectsBridgeInjectedTooLate() {
+        let trace = makeLivePopupBootstrapGapTrace()
+        let routeEvents = [
+            ChromeMV3PopupOptionsJSDebugRouteEventRecord(
+                sequence: 1,
+                eventKind: "bridgeBootstrapProbe",
+                apiName: "popup.bootstrapProbe",
+                sourceContext: "actionPopup",
+                targetContext: "platform",
+                safeMessageShapeClassification: "shape=unknown",
+                safeCommandTypeActionFieldNames: [],
+                diagnostics: [
+                    "phase=atDocumentStartBridgeInjection",
+                    "bridgeInjectedTooLateCandidate=true",
+                ]
+            ),
+            ChromeMV3PopupOptionsJSDebugRouteEventRecord(
+                sequence: 2,
+                eventKind: "bridgeBootstrapProbe",
+                apiName: "popup.bootstrapProbe",
+                sourceContext: "actionPopup",
+                targetContext: "platform",
+                safeMessageShapeClassification: "shape=unknown",
+                safeCommandTypeActionFieldNames: [],
+                diagnostics: [
+                    "phase=beforeFirstExtensionScript",
+                    "firstMissingAPI=none",
+                ]
+            ),
+        ]
+        XCTAssertEqual(
+            ChromeMV3LivePopupProductPathTraceBuilder.classify(
+                trace,
+                routeEvents: routeEvents
+            ),
+            .popupBridgeInjectedTooLate
+        )
+    }
+
+    @MainActor
+    func testDebugLivePopupProductPathClassifierDetectsChromeAPIMissingBeforeBundle() {
+        let trace = makeLivePopupBootstrapGapTrace()
+        let routeEvents = [
+            ChromeMV3PopupOptionsJSDebugRouteEventRecord(
+                sequence: 1,
+                eventKind: "bridgeBootstrapProbe",
+                apiName: "popup.bootstrapProbe",
+                sourceContext: "actionPopup",
+                targetContext: "platform",
+                safeMessageShapeClassification: "shape=unknown",
+                safeCommandTypeActionFieldNames: [],
+                diagnostics: [
+                    "phase=atDocumentStartBridgeInjection",
+                    "bridgeInjectedTooLateCandidate=false",
+                ]
+            ),
+            ChromeMV3PopupOptionsJSDebugRouteEventRecord(
+                sequence: 2,
+                eventKind: "bridgeBootstrapProbe",
+                apiName: "popup.bootstrapProbe",
+                sourceContext: "actionPopup",
+                targetContext: "platform",
+                safeMessageShapeClassification: "shape=unknown",
+                safeCommandTypeActionFieldNames: [],
+                firstMissingAPIOrPermissionOrLifecycleError: "chrome.runtime",
+                diagnostics: [
+                    "phase=beforeFirstExtensionScript",
+                    "firstMissingAPI=chrome.runtime",
+                ]
+            ),
+        ]
+        XCTAssertEqual(
+            ChromeMV3LivePopupProductPathTraceBuilder.classify(
+                trace,
+                routeEvents: routeEvents
+            ),
+            .popupChromeAPIMissingBeforeBundle
+        )
+    }
+
+    private func makeLivePopupBootstrapGapTrace()
+        -> ChromeMV3LivePopupProductPathTrace
+    {
+        let emptyDOM = ChromeMV3LivePopupDOMCheckpoint(
+            readyState: "complete",
+            visibleTextLengthBucket: "0",
+            controlCountBucket: "0",
+            bodyChildCount: 1,
+            appRootPresent: true,
+            navigationCommitted: true,
+            visibilityCategory: "unknown",
+            backgroundCategory: "white"
+        )
+        let staged = ChromeMV3LivePopupStagedSnapshot(
+            stage: "after3000ms",
+            readyState: "complete",
+            navigationStarted: true,
+            navigationFinished: true,
+            urlLoaded: true,
+            firstJSCheckpoint: false,
+            bridgeInstalled: true,
+            scriptsExecuted: true,
+            runtimeErrorCategory: "none",
+            consoleErrorCategory: "none",
+            unhandledRejectionCategory: "none",
+            appRootPresent: true,
+            bodyChildCountBucket: "1-3",
+            appRootChildCountBucket: "0",
+            visibleTextBucket: "0",
+            formControlCountBucket: "0",
+            buttonCountBucket: "0",
+            ariaBusyOrLoadingCategory: "none",
+            storageReadCountBucket: "0",
+            storageWriteCountBucket: "0",
+            runtimeSendMessageCountBucket: "0",
+            runtimeConnectCountBucket: "0",
+            portMessageCountBucket: "0",
+            tabsQueryCountBucket: "0",
+            tabsSendMessageCountBucket: "0",
+            scriptingExecuteScriptCountBucket: "0",
+            pendingBridgeRoutesBucket: "0",
+            serviceWorkerOnMessageListenerCountBucket: "0",
+            serviceWorkerOnConnectListenerCountBucket: "0"
+        )
+        return ChromeMV3LivePopupProductPathTrace(
+            productPath: .urlHubActionClick,
+            expectedPopupPath: "controlledCompatibilityActionPopup",
+            actualPopupPath: "controlledCompatibilityActionPopup",
+            extensionIDHash: "abc",
+            profileIDHash: "def",
+            loadingMode: "fileBacked",
+            forceNativeActionPopup: false,
+            forceControlledCompatibilityActionPopupOff: false,
+            compatibilityPolicyState: "allowed",
+            compatibilityPolicyReason: "test",
+            selectedTabBound: true,
+            anchorKind: "urlHubActionTile",
+            anchorViewAvailable: true,
+            anchorInWindow: true,
+            anchorBoundsSizeBucket: "large",
+            popupHostCreated: true,
+            popoverPresented: true,
+            popoverShown: true,
+            presentationAttempts: 1,
+            presentationSkipReason: nil,
+            contentViewAttachedToWindow: true,
+            contentViewSizeBucket: "large",
+            popoverContentSizeBucket: "large",
+            webViewCreated: true,
+            webViewAttachedToHost: true,
+            webViewFrameSizeBucket: "large",
+            webViewHidden: false,
+            webViewAlphaBucket: "opaque",
+            webViewInWindowHierarchy: true,
+            webViewDeallocated: false,
+            loadedURLCategory: "file",
+            navigationStarted: true,
+            navigationFinished: true,
+            navigationFailed: false,
+            urlLoadCommitted: true,
+            generatedRootHandlerActive: false,
+            bridgeInstalled: true,
+            scriptsExecuted: true,
+            firstJSCheckpointReached: false,
+            runtimeErrorCategory: nil,
+            firstDOMCheckpoint: emptyDOM,
+            finalDOMCheckpoint: emptyDOM,
+            dismissReason: nil,
+            nativeHostLaunched: false,
+            selectedPopupPath: "controlledCompatibilityActionPopup",
+            requiredResourceLoadFailure: false,
+            resourceFailureCategory: nil,
+            resourceLoadBlockerCategory: nil,
+            extensionClassifier: nil,
+            extensionBlankedDOM: false,
+            popupHostSessionIdentityHash: "session",
+            webViewIdentityHash: "webview",
+            bridgeHandlerIdentityHash: "bridge",
+            popoverDisplaysSameWebViewAsLoaded: true,
+            contentViewReplacedWebView: false,
+            failureClassifier: .unknown,
+            stagedSnapshots: [staged],
+            lifecycleEventCategories: [],
+            diagnostics: []
         )
     }
 

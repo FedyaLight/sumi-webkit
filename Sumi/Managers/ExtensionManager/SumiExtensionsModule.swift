@@ -3728,6 +3728,31 @@ final class SumiExtensionsModule {
         return result
     }
 
+    #if DEBUG
+    @discardableResult
+    func chromeMV3InstallUsablePopupFixtureThroughManager(
+        rootURL: URL,
+        profileID: String? = nil
+    ) -> ChromeMV3ExtensionManagerActionResult? {
+        guard let sourceURL = ChromeMV3LiveUsablePopupFixtureLocation.packageRoot() else {
+            return nil
+        }
+        print(
+            "[live-usable-popup-fixture] installing source=\(sourceURL.path)"
+        )
+        RuntimeDiagnostics.logger(category: "LiveUsablePopupFixture")
+            .debug(
+                "Installing mv3-sumi-usable-popup from \(sourceURL.path, privacy: .public)"
+            )
+        return chromeMV3InstallUnpackedThroughManager(
+            rootURL: rootURL,
+            sourceURL: sourceURL,
+            profileID: profileID,
+            enableInternal: true
+        )
+    }
+    #endif
+
     func chromeMV3PreflightLocalZipArchiveIfEnabled(
         rootURL: URL = ChromeMV3ExtensionManagerStoreLocation.defaultRootURL(),
         sourceURL: URL
@@ -5236,9 +5261,23 @@ final class SumiExtensionsModule {
             )
             self.lastChromeMV3LivePopupProductPathTrace = trace
             for line in trace.compactSanitizedLogLines {
-                self.cachedManager?.extensionRuntimeTrace(
-                    "[live-popup-product-path] \(line)"
+                let message = "[live-popup-product-path] \(line)"
+                self.cachedManager?.extensionRuntimeTrace(message)
+                print(message)
+                RuntimeDiagnostics.logger(category: "LivePopupProductPath")
+                    .debug("\(message, privacy: .public)")
+            }
+            for line in ChromeMV3LivePopupProductPathTraceBuilder
+                .stagedSummaryLogLines(
+                    trace: trace,
+                    extensionLabel: extensionId
                 )
+            {
+                let message = "[live-popup-product-path] \(line)"
+                self.cachedManager?.extensionRuntimeTrace(message)
+                print(message)
+                RuntimeDiagnostics.logger(category: "LivePopupProductPath")
+                    .debug("\(message, privacy: .public)")
             }
         }
     }
@@ -5272,7 +5311,7 @@ final class SumiExtensionsModule {
             .controlledCompatibilityDefault.rawValue
         let runResult = lastChromeMV3PopupOptionsRunResult
         let launchRecord = runResult?.launchRecord
-        let presentation =
+        var presentation =
             cachedChromeMV3PopupOptionsHostController?
             .presentationLifecycleSnapshot(
                 profileID: launchRecord?.profileID ?? profileID,
@@ -5297,7 +5336,7 @@ final class SumiExtensionsModule {
         var firstDOM: ChromeMV3LivePopupDOMCheckpoint?
         var finalDOM: ChromeMV3LivePopupDOMCheckpoint?
         if popupResult.opened {
-            for attempt in 0 ..< 24 {
+            for attempt in 0 ..< 72 {
                 if let raw = try? await cachedChromeMV3PopupOptionsHostController?
                     .evaluateJavaScriptForTesting(
                         profileID: launchRecord?.profileID ?? profileID,
@@ -5313,14 +5352,11 @@ final class SumiExtensionsModule {
                     let checkpoint =
                         ChromeMV3LivePopupProductPathTraceBuilder
                         .domCheckpoint(from: object)
-                    if firstDOM == nil,
-                       checkpoint.visibleTextLengthBucket != "0"
-                        || checkpoint.controlCountBucket != "0"
-                    {
+                    if firstDOM == nil {
                         firstDOM = checkpoint
                     }
                     finalDOM = checkpoint
-                    if attempt > 8,
+                    if attempt > 48,
                        checkpoint.navigationCommitted
                     {
                         break
@@ -5329,14 +5365,96 @@ final class SumiExtensionsModule {
                 try? await Task.sleep(nanoseconds: 50_000_000)
             }
         }
+        if popupResult.opened {
+            presentation =
+                cachedChromeMV3PopupOptionsHostController?
+                .presentationLifecycleSnapshot(
+                    profileID: launchRecord?.profileID ?? profileID,
+                    extensionID: launchRecord?.extensionID ?? extensionId,
+                    surface: .actionPopup
+                )
+                ?? presentation
+        }
+        let routeEvents = bridgeSnapshot?.jsDebugRouteEvents ?? []
         let resourceSummary =
             ChromeMV3PopupOptionsHostResourceLoadDiagnostics.summarize(
-                events: bridgeSnapshot?.jsDebugRouteEvents ?? [],
+                events: routeEvents,
                 launchRecord: launchRecord
             )
+        let postParseDiagnostics =
+            ChromeMV3LivePopupProductPathTraceBuilder.postParseSanitizedDiagnostics(
+                bridgeSnapshot: bridgeSnapshot,
+                finalDOM: finalDOM
+            )
         let extensionClassifier =
-            bridgeSnapshot?.appStateDependencyTrace.correlationSummary
-            .classification
+            ChromeMV3LivePopupProductPathTraceBuilder.deriveExtensionClassifier(
+                bridgeSnapshot: bridgeSnapshot,
+                finalDOM: finalDOM
+            )
+            ?? bridgeSnapshot?.appStateDependencyTrace.correlationSummary
+                .classification
+        let navigationState =
+            ChromeMV3LivePopupProductPathTraceBuilder.navigationState(
+                from: routeEvents,
+                readyState: finalDOM?.readyState,
+                urlLoadCommitted: finalDOM?.navigationCommitted ?? false
+            )
+        let loadedURLCategory =
+            ChromeMV3LivePopupProductPathTraceBuilder.loadedURLCategory(
+                from: routeEvents
+            )
+        let runtimeErrorCategory =
+            ChromeMV3LivePopupProductPathTraceBuilder.runtimeErrorCategory(
+                from: routeEvents
+            )
+        let extensionBlankedDOM =
+            ChromeMV3LivePopupProductPathTraceBuilder.extensionBlankedDOM(
+                from: routeEvents
+            )
+        let firstJSCheckpointReached =
+            ChromeMV3LivePopupProductPathTraceBuilder.firstJSCheckpointReached(
+                from: routeEvents,
+                observedMethods: bridgeSnapshot?.observedMethods ?? []
+            )
+        let scriptsExecuted =
+            ChromeMV3LivePopupProductPathTraceBuilder.scriptsExecuted(
+                from: routeEvents,
+                observedMethods: bridgeSnapshot?.observedMethods ?? []
+            )
+        var stagedSnapshots =
+            cachedChromeMV3PopupOptionsHostController?
+            .livePopupStagedSnapshots(
+                profileID: launchRecord?.profileID ?? profileID,
+                extensionID: launchRecord?.extensionID ?? extensionId,
+                surface: .actionPopup
+            ) ?? []
+        let synthesized =
+            ChromeMV3LivePopupProductPathTraceBuilder.synthesizeStagedSnapshots(
+                from: routeEvents,
+                observedMethods: bridgeSnapshot?.observedMethods ?? [],
+                bridgeInstalled: runResult?.popupOptionsBridgeInstalled ?? false,
+                finalDOM: finalDOM
+            )
+        for snapshot in synthesized
+        where stagedSnapshots.contains(where: { $0.stage == snapshot.stage }) == false
+        {
+            stagedSnapshots.append(snapshot)
+        }
+        if popupResult.opened {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            let refreshed =
+                cachedChromeMV3PopupOptionsHostController?
+                .livePopupStagedSnapshots(
+                    profileID: launchRecord?.profileID ?? profileID,
+                    extensionID: launchRecord?.extensionID ?? extensionId,
+                    surface: .actionPopup
+                ) ?? []
+            for snapshot in refreshed
+            where stagedSnapshots.contains(where: { $0.stage == snapshot.stage }) == false
+            {
+                stagedSnapshots.append(snapshot)
+            }
+        }
         var lifecycleCategories: [String] = []
         if popupResult.opened {
             lifecycleCategories.append("opened")
@@ -5375,45 +5493,78 @@ final class SumiExtensionsModule {
                 ?? (launchRecord == nil ? "none" : "urlHubActionTileUnavailable"),
             anchorViewAvailable: presentation?.anchorViewAvailable ?? false,
             anchorInWindow: presentation?.anchorInWindow ?? false,
+            anchorBoundsSizeBucket: presentation?.anchorBoundsSizeBucket ?? "zero",
             popupHostCreated: runResult?.status == .succeeded,
             popoverPresented: presentation?.popoverPresented ?? false,
             popoverShown: presentation?.popoverShown ?? false,
             presentationAttempts: presentation?.presentationAttempts ?? 0,
             presentationSkipReason: presentation?.presentationSkipReason,
+            contentViewAttachedToWindow:
+                presentation?.contentViewAttachedToWindow ?? false,
+            contentViewSizeBucket: presentation?.contentViewSizeBucket ?? "zero",
+            popoverContentSizeBucket:
+                presentation?.popoverContentSizeBucket ?? "zero",
             webViewCreated: runResult?.webViewCreated ?? false,
             webViewAttachedToHost:
                 presentation?.webViewAttachedToPopover ?? false,
+            webViewFrameSizeBucket: presentation?.webViewFrameSizeBucket ?? "zero",
+            webViewHidden: presentation?.webViewHidden ?? false,
+            webViewAlphaBucket: presentation?.webViewAlphaBucket ?? "opaque",
+            webViewInWindowHierarchy:
+                presentation?.webViewInWindowHierarchy ?? false,
             webViewDeallocated: presentation?.webViewDeallocated ?? false,
+            loadedURLCategory: loadedURLCategory,
+            navigationStarted: navigationState.started,
+            navigationFinished: navigationState.finished,
+            navigationFailed: navigationState.failed,
             urlLoadCommitted: finalDOM?.navigationCommitted
-                ?? (bridgeSnapshot?.jsDebugRouteEvents.contains {
-                    $0.eventKind.contains("navigation")
-                } ?? false),
+                ?? navigationState.finished,
             generatedRootHandlerActive:
                 loadingMode.contains("diagnostic")
-                && (bridgeSnapshot?.jsDebugRouteEvents.contains {
+                && routeEvents.contains {
                     $0.eventKind == "customSchemeResource"
                         || $0.apiName == "customScheme.resource"
-                } ?? false),
+                },
             bridgeInstalled: runResult?.popupOptionsBridgeInstalled ?? false,
-            scriptsExecuted:
-                (bridgeSnapshot?.observedMethods.isEmpty == false)
-                || (bridgeSnapshot?.jsDebugRouteEvents.isEmpty == false),
+            scriptsExecuted: scriptsExecuted,
+            firstJSCheckpointReached: firstJSCheckpointReached,
+            runtimeErrorCategory: runtimeErrorCategory,
             firstDOMCheckpoint: firstDOM,
             finalDOMCheckpoint: finalDOM,
             dismissReason: presentation?.dismissReason,
             nativeHostLaunched: false,
+            selectedPopupPath: actualPopupPath,
+            requiredResourceLoadFailure:
+                resourceSummary.firstBlocker != .unknown,
+            resourceFailureCategory:
+                resourceSummary.firstFailingResource?.resourceCategory,
             resourceLoadBlockerCategory: resourceSummary.firstBlocker.rawValue,
             extensionClassifier: extensionClassifier,
+            extensionBlankedDOM: extensionBlankedDOM,
+            popupHostSessionIdentityHash:
+                presentation?.popupHostSessionIdentityHash ?? "none",
+            webViewIdentityHash: presentation?.displayedWebViewIdentityHash ?? "none",
+            bridgeHandlerIdentityHash:
+                presentation?.bridgeHandlerIdentityHash ?? "none",
+            popoverDisplaysSameWebViewAsLoaded:
+                presentation?.popoverDisplaysLoadedWebView ?? false,
+            contentViewReplacedWebView:
+                presentation?.contentViewReplacedWebView ?? false,
             failureClassifier: .unknown,
+            stagedSnapshots: stagedSnapshots,
             lifecycleEventCategories: lifecycleCategories,
             diagnostics: Array(
                 Set(
                     popupResult.sanitizedBridgeSnapshotDiagnostics
                         + (runResult?.diagnostics ?? [])
                         + compatibilityPolicy.diagnostics
+                        + (postParseDiagnostics?.logLines ?? [])
                 )
             ).sorted()
         )
+        let reconciled =
+            ChromeMV3LivePopupProductPathTraceBuilder
+            .reconcileTraceWithStagedSnapshots(trace)
         return ChromeMV3LivePopupProductPathTrace(
             productPath: trace.productPath,
             expectedPopupPath: trace.expectedPopupPath,
@@ -5430,29 +5581,56 @@ final class SumiExtensionsModule {
             anchorKind: trace.anchorKind,
             anchorViewAvailable: trace.anchorViewAvailable,
             anchorInWindow: trace.anchorInWindow,
+            anchorBoundsSizeBucket: trace.anchorBoundsSizeBucket,
             popupHostCreated: trace.popupHostCreated,
             popoverPresented: trace.popoverPresented,
             popoverShown: trace.popoverShown,
             presentationAttempts: trace.presentationAttempts,
             presentationSkipReason: trace.presentationSkipReason,
+            contentViewAttachedToWindow: trace.contentViewAttachedToWindow,
+            contentViewSizeBucket: trace.contentViewSizeBucket,
+            popoverContentSizeBucket: trace.popoverContentSizeBucket,
             webViewCreated: trace.webViewCreated,
             webViewAttachedToHost: trace.webViewAttachedToHost,
+            webViewFrameSizeBucket: trace.webViewFrameSizeBucket,
+            webViewHidden: trace.webViewHidden,
+            webViewAlphaBucket: trace.webViewAlphaBucket,
+            webViewInWindowHierarchy: trace.webViewInWindowHierarchy,
             webViewDeallocated: trace.webViewDeallocated,
+            loadedURLCategory: trace.loadedURLCategory,
+            navigationStarted: trace.navigationStarted,
+            navigationFinished: trace.navigationFinished,
+            navigationFailed: trace.navigationFailed,
             urlLoadCommitted: trace.urlLoadCommitted,
             generatedRootHandlerActive: trace.generatedRootHandlerActive,
-            bridgeInstalled: trace.bridgeInstalled,
-            scriptsExecuted: trace.scriptsExecuted,
-            firstDOMCheckpoint: trace.firstDOMCheckpoint,
-            finalDOMCheckpoint: trace.finalDOMCheckpoint,
-            dismissReason: trace.dismissReason,
-            nativeHostLaunched: trace.nativeHostLaunched,
-            resourceLoadBlockerCategory: trace.resourceLoadBlockerCategory,
-            extensionClassifier: trace.extensionClassifier,
+            bridgeInstalled: reconciled.bridgeInstalled,
+            scriptsExecuted: reconciled.scriptsExecuted,
+            firstJSCheckpointReached: reconciled.firstJSCheckpointReached,
+            runtimeErrorCategory: reconciled.runtimeErrorCategory,
+            firstDOMCheckpoint: reconciled.firstDOMCheckpoint,
+            finalDOMCheckpoint: reconciled.finalDOMCheckpoint,
+            dismissReason: reconciled.dismissReason,
+            nativeHostLaunched: reconciled.nativeHostLaunched,
+            selectedPopupPath: reconciled.selectedPopupPath,
+            requiredResourceLoadFailure: reconciled.requiredResourceLoadFailure,
+            resourceFailureCategory: reconciled.resourceFailureCategory,
+            resourceLoadBlockerCategory: reconciled.resourceLoadBlockerCategory,
+            extensionClassifier: reconciled.extensionClassifier,
+            extensionBlankedDOM: reconciled.extensionBlankedDOM,
+            popupHostSessionIdentityHash:
+                reconciled.popupHostSessionIdentityHash,
+            webViewIdentityHash: reconciled.webViewIdentityHash,
+            bridgeHandlerIdentityHash: reconciled.bridgeHandlerIdentityHash,
+            popoverDisplaysSameWebViewAsLoaded:
+                reconciled.popoverDisplaysSameWebViewAsLoaded,
+            contentViewReplacedWebView: reconciled.contentViewReplacedWebView,
             failureClassifier: ChromeMV3LivePopupProductPathTraceBuilder.classify(
-                trace
+                reconciled,
+                routeEvents: routeEvents
             ),
-            lifecycleEventCategories: trace.lifecycleEventCategories,
-            diagnostics: trace.diagnostics
+            stagedSnapshots: reconciled.stagedSnapshots,
+            lifecycleEventCategories: reconciled.lifecycleEventCategories,
+            diagnostics: reconciled.diagnostics
         )
     }
     #endif

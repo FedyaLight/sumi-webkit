@@ -468,43 +468,7 @@ struct SumiExtensionsSettingsPane: View {
             )
 
         return VStack(alignment: .leading, spacing: 12) {
-            ChromeMV3ExtensionManagerView(
-                listViewModel: list,
-                selectedDetail: chromeMV3ManagerDetailViewModel,
-                onLoadUnpacked: { loadChromeMV3UnpackedFolder() },
-                onImportArchive: { importChromeMV3LocalArchive() },
-                onSelectExtension: { profileID, extensionID in
-                    selectChromeMV3Extension(
-                        profileID: profileID,
-                        extensionID: extensionID
-                    )
-                },
-                onRunAction: { action, profileID, extensionID in
-                    runChromeMV3ManagerAction(
-                        action,
-                        profileID: profileID,
-                        extensionID: extensionID
-                    )
-                },
-                onRunPermissionControl: {
-                    kind,
-                    profileID,
-                    extensionID,
-                    value in
-                    runChromeMV3PermissionControl(
-                        kind,
-                        profileID: profileID,
-                        extensionID: extensionID,
-                        value: value
-                    )
-                },
-                onCopyDiagnosticsJSON: { profileID, extensionID in
-                    copyChromeMV3DiagnosticsJSON(
-                        profileID: profileID,
-                        extensionID: extensionID
-                    )
-                }
-            )
+            chromeMV3ExtensionManagerView(list: list)
 
             if let statusMessage {
                 Text(statusMessage)
@@ -546,6 +510,109 @@ struct SumiExtensionsSettingsPane: View {
                 extensionID: extensionID
             )
     }
+
+    #if DEBUG
+    @ViewBuilder
+    private func chromeMV3ExtensionManagerView(
+        list: ChromeMV3ExtensionManagerListViewModel
+    ) -> some View {
+        ChromeMV3ExtensionManagerView(
+            listViewModel: list,
+            selectedDetail: chromeMV3ManagerDetailViewModel,
+            onLoadUnpacked: { loadChromeMV3UnpackedFolder() },
+            onImportArchive: { importChromeMV3LocalArchive() },
+            onInstallUsablePopupFixture: { installChromeMV3UsablePopupFixture() },
+            onSelectExtension: { profileID, extensionID in
+                selectChromeMV3Extension(
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+            },
+            onRunAction: { action, profileID, extensionID in
+                runChromeMV3ManagerAction(
+                    action,
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+            },
+            onRunPermissionControl: { kind, profileID, extensionID, value in
+                runChromeMV3PermissionControl(
+                    kind,
+                    profileID: profileID,
+                    extensionID: extensionID,
+                    value: value
+                )
+            },
+            onCopyDiagnosticsJSON: { profileID, extensionID in
+                copyChromeMV3DiagnosticsJSON(
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+            }
+        )
+    }
+    #else
+    @ViewBuilder
+    private func chromeMV3ExtensionManagerView(
+        list: ChromeMV3ExtensionManagerListViewModel
+    ) -> some View {
+        ChromeMV3ExtensionManagerView(
+            listViewModel: list,
+            selectedDetail: chromeMV3ManagerDetailViewModel,
+            onLoadUnpacked: { loadChromeMV3UnpackedFolder() },
+            onImportArchive: { importChromeMV3LocalArchive() },
+            onSelectExtension: { profileID, extensionID in
+                selectChromeMV3Extension(
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+            },
+            onRunAction: { action, profileID, extensionID in
+                runChromeMV3ManagerAction(
+                    action,
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+            },
+            onRunPermissionControl: { kind, profileID, extensionID, value in
+                runChromeMV3PermissionControl(
+                    kind,
+                    profileID: profileID,
+                    extensionID: extensionID,
+                    value: value
+                )
+            },
+            onCopyDiagnosticsJSON: { profileID, extensionID in
+                copyChromeMV3DiagnosticsJSON(
+                    profileID: profileID,
+                    extensionID: extensionID
+                )
+            }
+        )
+    }
+    #endif
+
+    #if DEBUG
+    private func installChromeMV3UsablePopupFixture() {
+        do {
+            let rootURL = try ChromeMV3ExtensionManagerStoreLocation
+                .ensureDefaultRootURL()
+            guard
+                let result = browserManager.extensionsModule
+                .chromeMV3InstallUsablePopupFixtureThroughManager(
+                    rootURL: rootURL
+                )
+            else {
+                statusMessage =
+                    "Usable popup fixture not found. Build from the Sumi-webkit repo or set \(ChromeMV3LiveUsablePopupFixtureLocation.fixtureEnvironmentVariable) to SumiTests/Fixtures/mv3-sumi-usable-popup."
+                return
+            }
+            applyChromeMV3ManagerResult(result)
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+    }
+    #endif
 
     private func loadChromeMV3UnpackedFolder() {
         let panel = NSOpenPanel()

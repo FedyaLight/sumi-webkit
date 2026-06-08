@@ -369,6 +369,13 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
     }
 
     #if DEBUG
+    func testControlledCompatibilityDefaultUsesFileBackedLoadingInLiveProductPath() {
+        XCTAssertEqual(
+            ChromeMV3ProductPopupOptionsLoadingMode.controlledCompatibilityDefault,
+            .fileBacked
+        )
+    }
+
     func testDiagnosticCustomSchemeMapsGeneratedPopupResourcesInsideRootOnly()
         throws
     {
@@ -890,11 +897,27 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
         }
         XCTAssertFalse(combined.contains("Process" + "("))
         XCTAssertTrue(hostSource.contains("addUser" + "Script"))
-        XCTAssertTrue(hostSource.contains("addScript" + "MessageHandler"))
+        XCTAssertTrue(
+            hostSource.contains(
+                "ChromeMV3WKScriptMessageHandlerRegistration.register"
+            )
+        )
+        XCTAssertTrue(
+            hostSource.contains(
+                "ChromeMV3WKScriptMessageHandlerRegistration.remove"
+            )
+        )
+        XCTAssertFalse(
+            hostSource.contains("userContentController.addScriptMessageHandler(")
+        )
         XCTAssertFalse(managerSource.contains("addUser" + "Script"))
-        XCTAssertFalse(managerSource.contains("addScript" + "MessageHandler"))
+        XCTAssertFalse(
+            managerSource.contains("userContentController.addScriptMessageHandler(")
+        )
         XCTAssertFalse(moduleSource.contains("addUser" + "Script"))
-        XCTAssertFalse(moduleSource.contains("addScript" + "MessageHandler"))
+        XCTAssertFalse(
+            moduleSource.contains("userContentController.addScriptMessageHandler(")
+        )
         XCTAssertFalse(normalTabGateSource.contains("ChromeMV3PopupOptionsJSShimSource"))
         XCTAssertFalse(normalTabBrowserSource.contains("ChromeMV3PopupOptionsJSShimSource"))
         XCTAssertFalse(combined.contains("WKContent" + "RuleList"))
@@ -944,6 +967,27 @@ final class ChromeMV3ProductPopupOptionsUITests: XCTestCase {
                 "controlledCompatibilityDefault"
             )
         )
+        let traceSource = try source(
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3LivePopupProductPathTrace.swift"
+        )
+        XCTAssertTrue(traceSource.contains("#if DEBUG"))
+        XCTAssertTrue(traceSource.contains("#endif"))
+        XCTAssertTrue(
+            hostSource.contains("refreshPopupPresentationDiagnosticsForTesting")
+        )
+        XCTAssertTrue(
+            moduleSource.contains("scheduleChromeMV3LivePopupProductPathTraceCapture")
+        )
+        XCTAssertTrue(traceSource.contains("visibleTextLengthBucket"))
+        XCTAssertTrue(traceSource.contains("objectIdentityHash"))
+        XCTAssertTrue(traceSource.contains("ChromeMV3LivePopupStagedSnapshot"))
+        XCTAssertTrue(traceSource.contains("stagedProbeScript"))
+        XCTAssertTrue(
+            traceSource.contains("ChromeMV3LivePopupStagedSnapshotCollector")
+        )
+        XCTAssertTrue(hostSource.contains("livePopupStagedSnapshots"))
+        XCTAssertFalse(traceSource.contains("document.body.innerHTML"))
+        XCTAssertFalse(traceSource.contains("localStorage.getItem("))
     }
 
     private func installFixture(

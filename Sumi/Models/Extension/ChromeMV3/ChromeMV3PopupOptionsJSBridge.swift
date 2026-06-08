@@ -3962,6 +3962,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
 
     private nonisolated static let allowedJSDebugEventKinds: Set<String> = [
         "bootstrapResourceObserved",
+        "bridgeBootstrapProbe",
         "bridgeCallStarted",
         "bridgeCallResolved",
         "bridgeCallRejected",
@@ -3995,6 +3996,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         "hostNavigationFinish",
         "hostNavigationResponse",
         "hostPreloadResource",
+        "livePopupStagedSnapshot",
         "resourceLoaded",
         "resourceLoadError",
         "resourceTimingSnapshot",
@@ -8677,6 +8679,26 @@ enum ChromeMV3PopupOptionsJSShimSource {
 
           \(debugSupportSource)
 
+          (function debugRecordDocumentStartBridgeInjectionProbe() {
+            const readyState = document.readyState || "unknown";
+            const chromePresentBeforeBridge = !!globalThis.chrome;
+            const browserPresentBeforeBridge = !!globalThis.browser;
+            debugRecordBridgeBootstrapProbe("atDocumentStartBridgeInjection", [
+              "probeKind=mainBridgeUserScriptStart",
+              "chromePresentBeforeBridge=" + String(chromePresentBeforeBridge),
+              "browserPresentBeforeBridge=" + String(browserPresentBeforeBridge),
+              "readyState=" + readyState,
+              "documentElementPresent=" + String(!!document.documentElement),
+              "existingScriptCount="
+                + String(document.scripts ? document.scripts.length : 0),
+              "bridgeInjectedTooLateCandidate=" + String(
+                chromePresentBeforeBridge
+                  || browserPresentBeforeBridge
+                  || readyState !== "loading"
+              )
+            ]);
+          })();
+
           function unavailable(namespace, methodName) {
             return {
               bridgeCallID: "popup-options-unavailable",
@@ -10348,6 +10370,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
 
           debugProbeRootNamespaceExtensibility();
           installControlledNavigatorCompatibilitySurface();
+          debugRecordBridgeBootstrapProbe("beforeFirstExtensionScript", [
+            "scheduled=syncEndOfBridgeUserScript"
+          ]);
         })();
         """
     }
@@ -10372,6 +10397,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
           function debugProbeRootNamespaceExtensibility() {}
           function debugClassifyReadonlyAssignmentFailure(messageValue, errorValue, stackDiagnostics) {}
           function debugPostGetManifestBootstrapSentinel(succeeded) {}
+          function debugRecordBridgeBootstrapProbe(phase, extras) {}
           function debugBeginExecuteScriptContinuation(args, invocationMode) {}
           function debugWrapExecuteScriptCallback(callback) { return callback; }
           function debugTrackExecuteScriptPopupPromise(promise) { return promise; }
@@ -11590,6 +11616,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
                         : ["console." + level + " called; raw arguments omitted."]
                             .concat(debugConsoleErrorDiagnostics(args))
                   });
+                  if (level === "error") {
+                    debugEmitLivePopupStagedSnapshot("onConsoleError");
+                  }
                   return original.apply(this, args);
                 },
                 configurable: true
@@ -11618,6 +11647,109 @@ enum ChromeMV3PopupOptionsJSShimSource {
               }, record));
             } catch (_) {
             }
+          }
+
+          function debugEmitLivePopupStagedSnapshot(stage) {
+            const safeStage = debugSafeString(stage, 80) || "unknown";
+            debugRecord("livePopupStagedSnapshot", {
+              apiName: "popup.stagedSnapshot",
+              targetContext: "dom",
+              resultClassifier: "staged snapshot requested",
+              diagnostics: ["stage=" + safeStage]
+            });
+          }
+
+          function debugChromeAPIAvailabilitySnapshot() {
+            const chromeRoot = globalThis.chrome;
+            const browserRoot = globalThis.browser;
+            const runtime = chromeRoot && chromeRoot.runtime;
+            const storage = chromeRoot && chromeRoot.storage;
+            const i18n = chromeRoot && chromeRoot.i18n;
+            const tabs = chromeRoot && chromeRoot.tabs;
+            return {
+              chromePresent: !!chromeRoot,
+              browserPresent: !!browserRoot,
+              chromeRuntimePresent: !!runtime,
+              chromeStoragePresent: !!storage,
+              chromeStorageLocalPresent: !!(storage && storage.local),
+              chromeI18nPresent: !!i18n,
+              chromeTabsPresent: !!tabs,
+              chromeRuntimeGetManifestCallable:
+                !!(runtime && typeof runtime.getManifest === "function"),
+              chromeRuntimeSendMessageCallable:
+                !!(runtime && typeof runtime.sendMessage === "function"),
+              browserRuntimePresent: !!(browserRoot && browserRoot.runtime)
+            };
+          }
+
+          function debugMissingChromeAPIsBeforeBundle(apis) {
+            const missing = [];
+            if (!apis.chromePresent) {
+              missing.push("chrome");
+            }
+            if (!apis.chromeRuntimePresent) {
+              missing.push("chrome.runtime");
+            }
+            if (!apis.chromeStoragePresent) {
+              missing.push("chrome.storage");
+            }
+            if (!apis.chromeStorageLocalPresent) {
+              missing.push("chrome.storage.local");
+            }
+            if (!apis.chromeTabsPresent) {
+              missing.push("chrome.tabs");
+            }
+            if (!apis.browserPresent) {
+              missing.push("browser");
+            }
+            if (!apis.browserRuntimePresent) {
+              missing.push("browser.runtime");
+            }
+            if (config.i18nExposed && !apis.chromeI18nPresent) {
+              missing.push("chrome.i18n");
+            }
+            return missing;
+          }
+
+          function debugRecordBridgeBootstrapProbe(phase, extras) {
+            const apis = debugChromeAPIAvailabilitySnapshot();
+            const missing = debugMissingChromeAPIsBeforeBundle(apis);
+            const diagnostics = [
+              "phase=" + phase,
+              "probeKind=mainBridgeUserScript",
+              "readyState=" + (document.readyState || "unknown"),
+              "documentElementPresent=" + String(!!document.documentElement),
+              "webkitHandlerPresent=" + String(
+                !!(
+                  globalThis.webkit
+                  && globalThis.webkit.messageHandlers
+                  && globalThis.webkit.messageHandlers[bridgeName]
+                )
+              ),
+              "chromePresent=" + String(apis.chromePresent),
+              "browserPresent=" + String(apis.browserPresent),
+              "chromeRuntimePresent=" + String(apis.chromeRuntimePresent),
+              "chromeStoragePresent=" + String(apis.chromeStoragePresent),
+              "chromeStorageLocalPresent=" + String(apis.chromeStorageLocalPresent),
+              "chromeI18nPresent=" + String(apis.chromeI18nPresent),
+              "chromeTabsPresent=" + String(apis.chromeTabsPresent),
+              "chromeRuntimeGetManifestCallable="
+                + String(apis.chromeRuntimeGetManifestCallable),
+              "chromeRuntimeSendMessageCallable="
+                + String(apis.chromeRuntimeSendMessageCallable),
+              "browserRuntimePresent=" + String(apis.browserRuntimePresent),
+              "firstMissingAPI=" + (missing[0] || "none"),
+              "missingAPIs=" + (missing.join(",") || "none")
+            ].concat(Array.isArray(extras) ? extras : []);
+            debugRecord("bridgeBootstrapProbe", {
+              apiName: "popup.bootstrapProbe",
+              targetContext: "platform",
+              resultClassifier: phase,
+              firstMissingAPIOrPermissionOrLifecycleError:
+                missing[0] || null,
+              diagnostics
+            });
+            debugEmitLivePopupStagedSnapshot(phase);
           }
 
           function debugRecord(eventKind, record) {
@@ -13097,6 +13229,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
             __sumiPostBootstrapState.manifestReturnedAt = debugNowMS();
             __sumiPostBootstrapState.scheduled = true;
             debugPostBootstrapCheckpoint("immediate");
+            debugEmitLivePopupStagedSnapshot("afterBridgeBootstrap");
             __sumiPostBootstrapCheckpointMS.forEach((delay) => {
               globalThis.setTimeout(() => {
                 debugPostBootstrapCheckpoint(
@@ -13274,6 +13407,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 message,
               diagnostics
             });
+            debugEmitLivePopupStagedSnapshot("onUnhandledRejection");
           });
 
           globalThis.addEventListener("securitypolicyviolation", (event) => {
@@ -13360,10 +13494,12 @@ enum ChromeMV3PopupOptionsJSShimSource {
           globalThis.addEventListener("DOMContentLoaded", () => {
             debugDiscoverSourceMaps();
             debugRecordResourceTiming("domcontentloaded");
+            debugEmitLivePopupStagedSnapshot("afterDOMContentLoaded");
           }, { once: true });
 
           globalThis.addEventListener("load", () => {
             debugRecordResourceTiming("window-load");
+            debugEmitLivePopupStagedSnapshot("afterLoadEvent");
           }, { once: true });
 
           globalThis.setTimeout(() => {

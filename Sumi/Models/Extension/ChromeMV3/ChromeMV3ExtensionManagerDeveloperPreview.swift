@@ -4415,6 +4415,9 @@ struct ChromeMV3ExtensionManagerView: View {
         let selectedDetail: ChromeMV3ExtensionManagerDetailViewModel?
         var onLoadUnpacked: (() -> Void)?
         var onImportArchive: (() -> Void)?
+        #if DEBUG
+        var onInstallUsablePopupFixture: (() -> Void)?
+        #endif
         var onSelectExtension: ((String, String) -> Void)?
         var onRunAction:
             ((ChromeMV3ExtensionManagerActionKind, String, String) -> Void)?
@@ -4431,6 +4434,9 @@ struct ChromeMV3ExtensionManagerView: View {
             VStack(alignment: .leading, spacing: 16) {
                 gateSection
                 actionsHeader
+                #if DEBUG
+                usablePopupFixtureSection
+                #endif
                 packageIntakeSection
                 HStack(alignment: .top, spacing: 16) {
                     listSection
@@ -4550,6 +4556,43 @@ struct ChromeMV3ExtensionManagerView: View {
                 }
             }
         }
+
+        #if DEBUG
+        private var usablePopupFixtureSection: some View {
+            SettingsSection(
+                title: "DEBUG: Usable Popup Fixture",
+                subtitle:
+                    "mv3-sumi-usable-popup is test-only proof, not auto-installed in the browser."
+            ) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(ChromeMV3LiveUsablePopupFixtureLocation.manualVerificationSummary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        "Resolved fixture path: \(ChromeMV3LiveUsablePopupFixtureLocation.resolvedPathDescription())"
+                    )
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    Button {
+                        onInstallUsablePopupFixture?()
+                    } label: {
+                        Label(
+                            "Install Usable Popup Fixture",
+                            systemImage: "puzzlepiece.extension"
+                        )
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(
+                        !listViewModel.gate.installActionsAvailable
+                            || onInstallUsablePopupFixture == nil
+                            || ChromeMV3LiveUsablePopupFixtureLocation.packageRoot() == nil
+                    )
+                }
+            }
+        }
+        #endif
 
         private var listSection: some View {
             SettingsSection(

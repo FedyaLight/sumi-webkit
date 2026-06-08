@@ -32,11 +32,9 @@ enum ChromeMV3ProductPopupOptionsLoadingMode:
     static var controlledCompatibilityDefault:
         ChromeMV3ProductPopupOptionsLoadingMode
     {
-        #if DEBUG
-        return .diagnosticCustomScheme
-        #else
-        return .fileBacked
-        #endif
+        // Live controlled popups must stay file-backed: WebKit cannot satisfy
+        // required popup subresource loads synchronously through WKURLSchemeHandler.
+        .fileBacked
     }
 }
 
@@ -1447,11 +1445,25 @@ struct ChromeMV3PopupOptionsPresentationLifecycleSnapshot:
     var anchorKind: String
     var anchorViewAvailable: Bool
     var anchorInWindow: Bool
+    var anchorBoundsSizeBucket: String
     var popoverPresented: Bool
     var popoverShown: Bool
     var presentationAttempts: Int
     var presentationSkipReason: String?
+    var contentViewAttachedToWindow: Bool
+    var contentViewSizeBucket: String
+    var popoverContentSizeBucket: String
     var webViewAttachedToPopover: Bool
+    var webViewFrameSizeBucket: String
+    var webViewHidden: Bool
+    var webViewAlphaBucket: String
+    var webViewInWindowHierarchy: Bool
+    var loadedWebViewIdentityHash: String
+    var displayedWebViewIdentityHash: String
+    var popupHostSessionIdentityHash: String
+    var bridgeHandlerIdentityHash: String
+    var popoverDisplaysLoadedWebView: Bool
+    var contentViewReplacedWebView: Bool
     var webViewDeallocated: Bool
     var dismissReason: String?
 }
@@ -1465,6 +1477,10 @@ protocol ChromeMV3PopupOptionsWebViewHandle: AnyObject {
     #if DEBUG
     var popupPresentationLifecycleSnapshot:
         ChromeMV3PopupOptionsPresentationLifecycleSnapshot? { get }
+
+    func refreshPopupPresentationDiagnosticsForTesting()
+
+    var livePopupStagedSnapshots: [ChromeMV3LivePopupStagedSnapshot] { get }
 
     func evaluateJavaScriptForTesting(_ script: String) async throws -> Any?
     #endif
@@ -1484,6 +1500,10 @@ extension ChromeMV3PopupOptionsWebViewHandle {
         ChromeMV3PopupOptionsPresentationLifecycleSnapshot? {
         nil
     }
+
+    func refreshPopupPresentationDiagnosticsForTesting() {}
+
+    var livePopupStagedSnapshots: [ChromeMV3LivePopupStagedSnapshot] { [] }
 
     func evaluateJavaScriptForTesting(_ script: String) async throws -> Any? {
         _ = script
@@ -1750,8 +1770,26 @@ final class ChromeMV3ProductPopupOptionsHostController {
                 surface: surface
             )
         }
-        guard let key else { return nil }
-        return sessions[key]?.handle.popupPresentationLifecycleSnapshot
+        guard let key, let handle = sessions[key]?.handle else { return nil }
+        handle.refreshPopupPresentationDiagnosticsForTesting()
+        return handle.popupPresentationLifecycleSnapshot
+    }
+
+    func livePopupStagedSnapshots(
+        profileID: String,
+        extensionID: String,
+        surface: ChromeMV3ProductPopupOptionsSurface? = nil
+    ) -> [ChromeMV3LivePopupStagedSnapshot] {
+        let key = sessions.keys.first {
+            matchesSessionKey(
+                $0,
+                profileID: profileID,
+                extensionID: extensionID,
+                surface: surface
+            )
+        }
+        guard let key, let handle = sessions[key]?.handle else { return [] }
+        return handle.livePopupStagedSnapshots
     }
     #endif
 
@@ -2344,16 +2382,35 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
     private var presentationRetryTask: DispatchWorkItem?
     #endif
     #if DEBUG
+    private var loadedWebViewIdentityHash = "none"
+    private var popupHostSessionIdentityHash =
+        ChromeMV3LivePopupProductPathTraceBuilder.objectIdentityHash(nil)
+    private var bridgeHandlerIdentityHash = "none"
+    private var stagedSnapshotCollector: ChromeMV3LivePopupStagedSnapshotCollector?
     private var presentationLifecycle =
         ChromeMV3PopupOptionsPresentationLifecycleSnapshot(
             anchorKind: "none",
             anchorViewAvailable: false,
             anchorInWindow: false,
+            anchorBoundsSizeBucket: "zero",
             popoverPresented: false,
             popoverShown: false,
             presentationAttempts: 0,
             presentationSkipReason: nil,
+            contentViewAttachedToWindow: false,
+            contentViewSizeBucket: "zero",
+            popoverContentSizeBucket: "zero",
             webViewAttachedToPopover: false,
+            webViewFrameSizeBucket: "zero",
+            webViewHidden: false,
+            webViewAlphaBucket: "opaque",
+            webViewInWindowHierarchy: false,
+            loadedWebViewIdentityHash: "none",
+            displayedWebViewIdentityHash: "none",
+            popupHostSessionIdentityHash: "none",
+            bridgeHandlerIdentityHash: "none",
+            popoverDisplaysLoadedWebView: false,
+            contentViewReplacedWebView: false,
             webViewDeallocated: false,
             dismissReason: nil
         )
@@ -2508,16 +2565,24 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         #endif
         #if DEBUG
         if let bridgeHandler {
+            let collector = ChromeMV3LivePopupStagedSnapshotCollector(
+                webView: webView,
+                bridgeHandler: bridgeHandler,
+                bridgeInstalled: bridgeInstallation.bridgeAvailable
+            )
+            stagedSnapshotCollector = collector
             let diagnosticsDelegate =
                 ChromeMV3ProductPopupOptionsWKDiagnosticsDelegate(
                     bridgeHandler: bridgeHandler,
-                    readAccessURL: readAccessURL
+                    readAccessURL: readAccessURL,
+                    stagedSnapshotCollector: collector
                 )
             webView.navigationDelegate = diagnosticsDelegate
             webView.uiDelegate = diagnosticsDelegate
             self.diagnosticsDelegate = diagnosticsDelegate
         } else {
             self.diagnosticsDelegate = nil
+            self.stagedSnapshotCollector = nil
         }
         #endif
         Self.load(
@@ -2527,6 +2592,25 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
             loadingMode: loadingMode
         )
         self.webView = webView
+        #if DEBUG
+        stagedSnapshotCollector?.begin()
+        #endif
+        #if DEBUG
+        loadedWebViewIdentityHash =
+            ChromeMV3LivePopupProductPathTraceBuilder.objectIdentityHash(webView)
+        popupHostSessionIdentityHash =
+            ChromeMV3LivePopupProductPathTraceBuilder.objectIdentityHash(self)
+        bridgeHandlerIdentityHash =
+            ChromeMV3LivePopupProductPathTraceBuilder.objectIdentityHash(
+                bridgeHandler
+            )
+        presentationLifecycle.loadedWebViewIdentityHash =
+            loadedWebViewIdentityHash
+        presentationLifecycle.popupHostSessionIdentityHash =
+            popupHostSessionIdentityHash
+        presentationLifecycle.bridgeHandlerIdentityHash =
+            bridgeHandlerIdentityHash
+        #endif
         #if canImport(AppKit)
         presentIfNeeded(webView: webView, context: presentationContext)
         #endif
@@ -2571,6 +2655,54 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
     var popupPresentationLifecycleSnapshot:
         ChromeMV3PopupOptionsPresentationLifecycleSnapshot? {
         presentationLifecycle
+    }
+
+    var livePopupStagedSnapshots: [ChromeMV3LivePopupStagedSnapshot] {
+        stagedSnapshotCollector?.snapshots ?? []
+    }
+
+    func refreshPopupPresentationDiagnosticsForTesting() {
+        guard let webView else { return }
+        let contentView = popoverContentViewController?.view
+        let anchorBounds = storedPresentationContext?.anchorView?.bounds
+        presentationLifecycle.anchorBoundsSizeBucket =
+            ChromeMV3LivePopupProductPathTraceBuilder.sizeBucket(
+                width: anchorBounds?.width ?? 0,
+                height: anchorBounds?.height ?? 0
+            )
+        presentationLifecycle.contentViewAttachedToWindow =
+            contentView?.window != nil
+        presentationLifecycle.contentViewSizeBucket =
+            ChromeMV3LivePopupProductPathTraceBuilder.sizeBucket(
+                width: contentView?.frame.width ?? 0,
+                height: contentView?.frame.height ?? 0
+            )
+        presentationLifecycle.popoverContentSizeBucket =
+            ChromeMV3LivePopupProductPathTraceBuilder.sizeBucket(
+                width: popover?.contentSize.width ?? 0,
+                height: popover?.contentSize.height ?? 0
+            )
+        presentationLifecycle.webViewFrameSizeBucket =
+            ChromeMV3LivePopupProductPathTraceBuilder.sizeBucket(
+                width: webView.frame.width,
+                height: webView.frame.height
+            )
+        presentationLifecycle.webViewHidden = webView.isHidden
+        presentationLifecycle.webViewAlphaBucket =
+            webView.alphaValue <= 0.01 ? "zero" : "opaque"
+        presentationLifecycle.webViewInWindowHierarchy = webView.window != nil
+        presentationLifecycle.displayedWebViewIdentityHash =
+            ChromeMV3LivePopupProductPathTraceBuilder.objectIdentityHash(
+                webView
+            )
+        presentationLifecycle.popoverDisplaysLoadedWebView =
+            loadedWebViewIdentityHash == presentationLifecycle
+            .displayedWebViewIdentityHash
+        presentationLifecycle.contentViewReplacedWebView =
+            contentView != nil && contentView !== webView
+        presentationLifecycle.popoverShown = popover?.isShown == true
+        presentationLifecycle.webViewAttachedToPopover =
+            webView.superview != nil || contentView === webView
     }
     #endif
 
@@ -2658,12 +2790,39 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
             of: anchorView,
             preferredEdge: context.preferredEdge
         )
+        finalizePopoverWebViewLayout(
+            webView: webView,
+            contentViewController: contentViewController,
+            preferredSize: context.preferredContentSize
+        )
         #if DEBUG
         presentationLifecycle.popoverPresented = true
-        presentationLifecycle.popoverShown = popover.isShown
-        presentationLifecycle.webViewAttachedToPopover = true
         presentationLifecycle.presentationSkipReason = nil
+        refreshPopupPresentationDiagnosticsForTesting()
         #endif
+    }
+
+    private func finalizePopoverWebViewLayout(
+        webView: WKWebView,
+        contentViewController: NSViewController,
+        preferredSize: NSSize
+    ) {
+        webView.isHidden = false
+        webView.alphaValue = 1
+        let frame = NSRect(origin: .zero, size: preferredSize)
+        webView.frame = frame
+        webView.autoresizingMask = [.width, .height]
+        contentViewController.preferredContentSize = preferredSize
+        if contentViewController.view !== webView {
+            contentViewController.view = webView
+        }
+        contentViewController.view.frame = frame
+        webView.layoutSubtreeIfNeeded()
+        contentViewController.view.layoutSubtreeIfNeeded()
+        DispatchQueue.main.async { [weak webView] in
+            guard let webView else { return }
+            webView.layoutSubtreeIfNeeded()
+        }
     }
 
     private func schedulePresentationRetry(webView: WKWebView) {
@@ -2725,6 +2884,8 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         bridgeHandler = nil
         #if DEBUG
         presentationLifecycle.webViewDeallocated = true
+        stagedSnapshotCollector?.tearDown()
+        stagedSnapshotCollector = nil
         diagnosticsDelegate = nil
         diagnosticSchemeHandler = nil
         #endif
@@ -2769,7 +2930,11 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
         guard WKWebView.handlesURLScheme(scheme) == false else { return nil }
         let handler = ChromeMV3PopupOptionsDiagnosticURLSchemeHandler(
             rootURL: readAccessURL,
-            bridgeHandler: bridgeHandler
+            bridgeHandler: bridgeHandler,
+            popupSessionHash:
+                ChromeMV3LivePopupProductPathTraceBuilder.objectIdentityHash(
+                    bridgeHandler
+                )
         )
         configuration.setURLSchemeHandler(handler, forURLScheme: scheme)
         return handler
@@ -2830,13 +2995,16 @@ private final class ChromeMV3ProductPopupOptionsWKDiagnosticsDelegate:
     WKUIDelegate
 {
     private weak var bridgeHandler: ChromeMV3PopupOptionsJSBridgeHandler?
+    private weak var stagedSnapshotCollector: ChromeMV3LivePopupStagedSnapshotCollector?
     private let readAccessURL: URL
 
     init(
         bridgeHandler: ChromeMV3PopupOptionsJSBridgeHandler,
-        readAccessURL: URL
+        readAccessURL: URL,
+        stagedSnapshotCollector: ChromeMV3LivePopupStagedSnapshotCollector? = nil
     ) {
         self.bridgeHandler = bridgeHandler
+        self.stagedSnapshotCollector = stagedSnapshotCollector
         self.readAccessURL = readAccessURL.standardizedFileURL
         super.init()
     }
@@ -2860,6 +3028,7 @@ private final class ChromeMV3ProductPopupOptionsWKDiagnosticsDelegate:
                 ]
             )
         )
+        stagedSnapshotCollector?.recordNavigationStarted()
         _ = webView
         decisionHandler(.allow)
     }
@@ -2908,6 +3077,7 @@ private final class ChromeMV3ProductPopupOptionsWKDiagnosticsDelegate:
                 resultClassifier: "navigation finished"
             )
         )
+        stagedSnapshotCollector?.recordNavigationFinished()
         _ = navigation
     }
 
@@ -2999,15 +3169,26 @@ final class ChromeMV3PopupOptionsDiagnosticURLSchemeHandler:
     private let rootURL: URL
     private weak var bridgeHandler: ChromeMV3PopupOptionsJSBridgeHandler?
     private let fileManager: FileManager
+    private let extensionIDHash: String
+    private let profileIDHash: String
+    private let popupSessionHash: String
     private var stoppedTasks: Set<ObjectIdentifier> = []
 
     init(
         rootURL: URL,
         bridgeHandler: ChromeMV3PopupOptionsJSBridgeHandler?,
+        popupSessionHash: String = "none",
         fileManager: FileManager = .default
     ) {
         self.rootURL = rootURL.standardizedFileURL
         self.bridgeHandler = bridgeHandler
+        self.extensionIDHash = bridgeHandler.map {
+            ChromeMV3CompatibilityPolicyLog.hashID($0.configuration.extensionID)
+        } ?? "none"
+        self.profileIDHash = bridgeHandler.map {
+            ChromeMV3CompatibilityPolicyLog.hashID($0.configuration.profileID)
+        } ?? "none"
+        self.popupSessionHash = popupSessionHash
         self.fileManager = fileManager
         super.init()
     }
@@ -3075,6 +3256,16 @@ final class ChromeMV3PopupOptionsDiagnosticURLSchemeHandler:
         defer { stoppedTasks.remove(taskID) }
 
         let resolution = resolve(urlSchemeTask.request.url)
+        logResourceDiagnostic(
+            phase: "requestReceived",
+            resolution: resolution,
+            responseOutcome: nil
+        )
+        logResourceDiagnostic(
+            phase: "mappingResult",
+            resolution: resolution,
+            responseOutcome: nil
+        )
         switch resolution.status {
         case .served:
             guard let data = resolution.data,
@@ -3096,10 +3287,25 @@ final class ChromeMV3PopupOptionsDiagnosticURLSchemeHandler:
             record(resolution: resolution)
             guard isStopped(taskID) == false else { return }
             urlSchemeTask.didReceive(response)
+            logResourceDiagnostic(
+                phase: "responseOutcome",
+                resolution: resolution,
+                responseOutcome: "didReceiveResponse"
+            )
             guard isStopped(taskID) == false else { return }
             urlSchemeTask.didReceive(data)
+            logResourceDiagnostic(
+                phase: "responseOutcome",
+                resolution: resolution,
+                responseOutcome: "didReceiveData"
+            )
             guard isStopped(taskID) == false else { return }
             urlSchemeTask.didFinish()
+            logResourceDiagnostic(
+                phase: "responseOutcome",
+                resolution: resolution,
+                responseOutcome: "didFinish"
+            )
         case .failed:
             record(resolution: resolution)
             guard isStopped(taskID) == false else { return }
@@ -3113,6 +3319,11 @@ final class ChromeMV3PopupOptionsDiagnosticURLSchemeHandler:
                                 ?? "resource load failed",
                     ]
                 )
+            )
+            logResourceDiagnostic(
+                phase: "responseOutcome",
+                resolution: resolution,
+                responseOutcome: "didFailWithError"
             )
         }
     }
@@ -3290,6 +3501,97 @@ final class ChromeMV3PopupOptionsDiagnosticURLSchemeHandler:
             return "font"
         }
         return "unknown"
+    }
+
+    private func sanitizedResourceTypeCategory(
+        for relativePath: String
+    ) -> String {
+        let lower = relativePath.lowercased()
+        if lower.hasSuffix(".html") || lower.hasSuffix(".htm") { return "document" }
+        if lower.hasSuffix(".mjs") { return "module" }
+        if lower.hasSuffix(".js") || lower.hasSuffix(".cjs") { return "script" }
+        if lower.hasSuffix(".css") { return "stylesheet" }
+        if lower.hasSuffix(".wasm") { return "wasm" }
+        if lower.hasSuffix(".json") { return "json" }
+        if lower.hasSuffix(".map") { return "sourceMap" }
+        if [".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".svg"].contains(
+            where: { lower.hasSuffix($0) }
+        ) {
+            return "imageIcon"
+        }
+        if [".woff", ".woff2", ".ttf", ".otf", ".eot"].contains(where: {
+            lower.hasSuffix($0)
+        }) {
+            return "font"
+        }
+        if lower.contains("preconnect") || lower.contains("dns-prefetch") {
+            return "networkHint"
+        }
+        return "unknown"
+    }
+
+    private func sanitizedPathCategory(for relativePath: String) -> String {
+        ChromeMV3PopupOptionsHostDiagnostics.safeRelativePath(relativePath)
+    }
+
+    private func mappingResultCategory(
+        for resolution: ChromeMV3PopupOptionsDiagnosticURLSchemeResolution
+    ) -> String {
+        switch resolution.status {
+        case .served:
+            return "mappedToGeneratedBundle"
+        case .failed:
+            if isOptionalSourceMapProbe(resolution) {
+                return "optionalSourceMapProbe"
+            }
+            let reason = resolution.failureReason?.lowercased() ?? ""
+            if reason.contains("mime type is unsupported") {
+                return "mimeMissing"
+            }
+            if reason.contains("escaped") {
+                return "generatedBundlePathMappingFailure"
+            }
+            if reason.contains("missing") {
+                return "missingInGeneratedBundle"
+            }
+            if reason.contains("could not be read") {
+                return "readFailure"
+            }
+            return "unknown"
+        }
+    }
+
+    private func logResourceDiagnostic(
+        phase: String,
+        resolution: ChromeMV3PopupOptionsDiagnosticURLSchemeResolution,
+        responseOutcome: String?
+    ) {
+        let resourceType = sanitizedResourceTypeCategory(
+            for: resolution.relativePath
+        )
+        let mappingResult = mappingResultCategory(for: resolution)
+        let pathCategory = sanitizedPathCategory(for: resolution.relativePath)
+        var parts = [
+            "[live-popup-resource]",
+            "phase=\(phase)",
+            "schemeCategory=diagnosticCustomScheme",
+            "pathCategory=\(pathCategory)",
+            "extensionIDHash=\(extensionIDHash)",
+            "profileIDHash=\(profileIDHash)",
+            "popupSessionHash=\(popupSessionHash)",
+            "resourceType=\(resourceType)",
+            "mappingResult=\(mappingResult)",
+        ]
+        if let responseOutcome {
+            parts.append("responseOutcome=\(responseOutcome)")
+        }
+        if resolution.status == .served {
+            parts.append("mimeResolved=\(resolution.mimeType != nil)")
+        }
+        let message = parts.joined(separator: " ")
+        print(message)
+        RuntimeDiagnostics.logger(category: "LivePopupResource")
+            .debug("\(message, privacy: .public)")
     }
 
     private func isOptionalSourceMapProbe(
