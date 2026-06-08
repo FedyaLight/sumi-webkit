@@ -10230,7 +10230,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 enumerable: true
               });
             }
-            return Object.freeze(target);
+            return target;
           }
           function rootObject(rootName) {
             const target = rootTarget(rootName);
@@ -10260,6 +10260,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
             configurable: true
           });
 
+          debugProbeRootNamespaceExtensibility();
           installControlledNavigatorCompatibilitySurface();
         })();
         """
@@ -10282,6 +10283,8 @@ enum ChromeMV3PopupOptionsJSShimSource {
           function debugExtensionNamespaceAccess(rootName) {}
           function debugExtensionGetBackgroundPage(rootName, resultClassifier, args) {}
           function debugPlatformEnvironmentProbe(phase, extras) {}
+          function debugProbeRootNamespaceExtensibility() {}
+          function debugClassifyReadonlyAssignmentFailure(messageValue, errorValue, stackDiagnostics) {}
           function debugPostGetManifestBootstrapSentinel(succeeded) {}
           function debugBeginExecuteScriptContinuation(args, invocationMode) {}
           function debugWrapExecuteScriptCallback(callback) { return callback; }
@@ -11864,6 +11867,126 @@ enum ChromeMV3PopupOptionsJSShimSource {
             }
           }
 
+          function debugProbeAssignmentSurface(namespaceObject, propertyName) {
+            const probeKey = "__sumiNamespaceExtensibilityProbe";
+            if (!namespaceObject || (typeof namespaceObject !== "object" && typeof namespaceObject !== "function")) {
+              return "targetUnavailable";
+            }
+            try {
+              Object.defineProperty(namespaceObject, probeKey, {
+                value: true,
+                configurable: true,
+                enumerable: false,
+                writable: true
+              });
+              delete namespaceObject[probeKey];
+              return "writable";
+            } catch (_) {
+              return "blocked";
+            }
+          }
+
+          function debugProbeRootNamespaceExtensibility() {
+            const chromeRoot = globalThis.chrome;
+            const browserRoot = globalThis.browser;
+            const chromeRuntime = chromeRoot && chromeRoot.runtime;
+            const browserRuntime = browserRoot && browserRoot.runtime;
+            const runtimeSendMessageDescriptor = chromeRuntime
+              ? Object.getOwnPropertyDescriptor(chromeRuntime, "sendMessage")
+              : null;
+            debugRecord("namespaceExtensibilityProbe", {
+              apiName: "bridge.namespaceExtensibility",
+              targetContext: "platform",
+              resultClassifier: "namespace extensibility probe captured",
+              diagnostics: [
+                "chromeExtensible=" + String(!!chromeRoot && Object.isExtensible(chromeRoot)),
+                "browserExtensible=" + String(!!browserRoot && Object.isExtensible(browserRoot)),
+                "chromeMetadataProbe=" + debugProbeAssignmentSurface(chromeRoot, "__sumiNamespaceExtensibilityProbe"),
+                "browserMetadataProbe=" + debugProbeAssignmentSurface(browserRoot, "__sumiNamespaceExtensibilityProbe"),
+                "browserESModuleProbe=" + debugProbeAssignmentSurface(browserRoot, "__esModule"),
+                "chromeAppProbe=" + (chromeRoot && Reflect.has(chromeRoot, "app")
+                  ? "present"
+                  : debugProbeAssignmentSurface(chromeRoot, "app")),
+                "runtimeFrozen=" + String(!!chromeRuntime && !Object.isExtensible(chromeRuntime)),
+                "runtimeSendMessageWritable=" + String(
+                  !!runtimeSendMessageDescriptor && runtimeSendMessageDescriptor.writable === true
+                ),
+                "browserRuntimeSharesChromeRuntime=" + String(
+                  !!chromeRuntime && chromeRuntime === browserRuntime
+                ),
+                "No raw storage values, message bodies, manifest bodies, URLs, or private payloads were recorded."
+              ]
+            });
+          }
+
+          function debugClassifyReadonlyAssignmentFailure(messageValue, errorValue, stackDiagnostics) {
+            const message = debugSanitizedMessage(
+              messageValue || (errorValue && errorValue.message) || ""
+            );
+            const errorName = debugSafeString(errorValue && errorValue.name, 80) || "unknown";
+            if (!/readonly property/i.test(message) && !/read only property/i.test(message)) {
+              return null;
+            }
+            const haystack = [
+              message,
+              errorName,
+              Array.isArray(stackDiagnostics) ? stackDiagnostics.join(" ") : ""
+            ].join(" ");
+            let propertyCategory = "unknown";
+            if (/__esModule/i.test(haystack)) {
+              propertyCategory = "browser.__esModule";
+            } else if (/chrome\\.app/i.test(haystack) || /\\bapp\\b/.test(haystack) && /chrome/i.test(haystack)) {
+              propertyCategory = "chrome.app";
+            } else if (/chrome\\.permissions/i.test(haystack) || /permissions\\.contains/i.test(haystack)) {
+              propertyCategory = "chrome.permissions";
+            } else if (/chrome\\.runtime/i.test(haystack) || /runtime\\.id/i.test(haystack)) {
+              propertyCategory = "chrome.runtime";
+            } else if (/\\bbrowser\\b/i.test(haystack)) {
+              propertyCategory = "namespace-level assignment";
+            } else if (/\\bchrome\\b/i.test(haystack)) {
+              propertyCategory = "namespace-level assignment";
+            }
+            let targetCategory = "unknown";
+            if (propertyCategory === "browser.__esModule") {
+              targetCategory = "browser";
+            } else if (propertyCategory === "chrome.app" || /\\bchrome\\b/i.test(haystack)) {
+              targetCategory = "chrome";
+            } else if (/\\bbrowser\\b/i.test(haystack)) {
+              targetCategory = "browser";
+            } else if (/\\bruntime\\b/i.test(haystack)) {
+              targetCategory = "runtime";
+            } else if (/\\bpermissions\\b/i.test(haystack)) {
+              targetCategory = "permissions";
+            }
+            let classifier = "readonlyPropertyAssignment";
+            if (propertyCategory === "browser.__esModule") {
+              classifier = "polyfillAssignsBrowserESModule";
+            } else if (propertyCategory === "chrome.app") {
+              classifier = "missingNarrowChromeAppAPI";
+            } else if (targetCategory === "browser") {
+              classifier = "browserNamespaceTooFrozen";
+            } else if (targetCategory === "chrome") {
+              classifier = "chromeNamespaceTooFrozen";
+            } else if (targetCategory === "runtime") {
+              classifier = "runtimeNamespaceTooFrozen";
+            } else if (targetCategory === "permissions") {
+              classifier = "missingPermissionsContains";
+            } else if (
+              globalThis.chrome
+              && globalThis.browser
+              && Object.isExtensible(globalThis.chrome)
+              && Object.isExtensible(globalThis.browser)
+            ) {
+              classifier = "popupBundleReadonlySelfMutation";
+            }
+            return {
+              exceptionCategory: errorName,
+              propertyCategory,
+              targetCategory,
+              classifier
+            };
+          }
+
           function debugPlatformEnvironmentProbe(phase, extras) {
             const nav = globalThis.navigator || {};
             const chromeRuntime = globalThis.chrome && globalThis.chrome.runtime;
@@ -12984,10 +13107,35 @@ enum ChromeMV3PopupOptionsJSShimSource {
             if (errorName) {
               diagnostics.push("errorName=" + errorName);
             }
+            const stackDiagnostics = debugCaptureContinuationStack("scriptError");
+            const readonlyClassification = debugClassifyReadonlyAssignmentFailure(
+              messageValue,
+              errorValue,
+              stackDiagnostics
+            );
+            if (readonlyClassification) {
+              diagnostics.push(
+                "exceptionCategory=" + readonlyClassification.exceptionCategory
+              );
+              diagnostics.push(
+                "assignmentPropertyCategory=" + readonlyClassification.propertyCategory
+              );
+              diagnostics.push(
+                "assignmentTargetCategory=" + readonlyClassification.targetCategory
+              );
+              diagnostics.push(
+                "readonlyAssignmentClassifier=" + readonlyClassification.classifier
+              );
+            }
+            diagnostics.push.apply(diagnostics, stackDiagnostics);
             debugRecord("scriptError", {
               apiName: "global.error",
-              targetContext: "unknown",
-              resultClassifier: "script error",
+              targetContext: readonlyClassification
+                ? readonlyClassification.targetCategory
+                : "unknown",
+              resultClassifier: readonlyClassification
+                ? readonlyClassification.classifier
+                : "script error",
               firstMissingAPIOrPermissionOrLifecycleError:
                 message,
               diagnostics

@@ -3170,6 +3170,190 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
     }
 
     @MainActor
+    func testControlledRootNamespacesRemainExtensibleForPolyfillMetadata()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("WKWebView extension-page bridge requires macOS 15.5.")
+        }
+        let handle = try await makeControlledRuntimeIDBridgeHandle(
+            extensionID: "popup-options-namespace-extensibility"
+        )
+        defer { handle.tearDown() }
+        let probe = try await handle.callAsyncJavaScriptForTesting(
+            """
+            const chromeExtensible = Object.isExtensible(globalThis.chrome);
+            const browserExtensible = Object.isExtensible(globalThis.browser);
+            let browserESModuleWritable = false;
+            let chromeAppWritable = false;
+            let runtimeSendMessageWritable = false;
+            try {
+              Object.defineProperty(globalThis.browser, "__esModule", {
+                value: true,
+                configurable: true,
+                enumerable: false,
+                writable: true
+              });
+              browserESModuleWritable = true;
+              delete globalThis.browser.__esModule;
+            } catch (_) {}
+            try {
+              Object.defineProperty(globalThis.chrome, "app", {
+                value: {},
+                configurable: true,
+                enumerable: true,
+                writable: true
+              });
+              chromeAppWritable = true;
+              delete globalThis.chrome.app;
+            } catch (_) {}
+            const runtimeDescriptor = Object.getOwnPropertyDescriptor(
+              globalThis.chrome.runtime,
+              "sendMessage"
+            );
+            runtimeSendMessageWritable = runtimeDescriptor?.writable === true;
+            return {
+              chromeExtensible,
+              browserExtensible,
+              browserESModuleWritable,
+              chromeAppWritable,
+              runtimeSendMessageWritable
+            };
+            """
+        ) as? [String: Bool]
+        XCTAssertEqual(probe?["chromeExtensible"], true)
+        XCTAssertEqual(probe?["browserExtensible"], true)
+        XCTAssertEqual(probe?["browserESModuleWritable"], true)
+        XCTAssertEqual(probe?["chromeAppWritable"], true)
+        XCTAssertEqual(probe?["runtimeSendMessageWritable"], false)
+    }
+
+    @MainActor
+    func testControlledBrowserExportsSurviveWebpackESModuleMarker()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("WKWebView extension-page bridge requires macOS 15.5.")
+        }
+        let handle = try await makeControlledRuntimeIDBridgeHandle(
+            extensionID: "popup-options-webpack-esmodule"
+        )
+        defer { handle.tearDown() }
+        let survived = try await handle.callAsyncJavaScriptForTesting(
+            """
+            if (
+              !(
+                globalThis.chrome
+                && globalThis.chrome.runtime
+                && globalThis.chrome.runtime.id
+              )
+            ) {
+              throw new Error(
+                "This script should only be loaded in a browser extension."
+              );
+            }
+            const moduleExports =
+              globalThis.browser
+              && globalThis.browser.runtime
+              && globalThis.browser.runtime.id
+                ? globalThis.browser
+                : globalThis.chrome;
+            Object.defineProperty(moduleExports, "__esModule", {
+              value: true,
+              configurable: true,
+              enumerable: false,
+              writable: true
+            });
+            delete moduleExports.__esModule;
+            return moduleExports === globalThis.browser;
+            """
+        ) as? Bool
+        XCTAssertEqual(survived, true)
+    }
+
+    @MainActor
+    func testControlledChromeAppFeatureDetectionDoesNotThrow()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("WKWebView extension-page bridge requires macOS 15.5.")
+        }
+        let handle = try await makeControlledRuntimeIDBridgeHandle(
+            extensionID: "popup-options-chrome-app-probe"
+        )
+        defer { handle.tearDown() }
+        let observed = try await handle.callAsyncJavaScriptForTesting(
+            """
+            const hasOwnApp = Object.prototype.hasOwnProperty.call(
+              globalThis.chrome || {},
+              "app"
+            );
+            const appValue = globalThis.chrome && globalThis.chrome.app;
+            return {
+              hasOwnApp,
+              appType: appValue === undefined ? "undefined" : typeof appValue
+            };
+            """
+        ) as? [String: AnyHashable]
+        XCTAssertEqual(observed?["hasOwnApp"], false)
+        XCTAssertEqual(observed?["appType"], "undefined")
+    }
+
+    func testControlledPermissionsContainsRemainsProductBlocked() throws {
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                allowlist: .controlledActionPopupPolicy
+            )
+        )
+        let response = handler.handle(request(
+            namespace: "permissions",
+            methodName: "contains",
+            arguments: [.object(["permissions": .array([.string("storage")])])],
+            invocationMode: .promise
+        ))
+        XCTAssertFalse(response.succeeded)
+        XCTAssertEqual(response.lastErrorCode, "productBlocked")
+        XCTAssertTrue(response.promiseWouldReject)
+    }
+
+    @MainActor
+    private func makeControlledRuntimeIDBridgeHandle(
+        extensionID: String
+    ) async throws -> ChromeMV3ProductPopupOptionsWKWebViewHandle {
+        let root = try makeTemporaryDirectory()
+        let htmlURL = root.appendingPathComponent("popup.html")
+        try """
+        <!doctype html>
+        <meta charset="utf-8">
+        <title>Runtime ID</title>
+        """.write(to: htmlURL, atomically: true, encoding: .utf8)
+        let config = configuration(
+            extensionID: extensionID,
+            allowlist: .controlledActionPopupPolicy
+        )
+        let installation = ChromeMV3PopupOptionsJSBridgeInstallation(
+            configuration: config,
+            allowlist: config.allowlist,
+            bridgeAvailable: true,
+            scriptSource: ChromeMV3PopupOptionsJSShimSource.source(
+                configuration: config
+            ),
+            messageHandlerName:
+                ChromeMV3PopupOptionsJSShimSource.bridgeMessageHandlerName,
+            diagnostics: config.diagnostics
+        )
+        let handle = ChromeMV3ProductPopupOptionsWKWebViewHandle(
+            loadFileURL: htmlURL,
+            readAccessURL: root,
+            bridgeInstallation: installation,
+            permissionPromptPresenter: nil,
+            permissionEventDispatcher: nil
+        )
+        try await handle.waitForLoadForTesting()
+        return handle
+    }
+
+    @MainActor
     func testRealPopupOptionsWKWebViewInstallsBridgeAndRunsJS()
         async throws
     {
