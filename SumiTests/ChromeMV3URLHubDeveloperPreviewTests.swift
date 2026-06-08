@@ -932,12 +932,41 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             "The controlled Bitwarden popup diagnostics must not launch com.bitwarden.desktop."
         )
 
+        let boundaryDiagnostics =
+            controlledBitwardenPopupAppStateBoundaryDiagnostics(
+                snapshot: snapshot,
+                domStateJSON: domState
+            )
+        XCTAssertEqual(
+            boundaryDiagnostics.firstStableAppStateClassifier,
+            "appStateWaitWithNoWriter"
+        )
+        XCTAssertEqual(
+            boundaryDiagnostics.extensionBoundaryClassifier,
+            "extensionLocalAppState"
+        )
+        XCTAssertEqual(boundaryDiagnostics.boundaryKind, "extension-local")
+        XCTAssertEqual(
+            boundaryDiagnostics.nativeMessagingRequestCategory,
+            "none"
+        )
+        XCTAssertEqual(
+            boundaryDiagnostics.nativeMessagingResultCategory,
+            "notRequested"
+        )
+        XCTAssertNotEqual(
+            boundaryDiagnostics.portRouteCategory,
+            "failed"
+        )
+        XCTAssertEqual(boundaryDiagnostics.storageCategory, "readNoWriter")
+
         recordControlledBitwardenPopupSanitizedDiagnostics(
             prefix: "SumiControlledBitwardenPopup",
             snapshot: snapshot,
             domState: domState,
             firstBlocker: firstBlocker,
-            tabsConnectFatal: tabsConnectFatal
+            tabsConnectFatal: tabsConnectFatal,
+            boundaryDiagnostics: boundaryDiagnostics
         )
 
         _ = module.chromeMV3ClosePopupOptionsThroughManager(
@@ -1157,7 +1186,9 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             scriptingExecuteScriptCountBucket: "0",
             pendingBridgeRoutesBucket: "0",
             serviceWorkerOnMessageListenerCountBucket: "0",
-            serviceWorkerOnConnectListenerCountBucket: "0"
+            serviceWorkerOnConnectListenerCountBucket: "0",
+            nativeMessagingRequestCountBucket: "0",
+            nativeMessagingResultCategory: "notRequested"
         )
         let trace = ChromeMV3LivePopupProductPathTrace(
             productPath: .urlHubActionClick,
@@ -1287,7 +1318,9 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             scriptingExecuteScriptCountBucket: "0",
             pendingBridgeRoutesBucket: "0",
             serviceWorkerOnMessageListenerCountBucket: "0",
-            serviceWorkerOnConnectListenerCountBucket: "0"
+            serviceWorkerOnConnectListenerCountBucket: "0",
+            nativeMessagingRequestCountBucket: "0",
+            nativeMessagingResultCategory: "notRequested"
         )
         var trace = makeLivePopupBootstrapGapTrace()
         trace.loadingMode = "fileBacked"
@@ -1468,7 +1501,9 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             scriptingExecuteScriptCountBucket: "0",
             pendingBridgeRoutesBucket: "0",
             serviceWorkerOnMessageListenerCountBucket: "0",
-            serviceWorkerOnConnectListenerCountBucket: "0"
+            serviceWorkerOnConnectListenerCountBucket: "0",
+            nativeMessagingRequestCountBucket: "0",
+            nativeMessagingResultCategory: "notRequested"
         )
         return ChromeMV3LivePopupProductPathTrace(
             productPath: .urlHubActionClick,
@@ -5776,14 +5811,74 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         return firstFatal.apiName == "tabs.connect"
     }
 
+    private func controlledBitwardenPopupAppStateBoundaryDiagnostics(
+        snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot,
+        domStateJSON: String
+    ) -> ChromeMV3ControlledPopupAppStateBoundaryDiagnostics {
+        let domObject =
+            (try? JSONSerialization.jsonObject(
+                with: Data(domStateJSON.utf8)
+            ) as? [String: Any]) ?? [:]
+        let finalDOM = ChromeMV3LivePopupDOMCheckpoint(
+            readyState: domObject["readyState"] as? String ?? "unknown",
+            visibleTextLengthBucket:
+                ChromeMV3LivePopupProductPathTraceBuilder.textLengthBucket(
+                    domObject["visibleTextLength"] as? Int ?? 0
+                ),
+            controlCountBucket:
+                ChromeMV3LivePopupProductPathTraceBuilder.countBucket(
+                    domObject["controlCount"] as? Int ?? 0
+                ),
+            bodyChildCount: domObject["elementCount"] as? Int ?? 0,
+            appRootPresent: (domObject["appRootCount"] as? Int ?? 0) > 0,
+            navigationCommitted: true,
+            visibilityCategory: "unknown",
+            backgroundCategory: "white"
+        )
+        let stagedSnapshots =
+            ChromeMV3LivePopupProductPathTraceBuilder.synthesizeStagedSnapshots(
+                from: snapshot.jsDebugRouteEvents,
+                observedMethods: snapshot.observedMethods,
+                bridgeInstalled: true,
+                finalDOM: finalDOM
+            )
+        return ChromeMV3LivePopupProductPathTraceBuilder
+            .controlledPopupAppStateBoundaryDiagnostics(
+                bridgeSnapshot: snapshot,
+                finalDOM: finalDOM,
+                stagedSnapshots: stagedSnapshots
+            )
+            ?? ChromeMV3ControlledPopupAppStateBoundaryDiagnostics(
+                firstStableAppStateClassifier: "notClassified",
+                extensionBoundaryClassifier: "unknown",
+                boundaryKind: "unknown",
+                nativeMessagingRequestCategory: "none",
+                nativeMessagingResultCategory: "notRequested",
+                pendingRouteBucket: "0",
+                serviceWorkerListenerCategory: "onMessage=0,onConnect=0",
+                popupMessagingCategory: "none",
+                portRouteCategory: "notObserved",
+                storageCategory: "unknown",
+                after3000msSnapshotLine: nil
+            )
+    }
+
     private func recordControlledBitwardenPopupSanitizedDiagnostics(
         prefix: String,
         snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot,
         domState: String,
         firstBlocker: String,
         tabsConnectFatal: Bool,
+        boundaryDiagnostics:
+            ChromeMV3ControlledPopupAppStateBoundaryDiagnostics? = nil,
         extraLines: [String] = []
     ) {
+        let resolvedBoundary =
+            boundaryDiagnostics
+            ?? controlledBitwardenPopupAppStateBoundaryDiagnostics(
+                snapshot: snapshot,
+                domStateJSON: domState
+            )
         let lines =
             [
                 "reproducedControlledHost=true",
@@ -5803,6 +5898,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 "appStateStorageOnChangedReachedRegisteredListeners=\(snapshot.appStateDependencyTrace.correlationSummary.storageOnChangedReachedRegisteredListeners)",
                 "appStateUsableOnboardingLoginUI=\(snapshot.appStateDependencyTrace.correlationSummary.popupReachedUsableOnboardingOrLoginUI)",
             ]
+            + resolvedBoundary.logLines
             + extraLines
             + controlledBitwardenPopupSanitizedLogLines(snapshot)
 

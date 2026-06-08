@@ -5476,6 +5476,14 @@ final class SumiExtensionsModule {
         if firstDOM != nil {
             lifecycleCategories.append("firstDOMObserved")
         }
+        let appStateBoundaryDiagnostics =
+            ChromeMV3LivePopupProductPathTraceBuilder
+            .controlledPopupAppStateBoundaryDiagnostics(
+                bridgeSnapshot: bridgeSnapshot,
+                finalDOM: finalDOM,
+                stagedSnapshots: stagedSnapshots
+            )?
+            .logLines ?? []
         let trace = ChromeMV3LivePopupProductPathTrace(
             productPath: productPath,
             expectedPopupPath: expectedPopupPath,
@@ -5559,6 +5567,7 @@ final class SumiExtensionsModule {
                         + (runResult?.diagnostics ?? [])
                         + compatibilityPolicy.diagnostics
                         + (postParseDiagnostics?.logLines ?? [])
+                        + appStateBoundaryDiagnostics
                 )
             ).sorted()
         )

@@ -105,6 +105,8 @@ struct ChromeMV3LivePopupStagedSnapshot: Codable, Equatable, Sendable {
     var pendingBridgeRoutesBucket: String
     var serviceWorkerOnMessageListenerCountBucket: String
     var serviceWorkerOnConnectListenerCountBucket: String
+    var nativeMessagingRequestCountBucket: String
+    var nativeMessagingResultCategory: String
 
     var compactSanitizedLogLine: String {
         [
@@ -137,7 +139,42 @@ struct ChromeMV3LivePopupStagedSnapshot: Codable, Equatable, Sendable {
             "pendingBridgeRoutesBucket=\(pendingBridgeRoutesBucket)",
             "serviceWorkerOnMessageListenerCountBucket=\(serviceWorkerOnMessageListenerCountBucket)",
             "serviceWorkerOnConnectListenerCountBucket=\(serviceWorkerOnConnectListenerCountBucket)",
+            "nativeMessagingRequestCountBucket=\(nativeMessagingRequestCountBucket)",
+            "nativeMessagingResultCategory=\(nativeMessagingResultCategory)",
         ].joined(separator: " ")
+    }
+}
+
+struct ChromeMV3ControlledPopupAppStateBoundaryDiagnostics: Equatable, Sendable {
+    var firstStableAppStateClassifier: String
+    var extensionBoundaryClassifier: String
+    var boundaryKind: String
+    var nativeMessagingRequestCategory: String
+    var nativeMessagingResultCategory: String
+    var pendingRouteBucket: String
+    var serviceWorkerListenerCategory: String
+    var popupMessagingCategory: String
+    var portRouteCategory: String
+    var storageCategory: String
+    var after3000msSnapshotLine: String?
+
+    var logLines: [String] {
+        var lines = [
+            "firstStableAppStateClassifier=\(firstStableAppStateClassifier)",
+            "extensionBoundaryClassifier=\(extensionBoundaryClassifier)",
+            "boundaryKind=\(boundaryKind)",
+            "nativeMessagingRequestCategory=\(nativeMessagingRequestCategory)",
+            "nativeMessagingResultCategory=\(nativeMessagingResultCategory)",
+            "pendingRouteBucket=\(pendingRouteBucket)",
+            "serviceWorkerListenerCategory=\(serviceWorkerListenerCategory)",
+            "popupMessagingCategory=\(popupMessagingCategory)",
+            "portRouteCategory=\(portRouteCategory)",
+            "storageCategory=\(storageCategory)",
+        ]
+        if let after3000msSnapshotLine {
+            lines.append(after3000msSnapshotLine)
+        }
+        return lines
     }
 }
 
@@ -721,6 +758,7 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         var pendingBridgeRoutes: Int = 0
         var serviceWorkerOnMessageListener: Int = 0
         var serviceWorkerOnConnectListener: Int = 0
+        var nativeMessagingRequest: Int = 0
     }
 
     static func apiRouteCountBuckets(
@@ -775,11 +813,226 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
                 if api.contains("runtime.onconnect") {
                     buckets.serviceWorkerOnConnectListener += 1
                 }
+                if api.contains("nativemessaging.")
+                    || api.contains("runtime.connectnative")
+                    || api.contains("runtime.sendnativemessage")
+                {
+                    buckets.nativeMessagingRequest += 1
+                }
             default:
                 break
             }
         }
         return buckets
+    }
+
+    static func nativeMessagingRequestCategory(
+        from events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
+    ) -> String {
+        var categories: Set<String> = []
+        for event in events {
+            let api = event.apiName.lowercased()
+            if api.contains("runtime.connectnative") {
+                categories.insert("runtime.connectNative")
+            } else if api.contains("runtime.sendnativemessage") {
+                categories.insert("runtime.sendNativeMessage")
+            } else if api.contains("nativemessaging.") {
+                categories.insert("nativeMessaging.namespace")
+            }
+        }
+        guard categories.isEmpty == false else { return "none" }
+        return categories.sorted().joined(separator: "+")
+    }
+
+    static func nativeMessagingResultCategory(
+        from events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord],
+        pendingRoutes: [ChromeMV3PopupOptionsJSDebugRouteEventRecord] = []
+    ) -> String {
+        let nativeEvents = events.filter { event in
+            let api = event.apiName.lowercased()
+            return api.contains("nativemessaging.")
+                || api.contains("runtime.connectnative")
+                || api.contains("runtime.sendnativemessage")
+        }
+        guard nativeEvents.isEmpty == false else { return "notRequested" }
+        if pendingRoutes.contains(where: { event in
+            let api = event.apiName.lowercased()
+            return api.contains("nativemessaging.")
+                || api.contains("runtime.connectnative")
+                || api.contains("runtime.sendnativemessage")
+        }) {
+            return "pending"
+        }
+        if nativeEvents.contains(where: {
+            $0.resultClassifier == "permissionDenied"
+                || $0.resultClassifier == "blocked"
+                || $0.firstMissingAPIOrPermissionOrLifecycleError?
+                    .localizedCaseInsensitiveContains("native messaging") == true
+                || $0.firstMissingAPIOrPermissionOrLifecycleError?
+                    .localizedCaseInsensitiveContains("Specified native messaging host not found")
+                    == true
+        }) {
+            return "unavailableError"
+        }
+        if nativeEvents.contains(where: {
+            $0.diagnostics.contains(where: {
+                $0.localizedCaseInsensitiveContains("fixture host")
+                    || $0.localizedCaseInsensitiveContains("processLaunchAttempted=true")
+            })
+        }) {
+            return "fixtureOrHostAttempted"
+        }
+        if nativeEvents.contains(where: {
+            $0.eventKind == "bridgeCallResolved"
+                || $0.resultClassifier?.contains("Succeeded") == true
+        }) {
+            return "resolved"
+        }
+        return "observed"
+    }
+
+    static func portRouteCategory(
+        from routes: [ChromeMV3PopupOptionsSanitizedBridgeRouteRecord],
+        pendingRoutes: [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
+    ) -> String {
+        let connectRoutes = routes.filter { $0.apiName == "runtime.connect" }
+        guard connectRoutes.isEmpty == false else { return "notObserved" }
+        if pendingRoutes.contains(where: { $0.apiName == "runtime.connect" })
+            || pendingRoutes.contains(where: { $0.apiName.hasPrefix("Port.") })
+        {
+            return "waiting"
+        }
+        if connectRoutes.contains(where: {
+            ["noReceivingEnd", "noListener", "blocked", "permissionDenied",
+             "listenerPresentButNoResponse", "Port message not delivered",
+             "Port response not delivered"].contains($0.resultClassifier)
+        }) {
+            return "failed"
+        }
+        if connectRoutes.contains(where: { $0.listenerInvoked }) {
+            if connectRoutes.contains(where: { $0.portMessageCount > 0 }) {
+                return "delivered"
+            }
+            return "connected"
+        }
+        return "observed"
+    }
+
+    static func normalizeExtensionBoundaryClassifier(_ classifier: String) -> String {
+        switch classifier {
+        case "appStateWaitWithNoWriter", "appStateWaitWithNoObservableDependency",
+            "appStateWaitWithSuppressedEvent", "appStateWaitWithDelayedWriter",
+            "appStateWaitWithUnresolvedBridgeRoute", "appStateWaitWithMissingAPI",
+            "appStateWaitWithNetworkOrAuthDependency":
+            return "extensionLocalAppState"
+        case "appStateWaitWithNoObservableBrowserDependency":
+            return "extensionLocalRenderState"
+        default:
+            return classifier
+        }
+    }
+
+    static func firstStableAppStateClassifier(
+        bridgeSnapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?,
+        stagedSnapshots: [ChromeMV3LivePopupStagedSnapshot] = []
+    ) -> String {
+        let correlation =
+            bridgeSnapshot?.appStateDependencyTrace.correlationSummary
+                .classification
+        if let correlation, correlation != "notClassified" {
+            return correlation
+        }
+        let lateStages = ["after3000ms", "after1000ms", "after250ms"]
+        for stage in lateStages {
+            if stagedSnapshots.contains(where: { $0.stage == stage }) {
+                break
+            }
+        }
+        return correlation ?? "notClassified"
+    }
+
+    static func controlledPopupAppStateBoundaryDiagnostics(
+        bridgeSnapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?,
+        finalDOM: ChromeMV3LivePopupDOMCheckpoint?,
+        stagedSnapshots: [ChromeMV3LivePopupStagedSnapshot] = []
+    ) -> ChromeMV3ControlledPopupAppStateBoundaryDiagnostics? {
+        guard let snapshot = bridgeSnapshot else { return nil }
+        let trace = snapshot.appStateDependencyTrace.correlationSummary
+        let postParse = postParseSanitizedDiagnostics(
+            bridgeSnapshot: snapshot,
+            finalDOM: finalDOM
+        )
+        let extensionBoundaryClassifier = normalizeExtensionBoundaryClassifier(
+            deriveExtensionClassifier(
+                bridgeSnapshot: snapshot,
+                finalDOM: finalDOM
+            ) ?? trace.classification
+        )
+        let firstStable = firstStableAppStateClassifier(
+            bridgeSnapshot: snapshot,
+            stagedSnapshots: stagedSnapshots
+        )
+        let routeEvents = snapshot.jsDebugRouteEvents
+        let pendingRoutes = snapshot.pendingUnresolvedJSDebugRoutes
+        let serviceWorkerListeners =
+            postParseServiceWorkerListenerCounts(in: snapshot)
+        let popupMessagingCategory = postParse.map(\.popupMessagingCategory)
+            ?? categorizePostParseRoutes(
+                snapshot.sanitizedBridgeRouteRecords.filter {
+                    ["runtime.sendMessage", "runtime.connect"].contains($0.apiName)
+                        && $0.sourceContext != "contentScript"
+                }
+            )
+        let storageCategory = postParse?.storageCategory
+            ?? (trace.popupReadKeyHashesNeverWritten.isEmpty == false
+                ? "readNoWriter" : "noObservableWrite")
+        let browserBlocker = postParse?.firstBrowserBlocker ?? "unknown"
+        let boundaryKind: String
+        switch extensionBoundaryClassifier {
+        case "extensionLocalAppState", "extensionLocalRenderState",
+            "appStateWaitWithNoWriter", "appStateWaitWithNoObservableDependency":
+            boundaryKind = "extension-local"
+        default:
+            if [
+                "storageAppStateReadNoWriter", "storageOnChangedMissed",
+                "storageWriteNotVisibleToPopup", "missingNarrowChromeAPI",
+                "serviceWorkerOnMessageMissing", "serviceWorkerOnConnectMissing",
+                "popupToServiceWorkerRouteDropped",
+                "popupToContentScriptRouteDropped", "networkOrAuthWait",
+            ].contains(browserBlocker) {
+                boundaryKind = "browser-side"
+            } else if trace.classification == "appStateWaitWithNoWriter" {
+                boundaryKind = "extension-local"
+            } else {
+                boundaryKind = "unknown"
+            }
+        }
+        let after3000msSnapshotLine =
+            stagedSnapshots.last(where: { $0.stage == "after3000ms" })?
+            .compactSanitizedLogLine
+            .replacingOccurrences(of: "stage=after3000ms ", with: "after3000ms=")
+
+        return ChromeMV3ControlledPopupAppStateBoundaryDiagnostics(
+            firstStableAppStateClassifier: firstStable,
+            extensionBoundaryClassifier: extensionBoundaryClassifier,
+            boundaryKind: boundaryKind,
+            nativeMessagingRequestCategory:
+                nativeMessagingRequestCategory(from: routeEvents),
+            nativeMessagingResultCategory: nativeMessagingResultCategory(
+                from: routeEvents,
+                pendingRoutes: pendingRoutes
+            ),
+            pendingRouteBucket: countBucket(trace.pendingRouteCount),
+            serviceWorkerListenerCategory:
+                "onMessage=\(serviceWorkerListeners.onMessage),onConnect=\(serviceWorkerListeners.onConnect)",
+            popupMessagingCategory: popupMessagingCategory,
+            portRouteCategory: portRouteCategory(
+                from: snapshot.sanitizedBridgeRouteRecords,
+                pendingRoutes: pendingRoutes
+            ),
+            storageCategory: storageCategory,
+            after3000msSnapshotLine: after3000msSnapshotLine
+        )
     }
 
     static func buildStagedSnapshot(
@@ -850,6 +1103,13 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             ),
             serviceWorkerOnConnectListenerCountBucket: countBucket(
                 buckets.serviceWorkerOnConnectListener
+            ),
+            nativeMessagingRequestCountBucket: countBucket(
+                buckets.nativeMessagingRequest
+            ),
+            nativeMessagingResultCategory: nativeMessagingResultCategory(
+                from: routeEvents,
+                pendingRoutes: pendingRoutes
             )
         )
     }
@@ -1014,6 +1274,7 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         "onPortRoute",
         "onTabsRoute",
         "onScriptingRoute",
+        "onNativeMessagingRoute",
         "afterBridgeBootstrap",
     ]
 
@@ -1967,6 +2228,11 @@ final class ChromeMV3LivePopupStagedSnapshotCollector {
                     capture(stage: "onTabsRoute")
                 } else if api.contains("scripting.") {
                     capture(stage: "onScriptingRoute")
+                } else if api.contains("nativemessaging.")
+                    || api.contains("runtime.connectnative")
+                    || api.contains("runtime.sendnativemessage")
+                {
+                    capture(stage: "onNativeMessagingRoute")
                 } else if event.eventKind == "bridgeBootstrapProbe" {
                     if event.diagnostics.contains(where: {
                         $0 == "phase=atDocumentStartBridgeInjection"
