@@ -1356,37 +1356,18 @@ final class ChromeMV3PermissionBrokerTests: XCTestCase {
                 || $0.relativePath.hasPrefix("SumiTests/ChromeMV3")
         }
         let joined = sources.map(\.contents).joined(separator: "\n")
+        let permissionBrokerLayerFiles: Set<String> = [
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3PermissionBroker.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3PermissionsAPIContract.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3PermissionRuntimeImplementation.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3PermissionsJSMVP.swift",
+            "Sumi/Models/Extension/ChromeMV3/ChromeMV3PermissionPromptProductUX.swift",
+            "SumiTests/ChromeMV3PermissionBrokerTests.swift",
+            "SumiTests/ChromeMV3PermissionRuntimeImplementationTests.swift",
+            "SumiTests/ChromeMV3PermissionPromptProductUXTests.swift",
+        ]
         let boundaryGuardJoined = sources
-            .filter {
-                $0.relativePath
-                    != "Sumi/Models/Extension/ChromeMV3/ChromeMV3RuntimeJSMessagingMVP.swift"
-                    && $0.relativePath
-                        != "SumiTests/ChromeMV3RuntimeJSMessagingMVPTests.swift"
-                    && $0.relativePath
-                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3TabsScriptingJSMVP.swift"
-                    && $0.relativePath
-                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3StorageLocalRuntime.swift"
-                    && $0.relativePath
-                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerSyntheticFixture.swift"
-                    && $0.relativePath
-                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3ExtensionEventAPIsRuntime.swift"
-                    && $0.relativePath
-                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3SidePanelOffscreenIdentitySyntheticWebKitHarness.swift"
-                    && $0.relativePath
-                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift"
-                    && $0.relativePath
-                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3PasswordManagerRealPackageCompatibility.swift"
-                    && $0.relativePath
-                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3PopupOptionsJSBridge.swift"
-                    && $0.relativePath
-                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift"
-                    && $0.relativePath
-                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3ContentScriptProductAttachment.swift"
-                    && $0.relativePath
-                        != "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift"
-                    && $0.relativePath
-                        != "SumiTests/ChromeMV3PasswordManagerRealPackageCompatibilityTests.swift"
-            }
+            .filter { permissionBrokerLayerFiles.contains($0.relativePath) }
             .map(\.contents)
             .joined(separator: "\n")
 
