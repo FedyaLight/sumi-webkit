@@ -213,7 +213,8 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
     private var nextJSListenerDispatchSequence = 1
     private var nextRuntimePortDeliverySequence = 1
     private var serviceWorkerLocalStorageMirror:
-        (() -> ChromeMV3StorageOnChangedEventPayload?)?
+        ((inout ChromeMV3StorageBroker)
+            -> ChromeMV3ServiceWorkerLocalStorageMirrorCallbackResult)?
     #if DEBUG
         private var initialAppStateServiceWorkerSnapshot:
             ChromeMV3ServiceWorkerJSExecutionSnapshot?
@@ -597,7 +598,9 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
     }
 
     func setServiceWorkerLocalStorageMirror(
-        _ mirror: @escaping () -> ChromeMV3StorageOnChangedEventPayload?
+        _ mirror:
+            @escaping (inout ChromeMV3StorageBroker)
+            -> ChromeMV3ServiceWorkerLocalStorageMirrorCallbackResult
     ) {
         serviceWorkerLocalStorageMirror = mirror
     }
@@ -606,10 +609,10 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
         serviceWorkerLocalStorageMirror = nil
     }
 
-    func mirrorServiceWorkerLocalStorageIfNeeded()
-        -> ChromeMV3StorageOnChangedEventPayload?
-    {
-        serviceWorkerLocalStorageMirror?()
+    func mirrorServiceWorkerLocalStorageIfNeeded(
+        into popupBroker: inout ChromeMV3StorageBroker
+    ) -> ChromeMV3ServiceWorkerLocalStorageMirrorCallbackResult {
+        serviceWorkerLocalStorageMirror?(&popupBroker) ?? .empty
     }
 
     #if DEBUG

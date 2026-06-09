@@ -2398,6 +2398,77 @@ private struct ChromeMV3PopupOptionsBridgeInputError: Error, Equatable {
     var message: String
 }
 
+private enum ChromeMV3ServiceWorkerStorageMirrorInvocationSource:
+    String,
+    Sendable
+{
+    case storageGet
+    case runtimeConnect
+    case runtimeSendMessage
+    case portMessage
+}
+
+#if DEBUG
+private struct ChromeMV3ServiceWorkerStorageMirrorPathDiagnostics:
+    Equatable,
+    Sendable
+{
+    var storageGetMirrorAttemptedCategory: String = "notObserved"
+    var lazySharedSessionWakeAttemptedCategory: String = "notObserved"
+    var lazySharedSessionResolvedCategory: String = "notObserved"
+    var mirrorCalledFromStorageGetCategory: String = "notObserved"
+    var mirrorCalledFromRuntimeConnectCategory: String = "notObserved"
+    var mirrorCalledFromRuntimeSendMessageCategory: String = "notObserved"
+    var mirrorCalledFromPortMessageCategory: String = "notObserved"
+    var exportedSwValueCountBucket: String = "0"
+    var hostBackedPreMirrorValueCountBucket: String = "0"
+    var popupBrokerPreMirrorValueCountBucket: String = "0"
+    var storeBrokerPreMirrorValueCountBucket: String = "0"
+    var mirrorExportedValueCountBucket: String = "0"
+    var mirrorChangedKeyCountBucket: String = "0"
+    var hostBackedChangedKeyCountBucket: String = "0"
+    var hostBackedImportSnapshotCategory: String = "notObserved"
+    var popupBrokerMissingExportedValueCountBucket: String = "0"
+    var popupBrokerImportedExportedValueCountBucket: String = "0"
+    var popupBrokerPostMirrorValueCountBucket: String = "0"
+    var popupHydrationCategory: String = "notObserved"
+    var popupBrokerRefreshAfterMirrorCategory: String = "notObserved"
+    var onChangedFromMirrorDispatchCategory: String = "notObserved"
+    var popupReadAfterMirrorCategory: String = "notObserved"
+    var storageGetRequestedKeyMatchCategory: String = "notObserved"
+    var storageGetResponseContainsMirroredValueCategory: String = "notObserved"
+
+    var diagnosticLines: [String] {
+        [
+            "storageMirrorPath.storageGetMirrorAttemptedCategory=\(storageGetMirrorAttemptedCategory)",
+            "storageMirrorPath.lazySharedSessionWakeAttemptedCategory=\(lazySharedSessionWakeAttemptedCategory)",
+            "storageMirrorPath.lazySharedSessionResolvedCategory=\(lazySharedSessionResolvedCategory)",
+            "storageMirrorPath.mirrorCalledFromStorageGetCategory=\(mirrorCalledFromStorageGetCategory)",
+            "storageMirrorPath.mirrorCalledFromRuntimeConnectCategory=\(mirrorCalledFromRuntimeConnectCategory)",
+            "storageMirrorPath.mirrorCalledFromRuntimeSendMessageCategory=\(mirrorCalledFromRuntimeSendMessageCategory)",
+            "storageMirrorPath.mirrorCalledFromPortMessageCategory=\(mirrorCalledFromPortMessageCategory)",
+            "storageMirrorPath.exportedSwValueCountBucket=\(exportedSwValueCountBucket)",
+            "storageMirrorPath.hostBackedPreMirrorValueCountBucket=\(hostBackedPreMirrorValueCountBucket)",
+            "storageMirrorPath.popupBrokerPreMirrorValueCountBucket=\(popupBrokerPreMirrorValueCountBucket)",
+            "storageMirrorPath.storeBrokerPreMirrorValueCountBucket=\(storeBrokerPreMirrorValueCountBucket)",
+            "storageMirrorPath.mirrorExportedValueCountBucket=\(mirrorExportedValueCountBucket)",
+            "storageMirrorPath.mirrorChangedKeyCountBucket=\(mirrorChangedKeyCountBucket)",
+            "storageMirrorPath.hostBackedChangedKeyCountBucket=\(hostBackedChangedKeyCountBucket)",
+            "storageMirrorPath.hostBackedImportSnapshotCategory=\(hostBackedImportSnapshotCategory)",
+            "storageMirrorPath.popupBrokerMissingExportedValueCountBucket=\(popupBrokerMissingExportedValueCountBucket)",
+            "storageMirrorPath.popupBrokerImportedExportedValueCountBucket=\(popupBrokerImportedExportedValueCountBucket)",
+            "storageMirrorPath.popupBrokerPostMirrorValueCountBucket=\(popupBrokerPostMirrorValueCountBucket)",
+            "storageMirrorPath.popupHydrationCategory=\(popupHydrationCategory)",
+            "storageMirrorPath.popupBrokerRefreshAfterMirrorCategory=\(popupBrokerRefreshAfterMirrorCategory)",
+            "storageMirrorPath.onChangedFromMirrorDispatchCategory=\(onChangedFromMirrorDispatchCategory)",
+            "storageMirrorPath.popupReadAfterMirrorCategory=\(popupReadAfterMirrorCategory)",
+            "storageMirrorPath.storageGetRequestedKeyMatchCategory=\(storageGetRequestedKeyMatchCategory)",
+            "storageMirrorPath.storageGetResponseContainsMirroredValueCategory=\(storageGetResponseContainsMirroredValueCategory)",
+        ]
+    }
+}
+#endif
+
 final class ChromeMV3PopupOptionsJSBridgeHandler {
     let configuration: ChromeMV3PopupOptionsJSBridgeConfiguration
     let popupUserGestureTracker: ChromeMV3PopupUserGestureTracker
@@ -2448,6 +2519,10 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         private var appStateStorageChangeDispatchRecords:
             [ChromeMV3AppStateStorageChangeDispatchTraceRecord] = []
         private var nextAppStateTraceSequence = 0
+        private var storageMirrorPathDiagnostics =
+            ChromeMV3ServiceWorkerStorageMirrorPathDiagnostics()
+        private var lastStorageMirrorCallbackResult:
+            ChromeMV3ServiceWorkerLocalStorageMirrorCallbackResult = .empty
     #endif
     private var onChangedPayloads: [ChromeMV3StorageOnChangedEventPayload] = []
     private var syntheticPortIDs: Set<String> = []
@@ -2788,6 +2863,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     configuration.diagnostics
                         + permissionPersistenceDiagnostics
                         + storagePersistenceDiagnostics
+                        + storageMirrorPathDiagnosticLines()
                         + [
                             "Popup/options bridge diagnostics are scoped to one WebKit host.",
                             "No normal-tab bridge installation is represented by this snapshot.",
@@ -2795,6 +2871,14 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 )
         )
     }
+
+    #if DEBUG
+        private func storageMirrorPathDiagnosticLines() -> [String] {
+            storageMirrorPathDiagnostics.diagnosticLines
+        }
+    #else
+        private func storageMirrorPathDiagnosticLines() -> [String] { [] }
+    #endif
 
     var permissionRuntimeSnapshot:
         ChromeMV3PermissionRuntimeStateOwnerSnapshot
@@ -4546,19 +4630,124 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         )
     }
 
-    private func synchronizePopupLocalStorageFromServiceWorkerMirror()
-        -> ChromeMV3StorageOnChangedEventPayload?
-    {
-        guard sharedLifecycleSessionForRuntimeWake() != nil else { return nil }
-        let onChanged =
+    private func synchronizePopupLocalStorageFromServiceWorkerMirror(
+        source: ChromeMV3ServiceWorkerStorageMirrorInvocationSource
+    ) -> ChromeMV3StorageOnChangedEventPayload? {
+        #if DEBUG
+            if source == .storageGet {
+                storageMirrorPathDiagnostics
+                    .storageGetMirrorAttemptedCategory = "attempted"
+            }
+            let hadSharedLifecycleSession = sharedLifecycleSession != nil
+            if sharedLifecycleSessionProvider != nil, hadSharedLifecycleSession == false
+            {
+                storageMirrorPathDiagnostics
+                    .lazySharedSessionWakeAttemptedCategory = "attempted"
+            }
+        #endif
+        guard sharedLifecycleSessionForRuntimeWake() != nil else {
+            #if DEBUG
+                storageMirrorPathDiagnostics
+                    .lazySharedSessionResolvedCategory = "unresolved"
+            #endif
+            return nil
+        }
+        #if DEBUG
+            storageMirrorPathDiagnostics
+                .lazySharedSessionResolvedCategory = "resolved"
+            switch source {
+            case .storageGet:
+                storageMirrorPathDiagnostics
+                    .mirrorCalledFromStorageGetCategory = "called"
+            case .runtimeConnect:
+                storageMirrorPathDiagnostics
+                    .mirrorCalledFromRuntimeConnectCategory = "called"
+            case .runtimeSendMessage:
+                storageMirrorPathDiagnostics
+                    .mirrorCalledFromRuntimeSendMessageCategory = "called"
+            case .portMessage:
+                storageMirrorPathDiagnostics
+                    .mirrorCalledFromPortMessageCategory = "called"
+            }
+        #endif
+        let refreshedBeforeMirror =
+            refreshPopupLocalStorageBrokerFromSharedBackingStore()
+        let mirrorResult =
             sharedLifecycleSession?
-            .mirrorServiceWorkerLocalStorageIfNeeded()
-        refreshPopupLocalStorageBrokerFromSharedBackingStore()
-        guard let onChanged, onChanged.changedKeys.isEmpty == false else {
+            .mirrorServiceWorkerLocalStorageIfNeeded(
+                into: &localStorageBroker
+            ) ?? .empty
+        #if DEBUG
+            lastStorageMirrorCallbackResult = mirrorResult
+            storageMirrorPathDiagnostics.exportedSwValueCountBucket =
+                storageMirrorCountBucket(mirrorResult.exportedValueCount)
+            storageMirrorPathDiagnostics.hostBackedPreMirrorValueCountBucket =
+                storageMirrorCountBucket(
+                    mirrorResult.hostBackedPreMirrorValueCount
+                )
+            storageMirrorPathDiagnostics.popupBrokerPreMirrorValueCountBucket =
+                storageMirrorCountBucket(
+                    mirrorResult.popupBrokerPreMirrorValueCount
+                )
+            storageMirrorPathDiagnostics.storeBrokerPreMirrorValueCountBucket =
+                storageMirrorCountBucket(
+                    mirrorResult.hostBackedPreMirrorValueCount
+                )
+            storageMirrorPathDiagnostics.mirrorExportedValueCountBucket =
+                storageMirrorCountBucket(mirrorResult.exportedValueCount)
+            storageMirrorPathDiagnostics.hostBackedChangedKeyCountBucket =
+                storageMirrorCountBucket(
+                    mirrorResult.hostBackedChangedKeyCount
+                )
+            if mirrorResult.hostBackedChangedKeyCount > 0 {
+                storageMirrorPathDiagnostics.mirrorChangedKeyCountBucket =
+                    storageMirrorCountBucket(
+                        mirrorResult.hostBackedChangedKeyCount
+                    )
+            } else if mirrorResult.popupBrokerImportedExportedValueCount > 0
+            {
+                storageMirrorPathDiagnostics.mirrorChangedKeyCountBucket =
+                    storageMirrorCountBucket(
+                        mirrorResult.popupBrokerImportedExportedValueCount
+                    )
+            }
+            storageMirrorPathDiagnostics.hostBackedImportSnapshotCategory =
+                localStorageBroker.snapshotURL == nil
+                    ? "inMemoryOnly"
+                    : mirrorResult.hostBackedImportCategory
+            storageMirrorPathDiagnostics
+                .popupBrokerMissingExportedValueCountBucket =
+                storageMirrorCountBucket(
+                    mirrorResult.popupBrokerMissingExportedValueCount
+                )
+            storageMirrorPathDiagnostics
+                .popupBrokerImportedExportedValueCountBucket =
+                storageMirrorCountBucket(
+                    mirrorResult.popupBrokerImportedExportedValueCount
+                )
+            storageMirrorPathDiagnostics.popupBrokerPostMirrorValueCountBucket =
+                storageMirrorCountBucket(
+                    mirrorResult.popupBrokerPostMirrorValueCount
+                )
+            storageMirrorPathDiagnostics.popupHydrationCategory =
+                mirrorResult.popupHydrationCategory
+            storageMirrorPathDiagnostics
+                .popupBrokerRefreshAfterMirrorCategory =
+                refreshedBeforeMirror ? "refreshedFromHost" : "inMemoryBrokerOnly"
+            storageMirrorPathDiagnostics.onChangedFromMirrorDispatchCategory =
+                mirrorResult.onChangedPayload == nil
+                    ? "notDispatched"
+                    : "pendingPopupDispatch"
+        #endif
+        guard let onChanged = mirrorResult.onChangedPayload,
+              onChanged.changedKeys.isEmpty == false
+        else {
             return nil
         }
         onChangedPayloads.append(onChanged)
         #if DEBUG
+            storageMirrorPathDiagnostics.onChangedFromMirrorDispatchCategory =
+                "dispatched"
             recordAppStateStorageChangeDispatch(
                 payload: onChanged,
                 elapsedMilliseconds: 0,
@@ -4568,11 +4757,94 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         return onChanged
     }
 
-    private func refreshPopupLocalStorageBrokerFromSharedBackingStore() {
-        guard sharedLifecycleSession != nil else { return }
-        guard localStorageBroker.snapshotURL != nil else { return }
-        _ = try? localStorageBroker.loadHostSnapshotIfPresent()
+    @discardableResult
+    private func refreshPopupLocalStorageBrokerFromSharedBackingStore() -> Bool {
+        guard sharedLifecycleSession != nil else { return false }
+        guard localStorageBroker.snapshotURL != nil else { return false }
+        return (try? localStorageBroker.loadHostSnapshotIfPresent()) ?? false
     }
+
+    #if DEBUG
+        private func storageMirrorCountBucket(_ count: Int) -> String {
+            switch count {
+            case 0: return "0"
+            case 1...3: return "1-3"
+            case 4...10: return "4-10"
+            default: return "11+"
+            }
+        }
+
+        private func recordPopupReadAfterMirrorIfNeeded(
+            request: ChromeMV3RuntimeJSBridgeHostRequest,
+            area: ChromeMV3StorageAreaKind,
+            resultPayload: ChromeMV3StorageValue?
+        ) {
+            guard area == .local else { return }
+            guard storageOperationName(methodName: request.methodName) == "get"
+            else { return }
+            let values = storageReadValues(from: resultPayload)
+            let requestedKeys = storageGetRequestedKeys(from: request.arguments)
+            if requestedKeys.isEmpty == false {
+                let brokerValues =
+                    localStorageBroker.exportSnapshot().values
+                let requestedKeysPresentInBroker = requestedKeys.allSatisfy {
+                    brokerValues[$0] != nil
+                }
+                storageMirrorPathDiagnostics
+                    .storageGetRequestedKeyMatchCategory =
+                    requestedKeysPresentInBroker
+                        ? "requestedKeysPresentInBroker"
+                        : "requestedKeysMissingInBroker"
+                let responseContainsRequested = requestedKeys.allSatisfy {
+                    values[$0] != nil
+                }
+                storageMirrorPathDiagnostics
+                    .storageGetResponseContainsMirroredValueCategory =
+                    responseContainsRequested
+                        ? "containsMirroredValue"
+                        : "missingMirroredValue"
+            } else {
+                storageMirrorPathDiagnostics
+                    .storageGetRequestedKeyMatchCategory = "getAllRequested"
+                storageMirrorPathDiagnostics
+                    .storageGetResponseContainsMirroredValueCategory =
+                    values.isEmpty ? "missingMirroredValue" : "containsMirroredValue"
+            }
+            guard values.isEmpty == false else {
+                storageMirrorPathDiagnostics.popupReadAfterMirrorCategory =
+                    "readEmptyAfterMirror"
+                return
+            }
+            storageMirrorPathDiagnostics.popupReadAfterMirrorCategory =
+                "readPopulatedAfterMirror"
+        }
+
+        private func storageGetRequestedKeys(
+            from arguments: [ChromeMV3StorageValue]
+        ) -> [String] {
+            guard let first = arguments.first else { return [] }
+            switch first {
+            case .string(let key):
+                return key.isEmpty ? [] : [key]
+            case .array(let keys):
+                return keys.compactMap(\.stringValue).filter {
+                    $0.isEmpty == false
+                }
+            default:
+                return []
+            }
+        }
+
+        private func storageReadValues(
+            from payload: ChromeMV3StorageValue?
+        ) -> [String: ChromeMV3StorageValue] {
+            guard let payload else { return [:] }
+            if case .object(let object) = payload {
+                return object
+            }
+            return [:]
+        }
+    #endif
 
     private func runtimeLastErrorContract(
         for resultKind: ChromeMV3ServiceWorkerJSDispatchResultKind
@@ -4616,7 +4888,9 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         ) {
             if jsResult.dispatched {
                 let mirroredOnChanged =
-                    synchronizePopupLocalStorageFromServiceWorkerMirror()
+                    synchronizePopupLocalStorageFromServiceWorkerMirror(
+                        source: .runtimeSendMessage
+                    )
                 return response(
                     request: request,
                     succeeded: true,
@@ -4811,7 +5085,9 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             serviceWorkerLifecyclePortIDs.insert(portID)
             let serviceWorkerPortOutbox = jsResult.serviceWorkerPortOutbox
             let mirroredOnChanged =
-                synchronizePopupLocalStorageFromServiceWorkerMirror()
+                synchronizePopupLocalStorageFromServiceWorkerMirror(
+                    source: .runtimeConnect
+                )
             return response(
                 request: request,
                 succeeded: true,
@@ -5058,7 +5334,9 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             )
         }
         let mirroredOnChanged =
-            synchronizePopupLocalStorageFromServiceWorkerMirror()
+            synchronizePopupLocalStorageFromServiceWorkerMirror(
+                source: .portMessage
+            )
         return response(
             request: request,
             succeeded: true,
@@ -5533,7 +5811,9 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             switch area {
             case .local:
                 mirroredOnChanged =
-                    synchronizePopupLocalStorageFromServiceWorkerMirror()
+                    synchronizePopupLocalStorageFromServiceWorkerMirror(
+                        source: .storageGet
+                    )
                 envelope = storageOperationHandler.handle(
                     input,
                     broker: &localStorageBroker
@@ -5606,6 +5886,13 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 )
             }
             let resultPayload = storageResultPayload(from: envelope)
+            #if DEBUG
+                recordPopupReadAfterMirrorIfNeeded(
+                    request: request,
+                    area: area,
+                    resultPayload: resultPayload
+                )
+            #endif
             let operationOnChanged = popupOnChangedPayload(from: envelope)
             let onChanged = combinedStorageOnChangedPayload(
                 operation: operationOnChanged,
@@ -8569,16 +8856,27 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     private func serviceWorkerStorageMirrorDiagnostics(
         _ onChanged: ChromeMV3StorageOnChangedEventPayload?
     ) -> [String] {
-        guard let onChanged else {
-            return [
-                "serviceWorkerStorageMirror=none",
-            ]
-        }
+        #if DEBUG
+            if let onChanged {
+                return [
+                    "serviceWorkerStorageMirror=applied",
+                    "mirroredChangedKeyCount=\(onChanged.changedKeys.count)",
+                    "mirroredStorageArea=\(onChanged.areaName)",
+                    "No raw storage keys or values are logged.",
+                ]
+            }
+            if lastStorageMirrorCallbackResult
+                .popupBrokerImportedExportedValueCount > 0
+            {
+                return [
+                    "serviceWorkerStorageMirror=hydratedPopupBroker",
+                    "popupBrokerImportedExportedValueCount=\(lastStorageMirrorCallbackResult.popupBrokerImportedExportedValueCount)",
+                    "No raw storage keys or values are logged.",
+                ]
+            }
+        #endif
         return [
-            "serviceWorkerStorageMirror=applied",
-            "mirroredChangedKeyCount=\(onChanged.changedKeys.count)",
-            "mirroredStorageArea=\(onChanged.areaName)",
-            "No raw storage keys or values are logged.",
+            "serviceWorkerStorageMirror=none",
         ]
     }
 

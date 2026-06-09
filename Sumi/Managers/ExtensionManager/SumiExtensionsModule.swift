@@ -226,16 +226,21 @@ private final class ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore {
         recordKey: String,
         record: inout Record
     ) {
-        record.session.setServiceWorkerLocalStorageMirror { [weak self] in
-            guard let self else { return nil }
-            return self.mirrorServiceWorkerLocalStorage(for: recordKey)
+        record.session.setServiceWorkerLocalStorageMirror {
+            [weak self] popupBroker in
+            guard let self else { return .empty }
+            return self.mirrorServiceWorkerLocalStorage(
+                for: recordKey,
+                into: &popupBroker
+            )
         }
     }
 
     private func mirrorServiceWorkerLocalStorage(
-        for recordKey: String
-    ) -> ChromeMV3StorageOnChangedEventPayload? {
-        guard var record = records[recordKey] else { return nil }
+        for recordKey: String,
+        into popupBroker: inout ChromeMV3StorageBroker
+    ) -> ChromeMV3ServiceWorkerLocalStorageMirrorCallbackResult {
+        guard var record = records[recordKey] else { return .empty }
         let asyncFlush = ChromeMV3ServiceWorkerLocalStorageMirror
             .flushDeferredServiceWorkerWork(in: record.harness)
         record.session.recordAppStateServiceWorkerSnapshot(
@@ -243,16 +248,17 @@ private final class ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore {
         )
         guard
             let exported = record.harness.exportStorageValues(area: .local)
-        else { return nil }
-        let mirror = ChromeMV3ServiceWorkerLocalStorageMirror
-            .mirrorExportedValues(
+        else { return .empty }
+        let reconcile = ChromeMV3ServiceWorkerLocalStorageMirror
+            .reconcileServiceWorkerExportIntoBrokers(
                 exported,
-                into: &record.localStorageBroker,
+                hostBackedBroker: &record.localStorageBroker,
+                popupBroker: &popupBroker,
                 writerContextCategory: "popupWakeSW"
             )
         records[recordKey] = record
         _ = asyncFlush
-        return mirror.onChangedPayload
+        return reconcile
     }
 
     func releaseControlledActionPopupRuntimePortSession(

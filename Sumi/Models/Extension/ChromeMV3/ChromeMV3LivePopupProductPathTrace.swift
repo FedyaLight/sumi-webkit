@@ -300,6 +300,30 @@ struct ChromeMV3FirstVisibleUIGateDiagnostics: Equatable, Sendable {
     var sdkTimerAwaitCategory: String
     var sdkLoadCompletionSignalCategory: String
     var sdkLoadUnresolvedReasonCategory: String
+    var storageGetMirrorAttemptedCategory: String
+    var lazySharedSessionWakeAttemptedCategory: String
+    var lazySharedSessionResolvedCategory: String
+    var mirrorCalledFromStorageGetCategory: String
+    var mirrorCalledFromRuntimeConnectCategory: String
+    var mirrorCalledFromRuntimeSendMessageCategory: String
+    var mirrorCalledFromPortMessageCategory: String
+    var exportedSwValueCountBucket: String
+    var hostBackedPreMirrorValueCountBucket: String
+    var popupBrokerPreMirrorValueCountBucket: String
+    var storeBrokerPreMirrorValueCountBucket: String
+    var mirrorExportedValueCountBucket: String
+    var mirrorChangedKeyCountBucket: String
+    var hostBackedChangedKeyCountBucket: String
+    var hostBackedImportSnapshotCategory: String
+    var popupBrokerMissingExportedValueCountBucket: String
+    var popupBrokerImportedExportedValueCountBucket: String
+    var popupBrokerPostMirrorValueCountBucket: String
+    var popupHydrationCategory: String
+    var popupBrokerRefreshAfterMirrorCategory: String
+    var onChangedFromMirrorDispatchCategory: String
+    var popupReadAfterMirrorCategory: String
+    var storageGetRequestedKeyMatchCategory: String
+    var storageGetResponseContainsMirroredValueCategory: String
 
     var logLines: [String] {
         [
@@ -361,6 +385,30 @@ struct ChromeMV3FirstVisibleUIGateDiagnostics: Equatable, Sendable {
             "sdkTimerAwaitCategory=\(sdkTimerAwaitCategory)",
             "sdkLoadCompletionSignalCategory=\(sdkLoadCompletionSignalCategory)",
             "sdkLoadUnresolvedReasonCategory=\(sdkLoadUnresolvedReasonCategory)",
+            "storageGetMirrorAttemptedCategory=\(storageGetMirrorAttemptedCategory)",
+            "lazySharedSessionWakeAttemptedCategory=\(lazySharedSessionWakeAttemptedCategory)",
+            "lazySharedSessionResolvedCategory=\(lazySharedSessionResolvedCategory)",
+            "mirrorCalledFromStorageGetCategory=\(mirrorCalledFromStorageGetCategory)",
+            "mirrorCalledFromRuntimeConnectCategory=\(mirrorCalledFromRuntimeConnectCategory)",
+            "mirrorCalledFromRuntimeSendMessageCategory=\(mirrorCalledFromRuntimeSendMessageCategory)",
+            "mirrorCalledFromPortMessageCategory=\(mirrorCalledFromPortMessageCategory)",
+            "exportedSwValueCountBucket=\(exportedSwValueCountBucket)",
+            "hostBackedPreMirrorValueCountBucket=\(hostBackedPreMirrorValueCountBucket)",
+            "popupBrokerPreMirrorValueCountBucket=\(popupBrokerPreMirrorValueCountBucket)",
+            "storeBrokerPreMirrorValueCountBucket=\(storeBrokerPreMirrorValueCountBucket)",
+            "mirrorExportedValueCountBucket=\(mirrorExportedValueCountBucket)",
+            "mirrorChangedKeyCountBucket=\(mirrorChangedKeyCountBucket)",
+            "hostBackedChangedKeyCountBucket=\(hostBackedChangedKeyCountBucket)",
+            "hostBackedImportSnapshotCategory=\(hostBackedImportSnapshotCategory)",
+            "popupBrokerMissingExportedValueCountBucket=\(popupBrokerMissingExportedValueCountBucket)",
+            "popupBrokerImportedExportedValueCountBucket=\(popupBrokerImportedExportedValueCountBucket)",
+            "popupBrokerPostMirrorValueCountBucket=\(popupBrokerPostMirrorValueCountBucket)",
+            "popupHydrationCategory=\(popupHydrationCategory)",
+            "popupBrokerRefreshAfterMirrorCategory=\(popupBrokerRefreshAfterMirrorCategory)",
+            "onChangedFromMirrorDispatchCategory=\(onChangedFromMirrorDispatchCategory)",
+            "popupReadAfterMirrorCategory=\(popupReadAfterMirrorCategory)",
+            "storageGetRequestedKeyMatchCategory=\(storageGetRequestedKeyMatchCategory)",
+            "storageGetResponseContainsMirroredValueCategory=\(storageGetResponseContainsMirroredValueCategory)",
         ]
     }
 
@@ -1540,7 +1588,7 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             && popupReadWrittenByServiceWorkerCountBucket != "0"
         {
             storageMirrorAfterAsyncDrainCategory =
-                "storageMirrorAfterAsyncDrainFixed"
+                "storageMirrorAfterAsyncDrainApplied"
         } else if swStorageWriteCapturedCountBucket != "0"
             && popupReadWrittenByServiceWorkerCountBucket == "0"
         {
@@ -1832,6 +1880,160 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         )
     }
 
+    private static func storageMirrorPathDiagnosticValue(
+        _ key: String,
+        in diagnostics: [String]
+    ) -> String {
+        let prefix = "storageMirrorPath.\(key)="
+        guard
+            let line = diagnostics.first(where: { $0.hasPrefix(prefix) })
+        else { return "notObserved" }
+        return String(line.dropFirst(prefix.count))
+    }
+
+    private static func deriveStorageMirrorPathDiagnostics(
+        bridgeSnapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?
+    ) -> (
+        storageGetMirrorAttemptedCategory: String,
+        lazySharedSessionWakeAttemptedCategory: String,
+        lazySharedSessionResolvedCategory: String,
+        mirrorCalledFromStorageGetCategory: String,
+        mirrorCalledFromRuntimeConnectCategory: String,
+        mirrorCalledFromRuntimeSendMessageCategory: String,
+        mirrorCalledFromPortMessageCategory: String,
+        exportedSwValueCountBucket: String,
+        hostBackedPreMirrorValueCountBucket: String,
+        popupBrokerPreMirrorValueCountBucket: String,
+        storeBrokerPreMirrorValueCountBucket: String,
+        mirrorExportedValueCountBucket: String,
+        mirrorChangedKeyCountBucket: String,
+        hostBackedChangedKeyCountBucket: String,
+        hostBackedImportSnapshotCategory: String,
+        popupBrokerMissingExportedValueCountBucket: String,
+        popupBrokerImportedExportedValueCountBucket: String,
+        popupBrokerPostMirrorValueCountBucket: String,
+        popupHydrationCategory: String,
+        popupBrokerRefreshAfterMirrorCategory: String,
+        onChangedFromMirrorDispatchCategory: String,
+        popupReadAfterMirrorCategory: String,
+        storageGetRequestedKeyMatchCategory: String,
+        storageGetResponseContainsMirroredValueCategory: String
+    ) {
+        let diagnostics = bridgeSnapshot?.diagnostics ?? []
+        return (
+            storageGetMirrorAttemptedCategory: storageMirrorPathDiagnosticValue(
+                "storageGetMirrorAttemptedCategory",
+                in: diagnostics
+            ),
+            lazySharedSessionWakeAttemptedCategory:
+                storageMirrorPathDiagnosticValue(
+                    "lazySharedSessionWakeAttemptedCategory",
+                    in: diagnostics
+                ),
+            lazySharedSessionResolvedCategory: storageMirrorPathDiagnosticValue(
+                "lazySharedSessionResolvedCategory",
+                in: diagnostics
+            ),
+            mirrorCalledFromStorageGetCategory: storageMirrorPathDiagnosticValue(
+                "mirrorCalledFromStorageGetCategory",
+                in: diagnostics
+            ),
+            mirrorCalledFromRuntimeConnectCategory:
+                storageMirrorPathDiagnosticValue(
+                    "mirrorCalledFromRuntimeConnectCategory",
+                    in: diagnostics
+                ),
+            mirrorCalledFromRuntimeSendMessageCategory:
+                storageMirrorPathDiagnosticValue(
+                    "mirrorCalledFromRuntimeSendMessageCategory",
+                    in: diagnostics
+                ),
+            mirrorCalledFromPortMessageCategory:
+                storageMirrorPathDiagnosticValue(
+                    "mirrorCalledFromPortMessageCategory",
+                    in: diagnostics
+                ),
+            exportedSwValueCountBucket: storageMirrorPathDiagnosticValue(
+                "exportedSwValueCountBucket",
+                in: diagnostics
+            ),
+            hostBackedPreMirrorValueCountBucket:
+                storageMirrorPathDiagnosticValue(
+                    "hostBackedPreMirrorValueCountBucket",
+                    in: diagnostics
+                ),
+            popupBrokerPreMirrorValueCountBucket:
+                storageMirrorPathDiagnosticValue(
+                    "popupBrokerPreMirrorValueCountBucket",
+                    in: diagnostics
+                ),
+            storeBrokerPreMirrorValueCountBucket:
+                storageMirrorPathDiagnosticValue(
+                    "storeBrokerPreMirrorValueCountBucket",
+                    in: diagnostics
+                ),
+            mirrorExportedValueCountBucket: storageMirrorPathDiagnosticValue(
+                "mirrorExportedValueCountBucket",
+                in: diagnostics
+            ),
+            mirrorChangedKeyCountBucket: storageMirrorPathDiagnosticValue(
+                "mirrorChangedKeyCountBucket",
+                in: diagnostics
+            ),
+            hostBackedChangedKeyCountBucket: storageMirrorPathDiagnosticValue(
+                "hostBackedChangedKeyCountBucket",
+                in: diagnostics
+            ),
+            hostBackedImportSnapshotCategory: storageMirrorPathDiagnosticValue(
+                "hostBackedImportSnapshotCategory",
+                in: diagnostics
+            ),
+            popupBrokerMissingExportedValueCountBucket:
+                storageMirrorPathDiagnosticValue(
+                    "popupBrokerMissingExportedValueCountBucket",
+                    in: diagnostics
+                ),
+            popupBrokerImportedExportedValueCountBucket:
+                storageMirrorPathDiagnosticValue(
+                    "popupBrokerImportedExportedValueCountBucket",
+                    in: diagnostics
+                ),
+            popupBrokerPostMirrorValueCountBucket:
+                storageMirrorPathDiagnosticValue(
+                    "popupBrokerPostMirrorValueCountBucket",
+                    in: diagnostics
+                ),
+            popupHydrationCategory: storageMirrorPathDiagnosticValue(
+                "popupHydrationCategory",
+                in: diagnostics
+            ),
+            popupBrokerRefreshAfterMirrorCategory:
+                storageMirrorPathDiagnosticValue(
+                    "popupBrokerRefreshAfterMirrorCategory",
+                    in: diagnostics
+                ),
+            onChangedFromMirrorDispatchCategory:
+                storageMirrorPathDiagnosticValue(
+                    "onChangedFromMirrorDispatchCategory",
+                    in: diagnostics
+                ),
+            popupReadAfterMirrorCategory: storageMirrorPathDiagnosticValue(
+                "popupReadAfterMirrorCategory",
+                in: diagnostics
+            ),
+            storageGetRequestedKeyMatchCategory:
+                storageMirrorPathDiagnosticValue(
+                    "storageGetRequestedKeyMatchCategory",
+                    in: diagnostics
+                ),
+            storageGetResponseContainsMirroredValueCategory:
+                storageMirrorPathDiagnosticValue(
+                    "storageGetResponseContainsMirroredValueCategory",
+                    in: diagnostics
+                )
+        )
+    }
+
     private static func deriveStorageMirrorDiagnostics(
         bridgeSnapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?,
         correlation: ChromeMV3AppStateDependencyCorrelationSummary,
@@ -1887,13 +2089,33 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             bridgeSnapshot?.diagnostics.contains {
                 $0 == "serviceWorkerStorageMirror=applied"
             } ?? false
+        let popupHydratedFromExport =
+            storageMirrorPathDiagnosticValue(
+                "popupHydrationCategory",
+                in: bridgeSnapshot?.diagnostics ?? []
+            ) == "hydratedFromExport"
+        let popupImportedBucket =
+            storageMirrorPathDiagnosticValue(
+                "popupBrokerImportedExportedValueCountBucket",
+                in: bridgeSnapshot?.diagnostics ?? []
+            )
+        let popupImportedCount =
+            popupImportedBucket == "notObserved" ? 0 : bucketLowerBound(popupImportedBucket)
+        let responseContainsMirrored =
+            storageMirrorPathDiagnosticValue(
+                "storageGetResponseContainsMirroredValueCategory",
+                in: bridgeSnapshot?.diagnostics ?? []
+            ) == "containsMirroredValue"
         let swStorageWriteMirroredCountBucket: String
         if swWrites.isEmpty {
             swStorageWriteMirroredCountBucket = "0"
         } else if mirroredWriteCount > 0 {
             swStorageWriteMirroredCountBucket =
                 countBucket(mirroredWriteCount)
-        } else if mirrorApplied {
+        } else if responseContainsMirrored || popupImportedCount > 0 {
+            swStorageWriteMirroredCountBucket =
+                countBucket(max(popupImportedCount, swWrites.count))
+        } else if mirrorApplied || popupHydratedFromExport {
             swStorageWriteMirroredCountBucket =
                 countBucket(swWrites.count)
         } else {
@@ -1903,7 +2125,11 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             swStorageWriteCapturedCountBucket: countBucket(swWrites.count),
             swStorageWriteMirroredCountBucket: swStorageWriteMirroredCountBucket,
             popupReadWrittenByServiceWorkerCountBucket:
-                countBucket(mirroredWriteCount),
+                countBucket(
+                    mirroredWriteCount > 0
+                        ? mirroredWriteCount
+                        : (responseContainsMirrored ? swWrites.count : 0)
+                ),
             storageNamespaceMatchCategory:
                 namespaceMatched ? "namespaceMatched" : "notObserved",
             storageSnapshotImportedCategory:
@@ -2030,6 +2256,8 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             appInitializerUnresolvedAwaitCategory = "sdkLoadStillPending"
         } else if swStorageWriteCapturedCountBucket != "0"
             && popupReadWrittenByServiceWorkerCountBucket == "0"
+            && storageMigrationWriteVisibilityCategory
+                != "writeVisibleToPopup"
         {
             appInitializerUnresolvedAwaitCategory =
                 "serviceWorkerStorageWriteNotMirrored"
@@ -2243,8 +2471,20 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             storageMigrationReadCategory = "notObserved"
         }
 
+        let storageGetResponseContainsMirrored =
+            storageMirrorPathDiagnosticValue(
+                "storageGetResponseContainsMirroredValueCategory",
+                in: bridgeSnapshot?.diagnostics ?? []
+            ) == "containsMirroredValue"
+        let popupBrokerHydrated =
+            storageMirrorPathDiagnosticValue(
+                "popupHydrationCategory",
+                in: bridgeSnapshot?.diagnostics ?? []
+            ) == "hydratedFromExport"
         let storageMigrationWriteVisibilityCategory: String
         if serviceWorkerWrites > 0 {
+            storageMigrationWriteVisibilityCategory = "writeVisibleToPopup"
+        } else if storageGetResponseContainsMirrored || popupBrokerHydrated {
             storageMigrationWriteVisibilityCategory = "writeVisibleToPopup"
         } else if swWritesAfterConnect {
             storageMigrationWriteVisibilityCategory = "serviceWorkerWriteNotMirrored"
@@ -2352,6 +2592,9 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             bridgeSnapshot: bridgeSnapshot,
             correlation: correlation,
             storageLifecycleContext: storageLifecycleContext
+        )
+        let storageMirrorPathDiagnostics = deriveStorageMirrorPathDiagnostics(
+            bridgeSnapshot: bridgeSnapshot
         )
         let migrationReadsForAsyncDrain = migrationShapedPopupReads(
             in: bridgeSnapshot?.appStateDependencyTrace.storageOperations ?? []
@@ -2618,7 +2861,64 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             sdkLoadCompletionSignalCategory:
                 sdkLoadDiagnostics.sdkLoadCompletionSignalCategory,
             sdkLoadUnresolvedReasonCategory:
-                sdkLoadDiagnostics.sdkLoadUnresolvedReasonCategory
+                sdkLoadDiagnostics.sdkLoadUnresolvedReasonCategory,
+            storageGetMirrorAttemptedCategory:
+                storageMirrorPathDiagnostics.storageGetMirrorAttemptedCategory,
+            lazySharedSessionWakeAttemptedCategory:
+                storageMirrorPathDiagnostics
+                .lazySharedSessionWakeAttemptedCategory,
+            lazySharedSessionResolvedCategory:
+                storageMirrorPathDiagnostics.lazySharedSessionResolvedCategory,
+            mirrorCalledFromStorageGetCategory:
+                storageMirrorPathDiagnostics.mirrorCalledFromStorageGetCategory,
+            mirrorCalledFromRuntimeConnectCategory:
+                storageMirrorPathDiagnostics
+                .mirrorCalledFromRuntimeConnectCategory,
+            mirrorCalledFromRuntimeSendMessageCategory:
+                storageMirrorPathDiagnostics
+                .mirrorCalledFromRuntimeSendMessageCategory,
+            mirrorCalledFromPortMessageCategory:
+                storageMirrorPathDiagnostics
+                .mirrorCalledFromPortMessageCategory,
+            exportedSwValueCountBucket:
+                storageMirrorPathDiagnostics.exportedSwValueCountBucket,
+            hostBackedPreMirrorValueCountBucket:
+                storageMirrorPathDiagnostics.hostBackedPreMirrorValueCountBucket,
+            popupBrokerPreMirrorValueCountBucket:
+                storageMirrorPathDiagnostics.popupBrokerPreMirrorValueCountBucket,
+            storeBrokerPreMirrorValueCountBucket:
+                storageMirrorPathDiagnostics.storeBrokerPreMirrorValueCountBucket,
+            mirrorExportedValueCountBucket:
+                storageMirrorPathDiagnostics.mirrorExportedValueCountBucket,
+            mirrorChangedKeyCountBucket:
+                storageMirrorPathDiagnostics.mirrorChangedKeyCountBucket,
+            hostBackedChangedKeyCountBucket:
+                storageMirrorPathDiagnostics.hostBackedChangedKeyCountBucket,
+            hostBackedImportSnapshotCategory:
+                storageMirrorPathDiagnostics.hostBackedImportSnapshotCategory,
+            popupBrokerMissingExportedValueCountBucket:
+                storageMirrorPathDiagnostics
+                .popupBrokerMissingExportedValueCountBucket,
+            popupBrokerImportedExportedValueCountBucket:
+                storageMirrorPathDiagnostics
+                .popupBrokerImportedExportedValueCountBucket,
+            popupBrokerPostMirrorValueCountBucket:
+                storageMirrorPathDiagnostics.popupBrokerPostMirrorValueCountBucket,
+            popupHydrationCategory:
+                storageMirrorPathDiagnostics.popupHydrationCategory,
+            popupBrokerRefreshAfterMirrorCategory:
+                storageMirrorPathDiagnostics
+                .popupBrokerRefreshAfterMirrorCategory,
+            onChangedFromMirrorDispatchCategory:
+                storageMirrorPathDiagnostics
+                .onChangedFromMirrorDispatchCategory,
+            popupReadAfterMirrorCategory:
+                storageMirrorPathDiagnostics.popupReadAfterMirrorCategory,
+            storageGetRequestedKeyMatchCategory:
+                storageMirrorPathDiagnostics.storageGetRequestedKeyMatchCategory,
+            storageGetResponseContainsMirroredValueCategory:
+                storageMirrorPathDiagnostics
+                .storageGetResponseContainsMirroredValueCategory
         )
     }
 
@@ -3058,7 +3358,31 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             sdkAsyncContinuationCategory: "",
             sdkTimerAwaitCategory: "",
             sdkLoadCompletionSignalCategory: "",
-            sdkLoadUnresolvedReasonCategory: ""
+            sdkLoadUnresolvedReasonCategory: "",
+            storageGetMirrorAttemptedCategory: "",
+            lazySharedSessionWakeAttemptedCategory: "",
+            lazySharedSessionResolvedCategory: "",
+            mirrorCalledFromStorageGetCategory: "",
+            mirrorCalledFromRuntimeConnectCategory: "",
+            mirrorCalledFromRuntimeSendMessageCategory: "",
+            mirrorCalledFromPortMessageCategory: "",
+            exportedSwValueCountBucket: "",
+            hostBackedPreMirrorValueCountBucket: "",
+            popupBrokerPreMirrorValueCountBucket: "",
+            storeBrokerPreMirrorValueCountBucket: "",
+            mirrorExportedValueCountBucket: "",
+            mirrorChangedKeyCountBucket: "",
+            hostBackedChangedKeyCountBucket: "",
+            hostBackedImportSnapshotCategory: "",
+            popupBrokerMissingExportedValueCountBucket: "",
+            popupBrokerImportedExportedValueCountBucket: "",
+            popupBrokerPostMirrorValueCountBucket: "",
+            popupHydrationCategory: "",
+            popupBrokerRefreshAfterMirrorCategory: "",
+            onChangedFromMirrorDispatchCategory: "",
+            popupReadAfterMirrorCategory: "",
+            storageGetRequestedKeyMatchCategory: "",
+            storageGetResponseContainsMirroredValueCategory: ""
         ).logLines.map { line in
             String(line.prefix(while: { $0 != "=" })) + "="
         }

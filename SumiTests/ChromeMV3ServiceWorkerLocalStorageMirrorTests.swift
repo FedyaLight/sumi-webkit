@@ -85,17 +85,17 @@ final class ChromeMV3ServiceWorkerLocalStorageMirrorTests: XCTestCase {
                 persistenceMode: .hostBacked(rootURL: storageRoot)
             )
         )
-        session.setServiceWorkerLocalStorageMirror {
+        session.setServiceWorkerLocalStorageMirror { popupBroker in
             guard
                 let exported = harness.exportStorageValues(area: .local)
-            else { return nil }
-            let mirror = ChromeMV3ServiceWorkerLocalStorageMirror
-                .mirrorExportedValues(
+            else { return .empty }
+            return ChromeMV3ServiceWorkerLocalStorageMirror
+                .reconcileServiceWorkerExportIntoBrokers(
                     exported,
-                    into: &brokerHolder.broker,
+                    hostBackedBroker: &brokerHolder.broker,
+                    popupBroker: &popupBroker,
                     writerContextCategory: "popupWakeSW"
                 )
-            return mirror.onChangedPayload
         }
 
         let handler = ChromeMV3PopupOptionsJSBridgeHandler(
@@ -361,40 +361,13 @@ final class ChromeMV3ServiceWorkerLocalStorageMirrorTests: XCTestCase {
             to: session,
             clearingExisting: true
         )
-
-        let namespace = ChromeMV3StorageNamespace(
+        try registerAsyncStorageMirror(
+            harness: harness,
+            session: session,
+            storageRoot: storageRoot,
             profileID: profileID,
-            extensionID: extensionID,
-            area: .local
+            extensionID: extensionID
         )
-        final class BrokerHolder: @unchecked Sendable {
-            var broker: ChromeMV3StorageBroker
-            init(broker: ChromeMV3StorageBroker) {
-                self.broker = broker
-            }
-        }
-        let brokerHolder = BrokerHolder(
-            broker: ChromeMV3StorageBroker(
-                namespace: namespace,
-                persistenceMode: .hostBacked(rootURL: storageRoot)
-            )
-        )
-        session.setServiceWorkerLocalStorageMirror {
-            let asyncFlush =
-                ChromeMV3ServiceWorkerLocalStorageMirror
-                .flushDeferredServiceWorkerWork(in: harness)
-            XCTAssertTrue(asyncFlush.attempted)
-            guard
-                let exported = harness.exportStorageValues(area: .local)
-            else { return nil }
-            let mirror = ChromeMV3ServiceWorkerLocalStorageMirror
-                .mirrorExportedValues(
-                    exported,
-                    into: &brokerHolder.broker,
-                    writerContextCategory: "popupWakeSW"
-                )
-            return mirror.onChangedPayload
-        }
 
         let handler = ChromeMV3PopupOptionsJSBridgeHandler(
             configuration: configuration(
@@ -426,6 +399,454 @@ final class ChromeMV3ServiceWorkerLocalStorageMirrorTests: XCTestCase {
         )
     }
 
+    func testLazyControlledPopupPathMirrorsIntoPopupBrokerOnStorageGetAfterAsyncWrite()
+        throws
+    {
+        let storageRoot = try makeTemporaryDirectory()
+        let profileID = "live-path-mirror-profile"
+        let extensionID = "live-path-mirror-extension"
+        let harness = try makeHarnessWritingStorageAsyncOnConnect(
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        let session = try XCTUnwrap(
+            ChromeMV3ServiceWorkerSharedLifecycleSessionRegistry()
+                .session(profileID: profileID, extensionID: extensionID)
+        )
+        harness.attachCapturedListenerDispatchers(
+            to: session,
+            clearingExisting: true
+        )
+        try registerAsyncStorageMirror(
+            harness: harness,
+            session: session,
+            storageRoot: storageRoot,
+            profileID: profileID,
+            extensionID: extensionID
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                extensionID: extensionID,
+                profileID: profileID,
+                allowlist: .controlledActionPopupPolicy,
+                storageLocalRootPath: storageRoot.path
+            ),
+            sharedLifecycleSessionProvider: { session }
+        )
+
+        let connect = handler.handle(request(
+            namespace: "runtime",
+            methodName: "connect",
+            arguments: [.object(["name": .string("live-path-mirror")])],
+            invocationMode: .fireAndForget
+        ))
+        XCTAssertTrue(connect.succeeded)
+
+        let read = handler.handle(request(
+            namespace: "storage",
+            methodName: "local.get",
+            arguments: [.string("mv3AsyncStartupStorageMarker")]
+        ))
+        XCTAssertTrue(read.succeeded)
+        XCTAssertEqual(
+            stringValue(
+                objectValue(read.resultPayload)?["mv3AsyncStartupStorageMarker"]
+            ),
+            "async-startup"
+        )
+        let snapshot = handler.diagnosticsSnapshot
+        XCTAssertTrue(
+            snapshot.diagnostics.contains(
+                "storageMirrorPath.storageGetMirrorAttemptedCategory=attempted"
+            )
+        )
+        XCTAssertTrue(
+            snapshot.diagnostics.contains(
+                "storageMirrorPath.mirrorCalledFromStorageGetCategory=called"
+            )
+        )
+        XCTAssertTrue(
+            snapshot.diagnostics.contains(
+                "storageMirrorPath.lazySharedSessionResolvedCategory=resolved"
+            )
+        )
+        XCTAssertTrue(
+            snapshot.diagnostics.contains {
+                $0.hasPrefix(
+                    "storageMirrorPath.mirrorChangedKeyCountBucket="
+                ) && $0 != "storageMirrorPath.mirrorChangedKeyCountBucket=0"
+            }
+                || snapshot.diagnostics.contains(
+                    "storageMirrorPath.popupReadAfterMirrorCategory=readPopulatedAfterMirror"
+                )
+        )
+    }
+
+    func testSameLifecycleSessionCapturesAndMirrorsServiceWorkerWrite() throws {
+        let storageRoot = try makeTemporaryDirectory()
+        let profileID = "same-session-mirror-profile"
+        let extensionID = "same-session-mirror-extension"
+        let harness = try makeHarnessWritingStorageAsyncOnConnect(
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        let session = try XCTUnwrap(
+            ChromeMV3ServiceWorkerSharedLifecycleSessionRegistry()
+                .session(profileID: profileID, extensionID: extensionID)
+        )
+        harness.attachCapturedListenerDispatchers(
+            to: session,
+            clearingExisting: true
+        )
+        try registerAsyncStorageMirror(
+            harness: harness,
+            session: session,
+            storageRoot: storageRoot,
+            profileID: profileID,
+            extensionID: extensionID
+        )
+        var resolvedSessions: [String] = []
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                extensionID: extensionID,
+                profileID: profileID,
+                allowlist: .controlledActionPopupPolicy,
+                storageLocalRootPath: storageRoot.path
+            ),
+            sharedLifecycleSessionProvider: {
+                resolvedSessions.append(session.key.lifecycleSessionID)
+                return session
+            }
+        )
+
+        _ = handler.handle(request(
+            namespace: "runtime",
+            methodName: "connect",
+            arguments: [.object(["name": .string("same-session")])],
+            invocationMode: .fireAndForget
+        ))
+        let read = handler.handle(request(
+            namespace: "storage",
+            methodName: "local.get",
+            arguments: [.string("mv3AsyncStartupStorageMarker")]
+        ))
+        XCTAssertEqual(resolvedSessions.count, 1)
+        XCTAssertEqual(resolvedSessions.first, session.key.lifecycleSessionID)
+        XCTAssertEqual(
+            stringValue(
+                objectValue(read.resultPayload)?["mv3AsyncStartupStorageMarker"]
+            ),
+            "async-startup"
+        )
+    }
+
+    func testMirroredWriteDispatchesStorageOnChangedToPopupListeners() throws {
+        let storageRoot = try makeTemporaryDirectory()
+        let profileID = "mirror-onchanged-profile"
+        let extensionID = "mirror-onchanged-extension"
+        let harness = try makeHarnessWritingStorageAsyncOnConnect(
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        let session = try XCTUnwrap(
+            ChromeMV3ServiceWorkerSharedLifecycleSessionRegistry()
+                .session(profileID: profileID, extensionID: extensionID)
+        )
+        harness.attachCapturedListenerDispatchers(
+            to: session,
+            clearingExisting: true
+        )
+        try registerAsyncStorageMirror(
+            harness: harness,
+            session: session,
+            storageRoot: storageRoot,
+            profileID: profileID,
+            extensionID: extensionID
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                extensionID: extensionID,
+                profileID: profileID,
+                allowlist: .controlledActionPopupPolicy,
+                storageLocalRootPath: storageRoot.path
+            ),
+            sharedLifecycleSession: session
+        )
+
+        let connect = handler.handle(request(
+            namespace: "runtime",
+            methodName: "connect",
+            arguments: [.object(["name": .string("mirror-onchanged")])],
+            invocationMode: .fireAndForget
+        ))
+        XCTAssertTrue(connect.succeeded)
+        XCTAssertNotNil(connect.onChangedPayload)
+        XCTAssertTrue(connect.onChangedPayload?.changedKeys.isEmpty == false)
+        let read = handler.handle(request(
+            namespace: "storage",
+            methodName: "local.get",
+            arguments: [.string("mv3AsyncStartupStorageMarker")]
+        ))
+        XCTAssertTrue(read.succeeded)
+        XCTAssertEqual(
+            stringValue(
+                objectValue(read.resultPayload)?["mv3AsyncStartupStorageMarker"]
+            ),
+            "async-startup"
+        )
+        XCTAssertGreaterThan(
+            handler.diagnosticsSnapshot.storageOnChangedPayloadCount,
+            0
+        )
+    }
+
+    func testDisabledStorageReadDoesNotWakeSharedLifecycleSession() throws {
+        let storageRoot = try makeTemporaryDirectory()
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                extensionID: "guard-extension",
+                profileID: "guard-profile",
+                allowlist: .defaultPolicy,
+                storageLocalRootPath: storageRoot.path
+            )
+        )
+        let read = handler.handle(request(
+            namespace: "storage",
+            methodName: "local.get",
+            arguments: [.string("fixtureMarker")]
+        ))
+        XCTAssertTrue(read.succeeded)
+        XCTAssertFalse(
+            handler.diagnosticsSnapshot.diagnostics.contains {
+                $0.hasPrefix(
+                    "storageMirrorPath.lazySharedSessionWakeAttemptedCategory=attempted"
+                )
+            }
+        )
+        XCTAssertFalse(
+            handler.diagnosticsSnapshot.diagnostics.contains {
+                $0.hasPrefix(
+                    "storageMirrorPath.mirrorCalledFromStorageGetCategory=called"
+                )
+            }
+        )
+    }
+
+    func testStalePopupBrokerHydratesFromExportWhenHostBackedImportHasNoChanges()
+        throws
+    {
+        let storageRoot = try makeTemporaryDirectory()
+        let profileID = "stale-hydration-profile"
+        let extensionID = "stale-hydration-extension"
+        let namespace = ChromeMV3StorageNamespace(
+            profileID: profileID,
+            extensionID: extensionID,
+            area: .local
+        )
+        let harness = try makeHarnessExportingSeededStorage(
+            extensionID: extensionID,
+            profileID: profileID,
+            seededValues: [
+                "mv3StaleHydrationMarker": .string("from-sw"),
+            ]
+        )
+        let session = try XCTUnwrap(
+            ChromeMV3ServiceWorkerSharedLifecycleSessionRegistry()
+                .session(profileID: profileID, extensionID: extensionID)
+        )
+        harness.attachCapturedListenerDispatchers(
+            to: session,
+            clearingExisting: true
+        )
+        final class BrokerHolder: @unchecked Sendable {
+            var broker: ChromeMV3StorageBroker
+            init(broker: ChromeMV3StorageBroker) {
+                self.broker = broker
+            }
+        }
+        let brokerHolder = BrokerHolder(
+            broker: ChromeMV3StorageBroker(
+                namespace: namespace,
+                persistenceMode: .hostBacked(rootURL: storageRoot)
+            )
+        )
+        session.setServiceWorkerLocalStorageMirror { popupBroker in
+            guard
+                let exported = harness.exportStorageValues(area: .local)
+            else { return .empty }
+            return ChromeMV3ServiceWorkerLocalStorageMirror
+                .reconcileServiceWorkerExportIntoBrokers(
+                    exported,
+                    hostBackedBroker: &brokerHolder.broker,
+                    popupBroker: &popupBroker,
+                    writerContextCategory: "popupWakeSW"
+                )
+        }
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                extensionID: extensionID,
+                profileID: profileID,
+                allowlist: .controlledActionPopupPolicy,
+                storageLocalRootPath: storageRoot.path
+            ),
+            sharedLifecycleSession: session
+        )
+        let seededValues: [String: ChromeMV3StorageValue] = [
+            "mv3StaleHydrationMarker": .string("from-sw"),
+        ]
+        _ = ChromeMV3ServiceWorkerLocalStorageMirror.mirrorExportedValues(
+            seededValues,
+            into: &brokerHolder.broker,
+            writerContextCategory: "testSeed"
+        )
+        let read = handler.handle(request(
+            namespace: "storage",
+            methodName: "local.get",
+            arguments: [.string("mv3StaleHydrationMarker")]
+        ))
+        XCTAssertTrue(read.succeeded)
+        XCTAssertEqual(
+            stringValue(
+                objectValue(read.resultPayload)?["mv3StaleHydrationMarker"]
+            ),
+            "from-sw"
+        )
+        let snapshot = handler.diagnosticsSnapshot
+        XCTAssertTrue(
+            snapshot.diagnostics.contains(
+                "storageMirrorPath.hostBackedImportSnapshotCategory=noChangesImported"
+            )
+                || snapshot.diagnostics.contains(
+                    "storageMirrorPath.popupHydrationCategory=alreadyCurrent"
+                )
+        )
+        XCTAssertTrue(
+            snapshot.diagnostics.contains(
+                "storageMirrorPath.storageGetResponseContainsMirroredValueCategory=containsMirroredValue"
+            )
+        )
+        XCTAssertTrue(
+            snapshot.diagnostics.contains {
+                $0.hasPrefix(
+                    "storageMirrorPath.popupBrokerImportedExportedValueCountBucket="
+                ) && $0 != "storageMirrorPath.popupBrokerImportedExportedValueCountBucket=0"
+            }
+                || snapshot.diagnostics.contains(
+                    "storageMirrorPath.popupHydrationCategory=alreadyCurrent"
+                )
+        )
+    }
+
+    func testAlreadySyncedBrokersDoNotDispatchDuplicateStorageOnChangedOnStorageGet()
+        throws
+    {
+        let storageRoot = try makeTemporaryDirectory()
+        let profileID = "no-duplicate-onchanged-profile"
+        let extensionID = "no-duplicate-onchanged-extension"
+        let harness = try makeHarnessExportingSeededStorage(
+            extensionID: extensionID,
+            profileID: profileID,
+            seededValues: [
+                "mv3DuplicateOnChangedMarker": .string("stable"),
+            ]
+        )
+        let session = try XCTUnwrap(
+            ChromeMV3ServiceWorkerSharedLifecycleSessionRegistry()
+                .session(profileID: profileID, extensionID: extensionID)
+        )
+        harness.attachCapturedListenerDispatchers(
+            to: session,
+            clearingExisting: true
+        )
+        try registerAsyncStorageMirror(
+            harness: harness,
+            session: session,
+            storageRoot: storageRoot,
+            profileID: profileID,
+            extensionID: extensionID
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                extensionID: extensionID,
+                profileID: profileID,
+                allowlist: .controlledActionPopupPolicy,
+                storageLocalRootPath: storageRoot.path
+            ),
+            sharedLifecycleSession: session
+        )
+        _ = handler.handle(request(
+            namespace: "storage",
+            methodName: "local.get",
+            arguments: [.string("mv3DuplicateOnChangedMarker")]
+        ))
+        let onChangedBefore =
+            handler.diagnosticsSnapshot.storageOnChangedPayloadCount
+        _ = handler.handle(request(
+            namespace: "storage",
+            methodName: "local.get",
+            arguments: [.string("mv3DuplicateOnChangedMarker")]
+        ))
+        XCTAssertEqual(
+            handler.diagnosticsSnapshot.storageOnChangedPayloadCount,
+            onChangedBefore
+        )
+    }
+
+    func testStoreBrokerAlreadySyncedStillMirrorsIntoSeparatePopupBrokerOnStorageGet()
+        throws
+    {
+        let storageRoot = try makeTemporaryDirectory()
+        let profileID = "dual-broker-mirror-profile"
+        let extensionID = "dual-broker-mirror-extension"
+        let harness = try makeHarnessWritingStorageAsyncOnConnect(
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        let session = try XCTUnwrap(
+            ChromeMV3ServiceWorkerSharedLifecycleSessionRegistry()
+                .session(profileID: profileID, extensionID: extensionID)
+        )
+        harness.attachCapturedListenerDispatchers(
+            to: session,
+            clearingExisting: true
+        )
+        try registerAsyncStorageMirror(
+            harness: harness,
+            session: session,
+            storageRoot: storageRoot,
+            profileID: profileID,
+            extensionID: extensionID
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                extensionID: extensionID,
+                profileID: profileID,
+                allowlist: .controlledActionPopupPolicy,
+                storageLocalRootPath: storageRoot.path
+            ),
+            sharedLifecycleSession: session
+        )
+
+        _ = handler.handle(request(
+            namespace: "runtime",
+            methodName: "connect",
+            arguments: [.object(["name": .string("dual-broker")])],
+            invocationMode: .fireAndForget
+        ))
+
+        let read = handler.handle(request(
+            namespace: "storage",
+            methodName: "local.get",
+            arguments: [.string("mv3AsyncStartupStorageMarker")]
+        ))
+        XCTAssertEqual(
+            stringValue(
+                objectValue(read.resultPayload)?["mv3AsyncStartupStorageMarker"]
+            ),
+            "async-startup"
+        )
+    }
+
     func testBoundedAsyncFlushDoesNotRunAwayOnRecursiveTimers() throws {
         let harness = try makeHarnessWithRunawayTimers(
             extensionID: "runaway-timer-extension",
@@ -449,6 +870,56 @@ final class ChromeMV3ServiceWorkerLocalStorageMirrorTests: XCTestCase {
         XCTAssertLessThanOrEqual(flush.iterationCount, 8)
         XCTAssertLessThanOrEqual(flush.totalTimerCallbacks, 400)
         XCTAssertTrue(flush.budgetExceeded || flush.iterationCount <= 8)
+    }
+
+    private func makeHarnessExportingSeededStorage(
+        extensionID: String,
+        profileID: String,
+        seededValues: [String: ChromeMV3StorageValue]
+    ) throws -> ChromeMV3ServiceWorkerJSExecutionHarness {
+        let fixtureDirectory = try makeTemporaryDirectory()
+            .appendingPathComponent("extension", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: fixtureDirectory,
+            withIntermediateDirectories: true
+        )
+        let manifest: [String: Any] = [
+            "manifest_version": 3,
+            "name": "Seeded Storage Export Harness",
+            "version": "1.0.0",
+            "background": [
+                "service_worker": "background.js",
+            ],
+        ]
+        try JSONSerialization.data(
+            withJSONObject: manifest,
+            options: [.prettyPrinted, .sortedKeys]
+        ).write(
+            to: fixtureDirectory.appendingPathComponent("manifest.json"),
+            options: [.atomic]
+        )
+        try """
+        chrome.runtime.onConnect.addListener((port) => {
+          port.postMessage({ type: "seeded-storage-ready" });
+        });
+        """.write(
+            to: fixtureDirectory.appendingPathComponent("background.js"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let harness = try stagedHarness(
+            fixtureDirectory: fixtureDirectory,
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        XCTAssertTrue(
+            ChromeMV3ServiceWorkerLocalStorageMirror.seedBrokerSnapshot(
+                seededValues,
+                into: harness,
+                area: .local
+            )
+        )
+        return harness
     }
 
     private func makeHarnessWritingStorageAsyncOnConnect(
@@ -603,21 +1074,21 @@ final class ChromeMV3ServiceWorkerLocalStorageMirrorTests: XCTestCase {
                 persistenceMode: .hostBacked(rootURL: storageRoot)
             )
         )
-        session.setServiceWorkerLocalStorageMirror {
+        session.setServiceWorkerLocalStorageMirror { popupBroker in
             let asyncFlush =
                 ChromeMV3ServiceWorkerLocalStorageMirror
                 .flushDeferredServiceWorkerWork(in: harness)
             XCTAssertTrue(asyncFlush.attempted)
             guard
                 let exported = harness.exportStorageValues(area: .local)
-            else { return nil }
-            let mirror = ChromeMV3ServiceWorkerLocalStorageMirror
-                .mirrorExportedValues(
+            else { return .empty }
+            return ChromeMV3ServiceWorkerLocalStorageMirror
+                .reconcileServiceWorkerExportIntoBrokers(
                     exported,
-                    into: &brokerHolder.broker,
+                    hostBackedBroker: &brokerHolder.broker,
+                    popupBroker: &popupBroker,
                     writerContextCategory: "popupWakeSW"
                 )
-            return mirror.onChangedPayload
         }
     }
 
