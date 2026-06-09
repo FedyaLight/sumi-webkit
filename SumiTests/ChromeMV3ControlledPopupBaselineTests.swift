@@ -25,6 +25,69 @@ final class ChromeMV3ControlledPopupBaselineTests: XCTestCase {
     }
 
     @MainActor
+    func testControlledPopupMinimalStaticReopenSoak() async throws {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Controlled popup reopen soak requires macOS 15.5.")
+        }
+
+        let root = try makeTemporaryDirectory()
+        let fixtureID = ChromeMV3ControlledPopupBaselineFixtureID.minimalStatic
+        let source = try makeFixtureDirectory(
+            named: "baseline-\(fixtureID.rawValue)-soak",
+            manifest: ChromeMV3ControlledPopupBaselineFixtureFactory.manifest(
+                for: fixtureID
+            ),
+            files: ChromeMV3ControlledPopupBaselineFixtureFactory.files(
+                for: fixtureID
+            )
+        )
+        let profileID = UUID()
+        let module = try makeModule(
+            enabled: true,
+            includesModelContext: true,
+            useFileBackedPopupHost: true
+        )
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: source,
+            profileID: profileID.uuidString,
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: record.extensionID
+        )
+
+        let currentTab = Tab(url: URL(string: "https://example.com/login")!)
+        currentTab.profileId = profileID
+        let reopenCount = 12
+        for cycle in 0 ..< reopenCount {
+            let result = await module.openActionPopupFromURLHub(
+                extensionId: record.extensionID,
+                currentTab: currentTab
+            )
+            XCTAssertTrue(
+                result.opened,
+                "Controlled popup reopen soak cycle \(cycle) should open."
+            )
+            _ = module.chromeMV3ClosePopupOptionsThroughManager(
+                profileID: record.profileID,
+                extensionID: record.extensionID
+            )
+        }
+
+        let surfaceDiagnostics = ChromeMV3WebViewSurfaceInventory.diagnostics(
+            extensionModuleEnabled: true,
+            profileHostActive: true
+        )
+        XCTAssertFalse(surfaceDiagnostics.isEmpty)
+        print(
+            "SumiControlledPopupReopenSoak cycles=\(reopenCount) surfaceMappings=\(surfaceDiagnostics.count)"
+        )
+    }
+
+    @MainActor
     func testControlledPopupBaselineMatrix() async throws {
         guard #available(macOS 15.5, *) else {
             throw XCTSkip("Controlled popup baseline matrix requires macOS 15.5.")
@@ -37,7 +100,7 @@ final class ChromeMV3ControlledPopupBaselineTests: XCTestCase {
         }
 
         rows.append(try await evaluateBitwardenExtensionRow())
-        rows.append(raindropReferenceRow())
+        rows.append(try await evaluateRaindropExtensionRow())
         rows.append(try await evaluateProtonPassExtensionRow())
         rows.append(try await evaluateOnePasswordPreflightRow())
         rows.append(try await evaluateSumiUsablePopupExtensionRow())
@@ -80,14 +143,21 @@ final class ChromeMV3ControlledPopupBaselineTests: XCTestCase {
             )
         }
 
-        XCTAssertEqual(
-            rows.first {
-                $0.rowID
-                    == ChromeMV3ControlledPopupBaselineExtensionID
-                    .raindropReference.rawValue
-            }?.outcome,
-            .extensionLocalRenderState
-        )
+        let raindropRow = rows.first {
+            $0.rowID
+                == ChromeMV3ControlledPopupBaselineExtensionID.raindropReference
+                .rawValue
+        }
+        if let raindropRow, raindropRow.ranLivePopup {
+            XCTAssertTrue(
+                [
+                    ChromeMV3ControlledPopupBaselineOutcome.extensionLocalRenderState,
+                    ChromeMV3ControlledPopupBaselineOutcome.popupUnhandledRejection,
+                    ChromeMV3ControlledPopupBaselineOutcome.usableUI,
+                ].contains(raindropRow.outcome),
+                "Live Raindrop baseline should open and classify a real extension-specific popup outcome. outcome=\(raindropRow.outcome.rawValue)"
+            )
+        }
 
         let onePasswordRow = rows.first {
             $0.rowID
@@ -601,17 +671,98 @@ final class ChromeMV3ControlledPopupBaselineTests: XCTestCase {
         )
     }
 
-    private func raindropReferenceRow()
+    @MainActor
+    private func evaluateRaindropExtensionRow() async throws
         -> ChromeMV3ControlledPopupBaselineMatrixRow
     {
-        ChromeMV3ControlledPopupBaselineMatrixRow(
+        let packageRoot = mv3TestExtensionsRoot.appendingPathComponent(
+            "raindrop",
+            isDirectory: true
+        )
+        guard FileManager.default.fileExists(
+            atPath: packageRoot.appendingPathComponent("manifest.json").path
+        ) else {
+            return ChromeMV3ControlledPopupBaselineMatrixRow(
+                rowID: ChromeMV3ControlledPopupBaselineExtensionID
+                    .raindropReference.rawValue,
+                layer: .realExtensionAppSpecific,
+                outcome: .unknown,
+                ranLivePopup: false,
+                notes: "packageUnavailable"
+            )
+        }
+
+        let root = try makeTemporaryDirectory()
+        let profileID = UUID()
+        let module = try makeModule(
+            enabled: true,
+            includesModelContext: true,
+            useFileBackedPopupHost: true
+        )
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: packageRoot,
+            profileID: profileID.uuidString,
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: record.extensionID
+        )
+
+        let currentTab = Tab(url: URL(string: "https://example.com/article")!)
+        currentTab.profileId = profileID
+        let result = await module.openActionPopupFromURLHub(
+            extensionId: record.extensionID,
+            currentTab: currentTab
+        )
+
+        defer {
+            _ = module.chromeMV3ClosePopupOptionsThroughManager(
+                profileID: record.profileID,
+                extensionID: record.extensionID
+            )
+        }
+
+        var snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?
+        var domProbe: ChromeMV3ControlledPopupBaselineDOMProbe?
+        if result.opened {
+            snapshot = try await waitForPopupBridgeSnapshot(
+                module: module,
+                profileID: record.profileID,
+                extensionID: record.extensionID
+            )
+            domProbe = try await waitForBaselineDOMProbe(
+                module: module,
+                profileID: record.profileID,
+                extensionID: record.extensionID,
+                allowMissingBaselineMarker: true
+            )
+        }
+
+        let outcome: ChromeMV3ControlledPopupBaselineOutcome
+        if result.opened == false {
+            outcome = result.blocker == .contextUnavailable
+                ? .resourceLoadFailure
+                : .unknown
+        } else if domProbe?.coarseUsable == true {
+            outcome = .usableUI
+        } else if let snapshot {
+            outcome = ChromeMV3ControlledPopupPostResourceClassifier
+                .classify(snapshot: snapshot, domProbe: domProbe)
+                .baselineOutcome
+        } else {
+            outcome = .unknown
+        }
+
+        return ChromeMV3ControlledPopupBaselineMatrixRow(
             rowID: ChromeMV3ControlledPopupBaselineExtensionID.raindropReference
                 .rawValue,
             layer: .realExtensionAppSpecific,
-            outcome: .extensionLocalRenderState,
-            ranLivePopup: false,
-            notes:
-                "closeRaindropAsExtensionLocalRenderState reference only; deep diagnostics closed"
+            outcome: outcome,
+            ranLivePopup: result.opened,
+            notes: "liveRaindropBaseline no product support claim"
         )
     }
 

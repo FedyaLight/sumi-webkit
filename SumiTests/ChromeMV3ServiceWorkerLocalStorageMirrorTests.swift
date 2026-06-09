@@ -215,6 +215,98 @@ final class ChromeMV3ServiceWorkerLocalStorageMirrorTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(drained.iterationCount, 0)
     }
 
+    func testExportLocalStorageAfterDrainingDeferredWorkStabilizesAsyncWrites()
+        throws
+    {
+        let harness = try makeHarnessWritingStorageAsyncOnConnect(
+            extensionID: "export-stabilize-extension",
+            profileID: "export-stabilize-profile"
+        )
+        XCTAssertEqual(harness.start().status, .running)
+        _ = harness.connectRuntime(
+            name: "export-stabilize",
+            sender: ChromeMV3ServiceWorkerEventSenderMetadata(
+                tabID: nil,
+                frameID: nil,
+                documentID: nil,
+                sourceURL: "chrome-extension://export-stabilize-extension/",
+                urlRedacted: false,
+                redactionState: "harness sender"
+            )
+        )
+        let exported =
+            ChromeMV3ServiceWorkerLocalStorageMirror
+            .exportLocalStorageAfterDrainingDeferredWork(in: harness)
+        XCTAssertEqual(
+            exported["mv3AsyncStartupStorageMarker"],
+            .string("async-startup")
+        )
+    }
+
+    func testHostStorageReconcilerMirrorsAsyncServiceWorkerWriteAfterDispatch()
+        throws
+    {
+        let storageRoot = try makeTemporaryDirectory()
+        let profileID = "host-reconcile-profile"
+        let extensionID = "host-reconcile-extension"
+        let harness = try makeHarnessWritingStorageAsyncOnConnect(
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        let session = try XCTUnwrap(
+            ChromeMV3ServiceWorkerSharedLifecycleSessionRegistry()
+                .session(profileID: profileID, extensionID: extensionID)
+        )
+        harness.attachCapturedListenerDispatchers(
+            to: session,
+            clearingExisting: true
+        )
+        let namespace = ChromeMV3StorageNamespace(
+            profileID: profileID,
+            extensionID: extensionID,
+            area: .local
+        )
+        final class BrokerHolder: @unchecked Sendable {
+            var broker: ChromeMV3StorageBroker
+            init(broker: ChromeMV3StorageBroker) {
+                self.broker = broker
+            }
+        }
+        let brokerHolder = BrokerHolder(
+            broker: ChromeMV3StorageBroker(
+                namespace: namespace,
+                persistenceMode: .hostBacked(rootURL: storageRoot)
+            )
+        )
+        session.setServiceWorkerHostStorageReconciler {
+            let exported = ChromeMV3ServiceWorkerLocalStorageMirror
+                .exportLocalStorageAfterDrainingDeferredWork(in: harness)
+            _ = ChromeMV3ServiceWorkerLocalStorageMirror.mirrorExportedValues(
+                exported,
+                into: &brokerHolder.broker,
+                writerContextCategory: "serviceWorkerDispatch"
+            )
+        }
+        _ = harness.connectRuntime(
+            name: "host-reconcile",
+            sender: ChromeMV3ServiceWorkerEventSenderMetadata(
+                tabID: nil,
+                frameID: nil,
+                documentID: nil,
+                sourceURL: "chrome-extension://\(extensionID)/",
+                urlRedacted: false,
+                redactionState: "harness sender"
+            )
+        )
+        session.reconcileServiceWorkerHostStorageAfterDispatchIfNeeded()
+        XCTAssertEqual(
+            brokerHolder.broker.exportSnapshot().values[
+                "mv3AsyncStartupStorageMarker"
+            ],
+            .string("async-startup")
+        )
+    }
+
     func testLazySessionProviderMirrorsAsyncServiceWorkerWriteOnStorageRead()
         throws
     {
@@ -734,6 +826,41 @@ final class ChromeMV3ServiceWorkerLocalStorageMirrorTests: XCTestCase {
                 || snapshot.diagnostics.contains(
                     "storageMirrorPath.popupHydrationCategory=alreadyCurrent"
                 )
+        )
+    }
+
+    func testHydrationProducesOnChangedWhenHostMirrorHasNoDelta() throws {
+        let namespace = ChromeMV3StorageNamespace(
+            profileID: "hydration-onchanged-profile",
+            extensionID: "hydration-onchanged-extension",
+            area: .local
+        )
+        var hostBroker = ChromeMV3StorageBroker(
+            namespace: namespace,
+            persistenceMode: .inMemory
+        )
+        var popupBroker = ChromeMV3StorageBroker(
+            namespace: namespace,
+            persistenceMode: .inMemory
+        )
+        _ = ChromeMV3ServiceWorkerLocalStorageMirror.mirrorExportedValues(
+            ["hydrationMarker": .string("from-sw")],
+            into: &hostBroker,
+            writerContextCategory: "testSeed"
+        )
+        let reconcile = ChromeMV3ServiceWorkerLocalStorageMirror
+            .reconcileServiceWorkerExportIntoBrokers(
+                ["hydrationMarker": .string("from-sw")],
+                hostBackedBroker: &hostBroker,
+                popupBroker: &popupBroker,
+                writerContextCategory: "popupWakeSW"
+            )
+        XCTAssertEqual(reconcile.hostBackedChangedKeyCount, 0)
+        XCTAssertEqual(reconcile.popupBrokerImportedExportedValueCount, 1)
+        XCTAssertNotNil(reconcile.onChangedPayload)
+        XCTAssertEqual(
+            reconcile.onChangedPayload?.changedKeys,
+            ["hydrationMarker"]
         )
     }
 

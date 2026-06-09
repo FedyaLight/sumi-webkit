@@ -234,6 +234,37 @@ private final class ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore {
                 into: &popupBroker
             )
         }
+        record.session.setServiceWorkerSessionStorageMirror {
+            [weak self] popupBroker in
+            guard let self else { return .empty }
+            return self.mirrorServiceWorkerSessionStorage(
+                for: recordKey,
+                into: &popupBroker
+            )
+        }
+        record.session.setServiceWorkerHostStorageReconciler {
+            [weak self] in
+            self?.reconcileServiceWorkerHostLocalStorageAfterDispatch(
+                for: recordKey
+            )
+        }
+    }
+
+    private func reconcileServiceWorkerHostLocalStorageAfterDispatch(
+        for recordKey: String
+    ) {
+        guard var record = records[recordKey] else { return }
+        let exported = ChromeMV3ServiceWorkerLocalStorageMirror
+            .exportLocalStorageAfterDrainingDeferredWork(in: record.harness)
+        _ = ChromeMV3ServiceWorkerLocalStorageMirror.mirrorExportedValues(
+            exported,
+            into: &record.localStorageBroker,
+            writerContextCategory: "serviceWorkerDispatch"
+        )
+        record.session.recordAppStateServiceWorkerSnapshot(
+            record.harness.snapshot
+        )
+        records[recordKey] = record
     }
 
     private func mirrorServiceWorkerLocalStorage(
@@ -241,14 +272,11 @@ private final class ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore {
         into popupBroker: inout ChromeMV3StorageBroker
     ) -> ChromeMV3ServiceWorkerLocalStorageMirrorCallbackResult {
         guard var record = records[recordKey] else { return .empty }
-        let asyncFlush = ChromeMV3ServiceWorkerLocalStorageMirror
-            .flushDeferredServiceWorkerWork(in: record.harness)
+        let exported = ChromeMV3ServiceWorkerLocalStorageMirror
+            .exportLocalStorageAfterDrainingDeferredWork(in: record.harness)
         record.session.recordAppStateServiceWorkerSnapshot(
             record.harness.snapshot
         )
-        guard
-            let exported = record.harness.exportStorageValues(area: .local)
-        else { return .empty }
         let reconcile = ChromeMV3ServiceWorkerLocalStorageMirror
             .reconcileServiceWorkerExportIntoBrokers(
                 exported,
@@ -257,8 +285,25 @@ private final class ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore {
                 writerContextCategory: "popupWakeSW"
             )
         records[recordKey] = record
-        _ = asyncFlush
         return reconcile
+    }
+
+    private func mirrorServiceWorkerSessionStorage(
+        for recordKey: String,
+        into popupBroker: inout ChromeMV3StorageBroker
+    ) -> ChromeMV3ServiceWorkerLocalStorageMirrorCallbackResult {
+        guard let record = records[recordKey] else { return .empty }
+        let exported = ChromeMV3ServiceWorkerLocalStorageMirror
+            .exportStorageAfterDrainingDeferredWork(
+                in: record.harness,
+                area: .session
+            )
+        return ChromeMV3ServiceWorkerLocalStorageMirror
+            .mirrorExportedSessionValuesIntoPopupBroker(
+                exported,
+                into: &popupBroker,
+                writerContextCategory: "popupWakeSWSession"
+            )
     }
 
     func serviceWorkerSnapshotForTesting(

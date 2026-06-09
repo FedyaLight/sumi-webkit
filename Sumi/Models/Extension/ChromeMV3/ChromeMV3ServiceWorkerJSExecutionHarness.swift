@@ -3385,9 +3385,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
     func deliverPortMessageFlushingAsyncContinuations(
         portID: String,
         message: ChromeMV3StorageValue,
-        maxDrainPasses: Int = 8,
+        maxDrainPasses: Int = 12,
         maxCallbacksPerPass: Int = 200,
-        maxElapsedMilliseconds: Int = 50
+        maxElapsedMilliseconds: Int = 150
     ) -> ChromeMV3ServiceWorkerJSPortRecord? {
         guard deliverPortMessage(portID: portID, message: message) != nil else {
             return nil
@@ -3396,7 +3396,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         let outboxCountBeforeDelivery = ports[portID]?.postedMessages.count ?? 0
         let started = Date()
         let passes = max(1, maxDrainPasses)
-        for pass in 0 ..< passes {
+        for _ in 0 ..< passes {
             let elapsedMilliseconds = Int(
                 Date().timeIntervalSince(started) * 1000
             )
@@ -3418,15 +3418,36 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 break
             }
             let checkpoint = asyncFlushCheckpoint() ?? .empty
+            let memorySessionTrace =
+                memorySessionGetTrace
+            let memorySessionGetPending =
+                memorySessionTrace.requestReceivedCategory == "received"
+                && memorySessionTrace.sessionGetStartedCategory == "started"
+                && memorySessionTrace.getResolvedCategory != "resolved"
             let pendingWork =
                 checkpoint.pendingAsyncCompletionCount > 0
                 || checkpoint.pendingTimeoutCount > 0
+                || memorySessionGetPending
             if pendingWork == false {
                 break
             }
         }
-        _ = drainPendingStorageCallbacks()
-        _ = pumpMicrotaskGeneration()
+        for _ in 0 ..< 6 {
+            _ = drainPendingStorageCallbacks()
+            _ = pumpMicrotaskGeneration()
+            _ = flushBoundedAsyncContinuations(
+                maxDrainPasses: 1,
+                maxCallbacksPerPass: maxCallbacksPerPass,
+                maxElapsedMilliseconds: 25
+            )
+            _ = finalizeMemorySessionGetTrace(portID: portID)
+            refreshJSSnapshot()
+            let outboxCountAfterTailDrain =
+                ports[portID]?.postedMessages.count ?? 0
+            if outboxCountAfterTailDrain > outboxCountBeforeDelivery {
+                break
+            }
+        }
         _ = drainPendingStorageCallbacks()
         _ = finalizeMemorySessionGetTrace(portID: portID)
         refreshJSSnapshot()
@@ -4105,6 +4126,12 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                     keepaliveKind: input.keepaliveKind,
                     sharedLifecycleSession: session
                 )
+                _ = self.flushBoundedAsyncContinuations(
+                    maxDrainPasses: 4,
+                    maxCallbacksPerPass: 100,
+                    maxElapsedMilliseconds: 40
+                )
+                session.reconcileServiceWorkerHostStorageAfterDispatchIfNeeded()
                 #if DEBUG
                     session.recordAppStateServiceWorkerSnapshot(self.snapshot)
                 #endif
@@ -4207,6 +4234,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                         sourceContext: input.source.sourceContext,
                         portID: input.portID
                     )
+                    session.reconcileServiceWorkerHostStorageAfterDispatchIfNeeded()
                     #if DEBUG
                         session.recordAppStateServiceWorkerSnapshot(
                             self.snapshot
@@ -7595,6 +7623,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           if (localGetCount > 0) {
             memorySessionGetTrace.stepAfterSessionGetCategory = 'localGetAwaited';
             memorySessionGetTrace.continuationAfterSessionGetCategory = 'continued';
+          } else if (sessionGetCount > 0) {
+            memorySessionGetTrace.stepAfterSessionGetCategory = 'sessionGetAwaited';
+            memorySessionGetTrace.continuationAfterSessionGetCategory = 'continued';
           } else if (cryptoSinceBaseline > 0) {
             memorySessionGetTrace.stepAfterSessionGetCategory = 'cryptoAwaited';
             memorySessionGetTrace.cryptoAwaitObserved = true;
@@ -8244,6 +8275,22 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
               }
             }
             syncMemorySessionLocalGetDiagnosticsFromShim();
+            refreshLocalBackedSessionContinuationDiagnostics();
+          });
+        } else if (areaName === 'session') {
+          promise.then(() => {
+            if (memorySessionGetTrace.sessionGetStarted
+                && !memorySessionGetTrace.getResolved) {
+              memorySessionGetTrace.storagePromiseResolved = true;
+              if (storageLocalGetTrace.hasCallbackCategory === 'no') {
+                memorySessionGetTrace.sessionGetCallbackInvoked = true;
+                if (memorySessionGetTrace.stepAfterSessionGetCategory
+                    === 'notObserved') {
+                  memorySessionGetTrace.stepAfterSessionGetCategory =
+                    'continuationPending';
+                }
+              }
+            }
             refreshLocalBackedSessionContinuationDiagnostics();
           });
         }

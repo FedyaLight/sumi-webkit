@@ -79,14 +79,113 @@ enum ChromeMV3ServiceWorkerLocalStorageMirror {
     @discardableResult
     static func flushDeferredServiceWorkerWork(
         in harness: ChromeMV3ServiceWorkerJSExecutionHarness,
-        maxDrainPasses: Int = 8,
+        maxDrainPasses: Int = 12,
         maxCallbacksPerPass: Int = 200,
-        maxElapsedMilliseconds: Int = 50
+        maxElapsedMilliseconds: Int = 150
     ) -> ChromeMV3ServiceWorkerAsyncFlushResult {
         harness.flushBoundedAsyncContinuations(
             maxDrainPasses: maxDrainPasses,
             maxCallbacksPerPass: maxCallbacksPerPass,
             maxElapsedMilliseconds: maxElapsedMilliseconds
+        )
+    }
+
+    /// Drains deferred service-worker work in bounded rounds until the exported
+    /// `storage.local` snapshot stabilizes or the round budget is exhausted.
+    static func exportStorageAfterDrainingDeferredWork(
+        in harness: ChromeMV3ServiceWorkerJSExecutionHarness,
+        area: ChromeMV3StorageAreaKind = .local,
+        maxRounds: Int = 3,
+        maxDrainPasses: Int = 12,
+        maxCallbacksPerPass: Int = 200,
+        maxElapsedMillisecondsPerRound: Int = 75
+    ) -> [String: ChromeMV3StorageValue] {
+        let rounds = max(1, maxRounds)
+        var exported = harness.exportStorageValues(area: area) ?? [:]
+        for _ in 0 ..< rounds {
+            _ = flushDeferredServiceWorkerWork(
+                in: harness,
+                maxDrainPasses: maxDrainPasses,
+                maxCallbacksPerPass: maxCallbacksPerPass,
+                maxElapsedMilliseconds: maxElapsedMillisecondsPerRound
+            )
+            let current = harness.exportStorageValues(area: area) ?? [:]
+            if current == exported {
+                break
+            }
+            exported = current
+        }
+        return exported
+    }
+
+    static func exportLocalStorageAfterDrainingDeferredWork(
+        in harness: ChromeMV3ServiceWorkerJSExecutionHarness,
+        maxRounds: Int = 3,
+        maxDrainPasses: Int = 12,
+        maxCallbacksPerPass: Int = 200,
+        maxElapsedMillisecondsPerRound: Int = 75
+    ) -> [String: ChromeMV3StorageValue] {
+        exportStorageAfterDrainingDeferredWork(
+            in: harness,
+            area: .local,
+            maxRounds: maxRounds,
+            maxDrainPasses: maxDrainPasses,
+            maxCallbacksPerPass: maxCallbacksPerPass,
+            maxElapsedMillisecondsPerRound: maxElapsedMillisecondsPerRound
+        )
+    }
+
+    static func mirrorExportedSessionValuesIntoPopupBroker(
+        _ exportedValues: [String: ChromeMV3StorageValue],
+        into broker: inout ChromeMV3StorageBroker,
+        writerContextCategory: String
+    ) -> ChromeMV3ServiceWorkerLocalStorageMirrorCallbackResult {
+        let popupPreMirrorCount = broker.exportSnapshot().values.count
+        let popupPreHydrationValues = broker.exportSnapshot().values
+        let hydration = hydratePopupBrokerFromExportedValues(
+            exportedValues,
+            into: &broker,
+            writerContextCategory: writerContextCategory
+        )
+        let hydrationOnChangedPayload: ChromeMV3StorageOnChangedEventPayload?
+        if hydration.importedExportedValueCount > 0 {
+            let hydratedChangeSet = ChromeMV3StorageChangeSet.make(
+                namespace: broker.namespace,
+                oldValues: popupPreHydrationValues,
+                newValues: broker.exportSnapshot().values
+            )
+            hydrationOnChangedPayload =
+                hydratedChangeSet.changedKeys.isEmpty
+                    ? nil
+                    : popupOnChangedPayload(
+                        from: hydratedChangeSet,
+                        writerContextCategory: writerContextCategory
+                    )
+        } else {
+            hydrationOnChangedPayload = nil
+        }
+        let popupHydrationCategory: String
+        if hydration.importedExportedValueCount > 0 {
+            popupHydrationCategory = "hydratedFromExport"
+        } else if hydration.missingExportedValueCount == 0 {
+            popupHydrationCategory = "alreadyCurrent"
+        } else {
+            popupHydrationCategory = "hydrationFailed"
+        }
+        return ChromeMV3ServiceWorkerLocalStorageMirrorCallbackResult(
+            onChangedPayload: hydrationOnChangedPayload,
+            exportedValueCount: exportedValues.count,
+            hostBackedChangedKeyCount: 0,
+            hostBackedPreMirrorValueCount: 0,
+            popupBrokerPreMirrorValueCount: popupPreMirrorCount,
+            popupBrokerMissingExportedValueCount:
+                hydration.missingExportedValueCount,
+            popupBrokerImportedExportedValueCount:
+                hydration.importedExportedValueCount,
+            popupBrokerPostMirrorValueCount:
+                broker.exportSnapshot().values.count,
+            hostBackedImportCategory: "notApplicable",
+            popupHydrationCategory: popupHydrationCategory
         )
     }
 
@@ -222,12 +321,36 @@ enum ChromeMV3ServiceWorkerLocalStorageMirror {
             writerContextCategory: writerContextCategory,
             fileManager: fileManager
         )
+        let popupPreHydrationValues = popupBroker.exportSnapshot().values
         let hydration = hydratePopupBrokerFromExportedValues(
             exportedValues,
             into: &popupBroker,
             writerContextCategory: writerContextCategory,
             fileManager: fileManager
         )
+        let hydrationOnChangedPayload: ChromeMV3StorageOnChangedEventPayload?
+        if hydration.importedExportedValueCount > 0 {
+            let hydratedChangeSet = ChromeMV3StorageChangeSet.make(
+                namespace: popupBroker.namespace,
+                oldValues: popupPreHydrationValues,
+                newValues: popupBroker.exportSnapshot().values
+            )
+            if hydratedChangeSet.changedKeys.isEmpty == false {
+                hydrationOnChangedPayload = popupOnChangedPayload(
+                    from: hydratedChangeSet,
+                    writerContextCategory: writerContextCategory
+                )
+            } else {
+                hydrationOnChangedPayload = nil
+            }
+        } else {
+            hydrationOnChangedPayload = nil
+        }
+        let combinedOnChangedPayload =
+            mergeOnChangedPayloads(
+                host: recordMirror.onChangedPayload,
+                hydration: hydrationOnChangedPayload
+            )
         let hostImportCategory: String
         if recordMirror.result.changedKeyCount == 0 {
             hostImportCategory = "noChangesImported"
@@ -245,7 +368,7 @@ enum ChromeMV3ServiceWorkerLocalStorageMirror {
             popupHydrationCategory = "hydrationFailed"
         }
         return ChromeMV3ServiceWorkerLocalStorageMirrorCallbackResult(
-            onChangedPayload: recordMirror.onChangedPayload,
+            onChangedPayload: combinedOnChangedPayload,
             exportedValueCount: exportedValues.count,
             hostBackedChangedKeyCount: recordMirror.result.changedKeyCount,
             hostBackedPreMirrorValueCount: hostPreMirrorCount,
@@ -267,6 +390,34 @@ enum ChromeMV3ServiceWorkerLocalStorageMirror {
         area: ChromeMV3StorageAreaKind = .local
     ) -> Bool {
         harness.importStorageValues(values, area: area)
+    }
+
+    private static func mergeOnChangedPayloads(
+        host: ChromeMV3StorageOnChangedEventPayload?,
+        hydration: ChromeMV3StorageOnChangedEventPayload?
+    ) -> ChromeMV3StorageOnChangedEventPayload? {
+        switch (host, hydration) {
+        case (nil, nil):
+            return nil
+        case (let host?, nil):
+            return host
+        case (nil, let hydration?):
+            return hydration
+        case (let host?, let hydration?):
+            var mergedChanges = host.changes
+            var mergedKeys = Set(host.changedKeys)
+            for change in hydration.changes where mergedKeys.insert(change.key).inserted
+            {
+                mergedChanges.append(change)
+            }
+            var merged = host
+            merged.changedKeys = Array(mergedKeys).sorted()
+            merged.changes = mergedChanges.sorted { $0.key < $1.key }
+            merged.blockers = uniqueSortedServiceWorkerLocalStorageMirror(
+                host.blockers + hydration.blockers
+            )
+            return merged
+        }
     }
 
     private static func popupOnChangedPayload(

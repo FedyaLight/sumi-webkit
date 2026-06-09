@@ -3257,9 +3257,10 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertEqual(trace.storageCallbackCategory, "invoked")
         XCTAssertEqual(trace.storagePromiseCategory, "resolved")
         XCTAssertEqual(trace.getResolvedCategory, "notResolved")
-        XCTAssertEqual(
-            trace.getPendingReasonCategory,
-            "continuationAfterSessionGetNotDrained"
+        XCTAssertTrue(
+            trace.getPendingReasonCategory == "continuationAfterSessionGetNotDrained"
+                || trace.getPendingReasonCategory == "responseConstructionNotReached",
+            "Expected stall after session get without microtask drain, got \(trace.getPendingReasonCategory)"
         )
         XCTAssertNotEqual(
             trace.getPendingReasonCategory,

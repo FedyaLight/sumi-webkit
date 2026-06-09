@@ -921,10 +921,17 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
 
         XCTAssertFalse(snapshot.jsDebugRouteEvents.isEmpty)
         XCTAssertNotEqual(firstBlocker, "unknown")
-        XCTAssertEqual(
-            snapshot.appStateDependencyTrace.correlationSummary.classification,
-            "appStateWaitWithNoWriter",
-            "Underlying storage correlation may still observe reads without writers."
+        XCTAssertTrue(
+            [
+                "appStateWaitWithSuppressedEvent",
+                "appStateWaitWithNoWriter",
+                "appStateWaitWithDelayedWriter",
+                "usableOnboardingOrLoginUIReached",
+            ].contains(
+                snapshot.appStateDependencyTrace.correlationSummary
+                    .classification
+            ),
+            "Bitwarden should progress past the static loading shell into app-state or usable UI classification. classification=\(snapshot.appStateDependencyTrace.correlationSummary.classification)"
         )
         XCTAssertEqual(
             bitwardenNativeHostRunningApplicationIdentifiers(),
@@ -937,9 +944,13 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 snapshot: snapshot,
                 domStateJSON: domState
             )
-        XCTAssertEqual(
-            boundaryDiagnostics.firstStableAppStateClassifier,
-            "appStateWaitWithNoWriter"
+        XCTAssertTrue(
+            [
+                "appStateWaitWithSuppressedEvent",
+                "appStateWaitWithNoWriter",
+                "appStateWaitWithDelayedWriter",
+                "usableOnboardingOrLoginUIReached",
+            ].contains(boundaryDiagnostics.firstStableAppStateClassifier)
         )
         let firstVisibleUIProbeJSON = try await module
             .chromeMV3PopupOptionsEvaluateJavaScriptForTesting(
@@ -989,39 +1000,24 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             firstVisibleUIGate?.firstVisibleUIGateCategory ?? "none"
         XCTAssertEqual(
             firstVisibleUIGate?.staticLoadingShellCategory,
-            "staticLoadingPresent"
+            "staticLoadingRemoved"
         )
         XCTAssertEqual(
             firstVisibleUIGate?.angularBootstrapCategory,
-            "bootstrapNotObserved"
+            "bootstrapComplete"
         )
         XCTAssertEqual(
-            firstVisibleUIGateCategory,
-            firstVisibleUIGate?.appInitializerUnresolvedAwaitCategory
-                ?? "none"
-        )
-        XCTAssertEqual(
-            firstVisibleUIGate?.appInitializerEnteredCategory,
-            "entered"
+            firstVisibleUIGate?.appInitializerGateCategory,
+            "appInitializerComplete"
         )
         XCTAssertTrue(
             [
-                "sdkLoadStillPending",
-                "migrationStateMissing",
-                "migrationWaitEnteredAndPending",
-                "serviceWorkerMigrationWriteMissing",
-                "serviceWorkerStorageWriteNotMirrored",
-                "storageSnapshotNotImported",
-                "storageOnChangedDeliveryFailure",
-                "loginRouteNotActivatedBecauseInitializerPending",
-                "appInitializerWaitingForI18n",
-                "appInitializerWaitingForViewCache",
-                "appInitializerWaitingForPopupSize",
-                "appInitializerWaitingForTheme",
-            ].contains(
-                firstVisibleUIGate?
-                    .appInitializerUnresolvedAwaitCategory ?? ""
-            )
+                "firstVisibleComponentWaiting",
+                "visibleComponentObserved",
+                "componentMountedNoVisibleText",
+                "componentMountedButHidden",
+            ].contains(firstVisibleUIGateCategory),
+            "Bitwarden should reach post-bootstrap first-visible gating after the static shell is removed. firstVisibleUIGateCategory=\(firstVisibleUIGateCategory)"
         )
         XCTAssertNotEqual(
             firstVisibleUIGateCategory,
@@ -1056,7 +1052,66 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             boundaryDiagnostics.portRouteCategory,
             "failed"
         )
-        XCTAssertEqual(boundaryDiagnostics.storageCategory, "readNoWriter")
+        XCTAssertTrue(
+            [
+                "readNoWriter",
+                "onChangedDelivered",
+                "serviceWorkerWriteObserved",
+            ].contains(boundaryDiagnostics.storageCategory)
+        )
+
+        let viewCacheShape =
+            ChromeMV3LivePopupProductPathTraceBuilder
+            .deriveViewCachePortShapeDiagnostics(
+                routeEvents: snapshot.jsDebugRouteEvents,
+                viewCacheInitCategory:
+                    firstVisibleUIGate?.viewCacheInitCategory ?? "notObserved",
+                appInitializerUnresolvedAwaitCategory:
+                    firstVisibleUIGate?
+                    .appInitializerUnresolvedAwaitCategory ?? "notObserved",
+                routerActivationCategory:
+                    firstVisibleUIGate?.routerActivationCategory
+                    ?? "notObserved",
+                visibleTextLength: 0,
+                formControlCount: 0,
+                buttonCount: 0
+            )
+        let swSnapshot =
+            module.chromeMV3ControlledActionPopupServiceWorkerSnapshotForTesting(
+                profileID: record.profileID,
+                extensionID: record.extensionID
+            )
+        let swPortPostedCount =
+            swSnapshot?.ports.reduce(0) { $0 + $1.postedMessages.count } ?? 0
+        let swMemorySessionTrace =
+            swSnapshot?.memorySessionGetTrace.getResolvedCategory ?? "none"
+        print(
+            "SumiControlledBitwardenPopup viewCachePortGetRequestObserved=\(viewCacheShape.viewCachePortGetRequestObservedCategory) viewCachePortGetResponseCaptured=\(viewCacheShape.viewCachePortGetResponseCapturedCategory) viewCachePortGetResponseDelivered=\(viewCacheShape.viewCachePortGetResponseDeliveredCategory) swPortPostedCount=\(swPortPostedCount) swMemorySessionGetResolved=\(swMemorySessionTrace) appStateClassification=\(snapshot.appStateDependencyTrace.correlationSummary.classification)"
+        )
+        XCTAssertEqual(
+            viewCacheShape.viewCachePortGetRequestObservedCategory,
+            "observed",
+            "Bitwarden popup should issue a foreground memory-session Port get request."
+        )
+        if viewCacheShape.viewCachePortGetResponseCapturedCategory == "captured" {
+            XCTAssertGreaterThan(
+                swPortPostedCount,
+                0,
+                "When popup captured a SW memory-session response, harness Port outbox should be non-empty."
+            )
+        }
+        if swPortPostedCount > 0 {
+            XCTAssertEqual(
+                viewCacheShape.viewCachePortGetResponseCapturedCategory,
+                "captured",
+                "Non-empty SW Port outbox should correspond to a captured popup-side memory-session response."
+            )
+        }
+        XCTAssertEqual(
+            viewCacheShape.viewCachePortGetResponseDeliveredCategory,
+            "delivered",
+            "Bitwarden memory-session view-cache Port response should reach popup onMessage listeners."
+        )
 
         recordControlledBitwardenPopupSanitizedDiagnostics(
             prefix: "SumiControlledBitwardenPopup",

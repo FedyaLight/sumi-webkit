@@ -2322,6 +2322,8 @@ struct ChromeMV3PopupOptionsJSBridgeHostResponse:
     var succeeded: Bool
     var resultPayload: ChromeMV3StorageValue?
     var onChangedPayload: ChromeMV3StorageOnChangedEventPayload?
+    var additionalOnChangedPayloads:
+        [ChromeMV3StorageOnChangedEventPayload] = []
     var permissionEventPayload: ChromeMV3PermissionsAPIEventPayload?
     var lastErrorMessage: String?
     var lastErrorCode: String?
@@ -2347,6 +2349,10 @@ struct ChromeMV3PopupOptionsJSBridgeHostResponse:
                 resultPayload?.popupOptionsBridgeFoundationObject
                 ?? NSNull(),
             "onChangedPayload": onChangedPayloadFoundationObject,
+            "additionalOnChangedPayloads":
+                additionalOnChangedPayloads.map(
+                    \.popupOptionsBridgeFoundationObject
+                ),
             "permissionEventPayload": permissionEventPayloadFoundationObject,
             "lastErrorMessage": lastErrorMessage ?? NSNull(),
             "lastErrorCode": lastErrorCode ?? NSNull(),
@@ -3015,6 +3021,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             succeeded: true,
             resultPayload: .null,
             onChangedPayload: nil,
+            additionalOnChangedPayloads: [],
             permissionEventPayload: nil,
             lastErrorMessage: nil,
             lastErrorCode: nil,
@@ -4798,6 +4805,26 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     }
 
     @discardableResult
+    private func synchronizePopupSessionStorageFromServiceWorkerMirror(
+        source: ChromeMV3ServiceWorkerStorageMirrorInvocationSource
+    ) -> ChromeMV3StorageOnChangedEventPayload? {
+        _ = source
+        guard sharedLifecycleSessionForRuntimeWake() != nil else { return nil }
+        let mirrorResult =
+            sharedLifecycleSession?
+            .mirrorServiceWorkerSessionStorageIfNeeded(
+                into: &sessionStorageBroker
+            ) ?? .empty
+        guard let onChanged = mirrorResult.onChangedPayload,
+              onChanged.changedKeys.isEmpty == false
+        else {
+            return nil
+        }
+        onChangedPayloads.append(onChanged)
+        return onChanged
+    }
+
+    @discardableResult
     private func refreshPopupLocalStorageBrokerFromSharedBackingStore() -> Bool {
         guard sharedLifecycleSession != nil else { return false }
         guard localStorageBroker.snapshotURL != nil else { return false }
@@ -4859,22 +4886,6 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 "readPopulatedAfterMirror"
         }
 
-        private func storageGetRequestedKeys(
-            from arguments: [ChromeMV3StorageValue]
-        ) -> [String] {
-            guard let first = arguments.first else { return [] }
-            switch first {
-            case .string(let key):
-                return key.isEmpty ? [] : [key]
-            case .array(let keys):
-                return keys.compactMap(\.stringValue).filter {
-                    $0.isEmpty == false
-                }
-            default:
-                return []
-            }
-        }
-
         private func storageReadValues(
             from payload: ChromeMV3StorageValue?
         ) -> [String: ChromeMV3StorageValue] {
@@ -4885,6 +4896,22 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             return [:]
         }
     #endif
+
+    private func storageGetRequestedKeys(
+        from arguments: [ChromeMV3StorageValue]
+    ) -> [String] {
+        guard let first = arguments.first else { return [] }
+        switch first {
+        case .string(let key):
+            return key.isEmpty ? [] : [key]
+        case .array(let keys):
+            return keys.compactMap(\.stringValue).filter {
+                $0.isEmpty == false
+            }
+        default:
+            return []
+        }
+    }
 
     private func runtimeLastErrorContract(
         for resultKind: ChromeMV3ServiceWorkerJSDispatchResultKind
@@ -4928,20 +4955,22 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         ) {
             if jsResult.dispatched {
                 let mirroredOnChanged =
-                    synchronizePopupLocalStorageFromServiceWorkerMirror(
+                    mirroredStorageOnChangedResponseFields(
                         source: .runtimeSendMessage
                     )
                 return response(
                     request: request,
                     succeeded: true,
                     payload: jsResult.responsePayload ?? .null,
-                    onChangedPayload: mirroredOnChanged,
+                    onChangedPayload: mirroredOnChanged.primary,
+                    additionalOnChangedPayloads:
+                        mirroredOnChanged.additional,
                     serviceWorkerLifecycleWakeResult:
                         jsResult.lifecycleWakeResult,
                     diagnostics:
                         jsResult.diagnostics
                         + serviceWorkerStorageMirrorDiagnostics(
-                            mirroredOnChanged
+                            mirroredOnChanged.primary
                         )
                         + [
                             "runtime.sendMessage dispatched to a captured service-worker runtime.onMessage JavaScript listener.",
@@ -5125,7 +5154,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             serviceWorkerLifecyclePortIDs.insert(portID)
             let serviceWorkerPortOutbox = jsResult.serviceWorkerPortOutbox
             let mirroredOnChanged =
-                synchronizePopupLocalStorageFromServiceWorkerMirror(
+                mirroredStorageOnChangedResponseFields(
                     source: .runtimeConnect
                 )
             return response(
@@ -5137,7 +5166,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     name: connectName,
                     serviceWorkerPortOutbox: serviceWorkerPortOutbox
                 ),
-                onChangedPayload: mirroredOnChanged,
+                onChangedPayload: mirroredOnChanged.primary,
+                additionalOnChangedPayloads: mirroredOnChanged.additional,
                 serviceWorkerLifecycleWakeResult:
                     jsResult.lifecycleWakeResult,
                 diagnostics:
@@ -5156,7 +5186,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                         serviceWorkerPortOutbox
                     )
                     + serviceWorkerStorageMirrorDiagnostics(
-                        mirroredOnChanged
+                        mirroredOnChanged.primary
                     )
                     + [
                         "runtime.connect delivered a named Port to captured service-worker runtime.onConnect JavaScript listener(s).",
@@ -5374,9 +5404,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             )
         }
         let mirroredOnChanged =
-            synchronizePopupLocalStorageFromServiceWorkerMirror(
-                source: .portMessage
-            )
+            mirroredStorageOnChangedResponseFields(source: .portMessage)
         return response(
             request: request,
             succeeded: true,
@@ -5384,12 +5412,15 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 delivery,
                 direction: "popupOptionsToServiceWorker"
             ),
-            onChangedPayload: mirroredOnChanged,
+            onChangedPayload: mirroredOnChanged.primary,
+            additionalOnChangedPayloads: mirroredOnChanged.additional,
             serviceWorkerLifecycleWakeResult:
                 delivery.lifecycleWakeResult,
             diagnostics:
                 delivery.diagnostics
-                + serviceWorkerStorageMirrorDiagnostics(mirroredOnChanged)
+                + serviceWorkerStorageMirrorDiagnostics(
+                    mirroredOnChanged.primary
+                )
                 + [
                     "popup/options Port.postMessage reached service-worker Port.onMessage.",
                 ]
@@ -5854,12 +5885,55 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     synchronizePopupLocalStorageFromServiceWorkerMirror(
                         source: .storageGet
                     )
+                if storageOperationName(methodName: request.methodName) == "get" {
+                    let requestedKeys =
+                        storageGetRequestedKeys(from: request.arguments)
+                    if requestedKeys.isEmpty == false {
+                        let brokerValues =
+                            localStorageBroker.exportSnapshot().values
+                        if requestedKeys.contains(where: {
+                            brokerValues[$0] == nil
+                        }) {
+                            let retryOnChanged =
+                                synchronizePopupLocalStorageFromServiceWorkerMirror(
+                                    source: .storageGet
+                                )
+                            mirroredOnChanged = combinedStorageOnChangedPayload(
+                                operation: mirroredOnChanged,
+                                mirrored: retryOnChanged
+                            )
+                        }
+                    }
+                }
                 envelope = storageOperationHandler.handle(
                     input,
                     broker: &localStorageBroker
                 )
             case .session:
-                mirroredOnChanged = nil
+                mirroredOnChanged =
+                    synchronizePopupSessionStorageFromServiceWorkerMirror(
+                        source: .storageGet
+                    )
+                if storageOperationName(methodName: request.methodName) == "get" {
+                    let requestedKeys =
+                        storageGetRequestedKeys(from: request.arguments)
+                    if requestedKeys.isEmpty == false {
+                        let brokerValues =
+                            sessionStorageBroker.exportSnapshot().values
+                        if requestedKeys.contains(where: {
+                            brokerValues[$0] == nil
+                        }) {
+                            let retryOnChanged =
+                                synchronizePopupSessionStorageFromServiceWorkerMirror(
+                                    source: .storageGet
+                                )
+                            mirroredOnChanged = combinedStorageOnChangedPayload(
+                                operation: mirroredOnChanged,
+                                mirrored: retryOnChanged
+                            )
+                        }
+                    }
+                }
                 envelope = storageOperationHandler.handle(
                     input,
                     broker: &sessionStorageBroker
@@ -7737,6 +7811,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         succeeded: Bool,
         payload: ChromeMV3StorageValue? = nil,
         onChangedPayload: ChromeMV3StorageOnChangedEventPayload? = nil,
+        additionalOnChangedPayloads:
+            [ChromeMV3StorageOnChangedEventPayload] = [],
         permissionEventPayload: ChromeMV3PermissionsAPIEventPayload? = nil,
         lastErrorMessage: String? = nil,
         lastErrorCode: String? = nil,
@@ -7765,6 +7841,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             succeeded: succeeded,
             resultPayload: payload,
             onChangedPayload: onChangedPayload,
+            additionalOnChangedPayloads: additionalOnChangedPayloads,
             permissionEventPayload: permissionEventPayload,
             lastErrorMessage: succeeded ? nil : lastErrorMessage,
             lastErrorCode: succeeded ? nil : lastErrorCode,
@@ -8924,41 +9001,75 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         operation: ChromeMV3StorageOnChangedEventPayload?,
         mirrored: ChromeMV3StorageOnChangedEventPayload?
     ) -> ChromeMV3StorageOnChangedEventPayload? {
-        switch (operation, mirrored) {
+        mirroredStorageOnChangedResponseFields(
+            local: operation,
+            session: mirrored
+        ).primary
+    }
+
+    private func mirroredStorageOnChangedResponseFields(
+        source: ChromeMV3ServiceWorkerStorageMirrorInvocationSource
+    ) -> (
+        primary: ChromeMV3StorageOnChangedEventPayload?,
+        additional: [ChromeMV3StorageOnChangedEventPayload]
+    ) {
+        let local = synchronizePopupLocalStorageFromServiceWorkerMirror(
+            source: source
+        )
+        let session = synchronizePopupSessionStorageFromServiceWorkerMirror(
+            source: source
+        )
+        return mirroredStorageOnChangedResponseFields(
+            local: local,
+            session: session
+        )
+    }
+
+    private func mirroredStorageOnChangedResponseFields(
+        local: ChromeMV3StorageOnChangedEventPayload?,
+        session: ChromeMV3StorageOnChangedEventPayload?
+    ) -> (
+        primary: ChromeMV3StorageOnChangedEventPayload?,
+        additional: [ChromeMV3StorageOnChangedEventPayload]
+    ) {
+        switch (local, session) {
         case (nil, nil):
-            return nil
-        case (let operation?, nil):
-            return operation
-        case (nil, let mirrored?):
-            return mirrored
-        case (let operation?, let mirrored?)
-            where operation.areaName == mirrored.areaName:
+            return (nil, [])
+        case (let local?, nil):
+            return (local, [])
+        case (nil, let session?):
+            return (session, [])
+        case (let local?, let session?)
+            where local.areaName == session.areaName:
             var mergedChanges = [String: ChromeMV3StorageChangeRecord]()
-            for change in operation.changes {
+            for change in local.changes {
                 mergedChanges[change.key] = change
             }
-            for change in mirrored.changes {
+            for change in session.changes {
                 mergedChanges[change.key] = change
             }
             let changes = mergedChanges.values.sorted { $0.key < $1.key }
-            guard changes.isEmpty == false else { return nil }
-            return ChromeMV3StorageOnChangedEventPayload(
-                areaName: operation.areaName,
-                changedKeys: changes.map(\.key),
-                changes: changes,
-                extensionID: operation.extensionID,
-                profileID: operation.profileID,
-                wouldDispatchNow: true,
-                listenerRegistrationRequired: false,
-                serviceWorkerWakeRequired: false,
-                blockers: uniqueSortedPopupOptionsBridge(
-                    operation.blockers + mirrored.blockers
+            guard changes.isEmpty == false else { return (nil, []) }
+            return (
+                ChromeMV3StorageOnChangedEventPayload(
+                    areaName: local.areaName,
+                    changedKeys: changes.map(\.key),
+                    changes: changes,
+                    extensionID: local.extensionID,
+                    profileID: local.profileID,
+                    wouldDispatchNow: true,
+                    listenerRegistrationRequired: false,
+                    serviceWorkerWakeRequired: false,
+                    blockers: uniqueSortedPopupOptionsBridge(
+                        local.blockers + session.blockers
+                    ),
+                    serviceWorkerWakePreflight:
+                        local.serviceWorkerWakePreflight
                 ),
-                serviceWorkerWakePreflight: operation.serviceWorkerWakePreflight
+                []
             )
-        case (let operation?, let mirrored?):
-            return operation.changedKeys.count >= mirrored.changedKeys.count
-                ? operation : mirrored
+        case (let local?, let session?):
+            return (local, [session])
         }
     }
 
@@ -9636,7 +9747,13 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 if (
                   response.succeeded
                   && namespace === "runtime"
-                  && response.onChangedPayload
+                  && (
+                    response.onChangedPayload
+                    || (
+                      Array.isArray(response.additionalOnChangedPayloads)
+                      && response.additionalOnChangedPayloads.length > 0
+                    )
+                  )
                 ) {
                   dispatchSyntheticStorageEvent(response);
                 }
@@ -9687,11 +9804,94 @@ enum ChromeMV3PopupOptionsJSShimSource {
             ).catch(() => {});
           }
 
+          const pendingStorageOnChangedByArea = {
+            local: null,
+            session: null,
+            sync: null
+          };
+
+          function mergeStorageOnChangedChanges(existing, incoming) {
+            const merged = Object.assign({}, existing || {});
+            Object.keys(incoming || {}).forEach((key) => {
+              merged[key] = incoming[key];
+            });
+            return merged;
+          }
+
+          function storageOnChangedHasListeners(areaName) {
+            const areaEvent = storageAreaOnChanged[areaName] || null;
+            const areaCount = areaEvent ? areaEvent.__sumiListenerCount() : 0;
+            const globalCount = storageOnChanged.__sumiListenerCount();
+            return areaCount > 0 || globalCount > 0;
+          }
+
+          function deliverSyntheticStorageOnChanged(changes, areaName) {
+            const changedKeyCount = Object.keys(changes).length;
+            if (changedKeyCount === 0) {
+              return;
+            }
+            const globalDispatch =
+              storageOnChanged.__sumiDispatch(changes, areaName);
+            const areaEvent = storageAreaOnChanged[areaName] || null;
+            const areaDispatch = areaEvent
+              ? areaEvent.__sumiDispatch(changes, areaName)
+              : { listenerCount: 0, listenerInvoked: false };
+            debugStorageEvent("extensionMethodCalled", {
+              apiName: "chrome.storage." + areaName + ".onChanged",
+              targetContext: "storage." + areaName,
+              safeMessageShapeClassification: "storageEventDispatch",
+              resultClassifier: areaEvent
+                ? "storage area onChanged dispatched"
+                : "storage area onChanged unavailable",
+              diagnostics: [
+                "area=" + areaName,
+                "eventObjectPresent=" + String(!!areaEvent),
+                "listenerCount=" + String(areaDispatch.listenerCount),
+                "globalListenerCount=" + String(globalDispatch.listenerCount),
+                "changedKeyCount=" + String(changedKeyCount),
+                "valueShape=" + debugStorageChangeValueShape(changes),
+                "resultClassifier=" + (
+                  areaEvent
+                    ? "storage area onChanged dispatched"
+                    : "storage area onChanged unavailable"
+                ),
+                "No raw storage keys or values are recorded."
+              ]
+            });
+          }
+
+          function bufferSyntheticStorageOnChanged(changes, areaName) {
+            pendingStorageOnChangedByArea[areaName] =
+              mergeStorageOnChangedChanges(
+                pendingStorageOnChangedByArea[areaName],
+                changes
+              );
+          }
+
+          function flushPendingStorageOnChanged(areaName) {
+            const changes = pendingStorageOnChangedByArea[areaName];
+            if (!changes || Object.keys(changes).length === 0) {
+              return;
+            }
+            if (!storageOnChangedHasListeners(areaName)) {
+              return;
+            }
+            pendingStorageOnChangedByArea[areaName] = null;
+            deliverSyntheticStorageOnChanged(changes, areaName);
+          }
+
+          function flushAllPendingStorageOnChanged() {
+            ["local", "session", "sync"].forEach((areaName) => {
+              flushPendingStorageOnChanged(areaName);
+            });
+          }
+
           function makeEvent(eventName, options) {
             const listeners = [];
             const eventOptions = options || {};
             const storageAreaName = eventOptions.storageAreaName || null;
             const isStorageAreaEvent = !!storageAreaName;
+            const onListenerAdded = eventOptions.onListenerAdded || null;
             const isRuntimeOnMessageEvent =
               eventOptions.runtimeOnMessage === true;
             let accessLogged = false;
@@ -9733,6 +9933,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 if (typeof listener === "function" && !listeners.includes(listener)) {
                   listeners.push(listener);
                   notifyListenerCountChanged("listener added");
+                  if (typeof onListenerAdded === "function") {
+                    onListenerAdded();
+                  }
                 }
               },
               removeListener(listener) {
@@ -9780,16 +9983,27 @@ enum ChromeMV3PopupOptionsJSShimSource {
             });
           }
 
-          const storageOnChanged = makeEvent("storage.onChanged");
+          const storageOnChanged = makeEvent("storage.onChanged", {
+            onListenerAdded: flushAllPendingStorageOnChanged
+          });
           const storageAreaOnChanged = {
             local: config.storageLocalOnChangedExposed
-              ? makeEvent("storage.local.onChanged", { storageAreaName: "local" })
+              ? makeEvent("storage.local.onChanged", {
+                  storageAreaName: "local",
+                  onListenerAdded: () => flushPendingStorageOnChanged("local")
+                })
               : null,
             session: config.storageSessionOnChangedExposed
-              ? makeEvent("storage.session.onChanged", { storageAreaName: "session" })
+              ? makeEvent("storage.session.onChanged", {
+                  storageAreaName: "session",
+                  onListenerAdded: () => flushPendingStorageOnChanged("session")
+                })
               : null,
             sync: config.storageSyncOnChangedExposed
-              ? makeEvent("storage.sync.onChanged", { storageAreaName: "sync" })
+              ? makeEvent("storage.sync.onChanged", {
+                  storageAreaName: "sync",
+                  onListenerAdded: () => flushPendingStorageOnChanged("sync")
+                })
               : null
           };
           const permissionsOnAdded = makeEvent("onAdded");
@@ -9821,38 +10035,24 @@ enum ChromeMV3PopupOptionsJSShimSource {
           }
 
           function dispatchSyntheticStorageEvent(response) {
-            const payload = normalizeOnChangedPayload(response && response.onChangedPayload);
-            if (payload && Object.keys(payload.changes).length > 0) {
-              const changedKeyCount = Object.keys(payload.changes).length;
-              const globalDispatch =
-                storageOnChanged.__sumiDispatch(payload.changes, payload.areaName);
-              const areaEvent = storageAreaOnChanged[payload.areaName] || null;
-              const areaDispatch = areaEvent
-                ? areaEvent.__sumiDispatch(payload.changes, payload.areaName)
-                : { listenerCount: 0, listenerInvoked: false };
-              debugStorageEvent("extensionMethodCalled", {
-                apiName: "chrome.storage." + payload.areaName + ".onChanged",
-                targetContext: "storage." + payload.areaName,
-                safeMessageShapeClassification: "storageEventDispatch",
-                resultClassifier: areaEvent
-                  ? "storage area onChanged dispatched"
-                  : "storage area onChanged unavailable",
-                diagnostics: [
-                  "area=" + payload.areaName,
-                  "eventObjectPresent=" + String(!!areaEvent),
-                  "listenerCount=" + String(areaDispatch.listenerCount),
-                  "globalListenerCount=" + String(globalDispatch.listenerCount),
-                  "changedKeyCount=" + String(changedKeyCount),
-                  "valueShape=" + debugStorageChangeValueShape(payload.changes),
-                  "resultClassifier=" + (
-                    areaEvent
-                      ? "storage area onChanged dispatched"
-                      : "storage area onChanged unavailable"
-                  ),
-                  "No raw storage keys or values are recorded."
-                ]
-              });
+            const payloads = [];
+            if (response && response.onChangedPayload) {
+              payloads.push(response.onChangedPayload);
             }
+            if (response && Array.isArray(response.additionalOnChangedPayloads)) {
+              payloads.push.apply(payloads, response.additionalOnChangedPayloads);
+            }
+            payloads.forEach((rawPayload) => {
+              const payload = normalizeOnChangedPayload(rawPayload);
+              if (!payload || Object.keys(payload.changes).length === 0) {
+                return;
+              }
+              if (storageOnChangedHasListeners(payload.areaName)) {
+                deliverSyntheticStorageOnChanged(payload.changes, payload.areaName);
+              } else {
+                bufferSyntheticStorageOnChanged(payload.changes, payload.areaName);
+              }
+            });
           }
 
           function normalizePermissionEvent(rawPayload) {
@@ -10833,7 +11033,13 @@ enum ChromeMV3PopupOptionsJSShimSource {
                     state.markDisconnected(response.lastErrorMessage);
                     return;
                   }
-                  if (response.onChangedPayload) {
+                  if (
+                    response.onChangedPayload
+                    || (
+                      Array.isArray(response.additionalOnChangedPayloads)
+                      && response.additionalOnChangedPayloads.length > 0
+                    )
+                  ) {
                     dispatchSyntheticStorageEvent(response);
                   }
                   const payload = response.resultPayload || {};

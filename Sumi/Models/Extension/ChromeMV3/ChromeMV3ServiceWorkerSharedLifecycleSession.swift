@@ -215,6 +215,10 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
     private var serviceWorkerLocalStorageMirror:
         ((inout ChromeMV3StorageBroker)
             -> ChromeMV3ServiceWorkerLocalStorageMirrorCallbackResult)?
+    private var serviceWorkerSessionStorageMirror:
+        ((inout ChromeMV3StorageBroker)
+            -> ChromeMV3ServiceWorkerLocalStorageMirrorCallbackResult)?
+    private var serviceWorkerHostStorageReconciler: (() -> Void)?
     #if DEBUG
         private var initialAppStateServiceWorkerSnapshot:
             ChromeMV3ServiceWorkerJSExecutionSnapshot?
@@ -588,6 +592,8 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
         runtimeOwner.reset()
         componentRecords.removeAll()
         clearServiceWorkerLocalStorageMirror()
+        clearServiceWorkerSessionStorageMirror()
+        clearServiceWorkerHostStorageReconciler()
         #if DEBUG
             initialAppStateServiceWorkerSnapshot = nil
             latestAppStateServiceWorkerSnapshot = nil
@@ -613,6 +619,38 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
         into popupBroker: inout ChromeMV3StorageBroker
     ) -> ChromeMV3ServiceWorkerLocalStorageMirrorCallbackResult {
         serviceWorkerLocalStorageMirror?(&popupBroker) ?? .empty
+    }
+
+    func setServiceWorkerSessionStorageMirror(
+        _ mirror:
+            @escaping (inout ChromeMV3StorageBroker)
+            -> ChromeMV3ServiceWorkerLocalStorageMirrorCallbackResult
+    ) {
+        serviceWorkerSessionStorageMirror = mirror
+    }
+
+    func clearServiceWorkerSessionStorageMirror() {
+        serviceWorkerSessionStorageMirror = nil
+    }
+
+    func mirrorServiceWorkerSessionStorageIfNeeded(
+        into popupBroker: inout ChromeMV3StorageBroker
+    ) -> ChromeMV3ServiceWorkerLocalStorageMirrorCallbackResult {
+        serviceWorkerSessionStorageMirror?(&popupBroker) ?? .empty
+    }
+
+    func setServiceWorkerHostStorageReconciler(
+        _ reconciler: @escaping () -> Void
+    ) {
+        serviceWorkerHostStorageReconciler = reconciler
+    }
+
+    func clearServiceWorkerHostStorageReconciler() {
+        serviceWorkerHostStorageReconciler = nil
+    }
+
+    func reconcileServiceWorkerHostStorageAfterDispatchIfNeeded() {
+        serviceWorkerHostStorageReconciler?()
     }
 
     #if DEBUG
