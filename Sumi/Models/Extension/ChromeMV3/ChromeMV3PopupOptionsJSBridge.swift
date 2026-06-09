@@ -13220,7 +13220,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
               ? body.querySelectorAll("*").length
               : 0;
             const hasBusyIndicator =
-              queryCount("[role='progressbar'],[aria-busy='true'],.spinner,.loading,.loader,[data-loading='true']") > 0;
+              queryCount(
+                "#loading,[id='loading'],[role='progressbar'],[aria-busy='true'],.spinner,.loading,.loader,[data-loading='true'],[class*='spin'],[class*='Spin']"
+              ) > 0;
             const hasLoadingText = /\\b(loading|please wait|initializing|syncing)\\b/i.test(text);
             const titleHasLoadingText =
               /\\b(loading|please wait|initializing|syncing)\\b/i.test(title);

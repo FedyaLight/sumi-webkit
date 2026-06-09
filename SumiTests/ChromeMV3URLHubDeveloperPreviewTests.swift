@@ -924,7 +924,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
         XCTAssertEqual(
             snapshot.appStateDependencyTrace.correlationSummary.classification,
             "appStateWaitWithNoWriter",
-            "Bitwarden controlled popup app-state classification should remain stable."
+            "Underlying storage correlation may still observe reads without writers."
         )
         XCTAssertEqual(
             bitwardenNativeHostRunningApplicationIdentifiers(),
@@ -941,9 +941,103 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             boundaryDiagnostics.firstStableAppStateClassifier,
             "appStateWaitWithNoWriter"
         )
+        let firstVisibleUIProbeJSON = try await module
+            .chromeMV3PopupOptionsEvaluateJavaScriptForTesting(
+                profileID: record.profileID,
+                extensionID: record.extensionID,
+                script: ChromeMV3LivePopupProductPathTraceBuilder
+                    .firstVisibleUIGateProbeScript
+            ) as? String
+        let firstVisibleUIProbeObject =
+            firstVisibleUIProbeJSON.flatMap { json in
+                try? JSONSerialization.jsonObject(with: Data(json.utf8))
+                    as? [String: Any]
+            }
+        let finalDOMCheckpoint = ChromeMV3LivePopupDOMCheckpoint(
+            readyState: "complete",
+            visibleTextLengthBucket: "0",
+            controlCountBucket: "0",
+            bodyChildCount: 1,
+            appRootPresent: true,
+            navigationCommitted: true,
+            visibilityCategory: "unknown",
+            backgroundCategory: "white"
+        )
+        let firstVisibleUIGate =
+            ChromeMV3LivePopupProductPathTraceBuilder
+            .deriveFirstVisibleUIGateDiagnostics(
+                bridgeSnapshot: snapshot,
+                finalDOM: finalDOMCheckpoint,
+                stagedSnapshots:
+                    ChromeMV3LivePopupProductPathTraceBuilder
+                    .synthesizeStagedSnapshots(
+                        from: snapshot.jsDebugRouteEvents,
+                        observedMethods: snapshot.observedMethods,
+                        bridgeInstalled: true,
+                        finalDOM: finalDOMCheckpoint,
+                        routeRecords: snapshot.sanitizedBridgeRouteRecords,
+                        harnessOnMessageListenerCount:
+                            snapshot.appStateDependencyTrace
+                            .serviceWorkerHarnessOnMessageListenerCount,
+                        harnessOnConnectListenerCount:
+                            snapshot.appStateDependencyTrace
+                            .serviceWorkerHarnessOnConnectListenerCount
+                    ),
+                probeObject: firstVisibleUIProbeObject
+            )
+        let firstVisibleUIGateCategory =
+            firstVisibleUIGate?.firstVisibleUIGateCategory ?? "none"
         XCTAssertEqual(
-            boundaryDiagnostics.extensionBoundaryClassifier,
-            "extensionLocalAppState"
+            firstVisibleUIGate?.staticLoadingShellCategory,
+            "staticLoadingPresent"
+        )
+        XCTAssertEqual(
+            firstVisibleUIGate?.angularBootstrapCategory,
+            "bootstrapNotObserved"
+        )
+        XCTAssertEqual(
+            firstVisibleUIGateCategory,
+            firstVisibleUIGate?.appInitializerUnresolvedAwaitCategory
+                ?? "none"
+        )
+        XCTAssertEqual(
+            firstVisibleUIGate?.appInitializerEnteredCategory,
+            "entered"
+        )
+        XCTAssertTrue(
+            [
+                "sdkLoadStillPending",
+                "migrationStateMissing",
+                "migrationWaitEnteredAndPending",
+                "serviceWorkerMigrationWriteMissing",
+                "serviceWorkerStorageWriteNotMirrored",
+                "storageSnapshotNotImported",
+                "storageOnChangedDeliveryFailure",
+                "loginRouteNotActivatedBecauseInitializerPending",
+            ].contains(
+                firstVisibleUIGate?
+                    .appInitializerUnresolvedAwaitCategory ?? ""
+            )
+        )
+        XCTAssertNotEqual(
+            firstVisibleUIGateCategory,
+            "accountStateRequired"
+        )
+        XCTAssertNotEqual(
+            firstVisibleUIGateCategory,
+            "authStateRequired"
+        )
+        XCTAssertNotEqual(
+            firstVisibleUIGateCategory,
+            "vaultStateRequired"
+        )
+        XCTAssertEqual(
+            ChromeMV3LivePopupProductPathTraceBuilder.deriveExtensionClassifier(
+                bridgeSnapshot: snapshot,
+                finalDOM: finalDOMCheckpoint,
+                firstVisibleUIGate: firstVisibleUIGate
+            ),
+            "extensionLocalRenderState"
         )
         XCTAssertEqual(boundaryDiagnostics.boundaryKind, "extension-local")
         XCTAssertEqual(
@@ -966,7 +1060,10 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             domState: domState,
             firstBlocker: firstBlocker,
             tabsConnectFatal: tabsConnectFatal,
-            boundaryDiagnostics: boundaryDiagnostics
+            boundaryDiagnostics: boundaryDiagnostics,
+            extraLines: firstVisibleUIGate?.logLines ?? [
+                "firstVisibleUIGateCategory=none",
+            ]
         )
 
         _ = module.chromeMV3ClosePopupOptionsThroughManager(
@@ -1759,6 +1856,88 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             stagedSnapshots: [staged],
             lifecycleEventCategories: [],
             diagnostics: []
+        )
+    }
+
+    @MainActor
+    func testDebugFirstVisibleUIGateClassifierDetectsStaticLoadingBeforeLoginUI()
+    {
+        let probe: [String: Any] = [
+            "ngVersionPresent": false,
+            "staticLoadingShellCount": 1,
+            "spinnerLikeCount": 1,
+            "routerOutletPresent": false,
+            "hyphenComponentCount": 0,
+            "visibleTextLength": 0,
+            "formControlCount": 0,
+            "buttonCount": 0,
+            "visibilityCategory": "unknown",
+            "pathnameDepth": 0,
+        ]
+        var trace = makeLivePopupBootstrapGapTrace()
+        trace.scriptsExecuted = true
+        trace.firstJSCheckpointReached = true
+        trace.stagedSnapshots = [
+            ChromeMV3LivePopupStagedSnapshot(
+                stage: "after3000ms",
+                readyState: "complete",
+                navigationStarted: true,
+                navigationFinished: true,
+                urlLoaded: true,
+                firstJSCheckpoint: true,
+                bridgeInstalled: true,
+                scriptsExecuted: true,
+                runtimeErrorCategory: "none",
+                consoleErrorCategory: "none",
+                unhandledRejectionCategory: "none",
+                appRootPresent: true,
+                bodyChildCountBucket: "1-3",
+                appRootChildCountBucket: "1-3",
+                visibleTextBucket: "0",
+                formControlCountBucket: "0",
+                buttonCountBucket: "0",
+                ariaBusyOrLoadingCategory: "busy",
+                storageReadCountBucket: "1-3",
+                storageWriteCountBucket: "0",
+                runtimeSendMessageCountBucket: "0",
+                runtimeConnectCountBucket: "1-3",
+                portMessageCountBucket: "0",
+                tabsQueryCountBucket: "0",
+                tabsSendMessageCountBucket: "0",
+                scriptingExecuteScriptCountBucket: "0",
+                pendingBridgeRoutesBucket: "0",
+                serviceWorkerOnMessageListenerCountBucket: "0",
+                serviceWorkerOnConnectListenerCountBucket: "1-3",
+                nativeMessagingRequestCountBucket: "0",
+                nativeMessagingResultCategory: "notRequested",
+                swOutboxCapturedCountBucket: "1-3",
+                swOutboxDeliveredToPopupCountBucket: "1-3",
+                popupPortOnMessageListenerCategory: "listenerRegistered",
+                pendingInboundPortMessagesBucket: "0",
+                portDisconnectCategory: "none"
+            ),
+        ]
+        let gate = ChromeMV3LivePopupProductPathTraceBuilder
+            .deriveFirstVisibleUIGateDiagnostics(
+                bridgeSnapshot: nil,
+                finalDOM: trace.finalDOMCheckpoint,
+                stagedSnapshots: trace.stagedSnapshots,
+                probeObject: probe
+            )
+        XCTAssertEqual(
+            gate?.appInitializerUnresolvedAwaitCategory,
+            "sdkLoadStillPending"
+        )
+        XCTAssertEqual(gate?.sdkLoadAwaitCategory, "sdkLoadStillPending")
+        XCTAssertEqual(gate?.migrationWaitEnteredCategory, "notObserved")
+        XCTAssertEqual(gate?.staticLoadingShellCategory, "staticLoadingPresent")
+        XCTAssertEqual(gate?.angularBootstrapCategory, "bootstrapNotObserved")
+        XCTAssertEqual(
+            ChromeMV3LivePopupProductPathTraceBuilder.classify(
+                trace,
+                firstVisibleUIGate: gate
+            ),
+            .extensionLocalRenderState
         )
     }
 
@@ -5933,7 +6112,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             hasHash: location.hash.length > 0
           };
           const hasBusyIndicator = !!document.querySelector(
-            '[role="progressbar"],[aria-busy="true"],.spinner,.loading,.loader,[data-loading="true"]'
+            '#loading,[id="loading"],[role="progressbar"],[aria-busy="true"],.spinner,.loading,.loader,[data-loading="true"],[class*="spin"],[class*="Spin"]'
           );
           const hasLoadingText =
             /\\b(loading|please wait|initializing|syncing)\\b/i.test(text);

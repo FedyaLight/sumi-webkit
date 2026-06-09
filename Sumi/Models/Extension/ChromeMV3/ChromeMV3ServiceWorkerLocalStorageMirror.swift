@@ -42,6 +42,30 @@ struct ChromeMV3ServiceWorkerLocalStorageMirrorResult:
 }
 
 enum ChromeMV3ServiceWorkerLocalStorageMirror {
+    /// Drains manually queued service-worker timer callbacks so deferred startup
+    /// work (for example async storage writes) can complete before export/mirror.
+    /// Chrome documents `storage.local` as shared extension state; MV3 service
+    /// workers may schedule follow-up work after listener dispatch.
+    static func flushDeferredServiceWorkerWork(
+        in harness: ChromeMV3ServiceWorkerJSExecutionHarness,
+        maxDrainPasses: Int = 8,
+        maxCallbacksPerPass: Int = 200
+    ) -> Int {
+        guard harness.start().status == .running else { return 0 }
+        var totalCallbacks = 0
+        let passes = max(0, maxDrainPasses)
+        for _ in 0 ..< passes {
+            guard
+                let drain = harness.drainQueuedTimeouts(
+                    maxCallbacks: maxCallbacksPerPass
+                ),
+                drain.callbackCount > 0
+            else { break }
+            totalCallbacks += drain.callbackCount
+        }
+        return totalCallbacks
+    }
+
     static func mirrorExportedValues(
         _ exportedValues: [String: ChromeMV3StorageValue],
         into broker: inout ChromeMV3StorageBroker,

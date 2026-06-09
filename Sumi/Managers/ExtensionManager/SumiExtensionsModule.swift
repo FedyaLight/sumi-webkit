@@ -134,6 +134,9 @@ private final class ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore {
         let seededStorageValues =
             localStorageBroker.exportSnapshot().values
         let start = harness.start()
+        let deferredStartupCallbacks =
+            ChromeMV3ServiceWorkerLocalStorageMirror
+            .flushDeferredServiceWorkerWork(in: harness)
         let storageSeededIntoWorker =
             seededStorageValues.isEmpty
                 ? true
@@ -149,6 +152,16 @@ private final class ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore {
                 to: session,
                 clearingExisting: true
             )
+        }
+        if deferredStartupCallbacks > 0 {
+            let startupMirror =
+                ChromeMV3ServiceWorkerLocalStorageMirror
+                .mirrorExportedValues(
+                    harness.exportStorageValues(area: .local) ?? [:],
+                    into: &localStorageBroker,
+                    writerContextCategory: "popupWakeSWStartup"
+                )
+            _ = startupMirror.result
         }
         session.recordAppStateServiceWorkerSnapshot(harness.snapshot)
         let onConnectCaptured = harness.capturedListener(
@@ -223,6 +236,8 @@ private final class ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore {
         for recordKey: String
     ) -> ChromeMV3StorageOnChangedEventPayload? {
         guard var record = records[recordKey] else { return nil }
+        _ = ChromeMV3ServiceWorkerLocalStorageMirror
+            .flushDeferredServiceWorkerWork(in: record.harness)
         guard
             let exported = record.harness.exportStorageValues(area: .local)
         else { return nil }
@@ -5464,18 +5479,6 @@ final class SumiExtensionsModule {
                 events: routeEvents,
                 launchRecord: launchRecord
             )
-        let postParseDiagnostics =
-            ChromeMV3LivePopupProductPathTraceBuilder.postParseSanitizedDiagnostics(
-                bridgeSnapshot: bridgeSnapshot,
-                finalDOM: finalDOM
-            )
-        let extensionClassifier =
-            ChromeMV3LivePopupProductPathTraceBuilder.deriveExtensionClassifier(
-                bridgeSnapshot: bridgeSnapshot,
-                finalDOM: finalDOM
-            )
-            ?? bridgeSnapshot?.appStateDependencyTrace.correlationSummary
-                .classification
         let navigationState =
             ChromeMV3LivePopupProductPathTraceBuilder.navigationState(
                 from: routeEvents,
@@ -5547,6 +5550,56 @@ final class SumiExtensionsModule {
                 stagedSnapshots.append(snapshot)
             }
         }
+        var firstVisibleUIGateProbeObject: [String: Any]?
+        if popupResult.opened {
+            if let raw = try? await cachedChromeMV3PopupOptionsHostController?
+                .evaluateJavaScriptForTesting(
+                    profileID: launchRecord?.profileID ?? profileID,
+                    extensionID: launchRecord?.extensionID ?? extensionId,
+                    surface: .actionPopup,
+                    script: ChromeMV3LivePopupProductPathTraceBuilder
+                        .firstVisibleUIGateProbeScript
+                ) as? String,
+                let data = raw.data(using: .utf8),
+                let object = try? JSONSerialization.jsonObject(with: data)
+                    as? [String: Any]
+            {
+                firstVisibleUIGateProbeObject = object
+            }
+        }
+        let firstVisibleUIGateDiagnostics =
+            ChromeMV3LivePopupProductPathTraceBuilder
+            .deriveFirstVisibleUIGateDiagnostics(
+                bridgeSnapshot: bridgeSnapshot,
+                finalDOM: finalDOM,
+                stagedSnapshots: stagedSnapshots,
+                probeObject: firstVisibleUIGateProbeObject,
+                requiredResourceLoadFailure:
+                    resourceSummary.firstBlocker != .unknown,
+                storageLifecycleContext: {
+                    #if DEBUG
+                        return ChromeMV3LivePopupStorageLifecycleContext
+                            .fromLocalLifecycleDispatch(
+                                lastChromeMV3LocalLifecycleDispatchResult
+                            )
+                    #else
+                        return .notObserved
+                    #endif
+                }()
+            )
+        let postParseDiagnostics =
+            ChromeMV3LivePopupProductPathTraceBuilder.postParseSanitizedDiagnostics(
+                bridgeSnapshot: bridgeSnapshot,
+                finalDOM: finalDOM
+            )
+        let extensionClassifier =
+            ChromeMV3LivePopupProductPathTraceBuilder.deriveExtensionClassifier(
+                bridgeSnapshot: bridgeSnapshot,
+                finalDOM: finalDOM,
+                firstVisibleUIGate: firstVisibleUIGateDiagnostics
+            )
+            ?? bridgeSnapshot?.appStateDependencyTrace.correlationSummary
+                .classification
         var lifecycleCategories: [String] = []
         if popupResult.opened {
             lifecycleCategories.append("opened")
@@ -5573,9 +5626,12 @@ final class SumiExtensionsModule {
             .controlledPopupAppStateBoundaryDiagnostics(
                 bridgeSnapshot: bridgeSnapshot,
                 finalDOM: finalDOM,
-                stagedSnapshots: stagedSnapshots
+                stagedSnapshots: stagedSnapshots,
+                firstVisibleUIGate: firstVisibleUIGateDiagnostics
             )?
             .logLines ?? []
+        let firstVisibleUIGateDiagnosticsLines =
+            firstVisibleUIGateDiagnostics?.logLines ?? []
         let trace = ChromeMV3LivePopupProductPathTrace(
             productPath: productPath,
             expectedPopupPath: expectedPopupPath,
@@ -5660,6 +5716,7 @@ final class SumiExtensionsModule {
                         + compatibilityPolicy.diagnostics
                         + (postParseDiagnostics?.logLines ?? [])
                         + appStateBoundaryDiagnostics
+                        + firstVisibleUIGateDiagnosticsLines
                 )
             ).sorted()
         )
@@ -5736,7 +5793,8 @@ final class SumiExtensionsModule {
                 harnessOnMessageCount:
                     ChromeMV3LivePopupProductPathTraceBuilder.harnessListenerCounts(
                         from: bridgeSnapshot
-                    ).onMessage
+                    ).onMessage,
+                firstVisibleUIGate: firstVisibleUIGateDiagnostics
             ),
             stagedSnapshots: reconciled.stagedSnapshots,
             lifecycleEventCategories: reconciled.lifecycleEventCategories,
@@ -6244,6 +6302,8 @@ final class SumiExtensionsModule {
                 sourceComponentID: "local-unpacked-mv3-lifecycle",
                 sourceComponentKind: .runtimeJSHarness
             )
+            _ = ChromeMV3ServiceWorkerLocalStorageMirror
+                .flushDeferredServiceWorkerWork(in: harness)
             let finalValues =
                 harness.exportStorageValues(area: .local)
                     ?? initialStorage.values

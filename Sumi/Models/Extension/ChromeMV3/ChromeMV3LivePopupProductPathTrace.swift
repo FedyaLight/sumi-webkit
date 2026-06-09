@@ -196,6 +196,133 @@ struct ChromeMV3ControlledPopupAppStateBoundaryDiagnostics: Equatable, Sendable 
     }
 }
 
+struct ChromeMV3LivePopupStorageLifecycleContext: Equatable, Sendable {
+    var installStoragePersistedCategory: String
+    var popupWakeStorageSeededCategory: String
+    var installStorageWriteCountBucket: String
+    var popupWakeDeferredStartupDrainCountBucket: String
+
+    static let notObserved = ChromeMV3LivePopupStorageLifecycleContext(
+        installStoragePersistedCategory: "notObserved",
+        popupWakeStorageSeededCategory: "notObserved",
+        installStorageWriteCountBucket: "notObserved",
+        popupWakeDeferredStartupDrainCountBucket: "notObserved"
+    )
+
+    #if DEBUG
+        static func fromLocalLifecycleDispatch(
+            _ result: ChromeMV3LocalLifecycleDispatchResult?
+        ) -> ChromeMV3LivePopupStorageLifecycleContext {
+            guard let result else { return .notObserved }
+            let installPersisted =
+                result.storageLocalPersistedFromWorker
+                    && result.storageLocalWriteCount > 0
+            return ChromeMV3LivePopupStorageLifecycleContext(
+                installStoragePersistedCategory:
+                    result.dispatched
+                        ? (
+                            installPersisted
+                                ? "installPersisted"
+                                : (
+                                    result.storageLocalWriteCount > 0
+                                        ? "installWriteNotPersisted"
+                                        : "installDispatchedNoWrite"
+                                )
+                        )
+                        : "installDispatchSkipped",
+                popupWakeStorageSeededCategory: "notObserved",
+                installStorageWriteCountBucket:
+                    ChromeMV3LivePopupProductPathTraceBuilder.countBucket(
+                        result.storageLocalWriteCount
+                    ),
+                popupWakeDeferredStartupDrainCountBucket: "notObserved"
+            )
+        }
+    #endif
+}
+
+struct ChromeMV3FirstVisibleUIGateDiagnostics: Equatable, Sendable {
+    var firstVisibleUIGateCategory: String
+    var appInitializerGateCategory: String
+    var angularBootstrapCategory: String
+    var routerActivationCategory: String
+    var redirectGuardCategory: String
+    var loginRouteActivationCategory: String
+    var firstVisibleComponentCategory: String
+    var staticLoadingShellCategory: String
+    var migrationWaitCategory: String
+    var migrationStateCategory: String
+    var migrationStateShapeCategory: String
+    var accountScaffoldCategory: String
+    var viewCacheStateCategory: String
+    var sdkReadyCategory: String
+    var i18nReadyCategory: String
+    var themeReadyCategory: String
+    var popupSizeReadyCategory: String
+    var storageMigrationReadCategory: String
+    var storageMigrationWriteVisibilityCategory: String
+    var nativeDependencyForVisibleUICategory: String
+    var appInitializerEnteredCategory: String
+    var sdkLoadAwaitCategory: String
+    var migrationWaitEnteredCategory: String
+    var migrationWaitResolvedCategory: String
+    var i18nInitCategory: String
+    var viewCacheInitCategory: String
+    var popupSizeInitCategory: String
+    var themeInitCategory: String
+    var appInitializerUnresolvedAwaitCategory: String
+    var swStorageWriteCapturedCountBucket: String
+    var swStorageWriteMirroredCountBucket: String
+    var popupReadWrittenByServiceWorkerCountBucket: String
+    var storageNamespaceMatchCategory: String
+    var storageSnapshotImportedCategory: String
+    var storageOnChangedDeliveryCategory: String
+    var installStoragePersistedCategory: String
+    var popupWakeStorageSeededCategory: String
+
+    var logLines: [String] {
+        [
+            "firstVisibleUIGateCategory=\(firstVisibleUIGateCategory)",
+            "appInitializerGateCategory=\(appInitializerGateCategory)",
+            "appInitializerEnteredCategory=\(appInitializerEnteredCategory)",
+            "sdkLoadAwaitCategory=\(sdkLoadAwaitCategory)",
+            "migrationWaitEnteredCategory=\(migrationWaitEnteredCategory)",
+            "migrationWaitResolvedCategory=\(migrationWaitResolvedCategory)",
+            "i18nInitCategory=\(i18nInitCategory)",
+            "viewCacheInitCategory=\(viewCacheInitCategory)",
+            "popupSizeInitCategory=\(popupSizeInitCategory)",
+            "themeInitCategory=\(themeInitCategory)",
+            "appInitializerUnresolvedAwaitCategory=\(appInitializerUnresolvedAwaitCategory)",
+            "angularBootstrapCategory=\(angularBootstrapCategory)",
+            "routerActivationCategory=\(routerActivationCategory)",
+            "redirectGuardCategory=\(redirectGuardCategory)",
+            "loginRouteActivationCategory=\(loginRouteActivationCategory)",
+            "firstVisibleComponentCategory=\(firstVisibleComponentCategory)",
+            "staticLoadingShellCategory=\(staticLoadingShellCategory)",
+            "migrationWaitCategory=\(migrationWaitCategory)",
+            "migrationStateCategory=\(migrationStateCategory)",
+            "migrationStateShapeCategory=\(migrationStateShapeCategory)",
+            "accountScaffoldCategory=\(accountScaffoldCategory)",
+            "viewCacheStateCategory=\(viewCacheStateCategory)",
+            "sdkReadyCategory=\(sdkReadyCategory)",
+            "i18nReadyCategory=\(i18nReadyCategory)",
+            "themeReadyCategory=\(themeReadyCategory)",
+            "popupSizeReadyCategory=\(popupSizeReadyCategory)",
+            "storageMigrationReadCategory=\(storageMigrationReadCategory)",
+            "storageMigrationWriteVisibilityCategory=\(storageMigrationWriteVisibilityCategory)",
+            "nativeDependencyForVisibleUICategory=\(nativeDependencyForVisibleUICategory)",
+            "swStorageWriteCapturedCountBucket=\(swStorageWriteCapturedCountBucket)",
+            "swStorageWriteMirroredCountBucket=\(swStorageWriteMirroredCountBucket)",
+            "popupReadWrittenByServiceWorkerCountBucket=\(popupReadWrittenByServiceWorkerCountBucket)",
+            "storageNamespaceMatchCategory=\(storageNamespaceMatchCategory)",
+            "storageSnapshotImportedCategory=\(storageSnapshotImportedCategory)",
+            "storageOnChangedDeliveryCategory=\(storageOnChangedDeliveryCategory)",
+            "installStoragePersistedCategory=\(installStoragePersistedCategory)",
+            "popupWakeStorageSeededCategory=\(popupWakeStorageSeededCategory)",
+        ]
+    }
+}
+
 struct ChromeMV3LivePopupDOMCheckpoint: Codable, Equatable, Sendable {
     var readyState: String
     var visibleTextLengthBucket: String
@@ -417,7 +544,7 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         "button,[role='button'],input[type='button'],input[type='submit']"
       );
       const hasBusy = queryCount(
-        "[role='progressbar'],[aria-busy='true'],.spinner,.loading,.loader,[data-loading='true']"
+        "#loading,[id='loading'],[role='progressbar'],[aria-busy='true'],.spinner,.loading,.loader,[data-loading='true'],[class*='spin'],[class*='Spin']"
       ) > 0;
       const hasLoadingText = /\\b(loading|please wait|initializing|syncing)\\b/i
         .test(text + " " + title);
@@ -440,6 +567,86 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         navigationCommitted: document.readyState === "complete"
           || document.readyState === "interactive",
         ariaBusyOrLoadingCategory: ariaBusyOrLoadingCategory
+      });
+    })();
+    """
+
+    static let firstVisibleUIGateProbeScript = """
+    (() => {
+      const queryCount = (selector) => {
+        try {
+          return document.querySelectorAll(selector).length;
+        } catch (_) {
+          return 0;
+        }
+      };
+      const appRoot = document.querySelector(
+        'app-root,[data-app-root],main,#app,#root,#react'
+      );
+      const body = document.body;
+      const text = body && body.innerText ? body.innerText.trim() : "";
+      const staticLoadingShellCount = queryCount(
+        '#loading,[id="loading"],[data-loading="true"]'
+      );
+      const spinnerLikeCount = queryCount(
+        '[role="progressbar"],[aria-busy="true"],.spinner,.loading,.loader,[class*="spin"],[class*="Spin"]'
+      );
+      const ngVersionPresent =
+        (appRoot && appRoot.hasAttribute("ng-version"))
+          || queryCount("[ng-version]") > 0;
+      const routerOutlet = document.querySelector("router-outlet");
+      const routerOutletPresent = routerOutlet != null;
+      const routeHost = appRoot || body;
+      const hyphenComponentCount = routeHost
+        ? Array.from(routeHost.querySelectorAll("*")).filter((node) => {
+            const tag = node.tagName ? node.tagName.toLowerCase() : "";
+            return tag.includes("-")
+              && tag !== "app-root"
+              && tag !== "router-outlet";
+          }).length
+        : 0;
+      const formControlCount = queryCount("input,textarea,select");
+      const buttonCount = queryCount(
+        "button,[role='button'],input[type='button'],input[type='submit']"
+      );
+      const visibleControlCount = formControlCount + buttonCount;
+      const visibilityCategory = (() => {
+        const target = appRoot || body;
+        if (!target) return "detached";
+        const style = window.getComputedStyle(target);
+        if (style.display === "none") return "displayNone";
+        if (style.visibility === "hidden") return "visibilityHidden";
+        if (parseFloat(style.opacity || "1") === 0) return "opacityZero";
+        const rect = target.getBoundingClientRect();
+        if (rect.width <= 1 || rect.height <= 1) return "zeroSize";
+        if (text.length > 0 || visibleControlCount > 0) return "visible";
+        return "unknown";
+      })();
+      const pathnameDepth = location && location.pathname
+        ? location.pathname.split("/").filter(Boolean).length
+        : 0;
+      const htmlLocaleClassPresent = document.documentElement
+        ? Array.from(document.documentElement.classList).some(
+            (className) =>
+              typeof className === "string"
+                && className.startsWith("locale_")
+          )
+        : false;
+      return JSON.stringify({
+        readyState: document.readyState || "unknown",
+        visibleTextLength: text.length,
+        formControlCount: formControlCount,
+        buttonCount: buttonCount,
+        appRootPresent: appRoot != null,
+        appRootChildCount: appRoot ? appRoot.childElementCount : 0,
+        staticLoadingShellCount: staticLoadingShellCount,
+        spinnerLikeCount: spinnerLikeCount,
+        ngVersionPresent: ngVersionPresent,
+        routerOutletPresent: routerOutletPresent,
+        hyphenComponentCount: hyphenComponentCount,
+        pathnameDepth: pathnameDepth,
+        visibilityCategory: visibilityCategory,
+        htmlLocaleClassPresent: htmlLocaleClassPresent
       });
     })();
     """
@@ -1151,10 +1358,707 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         return correlation ?? "notClassified"
     }
 
+    private static func finalPostBootstrapCoarseStatus(
+        from events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
+    ) -> String? {
+        events.last(where: { event in
+            event.eventKind == "postBootstrapCheckpoint"
+                && event.diagnostics.contains { $0 == "phase=final" }
+        })?.resultClassifier
+            ?? events.last(where: { $0.eventKind == "postBootstrapCheckpoint" })?
+            .resultClassifier
+    }
+
+    private static func migrationShapedPopupReads(
+        in operations: [ChromeMV3AppStateStorageOperationTraceRecord]
+    ) -> [ChromeMV3AppStateStorageOperationTraceRecord] {
+        operations.filter { record in
+            record.context == "popup"
+                && record.operation == "get"
+                && (
+                    record.keyShape == "singleKey"
+                        || record.keyShape == "stringKey"
+                        || record.keyShape == "objectKeys"
+                )
+        }
+    }
+
+    private static func serviceWorkerStorageWrites(
+        in operations: [ChromeMV3AppStateStorageOperationTraceRecord]
+    ) -> [ChromeMV3AppStateStorageOperationTraceRecord] {
+        operations.filter { record in
+            record.context == "serviceWorker"
+                && ["set", "remove", "clear"].contains(record.operation)
+        }
+    }
+
+    private static func deriveStorageMirrorDiagnostics(
+        bridgeSnapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?,
+        correlation: ChromeMV3AppStateDependencyCorrelationSummary,
+        storageLifecycleContext: ChromeMV3LivePopupStorageLifecycleContext
+    ) -> (
+        swStorageWriteCapturedCountBucket: String,
+        swStorageWriteMirroredCountBucket: String,
+        popupReadWrittenByServiceWorkerCountBucket: String,
+        storageNamespaceMatchCategory: String,
+        storageSnapshotImportedCategory: String,
+        storageOnChangedDeliveryCategory: String,
+        installStoragePersistedCategory: String,
+        popupWakeStorageSeededCategory: String
+    ) {
+        let storageOperations =
+            bridgeSnapshot?.appStateDependencyTrace.storageOperations ?? []
+        let swWrites = serviceWorkerStorageWrites(in: storageOperations)
+        let mirroredWriteCount =
+            correlation.popupReadKeyHashesWrittenByServiceWorker.count
+        let storageChangeDispatches =
+            bridgeSnapshot?.appStateDependencyTrace.storageChangeDispatches
+            ?? []
+        let onChangedDelivered =
+            storageChangeDispatches.contains { dispatch in
+                dispatch.listenerReceivedByContext.values.contains(true)
+            }
+        let onChangedObserved = storageChangeDispatches.isEmpty == false
+        let snapshotImported =
+            bridgeSnapshot?.diagnostics.contains {
+                $0.localizedCaseInsensitiveContains(
+                    "Loaded existing developer-preview storage.local snapshot"
+                )
+            } ?? false
+        let namespaceMatched =
+            bridgeSnapshot?.diagnostics.contains {
+                $0.localizedCaseInsensitiveContains(
+                    "scoped by profile ID, extension ID"
+                )
+            } ?? false
+        let storageOnChangedDeliveryCategory: String
+        if onChangedDelivered {
+            storageOnChangedDeliveryCategory = "onChangedDelivered"
+        } else if onChangedObserved {
+            storageOnChangedDeliveryCategory = "onChangedDeliveryFailure"
+        } else if correlation.writtenKeyHashesWithoutObservedOnChangedDelivery
+            .isEmpty == false
+        {
+            storageOnChangedDeliveryCategory = "onChangedMissed"
+        } else {
+            storageOnChangedDeliveryCategory = "notObserved"
+        }
+        let swStorageWriteMirroredCountBucket: String
+        if swWrites.isEmpty {
+            swStorageWriteMirroredCountBucket = "0"
+        } else if mirroredWriteCount > 0 {
+            swStorageWriteMirroredCountBucket =
+                countBucket(mirroredWriteCount)
+        } else {
+            swStorageWriteMirroredCountBucket = "0"
+        }
+        return (
+            swStorageWriteCapturedCountBucket: countBucket(swWrites.count),
+            swStorageWriteMirroredCountBucket: swStorageWriteMirroredCountBucket,
+            popupReadWrittenByServiceWorkerCountBucket:
+                countBucket(mirroredWriteCount),
+            storageNamespaceMatchCategory:
+                namespaceMatched ? "namespaceMatched" : "notObserved",
+            storageSnapshotImportedCategory:
+                snapshotImported
+                    ? "storageSnapshotImported"
+                    : "storageSnapshotNotImported",
+            storageOnChangedDeliveryCategory: storageOnChangedDeliveryCategory,
+            installStoragePersistedCategory:
+                storageLifecycleContext.installStoragePersistedCategory,
+            popupWakeStorageSeededCategory:
+                storageLifecycleContext.popupWakeStorageSeededCategory
+        )
+    }
+
+    private static func deriveAppInitializerPhaseDiagnostics(
+        scriptsExecuted: Bool,
+        staticLoadingShellCount: Int,
+        ngVersionPresent: Bool,
+        migrationReads: [ChromeMV3AppStateStorageOperationTraceRecord],
+        migrationEmptyReads: Int,
+        migrationPopulatedReads: Int,
+        i18nRouteCount: Int,
+        hyphenComponentCount: Int,
+        routerOutletPresent: Bool,
+        htmlLocaleClassPresent: Bool,
+        correlation: ChromeMV3AppStateDependencyCorrelationSummary,
+        storageMigrationWriteVisibilityCategory: String,
+        installStoragePersistedCategory: String,
+        swStorageWriteCapturedCountBucket: String,
+        popupReadWrittenByServiceWorkerCountBucket: String,
+        storageSnapshotImportedCategory: String,
+        storageOnChangedDeliveryCategory: String
+    ) -> (
+        appInitializerEnteredCategory: String,
+        sdkLoadAwaitCategory: String,
+        migrationWaitEnteredCategory: String,
+        migrationWaitResolvedCategory: String,
+        i18nInitCategory: String,
+        viewCacheInitCategory: String,
+        popupSizeInitCategory: String,
+        themeInitCategory: String,
+        appInitializerUnresolvedAwaitCategory: String
+    ) {
+        let migrationShapedReadObserved = migrationReads.isEmpty == false
+        let sdkLoadResolved =
+            migrationShapedReadObserved || i18nRouteCount > 0 || ngVersionPresent
+        let migrationWaitEntered = migrationShapedReadObserved
+        let migrationWaitResolved =
+            migrationPopulatedReads > 0 || i18nRouteCount > 0 || ngVersionPresent
+        let initializerEntered =
+            scriptsExecuted
+            && (
+                staticLoadingShellCount > 0
+                    || ngVersionPresent == false
+            )
+
+        let appInitializerEnteredCategory =
+            initializerEntered ? "entered" : "notObserved"
+        let sdkLoadAwaitCategory: String
+        if sdkLoadResolved {
+            sdkLoadAwaitCategory = "sdkLoadResolved"
+        } else if scriptsExecuted && staticLoadingShellCount > 0 {
+            sdkLoadAwaitCategory = "sdkLoadStillPending"
+        } else {
+            sdkLoadAwaitCategory = "notObserved"
+        }
+        let migrationWaitEnteredCategory =
+            migrationWaitEntered ? "entered" : "notObserved"
+        let migrationWaitResolvedCategory: String
+        if migrationWaitResolved {
+            migrationWaitResolvedCategory = "resolved"
+        } else if migrationWaitEntered {
+            migrationWaitResolvedCategory = "stillPending"
+        } else {
+            migrationWaitResolvedCategory = "notObserved"
+        }
+        let i18nInitCategory: String
+        if i18nRouteCount > 0 {
+            i18nInitCategory = "i18nInitObserved"
+        } else if migrationWaitResolved && ngVersionPresent == false {
+            i18nInitCategory = "i18nInitPending"
+        } else {
+            i18nInitCategory = "notObserved"
+        }
+        let viewCacheInitCategory: String
+        if ngVersionPresent && hyphenComponentCount > 0 {
+            viewCacheInitCategory = "viewCacheInitObserved"
+        } else if i18nRouteCount > 0 && ngVersionPresent == false {
+            viewCacheInitCategory = "viewCacheInitPending"
+        } else {
+            viewCacheInitCategory = "notObserved"
+        }
+        let popupSizeInitCategory: String
+        if ngVersionPresent && routerOutletPresent {
+            popupSizeInitCategory = "popupSizeInitObserved"
+        } else if ngVersionPresent {
+            popupSizeInitCategory = "popupSizeInitPending"
+        } else {
+            popupSizeInitCategory = "notObserved"
+        }
+        let themeInitCategory: String
+        if htmlLocaleClassPresent {
+            themeInitCategory = "themeInitObserved"
+        } else if ngVersionPresent {
+            themeInitCategory = "themeInitPending"
+        } else {
+            themeInitCategory = "notObserved"
+        }
+
+        let appInitializerUnresolvedAwaitCategory: String
+        if ngVersionPresent && staticLoadingShellCount == 0 {
+            appInitializerUnresolvedAwaitCategory = "appInitializerComplete"
+        } else if sdkLoadAwaitCategory == "sdkLoadStillPending" {
+            appInitializerUnresolvedAwaitCategory = "sdkLoadStillPending"
+        } else if swStorageWriteCapturedCountBucket != "0"
+            && popupReadWrittenByServiceWorkerCountBucket == "0"
+        {
+            appInitializerUnresolvedAwaitCategory =
+                "serviceWorkerStorageWriteNotMirrored"
+        } else if swStorageWriteCapturedCountBucket == "0"
+            && installStoragePersistedCategory == "installDispatchedNoWrite"
+            && migrationWaitEntered
+            && migrationWaitResolved == false
+        {
+            appInitializerUnresolvedAwaitCategory =
+                "serviceWorkerMigrationWriteMissing"
+        } else if storageSnapshotImportedCategory
+            == "storageSnapshotNotImported"
+            && migrationWaitEntered
+        {
+            appInitializerUnresolvedAwaitCategory = "storageSnapshotNotImported"
+        } else if storageOnChangedDeliveryCategory == "onChangedDeliveryFailure"
+            || storageOnChangedDeliveryCategory == "onChangedMissed"
+        {
+            appInitializerUnresolvedAwaitCategory =
+                "storageOnChangedDeliveryFailure"
+        } else if migrationWaitEntered
+            && migrationWaitResolved == false
+        {
+            if migrationPopulatedReads > 0 {
+                appInitializerUnresolvedAwaitCategory =
+                    "migrationWaitEnteredAndPending"
+            } else if migrationEmptyReads > 0 {
+                appInitializerUnresolvedAwaitCategory = "migrationStateMissing"
+            } else {
+                appInitializerUnresolvedAwaitCategory =
+                    "migrationWaitEnteredAndPending"
+            }
+        } else if migrationPopulatedReads > 0 && migrationWaitResolved == false
+        {
+            appInitializerUnresolvedAwaitCategory = "migrationStateShapeMismatch"
+        } else if i18nInitCategory == "i18nInitPending" {
+            appInitializerUnresolvedAwaitCategory =
+                "appInitializerWaitingForI18n"
+        } else if viewCacheInitCategory == "viewCacheInitPending" {
+            appInitializerUnresolvedAwaitCategory =
+                "appInitializerWaitingForViewCache"
+        } else if popupSizeInitCategory == "popupSizeInitPending" {
+            appInitializerUnresolvedAwaitCategory =
+                "appInitializerWaitingForPopupSize"
+        } else if themeInitCategory == "themeInitPending" {
+            appInitializerUnresolvedAwaitCategory =
+                "appInitializerWaitingForTheme"
+        } else if staticLoadingShellCount > 0 && ngVersionPresent == false {
+            appInitializerUnresolvedAwaitCategory =
+                "loginRouteNotActivatedBecauseInitializerPending"
+        } else if storageMigrationWriteVisibilityCategory
+            == "readNoWriter"
+            && correlation.popupReadKeyHashesNeverWritten.isEmpty == false
+        {
+            appInitializerUnresolvedAwaitCategory = "migrationStateMissing"
+        } else {
+            appInitializerUnresolvedAwaitCategory = "appInitializerUnknownAwait"
+        }
+
+        return (
+            appInitializerEnteredCategory: appInitializerEnteredCategory,
+            sdkLoadAwaitCategory: sdkLoadAwaitCategory,
+            migrationWaitEnteredCategory: migrationWaitEnteredCategory,
+            migrationWaitResolvedCategory: migrationWaitResolvedCategory,
+            i18nInitCategory: i18nInitCategory,
+            viewCacheInitCategory: viewCacheInitCategory,
+            popupSizeInitCategory: popupSizeInitCategory,
+            themeInitCategory: themeInitCategory,
+            appInitializerUnresolvedAwaitCategory:
+                appInitializerUnresolvedAwaitCategory
+        )
+    }
+
+    static func deriveFirstVisibleUIGateDiagnostics(
+        bridgeSnapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?,
+        finalDOM: ChromeMV3LivePopupDOMCheckpoint?,
+        stagedSnapshots: [ChromeMV3LivePopupStagedSnapshot] = [],
+        probeObject: [String: Any]? = nil,
+        requiredResourceLoadFailure: Bool = false,
+        storageLifecycleContext:
+            ChromeMV3LivePopupStorageLifecycleContext = .notObserved
+    ) -> ChromeMV3FirstVisibleUIGateDiagnostics? {
+        guard bridgeSnapshot != nil || probeObject != nil else { return nil }
+        let correlation =
+            bridgeSnapshot?.appStateDependencyTrace.correlationSummary
+            ?? ChromeMV3AppStateDependencyCorrelationSummary(
+                classification: "notClassified",
+                serviceWorkerState: "notObserved",
+                popupReadKeyHashesNeverWritten: [],
+                popupReadKeyHashesWrittenByServiceWorker: [],
+                writtenKeyHashesWithoutObservedOnChangedDelivery: [],
+                repeatedEmptyReadKeyHashes: [],
+                serviceWorkerStorageWritesAfterConnect: false,
+                serviceWorkerStorageWriteCountAfterConnect: 0,
+                storageOnChangedReachedRegisteredListeners: false,
+                missingAPIsObserved: [],
+                networkOrAuthDependencyObserved: false,
+                pendingRouteCount: 0,
+                popupReachedUsableOnboardingOrLoginUI: false,
+                domUsable: false,
+                diagnostics: []
+            )
+        let routeEvents = bridgeSnapshot?.jsDebugRouteEvents ?? []
+        let latest = preferredStagedSnapshot(stagedSnapshots)
+        let postBootstrapStatus = finalPostBootstrapCoarseStatus(from: routeEvents)
+        let migrationReads = migrationShapedPopupReads(
+            in: bridgeSnapshot?.appStateDependencyTrace.storageOperations ?? []
+        )
+        let migrationEmptyReads = migrationReads.filter(\.emptyResult).count
+        let migrationPopulatedReads = migrationReads.filter(\.populatedResult).count
+        let repeatedMigrationReads =
+            correlation.repeatedEmptyReadKeyHashes.count
+        let neverWrittenReads =
+            correlation.popupReadKeyHashesNeverWritten.count
+        let serviceWorkerWrites =
+            correlation.popupReadKeyHashesWrittenByServiceWorker.count
+        let swWritesAfterConnect =
+            correlation.serviceWorkerStorageWritesAfterConnect
+
+        let ngVersionPresent = probeObject?["ngVersionPresent"] as? Bool ?? false
+        let staticLoadingShellCount = probeObject?["staticLoadingShellCount"] as? Int ?? 0
+        let spinnerLikeCount = probeObject?["spinnerLikeCount"] as? Int ?? 0
+        let routerOutletPresent = probeObject?["routerOutletPresent"] as? Bool ?? false
+        let hyphenComponentCount = probeObject?["hyphenComponentCount"] as? Int ?? 0
+        let visibleTextLength = probeObject?["visibleTextLength"] as? Int
+            ?? bucketLowerBound(finalDOM?.visibleTextLengthBucket ?? "0")
+        let formControlCount = probeObject?["formControlCount"] as? Int ?? 0
+        let buttonCount = probeObject?["buttonCount"] as? Int ?? 0
+        let visibilityCategory =
+            probeObject?["visibilityCategory"] as? String
+            ?? finalDOM?.visibilityCategory
+            ?? "unknown"
+        let pathnameDepth = probeObject?["pathnameDepth"] as? Int ?? 0
+        let htmlLocaleClassPresent =
+            probeObject?["htmlLocaleClassPresent"] as? Bool ?? false
+
+        let consoleErrorCategory = latest?.consoleErrorCategory ?? "none"
+        let unhandledRejectionCategory =
+            latest?.unhandledRejectionCategory ?? "none"
+        let nativeMessagingCategory = nativeMessagingResultCategory(
+            from: routeEvents,
+            pendingRoutes:
+                bridgeSnapshot?.pendingUnresolvedJSDebugRoutes ?? []
+        )
+        let nativeMessagingRequests = routeEvents.contains { event in
+            let api = event.apiName.lowercased()
+            return api.contains("nativemessaging.")
+                || api.contains("runtime.connectnative")
+                || api.contains("runtime.sendnativemessage")
+        }
+
+        let staticLoadingShellCategory: String
+        if staticLoadingShellCount > 0 {
+            staticLoadingShellCategory = "staticLoadingPresent"
+        } else if ngVersionPresent {
+            staticLoadingShellCategory = "staticLoadingRemoved"
+        } else {
+            staticLoadingShellCategory = "staticLoadingAbsent"
+        }
+
+        let angularBootstrapCategory: String
+        if ngVersionPresent {
+            angularBootstrapCategory = "bootstrapComplete"
+        } else if latest?.scriptsExecuted == true
+            || latest?.firstJSCheckpoint == true
+        {
+            angularBootstrapCategory = "bootstrapNotObserved"
+        } else {
+            angularBootstrapCategory = "notStarted"
+        }
+
+        let sdkReadyCategory: String
+        if consoleErrorCategory != "none"
+            || unhandledRejectionCategory != "none"
+        {
+            sdkReadyCategory = "sdkBlocked"
+        } else if latest?.scriptsExecuted == true {
+            sdkReadyCategory = "sdkReady"
+        } else {
+            sdkReadyCategory = "notObserved"
+        }
+
+        let migrationStateCategory: String
+        if migrationPopulatedReads > 0 {
+            migrationStateCategory = "migrationStateVisible"
+        } else if migrationEmptyReads > 0 || repeatedMigrationReads > 0 {
+            migrationStateCategory = "migrationStateMissing"
+        } else {
+            migrationStateCategory = "notObserved"
+        }
+
+        let migrationStateShapeCategory: String
+        if migrationPopulatedReads > 0 {
+            migrationStateShapeCategory = "objectPopulated"
+        } else if migrationEmptyReads > 0 {
+            migrationStateShapeCategory = "objectEmpty"
+        } else {
+            migrationStateShapeCategory = "notObserved"
+        }
+
+        let storageMigrationReadCategory: String
+        if migrationPopulatedReads > 0 {
+            storageMigrationReadCategory = "populatedRead"
+        } else if migrationEmptyReads > 0 {
+            storageMigrationReadCategory = "emptyRead"
+        } else {
+            storageMigrationReadCategory = "notObserved"
+        }
+
+        let storageMigrationWriteVisibilityCategory: String
+        if serviceWorkerWrites > 0 {
+            storageMigrationWriteVisibilityCategory = "serviceWorkerWriteVisible"
+        } else if swWritesAfterConnect {
+            storageMigrationWriteVisibilityCategory = "serviceWorkerWriteNotMirrored"
+        } else if neverWrittenReads > 0 {
+            storageMigrationWriteVisibilityCategory = "readNoWriter"
+        } else {
+            storageMigrationWriteVisibilityCategory = "notObserved"
+        }
+
+        let migrationWaitCategory: String
+        if ngVersionPresent && staticLoadingShellCount == 0 {
+            migrationWaitCategory = "resolved"
+        } else if migrationEmptyReads > 0 && migrationPopulatedReads == 0 {
+            migrationWaitCategory = "stillPending"
+        } else {
+            migrationWaitCategory = "notObserved"
+        }
+
+        let accountScaffoldCategory: String
+        if neverWrittenReads > 0 && migrationPopulatedReads == 0 {
+            accountScaffoldCategory = "guestScaffoldMissing"
+        } else if migrationPopulatedReads > 0 {
+            accountScaffoldCategory = "guestScaffoldPresent"
+        } else {
+            accountScaffoldCategory = "notObserved"
+        }
+
+        let i18nRouteCount = routeEvents.filter {
+            $0.targetContext == "i18n"
+        }.count
+        let i18nReadyCategory =
+            i18nRouteCount > 0 ? "i18nRouteObserved" : "notObserved"
+
+        let themeReadyCategory =
+            ngVersionPresent ? "themeAppliedOrPending" : "notObserved"
+        let popupSizeReadyCategory =
+            ngVersionPresent ? "popupSizeAppliedOrPending" : "notObserved"
+        let viewCacheStateCategory =
+            ngVersionPresent && hyphenComponentCount == 0
+                ? "viewCacheWaitingBeforeFirstPaint"
+                : "notObserved"
+
+        let routerActivationCategory: String
+        if routerOutletPresent == false {
+            routerActivationCategory = ngVersionPresent
+                ? "routerOutletMissing"
+                : "routerNotStarted"
+        } else if hyphenComponentCount == 0 {
+            routerActivationCategory = "routerStartedNoVisibleRoute"
+        } else {
+            routerActivationCategory = "routerStartedWithComponents"
+        }
+
+        let redirectGuardCategory: String
+        if ngVersionPresent == false {
+            redirectGuardCategory = "redirectGuardNotRun"
+        } else if pathnameDepth == 0 && hyphenComponentCount == 0 {
+            redirectGuardCategory = "redirectGuardPending"
+        } else if hyphenComponentCount > 0 || pathnameDepth > 0 {
+            redirectGuardCategory = "redirectGuardObserved"
+        } else {
+            redirectGuardCategory = "redirectGuardNotRun"
+        }
+
+        let loginRouteActivationCategory: String
+        if hyphenComponentCount > 0 {
+            loginRouteActivationCategory = "guestRouteComponentPresent"
+        } else if ngVersionPresent && routerOutletPresent {
+            loginRouteActivationCategory = "loginRouteNotActivated"
+        } else {
+            loginRouteActivationCategory = "notObserved"
+        }
+
+        let firstVisibleComponentCategory: String
+        if visibleTextLength > 0 || formControlCount > 0 || buttonCount > 0 {
+            firstVisibleComponentCategory = "visibleComponentObserved"
+        } else if hyphenComponentCount > 0
+            && ["displayNone", "visibilityHidden", "opacityZero", "zeroSize"]
+                .contains(visibilityCategory)
+        {
+            firstVisibleComponentCategory = "componentMountedButHidden"
+        } else if spinnerLikeCount > 0 || staticLoadingShellCount > 0 {
+            firstVisibleComponentCategory = "firstVisibleComponentWaiting"
+        } else if hyphenComponentCount > 0 {
+            firstVisibleComponentCategory = "componentMountedNoVisibleText"
+        } else {
+            firstVisibleComponentCategory = "notConstructed"
+        }
+
+        let appInitializerGateCategory: String
+        if ngVersionPresent && staticLoadingShellCount == 0 {
+            appInitializerGateCategory = "appInitializerComplete"
+        } else if migrationWaitCategory == "stillPending" {
+            appInitializerGateCategory = "appInitializerWaitingForMigration"
+        } else if ngVersionPresent == false {
+            appInitializerGateCategory = "appInitializerStillPending"
+        } else {
+            appInitializerGateCategory = "appInitializerPartial"
+        }
+
+        let nativeDependencyForVisibleUICategory =
+            nativeMessagingRequests ? nativeMessagingCategory : "notRequested"
+
+        let storageMirrorDiagnostics = deriveStorageMirrorDiagnostics(
+            bridgeSnapshot: bridgeSnapshot,
+            correlation: correlation,
+            storageLifecycleContext: storageLifecycleContext
+        )
+        let appInitializerPhase = deriveAppInitializerPhaseDiagnostics(
+            scriptsExecuted: latest?.scriptsExecuted == true
+                || latest?.firstJSCheckpoint == true,
+            staticLoadingShellCount: staticLoadingShellCount,
+            ngVersionPresent: ngVersionPresent,
+            migrationReads: migrationReads,
+            migrationEmptyReads: migrationEmptyReads,
+            migrationPopulatedReads: migrationPopulatedReads,
+            i18nRouteCount: i18nRouteCount,
+            hyphenComponentCount: hyphenComponentCount,
+            routerOutletPresent: routerOutletPresent,
+            htmlLocaleClassPresent: htmlLocaleClassPresent,
+            correlation: correlation,
+            storageMigrationWriteVisibilityCategory:
+                storageMigrationWriteVisibilityCategory,
+            installStoragePersistedCategory:
+                storageMirrorDiagnostics.installStoragePersistedCategory,
+            swStorageWriteCapturedCountBucket:
+                storageMirrorDiagnostics.swStorageWriteCapturedCountBucket,
+            popupReadWrittenByServiceWorkerCountBucket:
+                storageMirrorDiagnostics
+                .popupReadWrittenByServiceWorkerCountBucket,
+            storageSnapshotImportedCategory:
+                storageMirrorDiagnostics.storageSnapshotImportedCategory,
+            storageOnChangedDeliveryCategory:
+                storageMirrorDiagnostics.storageOnChangedDeliveryCategory
+        )
+
+        let firstVisibleUIGateCategory: String
+        if requiredResourceLoadFailure {
+            firstVisibleUIGateCategory = "templateOrChunkLoadMissing"
+        } else if sdkReadyCategory == "sdkBlocked" {
+            firstVisibleUIGateCategory = "sdkBlocked"
+        } else if nativeMessagingRequests
+            && nativeMessagingCategory != "notRequested"
+        {
+            firstVisibleUIGateCategory = "nativeDependencyRequiredForVisibleUI"
+        } else if appInitializerPhase.appInitializerUnresolvedAwaitCategory
+            != "appInitializerComplete"
+            && appInitializerPhase.appInitializerUnresolvedAwaitCategory
+                != "appInitializerUnknownAwait"
+        {
+            firstVisibleUIGateCategory =
+                appInitializerPhase.appInitializerUnresolvedAwaitCategory
+        } else if appInitializerGateCategory == "appInitializerStillPending"
+            || (
+                staticLoadingShellCategory == "staticLoadingPresent"
+                    && ngVersionPresent == false
+            )
+        {
+            firstVisibleUIGateCategory = "appInitializerStillPending"
+        } else if appInitializerGateCategory
+            == "appInitializerWaitingForMigration"
+            || migrationWaitCategory == "stillPending"
+        {
+            firstVisibleUIGateCategory = migrationPopulatedReads > 0
+                ? "migrationWaitStillPending"
+                : "migrationStateMissing"
+        } else if migrationStateCategory == "migrationStateMissing"
+            && neverWrittenReads > 0
+        {
+            firstVisibleUIGateCategory = repeatedMigrationReads > 0
+                ? "storageShapeBlocksLoginRoute"
+                : "missingGuestStateForLoginRoute"
+        } else if routerActivationCategory == "routerNotStarted" {
+            firstVisibleUIGateCategory = "routerNotStarted"
+        } else if redirectGuardCategory == "redirectGuardNotRun"
+            || redirectGuardCategory == "redirectGuardPending"
+        {
+            firstVisibleUIGateCategory = redirectGuardCategory
+                == "redirectGuardPending"
+                ? "redirectGuardNotRun"
+                : "redirectGuardNotRun"
+        } else if loginRouteActivationCategory == "loginRouteNotActivated" {
+            firstVisibleUIGateCategory = "loginRouteNotActivated"
+        } else if routerActivationCategory == "routerStartedNoVisibleRoute" {
+            firstVisibleUIGateCategory = "routerStartedNoVisibleRoute"
+        } else if firstVisibleComponentCategory == "componentMountedButHidden" {
+            firstVisibleUIGateCategory = "componentMountedButHidden"
+        } else if firstVisibleComponentCategory
+            == "firstVisibleComponentWaiting"
+            || postBootstrapStatus == "spinner/loading"
+            || spinnerLikeCount > 0
+        {
+            firstVisibleUIGateCategory = viewCacheStateCategory
+                == "viewCacheWaitingBeforeFirstPaint"
+                ? "viewCacheWaitingBeforeFirstPaint"
+                : "firstVisibleComponentWaiting"
+        } else if visibleTextLength == 0 && formControlCount == 0
+            && buttonCount == 0
+        {
+            if ["displayNone", "visibilityHidden", "opacityZero", "zeroSize"]
+                .contains(visibilityCategory)
+            {
+                firstVisibleUIGateCategory = "cssOrLayoutHidesFirstUI"
+            } else if postBootstrapStatus == "blank"
+                || postBootstrapStatus == "waits on app state"
+            {
+                firstVisibleUIGateCategory = "extensionLocalRenderState"
+            } else {
+                firstVisibleUIGateCategory = "unknownOnlyIfNoSignal"
+            }
+        } else {
+            firstVisibleUIGateCategory = "extensionLocalRenderState"
+        }
+
+        return ChromeMV3FirstVisibleUIGateDiagnostics(
+            firstVisibleUIGateCategory: firstVisibleUIGateCategory,
+            appInitializerGateCategory: appInitializerGateCategory,
+            angularBootstrapCategory: angularBootstrapCategory,
+            routerActivationCategory: routerActivationCategory,
+            redirectGuardCategory: redirectGuardCategory,
+            loginRouteActivationCategory: loginRouteActivationCategory,
+            firstVisibleComponentCategory: firstVisibleComponentCategory,
+            staticLoadingShellCategory: staticLoadingShellCategory,
+            migrationWaitCategory: migrationWaitCategory,
+            migrationStateCategory: migrationStateCategory,
+            migrationStateShapeCategory: migrationStateShapeCategory,
+            accountScaffoldCategory: accountScaffoldCategory,
+            viewCacheStateCategory: viewCacheStateCategory,
+            sdkReadyCategory: sdkReadyCategory,
+            i18nReadyCategory: i18nReadyCategory,
+            themeReadyCategory: themeReadyCategory,
+            popupSizeReadyCategory: popupSizeReadyCategory,
+            storageMigrationReadCategory: storageMigrationReadCategory,
+            storageMigrationWriteVisibilityCategory:
+                storageMigrationWriteVisibilityCategory,
+            nativeDependencyForVisibleUICategory:
+                nativeDependencyForVisibleUICategory,
+            appInitializerEnteredCategory:
+                appInitializerPhase.appInitializerEnteredCategory,
+            sdkLoadAwaitCategory: appInitializerPhase.sdkLoadAwaitCategory,
+            migrationWaitEnteredCategory:
+                appInitializerPhase.migrationWaitEnteredCategory,
+            migrationWaitResolvedCategory:
+                appInitializerPhase.migrationWaitResolvedCategory,
+            i18nInitCategory: appInitializerPhase.i18nInitCategory,
+            viewCacheInitCategory: appInitializerPhase.viewCacheInitCategory,
+            popupSizeInitCategory: appInitializerPhase.popupSizeInitCategory,
+            themeInitCategory: appInitializerPhase.themeInitCategory,
+            appInitializerUnresolvedAwaitCategory:
+                appInitializerPhase.appInitializerUnresolvedAwaitCategory,
+            swStorageWriteCapturedCountBucket:
+                storageMirrorDiagnostics.swStorageWriteCapturedCountBucket,
+            swStorageWriteMirroredCountBucket:
+                storageMirrorDiagnostics.swStorageWriteMirroredCountBucket,
+            popupReadWrittenByServiceWorkerCountBucket:
+                storageMirrorDiagnostics
+                .popupReadWrittenByServiceWorkerCountBucket,
+            storageNamespaceMatchCategory:
+                storageMirrorDiagnostics.storageNamespaceMatchCategory,
+            storageSnapshotImportedCategory:
+                storageMirrorDiagnostics.storageSnapshotImportedCategory,
+            storageOnChangedDeliveryCategory:
+                storageMirrorDiagnostics.storageOnChangedDeliveryCategory,
+            installStoragePersistedCategory:
+                storageMirrorDiagnostics.installStoragePersistedCategory,
+            popupWakeStorageSeededCategory:
+                storageMirrorDiagnostics.popupWakeStorageSeededCategory
+        )
+    }
+
     static func controlledPopupAppStateBoundaryDiagnostics(
         bridgeSnapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?,
         finalDOM: ChromeMV3LivePopupDOMCheckpoint?,
-        stagedSnapshots: [ChromeMV3LivePopupStagedSnapshot] = []
+        stagedSnapshots: [ChromeMV3LivePopupStagedSnapshot] = [],
+        firstVisibleUIGate: ChromeMV3FirstVisibleUIGateDiagnostics? = nil
     ) -> ChromeMV3ControlledPopupAppStateBoundaryDiagnostics? {
         guard let snapshot = bridgeSnapshot else { return nil }
         let trace = snapshot.appStateDependencyTrace.correlationSummary
@@ -1165,7 +2069,8 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         let extensionBoundaryClassifier = normalizeExtensionBoundaryClassifier(
             deriveExtensionClassifier(
                 bridgeSnapshot: snapshot,
-                finalDOM: finalDOM
+                finalDOM: finalDOM,
+                firstVisibleUIGate: firstVisibleUIGate
             ) ?? trace.classification
         )
         let firstStable = firstStableAppStateClassifier(
@@ -1923,8 +2828,46 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
     }
 
     static func classifyAppStateBootstrapGap(
-        trace: ChromeMV3LivePopupProductPathTrace
+        trace: ChromeMV3LivePopupProductPathTrace,
+        firstVisibleUIGate: ChromeMV3FirstVisibleUIGateDiagnostics? = nil
     ) -> ChromeMV3LivePopupFailureClassifier? {
+        if let firstVisibleUIGate,
+           firstVisibleUIGate.firstVisibleUIGateCategory
+               != "missingGuestStateForLoginRoute",
+           firstVisibleUIGate.firstVisibleUIGateCategory
+               != "storageShapeBlocksLoginRoute",
+           [
+               "appInitializerStillPending",
+               "appInitializerWaitingForMigration",
+               "sdkLoadStillPending",
+               "migrationWaitEnteredAndPending",
+               "migrationStateMissing",
+               "migrationStateShapeMismatch",
+               "serviceWorkerMigrationWriteMissing",
+               "serviceWorkerStorageWriteNotMirrored",
+               "storageSnapshotNotImported",
+               "storageOnChangedDeliveryFailure",
+               "appInitializerWaitingForI18n",
+               "appInitializerWaitingForViewCache",
+               "appInitializerWaitingForPopupSize",
+               "appInitializerWaitingForTheme",
+               "loginRouteNotActivatedBecauseInitializerPending",
+               "appInitializerUnknownAwait",
+               "migrationWaitStillPending",
+               "migrationStateMissing",
+               "routerNotStarted",
+               "redirectGuardNotRun",
+               "loginRouteNotActivated",
+               "routerStartedNoVisibleRoute",
+               "componentMountedButHidden",
+               "firstVisibleComponentWaiting",
+               "viewCacheWaitingBeforeFirstPaint",
+               "extensionLocalRenderState",
+               "cssOrLayoutHidesFirstUI",
+           ].contains(firstVisibleUIGate.firstVisibleUIGateCategory)
+        {
+            return .extensionLocalRenderState
+        }
         if trace.extensionClassifier == "extensionLocalAppState" {
             return .extensionLocalAppState
         }
@@ -2113,11 +3056,45 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
 
     static func deriveExtensionClassifier(
         bridgeSnapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?,
-        finalDOM: ChromeMV3LivePopupDOMCheckpoint?
+        finalDOM: ChromeMV3LivePopupDOMCheckpoint?,
+        firstVisibleUIGate: ChromeMV3FirstVisibleUIGateDiagnostics? = nil
     ) -> String? {
         guard let snapshot = bridgeSnapshot else { return nil }
         let correlation =
             snapshot.appStateDependencyTrace.correlationSummary.classification
+        if let firstVisibleUIGate,
+           [
+               "appInitializerStillPending",
+               "appInitializerWaitingForMigration",
+               "sdkLoadStillPending",
+               "migrationWaitEnteredAndPending",
+               "migrationStateMissing",
+               "migrationStateShapeMismatch",
+               "serviceWorkerMigrationWriteMissing",
+               "serviceWorkerStorageWriteNotMirrored",
+               "storageSnapshotNotImported",
+               "storageOnChangedDeliveryFailure",
+               "appInitializerWaitingForI18n",
+               "appInitializerWaitingForViewCache",
+               "appInitializerWaitingForPopupSize",
+               "appInitializerWaitingForTheme",
+               "loginRouteNotActivatedBecauseInitializerPending",
+               "appInitializerUnknownAwait",
+               "migrationWaitStillPending",
+               "migrationStateMissing",
+               "routerNotStarted",
+               "redirectGuardNotRun",
+               "loginRouteNotActivated",
+               "routerStartedNoVisibleRoute",
+               "componentMountedButHidden",
+               "firstVisibleComponentWaiting",
+               "viewCacheWaitingBeforeFirstPaint",
+               "extensionLocalRenderState",
+               "cssOrLayoutHidesFirstUI",
+           ].contains(firstVisibleUIGate.firstVisibleUIGateCategory)
+        {
+            return "extensionLocalRenderState"
+        }
         guard let postParse = postParseSanitizedDiagnostics(
             bridgeSnapshot: snapshot,
             finalDOM: finalDOM
@@ -2136,6 +3113,12 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             || postParse.appStateClassification == "appStateWaitWithNoWriter"
             || postParse.storageCategory == "readNoWriter"
         {
+            if let firstVisibleUIGate,
+               firstVisibleUIGate.appInitializerGateCategory
+                   != "appInitializerComplete"
+            {
+                return "extensionLocalRenderState"
+            }
             return "extensionLocalAppState"
         }
 
@@ -2441,7 +3424,8 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         routeRecords:
             [ChromeMV3PopupOptionsSanitizedBridgeRouteRecord] = [],
         harnessOnConnectCount: Int = 0,
-        harnessOnMessageCount: Int = 0
+        harnessOnMessageCount: Int = 0,
+        firstVisibleUIGate: ChromeMV3FirstVisibleUIGateDiagnostics? = nil
     ) -> ChromeMV3LivePopupFailureClassifier {
         let trace = reconcileTraceWithStagedSnapshots(trace)
         if let resourceClassifier = resourceFailureClassifier(
@@ -2580,7 +3564,10 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             return portClassifier
         }
 
-        if let appStateClassifier = classifyAppStateBootstrapGap(trace: trace) {
+        if let appStateClassifier = classifyAppStateBootstrapGap(
+            trace: trace,
+            firstVisibleUIGate: firstVisibleUIGate
+        ) {
             return appStateClassifier
         }
 
@@ -2609,11 +3596,14 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             }
         }
 
+        if trace.extensionClassifier == "extensionLocalRenderState"
+            || firstVisibleUIGate?.firstVisibleUIGateCategory
+                == "extensionLocalRenderState"
+        {
+            return .extensionLocalRenderState
+        }
         if trace.extensionClassifier == "extensionLocalAppState" {
             return .extensionLocalAppState
-        }
-        if trace.extensionClassifier == "extensionLocalRenderState" {
-            return .extensionLocalRenderState
         }
         if trace.extensionBlankedDOM {
             return .popoverPresentedThenExtensionBlankedDOM

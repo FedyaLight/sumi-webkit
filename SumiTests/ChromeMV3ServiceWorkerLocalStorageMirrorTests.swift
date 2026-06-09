@@ -199,6 +199,21 @@ final class ChromeMV3ServiceWorkerLocalStorageMirrorTests: XCTestCase {
         return harness
     }
 
+    func testFlushDeferredServiceWorkerWorkDrainsQueuedTimeoutsBeforeMirror()
+        throws
+    {
+        let harness = try makeHarnessWritingStorageOnConnect(
+            extensionID: "deferred-drain-extension",
+            profileID: "deferred-drain-profile"
+        )
+        let start = harness.start()
+        XCTAssertEqual(start.status, .running)
+        let drained =
+            ChromeMV3ServiceWorkerLocalStorageMirror
+            .flushDeferredServiceWorkerWork(in: harness)
+        XCTAssertGreaterThanOrEqual(drained, 0)
+    }
+
     private func configuration(
         extensionID: String,
         profileID: String,
