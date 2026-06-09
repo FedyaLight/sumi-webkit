@@ -5433,7 +5433,16 @@ final class SumiExtensionsModule {
                 from: routeEvents,
                 observedMethods: bridgeSnapshot?.observedMethods ?? [],
                 bridgeInstalled: runResult?.popupOptionsBridgeInstalled ?? false,
-                finalDOM: finalDOM
+                finalDOM: finalDOM,
+                routeRecords: bridgeSnapshot?.sanitizedBridgeRouteRecords ?? [],
+                harnessOnMessageListenerCount:
+                    ChromeMV3LivePopupProductPathTraceBuilder.harnessListenerCounts(
+                        from: bridgeSnapshot
+                    ).onMessage,
+                harnessOnConnectListenerCount:
+                    ChromeMV3LivePopupProductPathTraceBuilder.harnessListenerCounts(
+                        from: bridgeSnapshot
+                    ).onConnect
             )
         for snapshot in synthesized
         where stagedSnapshots.contains(where: { $0.stage == snapshot.stage }) == false
@@ -5635,7 +5644,16 @@ final class SumiExtensionsModule {
             contentViewReplacedWebView: reconciled.contentViewReplacedWebView,
             failureClassifier: ChromeMV3LivePopupProductPathTraceBuilder.classify(
                 reconciled,
-                routeEvents: routeEvents
+                routeEvents: routeEvents,
+                routeRecords: bridgeSnapshot?.sanitizedBridgeRouteRecords ?? [],
+                harnessOnConnectCount:
+                    ChromeMV3LivePopupProductPathTraceBuilder.harnessListenerCounts(
+                        from: bridgeSnapshot
+                    ).onConnect,
+                harnessOnMessageCount:
+                    ChromeMV3LivePopupProductPathTraceBuilder.harnessListenerCounts(
+                        from: bridgeSnapshot
+                    ).onMessage
             ),
             stagedSnapshots: reconciled.stagedSnapshots,
             lifecycleEventCategories: reconciled.lifecycleEventCategories,

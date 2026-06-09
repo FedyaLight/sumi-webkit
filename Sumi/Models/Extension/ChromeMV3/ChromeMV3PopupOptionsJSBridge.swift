@@ -1330,6 +1330,8 @@ struct ChromeMV3AppStateDependencyTraceSnapshot:
     var domCheckpoints:
         [ChromeMV3AppStateDOMCheckpointTraceRecord]
     var serviceWorkerCapturedListenerCount: Int
+    var serviceWorkerHarnessOnMessageListenerCount: Int
+    var serviceWorkerHarnessOnConnectListenerCount: Int
     var serviceWorkerDispatchRecordCount: Int
     var serviceWorkerStorageOperationCount: Int
     var serviceWorkerPortCount: Int
@@ -1346,6 +1348,8 @@ struct ChromeMV3AppStateDependencyTraceSnapshot:
             portLifecycle: [],
             domCheckpoints: [],
             serviceWorkerCapturedListenerCount: 0,
+            serviceWorkerHarnessOnMessageListenerCount: 0,
+            serviceWorkerHarnessOnConnectListenerCount: 0,
             serviceWorkerDispatchRecordCount: 0,
             serviceWorkerStorageOperationCount: 0,
             serviceWorkerPortCount: 0,
@@ -3370,6 +3374,14 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 domCheckpoints: domCheckpoints,
                 serviceWorkerCapturedListenerCount:
                     serviceWorkerSnapshot?.capturedListeners.count ?? 0,
+                serviceWorkerHarnessOnMessageListenerCount:
+                    serviceWorkerSnapshot?.capturedListeners.filter {
+                        $0.event == .runtimeOnMessage
+                    }.count ?? 0,
+                serviceWorkerHarnessOnConnectListenerCount:
+                    serviceWorkerSnapshot?.capturedListeners.filter {
+                        $0.event == .runtimeOnConnect
+                    }.count ?? 0,
                 serviceWorkerDispatchRecordCount:
                     serviceWorkerSnapshot?.dispatchRecords.count ?? 0,
                 serviceWorkerStorageOperationCount:

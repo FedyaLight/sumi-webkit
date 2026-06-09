@@ -1056,6 +1056,142 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
     }
 
     @MainActor
+    func testDebugLivePopupServiceWorkerOnConnectBucketsUseBridgeRoutesNotPopupRegistrations()
+    {
+        let popupOnMessageRegistration = [
+            ChromeMV3PopupOptionsJSDebugRouteEventRecord(
+                sequence: 1,
+                eventKind: "extensionMethodCalled",
+                apiName: "runtime.onMessage.addListener",
+                sourceContext: "actionPopup",
+                targetContext: "popup",
+                safeMessageShapeClassification: "shape=unknown",
+                safeCommandTypeActionFieldNames: [],
+                diagnostics: []
+            ),
+        ]
+        let bucketsWithoutRoutes =
+            ChromeMV3LivePopupProductPathTraceBuilder.apiRouteCountBuckets(
+                from: popupOnMessageRegistration
+            )
+        XCTAssertEqual(bucketsWithoutRoutes.serviceWorkerOnMessageListener, 0)
+        XCTAssertEqual(bucketsWithoutRoutes.serviceWorkerOnConnectListener, 0)
+
+        let connectRoute = ChromeMV3PopupOptionsSanitizedBridgeRouteRecord(
+            extensionIDHash: "abc",
+            profileID: "profile",
+            sourceContext: "actionPopup",
+            targetContext: "serviceWorker",
+            apiName: "runtime.connect",
+            safeMessageShapeClassification: "shape=unknown",
+            safeCommandTypeActionFieldNames: [],
+            listenerCount: 3,
+            listenerInvoked: true,
+            sendResponseCalled: false,
+            listenerReturnedTrue: false,
+            listenerThrew: false,
+            portName: "callerProvided",
+            portMessageCount: 0,
+            resultClassifier: "delivered",
+            firstMissingAPIOrPermissionOrLifecycleError: nil,
+            diagnostics: [
+                "runtime.connect delivered a named Port to captured service-worker runtime.onConnect JavaScript listener(s).",
+            ]
+        )
+        let bucketsWithRoutes =
+            ChromeMV3LivePopupProductPathTraceBuilder.apiRouteCountBuckets(
+                from: popupOnMessageRegistration,
+                routeRecords: [connectRoute],
+                harnessOnConnectListenerCount: 6
+            )
+        XCTAssertEqual(bucketsWithRoutes.serviceWorkerOnConnectListener, 3)
+        XCTAssertEqual(bucketsWithRoutes.serviceWorkerOnMessageListener, 0)
+
+        var trace = makeLivePopupBootstrapGapTrace()
+        trace.stagedSnapshots = [
+            ChromeMV3LivePopupStagedSnapshot(
+                stage: "after3000ms",
+                readyState: "loading",
+                navigationStarted: true,
+                navigationFinished: true,
+                urlLoaded: true,
+                firstJSCheckpoint: true,
+                bridgeInstalled: true,
+                scriptsExecuted: true,
+                runtimeErrorCategory: "none",
+                consoleErrorCategory: "none",
+                unhandledRejectionCategory: "none",
+                appRootPresent: true,
+                bodyChildCountBucket: "1-3",
+                appRootChildCountBucket: "0",
+                visibleTextBucket: "0",
+                formControlCountBucket: "0",
+                buttonCountBucket: "0",
+                ariaBusyOrLoadingCategory: "none",
+                storageReadCountBucket: "1-3",
+                storageWriteCountBucket: "0",
+                runtimeSendMessageCountBucket: "0",
+                runtimeConnectCountBucket: "1-3",
+                portMessageCountBucket: "0",
+                tabsQueryCountBucket: "0",
+                tabsSendMessageCountBucket: "0",
+                scriptingExecuteScriptCountBucket: "0",
+                pendingBridgeRoutesBucket: "0",
+                serviceWorkerOnMessageListenerCountBucket: "0",
+                serviceWorkerOnConnectListenerCountBucket: "1-3",
+                nativeMessagingRequestCountBucket: "0",
+                nativeMessagingResultCategory: "notRequested",
+                swOutboxCapturedCountBucket: "0",
+                swOutboxDeliveredToPopupCountBucket: "0",
+                popupPortOnMessageListenerCategory: "listenerRegistered",
+                pendingInboundPortMessagesBucket: "0",
+                portDisconnectCategory: "notObserved"
+            ),
+        ]
+        XCTAssertNotEqual(
+            ChromeMV3LivePopupProductPathTraceBuilder.classifyBootstrapFailure(
+                trace: trace,
+                routeEvents: popupOnMessageRegistration,
+                routeRecords: [connectRoute],
+                harnessOnConnectCount: 6
+            ),
+            .popupWaitingOnServiceWorkerListener
+        )
+
+        let missingListenerRoute = ChromeMV3PopupOptionsSanitizedBridgeRouteRecord(
+            extensionIDHash: "abc",
+            profileID: "profile",
+            sourceContext: "actionPopup",
+            targetContext: "serviceWorker",
+            apiName: "runtime.connect",
+            safeMessageShapeClassification: "shape=unknown",
+            safeCommandTypeActionFieldNames: [],
+            listenerCount: 0,
+            listenerInvoked: false,
+            sendResponseCalled: false,
+            listenerReturnedTrue: false,
+            listenerThrew: false,
+            portName: "callerProvided",
+            portMessageCount: 0,
+            resultClassifier: "noReceivingEnd",
+            firstMissingAPIOrPermissionOrLifecycleError: nil,
+            diagnostics: [
+                "listenerCount=0",
+                "listenerInvoked=false",
+                "runtime.connect returned a popup/options-scoped synthetic Port object.",
+            ]
+        )
+        XCTAssertEqual(
+            ChromeMV3LivePopupProductPathTraceBuilder.classifyServiceWorkerConnectBlocker(
+                trace: trace,
+                routeEvents: popupOnMessageRegistration,
+                routeRecords: [missingListenerRoute]
+            ),
+            .serviceWorkerOnConnectListenerMissing
+        )
+    }
+
+    @MainActor
     func testDebugLivePopupProductPathClassifierDetectsPresentationMismatch()
     {
         let domVisible = ChromeMV3LivePopupDOMCheckpoint(

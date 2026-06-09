@@ -70,6 +70,10 @@ enum ChromeMV3LivePopupFailureClassifier: String, Codable, Equatable, Sendable {
     case popupWaitingOnRuntimeMessage
     case popupWaitingOnPortResponse
     case popupWaitingOnServiceWorkerListener
+    case serviceWorkerOnConnectListenerMissing
+    case serviceWorkerConnectDispatchedBeforeStartup
+    case runtimePortSenderShapeMismatch
+    case extensionLocalNoOnConnectListener
     case popupWaitingOnTabsOrScripting
     case popupMissingChromeAPIAbort
     case appStateWaitWithNoWriter
@@ -777,7 +781,11 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
 
     static func apiRouteCountBuckets(
         from events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord],
-        pendingRoutes: [ChromeMV3PopupOptionsJSDebugRouteEventRecord] = []
+        pendingRoutes: [ChromeMV3PopupOptionsJSDebugRouteEventRecord] = [],
+        routeRecords:
+            [ChromeMV3PopupOptionsSanitizedBridgeRouteRecord] = [],
+        harnessOnMessageListenerCount: Int = 0,
+        harnessOnConnectListenerCount: Int = 0
     ) -> APIRouteCountBuckets {
         var buckets = APIRouteCountBuckets()
         buckets.pendingBridgeRoutes = pendingRoutes.count
@@ -821,12 +829,6 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
                 if api.contains("scripting.executescript") {
                     buckets.scriptingExecuteScript += 1
                 }
-                if api.contains("runtime.onmessage") {
-                    buckets.serviceWorkerOnMessageListener += 1
-                }
-                if api.contains("runtime.onconnect") {
-                    buckets.serviceWorkerOnConnectListener += 1
-                }
                 if api.contains("nativemessaging.")
                     || api.contains("runtime.connectnative")
                     || api.contains("runtime.sendnativemessage")
@@ -837,7 +839,65 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
                 break
             }
         }
+        let serviceWorkerListeners = serviceWorkerListenerCounts(
+            from: routeRecords,
+            harnessOnMessageListenerCount: harnessOnMessageListenerCount,
+            harnessOnConnectListenerCount: harnessOnConnectListenerCount
+        )
+        buckets.serviceWorkerOnMessageListener = serviceWorkerListeners.onMessage
+        buckets.serviceWorkerOnConnectListener = serviceWorkerListeners.onConnect
         return buckets
+    }
+
+    static func serviceWorkerListenerCounts(
+        from routeRecords: [ChromeMV3PopupOptionsSanitizedBridgeRouteRecord],
+        harnessOnMessageListenerCount: Int = 0,
+        harnessOnConnectListenerCount: Int = 0
+    ) -> (onMessage: Int, onConnect: Int) {
+        var onMessage = 0
+        var onConnect = 0
+        for route in routeRecords {
+            switch route.apiName {
+            case "runtime.sendMessage":
+                if route.sourceContext != "contentScript" {
+                    onMessage = max(onMessage, route.listenerCount)
+                }
+            case "runtime.connect":
+                onConnect = max(onConnect, route.listenerCount)
+            default:
+                break
+            }
+            if route.diagnostics.contains(where: {
+                $0.contains("runtime.onMessage listener")
+            }) {
+                onMessage = max(onMessage, route.listenerCount)
+            }
+            if route.diagnostics.contains(where: {
+                $0.contains("runtime.onConnect listener")
+                    || $0.contains("runtime.onConnect JavaScript listener")
+            }) {
+                onConnect = max(onConnect, route.listenerCount)
+            }
+        }
+        if onMessage == 0, harnessOnMessageListenerCount > 0 {
+            onMessage = harnessOnMessageListenerCount
+        }
+        if onConnect == 0, harnessOnConnectListenerCount > 0 {
+            onConnect = harnessOnConnectListenerCount
+        }
+        return (onMessage, onConnect)
+    }
+
+    static func harnessListenerCounts(
+        from bridgeSnapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?
+    ) -> (onMessage: Int, onConnect: Int) {
+        guard let trace = bridgeSnapshot?.appStateDependencyTrace else {
+            return (0, 0)
+        }
+        return (
+            trace.serviceWorkerHarnessOnMessageListenerCount,
+            trace.serviceWorkerHarnessOnConnectListenerCount
+        )
     }
 
     struct PortDeliveryDiagnostics: Equatable, Sendable {
@@ -1183,13 +1243,20 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         observedMethods: [String],
         bridgeInstalled: Bool,
         navigationStarted: Bool,
-        navigationFinished: Bool
+        navigationFinished: Bool,
+        routeRecords:
+            [ChromeMV3PopupOptionsSanitizedBridgeRouteRecord] = [],
+        harnessOnMessageListenerCount: Int = 0,
+        harnessOnConnectListenerCount: Int = 0
     ) -> ChromeMV3LivePopupStagedSnapshot {
         let readyState = domObject["readyState"] as? String ?? "unknown"
         let urlLoaded = domObject["navigationCommitted"] as? Bool ?? false
         let buckets = apiRouteCountBuckets(
             from: routeEvents,
-            pendingRoutes: pendingRoutes
+            pendingRoutes: pendingRoutes,
+            routeRecords: routeRecords,
+            harnessOnMessageListenerCount: harnessOnMessageListenerCount,
+            harnessOnConnectListenerCount: harnessOnConnectListenerCount
         )
         let portDelivery = portDeliveryDiagnostics(from: routeEvents)
         return ChromeMV3LivePopupStagedSnapshot(
@@ -1266,7 +1333,11 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         from events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord],
         observedMethods: [String],
         bridgeInstalled: Bool,
-        finalDOM: ChromeMV3LivePopupDOMCheckpoint?
+        finalDOM: ChromeMV3LivePopupDOMCheckpoint?,
+        routeRecords:
+            [ChromeMV3PopupOptionsSanitizedBridgeRouteRecord] = [],
+        harnessOnMessageListenerCount: Int = 0,
+        harnessOnConnectListenerCount: Int = 0
     ) -> [ChromeMV3LivePopupStagedSnapshot] {
         var snapshots: [ChromeMV3LivePopupStagedSnapshot] = []
         let domObject: [String: Any] = [
@@ -1297,7 +1368,12 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
                     observedMethods: observedMethods,
                     bridgeInstalled: bridgeInstalled,
                     navigationStarted: navigation.started,
-                    navigationFinished: navigation.finished
+                    navigationFinished: navigation.finished,
+                    routeRecords: routeRecords,
+                    harnessOnMessageListenerCount:
+                        harnessOnMessageListenerCount,
+                    harnessOnConnectListenerCount:
+                        harnessOnConnectListenerCount
                 )
             )
         }
@@ -1530,9 +1606,73 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         return snapshots.last
     }
 
+    static func classifyServiceWorkerConnectBlocker(
+        trace: ChromeMV3LivePopupProductPathTrace,
+        routeEvents: [ChromeMV3PopupOptionsJSDebugRouteEventRecord] = [],
+        routeRecords:
+            [ChromeMV3PopupOptionsSanitizedBridgeRouteRecord] = [],
+        harnessOnConnectCount: Int = 0,
+        harnessOnMessageCount: Int = 0
+    ) -> ChromeMV3LivePopupFailureClassifier? {
+        guard let latest = preferredStagedSnapshot(trace.stagedSnapshots) else {
+            return nil
+        }
+        let runtimeConnectObserved =
+            latest.runtimeConnectCountBucket != "0"
+            || routeEvents.contains {
+                $0.apiName.lowercased().contains("runtime.connect")
+            }
+        guard runtimeConnectObserved else { return nil }
+
+        let serviceWorkerListeners = serviceWorkerListenerCounts(
+            from: routeRecords,
+            harnessOnMessageListenerCount: harnessOnMessageCount,
+            harnessOnConnectListenerCount: harnessOnConnectCount
+        )
+        let popupConnectRoutes = routeRecords.filter {
+            $0.apiName == "runtime.connect" && $0.sourceContext != "contentScript"
+        }
+        let connectFailedRoutes = popupConnectRoutes.filter(postParseRouteFailed)
+        let connectDelivered = popupConnectRoutes.contains(where: \.listenerInvoked)
+
+        if harnessOnConnectCount == 0, serviceWorkerListeners.onConnect == 0 {
+            if connectFailedRoutes.isEmpty, connectDelivered == false,
+               latest.pendingBridgeRoutesBucket != "0"
+            {
+                return .serviceWorkerConnectDispatchedBeforeStartup
+            }
+            return .serviceWorkerOnConnectListenerMissing
+        }
+
+        if let failedRoute = connectFailedRoutes.first {
+            if failedRoute.listenerCount == 0, failedRoute.listenerInvoked == false {
+                if harnessOnConnectCount > 0 {
+                    return .serviceWorkerConnectDispatchedBeforeStartup
+                }
+                return .serviceWorkerOnConnectListenerMissing
+            }
+            if failedRoute.listenerCount > 0, failedRoute.listenerInvoked == false {
+                return .runtimePortSenderShapeMismatch
+            }
+        }
+
+        if connectDelivered == false,
+           latest.pendingBridgeRoutesBucket == "0",
+           serviceWorkerListeners.onConnect > 0
+        {
+            return .popupWaitingOnPortResponse
+        }
+
+        return nil
+    }
+
     static func classifyBootstrapFailure(
         trace: ChromeMV3LivePopupProductPathTrace,
-        routeEvents: [ChromeMV3PopupOptionsJSDebugRouteEventRecord] = []
+        routeEvents: [ChromeMV3PopupOptionsJSDebugRouteEventRecord] = [],
+        routeRecords:
+            [ChromeMV3PopupOptionsSanitizedBridgeRouteRecord] = [],
+        harnessOnConnectCount: Int = 0,
+        harnessOnMessageCount: Int = 0
     ) -> ChromeMV3LivePopupFailureClassifier? {
         let final = trace.finalDOMCheckpoint
         let snapshots = trace.stagedSnapshots
@@ -1590,8 +1730,17 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
                     return .popupWaitingOnTabsOrScripting
                 }
             }
-            if latest.serviceWorkerOnMessageListenerCountBucket != "0"
-                || latest.serviceWorkerOnConnectListenerCountBucket != "0"
+            if let connectBlocker = classifyServiceWorkerConnectBlocker(
+                trace: trace,
+                routeEvents: routeEvents,
+                routeRecords: routeRecords,
+                harnessOnConnectCount: harnessOnConnectCount,
+                harnessOnMessageCount: harnessOnMessageCount
+            ) {
+                return connectBlocker
+            }
+            if latest.runtimeSendMessageCountBucket != "0",
+               latest.serviceWorkerOnMessageListenerCountBucket == "0"
             {
                 return .popupWaitingOnServiceWorkerListener
             }
@@ -1930,25 +2079,12 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
     private static func postParseServiceWorkerListenerCounts(
         in snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot
     ) -> (onMessage: Int, onConnect: Int) {
-        var onMessage = 0
-        var onConnect = 0
-        for route in snapshot.sanitizedBridgeRouteRecords {
-            if route.apiName == "runtime.onMessage"
-                || route.diagnostics.contains(where: {
-                    $0.contains("runtime.onMessage listener")
-                })
-            {
-                onMessage = max(onMessage, route.listenerCount)
-            }
-            if route.apiName == "runtime.onConnect"
-                || route.diagnostics.contains(where: {
-                    $0.contains("runtime.onConnect listener")
-                })
-            {
-                onConnect = max(onConnect, route.listenerCount)
-            }
-        }
-        return (onMessage, onConnect)
+        let harness = harnessListenerCounts(from: snapshot)
+        return serviceWorkerListenerCounts(
+            from: snapshot.sanitizedBridgeRouteRecords,
+            harnessOnMessageListenerCount: harness.onMessage,
+            harnessOnConnectListenerCount: harness.onConnect
+        )
     }
 
     private static func categorizePostParseRoutes(
@@ -2204,7 +2340,11 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
 
     static func classify(
         _ trace: ChromeMV3LivePopupProductPathTrace,
-        routeEvents: [ChromeMV3PopupOptionsJSDebugRouteEventRecord] = []
+        routeEvents: [ChromeMV3PopupOptionsJSDebugRouteEventRecord] = [],
+        routeRecords:
+            [ChromeMV3PopupOptionsSanitizedBridgeRouteRecord] = [],
+        harnessOnConnectCount: Int = 0,
+        harnessOnMessageCount: Int = 0
     ) -> ChromeMV3LivePopupFailureClassifier {
         let trace = reconcileTraceWithStagedSnapshots(trace)
         if let resourceClassifier = resourceFailureClassifier(
@@ -2321,7 +2461,10 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
 
         let bootstrapClassifier = classifyBootstrapFailure(
             trace: trace,
-            routeEvents: routeEvents
+            routeEvents: routeEvents,
+            routeRecords: routeRecords,
+            harnessOnConnectCount: harnessOnConnectCount,
+            harnessOnMessageCount: harnessOnMessageCount
         )
         if let bootstrapClassifier,
            bootstrapClassifier != .popupAppRootPresentButEmpty,
@@ -2521,6 +2664,12 @@ final class ChromeMV3LivePopupStagedSnapshotCollector {
             let pendingRoutes =
                 bridgeSnapshot?.pendingUnresolvedJSDebugRoutes ?? []
             let observedMethods = bridgeSnapshot?.observedMethods ?? []
+            let routeRecords =
+                bridgeSnapshot?.sanitizedBridgeRouteRecords ?? []
+            let harnessCounts =
+                ChromeMV3LivePopupProductPathTraceBuilder.harnessListenerCounts(
+                    from: bridgeSnapshot
+                )
             let domObject: [String: Any]
             if let raw = try? await webView.evaluateJavaScript(
                 ChromeMV3LivePopupProductPathTraceBuilder.stagedProbeScript
@@ -2558,7 +2707,10 @@ final class ChromeMV3LivePopupStagedSnapshotCollector {
                 observedMethods: observedMethods,
                 bridgeInstalled: self.bridgeInstalled,
                 navigationStarted: self.navigationStarted || navigation.started,
-                navigationFinished: self.navigationFinished || navigation.finished
+                navigationFinished: self.navigationFinished || navigation.finished,
+                routeRecords: routeRecords,
+                harnessOnMessageListenerCount: harnessCounts.onMessage,
+                harnessOnConnectListenerCount: harnessCounts.onConnect
             )
             if self.snapshots.contains(where: { $0.stage == stage }) == false {
                 self.snapshots.append(snapshot)
