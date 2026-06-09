@@ -1337,6 +1337,8 @@ struct ChromeMV3AppStateDependencyTraceSnapshot:
     var serviceWorkerPortCount: Int
     var serviceWorkerLatestAsyncFlush:
         ChromeMV3ServiceWorkerAsyncFlushResult?
+    var serviceWorkerMemorySessionGetTrace:
+        ChromeMV3ServiceWorkerJSMemorySessionGetTraceRecord
     var correlationSummary:
         ChromeMV3AppStateDependencyCorrelationSummary
     var diagnostics: [String]
@@ -1356,6 +1358,7 @@ struct ChromeMV3AppStateDependencyTraceSnapshot:
             serviceWorkerStorageOperationCount: 0,
             serviceWorkerPortCount: 0,
             serviceWorkerLatestAsyncFlush: nil,
+            serviceWorkerMemorySessionGetTrace: .empty,
             correlationSummary:
                 ChromeMV3AppStateDependencyCorrelationSummary(
                     classification: "notClassified",
@@ -3477,6 +3480,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     serviceWorkerSnapshot?.ports.count ?? 0,
                 serviceWorkerLatestAsyncFlush:
                     serviceWorkerSnapshot?.asyncFlushRecords.last,
+                serviceWorkerMemorySessionGetTrace:
+                    serviceWorkerSnapshot?.memorySessionGetTrace ?? .empty,
                 correlationSummary: summary,
                 diagnostics: [
                     "DEBUG/local-experimental app-state dependency tracer is passive and records sanitized metadata only.",

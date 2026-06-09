@@ -2319,6 +2319,72 @@ struct ChromeMV3ServiceWorkerJSStorageOperationRecord:
     var diagnostics: [String]
 }
 
+struct ChromeMV3ServiceWorkerJSMemorySessionGetTraceRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var requestReceivedCategory: String
+    var requestShapeCategory: String
+    var handlerMatchedCategory: String
+    var sessionGetStartedCategory: String
+    var awaitedApiCategory: String
+    var storageCallbackCategory: String
+    var storagePromiseCategory: String
+    var getResolvedCategory: String
+    var responseConstructedCategory: String
+    var responseDataStringCategory: String
+    var responsePostMessageCalledCategory: String
+    var responseOutboxCapturedCategory: String
+    var responseFlushCategory: String
+    var responseDeliveredCategory: String
+    var getPendingReasonCategory: String
+    var stepAfterSessionGetCategory: String
+    var continuationAfterSessionGetCategory: String
+    var nextAwaitedApiCategory: String
+    var localGetStartedCategory: String
+    var localGetCallbackCategory: String
+    var localGetPromiseCategory: String
+    var cryptoAwaitCategory: String
+    var timerAwaitCategory: String
+    var microtaskContinuationCategory: String
+    var getReturnValueCategory: String
+    var responseConstructionReachedCategory: String
+    var diagnostics: [String]
+
+    static let empty = ChromeMV3ServiceWorkerJSMemorySessionGetTraceRecord(
+        requestReceivedCategory: "notObserved",
+        requestShapeCategory: "notObserved",
+        handlerMatchedCategory: "notObserved",
+        sessionGetStartedCategory: "notObserved",
+        awaitedApiCategory: "notObserved",
+        storageCallbackCategory: "notObserved",
+        storagePromiseCategory: "notObserved",
+        getResolvedCategory: "notObserved",
+        responseConstructedCategory: "notObserved",
+        responseDataStringCategory: "notObserved",
+        responsePostMessageCalledCategory: "notObserved",
+        responseOutboxCapturedCategory: "notObserved",
+        responseFlushCategory: "notObserved",
+        responseDeliveredCategory: "notObserved",
+        getPendingReasonCategory: "notObserved",
+        stepAfterSessionGetCategory: "notObserved",
+        continuationAfterSessionGetCategory: "notObserved",
+        nextAwaitedApiCategory: "notObserved",
+        localGetStartedCategory: "notObserved",
+        localGetCallbackCategory: "notObserved",
+        localGetPromiseCategory: "notObserved",
+        cryptoAwaitCategory: "notObserved",
+        timerAwaitCategory: "notObserved",
+        microtaskContinuationCategory: "notObserved",
+        getReturnValueCategory: "notObserved",
+        responseConstructionReachedCategory: "notObserved",
+        diagnostics: [
+            "No service-worker memory-session Port get trace was recorded.",
+        ]
+    )
+}
+
 struct ChromeMV3ServiceWorkerJSExecutionStartRecord:
     Codable,
     Equatable,
@@ -2641,6 +2707,8 @@ struct ChromeMV3ServiceWorkerJSExecutionSnapshot:
     var timers: [ChromeMV3ServiceWorkerJSTimerRecord]
     var timerDrainRecords: [ChromeMV3ServiceWorkerJSTimerDrainRecord]
     var asyncFlushRecords: [ChromeMV3ServiceWorkerAsyncFlushResult]
+    var memorySessionGetTrace:
+        ChromeMV3ServiceWorkerJSMemorySessionGetTraceRecord
     var lifecycleSnapshot: ChromeMV3ServiceWorkerInternalLifecycleSnapshot?
     var documentationSources:
         [ChromeMV3ServiceWorkerJSExecutionDocumentationSource]
@@ -2691,6 +2759,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         [ChromeMV3ServiceWorkerJSTimerDrainRecord] = []
     private var asyncFlushRecords:
         [ChromeMV3ServiceWorkerAsyncFlushResult] = []
+    private var memorySessionGetTrace:
+        ChromeMV3ServiceWorkerJSMemorySessionGetTraceRecord =
+        .empty
     private var lifecycleKeepaliveIDsByPort: [String: String] = [:]
     private var nextPortSequence = 1
     private var nextImportEvaluationOrder = 1
@@ -2797,6 +2868,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             timers: timers.sorted { $0.timerID < $1.timerID },
             timerDrainRecords: timerDrainRecords,
             asyncFlushRecords: asyncFlushRecords,
+            memorySessionGetTrace: memorySessionGetTrace,
             lifecycleSnapshot: lifecycleSession?.runtimeOwner.snapshot,
             documentationSources:
                 ChromeMV3ServiceWorkerJSExecutionDocumentationSource
@@ -3242,6 +3314,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         guard deliverPortMessage(portID: portID, message: message) != nil else {
             return nil
         }
+        _ = drainPendingStorageCallbacks()
         let outboxCountBeforeDelivery = ports[portID]?.postedMessages.count ?? 0
         let started = Date()
         let passes = max(1, maxDrainPasses)
@@ -3260,6 +3333,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                     maxElapsedMilliseconds - elapsedMilliseconds
                 )
             )
+            _ = finalizeMemorySessionGetTrace(portID: portID)
             refreshJSSnapshot()
             let outboxCountAfterFlush = ports[portID]?.postedMessages.count ?? 0
             if outboxCountAfterFlush > outboxCountBeforeDelivery {
@@ -3463,6 +3537,37 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
     }
 
     @discardableResult
+    func drainPendingStorageCallbacks() -> Int {
+        guard start().status == .running else { return 0 }
+        #if canImport(JavaScriptCore)
+            let drained: Int? = callJSON(
+                "__sumiHarness.drainPendingStorageCallbacks()"
+            )
+            refreshJSSnapshot()
+            return drained ?? 0
+        #else
+            return 0
+        #endif
+    }
+
+    @discardableResult
+    func finalizeMemorySessionGetTrace(portID: String)
+        -> ChromeMV3ServiceWorkerJSMemorySessionGetTraceRecord?
+    {
+        guard start().status == .running else { return nil }
+        #if canImport(JavaScriptCore)
+            let trace: ChromeMV3ServiceWorkerJSMemorySessionGetTraceRecord? =
+                callJSON(
+                    "__sumiHarness.finalizeMemorySessionGetTrace(\(jsonStringServiceWorkerJS(portID)))"
+                )
+            refreshJSSnapshot()
+            return trace ?? memorySessionGetTrace
+        #else
+            return nil
+        #endif
+    }
+
+    @discardableResult
     func flushBoundedAsyncContinuations(
         maxDrainPasses: Int = 8,
         maxCallbacksPerPass: Int = 200,
@@ -3488,6 +3593,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 break
             }
             iterationCount = pass + 1
+            _ = drainPendingStorageCallbacks()
             _ = pumpMicrotaskGeneration()
             let afterPump =
                 asyncFlushCheckpoint() ?? previousCheckpoint
@@ -6031,6 +6137,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                     }
             )
             timers = wire.timers.sorted { $0.timerID < $1.timerID }
+            memorySessionGetTrace =
+                wire.memorySessionGetTrace ?? .empty
         }
 
         private func callJSON<T: Decodable>(_ expression: String) -> T? {
@@ -6591,6 +6699,15 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             blocker: blocker ? String(blocker) : null,
             diagnostics: diagnostics.map((value) => String(value))
           });
+          if (memorySessionGetTrace.sessionGetStarted
+              && !memorySessionGetTrace.getResolved) {
+            memorySessionGetTrace.cryptoAwaitObserved = true;
+            if (memorySessionGetTrace.sessionGetCallbackInvoked
+                && memorySessionGetTrace.stepAfterSessionGetCategory
+                   === 'continuationPending') {
+              memorySessionGetTrace.stepAfterSessionGetCategory = 'cryptoAwaited';
+            }
+          }
         };
         const algorithmName = (algorithm) => {
           if (typeof algorithm === 'string') return algorithm;
@@ -6840,10 +6957,387 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           runtimeLastErrorValue = undefined;
         }
       };
-      const callbackLater = (callback, ...values) => {
-        if (typeof callback === 'function') {
-          Promise.resolve().then(() => invokeCallbackNow(callback, null, ...values));
+      const PUMP_MICROTASK_GENERATION_LIMIT = 16;
+      const memorySessionGetTrace = {
+        requestReceived: false,
+        requestShapeCategory: 'notObserved',
+        handlerMatchedCategory: 'notObserved',
+        sessionGetStarted: false,
+        awaitedApiCategory: 'notObserved',
+        storageCallbackInvoked: false,
+        storagePromiseResolved: false,
+        sessionGetCallbackInvoked: false,
+        localGetCallbackInvoked: false,
+        getResolved: false,
+        responseConstructed: false,
+        responseDataStringCategory: 'notObserved',
+        postMessageCalled: false,
+        outboxCaptured: false,
+        responseFlushCategory: 'notObserved',
+        responseDeliveredCategory: 'notObserved',
+        getPendingReasonCategory: 'notObserved',
+        stepAfterSessionGetCategory: 'notObserved',
+        continuationAfterSessionGetCategory: 'notObserved',
+        nextAwaitedApiCategory: 'notObserved',
+        localGetStarted: false,
+        localGetPromiseResolved: false,
+        cryptoAwaitObserved: false,
+        timerAwaitObserved: false,
+        microtaskContinuationCategory: 'notObserved',
+        getReturnValueCategory: 'notObserved',
+        responseConstructionReached: false,
+        pendingCallbackApiCategory: 'notObserved',
+        storageOpsBaseline: 0,
+        cryptoOpsBaseline: 0,
+        timerCountBaseline: 0,
+        microtaskGenerationsDrained: 0,
+        activeRequestIdFingerprint: null,
+        activePortID: null,
+        outboxCountBeforeRequest: 0
+      };
+      const memorySessionRequestIdFingerprint = (value) => {
+        const text = value == null ? '' : String(value);
+        if (!text) return null;
+        let hash = 2166136261;
+        const bytes = new TextEncoder().encode(text);
+        for (let index = 0; index < bytes.length; index += 1) {
+          hash ^= bytes[index];
+          hash = Math.imul(hash, 16777619);
         }
+        return `id:length=${text.length}:hash=${(hash >>> 0).toString(16).padStart(8, '0')}`;
+      };
+      const memorySessionGetRequestShapeCategory = (message) => {
+        if (!message || typeof message !== 'object' || Array.isArray(message)) {
+          return 'malformed';
+        }
+        if (message.originator !== 'foreground') return 'originatorRejected';
+        if (message.action !== 'get' && message.action !== 'has') return 'actionRejected';
+        if (typeof message.id !== 'string' || !message.id) return 'idMissing';
+        if (typeof message.key !== 'string' || !message.key) return 'keyMissing';
+        return 'foregroundGet';
+      };
+      const isMemorySessionForegroundGetRequest = (message) =>
+        memorySessionGetRequestShapeCategory(message) === 'foregroundGet';
+      const isMemorySessionGetResponse = (message, requestFingerprint) => {
+        if (!message || typeof message !== 'object' || Array.isArray(message)) {
+          return false;
+        }
+        if (message.originator !== 'background') return false;
+        if (message.action === 'initialization' || message.action === 'subject_update') {
+          return false;
+        }
+        if (typeof message.id !== 'string' || !message.id) return false;
+        if (typeof message.key !== 'string' || !message.key) return false;
+        if (typeof message.data !== 'string') return false;
+        if (!requestFingerprint) return true;
+        return memorySessionRequestIdFingerprint(message.id) === requestFingerprint;
+      };
+      const memorySessionAwaitedApi = (areaName, operation) =>
+        `chrome.storage.${String(areaName)}.${String(operation)}`;
+      const noteMemorySessionAwaitedApi = (areaName, operation) => {
+        if (!memorySessionGetTrace.sessionGetStarted
+            || memorySessionGetTrace.getResolved
+            || operation !== 'get') {
+          return;
+        }
+        const api = memorySessionAwaitedApi(areaName, operation);
+        if (memorySessionGetTrace.awaitedApiCategory === 'notObserved') {
+          memorySessionGetTrace.awaitedApiCategory = api;
+          memorySessionGetTrace.pendingCallbackApiCategory = api;
+          return;
+        }
+        if (areaName === 'local' && memorySessionGetTrace.localGetStarted === false) {
+          memorySessionGetTrace.localGetStarted = true;
+          memorySessionGetTrace.nextAwaitedApiCategory = api;
+          memorySessionGetTrace.pendingCallbackApiCategory = api;
+          if (memorySessionGetTrace.sessionGetCallbackInvoked) {
+            memorySessionGetTrace.continuationAfterSessionGetCategory = 'continued';
+            memorySessionGetTrace.stepAfterSessionGetCategory = 'localGetAwaited';
+          }
+        }
+      };
+      const refreshLocalBackedSessionContinuationDiagnostics = () => {
+        if (!memorySessionGetTrace.sessionGetStarted
+            || memorySessionGetTrace.getResolved) {
+          return;
+        }
+        const sessionGetCount = storageOperations.filter((item) =>
+          item.area === 'session' && item.operation === 'get').length;
+        const localGetCount = storageOperations.filter((item) =>
+          item.area === 'local' && item.operation === 'get').length;
+        const cryptoSinceBaseline =
+          cryptoOperations.length - memorySessionGetTrace.cryptoOpsBaseline;
+        const timerSinceBaseline =
+          timers.size - memorySessionGetTrace.timerCountBaseline;
+        if (memorySessionGetTrace.sessionGetCallbackInvoked) {
+          if (localGetCount > 0) {
+            memorySessionGetTrace.stepAfterSessionGetCategory = 'localGetAwaited';
+            memorySessionGetTrace.continuationAfterSessionGetCategory = 'continued';
+          } else if (cryptoSinceBaseline > 0) {
+            memorySessionGetTrace.stepAfterSessionGetCategory = 'cryptoAwaited';
+            memorySessionGetTrace.cryptoAwaitObserved = true;
+          } else if (timerSinceBaseline > 0) {
+            memorySessionGetTrace.stepAfterSessionGetCategory = 'timerAwaited';
+            memorySessionGetTrace.timerAwaitObserved = true;
+          } else if (memorySessionGetTrace.stepAfterSessionGetCategory === 'notObserved') {
+            memorySessionGetTrace.stepAfterSessionGetCategory = 'continuationPending';
+          }
+        }
+        if (localGetCount > 0) {
+          memorySessionGetTrace.localGetStarted = true;
+          if (memorySessionGetTrace.nextAwaitedApiCategory === 'notObserved') {
+            memorySessionGetTrace.nextAwaitedApiCategory =
+              memorySessionAwaitedApi('local', 'get');
+          }
+        }
+        if (memorySessionGetTrace.localGetCallbackInvoked) {
+          memorySessionGetTrace.localGetPromiseResolved = true;
+        }
+        if (cryptoSinceBaseline > 0) {
+          memorySessionGetTrace.cryptoAwaitObserved = true;
+        }
+        if (timerSinceBaseline > 0) {
+          memorySessionGetTrace.timerAwaitObserved = true;
+        }
+        if (memorySessionGetTrace.continuationAfterSessionGetCategory === 'continued'
+            || memorySessionGetTrace.getResolved
+            || memorySessionGetTrace.responseConstructionReached) {
+          memorySessionGetTrace.microtaskContinuationCategory = 'drained';
+        } else if (memorySessionGetTrace.sessionGetCallbackInvoked
+                   && memorySessionGetTrace.stepAfterSessionGetCategory
+                      === 'continuationPending') {
+          memorySessionGetTrace.microtaskContinuationCategory = 'notDrained';
+        }
+      };
+      const beginMemorySessionGetTrace = (portID, message, listenerCount) => {
+        memorySessionGetTrace.requestReceived = true;
+        memorySessionGetTrace.requestShapeCategory =
+          memorySessionGetRequestShapeCategory(message);
+        memorySessionGetTrace.handlerMatchedCategory =
+          listenerCount > 0 ? 'matched' : 'notMatched';
+        memorySessionGetTrace.sessionGetStarted =
+          memorySessionGetTrace.requestShapeCategory === 'foregroundGet'
+            && listenerCount > 0;
+        memorySessionGetTrace.activeRequestIdFingerprint =
+          memorySessionRequestIdFingerprint(message && message.id);
+        memorySessionGetTrace.activePortID = String(portID || '');
+        const state = ports.get(portID);
+        memorySessionGetTrace.outboxCountBeforeRequest =
+          state && Array.isArray(state.outbox) ? state.outbox.length : 0;
+        memorySessionGetTrace.storageOpsBaseline = storageOperations.length;
+        memorySessionGetTrace.cryptoOpsBaseline = cryptoOperations.length;
+        memorySessionGetTrace.timerCountBaseline = timers.size;
+        if (!memorySessionGetTrace.sessionGetStarted) {
+          memorySessionGetTrace.getPendingReasonCategory =
+            memorySessionGetTrace.requestShapeCategory === 'foregroundGet'
+              ? 'swMemorySessionHandlerNotMatched'
+              : 'swMemorySessionGetNotReceived';
+        }
+      };
+      const noteMemorySessionGetResponse = (message) => {
+        if (!isMemorySessionGetResponse(
+              message,
+              memorySessionGetTrace.activeRequestIdFingerprint)) {
+          return;
+        }
+        memorySessionGetTrace.responseConstructionReached = true;
+        memorySessionGetTrace.responseConstructed = true;
+        memorySessionGetTrace.postMessageCalled = true;
+        memorySessionGetTrace.getResolved = true;
+        memorySessionGetTrace.getReturnValueCategory = 'returned';
+        memorySessionGetTrace.responseDataStringCategory = 'jsonString';
+        try {
+          JSON.parse(message.data);
+        } catch (_) {
+          memorySessionGetTrace.responseDataStringCategory = 'parseFailed';
+        }
+      };
+      const finalizeMemorySessionGetTrace = (portID) => {
+        const state = ports.get(portID);
+        const outbox = state && Array.isArray(state.outbox) ? state.outbox : [];
+        const newMessages = outbox.slice(
+          Math.max(0, memorySessionGetTrace.outboxCountBeforeRequest)
+        );
+        const captured = newMessages.some((message) =>
+          isMemorySessionGetResponse(
+            message,
+            memorySessionGetTrace.activeRequestIdFingerprint
+          ));
+        if (captured) {
+          memorySessionGetTrace.outboxCaptured = true;
+          memorySessionGetTrace.responseDeliveredCategory = 'captured';
+        }
+        refreshLocalBackedSessionContinuationDiagnostics();
+        const pendingAsync = asyncCompletions.filter((item) => item.state === 'pending').length;
+        const pendingCallbacks = pendingStorageCallbackInvokers.length;
+        if (memorySessionGetTrace.requestReceived
+            && memorySessionGetTrace.sessionGetStarted
+            && !memorySessionGetTrace.getResolved) {
+          if (!memorySessionGetTrace.sessionGetCallbackInvoked) {
+            memorySessionGetTrace.getPendingReasonCategory =
+              pendingCallbacks > 0
+                ? 'sessionGetCallbackNotInvoked'
+                : 'sessionGetPromiseNotResolved';
+          } else if (!memorySessionGetTrace.storagePromiseResolved) {
+            memorySessionGetTrace.getPendingReasonCategory =
+              'sessionGetPromiseNotResolved';
+          } else if (memorySessionGetTrace.continuationAfterSessionGetCategory
+                     !== 'continued'
+                     && memorySessionGetTrace.localGetStarted === false
+                     && memorySessionGetTrace.cryptoAwaitObserved === false
+                     && memorySessionGetTrace.timerAwaitObserved === false) {
+            memorySessionGetTrace.getPendingReasonCategory =
+              'continuationAfterSessionGetNotDrained';
+          } else if (memorySessionGetTrace.localGetStarted
+                     && !memorySessionGetTrace.localGetCallbackInvoked) {
+            memorySessionGetTrace.getPendingReasonCategory =
+              pendingCallbacks > 0
+                ? 'localGetCallbackNotInvoked'
+                : 'localGetNotStarted';
+          } else if (memorySessionGetTrace.localGetCallbackInvoked
+                     && !memorySessionGetTrace.localGetPromiseResolved) {
+            memorySessionGetTrace.getPendingReasonCategory =
+              'localGetPromiseNotResolved';
+          } else if (memorySessionGetTrace.localGetPromiseResolved
+                     && memorySessionGetTrace.continuationAfterSessionGetCategory
+                        === 'continued'
+                     && !memorySessionGetTrace.responseConstructionReached) {
+            memorySessionGetTrace.getPendingReasonCategory =
+              'continuationAfterLocalGetNotDrained';
+          } else if (memorySessionGetTrace.cryptoAwaitObserved
+                     && !memorySessionGetTrace.getResolved) {
+            memorySessionGetTrace.getPendingReasonCategory =
+              'cryptoPromiseNotResolved';
+          } else if (memorySessionGetTrace.timerAwaitObserved
+                     && !memorySessionGetTrace.getResolved) {
+            memorySessionGetTrace.getPendingReasonCategory = 'timerNotDrained';
+          } else if (!memorySessionGetTrace.responseConstructionReached) {
+            memorySessionGetTrace.getPendingReasonCategory =
+              'responseConstructionNotReached';
+          } else if (!memorySessionGetTrace.postMessageCalled) {
+            memorySessionGetTrace.getPendingReasonCategory =
+              'responsePostMessageNotCalled';
+          } else if (!memorySessionGetTrace.outboxCaptured) {
+            memorySessionGetTrace.getPendingReasonCategory = 'outboxNotCaptured';
+          } else if (pendingAsync > 0) {
+            memorySessionGetTrace.getPendingReasonCategory =
+              'continuationAfterSessionGetNotDrained';
+          } else {
+            memorySessionGetTrace.getPendingReasonCategory =
+              'responseConstructionNotReached';
+          }
+        } else if (memorySessionGetTrace.getResolved
+                   && !memorySessionGetTrace.outboxCaptured) {
+          memorySessionGetTrace.getPendingReasonCategory =
+            'swMemorySessionResponseOutboxNotCaptured';
+        } else if (memorySessionGetTrace.getResolved
+                   && memorySessionGetTrace.outboxCaptured) {
+          memorySessionGetTrace.getPendingReasonCategory = 'notObserved';
+        }
+        return memorySessionGetTraceSnapshot();
+      };
+      const memorySessionGetTraceSnapshot = () => ({
+        requestReceivedCategory:
+          memorySessionGetTrace.requestReceived ? 'received' : 'notReceived',
+        requestShapeCategory: memorySessionGetTrace.requestShapeCategory,
+        handlerMatchedCategory: memorySessionGetTrace.handlerMatchedCategory,
+        sessionGetStartedCategory:
+          memorySessionGetTrace.sessionGetStarted ? 'started' : 'notStarted',
+        awaitedApiCategory: memorySessionGetTrace.awaitedApiCategory,
+        storageCallbackCategory:
+          memorySessionGetTrace.storageCallbackInvoked ? 'invoked' : 'notInvoked',
+        storagePromiseCategory:
+          memorySessionGetTrace.storagePromiseResolved ? 'resolved' : 'notResolved',
+        getResolvedCategory:
+          memorySessionGetTrace.getResolved ? 'resolved' : 'notResolved',
+        responseConstructedCategory:
+          memorySessionGetTrace.responseConstructed ? 'constructed' : 'notConstructed',
+        responseDataStringCategory: memorySessionGetTrace.responseDataStringCategory,
+        responsePostMessageCalledCategory:
+          memorySessionGetTrace.postMessageCalled ? 'called' : 'notCalled',
+        responseOutboxCapturedCategory:
+          memorySessionGetTrace.outboxCaptured ? 'captured' : 'notCaptured',
+        responseFlushCategory: memorySessionGetTrace.responseFlushCategory,
+        responseDeliveredCategory: memorySessionGetTrace.responseDeliveredCategory,
+        getPendingReasonCategory: memorySessionGetTrace.getPendingReasonCategory,
+        stepAfterSessionGetCategory: memorySessionGetTrace.stepAfterSessionGetCategory,
+        continuationAfterSessionGetCategory:
+          memorySessionGetTrace.continuationAfterSessionGetCategory,
+        nextAwaitedApiCategory: memorySessionGetTrace.nextAwaitedApiCategory,
+        localGetStartedCategory:
+          memorySessionGetTrace.localGetStarted ? 'started' : 'notStarted',
+        localGetCallbackCategory:
+          memorySessionGetTrace.localGetCallbackInvoked ? 'invoked' : 'notInvoked',
+        localGetPromiseCategory:
+          memorySessionGetTrace.localGetPromiseResolved ? 'resolved' : 'notResolved',
+        cryptoAwaitCategory:
+          memorySessionGetTrace.cryptoAwaitObserved ? 'awaited' : 'notObserved',
+        timerAwaitCategory:
+          memorySessionGetTrace.timerAwaitObserved ? 'awaited' : 'notObserved',
+        microtaskContinuationCategory:
+          memorySessionGetTrace.microtaskContinuationCategory,
+        getReturnValueCategory: memorySessionGetTrace.getReturnValueCategory,
+        responseConstructionReachedCategory:
+          memorySessionGetTrace.responseConstructionReached
+            ? 'reached' : 'notReached',
+        diagnostics: [
+          'Service-worker memory-session Port get trace omits raw ids, keys, values, and message payloads.',
+          `pendingAsyncCompletionCount=${asyncCompletions.filter((item) => item.state === 'pending').length}`,
+          `pendingStorageCallbackCount=${pendingStorageCallbackInvokers.length}`,
+          `microtaskGenerationsDrained=${memorySessionGetTrace.microtaskGenerationsDrained}`,
+          `activePortIDPresent=${memorySessionGetTrace.activePortID ? 'true' : 'false'}`,
+        ]
+      });
+      const pendingStorageCallbackInvokers = [];
+      const drainPendingStorageCallbacks = () => {
+        let drained = 0;
+        while (pendingStorageCallbackInvokers.length > 0 && drained < 200) {
+          const batch = pendingStorageCallbackInvokers.splice(0);
+          for (const invoke of batch) {
+            if (typeof invoke !== 'function') continue;
+            try {
+              invoke();
+              drained += 1;
+            } catch (_) {
+              noteBlocked('storage.callbackDrainError');
+            }
+          }
+        }
+        if (memorySessionGetTrace.sessionGetStarted
+            && memorySessionGetTrace.storageCallbackInvoked) {
+          memorySessionGetTrace.storagePromiseResolved = true;
+        }
+        refreshLocalBackedSessionContinuationDiagnostics();
+        return drained;
+      };
+      const callbackLater = (callback, ...values) => {
+        if (typeof callback !== 'function') return;
+        let invoked = false;
+        const invoke = () => {
+          if (invoked) return;
+          invoked = true;
+          const index = pendingStorageCallbackInvokers.indexOf(invoke);
+          if (index >= 0) pendingStorageCallbackInvokers.splice(index, 1);
+          if (memorySessionGetTrace.sessionGetStarted
+              && !memorySessionGetTrace.getResolved) {
+            const api = memorySessionGetTrace.pendingCallbackApiCategory;
+            memorySessionGetTrace.storageCallbackInvoked = true;
+            memorySessionGetTrace.storagePromiseResolved = true;
+            if (api === memorySessionAwaitedApi('session', 'get')) {
+              memorySessionGetTrace.sessionGetCallbackInvoked = true;
+              if (memorySessionGetTrace.stepAfterSessionGetCategory === 'notObserved') {
+                memorySessionGetTrace.stepAfterSessionGetCategory = 'continuationPending';
+              }
+            } else if (api === memorySessionAwaitedApi('local', 'get')) {
+              memorySessionGetTrace.localGetCallbackInvoked = true;
+              memorySessionGetTrace.localGetPromiseResolved = true;
+            }
+          }
+          invokeCallbackNow(callback, null, ...values);
+          refreshLocalBackedSessionContinuationDiagnostics();
+        };
+        pendingStorageCallbackInvokers.push(invoke);
+        Promise.resolve().then(invoke);
       };
       const callbackErrorLater = (callback, errorMessage, ...values) => {
         if (typeof callback === 'function') {
@@ -7052,6 +7546,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           get(keys, callback) {
             const startedAt = Date.now();
             const result = storageGet(keys, store);
+            noteMemorySessionAwaitedApi(areaName, 'get');
             recordStorageOperation(areaName, 'get', keys, store, callback, { startedAt, result });
             callbackLater(callback, clone(result));
             return Promise.resolve(clone(result));
@@ -7297,7 +7792,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           onDisconnect,
           postMessage(message) {
             if (!state.connected) return;
-            state.outbox.push(clone(message));
+            const posted = clone(message);
+            noteMemorySessionGetResponse(posted);
+            state.outbox.push(posted);
           },
           disconnect() {
             disconnectPort(state.portID, 'listenerRequestedDisconnect');
@@ -7331,11 +7828,27 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       const deliverPortMessage = (portID, message) => {
         const state = ports.get(portID);
         if (!state || !state.connected) return state ? portSnapshot(state) : null;
+        if (state.name === 'session' && isMemorySessionForegroundGetRequest(message)) {
+          beginMemorySessionGetTrace(
+            portID,
+            message,
+            state.onMessage.listeners.length
+          );
+        }
         for (const listener of [...state.onMessage.listeners]) {
           try {
             const result = listener(clone(message), state.port);
             if (result && typeof result.then === 'function') {
               trackPromiseCompletion(`port.${portID}.onMessage`, 'port-listener', result);
+              result.then(
+                () => {
+                  if (memorySessionGetTrace.sessionGetStarted
+                      && memorySessionGetTrace.postMessageCalled) {
+                    memorySessionGetTrace.getResolved = true;
+                  }
+                },
+                () => {}
+              );
             }
           }
           catch (_) { noteBlocked(`port.${portID}.onMessage.listenerError`); }
@@ -8217,6 +8730,15 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           args
         });
         if (kind === 'timeout') pendingTimeoutIDs.push(timerID);
+        if (memorySessionGetTrace.sessionGetStarted
+            && !memorySessionGetTrace.getResolved) {
+          memorySessionGetTrace.timerAwaitObserved = true;
+          if (memorySessionGetTrace.sessionGetCallbackInvoked
+              && memorySessionGetTrace.stepAfterSessionGetCategory
+                 === 'continuationPending') {
+            memorySessionGetTrace.stepAfterSessionGetCategory = 'timerAwaited';
+          }
+        }
         return timerID;
       };
       const clearTimer = (timerID) => {
@@ -8299,7 +8821,21 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           state.kind === 'interval' && state.active).length
       });
       const pumpMicrotaskGeneration = () => {
-        Promise.resolve().then(() => {});
+        drainPendingStorageCallbacks();
+        let generations = 0;
+        let chain = Promise.resolve();
+        for (let index = 0; index < PUMP_MICROTASK_GENERATION_LIMIT; index += 1) {
+          chain = chain.then(() => {
+            generations += 1;
+            drainPendingStorageCallbacks();
+            refreshLocalBackedSessionContinuationDiagnostics();
+          });
+        }
+        chain = chain.then(() => {
+          memorySessionGetTrace.microtaskGenerationsDrained = generations;
+          refreshLocalBackedSessionContinuationDiagnostics();
+        });
+        memorySessionGetTrace.responseFlushCategory = 'flushed';
         return asyncFlushCheckpoint();
       };
       globalThis.setTimeout = (callback, delay, ...args) =>
@@ -8791,7 +9327,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           active: state.active,
           queued: state.queued,
           invocationCount: state.invocationCount
-        }))
+        })),
+        memorySessionGetTrace: memorySessionGetTraceSnapshot()
       });
       globalThis.__sumiHarness = {
         snapshot,
@@ -8803,6 +9340,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         tickIntervals,
         asyncFlushCheckpoint,
         pumpMicrotaskGeneration,
+        drainPendingStorageCallbacks,
+        finalizeMemorySessionGetTrace,
         seedStorageArea,
         exportStorageArea
       };
@@ -8851,6 +9390,8 @@ private struct ChromeMV3ServiceWorkerJSWireSnapshot: Decodable {
         ChromeMV3ServiceWorkerJSWebAssemblyCapabilityRecord?
     var ports: [ChromeMV3ServiceWorkerJSWirePort]
     var timers: [ChromeMV3ServiceWorkerJSTimerRecord]
+    var memorySessionGetTrace:
+        ChromeMV3ServiceWorkerJSMemorySessionGetTraceRecord?
 }
 
 private struct ChromeMV3ServiceWorkerJSWireCryptoOperation: Decodable {
