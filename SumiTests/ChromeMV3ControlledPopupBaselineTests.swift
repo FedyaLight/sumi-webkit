@@ -73,10 +73,10 @@ final class ChromeMV3ControlledPopupBaselineTests: XCTestCase {
             $0.rowID == ChromeMV3ControlledPopupBaselineExtensionID.bitwarden.rawValue
         }
         if let bitwardenRow, bitwardenRow.ranLivePopup {
-            XCTAssertEqual(
-                bitwardenRow.outcome,
-                .extensionLocalAppState,
-                "Bitwarden controlled popup baseline should remain extension-local app-state wait."
+            XCTAssertTrue(
+                bitwardenRow.outcome == .usableUI
+                    || bitwardenRow.outcome == .extensionLocalAppState,
+                "Bitwarden controlled popup baseline should reach usable UI or remain extension-local app-state wait. outcome=\(bitwardenRow.outcome.rawValue)"
             )
         }
 
@@ -572,8 +572,14 @@ final class ChromeMV3ControlledPopupBaselineTests: XCTestCase {
         }
 
         var snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?
+        var domProbe: ChromeMV3ControlledPopupBaselineDOMProbe?
         if result.opened {
             snapshot = try await waitForPopupBridgeSnapshot(
+                module: module,
+                profileID: record.profileID,
+                extensionID: record.extensionID
+            )
+            domProbe = try await waitForRealExtensionPopupDOMProbe(
                 module: module,
                 profileID: record.profileID,
                 extensionID: record.extensionID
@@ -582,7 +588,8 @@ final class ChromeMV3ControlledPopupBaselineTests: XCTestCase {
 
         let outcome = ChromeMV3ControlledPopupBaselineClassifier.classifyBitwarden(
             opened: result.opened,
-            snapshot: snapshot
+            snapshot: snapshot,
+            domProbe: domProbe
         )
 
         return ChromeMV3ControlledPopupBaselineMatrixRow(
@@ -1126,6 +1133,82 @@ final class ChromeMV3ControlledPopupBaselineTests: XCTestCase {
     }
 
     // MARK: - Popup wait helpers
+
+    @MainActor
+    private func waitForRealExtensionPopupDOMProbe(
+        module: SumiExtensionsModule,
+        profileID: String,
+        extensionID: String
+    ) async throws -> ChromeMV3ControlledPopupBaselineDOMProbe {
+        let script = """
+        (() => {
+          const text = document.body && document.body.innerText
+            ? document.body.innerText.trim()
+            : "";
+          const inputCount =
+            document.querySelectorAll('input,textarea,select').length;
+          const buttonCount =
+            document.querySelectorAll(
+              'button,[role="button"],input[type="button"],input[type="submit"]'
+            ).length;
+          const linkCount = document.querySelectorAll('a[href]').length;
+          const controlCount = inputCount + buttonCount + linkCount;
+          const coarseUsable =
+            (inputCount > 0 && buttonCount > 0)
+            || (controlCount >= 2 && text.length > 0)
+            || (controlCount >= 2 && buttonCount > 0);
+          return JSON.stringify({
+            outcome: coarseUsable ? 'ok' : 'pending',
+            hasButton: buttonCount > 0,
+            visibleTextLength: text.length,
+            controlCount: controlCount,
+            coarseUsable: coarseUsable
+          });
+        })();
+        """
+        for _ in 0..<240 {
+            let raw = try await module
+                .chromeMV3PopupOptionsEvaluateJavaScriptForTesting(
+                    profileID: profileID,
+                    extensionID: extensionID,
+                    script: script
+                ) as? String
+            if let raw,
+               let data = raw.data(using: .utf8),
+               let object = try? JSONSerialization.jsonObject(with: data)
+                as? [String: Any]
+            {
+                let probe = ChromeMV3ControlledPopupBaselineDOMProbe(
+                    outcome: object["outcome"] as? String ?? "pending",
+                    hasButton: object["hasButton"] as? Bool ?? false,
+                    visibleTextLength: object["visibleTextLength"] as? Int ?? 0,
+                    controlCount: object["controlCount"] as? Int ?? 0,
+                    coarseUsable: object["coarseUsable"] as? Bool ?? false
+                )
+                if probe.coarseUsable {
+                    return probe
+                }
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        let raw = try await module
+            .chromeMV3PopupOptionsEvaluateJavaScriptForTesting(
+                profileID: profileID,
+                extensionID: extensionID,
+                script: script
+            ) as? String ?? "{}"
+        let object =
+            raw.data(using: .utf8).flatMap {
+                try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+            } ?? [:]
+        return ChromeMV3ControlledPopupBaselineDOMProbe(
+            outcome: object["outcome"] as? String ?? "pending",
+            hasButton: object["hasButton"] as? Bool ?? false,
+            visibleTextLength: object["visibleTextLength"] as? Int ?? 0,
+            controlCount: object["controlCount"] as? Int ?? 0,
+            coarseUsable: object["coarseUsable"] as? Bool ?? false
+        )
+    }
 
     @MainActor
     private func waitForBaselineDOMProbe(

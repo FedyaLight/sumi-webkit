@@ -2820,6 +2820,297 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
     }
 
     @MainActor
+    func testDebugControlledBitwardenURLHubActionPopupLongWindowRenderTimeline()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Controlled popup WKWebView diagnostics require macOS 15.5.")
+        }
+        let bitwardenRoot = URL(
+            fileURLWithPath:
+                "/Users/fedaefimov/Downloads/Aura/mv3-test-extensions/bitwarden",
+            isDirectory: true
+        )
+        try XCTSkipUnless(
+            FileManager.default.fileExists(
+                atPath: bitwardenRoot.appendingPathComponent("manifest.json").path
+            ),
+            "Local Bitwarden package is not available."
+        )
+        try await runControlledPopupLongWindowRenderTimeline(
+            prefix: "SumiControlledBitwardenLongWindow",
+            sourceURL: bitwardenRoot,
+            currentTabURL: URL(string: "https://example.com/login")!
+        )
+    }
+
+    @MainActor
+    func testDebugControlledRaindropURLHubActionPopupLongWindowRenderTimeline()
+        async throws
+    {
+        guard #available(macOS 15.5, *) else {
+            throw XCTSkip("Controlled popup WKWebView diagnostics require macOS 15.5.")
+        }
+        let raindropRoot = URL(
+            fileURLWithPath:
+                "/Users/fedaefimov/Downloads/Aura/mv3-test-extensions/raindrop",
+            isDirectory: true
+        )
+        try XCTSkipUnless(
+            FileManager.default.fileExists(
+                atPath: raindropRoot.appendingPathComponent("manifest.json").path
+            ),
+            "Local Raindrop package is not available."
+        )
+        try await runControlledPopupLongWindowRenderTimeline(
+            prefix: "SumiControlledRaindropLongWindow",
+            sourceURL: raindropRoot,
+            currentTabURL: URL(string: "https://example.com/article")!
+        )
+    }
+
+    @MainActor
+    private func runControlledPopupLongWindowRenderTimeline(
+        prefix: String,
+        sourceURL: URL,
+        currentTabURL: URL
+    ) async throws {
+        let root = try makeTemporaryDirectory()
+        let profileID = UUID()
+        let module = try makeModule(
+            enabled: true,
+            includesModelContext: true,
+            popupOptionsWebViewFactory: {
+                ChromeMV3ProductPopupOptionsWKWebViewFactory(
+                    loadingMode: .fileBacked
+                )
+            }
+        )
+        let install = module.chromeMV3InstallUnpackedThroughManager(
+            rootURL: root,
+            sourceURL: sourceURL,
+            profileID: profileID.uuidString,
+            enableInternal: true
+        )
+        let record = try XCTUnwrap(install.lifecycleOperationResult?.record)
+        XCTAssertTrue(install.succeeded)
+        _ = await waitForEnabledExtension(
+            in: module,
+            extensionId: record.extensionID
+        )
+
+        let currentTab = Tab(url: currentTabURL)
+        currentTab.profileId = profileID
+        let openedAt = Date()
+        let result = await module.openActionPopupFromURLHub(
+            extensionId: record.extensionID,
+            currentTab: currentTab
+        )
+        guard result.opened else {
+            throw XCTSkip("\(prefix) popup did not open: \(result.message)")
+        }
+
+        let probeScript = """
+        (() => {
+          const body = document.body;
+          const text = body && body.innerText ? body.innerText.trim() : "";
+          const controls = document.querySelectorAll(
+            'input,textarea,select,button,[role=\"button\"],a[href]'
+          ).length;
+          const busy = document.querySelectorAll(
+            '[aria-busy=\"true\"],.spinner,[class*=\"loading\"]'
+          ).length;
+          const safeToken = (value) => {
+            const token = String(value || "").trim();
+            if (!token || token.length > 48) return "redacted";
+            if (!/^[A-Za-z0-9_./#?=-]+$/.test(token)) return "redacted";
+            if (/(auth|cookie|jwt|oauth|passwd|password|secret|token)/i
+                .test(token)) {
+              return "redacted";
+            }
+            return token;
+          };
+          const describe = (node, depth) => {
+            if (!node || depth > 3) return null;
+            const classes = node.classList
+              ? Array.from(node.classList).slice(0, 4).map(safeToken)
+              : [];
+            const children = Array.from(node.children || [])
+              .slice(0, 6)
+              .map((child) => describe(child, depth + 1))
+              .filter(Boolean);
+            return {
+              tag: node.tagName ? node.tagName.toLowerCase() : "unknown",
+              classes,
+              childCount: node.children ? node.children.length : 0,
+              children
+            };
+          };
+          const appRoot = document.querySelector("#app, app-root, #root, main")
+            || document.body;
+          return JSON.stringify({
+            readyState: document.readyState,
+            visibleTextLength: text.length,
+            controlCount: controls,
+            busyCount: busy,
+            hash: safeToken(location.hash),
+            search: safeToken(location.search),
+            domShape: describe(appRoot, 0)
+          });
+        })()
+        """
+        var timeline: [String] = []
+        var renderedAtMS: Int?
+        var lastProbeJSON = "unavailable"
+        for _ in 0..<30 {
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+            let elapsedMS = Int(Date().timeIntervalSince(openedAt) * 1000)
+            let probeJSON = try? await module
+                .chromeMV3PopupOptionsEvaluateJavaScriptForTesting(
+                    profileID: record.profileID,
+                    extensionID: record.extensionID,
+                    script: probeScript
+                ) as? String
+            guard let probeJSON,
+                  let object = try? JSONSerialization.jsonObject(
+                      with: Data(probeJSON.utf8)
+                  ) as? [String: Any]
+            else {
+                timeline.append("t=\(elapsedMS)ms probe=unavailable")
+                continue
+            }
+            lastProbeJSON = probeJSON
+            let textLength = object["visibleTextLength"] as? Int ?? 0
+            let controlCount = object["controlCount"] as? Int ?? 0
+            let busyCount = object["busyCount"] as? Int ?? 0
+            timeline.append(
+                "t=\(elapsedMS)ms textLen=\(textLength) controls=\(controlCount) busy=\(busyCount)"
+            )
+            if renderedAtMS == nil, textLength > 0 || controlCount > 0 {
+                renderedAtMS = elapsedMS
+            }
+            if let renderedAtMS, elapsedMS >= renderedAtMS + 3000 {
+                break
+            }
+        }
+        let fetchProbeStartScript = """
+        (() => {
+          if (globalThis.__sumiFetchProbe) { return "alreadyStarted"; }
+          globalThis.__sumiFetchProbe = { state: "pending" };
+          const url = "https://api.raindrop.io/rest/v1/user";
+          fetch(url, { credentials: "include" }).then((response) => {
+            globalThis.__sumiFetchProbe = {
+              state: "resolved",
+              status: response.status,
+              type: response.type
+            };
+          }).catch((error) => {
+            globalThis.__sumiFetchProbe = {
+              state: "rejected",
+              errorName: error && error.name ? String(error.name) : "unknown"
+            };
+          });
+          return "started";
+        })()
+        """
+        _ = try? await module.chromeMV3PopupOptionsEvaluateJavaScriptForTesting(
+            profileID: record.profileID,
+            extensionID: record.extensionID,
+            script: fetchProbeStartScript
+        )
+        var fetchProbeResult = "notRun"
+        for _ in 0..<5 {
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+            let probe = try? await module
+                .chromeMV3PopupOptionsEvaluateJavaScriptForTesting(
+                    profileID: record.profileID,
+                    extensionID: record.extensionID,
+                    script: "JSON.stringify(globalThis.__sumiFetchProbe || {})"
+                ) as? String
+            if let probe, probe.contains("pending") == false {
+                fetchProbeResult = probe
+                break
+            }
+            fetchProbeResult = probe ?? "unavailable"
+        }
+
+        var memorySessionTraceSummary = "unavailable"
+        if let bridgeSnapshot = module
+            .chromeMV3PopupOptionsBridgeDiagnosticsSnapshotForTesting(
+                profileID: record.profileID,
+                extensionID: record.extensionID
+            )
+        {
+            let trace = bridgeSnapshot.appStateDependencyTrace
+                .serviceWorkerMemorySessionGetTrace
+            memorySessionTraceSummary = [
+                "requestReceived=\(trace.requestReceivedCategory)",
+                "handlerMatched=\(trace.handlerMatchedCategory)",
+                "sessionGetStarted=\(trace.sessionGetStartedCategory)",
+                "awaitedApi=\(trace.awaitedApiCategory)",
+                "getResolved=\(trace.getResolvedCategory)",
+                "responseConstructed=\(trace.responseConstructedCategory)",
+                "responsePostMessageCalled=\(trace.responsePostMessageCalledCategory)",
+                "responseDelivered=\(trace.responseDeliveredCategory)",
+                "getPendingReason=\(trace.getPendingReasonCategory)",
+                "localGetStarted=\(trace.localGetStartedCategory)",
+                "localGetDrainResult=\(trace.localGetDrainResultCategory)",
+                "localGetCallbackInvoked=\(trace.localGetCallbackInvokedCategory)",
+                "continuationAfterLocalGet=\(trace.continuationAfterLocalGetCategory)",
+                "nextAwaitedApi=\(trace.nextAwaitedApiCategory)",
+            ].joined(separator: " ")
+        }
+
+        var serviceWorkerSummary = "unavailable"
+        if let swSnapshot = module
+            .chromeMV3ControlledActionPopupServiceWorkerSnapshotForTesting(
+                profileID: record.profileID,
+                extensionID: record.extensionID
+            )
+        {
+            let cryptoOps = swSnapshot.cryptoOperationRecords.map {
+                "\($0.operation):\($0.algorithm ?? "none"):\($0.status):\($0.blocker ?? "none")"
+            }
+            let dispatches = swSnapshot.dispatchRecords.map {
+                "\($0.event.rawValue)"
+            }
+            let safeName: (String) -> String = { name in
+                let allowed = name.unicodeScalars.allSatisfy {
+                    CharacterSet.alphanumerics.contains($0)
+                        || $0 == "_" || $0 == "-"
+                }
+                return allowed && name.count <= 32 ? name : "redacted"
+            }
+            let ports = swSnapshot.ports.map {
+                "name=\(safeName($0.name)) connected=\($0.connected) onMessage=\($0.onMessageListenerCount) posted=\($0.postedMessages.count)"
+            }
+            let timers = swSnapshot.timers.filter(\.active).count
+            serviceWorkerSummary = [
+                "startStatus=\(swSnapshot.startRecord.status.rawValue)",
+                "cryptoOps=[\(cryptoOps.joined(separator: ","))]",
+                "dispatches=[\(dispatches.joined(separator: ","))]",
+                "ports=[\(ports.joined(separator: "; "))]",
+                "activeTimers=\(timers)",
+                "storageOps=\(swSnapshot.storageOperationRecords.count)",
+                "blockedUnsupported=[\(swSnapshot.blockedUnsupportedCalls.sorted().joined(separator: ","))]",
+            ].joined(separator: " ")
+        }
+
+        let summary =
+            "\(prefix) renderedAtMS=\(renderedAtMS.map(String.init) ?? "never") fetchProbe=\(fetchProbeResult) memorySessionGetTrace[\(memorySessionTraceSummary)] serviceWorker[\(serviceWorkerSummary)] lastProbe=\(lastProbeJSON) timeline=[\(timeline.joined(separator: "; "))]"
+        print(summary)
+        let attachment = XCTAttachment(string: summary)
+        attachment.name = "\(prefix)-render-timeline"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        _ = module.chromeMV3ClosePopupOptionsThroughManager(
+            profileID: record.profileID,
+            extensionID: record.extensionID
+        )
+    }
+
+    @MainActor
     func testDebugControlledRaindropURLHubActionPopupDefaultDiagnostics()
         async throws
     {

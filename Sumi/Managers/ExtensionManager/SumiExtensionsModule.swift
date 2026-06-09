@@ -261,6 +261,19 @@ private final class ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore {
         return reconcile
     }
 
+    func serviceWorkerSnapshotForTesting(
+        profileID: String,
+        extensionID: String
+    ) -> ChromeMV3ServiceWorkerJSExecutionSnapshot? {
+        records.values.first {
+            $0.profileID == profileID && $0.extensionID == extensionID
+        }.map { record in
+            _ = ChromeMV3ServiceWorkerLocalStorageMirror
+                .flushDeferredServiceWorkerWork(in: record.harness)
+            return record.harness.snapshot
+        }
+    }
+
     func releaseControlledActionPopupRuntimePortSession(
         launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord,
         reason: String,
@@ -5896,6 +5909,17 @@ final class SumiExtensionsModule {
             extensionID: extensionID,
             surface: surface
         )
+    }
+
+    func chromeMV3ControlledActionPopupServiceWorkerSnapshotForTesting(
+        profileID: String,
+        extensionID: String
+    ) -> ChromeMV3ServiceWorkerJSExecutionSnapshot? {
+        controlledActionPopupServiceWorkerLifecycleStore
+            .serviceWorkerSnapshotForTesting(
+                profileID: profileID,
+                extensionID: extensionID
+            )
     }
 
     func chromeMV3PopupOptionsEvaluateJavaScriptForTesting(

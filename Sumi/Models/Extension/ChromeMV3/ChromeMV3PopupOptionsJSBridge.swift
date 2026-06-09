@@ -3964,7 +3964,28 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         ) -> String {
             guard let snapshot else { return "notObserved" }
             guard snapshot.startRecord.status == .running else {
-                return "loadedFailed:\(snapshot.startRecord.status.rawValue)"
+                var state =
+                    "loadedFailed:\(snapshot.startRecord.status.rawValue)"
+                let startBlockers = snapshot.startRecord.blockers
+                    .map(\.rawValue)
+                    .sorted()
+                    .joined(separator: "|")
+                if startBlockers.isEmpty == false {
+                    state += ":blockers=\(startBlockers)"
+                }
+                if let exception = snapshot.startRecord.exceptionDetails {
+                    state +=
+                        ":exception=\(exception.classification.rawValue)"
+                    if let missingGlobal = exception.inferredMissingGlobal {
+                        state += ":missingGlobal=\(missingGlobal)"
+                    }
+                    if let missingProperty =
+                        exception.inferredMissingProperty
+                    {
+                        state += ":missingProperty=\(missingProperty)"
+                    }
+                }
+                return state
             }
             let writeCount = snapshot.storageOperationRecords.filter {
                 ["set", "remove", "clear"].contains($0.operation)

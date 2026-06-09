@@ -52,10 +52,16 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         )
         let start = harness.start()
         let exception = start.exceptionDetails
+        let capturedEvents = harness.snapshot.capturedListeners
+            .map(\.event.rawValue)
+            .sorted()
+            .joined(separator: ",")
         let diagnostic = [
             "status=\(start.status.rawValue)",
             "blockers=\(start.blockers.map(\.rawValue).joined(separator: ","))",
             "capturedListeners=\(start.capturedListenerCount)",
+            "capturedEvents=\(capturedEvents)",
+            "blockedUnsupportedCalls=\(harness.snapshot.blockedUnsupportedCalls.sorted().joined(separator: ","))",
             "lastError=\(safeDebugToken(start.lastErrorMessage ?? "none"))",
             "classification=\(exception?.classification.rawValue ?? "none")",
             "missingGlobal=\(safeDebugToken(exception?.inferredMissingGlobal ?? "none"))",
@@ -72,6 +78,94 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         add(attachment)
         XCTAssertFalse(diagnostic.contains("token"))
         XCTAssertFalse(diagnostic.contains("password"))
+    }
+
+    func testDebugRaindropRegistryInstalledServiceWorkerHarnessDiagnostics() throws {
+        let raindropRoot = URL(
+            fileURLWithPath:
+                "/Users/fedaefimov/Downloads/Aura/mv3-test-extensions/raindrop",
+            isDirectory: true
+        )
+        try XCTSkipUnless(
+            FileManager.default.fileExists(
+                atPath: raindropRoot.appendingPathComponent("manifest.json").path
+            ),
+            "Local Raindrop package is not available."
+        )
+
+        let storeRoot = try temporaryDirectory()
+        let install = ChromeMV3ExtensionLifecycleRegistry(rootURL: storeRoot)
+            .installUnpackedExtension(
+                at: raindropRoot,
+                profileID: "debug-raindrop-registry-profile",
+                enableInternal: true
+            )
+        let record = try XCTUnwrap(install.record)
+        let activeVersion = try XCTUnwrap(
+            record.generatedBundleVersions.first {
+                $0.id == record.activeGeneratedVersionID
+            }
+        )
+        // Mirror ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore:
+        // validate the generated manifest and reuse the generated bundle
+        // record, then start the harness exactly as the live popup wake does.
+        let generatedRootURL = URL(
+            fileURLWithPath: activeVersion.generatedBundleRootPath,
+            isDirectory: true
+        ).standardizedFileURL
+        let manifest = try ChromeMV3ManifestValidator.validateManifestFile(
+            at: generatedRootURL.appendingPathComponent("manifest.json")
+        )
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: ChromeMV3ServiceWorkerJSExecutionRequest(
+                manifest: manifest,
+                generatedBundleRecord: activeVersion.generatedBundleRecord,
+                extensionID: record.extensionID,
+                profileID: record.profileID,
+                moduleState: .enabled,
+                extensionEnabled: true,
+                localExperimentalGateAllowed: true,
+                dynamicImportRewriteExperimentAllowed: true
+            )
+        )
+        let start = harness.start()
+        let exception = start.exceptionDetails
+        let capturedEvents = harness.snapshot.capturedListeners
+            .map(\.event.rawValue)
+            .sorted()
+            .joined(separator: ",")
+        let diagnostic = [
+            "status=\(start.status.rawValue)",
+            "blockers=\(start.blockers.map(\.rawValue).joined(separator: ","))",
+            "capturedListeners=\(start.capturedListenerCount)",
+            "capturedEvents=\(capturedEvents)",
+            "blockedUnsupportedCalls=\(harness.snapshot.blockedUnsupportedCalls.sorted().joined(separator: ","))",
+            "lastError=\(safeDebugToken(start.lastErrorMessage ?? "none"))",
+            "classification=\(exception?.classification.rawValue ?? "none")",
+            "missingGlobal=\(safeDebugToken(exception?.inferredMissingGlobal ?? "none"))",
+            "missingProperty=\(safeDebugToken(exception?.inferredMissingProperty ?? "none"))",
+            "line=\(exception?.line.map(String.init) ?? "none")",
+            "column=\(exception?.column.map(String.init) ?? "none")",
+        ].joined(separator: " ")
+        print("SumiRaindropRegistryServiceWorkerHarness \(diagnostic)")
+        let attachment = XCTAttachment(
+            string: "SumiRaindropRegistryServiceWorkerHarness \(diagnostic)"
+        )
+        attachment.name =
+            "SumiRaindropRegistryServiceWorkerHarness-sanitized-diagnostics"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTAssertEqual(
+            start.status,
+            .running,
+            "Registry-installed Raindrop service worker should start: \(diagnostic)"
+        )
+        XCTAssertTrue(
+            harness.snapshot.capturedListeners.contains {
+                $0.event == .runtimeOnMessage
+            },
+            "Registry-installed Raindrop service worker should capture runtime.onMessage: \(diagnostic)"
+        )
     }
 
     func testDisabledModuleAndExtensionBlockExecutionBeforeResourceLoad() throws {
@@ -627,7 +721,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             result.responsePayload,
             .object([
                 "base64": .string("ok"),
-                "browserType": .string("object"),
+                "browserType": .string("undefined"),
                 "documentType": .string("undefined"),
                 "domName": .string("InvalidStateError"),
                 "getURL": .bool(true),
@@ -662,9 +756,15 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertTrue(
             harness.policy.workerNavigatorChromeCompatibilityTokenAvailable
         )
-        XCTAssertEqual(harness.policy.subtleCryptoSupportedMethods, ["digest"])
-        XCTAssertTrue(
+        XCTAssertEqual(
+            harness.policy.subtleCryptoSupportedMethods,
+            ["deriveBits", "digest", "exportKey", "generateKey", "importKey"]
+        )
+        XCTAssertFalse(
             harness.policy.subtleCryptoBlockedMethods.contains("importKey")
+        )
+        XCTAssertTrue(
+            harness.policy.subtleCryptoBlockedMethods.contains("sign")
         )
         XCTAssertTrue(
             harness.snapshot.cryptoOperationRecords.contains {
@@ -763,6 +863,132 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             encoding: .utf8
         )
         XCTAssertFalse(serializedRecords?.contains("abc") == true)
+    }
+
+    func testSubtleCryptoAESGenerateKeyAndRawExportProduceSecureKeyBytes()
+        throws
+    {
+        let harness = try startedHarness(
+            source: """
+            (async () => {
+              try {
+                const key = await crypto.subtle.generateKey(
+                  { name: 'AES-CBC', length: 256 }, true, ['encrypt', 'decrypt']
+                );
+                const raw = new Uint8Array(
+                  await crypto.subtle.exportKey('raw', key)
+                );
+                const second = new Uint8Array(await crypto.subtle.exportKey(
+                  'raw',
+                  await crypto.subtle.generateKey(
+                    { name: 'AES-CBC', length: 256 }, true, ['encrypt', 'decrypt']
+                  )
+                ));
+                globalThis.aesProbe = {
+                  keyType: key.type,
+                  algorithmName: key.algorithm.name,
+                  algorithmLength: key.algorithm.length,
+                  extractable: key.extractable,
+                  rawLength: raw.length,
+                  allZero: raw.every((value) => value === 0),
+                  distinctKeys: raw.some((value, index) => value !== second[index])
+                };
+              } catch (error) {
+                globalThis.aesProbe = { errorName: String(error && error.name) };
+              }
+              try {
+                const nonExtractable = await crypto.subtle.generateKey(
+                  { name: 'AES-CBC', length: 128 }, false, ['encrypt']
+                );
+                await crypto.subtle.exportKey('raw', nonExtractable);
+                globalThis.nonExtractableExportError = 'resolvedUnexpectedly';
+              } catch (error) {
+                globalThis.nonExtractableExportError = String(error && error.name);
+              }
+            })();
+            chrome.runtime.onMessage.addListener(() => ({
+              aesProbe: globalThis.aesProbe || null,
+              nonExtractableExportError:
+                globalThis.nonExtractableExportError || null
+            }));
+            """
+        )
+
+        let result = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            payloadSummary: "aes key slice"
+        )
+
+        XCTAssertEqual(
+            result.responsePayload,
+            .object([
+                "aesProbe": .object([
+                    "algorithmLength": .number(256),
+                    "algorithmName": .string("AES-CBC"),
+                    "allZero": .bool(false),
+                    "distinctKeys": .bool(true),
+                    "extractable": .bool(true),
+                    "keyType": .string("secret"),
+                    "rawLength": .number(32),
+                ]),
+                "nonExtractableExportError": .string("InvalidAccessError"),
+            ])
+        )
+        XCTAssertTrue(
+            harness.snapshot.cryptoOperationRecords.contains {
+                $0.operation == "subtle.generateKey"
+                    && $0.status == "fulfilled"
+                    && $0.algorithm == "AES-CBC"
+                    && $0.byteCount == 32
+            }
+        )
+        XCTAssertTrue(
+            harness.snapshot.cryptoOperationRecords.contains {
+                $0.operation == "subtle.exportKey"
+                    && $0.status == "fulfilled"
+                    && $0.algorithm == "AES-CBC"
+            }
+        )
+        // RSA/EC key generation stays outside the AES secret-key slice.
+        XCTAssertTrue(
+            harness.snapshot.cryptoOperationRecords.isEmpty == false
+        )
+    }
+
+    func testSubtleCryptoNonAESGenerateKeyStillRejectsDeterministically()
+        throws
+    {
+        let harness = try startedHarness(
+            source: """
+            crypto.subtle.generateKey(
+              { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048 },
+              true,
+              ['sign', 'verify']
+            ).catch((error) => {
+              globalThis.rsaError = String(error && error.name);
+            });
+            chrome.runtime.onMessage.addListener(() => ({
+              rsaError: globalThis.rsaError || null
+            }));
+            """
+        )
+
+        let result = harness.dispatch(
+            source: .popupOptionsRuntimeMessage,
+            payloadSummary: "rsa generateKey rejected"
+        )
+
+        XCTAssertEqual(
+            result.responsePayload,
+            .object(["rsaError": .string("NotSupportedError")])
+        )
+        XCTAssertTrue(
+            harness.snapshot.cryptoOperationRecords.contains {
+                $0.operation == "subtle.generateKey"
+                    && $0.status == "blocked"
+                    && $0.blocker == "unsupportedMethod"
+            }
+        )
     }
 
     func testUnsupportedSubtleCryptoRejectsDeterministically() throws {
@@ -1533,7 +1759,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertEqual(
             result.responsePayload,
             .object([
-                "browserType": .string("object"),
+                "browserType": .string("undefined"),
                 "extensionID": .string(
                     "service-worker-js-fixture-extension"
                 ),
@@ -2713,9 +2939,26 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertEqual(trace.responseOutboxCapturedCategory, "captured")
     }
 
-    func testBrowserStorageLocalGetUsesSharedHarnessShim() throws {
+    func testPolyfillStyleBrowserStorageLocalGetUsesSharedHarnessShim() throws {
+        // Chrome MV3 service workers have no global `browser`; bundled
+        // webextension-polyfill builds construct one from `chrome` when the
+        // global is absent. The polyfill-built wrapper must still drive the
+        // shared chrome.storage.local.get shim.
         let harness = try startedHarness(
             source: """
+            if (typeof globalThis.browser !== "undefined") {
+              throw new Error(
+                "Chrome MV3 service workers must not define a global browser namespace."
+              );
+            }
+            const browser = {
+              storage: {
+                local: {
+                  get: (keys, callback) =>
+                    chrome.storage.local.get(keys, callback)
+                }
+              }
+            };
             chrome.runtime.onConnect.addListener((port) => {
               if (port.name !== "session") {
                 return;
@@ -2772,7 +3015,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         )
         let shimTrace = harness.snapshot.storageLocalGetTrace
         XCTAssertEqual(shimTrace.shimEnteredCategory, "entered")
-        XCTAssertEqual(shimTrace.invocationSourceCategory, "browser.storage.local.get")
+        XCTAssertEqual(shimTrace.invocationSourceCategory, "chrome.storage.local.get")
         XCTAssertEqual(shimTrace.callbackInvokedCategory, "invoked")
     }
 
@@ -4759,10 +5002,22 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertTrue(policy.cryptoRandomUUIDAvailable)
         XCTAssertTrue(policy.subtleCryptoAvailableInLocalExperimentalGate)
         XCTAssertFalse(policy.subtleCryptoAvailableByDefault)
-        XCTAssertEqual(policy.subtleCryptoSupportedMethods, ["digest"])
-        XCTAssertTrue(policy.subtleCryptoBlockedMethods.contains("deriveBits"))
+        XCTAssertEqual(
+            policy.subtleCryptoSupportedMethods,
+            ["deriveBits", "digest", "exportKey", "generateKey", "importKey"]
+        )
+        XCTAssertFalse(policy.subtleCryptoBlockedMethods.contains("deriveBits"))
+        XCTAssertFalse(policy.subtleCryptoBlockedMethods.contains("importKey"))
+        XCTAssertTrue(policy.subtleCryptoBlockedMethods.contains("sign"))
         XCTAssertTrue(
             policy.subtleCryptoSupportedAlgorithms.contains("digest:SHA-256")
+        )
+        XCTAssertTrue(
+            policy.subtleCryptoSupportedAlgorithms
+                .contains("generateKey:AES-CBC")
+        )
+        XCTAssertTrue(
+            policy.subtleCryptoSupportedAlgorithms.contains("deriveBits:HKDF")
         )
         XCTAssertTrue(policy.subtleCryptoBlockedAlgorithms.contains("PBKDF2"))
     }

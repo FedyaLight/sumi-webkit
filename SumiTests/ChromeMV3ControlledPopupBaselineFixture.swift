@@ -528,9 +528,16 @@ enum ChromeMV3ControlledPopupBaselineClassifier {
 
     static func classifyBitwarden(
         opened: Bool,
-        snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?
+        snapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?,
+        domProbe: ChromeMV3ControlledPopupBaselineDOMProbe? = nil
     ) -> ChromeMV3ControlledPopupBaselineOutcome {
         guard opened else { return .unknown }
+        if let domProbe,
+           domProbe.coarseUsable
+               || (domProbe.controlCount >= 2 && domProbe.hasButton)
+        {
+            return .usableUI
+        }
         guard let snapshot else { return .unknown }
         let trace = snapshot.appStateDependencyTrace.correlationSummary
         if trace.classification == "appStateWaitWithNoWriter" {

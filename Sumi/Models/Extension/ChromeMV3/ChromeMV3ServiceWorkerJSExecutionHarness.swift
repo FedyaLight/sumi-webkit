@@ -1109,17 +1109,16 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
                 extensionEnabled: extensionEnabled
             )
         let webCryptoAvailable = available
-        let supportedSubtleMethods = webCryptoAvailable ? ["digest"] : []
+        let supportedSubtleMethods =
+            webCryptoAvailable
+            ? ["deriveBits", "digest", "exportKey", "generateKey", "importKey"]
+            : []
         let blockedSubtleMethods =
             webCryptoAvailable
             ? [
                 "decrypt",
-                "deriveBits",
                 "deriveKey",
                 "encrypt",
-                "exportKey",
-                "generateKey",
-                "importKey",
                 "sign",
                 "unwrapKey",
                 "verify",
@@ -1128,20 +1127,23 @@ struct ChromeMV3ServiceWorkerJSExecutionPolicy:
         let supportedSubtleAlgorithms =
             webCryptoAvailable
             ? [
+                "deriveBits:HKDF",
                 "digest:SHA-1",
                 "digest:SHA-256",
                 "digest:SHA-384",
                 "digest:SHA-512",
+                "exportKey:AES-CBC:raw",
+                "exportKey:AES-GCM:raw",
+                "generateKey:AES-CBC",
+                "generateKey:AES-GCM",
+                "importKey:HKDF:raw",
             ] : []
         let blockedSubtleAlgorithms =
             webCryptoAvailable
             ? [
-                "AES-CBC",
                 "AES-CTR",
-                "AES-GCM",
                 "ECDH",
                 "ECDSA",
-                "HKDF",
                 "HMAC",
                 "PBKDF2",
                 "RSA-OAEP",
@@ -3688,8 +3690,14 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             if let drain = drainQueuedTimeouts(
                 maxCallbacks: maxCallbacksPerPass
             ) {
-                timerCallbacksThisPass = drain.callbackCount
+                timerCallbacksThisPass += drain.callbackCount
                 totalTimerCallbacks += drain.callbackCount
+            }
+            if let intervals = tickIntervals(
+                maxCallbacks: maxCallbacksPerPass
+            ) {
+                timerCallbacksThisPass += intervals.callbackCount
+                totalTimerCallbacks += intervals.callbackCount
             }
             let currentCheckpoint =
                 asyncFlushCheckpoint() ?? afterPump
@@ -4613,10 +4621,48 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 forKeyedSubscript:
                     "__sumiCryptoRandomUUIDHost" as NSString
             )
+            let hkdfHost:
+                @convention(block) (
+                    NSString, JSValue, JSValue, JSValue, NSNumber
+                ) -> NSDictionary =
+            { hashValue, keyValues, saltValues, infoValues, byteCountValue in
+                guard
+                    let keyBytes =
+                        uint8BytesFromJSValueServiceWorkerJS(keyValues),
+                    let saltBytes =
+                        uint8BytesFromJSValueServiceWorkerJS(saltValues),
+                    let infoBytes =
+                        uint8BytesFromJSValueServiceWorkerJS(infoValues)
+                else {
+                    return webCryptoHostErrorServiceWorkerJS(
+                        "SubtleCrypto.deriveBits received non-byte-array HKDF material from the JavaScript bridge."
+                    )
+                }
+                guard let derived = webCryptoHKDFDeriveBitsServiceWorkerJS(
+                    hash: String(hashValue),
+                    keyBytes: keyBytes,
+                    saltBytes: saltBytes,
+                    infoBytes: infoBytes,
+                    byteCount: byteCountValue.intValue
+                ) else {
+                    return webCryptoHostErrorServiceWorkerJS(
+                        "SubtleCrypto.deriveBits HKDF request used an unsupported hash or length."
+                    )
+                }
+                return [
+                    "ok": true,
+                    "bytes": derived.map { NSNumber(value: $0) } as NSArray,
+                ] as NSDictionary
+            }
             context.setObject(
                 digestHost,
                 forKeyedSubscript:
                     "__sumiCryptoDigestHost" as NSString
+            )
+            context.setObject(
+                hkdfHost,
+                forKeyedSubscript:
+                    "__sumiCryptoHKDFDeriveBitsHost" as NSString
             )
         }
 
@@ -6843,6 +6889,292 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             'NotSupportedError'
           ));
         };
+        // Narrow AES secret-key slice: MV3 service workers (for example
+        // Bitwarden's session-storage view cache) mint ephemeral AES-CBC keys
+        // with generateKey + exportKey('raw') and run the actual cipher in
+        // bundled JS. Only random key-byte generation and raw export are
+        // modeled here; every other SubtleCrypto method still rejects.
+        const aesSecretKeyBytes = new WeakMap();
+        const secureRandomKeyBytes = (byteCount) => {
+          if (typeof globalThis.__sumiCryptoGetRandomValuesHost !== 'function') {
+            return null;
+          }
+          const result = globalThis.__sumiCryptoGetRandomValuesHost(byteCount);
+          if (!result || result.ok !== true) return null;
+          const bytes = Uint8Array.from(
+            Array.from(result.bytes || []).map((value) => Number(value) & 0xff)
+          );
+          return bytes.length === byteCount ? bytes : null;
+        };
+        const unsupportedGenerateKey = unsupportedSubtleMethod('generateKey');
+        const unsupportedExportKey = unsupportedSubtleMethod('exportKey');
+        const aesGenerateKey = function (algorithm, extractable, keyUsages) {
+          const name = algorithmName(algorithm);
+          const normalized = name
+            ? String(name).trim().toUpperCase()
+            : null;
+          const length = algorithm && typeof algorithm.length === 'number'
+            ? algorithm.length
+            : null;
+          if (normalized !== 'AES-CBC' && normalized !== 'AES-GCM') {
+            return unsupportedGenerateKey(algorithm, extractable, keyUsages);
+          }
+          if (length !== 128 && length !== 192 && length !== 256) {
+            recordCryptoOperation(
+              'subtle.generateKey',
+              normalized,
+              null,
+              'blocked',
+              'invalidInput',
+              ['AES generateKey length must be 128, 192, or 256 bits.']
+            );
+            return Promise.reject(new DOMException(
+              'AES key length must be 128, 192, or 256 bits.',
+              'OperationError'
+            ));
+          }
+          const usages = Array.isArray(keyUsages)
+            ? keyUsages.map((usage) => String(usage))
+            : [];
+          const allowedUsages = ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'];
+          if (usages.length === 0
+              || usages.some((usage) => !allowedUsages.includes(usage))) {
+            recordCryptoOperation(
+              'subtle.generateKey',
+              normalized,
+              length / 8,
+              'blocked',
+              'invalidInput',
+              ['AES secret-key usages outside encrypt/decrypt/wrapKey/unwrapKey were rejected.']
+            );
+            return Promise.reject(new DOMException(
+              'AES generateKey usages must be encrypt, decrypt, wrapKey, or unwrapKey.',
+              'SyntaxError'
+            ));
+          }
+          const bytes = secureRandomKeyBytes(length / 8);
+          if (!bytes) {
+            recordCryptoOperation(
+              'subtle.generateKey',
+              normalized,
+              length / 8,
+              'blocked',
+              'secureRandomUnavailable',
+              ['Security.framework secure random bytes were unavailable for AES key generation.']
+            );
+            return Promise.reject(cryptoHostError(
+              'SubtleCrypto.generateKey secure random host is unavailable.'
+            ));
+          }
+          const key = Object.freeze({
+            type: 'secret',
+            extractable: extractable === true,
+            algorithm: Object.freeze({ name: normalized, length }),
+            usages: Object.freeze(usages.slice())
+          });
+          aesSecretKeyBytes.set(key, bytes);
+          recordCryptoOperation(
+            'subtle.generateKey',
+            normalized,
+            length / 8,
+            'fulfilled',
+            null,
+            ['AES secret key bytes came from the native secure random host; key material is held only inside the worker context and is not recorded.']
+          );
+          return Promise.resolve(key);
+        };
+        // HKDF slice: MV3 service workers (for example Bitwarden's
+        // session-storage key derivation) import raw HKDF key material and
+        // call deriveBits. Derivation happens in the native CryptoKit host;
+        // key material stays inside the worker context and is not recorded.
+        const hkdfKeyBytes = new WeakMap();
+        const bufferSourceOrEmptyBytes = (data) => {
+          if (data === undefined || data === null) return new Uint8Array(0);
+          return bufferSourceBytes(data);
+        };
+        const unsupportedImportKey = unsupportedSubtleMethod('importKey');
+        const unsupportedDeriveBits = unsupportedSubtleMethod('deriveBits');
+        const hkdfAwareImportKey = function (
+          format, keyData, algorithm, extractable, keyUsages
+        ) {
+          const name = algorithmName(algorithm);
+          const normalized = name ? String(name).trim().toUpperCase() : null;
+          if (String(format) !== 'raw' || normalized !== 'HKDF') {
+            return unsupportedImportKey(
+              format, keyData, algorithm, extractable, keyUsages
+            );
+          }
+          const usages = Array.isArray(keyUsages)
+            ? keyUsages.map((usage) => String(usage))
+            : [];
+          const allowedUsages = ['deriveBits', 'deriveKey'];
+          if (usages.length === 0
+              || usages.some((usage) => !allowedUsages.includes(usage))) {
+            recordCryptoOperation(
+              'subtle.importKey',
+              'HKDF',
+              null,
+              'blocked',
+              'invalidInput',
+              ['HKDF key usages outside deriveBits/deriveKey were rejected.']
+            );
+            return Promise.reject(new DOMException(
+              'HKDF importKey usages must be deriveBits or deriveKey.',
+              'SyntaxError'
+            ));
+          }
+          let bytes;
+          try {
+            bytes = bufferSourceBytes(keyData).slice();
+          } catch (error) {
+            recordCryptoOperation(
+              'subtle.importKey',
+              'HKDF',
+              null,
+              'blocked',
+              'invalidInput',
+              ['HKDF importKey rejected a non-BufferSource key.']
+            );
+            return Promise.reject(error);
+          }
+          const key = Object.freeze({
+            type: 'secret',
+            extractable: false,
+            algorithm: Object.freeze({ name: 'HKDF' }),
+            usages: Object.freeze(usages.slice())
+          });
+          hkdfKeyBytes.set(key, bytes);
+          recordCryptoOperation(
+            'subtle.importKey',
+            'HKDF',
+            bytes.length,
+            'fulfilled',
+            null,
+            ['HKDF key material was retained only inside the worker context and is not recorded.']
+          );
+          return Promise.resolve(key);
+        };
+        const hkdfAwareDeriveBits = function (algorithm, key, length) {
+          const name = algorithmName(algorithm);
+          const normalized = name ? String(name).trim().toUpperCase() : null;
+          const bytes = key ? hkdfKeyBytes.get(key) : undefined;
+          if (normalized !== 'HKDF' || !bytes) {
+            return unsupportedDeriveBits(algorithm, key, length);
+          }
+          const hash = algorithm
+            ? algorithmName(algorithm.hash) || algorithm.hash
+            : null;
+          const bitLength = Number(length);
+          if (!hash
+              || !Number.isInteger(bitLength)
+              || bitLength <= 0
+              || bitLength % 8 !== 0) {
+            recordCryptoOperation(
+              'subtle.deriveBits',
+              'HKDF',
+              null,
+              'blocked',
+              'invalidInput',
+              ['HKDF deriveBits requires a hash and a positive bit length divisible by 8.']
+            );
+            return Promise.reject(new DOMException(
+              'HKDF deriveBits requires a supported hash and byte-aligned length.',
+              'OperationError'
+            ));
+          }
+          let saltBytes;
+          let infoBytes;
+          try {
+            saltBytes = bufferSourceOrEmptyBytes(algorithm.salt);
+            infoBytes = bufferSourceOrEmptyBytes(algorithm.info);
+          } catch (error) {
+            recordCryptoOperation(
+              'subtle.deriveBits',
+              'HKDF',
+              null,
+              'blocked',
+              'invalidInput',
+              ['HKDF deriveBits rejected non-BufferSource salt or info.']
+            );
+            return Promise.reject(error);
+          }
+          if (typeof globalThis.__sumiCryptoHKDFDeriveBitsHost !== 'function') {
+            recordCryptoOperation(
+              'subtle.deriveBits',
+              'HKDF',
+              bitLength / 8,
+              'blocked',
+              'hostUnavailable',
+              ['Native HKDF host is unavailable.']
+            );
+            return Promise.reject(cryptoHostError(
+              'SubtleCrypto.deriveBits HKDF host is unavailable.'
+            ));
+          }
+          const result = globalThis.__sumiCryptoHKDFDeriveBitsHost(
+            String(hash),
+            Array.from(bytes),
+            Array.from(saltBytes),
+            Array.from(infoBytes),
+            bitLength / 8
+          );
+          if (!result || result.ok !== true) {
+            recordCryptoOperation(
+              'subtle.deriveBits',
+              'HKDF',
+              bitLength / 8,
+              'blocked',
+              'hostUnavailable',
+              ['Native HKDF host rejected the request.']
+            );
+            return Promise.reject(cryptoHostError(result && result.error
+              ? String(result.error)
+              : 'SubtleCrypto.deriveBits HKDF host failed.'));
+          }
+          const derived = Uint8Array.from(
+            Array.from(result.bytes || []).map((value) => Number(value) & 0xff)
+          );
+          recordCryptoOperation(
+            'subtle.deriveBits',
+            'HKDF',
+            bitLength / 8,
+            'fulfilled',
+            null,
+            ['HKDF bits were derived by the native CryptoKit host; derived material is not recorded.']
+          );
+          return Promise.resolve(derived.buffer);
+        };
+        const aesAwareExportKey = function (format, key) {
+          const bytes = key ? aesSecretKeyBytes.get(key) : undefined;
+          if (String(format) !== 'raw' || !bytes) {
+            return unsupportedExportKey(format, key);
+          }
+          const keyAlgorithmName =
+            key.algorithm && key.algorithm.name ? key.algorithm.name : null;
+          if (key.extractable !== true) {
+            recordCryptoOperation(
+              'subtle.exportKey',
+              keyAlgorithmName,
+              bytes.length,
+              'blocked',
+              'invalidInput',
+              ['Non-extractable AES secret-key export was rejected.']
+            );
+            return Promise.reject(new DOMException(
+              'key is not extractable',
+              'InvalidAccessError'
+            ));
+          }
+          recordCryptoOperation(
+            'subtle.exportKey',
+            keyAlgorithmName,
+            bytes.length,
+            'fulfilled',
+            null,
+            ['Raw AES secret-key bytes were exported inside the worker context; key material is not recorded.']
+          );
+          return Promise.resolve(bytes.slice().buffer);
+        };
         const subtle = Object.freeze({
           digest(algorithm, data) {
             try {
@@ -6911,12 +7243,12 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             }
           },
           decrypt: unsupportedSubtleMethod('decrypt'),
-          deriveBits: unsupportedSubtleMethod('deriveBits'),
+          deriveBits: hkdfAwareDeriveBits,
           deriveKey: unsupportedSubtleMethod('deriveKey'),
           encrypt: unsupportedSubtleMethod('encrypt'),
-          exportKey: unsupportedSubtleMethod('exportKey'),
-          generateKey: unsupportedSubtleMethod('generateKey'),
-          importKey: unsupportedSubtleMethod('importKey'),
+          exportKey: aesAwareExportKey,
+          generateKey: aesGenerateKey,
+          importKey: hkdfAwareImportKey,
           sign: unsupportedSubtleMethod('sign'),
           unwrapKey: unsupportedSubtleMethod('unwrapKey'),
           verify: unsupportedSubtleMethod('verify'),
@@ -7941,19 +8273,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             arguments.length
           );
         };
-        const browserGet = function(keys, callback) {
-          return invokeStorageAreaGet(
-            areaName,
-            store,
-            `browser.storage.${areaName}.get`,
-            keys,
-            callback,
-            arguments.length
-          );
-        };
         return {
           get: chromeGet,
-          __sumiBrowserGet: browserGet,
           getBytesInUse(keys, callback) {
             const parsed = parseStorageGetArgs(keys, callback);
             const startedAt = Date.now();
@@ -8519,29 +8840,6 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         session: sessionStorageArea,
         managed: managedStorageArea
       }, 'chrome.storage');
-      const browserLocalStorageArea = {
-        get: localStorageArea.__sumiBrowserGet,
-        getBytesInUse: localStorageArea.getBytesInUse,
-        getKeys: localStorageArea.getKeys,
-        set: localStorageArea.set,
-        remove: localStorageArea.remove,
-        clear: localStorageArea.clear,
-        setAccessLevel: localStorageArea.setAccessLevel
-      };
-      const browserSessionStorageArea = {
-        get: sessionStorageArea.__sumiBrowserGet,
-        getBytesInUse: sessionStorageArea.getBytesInUse,
-        getKeys: sessionStorageArea.getKeys,
-        set: sessionStorageArea.set,
-        remove: sessionStorageArea.remove,
-        clear: sessionStorageArea.clear,
-        setAccessLevel: sessionStorageArea.setAccessLevel
-      };
-      const browserStorage = {
-        onChanged: storageOnChanged,
-        local: browserLocalStorageArea,
-        session: browserSessionStorageArea
-      };
       const permissions = proxiedNamespace({
         onAdded: event('permissionsOnAdded'),
         onRemoved: event('permissionsOnRemoved')
@@ -9113,14 +9411,11 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         webNavigation,
         webRequest
       }, 'chrome');
-      Object.defineProperty(globalThis, 'browser', {
-        value: Object.freeze({
-          storage: Object.freeze(browserStorage)
-        }),
-        configurable: true,
-        enumerable: true,
-        writable: false
-      });
+      // Chrome MV3 service workers do not define a global `browser`
+      // namespace; extensions that check `typeof browser` (for example
+      // Bitwarden's BrowserApi) must take their Chrome code paths, and
+      // bundled webextension-polyfill builds construct `browser` from
+      // `chrome` themselves only when the global is absent.
       globalThis.importScripts = function (...urls) {
         if (typeof globalThis.__sumiImportScriptsHost !== 'function') {
           noteBlocked('importScripts.hostMissing');
@@ -10723,6 +11018,68 @@ private func webCryptoDigestBytesServiceWorkerJS(
     default:
         return nil
     }
+}
+
+private func webCryptoHKDFDeriveBitsServiceWorkerJS(
+    hash: String,
+    keyBytes: [UInt8],
+    saltBytes: [UInt8],
+    infoBytes: [UInt8],
+    byteCount: Int
+) -> [UInt8]? {
+    guard byteCount > 0 && byteCount <= 8_192 else { return nil }
+    let inputKeyMaterial = SymmetricKey(data: Data(keyBytes))
+    let salt = Data(saltBytes)
+    let info = Data(infoBytes)
+    let derived: SymmetricKey
+    switch normalizedWebCryptoDigestAlgorithmServiceWorkerJS(hash) {
+    case "SHA-1":
+        derived = HKDF<Insecure.SHA1>.deriveKey(
+            inputKeyMaterial: inputKeyMaterial,
+            salt: salt,
+            info: info,
+            outputByteCount: byteCount
+        )
+    case "SHA-256":
+        derived = HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: inputKeyMaterial,
+            salt: salt,
+            info: info,
+            outputByteCount: byteCount
+        )
+    case "SHA-384":
+        derived = HKDF<SHA384>.deriveKey(
+            inputKeyMaterial: inputKeyMaterial,
+            salt: salt,
+            info: info,
+            outputByteCount: byteCount
+        )
+    case "SHA-512":
+        derived = HKDF<SHA512>.deriveKey(
+            inputKeyMaterial: inputKeyMaterial,
+            salt: salt,
+            info: info,
+            outputByteCount: byteCount
+        )
+    default:
+        return nil
+    }
+    return derived.withUnsafeBytes { Array($0) }
+}
+
+private func uint8BytesFromJSValueServiceWorkerJS(
+    _ value: JSValue
+) -> [UInt8]? {
+    guard let values = value.toArray() else { return nil }
+    var bytes: [UInt8] = []
+    bytes.reserveCapacity(values.count)
+    for item in values {
+        guard let number = item as? NSNumber else { return nil }
+        let intValue = number.intValue
+        guard intValue >= 0 && intValue <= 255 else { return nil }
+        bytes.append(UInt8(intValue))
+    }
+    return bytes
 }
 
 private func rewriteDynamicImportsForHarnessServiceWorkerJS(
