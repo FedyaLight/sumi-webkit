@@ -1482,6 +1482,9 @@ protocol ChromeMV3PopupOptionsWebViewHandle: AnyObject {
 
     var livePopupStagedSnapshots: [ChromeMV3LivePopupStagedSnapshot] { get }
 
+    var liveViewCachePortDeliveryObservations:
+        [ChromeMV3ViewCachePortDeliveryObservation] { get }
+
     func evaluateJavaScriptForTesting(_ script: String) async throws -> Any?
     #endif
 
@@ -1504,6 +1507,9 @@ extension ChromeMV3PopupOptionsWebViewHandle {
     func refreshPopupPresentationDiagnosticsForTesting() {}
 
     var livePopupStagedSnapshots: [ChromeMV3LivePopupStagedSnapshot] { [] }
+
+    var liveViewCachePortDeliveryObservations:
+        [ChromeMV3ViewCachePortDeliveryObservation] { [] }
 
     func evaluateJavaScriptForTesting(_ script: String) async throws -> Any? {
         _ = script
@@ -1790,6 +1796,23 @@ final class ChromeMV3ProductPopupOptionsHostController {
         }
         guard let key, let handle = sessions[key]?.handle else { return [] }
         return handle.livePopupStagedSnapshots
+    }
+
+    func liveViewCachePortDeliveryObservations(
+        profileID: String,
+        extensionID: String,
+        surface: ChromeMV3ProductPopupOptionsSurface? = nil
+    ) -> [ChromeMV3ViewCachePortDeliveryObservation] {
+        let key = sessions.keys.first {
+            matchesSessionKey(
+                $0,
+                profileID: profileID,
+                extensionID: extensionID,
+                surface: surface
+            )
+        }
+        guard let key, let handle = sessions[key]?.handle else { return [] }
+        return handle.liveViewCachePortDeliveryObservations
     }
     #endif
 
@@ -2685,6 +2708,11 @@ final class ChromeMV3ProductPopupOptionsWKWebViewHandle:
 
     var livePopupStagedSnapshots: [ChromeMV3LivePopupStagedSnapshot] {
         stagedSnapshotCollector?.snapshots ?? []
+    }
+
+    var liveViewCachePortDeliveryObservations:
+        [ChromeMV3ViewCachePortDeliveryObservation] {
+        stagedSnapshotCollector?.viewCachePortDeliveryObservations ?? []
     }
 
     func refreshPopupPresentationDiagnosticsForTesting() {

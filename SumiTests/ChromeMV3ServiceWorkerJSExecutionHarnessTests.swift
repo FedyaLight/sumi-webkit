@@ -2221,6 +2221,115 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         )
     }
 
+    func testSessionMemoryPortGetResponseAppendsToInitializationOutbox() throws {
+        let harness = try startedHarness(
+            source: """
+            chrome.runtime.onConnect.addListener((port) => {
+              if (port.name !== "session") {
+                return;
+              }
+              port.onMessage.addListener(async (message, replyPort) => {
+                const target = replyPort || port;
+                if (message && message.originator === "background") {
+                  return;
+                }
+                let result = null;
+                if (message.action === "get" || message.action === "has") {
+                  result = await Promise.resolve(null);
+                }
+                target.postMessage({
+                  originator: "background",
+                  id: message.id,
+                  key: message.key,
+                  data: JSON.stringify(result)
+                });
+              });
+              port.postMessage({
+                originator: "background",
+                action: "initialization",
+                data: JSON.stringify([])
+              });
+            });
+            """
+        )
+        let connect = harness.connectRuntime(
+            name: "session",
+            sender: ChromeMV3ServiceWorkerEventSenderMetadata(
+                tabID: nil,
+                frameID: nil,
+                documentID: nil,
+                sourceURL: "chrome-extension://test-extension-id/",
+                urlRedacted: false,
+                redactionState: "harness sender"
+            )
+        )
+        let portID = try XCTUnwrap(connect.portID)
+        let port = try XCTUnwrap(
+            harness.deliverPortMessageFlushingAsyncContinuations(
+                portID: portID,
+                message: .object([
+                    "originator": .string("foreground"),
+                    "id": .string("probe-get-id"),
+                    "key": .string("global_popupViewMemory_popup-view-cache"),
+                    "action": .string("get"),
+                ])
+            )
+        )
+        XCTAssertEqual(port.postedMessages.count, 2)
+        guard case .object(let response)? = port.postedMessages.last else {
+            return XCTFail("Expected get response in cumulative Port outbox.")
+        }
+        XCTAssertEqual(response["originator"], .string("background"))
+        XCTAssertEqual(response["id"], .string("probe-get-id"))
+    }
+
+    func testAsyncPortOnMessageResponseDeliveredAfterBoundedFlush() throws {
+        let harness = try startedHarness(
+            source: """
+            chrome.runtime.onConnect.addListener((port) => {
+              port.onMessage.addListener(async (message) => {
+                await Promise.resolve();
+                port.postMessage({
+                  originator: 'background',
+                  id: message.id,
+                  key: message.key,
+                  data: JSON.stringify(null)
+                });
+              });
+            });
+            """
+        )
+        let connect = harness.connectRuntime(
+            name: "session",
+            sender: ChromeMV3ServiceWorkerEventSenderMetadata(
+                tabID: nil,
+                frameID: nil,
+                documentID: nil,
+                sourceURL: "chrome-extension://test-extension-id/",
+                urlRedacted: false,
+                redactionState: "harness sender"
+            )
+        )
+        let portID = try XCTUnwrap(connect.portID)
+        let port = try XCTUnwrap(
+            harness.deliverPortMessageFlushingAsyncContinuations(
+                portID: portID,
+                message: .object([
+                    "originator": .string("foreground"),
+                    "id": .string("probe-get-id"),
+                    "key": .string("global_popupViewMemory_popup-view-cache"),
+                    "action": .string("get"),
+                ])
+            )
+        )
+        XCTAssertEqual(port.postedMessages.count, 1)
+        guard case .object(let response)? = port.postedMessages.first else {
+            return XCTFail("Expected one Port response object")
+        }
+        XCTAssertEqual(response["originator"], .string("background"))
+        XCTAssertEqual(response["id"], .string("probe-get-id"))
+    }
+
     func testDeterministicTimerShimQueuesDrainsCancelsAndTicksManually()
         throws
     {

@@ -1014,6 +1014,10 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 "storageSnapshotNotImported",
                 "storageOnChangedDeliveryFailure",
                 "loginRouteNotActivatedBecauseInitializerPending",
+                "appInitializerWaitingForI18n",
+                "appInitializerWaitingForViewCache",
+                "appInitializerWaitingForPopupSize",
+                "appInitializerWaitingForTheme",
             ].contains(
                 firstVisibleUIGate?
                     .appInitializerUnresolvedAwaitCategory ?? ""
@@ -1037,7 +1041,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 finalDOM: finalDOMCheckpoint,
                 firstVisibleUIGate: firstVisibleUIGate
             ),
-            "extensionLocalRenderState"
+            firstVisibleUIGateCategory
         )
         XCTAssertEqual(boundaryDiagnostics.boundaryKind, "extension-local")
         XCTAssertEqual(
@@ -1382,6 +1386,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             contentViewReplacedWebView: false,
             failureClassifier: .unknown,
             stagedSnapshots: [],
+            viewCachePortDeliveryObservations: [],
             lifecycleEventCategories: [],
             diagnostics: []
         )
@@ -1509,6 +1514,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             contentViewReplacedWebView: false,
             failureClassifier: .unknown,
             stagedSnapshots: [staged],
+            viewCachePortDeliveryObservations: [],
             lifecycleEventCategories: [],
             diagnostics: []
         )
@@ -1709,7 +1715,47 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             onChangedFromMirrorDispatchCategory: "notObserved",
             popupReadAfterMirrorCategory: "notObserved",
             storageGetRequestedKeyMatchCategory: "notObserved",
-            storageGetResponseContainsMirroredValueCategory: "notObserved"
+            storageGetResponseContainsMirroredValueCategory: "notObserved",
+            viewCacheInitStartedCategory: "notObserved",
+            viewCacheAwaitedApiCategory: "notObserved",
+            viewCacheStorageReadCategory: "notObserved",
+            viewCacheStorageWriteCategory: "notObserved",
+            viewCacheRuntimeMessageCategory: "notObserved",
+            viewCachePortAwaitCategory: "notObserved",
+            viewCacheTabsQueryCategory: "notObserved",
+            viewCacheWindowsApiCategory: "notObserved",
+            viewCacheActionApiCategory: "notObserved",
+            viewCacheI18nCategory: "notObserved",
+            viewCacheTimerAwaitCategory: "notObserved",
+            viewCachePromiseContinuationCategory: "notObserved",
+            viewCacheCallbackCompletionCategory: "notObserved",
+            viewCacheInitResolvedCategory: "notObserved",
+            viewCacheUnresolvedReasonCategory: "notObserved",
+            viewCachePortGetRequestObservedCategory: "notObserved",
+            viewCachePortGetResponseCapturedCategory: "notObserved",
+            viewCachePortGetResponseDeliveredCategory: "notObserved",
+            viewCachePortRequestActionCategory: "notObserved",
+            viewCachePortRequestIdPresenceCategory: "notObserved",
+            viewCachePortRequestKeyMatchCategory: "notObserved",
+            viewCachePortRequestOriginatorCategory: "notObserved",
+            viewCachePortResponseOriginatorCategory: "notObserved",
+            viewCachePortResponseIdMatchCategory: "notObserved",
+            viewCachePortResponseKeyMatchCategory: "notObserved",
+            viewCachePortResponseDataPresenceCategory: "notObserved",
+            viewCachePortResponseEnvelopeShapeCategory: "notObserved",
+            viewCachePortListenerRegisteredBeforeResponseCategory: "notObserved",
+            viewCachePortListenerReceivedResponseCategory: "notObserved",
+            viewCachePortFilterResultCategory: "notObserved",
+            viewCacheObservableEmissionCategory: "notObserved",
+            viewCacheFirstValueFromResolvedCategory: "notObserved",
+            viewCachePortResponseAcceptedByForegroundStorageCategory: "notObserved",
+            viewCachePortResponseRejectedReasonCategory: "notObserved",
+            viewCacheResponseDataTypeCategory: "notObserved",
+            viewCacheResponseDataNullabilityCategory: "notObserved",
+            viewCacheRequestSubscriptionRegisteredCategory: "notObserved",
+            viewCacheResponseDeliveredBeforeSubscriptionCategory: "notObserved",
+            viewCacheObservableNextCategory: "notObserved",
+            viewCacheFirstValueFromPendingReasonCategory: "notObserved"
         )
         let classifier = ChromeMV3LivePopupProductPathTraceBuilder.classify(
             trace,
@@ -2026,6 +2072,7 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             contentViewReplacedWebView: false,
             failureClassifier: .unknown,
             stagedSnapshots: [staged],
+            viewCachePortDeliveryObservations: [],
             lifecycleEventCategories: [],
             diagnostics: []
         )
@@ -2321,6 +2368,136 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             staged.compactSanitizedLogLine.contains(
                 "popupPortOnMessageListenerCategory=listenerRegistered"
             )
+        )
+    }
+
+    @MainActor
+    func testDebugViewCachePortShapeDiagnosticsClassifyDeliveredButUnresolved()
+    {
+        let routeEvents = [
+            ChromeMV3PopupOptionsJSDebugRouteEventRecord(
+                sequence: 1,
+                eventKind: "portMemorySessionGetRequested",
+                apiName: "Port.postMessage",
+                sourceContext: "actionPopup",
+                targetContext: "serviceWorker",
+                safeMessageShapeClassification: "shape=unknown",
+                safeCommandTypeActionFieldNames: [],
+                diagnostics: [
+                    "viewCachePortRequestActionCategory=get",
+                    "viewCachePortRequestIdPresenceCategory=present",
+                    "viewCachePortRequestKeyMatchCategory=keyPresent",
+                    "viewCachePortRequestOriginatorCategory=foreground",
+                ]
+            ),
+            ChromeMV3PopupOptionsJSDebugRouteEventRecord(
+                sequence: 2,
+                eventKind: "portMemorySessionGetResponseCaptured",
+                apiName: "Port.onMessage",
+                sourceContext: "serviceWorker",
+                targetContext: "actionPopup",
+                safeMessageShapeClassification: "shape=unknown",
+                safeCommandTypeActionFieldNames: [],
+                diagnostics: [
+                    "viewCachePortResponseOriginatorCategory=background",
+                    "viewCachePortResponseIdMatchCategory=matchesRequest",
+                    "viewCachePortResponseKeyMatchCategory=matchesRequest",
+                    "viewCachePortResponseDataPresenceCategory=null",
+                    "viewCachePortResponseEnvelopeShapeCategory=rawObject",
+                    "viewCachePortListenerRegisteredBeforeResponseCategory=registeredBeforeResponse",
+                ]
+            ),
+            ChromeMV3PopupOptionsJSDebugRouteEventRecord(
+                sequence: 3,
+                eventKind: "portMemorySessionGetResponseDelivered",
+                apiName: "Port.onMessage",
+                sourceContext: "serviceWorker",
+                targetContext: "actionPopup",
+                safeMessageShapeClassification: "shape=unknown",
+                safeCommandTypeActionFieldNames: [],
+                diagnostics: [
+                    "viewCachePortGetResponseDeliveredCategory=delivered",
+                    "viewCachePortListenerReceivedResponseCategory=received",
+                    "viewCachePortResponseOriginatorCategory=background",
+                    "viewCachePortResponseIdMatchCategory=matchesRequest",
+                    "viewCachePortResponseKeyMatchCategory=matchesRequest",
+                    "viewCachePortResponseDataPresenceCategory=null",
+                    "viewCachePortResponseEnvelopeShapeCategory=rawObject",
+                    "viewCachePortResponseAcceptedByForegroundStorageCategory=accepted",
+                    "viewCachePortResponseRejectedReasonCategory=notRejected",
+                    "viewCacheResponseDataTypeCategory=string",
+                    "viewCacheResponseDataNullabilityCategory=null",
+                    "viewCacheRequestSubscriptionRegisteredCategory=registeredBeforeRequest",
+                    "viewCacheResponseDeliveredBeforeSubscriptionCategory=deliveredAfterSubscription",
+                    "viewCacheObservableNextCategory=wouldEmit",
+                    "viewCacheFirstValueFromResolvedCategory=wouldResolve",
+                    "viewCacheFirstValueFromPendingReasonCategory=notObserved",
+                ]
+            ),
+        ]
+        let shape =
+            ChromeMV3LivePopupProductPathTraceBuilder
+            .deriveViewCachePortShapeDiagnostics(
+                routeEvents: routeEvents,
+                viewCacheInitCategory: "viewCacheInitPending",
+                appInitializerUnresolvedAwaitCategory:
+                    "appInitializerWaitingForViewCache",
+                routerActivationCategory: "routerNotStarted",
+                visibleTextLength: 0,
+                formControlCount: 0,
+                buttonCount: 0
+            )
+        XCTAssertEqual(shape.viewCachePortGetRequestObservedCategory, "observed")
+        XCTAssertEqual(shape.viewCachePortGetResponseCapturedCategory, "captured")
+        XCTAssertEqual(shape.viewCachePortGetResponseDeliveredCategory, "delivered")
+        XCTAssertEqual(shape.viewCachePortResponseIdMatchCategory, "matchesRequest")
+        XCTAssertEqual(
+            shape.viewCachePortResponseAcceptedByForegroundStorageCategory,
+            "accepted"
+        )
+        XCTAssertEqual(shape.viewCacheResponseDataTypeCategory, "string")
+        XCTAssertEqual(
+            shape.viewCacheObservableEmissionCategory,
+            "notEmittedDespiteAcceptance"
+        )
+        XCTAssertEqual(shape.viewCacheFirstValueFromResolvedCategory, "stillPending")
+        XCTAssertEqual(
+            shape.viewCacheFirstValueFromPendingReasonCategory,
+            "foregroundStorageAcceptedButInitStillPending"
+        )
+
+        let observation =
+            ChromeMV3LivePopupProductPathTraceBuilder
+            .buildViewCachePortDeliveryObservation(
+                delayBucket: "immediate",
+                routeEvents: routeEvents,
+                viewCacheInitCategory: "viewCacheInitPending",
+                appInitializerUnresolvedAwaitCategory:
+                    "appInitializerWaitingForViewCache",
+                routerActivationCategory: "routerNotStarted",
+                visibleTextLength: 0,
+                formControlCount: 0,
+                buttonCount: 0
+            )
+        XCTAssertEqual(
+            observation.viewCachePortGetResponseAfterDeliveryDelayBucket,
+            "immediate"
+        )
+        XCTAssertEqual(
+            observation.viewCacheResolvedAfterPortDeliveryCategory,
+            "stillPending"
+        )
+        XCTAssertEqual(
+            observation.viewCacheObservableEmissionCategory,
+            "notEmittedDespiteAcceptance"
+        )
+        XCTAssertEqual(
+            observation.viewCacheFirstValueFromResolvedCategory,
+            "stillPending"
+        )
+        XCTAssertEqual(
+            observation.viewCachePortResponseAcceptedByForegroundStorageCategory,
+            "accepted"
         )
     }
 

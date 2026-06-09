@@ -83,6 +83,74 @@ enum ChromeMV3LivePopupFailureClassifier: String, Codable, Equatable, Sendable {
     case unknown
 }
 
+struct ChromeMV3ViewCachePortDeliveryObservation: Codable, Equatable, Sendable {
+    var viewCachePortGetResponseAfterDeliveryDelayBucket: String
+    var viewCachePortGetRequestObservedCategory: String
+    var viewCachePortGetResponseCapturedCategory: String
+    var viewCachePortGetResponseDeliveredCategory: String
+    var viewCacheResolvedAfterPortDeliveryCategory: String
+    var appInitializerAdvancedAfterPortDeliveryCategory: String
+    var routerStartedAfterPortDeliveryCategory: String
+    var visibleUIAfterPortDeliveryCategory: String
+    var viewCachePortRequestActionCategory: String
+    var viewCachePortRequestIdPresenceCategory: String
+    var viewCachePortRequestKeyMatchCategory: String
+    var viewCachePortRequestOriginatorCategory: String
+    var viewCachePortResponseOriginatorCategory: String
+    var viewCachePortResponseIdMatchCategory: String
+    var viewCachePortResponseKeyMatchCategory: String
+    var viewCachePortResponseDataPresenceCategory: String
+    var viewCachePortResponseEnvelopeShapeCategory: String
+    var viewCachePortListenerRegisteredBeforeResponseCategory: String
+    var viewCachePortListenerReceivedResponseCategory: String
+    var viewCachePortFilterResultCategory: String
+    var viewCacheObservableEmissionCategory: String
+    var viewCacheFirstValueFromResolvedCategory: String
+    var viewCachePortResponseAcceptedByForegroundStorageCategory: String
+    var viewCachePortResponseRejectedReasonCategory: String
+    var viewCacheResponseDataTypeCategory: String
+    var viewCacheResponseDataNullabilityCategory: String
+    var viewCacheRequestSubscriptionRegisteredCategory: String
+    var viewCacheResponseDeliveredBeforeSubscriptionCategory: String
+    var viewCacheObservableNextCategory: String
+    var viewCacheFirstValueFromPendingReasonCategory: String
+
+    var compactSanitizedLogLine: String {
+        [
+            "delayBucket=\(viewCachePortGetResponseAfterDeliveryDelayBucket)",
+            "viewCachePortGetRequestObservedCategory=\(viewCachePortGetRequestObservedCategory)",
+            "viewCachePortGetResponseCapturedCategory=\(viewCachePortGetResponseCapturedCategory)",
+            "viewCachePortGetResponseDeliveredCategory=\(viewCachePortGetResponseDeliveredCategory)",
+            "viewCacheResolvedAfterPortDeliveryCategory=\(viewCacheResolvedAfterPortDeliveryCategory)",
+            "appInitializerAdvancedAfterPortDeliveryCategory=\(appInitializerAdvancedAfterPortDeliveryCategory)",
+            "routerStartedAfterPortDeliveryCategory=\(routerStartedAfterPortDeliveryCategory)",
+            "visibleUIAfterPortDeliveryCategory=\(visibleUIAfterPortDeliveryCategory)",
+            "viewCachePortRequestActionCategory=\(viewCachePortRequestActionCategory)",
+            "viewCachePortRequestIdPresenceCategory=\(viewCachePortRequestIdPresenceCategory)",
+            "viewCachePortRequestKeyMatchCategory=\(viewCachePortRequestKeyMatchCategory)",
+            "viewCachePortRequestOriginatorCategory=\(viewCachePortRequestOriginatorCategory)",
+            "viewCachePortResponseOriginatorCategory=\(viewCachePortResponseOriginatorCategory)",
+            "viewCachePortResponseIdMatchCategory=\(viewCachePortResponseIdMatchCategory)",
+            "viewCachePortResponseKeyMatchCategory=\(viewCachePortResponseKeyMatchCategory)",
+            "viewCachePortResponseDataPresenceCategory=\(viewCachePortResponseDataPresenceCategory)",
+            "viewCachePortResponseEnvelopeShapeCategory=\(viewCachePortResponseEnvelopeShapeCategory)",
+            "viewCachePortListenerRegisteredBeforeResponseCategory=\(viewCachePortListenerRegisteredBeforeResponseCategory)",
+            "viewCachePortListenerReceivedResponseCategory=\(viewCachePortListenerReceivedResponseCategory)",
+            "viewCachePortFilterResultCategory=\(viewCachePortFilterResultCategory)",
+            "viewCacheObservableEmissionCategory=\(viewCacheObservableEmissionCategory)",
+            "viewCacheFirstValueFromResolvedCategory=\(viewCacheFirstValueFromResolvedCategory)",
+            "viewCachePortResponseAcceptedByForegroundStorageCategory=\(viewCachePortResponseAcceptedByForegroundStorageCategory)",
+            "viewCachePortResponseRejectedReasonCategory=\(viewCachePortResponseRejectedReasonCategory)",
+            "viewCacheResponseDataTypeCategory=\(viewCacheResponseDataTypeCategory)",
+            "viewCacheResponseDataNullabilityCategory=\(viewCacheResponseDataNullabilityCategory)",
+            "viewCacheRequestSubscriptionRegisteredCategory=\(viewCacheRequestSubscriptionRegisteredCategory)",
+            "viewCacheResponseDeliveredBeforeSubscriptionCategory=\(viewCacheResponseDeliveredBeforeSubscriptionCategory)",
+            "viewCacheObservableNextCategory=\(viewCacheObservableNextCategory)",
+            "viewCacheFirstValueFromPendingReasonCategory=\(viewCacheFirstValueFromPendingReasonCategory)",
+        ].joined(separator: " ")
+    }
+}
+
 struct ChromeMV3LivePopupStagedSnapshot: Codable, Equatable, Sendable {
     var stage: String
     var readyState: String
@@ -324,6 +392,46 @@ struct ChromeMV3FirstVisibleUIGateDiagnostics: Equatable, Sendable {
     var popupReadAfterMirrorCategory: String
     var storageGetRequestedKeyMatchCategory: String
     var storageGetResponseContainsMirroredValueCategory: String
+    var viewCacheInitStartedCategory: String
+    var viewCacheAwaitedApiCategory: String
+    var viewCacheStorageReadCategory: String
+    var viewCacheStorageWriteCategory: String
+    var viewCacheRuntimeMessageCategory: String
+    var viewCachePortAwaitCategory: String
+    var viewCacheTabsQueryCategory: String
+    var viewCacheWindowsApiCategory: String
+    var viewCacheActionApiCategory: String
+    var viewCacheI18nCategory: String
+    var viewCacheTimerAwaitCategory: String
+    var viewCachePromiseContinuationCategory: String
+    var viewCacheCallbackCompletionCategory: String
+    var viewCacheInitResolvedCategory: String
+    var viewCacheUnresolvedReasonCategory: String
+    var viewCachePortGetRequestObservedCategory: String
+    var viewCachePortGetResponseCapturedCategory: String
+    var viewCachePortGetResponseDeliveredCategory: String
+    var viewCachePortRequestActionCategory: String
+    var viewCachePortRequestIdPresenceCategory: String
+    var viewCachePortRequestKeyMatchCategory: String
+    var viewCachePortRequestOriginatorCategory: String
+    var viewCachePortResponseOriginatorCategory: String
+    var viewCachePortResponseIdMatchCategory: String
+    var viewCachePortResponseKeyMatchCategory: String
+    var viewCachePortResponseDataPresenceCategory: String
+    var viewCachePortResponseEnvelopeShapeCategory: String
+    var viewCachePortListenerRegisteredBeforeResponseCategory: String
+    var viewCachePortListenerReceivedResponseCategory: String
+    var viewCachePortFilterResultCategory: String
+    var viewCacheObservableEmissionCategory: String
+    var viewCacheFirstValueFromResolvedCategory: String
+    var viewCachePortResponseAcceptedByForegroundStorageCategory: String
+    var viewCachePortResponseRejectedReasonCategory: String
+    var viewCacheResponseDataTypeCategory: String
+    var viewCacheResponseDataNullabilityCategory: String
+    var viewCacheRequestSubscriptionRegisteredCategory: String
+    var viewCacheResponseDeliveredBeforeSubscriptionCategory: String
+    var viewCacheObservableNextCategory: String
+    var viewCacheFirstValueFromPendingReasonCategory: String
 
     var logLines: [String] {
         [
@@ -409,6 +517,46 @@ struct ChromeMV3FirstVisibleUIGateDiagnostics: Equatable, Sendable {
             "popupReadAfterMirrorCategory=\(popupReadAfterMirrorCategory)",
             "storageGetRequestedKeyMatchCategory=\(storageGetRequestedKeyMatchCategory)",
             "storageGetResponseContainsMirroredValueCategory=\(storageGetResponseContainsMirroredValueCategory)",
+            "viewCacheInitStartedCategory=\(viewCacheInitStartedCategory)",
+            "viewCacheAwaitedApiCategory=\(viewCacheAwaitedApiCategory)",
+            "viewCacheStorageReadCategory=\(viewCacheStorageReadCategory)",
+            "viewCacheStorageWriteCategory=\(viewCacheStorageWriteCategory)",
+            "viewCacheRuntimeMessageCategory=\(viewCacheRuntimeMessageCategory)",
+            "viewCachePortAwaitCategory=\(viewCachePortAwaitCategory)",
+            "viewCacheTabsQueryCategory=\(viewCacheTabsQueryCategory)",
+            "viewCacheWindowsApiCategory=\(viewCacheWindowsApiCategory)",
+            "viewCacheActionApiCategory=\(viewCacheActionApiCategory)",
+            "viewCacheI18nCategory=\(viewCacheI18nCategory)",
+            "viewCacheTimerAwaitCategory=\(viewCacheTimerAwaitCategory)",
+            "viewCachePromiseContinuationCategory=\(viewCachePromiseContinuationCategory)",
+            "viewCacheCallbackCompletionCategory=\(viewCacheCallbackCompletionCategory)",
+            "viewCacheInitResolvedCategory=\(viewCacheInitResolvedCategory)",
+            "viewCacheUnresolvedReasonCategory=\(viewCacheUnresolvedReasonCategory)",
+            "viewCachePortGetRequestObservedCategory=\(viewCachePortGetRequestObservedCategory)",
+            "viewCachePortGetResponseCapturedCategory=\(viewCachePortGetResponseCapturedCategory)",
+            "viewCachePortGetResponseDeliveredCategory=\(viewCachePortGetResponseDeliveredCategory)",
+            "viewCachePortRequestActionCategory=\(viewCachePortRequestActionCategory)",
+            "viewCachePortRequestIdPresenceCategory=\(viewCachePortRequestIdPresenceCategory)",
+            "viewCachePortRequestKeyMatchCategory=\(viewCachePortRequestKeyMatchCategory)",
+            "viewCachePortRequestOriginatorCategory=\(viewCachePortRequestOriginatorCategory)",
+            "viewCachePortResponseOriginatorCategory=\(viewCachePortResponseOriginatorCategory)",
+            "viewCachePortResponseIdMatchCategory=\(viewCachePortResponseIdMatchCategory)",
+            "viewCachePortResponseKeyMatchCategory=\(viewCachePortResponseKeyMatchCategory)",
+            "viewCachePortResponseDataPresenceCategory=\(viewCachePortResponseDataPresenceCategory)",
+            "viewCachePortResponseEnvelopeShapeCategory=\(viewCachePortResponseEnvelopeShapeCategory)",
+            "viewCachePortListenerRegisteredBeforeResponseCategory=\(viewCachePortListenerRegisteredBeforeResponseCategory)",
+            "viewCachePortListenerReceivedResponseCategory=\(viewCachePortListenerReceivedResponseCategory)",
+            "viewCachePortFilterResultCategory=\(viewCachePortFilterResultCategory)",
+            "viewCacheObservableEmissionCategory=\(viewCacheObservableEmissionCategory)",
+            "viewCacheFirstValueFromResolvedCategory=\(viewCacheFirstValueFromResolvedCategory)",
+            "viewCachePortResponseAcceptedByForegroundStorageCategory=\(viewCachePortResponseAcceptedByForegroundStorageCategory)",
+            "viewCachePortResponseRejectedReasonCategory=\(viewCachePortResponseRejectedReasonCategory)",
+            "viewCacheResponseDataTypeCategory=\(viewCacheResponseDataTypeCategory)",
+            "viewCacheResponseDataNullabilityCategory=\(viewCacheResponseDataNullabilityCategory)",
+            "viewCacheRequestSubscriptionRegisteredCategory=\(viewCacheRequestSubscriptionRegisteredCategory)",
+            "viewCacheResponseDeliveredBeforeSubscriptionCategory=\(viewCacheResponseDeliveredBeforeSubscriptionCategory)",
+            "viewCacheObservableNextCategory=\(viewCacheObservableNextCategory)",
+            "viewCacheFirstValueFromPendingReasonCategory=\(viewCacheFirstValueFromPendingReasonCategory)",
         ]
     }
 
@@ -496,6 +644,7 @@ struct ChromeMV3LivePopupProductPathTrace: Codable, Equatable, Sendable {
     var contentViewReplacedWebView: Bool
     var failureClassifier: ChromeMV3LivePopupFailureClassifier
     var stagedSnapshots: [ChromeMV3LivePopupStagedSnapshot]
+    var viewCachePortDeliveryObservations: [ChromeMV3ViewCachePortDeliveryObservation]
     var lifecycleEventCategories: [String]
     var diagnostics: [String]
 
@@ -1331,6 +1480,13 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
                 result.disconnectCategory =
                     event.resultClassifier == "lastError"
                     ? "disconnectedWithError" : "disconnected"
+            case "portMemorySessionGetResponseDelivered":
+                if portEventDiagnosticValue(
+                    "viewCachePortGetResponseDeliveredCategory",
+                    from: event
+                ) == "delivered" {
+                    result.swOutboxDelivered += 1
+                }
             case "portObjectReturned":
                 if event.apiName == "runtime.connect" {
                     connectObserved = true
@@ -1363,6 +1519,471 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             result.disconnectCategory = "none"
         }
         return result
+    }
+
+    private static func latestPortDiagnosticCategory(
+        _ key: String,
+        from events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord],
+        eventKinds: [String]
+    ) -> String {
+        for event in events.reversed() {
+            guard eventKinds.contains(event.eventKind) else { continue }
+            if let value = portEventDiagnosticValue(key, from: event) {
+                return value
+            }
+        }
+        return "notObserved"
+    }
+
+    static func deriveViewCachePortShapeDiagnostics(
+        routeEvents: [ChromeMV3PopupOptionsJSDebugRouteEventRecord],
+        viewCacheInitCategory: String,
+        appInitializerUnresolvedAwaitCategory: String,
+        routerActivationCategory: String,
+        visibleTextLength: Int,
+        formControlCount: Int,
+        buttonCount: Int
+    ) -> (
+        viewCachePortGetRequestObservedCategory: String,
+        viewCachePortGetResponseCapturedCategory: String,
+        viewCachePortGetResponseDeliveredCategory: String,
+        viewCachePortRequestActionCategory: String,
+        viewCachePortRequestIdPresenceCategory: String,
+        viewCachePortRequestKeyMatchCategory: String,
+        viewCachePortRequestOriginatorCategory: String,
+        viewCachePortResponseOriginatorCategory: String,
+        viewCachePortResponseIdMatchCategory: String,
+        viewCachePortResponseKeyMatchCategory: String,
+        viewCachePortResponseDataPresenceCategory: String,
+        viewCachePortResponseEnvelopeShapeCategory: String,
+        viewCachePortListenerRegisteredBeforeResponseCategory: String,
+        viewCachePortListenerReceivedResponseCategory: String,
+        viewCachePortFilterResultCategory: String,
+        viewCacheObservableEmissionCategory: String,
+        viewCacheFirstValueFromResolvedCategory: String,
+        viewCachePortResponseAcceptedByForegroundStorageCategory: String,
+        viewCachePortResponseRejectedReasonCategory: String,
+        viewCacheResponseDataTypeCategory: String,
+        viewCacheResponseDataNullabilityCategory: String,
+        viewCacheRequestSubscriptionRegisteredCategory: String,
+        viewCacheResponseDeliveredBeforeSubscriptionCategory: String,
+        viewCacheObservableNextCategory: String,
+        viewCacheFirstValueFromPendingReasonCategory: String,
+        viewCacheInitResolvedCategory: String
+    ) {
+        let memorySessionEvents = routeEvents.filter {
+            [
+                "portMemorySessionGetRequested",
+                "portMemorySessionGetResponseCaptured",
+                "portMemorySessionGetResponseDelivered",
+            ].contains($0.eventKind)
+        }
+        let requestObserved = memorySessionEvents.contains {
+            $0.eventKind == "portMemorySessionGetRequested"
+        }
+        let responseCaptured = memorySessionEvents.contains {
+            $0.eventKind == "portMemorySessionGetResponseCaptured"
+        }
+        let responseDelivered = memorySessionEvents.contains {
+            $0.eventKind == "portMemorySessionGetResponseDelivered"
+                && portEventDiagnosticValue(
+                    "viewCachePortGetResponseDeliveredCategory",
+                    from: $0
+                ) == "delivered"
+        }
+
+        let requestActionCategory = latestPortDiagnosticCategory(
+            "viewCachePortRequestActionCategory",
+            from: routeEvents,
+            eventKinds: ["portMemorySessionGetRequested"]
+        )
+        let requestIdPresenceCategory = latestPortDiagnosticCategory(
+            "viewCachePortRequestIdPresenceCategory",
+            from: routeEvents,
+            eventKinds: ["portMemorySessionGetRequested"]
+        )
+        let requestKeyMatchCategory = latestPortDiagnosticCategory(
+            "viewCachePortRequestKeyMatchCategory",
+            from: routeEvents,
+            eventKinds: ["portMemorySessionGetRequested"]
+        )
+        let requestOriginatorCategory = latestPortDiagnosticCategory(
+            "viewCachePortRequestOriginatorCategory",
+            from: routeEvents,
+            eventKinds: ["portMemorySessionGetRequested"]
+        )
+        let responseOriginatorCategory = latestPortDiagnosticCategory(
+            "viewCachePortResponseOriginatorCategory",
+            from: routeEvents,
+            eventKinds: [
+                "portMemorySessionGetResponseCaptured",
+                "portMemorySessionGetResponseDelivered",
+            ]
+        )
+        let responseIdMatchCategory = latestPortDiagnosticCategory(
+            "viewCachePortResponseIdMatchCategory",
+            from: routeEvents,
+            eventKinds: [
+                "portMemorySessionGetResponseCaptured",
+                "portMemorySessionGetResponseDelivered",
+            ]
+        )
+        let responseKeyMatchCategory = latestPortDiagnosticCategory(
+            "viewCachePortResponseKeyMatchCategory",
+            from: routeEvents,
+            eventKinds: [
+                "portMemorySessionGetResponseCaptured",
+                "portMemorySessionGetResponseDelivered",
+            ]
+        )
+        let responseDataPresenceCategory = latestPortDiagnosticCategory(
+            "viewCachePortResponseDataPresenceCategory",
+            from: routeEvents,
+            eventKinds: [
+                "portMemorySessionGetResponseCaptured",
+                "portMemorySessionGetResponseDelivered",
+            ]
+        )
+        let responseEnvelopeShapeCategory = latestPortDiagnosticCategory(
+            "viewCachePortResponseEnvelopeShapeCategory",
+            from: routeEvents,
+            eventKinds: [
+                "portMemorySessionGetResponseCaptured",
+                "portMemorySessionGetResponseDelivered",
+            ]
+        )
+        let listenerRegisteredBeforeResponseCategory =
+            latestPortDiagnosticCategory(
+                "viewCachePortListenerRegisteredBeforeResponseCategory",
+                from: routeEvents,
+                eventKinds: [
+                    "portMemorySessionGetResponseCaptured",
+                    "portMemorySessionGetResponseDelivered",
+                ]
+            )
+        let listenerReceivedResponseCategory = latestPortDiagnosticCategory(
+            "viewCachePortListenerReceivedResponseCategory",
+            from: routeEvents,
+            eventKinds: ["portMemorySessionGetResponseDelivered"]
+        )
+        let foregroundStorageAcceptedCategory = latestPortDiagnosticCategory(
+            "viewCachePortResponseAcceptedByForegroundStorageCategory",
+            from: routeEvents,
+            eventKinds: ["portMemorySessionGetResponseDelivered"]
+        )
+        let foregroundStorageRejectedReasonCategory =
+            latestPortDiagnosticCategory(
+                "viewCachePortResponseRejectedReasonCategory",
+                from: routeEvents,
+                eventKinds: ["portMemorySessionGetResponseDelivered"]
+            )
+        let responseDataTypeCategory = latestPortDiagnosticCategory(
+            "viewCacheResponseDataTypeCategory",
+            from: routeEvents,
+            eventKinds: ["portMemorySessionGetResponseDelivered"]
+        )
+        let responseDataNullabilityCategory = latestPortDiagnosticCategory(
+            "viewCacheResponseDataNullabilityCategory",
+            from: routeEvents,
+            eventKinds: ["portMemorySessionGetResponseDelivered"]
+        )
+        let requestSubscriptionRegisteredCategory =
+            latestPortDiagnosticCategory(
+                "viewCacheRequestSubscriptionRegisteredCategory",
+                from: routeEvents,
+                eventKinds: ["portMemorySessionGetRequested"]
+            ) != "notObserved"
+            ? latestPortDiagnosticCategory(
+                "viewCacheRequestSubscriptionRegisteredCategory",
+                from: routeEvents,
+                eventKinds: ["portMemorySessionGetRequested"]
+            )
+            : latestPortDiagnosticCategory(
+                "viewCacheRequestSubscriptionRegisteredCategory",
+                from: routeEvents,
+                eventKinds: ["portMemorySessionGetResponseDelivered"]
+            )
+        let responseDeliveredBeforeSubscriptionCategory =
+            latestPortDiagnosticCategory(
+                "viewCacheResponseDeliveredBeforeSubscriptionCategory",
+                from: routeEvents,
+                eventKinds: ["portMemorySessionGetResponseDelivered"]
+            )
+        let bridgeObservableNextCategory = latestPortDiagnosticCategory(
+            "viewCacheObservableNextCategory",
+            from: routeEvents,
+            eventKinds: ["portMemorySessionGetResponseDelivered"]
+        )
+        let bridgeFirstValueFromPendingReasonCategory =
+            latestPortDiagnosticCategory(
+                "viewCacheFirstValueFromPendingReasonCategory",
+                from: routeEvents,
+                eventKinds: ["portMemorySessionGetResponseDelivered"]
+            )
+
+        let viewCacheResolved = viewCacheInitCategory == "viewCacheInitObserved"
+        let viewCachePending = viewCacheInitCategory == "viewCacheInitPending"
+        let initResolvedCategory: String
+        if viewCacheResolved {
+            initResolvedCategory = "resolved"
+        } else if viewCachePending {
+            initResolvedCategory = "stillPending"
+        } else {
+            initResolvedCategory = "notObserved"
+        }
+
+        let firstValueFromResolvedCategory: String
+        if viewCacheResolved {
+            firstValueFromResolvedCategory = "resolved"
+        } else if viewCachePending
+            && foregroundStorageAcceptedCategory == "accepted"
+            && responseDelivered
+        {
+            firstValueFromResolvedCategory = "stillPending"
+        } else if viewCachePending && responseDelivered {
+            firstValueFromResolvedCategory = "stillPending"
+        } else if requestObserved {
+            firstValueFromResolvedCategory = "notObserved"
+        } else {
+            firstValueFromResolvedCategory = "notObserved"
+        }
+
+        let observableNextCategory: String
+        if viewCacheResolved {
+            observableNextCategory = "emitted"
+        } else if bridgeObservableNextCategory != "notObserved" {
+            observableNextCategory = bridgeObservableNextCategory
+        } else {
+            observableNextCategory = "notObserved"
+        }
+
+        let observableEmissionCategory: String
+        if viewCacheResolved && responseDelivered {
+            observableEmissionCategory = "emitted"
+        } else if viewCachePending
+            && foregroundStorageAcceptedCategory == "accepted"
+            && responseDelivered
+        {
+            observableEmissionCategory = "notEmittedDespiteAcceptance"
+        } else if viewCachePending
+            && responseDelivered
+            && listenerReceivedResponseCategory == "received"
+        {
+            observableEmissionCategory = "notEmittedDespiteDelivery"
+        } else if viewCachePending && responseCaptured {
+            observableEmissionCategory = "notEmitted"
+        } else {
+            observableEmissionCategory = "notObserved"
+        }
+
+        let firstValueFromPendingReasonCategory: String
+        if viewCacheResolved {
+            firstValueFromPendingReasonCategory = "notPending"
+        } else if viewCachePending
+            && foregroundStorageAcceptedCategory == "accepted"
+            && responseDelivered
+        {
+            firstValueFromPendingReasonCategory =
+                "foregroundStorageAcceptedButInitStillPending"
+        } else if bridgeFirstValueFromPendingReasonCategory != "notObserved" {
+            firstValueFromPendingReasonCategory =
+                bridgeFirstValueFromPendingReasonCategory
+        } else if viewCachePending && responseDelivered {
+            firstValueFromPendingReasonCategory = "viewCacheInitStillPending"
+        } else {
+            firstValueFromPendingReasonCategory = "notObserved"
+        }
+
+        let filterResultCategory: String
+        if foregroundStorageAcceptedCategory == "accepted" {
+            filterResultCategory = viewCacheResolved
+                ? "accepted"
+                : "acceptedButViewCacheStillPending"
+        } else if foregroundStorageAcceptedCategory == "rejected"
+            || foregroundStorageRejectedReasonCategory == "idMismatch"
+            || foregroundStorageRejectedReasonCategory == "dataParseFailed"
+            || foregroundStorageRejectedReasonCategory == "originatorRejected"
+        {
+            filterResultCategory = "foregroundStorageRejected"
+        } else if listenerReceivedResponseCategory != "received" {
+            filterResultCategory = "listenerMissedResponse"
+        } else if responseEnvelopeShapeCategory == "wrappedEnvelope" {
+            filterResultCategory = "envelopeRejected"
+        } else if responseIdMatchCategory == "mismatchesRequest" {
+            filterResultCategory = "idMismatchRejected"
+        } else if responseKeyMatchCategory == "mismatchesRequest" {
+            filterResultCategory = "keyMismatchRejected"
+        } else if responseDataPresenceCategory == "absent" {
+            filterResultCategory = "dataMissingRejected"
+        } else if viewCacheResolved {
+            filterResultCategory = "accepted"
+        } else if viewCachePending && responseDelivered {
+            filterResultCategory = "acceptedButViewCacheStillPending"
+        } else {
+            filterResultCategory = "notObserved"
+        }
+
+        return (
+            viewCachePortGetRequestObservedCategory:
+                requestObserved ? "observed" : "notObserved",
+            viewCachePortGetResponseCapturedCategory:
+                responseCaptured ? "captured" : "notCaptured",
+            viewCachePortGetResponseDeliveredCategory:
+                responseDelivered ? "delivered" : (
+                    memorySessionEvents.contains {
+                        $0.eventKind == "portMemorySessionGetResponseDelivered"
+                    } ? "queued" : "notDelivered"
+                ),
+            viewCachePortRequestActionCategory: requestActionCategory,
+            viewCachePortRequestIdPresenceCategory: requestIdPresenceCategory,
+            viewCachePortRequestKeyMatchCategory: requestKeyMatchCategory,
+            viewCachePortRequestOriginatorCategory: requestOriginatorCategory,
+            viewCachePortResponseOriginatorCategory: responseOriginatorCategory,
+            viewCachePortResponseIdMatchCategory: responseIdMatchCategory,
+            viewCachePortResponseKeyMatchCategory: responseKeyMatchCategory,
+            viewCachePortResponseDataPresenceCategory:
+                responseDataPresenceCategory,
+            viewCachePortResponseEnvelopeShapeCategory:
+                responseEnvelopeShapeCategory,
+            viewCachePortListenerRegisteredBeforeResponseCategory:
+                listenerRegisteredBeforeResponseCategory,
+            viewCachePortListenerReceivedResponseCategory:
+                listenerReceivedResponseCategory,
+            viewCachePortFilterResultCategory: filterResultCategory,
+            viewCacheObservableEmissionCategory: observableEmissionCategory,
+            viewCacheFirstValueFromResolvedCategory:
+                firstValueFromResolvedCategory,
+            viewCachePortResponseAcceptedByForegroundStorageCategory:
+                foregroundStorageAcceptedCategory,
+            viewCachePortResponseRejectedReasonCategory:
+                foregroundStorageRejectedReasonCategory,
+            viewCacheResponseDataTypeCategory: responseDataTypeCategory,
+            viewCacheResponseDataNullabilityCategory:
+                responseDataNullabilityCategory,
+            viewCacheRequestSubscriptionRegisteredCategory:
+                requestSubscriptionRegisteredCategory,
+            viewCacheResponseDeliveredBeforeSubscriptionCategory:
+                responseDeliveredBeforeSubscriptionCategory,
+            viewCacheObservableNextCategory: observableNextCategory,
+            viewCacheFirstValueFromPendingReasonCategory:
+                firstValueFromPendingReasonCategory,
+            viewCacheInitResolvedCategory: initResolvedCategory
+        )
+    }
+
+    static func buildViewCachePortDeliveryObservation(
+        delayBucket: String,
+        routeEvents: [ChromeMV3PopupOptionsJSDebugRouteEventRecord],
+        viewCacheInitCategory: String,
+        appInitializerUnresolvedAwaitCategory: String,
+        routerActivationCategory: String,
+        visibleTextLength: Int,
+        formControlCount: Int,
+        buttonCount: Int
+    ) -> ChromeMV3ViewCachePortDeliveryObservation {
+        let shape = deriveViewCachePortShapeDiagnostics(
+            routeEvents: routeEvents,
+            viewCacheInitCategory: viewCacheInitCategory,
+            appInitializerUnresolvedAwaitCategory:
+                appInitializerUnresolvedAwaitCategory,
+            routerActivationCategory: routerActivationCategory,
+            visibleTextLength: visibleTextLength,
+            formControlCount: formControlCount,
+            buttonCount: buttonCount
+        )
+        let viewCacheResolvedCategory =
+            viewCacheInitCategory == "viewCacheInitObserved"
+            ? "resolved"
+            : (
+                viewCacheInitCategory == "viewCacheInitPending"
+                    ? "stillPending" : "notObserved"
+            )
+        let appInitializerAdvancedCategory =
+            appInitializerUnresolvedAwaitCategory
+                == "appInitializerWaitingForViewCache"
+            ? "stillWaitingForViewCache"
+            : (
+                appInitializerUnresolvedAwaitCategory
+                    == "appInitializerComplete"
+                    ? "advancedPastViewCache"
+                    : (
+                        appInitializerUnresolvedAwaitCategory == "notObserved"
+                            ? "notObserved"
+                            : "advancedPastViewCacheGate"
+                    )
+            )
+        let routerStartedCategory =
+            routerActivationCategory == "routerNotStarted"
+            ? "routerNotStarted"
+            : (
+                routerActivationCategory == "notObserved"
+                    ? "notObserved" : "routerStarted"
+            )
+        let visibleUICategory =
+            visibleTextLength > 0 || formControlCount > 0 || buttonCount > 0
+            ? "visibleUIPresent"
+            : (
+                shape.viewCachePortGetResponseDeliveredCategory == "delivered"
+                    ? "visibleUIAbsent"
+                    : "notObserved"
+            )
+        return ChromeMV3ViewCachePortDeliveryObservation(
+            viewCachePortGetResponseAfterDeliveryDelayBucket: delayBucket,
+            viewCachePortGetRequestObservedCategory:
+                shape.viewCachePortGetRequestObservedCategory,
+            viewCachePortGetResponseCapturedCategory:
+                shape.viewCachePortGetResponseCapturedCategory,
+            viewCachePortGetResponseDeliveredCategory:
+                shape.viewCachePortGetResponseDeliveredCategory,
+            viewCacheResolvedAfterPortDeliveryCategory: viewCacheResolvedCategory,
+            appInitializerAdvancedAfterPortDeliveryCategory:
+                appInitializerAdvancedCategory,
+            routerStartedAfterPortDeliveryCategory: routerStartedCategory,
+            visibleUIAfterPortDeliveryCategory: visibleUICategory,
+            viewCachePortRequestActionCategory:
+                shape.viewCachePortRequestActionCategory,
+            viewCachePortRequestIdPresenceCategory:
+                shape.viewCachePortRequestIdPresenceCategory,
+            viewCachePortRequestKeyMatchCategory:
+                shape.viewCachePortRequestKeyMatchCategory,
+            viewCachePortRequestOriginatorCategory:
+                shape.viewCachePortRequestOriginatorCategory,
+            viewCachePortResponseOriginatorCategory:
+                shape.viewCachePortResponseOriginatorCategory,
+            viewCachePortResponseIdMatchCategory:
+                shape.viewCachePortResponseIdMatchCategory,
+            viewCachePortResponseKeyMatchCategory:
+                shape.viewCachePortResponseKeyMatchCategory,
+            viewCachePortResponseDataPresenceCategory:
+                shape.viewCachePortResponseDataPresenceCategory,
+            viewCachePortResponseEnvelopeShapeCategory:
+                shape.viewCachePortResponseEnvelopeShapeCategory,
+            viewCachePortListenerRegisteredBeforeResponseCategory:
+                shape.viewCachePortListenerRegisteredBeforeResponseCategory,
+            viewCachePortListenerReceivedResponseCategory:
+                shape.viewCachePortListenerReceivedResponseCategory,
+            viewCachePortFilterResultCategory:
+                shape.viewCachePortFilterResultCategory,
+            viewCacheObservableEmissionCategory:
+                shape.viewCacheObservableEmissionCategory,
+            viewCacheFirstValueFromResolvedCategory:
+                shape.viewCacheFirstValueFromResolvedCategory,
+            viewCachePortResponseAcceptedByForegroundStorageCategory:
+                shape.viewCachePortResponseAcceptedByForegroundStorageCategory,
+            viewCachePortResponseRejectedReasonCategory:
+                shape.viewCachePortResponseRejectedReasonCategory,
+            viewCacheResponseDataTypeCategory:
+                shape.viewCacheResponseDataTypeCategory,
+            viewCacheResponseDataNullabilityCategory:
+                shape.viewCacheResponseDataNullabilityCategory,
+            viewCacheRequestSubscriptionRegisteredCategory:
+                shape.viewCacheRequestSubscriptionRegisteredCategory,
+            viewCacheResponseDeliveredBeforeSubscriptionCategory:
+                shape.viewCacheResponseDeliveredBeforeSubscriptionCategory,
+            viewCacheObservableNextCategory: shape.viewCacheObservableNextCategory,
+            viewCacheFirstValueFromPendingReasonCategory:
+                shape.viewCacheFirstValueFromPendingReasonCategory
+        )
     }
 
     static func nativeMessagingRequestCategory(
@@ -1643,6 +2264,329 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         return nil
     }
 
+    private static func deriveViewCacheDiagnostics(
+        routeEvents: [ChromeMV3PopupOptionsJSDebugRouteEventRecord],
+        apiBuckets: APIRouteCountBuckets,
+        portDelivery: PortDeliveryDiagnostics,
+        portShape: (
+            viewCachePortGetRequestObservedCategory: String,
+            viewCachePortGetResponseCapturedCategory: String,
+            viewCachePortGetResponseDeliveredCategory: String,
+            viewCachePortResponseIdMatchCategory: String,
+            viewCachePortResponseKeyMatchCategory: String,
+            viewCachePortResponseDataPresenceCategory: String,
+            viewCachePortResponseEnvelopeShapeCategory: String,
+            viewCachePortListenerReceivedResponseCategory: String,
+            viewCacheObservableEmissionCategory: String,
+            viewCacheFirstValueFromResolvedCategory: String,
+            viewCachePortResponseAcceptedByForegroundStorageCategory: String,
+            viewCachePortResponseRejectedReasonCategory: String,
+            viewCacheResponseDataTypeCategory: String,
+            viewCacheFirstValueFromPendingReasonCategory: String
+        ),
+        i18nInitCategory: String,
+        viewCacheInitCategory: String,
+        appInitializerUnresolvedAwaitCategory: String,
+        routerActivationCategory: String,
+        swPromiseContinuationObservedCategory: String,
+        pendingPortRoutes: Int
+    ) -> (
+        viewCacheInitStartedCategory: String,
+        viewCacheAwaitedApiCategory: String,
+        viewCacheStorageReadCategory: String,
+        viewCacheStorageWriteCategory: String,
+        viewCacheRuntimeMessageCategory: String,
+        viewCachePortAwaitCategory: String,
+        viewCacheTabsQueryCategory: String,
+        viewCacheWindowsApiCategory: String,
+        viewCacheActionApiCategory: String,
+        viewCacheI18nCategory: String,
+        viewCacheTimerAwaitCategory: String,
+        viewCachePromiseContinuationCategory: String,
+        viewCacheCallbackCompletionCategory: String,
+        viewCacheInitResolvedCategory: String,
+        viewCacheUnresolvedReasonCategory: String
+    ) {
+        let sessionStorageReads = routeEvents.filter {
+            $0.apiName.localizedCaseInsensitiveContains("storage.session.get")
+        }.count
+        let sessionStorageWrites = routeEvents.filter {
+            $0.apiName.localizedCaseInsensitiveContains("storage.session.set")
+                || $0.apiName.localizedCaseInsensitiveContains(
+                    "storage.session.remove"
+                )
+        }.count
+        let runtimeConnectObserved = apiBuckets.runtimeConnect > 0
+        let portMessageObserved = apiBuckets.portMessage > 0
+        let viewCachePending = viewCacheInitCategory == "viewCacheInitPending"
+        let viewCacheResolved = viewCacheInitCategory == "viewCacheInitObserved"
+
+        let viewCacheInitStartedCategory: String
+        if viewCacheResolved {
+            viewCacheInitStartedCategory = "startedAndResolved"
+        } else if i18nInitCategory == "i18nInitObserved" && viewCachePending {
+            viewCacheInitStartedCategory = "started"
+        } else if i18nInitCategory == "i18nInitObserved" {
+            viewCacheInitStartedCategory = "notObserved"
+        } else {
+            viewCacheInitStartedCategory = "notObserved"
+        }
+
+        let viewCacheAwaitedApiCategory: String
+        if runtimeConnectObserved && portMessageObserved {
+            viewCacheAwaitedApiCategory = "memoryPortSessionConnect"
+        } else if runtimeConnectObserved && viewCachePending {
+            viewCacheAwaitedApiCategory = "memoryPortSessionConnect"
+        } else if sessionStorageReads > 0 {
+            viewCacheAwaitedApiCategory = "storageSessionRead"
+        } else if viewCachePending {
+            viewCacheAwaitedApiCategory = "globalStateStorageRead"
+        } else {
+            viewCacheAwaitedApiCategory = "notObserved"
+        }
+
+        let viewCacheStorageReadCategory: String
+        if sessionStorageReads > 0 && viewCachePending {
+            viewCacheStorageReadCategory = "viewCacheWaitingOnStorageRead"
+        } else if sessionStorageReads > 0 && viewCacheResolved {
+            viewCacheStorageReadCategory = "notObserved"
+        } else if viewCachePending && portMessageObserved {
+            viewCacheStorageReadCategory = "notObserved"
+        } else {
+            viewCacheStorageReadCategory = "notObserved"
+        }
+
+        let viewCacheStorageWriteCategory: String
+        if sessionStorageWrites > 0 {
+            viewCacheStorageWriteCategory = "viewCacheWaitingOnStorageWrite"
+        } else {
+            viewCacheStorageWriteCategory = "notObserved"
+        }
+
+        let viewCacheRuntimeMessageCategory = "notObserved"
+
+        let viewCachePortAwaitCategory: String
+        if pendingPortRoutes > 0 || portDelivery.pendingInbound > 0 {
+            viewCachePortAwaitCategory = "viewCacheWaitingOnPortResponse"
+        } else if portDelivery.swOutboxCaptured > portDelivery.swOutboxDelivered
+            && viewCachePending
+        {
+            viewCachePortAwaitCategory = "viewCacheWaitingOnPortResponse"
+        } else if viewCachePending
+            && runtimeConnectObserved
+            && portMessageObserved == false
+        {
+            viewCachePortAwaitCategory = "viewCacheWaitingOnPortResponse"
+        } else {
+            viewCachePortAwaitCategory = "notObserved"
+        }
+
+        let viewCacheTabsQueryCategory =
+            apiBuckets.tabsQuery > 0 ? "viewCacheWaitingOnTabsQuery" : "notObserved"
+        let viewCacheWindowsApiCategory = "notObserved"
+        let viewCacheActionApiCategory = "notObserved"
+        let viewCacheI18nCategory =
+            i18nInitCategory == "i18nInitPending"
+                ? "viewCacheWaitingOnI18n"
+                : "notObserved"
+        let viewCacheTimerAwaitCategory = "notObserved"
+
+        let viewCachePromiseContinuationCategory: String
+        if viewCachePending
+            && portMessageObserved
+            && swPromiseContinuationObservedCategory == "notObserved"
+        {
+            viewCachePromiseContinuationCategory =
+                "viewCachePromiseContinuationNotDrained"
+        } else {
+            viewCachePromiseContinuationCategory = "notObserved"
+        }
+
+        let viewCacheCallbackCompletionCategory: String
+        if viewCachePending
+            && runtimeConnectObserved == false
+            && i18nInitCategory == "i18nInitObserved"
+        {
+            viewCacheCallbackCompletionCategory = "viewCacheCallbackNotInvoked"
+        } else if viewCachePending
+            && portMessageObserved
+            && portDelivery.swOutboxDelivered == 0
+            && portDelivery.swOutboxCaptured > 0
+        {
+            viewCacheCallbackCompletionCategory = "viewCacheWrongApiResponseShape"
+        } else if viewCachePending
+            && runtimeConnectObserved
+            && portMessageObserved
+            && portDelivery.swOutboxDelivered > 0
+        {
+            viewCacheCallbackCompletionCategory = "viewCacheCallbackCompleted"
+        } else {
+            viewCacheCallbackCompletionCategory = "notObserved"
+        }
+
+        let viewCacheInitResolvedCategory: String
+        if viewCacheResolved {
+            viewCacheInitResolvedCategory = "viewCacheInitResolved"
+        } else if viewCachePending {
+            viewCacheInitResolvedCategory = "viewCacheInitPending"
+        } else {
+            viewCacheInitResolvedCategory = "notObserved"
+        }
+
+        let viewCacheUnresolvedReasonCategory: String
+        if viewCacheResolved {
+            if appInitializerUnresolvedAwaitCategory
+                == "appInitializerWaitingForViewCache"
+            {
+                viewCacheUnresolvedReasonCategory =
+                    "viewCacheResolvedInitializerStillPending"
+            } else if routerActivationCategory == "routerNotStarted"
+                || routerActivationCategory == "routerOutletMissing"
+            {
+                viewCacheUnresolvedReasonCategory =
+                    "viewCacheResolvedRouterNotStarted"
+            } else {
+                viewCacheUnresolvedReasonCategory = "notObserved"
+            }
+        } else if viewCachePortAwaitCategory == "viewCacheWaitingOnPortResponse" {
+            if portShape.viewCachePortGetResponseCapturedCategory == "notCaptured" {
+                viewCacheUnresolvedReasonCategory =
+                    "viewCachePortResponseNotCaptured"
+            } else if portShape.viewCachePortGetResponseDeliveredCategory
+                != "delivered"
+            {
+                viewCacheUnresolvedReasonCategory =
+                    "viewCachePortResponseNotDelivered"
+            } else {
+                viewCacheUnresolvedReasonCategory = "viewCacheWaitingOnPortResponse"
+            }
+        } else if viewCachePending
+            && portShape.viewCachePortGetResponseDeliveredCategory == "delivered"
+        {
+            if portShape.viewCachePortResponseAcceptedByForegroundStorageCategory
+                == "rejected"
+            {
+                switch portShape.viewCachePortResponseRejectedReasonCategory {
+                case "idMismatch":
+                    viewCacheUnresolvedReasonCategory =
+                        "viewCacheForegroundStorageIdMismatch"
+                case "dataParseFailed":
+                    viewCacheUnresolvedReasonCategory =
+                        "viewCacheForegroundStorageDataParseFailed"
+                case "originatorRejected":
+                    viewCacheUnresolvedReasonCategory =
+                        "viewCacheForegroundStorageOriginatorRejected"
+                case "noPendingGetRequest":
+                    viewCacheUnresolvedReasonCategory =
+                        "viewCacheForegroundStorageNoPendingGetRequest"
+                case "nonDelegateMessage":
+                    viewCacheUnresolvedReasonCategory =
+                        "viewCacheForegroundStorageNonDelegateMessage"
+                default:
+                    viewCacheUnresolvedReasonCategory =
+                        "viewCacheForegroundStorageRejected"
+                }
+            } else if portShape.viewCachePortResponseAcceptedByForegroundStorageCategory
+                == "accepted"
+            {
+                if portShape.viewCacheFirstValueFromPendingReasonCategory
+                    == "foregroundStorageAcceptedButInitStillPending"
+                {
+                    viewCacheUnresolvedReasonCategory =
+                        "viewCacheForegroundStorageAcceptedButInitStillPending"
+                } else if portShape.viewCacheObservableEmissionCategory
+                    == "notEmittedDespiteAcceptance"
+                {
+                    viewCacheUnresolvedReasonCategory =
+                        "viewCacheObservableDidNotEmitDespiteAcceptance"
+                } else {
+                    viewCacheUnresolvedReasonCategory =
+                        "viewCacheFirstValueFromStillPending"
+                }
+            } else if portShape.viewCachePortResponseEnvelopeShapeCategory
+                == "wrappedEnvelope"
+            {
+                viewCacheUnresolvedReasonCategory =
+                    "viewCachePortResponseShapeMismatch"
+            } else if portShape.viewCachePortResponseIdMatchCategory
+                == "mismatchesRequest"
+            {
+                viewCacheUnresolvedReasonCategory =
+                    "viewCachePortResponseIdMismatch"
+            } else if portShape.viewCachePortResponseKeyMatchCategory
+                == "mismatchesRequest"
+            {
+                viewCacheUnresolvedReasonCategory =
+                    "viewCachePortResponseKeyMismatch"
+            } else if portShape.viewCachePortResponseDataPresenceCategory == "absent" {
+                viewCacheUnresolvedReasonCategory =
+                    "viewCachePortResponseDataMissing"
+            } else if portShape.viewCachePortListenerReceivedResponseCategory
+                != "received"
+            {
+                viewCacheUnresolvedReasonCategory =
+                    "viewCachePortListenerMissedResponse"
+            } else if portShape.viewCacheObservableEmissionCategory
+                == "notEmittedDespiteDelivery"
+            {
+                viewCacheUnresolvedReasonCategory =
+                    "viewCacheObservableDidNotEmit"
+            } else if portShape.viewCacheFirstValueFromResolvedCategory
+                == "stillPending"
+            {
+                viewCacheUnresolvedReasonCategory =
+                    "viewCacheFirstValueFromStillPending"
+            } else if viewCacheCallbackCompletionCategory
+                == "viewCacheWrongApiResponseShape"
+            {
+                viewCacheUnresolvedReasonCategory = "viewCacheWrongApiResponseShape"
+            } else {
+                viewCacheUnresolvedReasonCategory = "viewCacheSilentPending"
+            }
+        } else if viewCacheStorageReadCategory
+            == "viewCacheWaitingOnStorageRead"
+        {
+            viewCacheUnresolvedReasonCategory = "viewCacheWaitingOnStorageRead"
+        } else if viewCachePromiseContinuationCategory
+            == "viewCachePromiseContinuationNotDrained"
+        {
+            viewCacheUnresolvedReasonCategory =
+                "viewCachePromiseContinuationNotDrained"
+        } else if viewCacheCallbackCompletionCategory
+            == "viewCacheCallbackNotInvoked"
+        {
+            viewCacheUnresolvedReasonCategory = "viewCacheCallbackNotInvoked"
+        } else if viewCacheCallbackCompletionCategory
+            == "viewCacheWrongApiResponseShape"
+        {
+            viewCacheUnresolvedReasonCategory = "viewCacheWrongApiResponseShape"
+        } else if viewCachePending {
+            viewCacheUnresolvedReasonCategory = "viewCacheSilentPending"
+        } else {
+            viewCacheUnresolvedReasonCategory = "notObserved"
+        }
+
+        return (
+            viewCacheInitStartedCategory: viewCacheInitStartedCategory,
+            viewCacheAwaitedApiCategory: viewCacheAwaitedApiCategory,
+            viewCacheStorageReadCategory: viewCacheStorageReadCategory,
+            viewCacheStorageWriteCategory: viewCacheStorageWriteCategory,
+            viewCacheRuntimeMessageCategory: viewCacheRuntimeMessageCategory,
+            viewCachePortAwaitCategory: viewCachePortAwaitCategory,
+            viewCacheTabsQueryCategory: viewCacheTabsQueryCategory,
+            viewCacheWindowsApiCategory: viewCacheWindowsApiCategory,
+            viewCacheActionApiCategory: viewCacheActionApiCategory,
+            viewCacheI18nCategory: viewCacheI18nCategory,
+            viewCacheTimerAwaitCategory: viewCacheTimerAwaitCategory,
+            viewCachePromiseContinuationCategory:
+                viewCachePromiseContinuationCategory,
+            viewCacheCallbackCompletionCategory:
+                viewCacheCallbackCompletionCategory,
+            viewCacheInitResolvedCategory: viewCacheInitResolvedCategory,
+            viewCacheUnresolvedReasonCategory: viewCacheUnresolvedReasonCategory
+        )
+    }
+
     private static func wasmResourceLoadSignals(
         in events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
     ) -> (loadedCount: Int, failedCount: Int) {
@@ -1680,7 +2624,9 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         unhandledRejectionCategory: String,
         requiredResourceLoadFailure: Bool,
         resourceFailureCategory: String?,
-        nativeMessagingCategory: String
+        nativeMessagingCategory: String,
+        migrationWaitEnteredCategory: String,
+        appInitializerUnresolvedAwaitCategory: String
     ) -> (
         sdkLoadStartedCategory: String,
         sdkWasmFetchCategory: String,
@@ -1838,7 +2784,18 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         {
             sdkLoadUnresolvedReasonCategory = "sdkBlocked"
         } else if sdkLoadAwaitCategory == "sdkLoadResolved" {
-            sdkLoadUnresolvedReasonCategory = "sdkLoadResolvedMigrationNotEntered"
+            let sdkNoLongerGating =
+                [
+                    "appInitializerComplete",
+                    "appInitializerWaitingForI18n",
+                    "appInitializerWaitingForViewCache",
+                    "appInitializerWaitingForPopupSize",
+                    "appInitializerWaitingForTheme",
+                ].contains(appInitializerUnresolvedAwaitCategory)
+                || migrationWaitEnteredCategory == "passedInferred"
+                || migrationWaitEnteredCategory == "notObserved"
+            sdkLoadUnresolvedReasonCategory =
+                sdkNoLongerGating ? "notObserved" : "sdkLoadResolvedMigrationNotEntered"
         } else if sdkLoadAwaitCategory != "sdkLoadStillPending" {
             sdkLoadUnresolvedReasonCategory = "notObserved"
         } else if sdkWasmFetchCategory == "sdkWasmFetchMissing" {
@@ -2207,12 +3164,25 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             sdkLoadAwaitCategory = "notObserved"
         }
         let migrationWaitEnteredCategory =
-            migrationWaitEntered ? "entered" : "notObserved"
+            migrationWaitEntered
+                ? "entered"
+                : (
+                    i18nRouteCount > 0
+                        || (
+                            ngVersionPresent == false
+                                && sdkLoadResolved
+                                && staticLoadingShellCount > 0
+                        )
+                        ? "passedInferred"
+                        : "notObserved"
+                )
         let migrationWaitResolvedCategory: String
         if migrationWaitResolved {
             migrationWaitResolvedCategory = "resolved"
         } else if migrationWaitEntered {
             migrationWaitResolvedCategory = "stillPending"
+        } else if migrationWaitEnteredCategory == "passedInferred" {
+            migrationWaitResolvedCategory = "passedInferred"
         } else {
             migrationWaitResolvedCategory = "notObserved"
         }
@@ -2690,7 +3660,87 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
                     launchRecord: nil
                 ).firstFailingResource?.resourceCategory
                 : nil,
-            nativeMessagingCategory: nativeMessagingCategory
+            nativeMessagingCategory: nativeMessagingCategory,
+            migrationWaitEnteredCategory:
+                appInitializerPhase.migrationWaitEnteredCategory,
+            appInitializerUnresolvedAwaitCategory:
+                appInitializerPhase.appInitializerUnresolvedAwaitCategory
+        )
+        let apiBuckets = apiRouteCountBuckets(
+            from: routeEvents,
+            pendingRoutes: bridgeSnapshot?.pendingUnresolvedJSDebugRoutes ?? [],
+            routeRecords: bridgeSnapshot?.sanitizedBridgeRouteRecords ?? []
+        )
+        let portDelivery = portDeliveryDiagnostics(from: routeEvents)
+        let pendingPortRoutes =
+            bridgeSnapshot?.pendingUnresolvedJSDebugRoutes.filter {
+                $0.apiName.localizedCaseInsensitiveContains("port")
+            }.count ?? 0
+        let viewCachePortShapeDiagnostics = deriveViewCachePortShapeDiagnostics(
+            routeEvents: routeEvents,
+            viewCacheInitCategory: appInitializerPhase.viewCacheInitCategory,
+            appInitializerUnresolvedAwaitCategory:
+                appInitializerPhase.appInitializerUnresolvedAwaitCategory,
+            routerActivationCategory: routerActivationCategory,
+            visibleTextLength: visibleTextLength,
+            formControlCount: formControlCount,
+            buttonCount: buttonCount
+        )
+        let viewCacheDiagnostics = deriveViewCacheDiagnostics(
+            routeEvents: routeEvents,
+            apiBuckets: apiBuckets,
+            portDelivery: portDelivery,
+            portShape: (
+                viewCachePortGetRequestObservedCategory:
+                    viewCachePortShapeDiagnostics
+                    .viewCachePortGetRequestObservedCategory,
+                viewCachePortGetResponseCapturedCategory:
+                    viewCachePortShapeDiagnostics
+                    .viewCachePortGetResponseCapturedCategory,
+                viewCachePortGetResponseDeliveredCategory:
+                    viewCachePortShapeDiagnostics
+                    .viewCachePortGetResponseDeliveredCategory,
+                viewCachePortResponseIdMatchCategory:
+                    viewCachePortShapeDiagnostics
+                    .viewCachePortResponseIdMatchCategory,
+                viewCachePortResponseKeyMatchCategory:
+                    viewCachePortShapeDiagnostics
+                    .viewCachePortResponseKeyMatchCategory,
+                viewCachePortResponseDataPresenceCategory:
+                    viewCachePortShapeDiagnostics
+                    .viewCachePortResponseDataPresenceCategory,
+                viewCachePortResponseEnvelopeShapeCategory:
+                    viewCachePortShapeDiagnostics
+                    .viewCachePortResponseEnvelopeShapeCategory,
+                viewCachePortListenerReceivedResponseCategory:
+                    viewCachePortShapeDiagnostics
+                    .viewCachePortListenerReceivedResponseCategory,
+                viewCacheObservableEmissionCategory:
+                    viewCachePortShapeDiagnostics
+                    .viewCacheObservableEmissionCategory,
+                viewCacheFirstValueFromResolvedCategory:
+                    viewCachePortShapeDiagnostics
+                    .viewCacheFirstValueFromResolvedCategory,
+                viewCachePortResponseAcceptedByForegroundStorageCategory:
+                    viewCachePortShapeDiagnostics
+                    .viewCachePortResponseAcceptedByForegroundStorageCategory,
+                viewCachePortResponseRejectedReasonCategory:
+                    viewCachePortShapeDiagnostics
+                    .viewCachePortResponseRejectedReasonCategory,
+                viewCacheResponseDataTypeCategory:
+                    viewCachePortShapeDiagnostics.viewCacheResponseDataTypeCategory,
+                viewCacheFirstValueFromPendingReasonCategory:
+                    viewCachePortShapeDiagnostics
+                    .viewCacheFirstValueFromPendingReasonCategory
+            ),
+            i18nInitCategory: appInitializerPhase.i18nInitCategory,
+            viewCacheInitCategory: appInitializerPhase.viewCacheInitCategory,
+            appInitializerUnresolvedAwaitCategory:
+                appInitializerPhase.appInitializerUnresolvedAwaitCategory,
+            routerActivationCategory: routerActivationCategory,
+            swPromiseContinuationObservedCategory:
+                asyncDrainDiagnostics.swPromiseContinuationObservedCategory,
+            pendingPortRoutes: pendingPortRoutes
         )
 
         let firstVisibleUIGateCategory: String
@@ -2704,6 +3754,20 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             && nativeMessagingCategory != "notRequested"
         {
             firstVisibleUIGateCategory = "nativeDependencyRequiredForVisibleUI"
+        } else if appInitializerPhase.appInitializerUnresolvedAwaitCategory
+            == "appInitializerWaitingForViewCache"
+        {
+            let portReason = viewCacheDiagnostics.viewCacheUnresolvedReasonCategory
+            firstVisibleUIGateCategory =
+                portReason.hasPrefix("viewCachePort")
+                || [
+                    "viewCacheObservableDidNotEmit",
+                    "viewCacheFirstValueFromStillPending",
+                    "viewCacheResolvedInitializerStillPending",
+                    "viewCacheResolvedRouterNotStarted",
+                ].contains(portReason)
+                ? portReason
+                : "appInitializerWaitingForViewCache"
         } else if appInitializerPhase.appInitializerUnresolvedAwaitCategory
             != "appInitializerComplete"
             && appInitializerPhase.appInitializerUnresolvedAwaitCategory
@@ -2918,7 +3982,107 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
                 storageMirrorPathDiagnostics.storageGetRequestedKeyMatchCategory,
             storageGetResponseContainsMirroredValueCategory:
                 storageMirrorPathDiagnostics
-                .storageGetResponseContainsMirroredValueCategory
+                .storageGetResponseContainsMirroredValueCategory,
+            viewCacheInitStartedCategory:
+                viewCacheDiagnostics.viewCacheInitStartedCategory,
+            viewCacheAwaitedApiCategory:
+                viewCacheDiagnostics.viewCacheAwaitedApiCategory,
+            viewCacheStorageReadCategory:
+                viewCacheDiagnostics.viewCacheStorageReadCategory,
+            viewCacheStorageWriteCategory:
+                viewCacheDiagnostics.viewCacheStorageWriteCategory,
+            viewCacheRuntimeMessageCategory:
+                viewCacheDiagnostics.viewCacheRuntimeMessageCategory,
+            viewCachePortAwaitCategory:
+                viewCacheDiagnostics.viewCachePortAwaitCategory,
+            viewCacheTabsQueryCategory:
+                viewCacheDiagnostics.viewCacheTabsQueryCategory,
+            viewCacheWindowsApiCategory:
+                viewCacheDiagnostics.viewCacheWindowsApiCategory,
+            viewCacheActionApiCategory:
+                viewCacheDiagnostics.viewCacheActionApiCategory,
+            viewCacheI18nCategory: viewCacheDiagnostics.viewCacheI18nCategory,
+            viewCacheTimerAwaitCategory:
+                viewCacheDiagnostics.viewCacheTimerAwaitCategory,
+            viewCachePromiseContinuationCategory:
+                viewCacheDiagnostics.viewCachePromiseContinuationCategory,
+            viewCacheCallbackCompletionCategory:
+                viewCacheDiagnostics.viewCacheCallbackCompletionCategory,
+            viewCacheInitResolvedCategory:
+                viewCacheDiagnostics.viewCacheInitResolvedCategory,
+            viewCacheUnresolvedReasonCategory:
+                viewCacheDiagnostics.viewCacheUnresolvedReasonCategory,
+            viewCachePortGetRequestObservedCategory:
+                viewCachePortShapeDiagnostics
+                .viewCachePortGetRequestObservedCategory,
+            viewCachePortGetResponseCapturedCategory:
+                viewCachePortShapeDiagnostics
+                .viewCachePortGetResponseCapturedCategory,
+            viewCachePortGetResponseDeliveredCategory:
+                viewCachePortShapeDiagnostics
+                .viewCachePortGetResponseDeliveredCategory,
+            viewCachePortRequestActionCategory:
+                viewCachePortShapeDiagnostics.viewCachePortRequestActionCategory,
+            viewCachePortRequestIdPresenceCategory:
+                viewCachePortShapeDiagnostics
+                .viewCachePortRequestIdPresenceCategory,
+            viewCachePortRequestKeyMatchCategory:
+                viewCachePortShapeDiagnostics
+                .viewCachePortRequestKeyMatchCategory,
+            viewCachePortRequestOriginatorCategory:
+                viewCachePortShapeDiagnostics
+                .viewCachePortRequestOriginatorCategory,
+            viewCachePortResponseOriginatorCategory:
+                viewCachePortShapeDiagnostics
+                .viewCachePortResponseOriginatorCategory,
+            viewCachePortResponseIdMatchCategory:
+                viewCachePortShapeDiagnostics
+                .viewCachePortResponseIdMatchCategory,
+            viewCachePortResponseKeyMatchCategory:
+                viewCachePortShapeDiagnostics
+                .viewCachePortResponseKeyMatchCategory,
+            viewCachePortResponseDataPresenceCategory:
+                viewCachePortShapeDiagnostics
+                .viewCachePortResponseDataPresenceCategory,
+            viewCachePortResponseEnvelopeShapeCategory:
+                viewCachePortShapeDiagnostics
+                .viewCachePortResponseEnvelopeShapeCategory,
+            viewCachePortListenerRegisteredBeforeResponseCategory:
+                viewCachePortShapeDiagnostics
+                .viewCachePortListenerRegisteredBeforeResponseCategory,
+            viewCachePortListenerReceivedResponseCategory:
+                viewCachePortShapeDiagnostics
+                .viewCachePortListenerReceivedResponseCategory,
+            viewCachePortFilterResultCategory:
+                viewCachePortShapeDiagnostics.viewCachePortFilterResultCategory,
+            viewCacheObservableEmissionCategory:
+                viewCachePortShapeDiagnostics
+                .viewCacheObservableEmissionCategory,
+            viewCacheFirstValueFromResolvedCategory:
+                viewCachePortShapeDiagnostics
+                .viewCacheFirstValueFromResolvedCategory,
+            viewCachePortResponseAcceptedByForegroundStorageCategory:
+                viewCachePortShapeDiagnostics
+                .viewCachePortResponseAcceptedByForegroundStorageCategory,
+            viewCachePortResponseRejectedReasonCategory:
+                viewCachePortShapeDiagnostics
+                .viewCachePortResponseRejectedReasonCategory,
+            viewCacheResponseDataTypeCategory:
+                viewCachePortShapeDiagnostics.viewCacheResponseDataTypeCategory,
+            viewCacheResponseDataNullabilityCategory:
+                viewCachePortShapeDiagnostics
+                .viewCacheResponseDataNullabilityCategory,
+            viewCacheRequestSubscriptionRegisteredCategory:
+                viewCachePortShapeDiagnostics
+                .viewCacheRequestSubscriptionRegisteredCategory,
+            viewCacheResponseDeliveredBeforeSubscriptionCategory:
+                viewCachePortShapeDiagnostics
+                .viewCacheResponseDeliveredBeforeSubscriptionCategory,
+            viewCacheObservableNextCategory:
+                viewCachePortShapeDiagnostics.viewCacheObservableNextCategory,
+            viewCacheFirstValueFromPendingReasonCategory:
+                viewCachePortShapeDiagnostics
+                .viewCacheFirstValueFromPendingReasonCategory
         )
     }
 
@@ -3382,7 +4546,47 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             onChangedFromMirrorDispatchCategory: "",
             popupReadAfterMirrorCategory: "",
             storageGetRequestedKeyMatchCategory: "",
-            storageGetResponseContainsMirroredValueCategory: ""
+            storageGetResponseContainsMirroredValueCategory: "",
+            viewCacheInitStartedCategory: "",
+            viewCacheAwaitedApiCategory: "",
+            viewCacheStorageReadCategory: "",
+            viewCacheStorageWriteCategory: "",
+            viewCacheRuntimeMessageCategory: "",
+            viewCachePortAwaitCategory: "",
+            viewCacheTabsQueryCategory: "",
+            viewCacheWindowsApiCategory: "",
+            viewCacheActionApiCategory: "",
+            viewCacheI18nCategory: "",
+            viewCacheTimerAwaitCategory: "",
+            viewCachePromiseContinuationCategory: "",
+            viewCacheCallbackCompletionCategory: "",
+            viewCacheInitResolvedCategory: "",
+            viewCacheUnresolvedReasonCategory: "",
+            viewCachePortGetRequestObservedCategory: "",
+            viewCachePortGetResponseCapturedCategory: "",
+            viewCachePortGetResponseDeliveredCategory: "",
+            viewCachePortRequestActionCategory: "",
+            viewCachePortRequestIdPresenceCategory: "",
+            viewCachePortRequestKeyMatchCategory: "",
+            viewCachePortRequestOriginatorCategory: "",
+            viewCachePortResponseOriginatorCategory: "",
+            viewCachePortResponseIdMatchCategory: "",
+            viewCachePortResponseKeyMatchCategory: "",
+            viewCachePortResponseDataPresenceCategory: "",
+            viewCachePortResponseEnvelopeShapeCategory: "",
+            viewCachePortListenerRegisteredBeforeResponseCategory: "",
+            viewCachePortListenerReceivedResponseCategory: "",
+            viewCachePortFilterResultCategory: "",
+            viewCacheObservableEmissionCategory: "",
+            viewCacheFirstValueFromResolvedCategory: "",
+            viewCachePortResponseAcceptedByForegroundStorageCategory: "",
+            viewCachePortResponseRejectedReasonCategory: "",
+            viewCacheResponseDataTypeCategory: "",
+            viewCacheResponseDataNullabilityCategory: "",
+            viewCacheRequestSubscriptionRegisteredCategory: "",
+            viewCacheResponseDeliveredBeforeSubscriptionCategory: "",
+            viewCacheObservableNextCategory: "",
+            viewCacheFirstValueFromPendingReasonCategory: ""
         ).logLines.map { line in
             String(line.prefix(while: { $0 != "=" })) + "="
         }
@@ -4109,7 +5313,6 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
                "loginRouteNotActivatedBecauseInitializerPending",
                "appInitializerUnknownAwait",
                "migrationWaitStillPending",
-               "migrationStateMissing",
                "routerNotStarted",
                "redirectGuardNotRun",
                "loginRouteNotActivated",
@@ -4117,9 +5320,14 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
                "componentMountedButHidden",
                "firstVisibleComponentWaiting",
                "viewCacheWaitingBeforeFirstPaint",
-               "extensionLocalRenderState",
                "cssOrLayoutHidesFirstUI",
            ].contains(firstVisibleUIGate.firstVisibleUIGateCategory)
+        {
+            return firstVisibleUIGate.firstVisibleUIGateCategory
+        }
+        if let firstVisibleUIGate,
+           firstVisibleUIGate.firstVisibleUIGateCategory
+               == "extensionLocalRenderState"
         {
             return "extensionLocalRenderState"
         }
@@ -4677,10 +5885,13 @@ final class ChromeMV3LivePopupStagedSnapshotCollector {
     private weak var webView: WKWebView?
     private weak var bridgeHandler: ChromeMV3PopupOptionsJSBridgeHandler?
     private(set) var snapshots: [ChromeMV3LivePopupStagedSnapshot] = []
+    private(set) var viewCachePortDeliveryObservations:
+        [ChromeMV3ViewCachePortDeliveryObservation] = []
     private var scheduledWork: [DispatchWorkItem] = []
     private var bridgePollTask: Task<Void, Never>?
     private var navigationStarted = false
     private var navigationFinished = false
+    private var viewCachePortDeliveryObservationScheduled = false
     private let bridgeInstalled: Bool
 
     init(
@@ -4725,6 +5936,92 @@ final class ChromeMV3LivePopupStagedSnapshotCollector {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
+    private func scheduleViewCachePortDeliveryObservations() {
+        guard viewCachePortDeliveryObservationScheduled == false else { return }
+        viewCachePortDeliveryObservationScheduled = true
+        captureViewCachePortDeliveryObservation(delayBucket: "immediate")
+        scheduleViewCachePortDeliveryObservation(after: 0.2, delayBucket: "200ms")
+        scheduleViewCachePortDeliveryObservation(after: 1.0, delayBucket: "1000ms")
+        scheduleViewCachePortDeliveryObservation(after: 3.0, delayBucket: "3000ms")
+    }
+
+    private func scheduleViewCachePortDeliveryObservation(
+        after delay: TimeInterval,
+        delayBucket: String
+    ) {
+        let work = DispatchWorkItem { [weak self] in
+            self?.captureViewCachePortDeliveryObservation(delayBucket: delayBucket)
+        }
+        scheduledWork.append(work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func captureViewCachePortDeliveryObservation(delayBucket: String) {
+        guard viewCachePortDeliveryObservations.contains(where: {
+            $0.viewCachePortGetResponseAfterDeliveryDelayBucket == delayBucket
+        }) == false else {
+            return
+        }
+        Task { @MainActor [weak self] in
+            guard let self, let webView = self.webView else { return }
+            let bridgeSnapshot = self.bridgeHandler?.diagnosticsSnapshot
+            let routeEvents = bridgeSnapshot?.jsDebugRouteEvents ?? []
+            let domObject: [String: Any]
+            if let raw = try? await webView.evaluateJavaScript(
+                ChromeMV3LivePopupProductPathTraceBuilder.stagedProbeScript
+            ) as? String,
+                let data = raw.data(using: .utf8),
+                let object = try? JSONSerialization.jsonObject(with: data)
+                    as? [String: Any]
+            {
+                domObject = object
+            } else {
+                domObject = [:]
+            }
+            let probeObject: [String: Any]?
+            if let raw = try? await webView.evaluateJavaScript(
+                ChromeMV3LivePopupProductPathTraceBuilder
+                    .firstVisibleUIGateProbeScript
+            ) as? String,
+                let data = raw.data(using: .utf8),
+                let object = try? JSONSerialization.jsonObject(with: data)
+                    as? [String: Any]
+            {
+                probeObject = object
+            } else {
+                probeObject = nil
+            }
+            let gate =
+                ChromeMV3LivePopupProductPathTraceBuilder
+                .deriveFirstVisibleUIGateDiagnostics(
+                    bridgeSnapshot: bridgeSnapshot,
+                    finalDOM: nil,
+                    stagedSnapshots: self.snapshots,
+                    probeObject: probeObject
+                )
+            let observation =
+                ChromeMV3LivePopupProductPathTraceBuilder
+                .buildViewCachePortDeliveryObservation(
+                    delayBucket: delayBucket,
+                    routeEvents: routeEvents,
+                    viewCacheInitCategory: gate?.viewCacheInitCategory ?? "notObserved",
+                    appInitializerUnresolvedAwaitCategory:
+                        gate?.appInitializerUnresolvedAwaitCategory
+                        ?? "notObserved",
+                    routerActivationCategory:
+                        gate?.routerActivationCategory ?? "notObserved",
+                    visibleTextLength: domObject["visibleTextLength"] as? Int ?? 0,
+                    formControlCount: domObject["formControlCount"] as? Int ?? 0,
+                    buttonCount: domObject["buttonCount"] as? Int ?? 0
+                )
+            if self.viewCachePortDeliveryObservations.contains(where: {
+                $0.viewCachePortGetResponseAfterDeliveryDelayBucket == delayBucket
+            }) == false {
+                self.viewCachePortDeliveryObservations.append(observation)
+            }
+        }
+    }
+
     private func startBridgeEventPolling() {
         bridgePollTask?.cancel()
         bridgePollTask = Task { @MainActor [weak self] in
@@ -4761,6 +6058,14 @@ final class ChromeMV3LivePopupStagedSnapshotCollector {
                     capture(stage: "onRuntimeRoute")
                 } else if api.contains("runtime.connect") || api.contains("port.") {
                     capture(stage: "onPortRoute")
+                } else if event.eventKind == "portMemorySessionGetResponseDelivered",
+                          ChromeMV3LivePopupProductPathTraceBuilder
+                          .portEventDiagnosticValue(
+                              "viewCachePortGetResponseDeliveredCategory",
+                              from: event
+                          ) == "delivered"
+                {
+                    scheduleViewCachePortDeliveryObservations()
                 } else if api.contains("tabs.") {
                     capture(stage: "onTabsRoute")
                 } else if api.contains("scripting.") {

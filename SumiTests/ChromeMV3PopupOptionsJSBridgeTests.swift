@@ -1727,6 +1727,79 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         ))
     }
 
+    func testRuntimePortPostMessageDeliversMemoryPortGetResponseAfterInitializationOutbox()
+        throws
+    {
+        let extensionID = "popup-options-extension"
+        let profileID = "popup-options-profile"
+        let session = try makeSharedLifecycleSession(
+            profileID: profileID,
+            extensionID: extensionID
+        )
+        let harness = try makeServiceWorkerHarnessMemoryPortSession(
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        harness.attachCapturedListenerDispatchers(
+            to: session,
+            clearingExisting: true
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                extensionID: extensionID,
+                profileID: profileID
+            ),
+            sharedLifecycleSession: session
+        )
+
+        let connect = handler.handle(request(
+            namespace: "runtime",
+            methodName: "connect",
+            arguments: [.object(["name": .string("session")])],
+            invocationMode: .fireAndForget
+        ))
+        let portID = try XCTUnwrap(
+            stringValue(objectValue(connect.resultPayload)?["portID"])
+        )
+        let connectPayload = try XCTUnwrap(objectValue(connect.resultPayload))
+        let connectOutbox = try XCTUnwrap(connectPayload["postedMessages"])
+        guard case .array(let initMessages) = connectOutbox else {
+            XCTFail("Expected initialization outbox on runtime.connect.")
+            return
+        }
+        XCTAssertEqual(initMessages.count, 1)
+
+        let post = handler.handle(request(
+            namespace: "runtime",
+            methodName: "port.postMessage",
+            arguments: [
+                .string(portID),
+                .object([
+                    "originator": .string("foreground"),
+                    "id": .string("probe-get-id"),
+                    "key": .string("global_popupViewMemory_popup-view-cache"),
+                    "action": .string("get"),
+                ]),
+            ],
+            invocationMode: .fireAndForget
+        ))
+        let postPayload = try XCTUnwrap(objectValue(post.resultPayload))
+        let postedMessages = try XCTUnwrap(postPayload["postedMessages"])
+        guard case .array(let messages) = postedMessages else {
+            XCTFail("Expected cumulative service-worker Port outbox after get.")
+            return
+        }
+
+        XCTAssertTrue(post.succeeded)
+        XCTAssertEqual(messages.count, 2)
+        guard case .object(let response)? = messages.last else {
+            XCTFail("Expected get response object in Port outbox.")
+            return
+        }
+        XCTAssertEqual(stringValue(response["originator"]), "background")
+        XCTAssertEqual(stringValue(response["id"]), "probe-get-id")
+    }
+
     func testRuntimeConnectIncludesServiceWorkerPortOutboxPostedDuringOnConnect()
         throws
     {
@@ -1867,6 +1940,105 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
         XCTAssertEqual(object["firstType"] as? String, "sw-greeting")
         XCTAssertEqual(object["deliveredEventCount"] as? Int, 1)
         XCTAssertEqual(object["queuedEventCount"] as? Int, 0)
+    }
+
+    @MainActor
+    func testRealPopupOptionsWKWebViewDeliversMemoryPortGetResponseAfterInitializationOutbox()
+        async throws
+    {
+        let extensionID = "popup-options-extension"
+        let profileID = "popup-options-profile"
+        let root = try makeTemporaryDirectory()
+        let htmlURL = root.appendingPathComponent("popup.html")
+        try """
+        <!doctype html>
+        <meta charset="utf-8">
+        <title>Memory Port Session Get Response</title>
+        <main data-sumi-extension-page-fixture-marker="safe">Popup</main>
+        """.write(to: htmlURL, atomically: true, encoding: .utf8)
+        let session = try makeSharedLifecycleSession(
+            profileID: profileID,
+            extensionID: extensionID
+        )
+        let harness = try makeServiceWorkerHarnessMemoryPortSession(
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        harness.attachCapturedListenerDispatchers(
+            to: session,
+            clearingExisting: true
+        )
+        let config = configuration(
+            extensionID: extensionID,
+            profileID: profileID,
+            allowlist: .controlledActionPopupPolicy
+        )
+        let installation = ChromeMV3PopupOptionsJSBridgeInstallation(
+            configuration: config,
+            allowlist: config.allowlist,
+            bridgeAvailable: true,
+            scriptSource: ChromeMV3PopupOptionsJSShimSource.source(
+                configuration: config
+            ),
+            messageHandlerName:
+                ChromeMV3PopupOptionsJSShimSource.bridgeMessageHandlerName,
+            diagnostics: config.diagnostics
+        )
+        let handle = ChromeMV3ProductPopupOptionsWKWebViewHandle(
+            loadFileURL: htmlURL,
+            readAccessURL: root,
+            bridgeInstallation: installation,
+            sharedLifecycleSession: session,
+            permissionPromptPresenter: nil,
+            permissionEventDispatcher: nil
+        )
+        defer { handle.tearDown() }
+
+        try await handle.waitForLoadForTesting()
+        let raw = try await handle.callAsyncJavaScriptForTesting(
+            """
+            const messages = [];
+            const port = chrome.runtime.connect({ name: "session" });
+            port.onMessage.addListener((message) => {
+              messages.push({
+                originator: message && message.originator ? message.originator : null,
+                action: message && message.action ? message.action : null,
+                id: message && message.id ? message.id : null
+              });
+            });
+            await new Promise((resolve) => setTimeout(resolve, 120));
+            const requestID = "probe-get-id";
+            port.postMessage({
+              originator: "foreground",
+              id: requestID,
+              key: "global_popupViewMemory_popup-view-cache",
+              action: "get"
+            });
+            await new Promise((resolve) => setTimeout(resolve, 120));
+            const debug = globalThis.__sumiChromeMV3PopupOptionsDebugSnapshot();
+            return {
+              messageCount: messages.length,
+              initAction: messages[0] && messages[0].action,
+              getResponseID: messages.find((message) => message.id === requestID)?.id || null,
+              deliveredEventCount: debug.events.filter((event) => {
+                return event.eventKind === "portSwOutboxDelivered";
+              }).length,
+              memorySessionGetDeliveredEventCount: debug.events.filter((event) => {
+                return event.eventKind === "portMemorySessionGetResponseDelivered"
+                  && (event.diagnostics || []).some((diagnostic) => {
+                    return diagnostic === "viewCachePortGetResponseDeliveredCategory=delivered";
+                  });
+              }).length
+            };
+            """
+        )
+        let object = try XCTUnwrap(raw as? [String: Any])
+
+        XCTAssertEqual(object["messageCount"] as? Int, 2)
+        XCTAssertEqual(object["initAction"] as? String, "initialization")
+        XCTAssertEqual(object["getResponseID"] as? String, "probe-get-id")
+        XCTAssertEqual(object["deliveredEventCount"] as? Int, 2)
+        XCTAssertEqual(object["memorySessionGetDeliveredEventCount"] as? Int, 1)
     }
 
     @MainActor
@@ -5407,6 +5579,95 @@ final class ChromeMV3PopupOptionsJSBridgeTests: XCTestCase {
             ChromeMV3ServiceWorkerSharedLifecycleSessionRegistry()
                 .session(profileID: profileID, extensionID: extensionID)
         )
+    }
+
+    private func makeServiceWorkerHarnessMemoryPortSession(
+        extensionID: String,
+        profileID: String
+    ) throws -> ChromeMV3ServiceWorkerJSExecutionHarness {
+        let fixtureDirectory = try makeTemporaryDirectory()
+            .appendingPathComponent("extension", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: fixtureDirectory,
+            withIntermediateDirectories: true
+        )
+        let manifest: [String: Any] = [
+            "manifest_version": 3,
+            "name": "Memory Port Session Fixture",
+            "version": "1.0.0",
+            "background": [
+                "service_worker": "background.js",
+            ],
+        ]
+        try JSONSerialization.data(
+            withJSONObject: manifest,
+            options: [.prettyPrinted, .sortedKeys]
+        ).write(
+            to: fixtureDirectory.appendingPathComponent("manifest.json"),
+            options: [.atomic]
+        )
+        try """
+        chrome.runtime.onConnect.addListener((port) => {
+          if (port.name !== "session") {
+            return;
+          }
+          port.onMessage.addListener(async (message, replyPort) => {
+            const target = replyPort || port;
+            if (message && message.originator === "background") {
+              return;
+            }
+            let result = null;
+            if (message.action === "get" || message.action === "has") {
+              result = await Promise.resolve(null);
+            }
+            target.postMessage({
+              originator: "background",
+              id: message.id,
+              key: message.key,
+              data: JSON.stringify(result)
+            });
+          });
+          port.postMessage({
+            originator: "background",
+            action: "initialization",
+            data: JSON.stringify([])
+          });
+        });
+        """.write(
+            to: fixtureDirectory.appendingPathComponent("background.js"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let storeRoot = try makeTemporaryDirectory()
+        let stage = try ChromeMV3OriginalBundleStore(
+            rootURL: storeRoot
+        ).stageUnpackedDirectory(at: fixtureDirectory)
+        let generated = try ChromeMV3GeneratedBundleWriter(
+            rootURL: storeRoot
+        ).writeGeneratedBundle(
+            originalBundleRecord: stage.originalBundleRecord,
+            manifestSnapshot: stage.manifestSnapshot,
+            planningRecord: stage.generatedBundlePlan
+        )
+        let harness = ChromeMV3ServiceWorkerJSExecutionHarness(
+            request: ChromeMV3ServiceWorkerJSExecutionRequest(
+                manifest: stage.manifestSnapshot.normalizedManifest,
+                generatedBundleRecord: generated.record,
+                extensionID: extensionID,
+                profileID: profileID,
+                moduleState: .enabled,
+                extensionEnabled: true,
+                localExperimentalGateAllowed: true,
+                dynamicImportRewriteExperimentAllowed: true
+            )
+        )
+        let start = harness.start()
+        XCTAssertTrue(
+            start.status == .running || harness.canDispatchCapturedListeners,
+            start.diagnostics.joined(separator: "\n")
+        )
+        XCTAssertTrue(harness.capturedListener(for: .runtimeOnConnect))
+        return harness
     }
 
     private func makeServiceWorkerHarnessPostingOnConnect(

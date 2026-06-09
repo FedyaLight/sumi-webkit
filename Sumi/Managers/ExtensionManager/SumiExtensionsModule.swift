@@ -5735,6 +5735,13 @@ final class SumiExtensionsModule {
                 presentation?.contentViewReplacedWebView ?? false,
             failureClassifier: .unknown,
             stagedSnapshots: stagedSnapshots,
+            viewCachePortDeliveryObservations:
+                cachedChromeMV3PopupOptionsHostController?
+                .liveViewCachePortDeliveryObservations(
+                    profileID: launchRecord?.profileID ?? profileID,
+                    extensionID: launchRecord?.extensionID ?? extensionId,
+                    surface: .actionPopup
+                ) ?? [],
             lifecycleEventCategories: lifecycleCategories,
             diagnostics: Array(
                 Set(
@@ -5824,8 +5831,13 @@ final class SumiExtensionsModule {
                 firstVisibleUIGate: firstVisibleUIGateDiagnostics
             ),
             stagedSnapshots: reconciled.stagedSnapshots,
+            viewCachePortDeliveryObservations:
+                reconciled.viewCachePortDeliveryObservations,
             lifecycleEventCategories: reconciled.lifecycleEventCategories,
             diagnostics: reconciled.diagnostics
+                + reconciled.viewCachePortDeliveryObservations.map {
+                    "viewCachePortDeliveryObservation=\($0.compactSanitizedLogLine)"
+                }
         )
     }
     #endif

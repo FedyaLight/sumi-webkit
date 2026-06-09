@@ -3232,6 +3232,51 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         return ports[portID]
     }
 
+    func deliverPortMessageFlushingAsyncContinuations(
+        portID: String,
+        message: ChromeMV3StorageValue,
+        maxDrainPasses: Int = 8,
+        maxCallbacksPerPass: Int = 200,
+        maxElapsedMilliseconds: Int = 50
+    ) -> ChromeMV3ServiceWorkerJSPortRecord? {
+        guard deliverPortMessage(portID: portID, message: message) != nil else {
+            return nil
+        }
+        let outboxCountBeforeDelivery = ports[portID]?.postedMessages.count ?? 0
+        let started = Date()
+        let passes = max(1, maxDrainPasses)
+        for pass in 0 ..< passes {
+            let elapsedMilliseconds = Int(
+                Date().timeIntervalSince(started) * 1000
+            )
+            if elapsedMilliseconds >= max(0, maxElapsedMilliseconds) {
+                break
+            }
+            _ = flushBoundedAsyncContinuations(
+                maxDrainPasses: 1,
+                maxCallbacksPerPass: maxCallbacksPerPass,
+                maxElapsedMilliseconds: max(
+                    0,
+                    maxElapsedMilliseconds - elapsedMilliseconds
+                )
+            )
+            refreshJSSnapshot()
+            let outboxCountAfterFlush = ports[portID]?.postedMessages.count ?? 0
+            if outboxCountAfterFlush > outboxCountBeforeDelivery {
+                break
+            }
+            let checkpoint = asyncFlushCheckpoint() ?? .empty
+            let pendingWork =
+                checkpoint.pendingAsyncCompletionCount > 0
+                || checkpoint.pendingTimeoutCount > 0
+            if pendingWork == false {
+                break
+            }
+        }
+        refreshJSSnapshot()
+        return ports[portID]
+    }
+
     func deliverTrustedNativeFixturePortMessage(
         portID: String,
         message: ChromeMV3StorageValue
@@ -3871,10 +3916,16 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 #endif
                 let lifecycleDiagnostics =
                     record.lifecycleRoutingRecord?.diagnostics ?? []
-                let serviceWorkerPortOutbox: [ChromeMV3StorageValue]
+                var serviceWorkerPortOutbox: [ChromeMV3StorageValue] = []
                 if input.event == .runtimeOnConnect,
                    let portID = record.portID
                 {
+                    _ = self.flushBoundedAsyncContinuations(
+                        maxDrainPasses: 8,
+                        maxCallbacksPerPass: 200,
+                        maxElapsedMilliseconds: 50
+                    )
+                    refreshJSSnapshot()
                     serviceWorkerPortOutbox =
                         self.ports[portID]?.postedMessages ?? []
                 } else {
@@ -3931,7 +3982,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                         )
                     }
                     guard let message = input.message,
-                          let port = self.deliverPortMessage(
+                          let port = self.deliverPortMessageFlushingAsyncContinuations(
                             portID: input.portID,
                             message: message
                           )
@@ -3984,6 +4035,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                                     + wake.diagnostics
                                     + [
                                         "runtime Port.postMessage reached the captured service-worker Port.onMessage listeners.",
+                                        "Bounded async flush drained Promise continuations before returning the service-worker Port.postMessage outbox.",
                                         "Service-worker Port.postMessage outbox was returned to the caller-side Port.",
                                     ]
                             )
@@ -7280,7 +7332,12 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         const state = ports.get(portID);
         if (!state || !state.connected) return state ? portSnapshot(state) : null;
         for (const listener of [...state.onMessage.listeners]) {
-          try { invokeCallbackNow(listener, null, clone(message), state.port); }
+          try {
+            const result = listener(clone(message), state.port);
+            if (result && typeof result.then === 'function') {
+              trackPromiseCompletion(`port.${portID}.onMessage`, 'port-listener', result);
+            }
+          }
           catch (_) { noteBlocked(`port.${portID}.onMessage.listenerError`); }
         }
         return portSnapshot(state);

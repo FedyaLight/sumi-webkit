@@ -3733,7 +3733,10 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 "portMessageDelivered", "portMessageBridgeFailed":
                 return "popupToServiceWorker"
             case "portOnMessageDispatched", "portSwOutboxReceived",
-                "portSwOutboxQueued", "portSwOutboxDelivered":
+                "portSwOutboxQueued", "portSwOutboxDelivered",
+                "portMemorySessionGetRequested",
+                "portMemorySessionGetResponseCaptured",
+                "portMemorySessionGetResponseDelivered":
                 return "serviceWorkerToPopup"
             case "portOnDisconnectDispatched", "portDisconnected":
                 return "disconnect"
@@ -4088,8 +4091,14 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         "portMessageDelivered",
         "portObjectReturned",
         "portMessageQueued",
+        "portMemorySessionGetRequested",
+        "portMemorySessionGetResponseCaptured",
+        "portMemorySessionGetResponseDelivered",
         "portOnDisconnectDispatched",
         "portOnMessageDispatched",
+        "portSwOutboxDelivered",
+        "portSwOutboxQueued",
+        "portSwOutboxReceived",
         "postBootstrapCheckpoint",
         "popupRenderTimelineCheckpoint",
         "executeScriptContinuationCheckpoint",
@@ -9887,6 +9896,461 @@ enum ChromeMV3PopupOptionsJSShimSource {
             return "2plus";
           }
 
+          function debugMemorySessionPortName(name) {
+            return debugSafePortName(name) === "session";
+          }
+
+          function debugSanitizedPairFingerprint(id, key) {
+            let hash = 2166136261;
+            function mix(value) {
+              const text = typeof value === "string" ? value : "";
+              for (let index = 0; index < text.length; index += 1) {
+                hash ^= text.charCodeAt(index);
+                hash = Math.imul(hash, 16777619);
+              }
+            }
+            mix(id);
+            mix(key);
+            return (hash >>> 0).toString(16);
+          }
+
+          function debugSanitizedIdFingerprint(id) {
+            let hash = 2166136261;
+            const text = typeof id === "string" ? id : "";
+            for (let index = 0; index < text.length; index += 1) {
+              hash ^= text.charCodeAt(index);
+              hash = Math.imul(hash, 16777619);
+            }
+            return (hash >>> 0).toString(16);
+          }
+
+          function debugForegroundMemoryStorageDataTypeCategory(message) {
+            if (!message || typeof message !== "object") {
+              return "notObserved";
+            }
+            if (!Object.prototype.hasOwnProperty.call(message, "data")) {
+              return "absent";
+            }
+            if (message.data === null) {
+              return "null";
+            }
+            if (message.data === undefined) {
+              return "undefined";
+            }
+            return typeof message.data;
+          }
+
+          function debugForegroundMemoryStorageParseCategory(message) {
+            const dataType = debugForegroundMemoryStorageDataTypeCategory(message);
+            if (dataType === "string") {
+              try {
+                JSON.parse(message.data);
+                return "parseSucceeded";
+              } catch (error) {
+                return "parseFailed";
+              }
+            }
+            if (dataType === "null" || dataType === "undefined" || dataType === "absent") {
+              try {
+                JSON.parse(message.data ?? null);
+                return "parseSucceededViaNullCoercion";
+              } catch (error) {
+                return "parseFailed";
+              }
+            }
+            try {
+              JSON.parse(message.data);
+              return "parseSucceededWrongType";
+            } catch (error) {
+              return "parseFailedWrongType";
+            }
+          }
+
+          function debugForegroundMemoryStorageNullabilityCategory(message) {
+            const parseCategory = debugForegroundMemoryStorageParseCategory(message);
+            if (
+              parseCategory === "parseFailed"
+              || parseCategory === "parseFailedWrongType"
+            ) {
+              return "notObserved";
+            }
+            if (!message || typeof message !== "object") {
+              return "notObserved";
+            }
+            let parsed = null;
+            try {
+              parsed = typeof message.data === "string"
+                ? JSON.parse(message.data)
+                : JSON.parse(message.data ?? null);
+            } catch (error) {
+              return "notObserved";
+            }
+            if (parsed === null) {
+              return "null";
+            }
+            if (parsed === undefined) {
+              return "undefined";
+            }
+            return "nonNull";
+          }
+
+          function debugForegroundMemoryStorageAcceptanceDiagnostics(state, message) {
+            const subscriptionCategory = state.memorySessionPendingGetIdFingerprint
+              ? "registeredBeforeRequest"
+              : "notObserved";
+            const deliveredBeforeSubscriptionCategory =
+              debugIsMemorySessionGetResponse(message)
+                ? (
+                    state.memorySessionPendingGetIdFingerprint
+                      ? "deliveredAfterSubscription"
+                      : "deliveredBeforeRequest"
+                  )
+                : "notObserved";
+            const dataTypeCategory = debugForegroundMemoryStorageDataTypeCategory(message);
+            const nullabilityCategory =
+              debugForegroundMemoryStorageNullabilityCategory(message);
+            const parseCategory = debugForegroundMemoryStorageParseCategory(message);
+
+            let acceptedCategory = "notObserved";
+            let rejectedReasonCategory = "notObserved";
+            let observableNextCategory = "notObserved";
+            let firstValueFromResolvedCategory = "notObserved";
+            let firstValueFromPendingReasonCategory = "notObserved";
+            let initResolvedCategory = "notObserved";
+
+            if (!debugMemorySessionPortName(state.name)) {
+              rejectedReasonCategory = "notMemorySessionPort";
+            } else if (!message || typeof message !== "object") {
+              rejectedReasonCategory = "messageAbsent";
+            } else if (message.originator !== "background") {
+              rejectedReasonCategory = "originatorRejected";
+            } else if (
+              message.action === "initialization"
+              || message.action === "subject_update"
+            ) {
+              rejectedReasonCategory = "nonDelegateMessage";
+            } else if (!debugIsMemorySessionGetResponse(message)) {
+              rejectedReasonCategory = "notGetResponseShape";
+            } else if (!state.memorySessionPendingGetIdFingerprint) {
+              rejectedReasonCategory = "noPendingGetRequest";
+            } else if (
+              debugSanitizedIdFingerprint(message.id)
+                !== state.memorySessionPendingGetIdFingerprint
+            ) {
+              rejectedReasonCategory = "idMismatch";
+            } else if (
+              parseCategory === "parseFailed"
+              || parseCategory === "parseFailedWrongType"
+            ) {
+              rejectedReasonCategory = "dataParseFailed";
+            } else {
+              acceptedCategory = "accepted";
+              rejectedReasonCategory = "notRejected";
+              observableNextCategory = "wouldEmit";
+              firstValueFromResolvedCategory = "wouldResolve";
+            }
+
+            if (acceptedCategory !== "accepted") {
+              if (
+                debugIsMemorySessionGetResponse(message)
+                && rejectedReasonCategory !== "notObserved"
+                && rejectedReasonCategory !== "notMemorySessionPort"
+                && rejectedReasonCategory !== "messageAbsent"
+              ) {
+                acceptedCategory = "rejected";
+              }
+              observableNextCategory = debugIsMemorySessionGetResponse(message)
+                ? "wouldNotEmit"
+                : "notObserved";
+              firstValueFromResolvedCategory = debugIsMemorySessionGetResponse(message)
+                ? "wouldNotResolve"
+                : "notObserved";
+              firstValueFromPendingReasonCategory = rejectedReasonCategory;
+            }
+
+            return [
+              "viewCachePortResponseAcceptedByForegroundStorageCategory="
+                + acceptedCategory,
+              "viewCachePortResponseRejectedReasonCategory="
+                + rejectedReasonCategory,
+              "viewCacheResponseDataTypeCategory=" + dataTypeCategory,
+              "viewCacheResponseDataNullabilityCategory=" + nullabilityCategory,
+              "viewCacheRequestSubscriptionRegisteredCategory="
+                + subscriptionCategory,
+              "viewCacheResponseDeliveredBeforeSubscriptionCategory="
+                + deliveredBeforeSubscriptionCategory,
+              "viewCacheObservableNextCategory=" + observableNextCategory,
+              "viewCacheFirstValueFromResolvedCategory="
+                + firstValueFromResolvedCategory,
+              "viewCacheFirstValueFromPendingReasonCategory="
+                + firstValueFromPendingReasonCategory,
+              "viewCacheInitResolvedCategory=" + initResolvedCategory,
+              "viewCacheForegroundStorageParseCategory=" + parseCategory,
+            ];
+          }
+
+          function debugMemorySessionGetActionCategory(message) {
+            if (!message || typeof message !== "object") {
+              return "notObserved";
+            }
+            if (message.action === "get") {
+              return "get";
+            }
+            if (message.action === "has") {
+              return "has";
+            }
+            if (typeof message.action === "string" && message.action.length > 0) {
+              return "nonGetAction";
+            }
+            return "actionAbsent";
+          }
+
+          function debugMemorySessionOriginatorCategory(message) {
+            if (!message || typeof message !== "object") {
+              return "notObserved";
+            }
+            if (message.originator === "foreground") {
+              return "foreground";
+            }
+            if (message.originator === "background") {
+              return "background";
+            }
+            if (typeof message.originator === "string" && message.originator.length > 0) {
+              return "other";
+            }
+            return "absent";
+          }
+
+          function debugMemorySessionIdPresenceCategory(message) {
+            if (!message || typeof message !== "object") {
+              return "notObserved";
+            }
+            return typeof message.id === "string" && message.id.length > 0
+              ? "present"
+              : "absent";
+          }
+
+          function debugMemorySessionKeyPresenceCategory(message) {
+            if (!message || typeof message !== "object") {
+              return "notObserved";
+            }
+            return typeof message.key === "string" && message.key.length > 0
+              ? "keyPresent"
+              : "keyAbsent";
+          }
+
+          function debugMemorySessionResponseDataPresenceCategory(message) {
+            if (!message || typeof message !== "object") {
+              return "notObserved";
+            }
+            if (!Object.prototype.hasOwnProperty.call(message, "data")) {
+              return "absent";
+            }
+            if (message.data === null) {
+              return "null";
+            }
+            if (message.data === undefined) {
+              return "undefined";
+            }
+            if (typeof message.data === "object") {
+              if (Array.isArray(message.data)) {
+                return message.data.length === 0
+                  ? "presentEmptyArray"
+                  : "presentObject";
+              }
+              return Object.keys(message.data).length === 0
+                ? "presentEmptyObject"
+                : "presentObject";
+            }
+            if (typeof message.data === "string") {
+              return message.data.length === 0
+                ? "presentEmptyString"
+                : "presentScalar";
+            }
+            return "presentScalar";
+          }
+
+          function debugMemorySessionEnvelopeShapeCategory(message) {
+            if (!message || typeof message !== "object" || Array.isArray(message)) {
+              return "notObject";
+            }
+            if (
+              message.message
+              && typeof message.message === "object"
+              && !Array.isArray(message.message)
+            ) {
+              return "wrappedEnvelope";
+            }
+            if (
+              message.payload
+              && typeof message.payload === "object"
+              && !Array.isArray(message.payload)
+            ) {
+              return "wrappedEnvelope";
+            }
+            return "rawObject";
+          }
+
+          function debugMemorySessionGetRequestDiagnostics(message) {
+            return [
+              "viewCachePortRequestActionCategory="
+                + debugMemorySessionGetActionCategory(message),
+              "viewCachePortRequestIdPresenceCategory="
+                + debugMemorySessionIdPresenceCategory(message),
+              "viewCachePortRequestKeyMatchCategory="
+                + debugMemorySessionKeyPresenceCategory(message),
+              "viewCachePortRequestOriginatorCategory="
+                + debugMemorySessionOriginatorCategory(message),
+            ];
+          }
+
+          function debugMemorySessionGetResponseDiagnostics(state, message) {
+            const requestFingerprint = state.memorySessionGetRequestFingerprint || null;
+            const responseFingerprint = debugSanitizedPairFingerprint(
+              message && message.id,
+              message && message.key
+            );
+            const idMatchCategory = requestFingerprint
+              ? (
+                  responseFingerprint === requestFingerprint
+                    ? "matchesRequest"
+                    : "mismatchesRequest"
+                )
+              : "requestAbsent";
+            const keyMatchCategory =
+              debugMemorySessionKeyPresenceCategory(message) === "keyAbsent"
+                ? "keyAbsent"
+                : idMatchCategory === "matchesRequest"
+                  ? "matchesRequest"
+                  : idMatchCategory === "mismatchesRequest"
+                    ? "mismatchesRequest"
+                    : "requestAbsent";
+            const listenerBeforeCategory =
+              state.memorySessionGetListenerCountAtRequest > 0
+                ? "registeredBeforeResponse"
+                : (
+                    state.onMessage.__sumiListenerCount() > 0
+                      ? "registeredAfterResponse"
+                      : "listenerAbsent"
+                  );
+            return [
+              "viewCachePortResponseOriginatorCategory="
+                + debugMemorySessionOriginatorCategory(message),
+              "viewCachePortResponseIdMatchCategory=" + idMatchCategory,
+              "viewCachePortResponseKeyMatchCategory=" + keyMatchCategory,
+              "viewCachePortResponseDataPresenceCategory="
+                + debugMemorySessionResponseDataPresenceCategory(message),
+              "viewCachePortResponseEnvelopeShapeCategory="
+                + debugMemorySessionEnvelopeShapeCategory(message),
+              "viewCachePortListenerRegisteredBeforeResponseCategory="
+                + listenerBeforeCategory,
+            ];
+          }
+
+          function debugEmitMemorySessionGetRequested(state, message) {
+            if (
+              !debugMemorySessionPortName(state.name)
+              || !message
+              || message.originator !== "foreground"
+              || message.action !== "get"
+            ) {
+              return;
+            }
+            state.memorySessionGetRequestFingerprint =
+              debugSanitizedPairFingerprint(message.id, message.key);
+            state.memorySessionPendingGetIdFingerprint =
+              debugSanitizedIdFingerprint(message.id);
+            state.memorySessionGetListenerCountAtRequest =
+              state.onMessage.__sumiListenerCount();
+            debugPortEvent("portMemorySessionGetRequested", {
+              apiName: "Port.postMessage",
+              portName: debugSafePortName(state.name),
+              safeMessageShapeClassification: debugValueShape(message, 0),
+              resultClassifier: "memory session get requested",
+              diagnostics: [
+                "viewCachePortGetRequestObservedCategory=observed",
+                "viewCachePortGetResponseCapturedCategory=notObserved",
+                "viewCachePortGetResponseDeliveredCategory=notObserved",
+                "viewCacheRequestSubscriptionRegisteredCategory=registeredBeforeRequest",
+              ].concat(debugMemorySessionGetRequestDiagnostics(message)),
+            });
+          }
+
+          function debugIsMemorySessionGetResponse(message) {
+            if (!message || typeof message !== "object") {
+              return false;
+            }
+            if (message.originator !== "background") {
+              return false;
+            }
+            if (message.action === "initialization") {
+              return false;
+            }
+            return typeof message.id === "string"
+              && message.id.length > 0
+              && typeof message.key === "string"
+              && message.key.length > 0;
+          }
+
+          function debugEmitMemorySessionGetResponseCaptured(state, message) {
+            if (
+              !debugMemorySessionPortName(state.name)
+              || !debugIsMemorySessionGetResponse(message)
+            ) {
+              return;
+            }
+            debugPortEvent("portMemorySessionGetResponseCaptured", {
+              apiName: "Port.onMessage",
+              portName: debugSafePortName(state.name),
+              safeMessageShapeClassification: debugValueShape(message, 0),
+              resultClassifier: "memory session get response captured",
+              diagnostics: [
+                "viewCachePortGetRequestObservedCategory=observed",
+                "viewCachePortGetResponseCapturedCategory=captured",
+                "viewCachePortGetResponseDeliveredCategory=notObserved",
+              ].concat(debugMemorySessionGetResponseDiagnostics(state, message)),
+            });
+          }
+
+          function debugEmitMemorySessionGetResponseDelivered(
+            state,
+            message,
+            listenerCount
+          ) {
+            if (
+              !debugMemorySessionPortName(state.name)
+              || !debugIsMemorySessionGetResponse(message)
+            ) {
+              return;
+            }
+            state.memorySessionGetResponseDeliveredCount =
+              (state.memorySessionGetResponseDeliveredCount || 0) + 1;
+            debugPortEvent("portMemorySessionGetResponseDelivered", {
+              apiName: "Port.onMessage",
+              portName: debugSafePortName(state.name),
+              safeMessageShapeClassification: debugValueShape(message, 0),
+              resultClassifier: listenerCount > 0
+                ? "memory session get response delivered"
+                : "memory session get response queued",
+              diagnostics: [
+                "viewCachePortGetRequestObservedCategory=observed",
+                "viewCachePortGetResponseCapturedCategory=captured",
+                "viewCachePortGetResponseDeliveredCategory="
+                  + (listenerCount > 0 ? "delivered" : "queued"),
+                "viewCachePortListenerReceivedResponseCategory="
+                  + (listenerCount > 0 ? "received" : "notReceived"),
+                "viewCachePortDeliveryCountBucket="
+                  + debugSwOutboxCountBucket(
+                    state.memorySessionGetResponseDeliveredCount
+                  ),
+              ]
+                .concat(debugMemorySessionGetResponseDiagnostics(state, message))
+                .concat(
+                  debugForegroundMemoryStorageAcceptanceDiagnostics(state, message)
+                ),
+            });
+          }
+
           function makePortEvent(eventName, stateProvider) {
             const listeners = [];
             return Object.freeze({
@@ -9978,6 +10442,10 @@ enum ChromeMV3PopupOptionsJSShimSource {
               pendingInboundMessages: [],
               inboundFlushScheduled: false,
               deliveredMessageCount: 0,
+              memorySessionGetRequestFingerprint: null,
+              memorySessionPendingGetIdFingerprint: null,
+              memorySessionGetListenerCountAtRequest: 0,
+              memorySessionGetResponseDeliveredCount: 0,
               onMessage: null,
               onDisconnect: null
             };
@@ -9993,7 +10461,14 @@ enum ChromeMV3PopupOptionsJSShimSource {
                 return;
               }
               messages.forEach((postedMessage) => {
+                debugEmitMemorySessionGetResponseCaptured(state, postedMessage);
+                const listenerCount = state.onMessage.__sumiListenerCount();
                 state.onMessage.dispatch(postedMessage, port);
+                debugEmitMemorySessionGetResponseDelivered(
+                  state,
+                  postedMessage,
+                  listenerCount
+                );
               });
               debugPortEvent("portSwOutboxDelivered", {
                 apiName: "Port.onMessage",
@@ -10027,8 +10502,14 @@ enum ChromeMV3PopupOptionsJSShimSource {
               let queuedCount = 0;
               let deliveredCount = 0;
               messages.forEach((postedMessage) => {
+                debugEmitMemorySessionGetResponseCaptured(state, postedMessage);
                 if (listenerCount > 0) {
                   state.onMessage.dispatch(postedMessage, port);
+                  debugEmitMemorySessionGetResponseDelivered(
+                    state,
+                    postedMessage,
+                    listenerCount
+                  );
                   deliveredCount += 1;
                 } else {
                   state.pendingInboundMessages.push(postedMessage);
@@ -10088,8 +10569,18 @@ enum ChromeMV3PopupOptionsJSShimSource {
               const messages = payload && Array.isArray(payload.postedMessages)
                 ? payload.postedMessages
                 : [];
-              const nextMessages = messages.slice(state.deliveredMessageCount);
-              state.deliveredMessageCount = messages.length;
+              let nextMessages = messages.slice(state.deliveredMessageCount);
+              if (
+                nextMessages.length === 0
+                && messages.length > 0
+                && payload
+                && payload.direction === "popupOptionsToServiceWorker"
+              ) {
+                nextMessages = messages;
+                state.deliveredMessageCount += messages.length;
+              } else {
+                state.deliveredMessageCount = messages.length;
+              }
               if (nextMessages.length > 0) {
                 debugPortEvent("portSwOutboxReceived", {
                   apiName: "Port.onMessage",
@@ -10111,6 +10602,7 @@ enum ChromeMV3PopupOptionsJSShimSource {
               }
             }
             function sendNativePortMessage(message) {
+              debugEmitMemorySessionGetRequested(state, message);
               debugPortEvent("portMessageCalled", {
                 apiName: "Port.postMessage",
                 portName: debugSafePortName(state.name),
