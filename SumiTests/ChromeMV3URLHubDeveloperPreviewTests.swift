@@ -1188,7 +1188,12 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             serviceWorkerOnMessageListenerCountBucket: "0",
             serviceWorkerOnConnectListenerCountBucket: "0",
             nativeMessagingRequestCountBucket: "0",
-            nativeMessagingResultCategory: "notRequested"
+            nativeMessagingResultCategory: "notRequested",
+            swOutboxCapturedCountBucket: "0",
+            swOutboxDeliveredToPopupCountBucket: "0",
+            popupPortOnMessageListenerCategory: "notObserved",
+            pendingInboundPortMessagesBucket: "0",
+            portDisconnectCategory: "notObserved"
         )
         let trace = ChromeMV3LivePopupProductPathTrace(
             productPath: .urlHubActionClick,
@@ -1320,7 +1325,12 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             serviceWorkerOnMessageListenerCountBucket: "0",
             serviceWorkerOnConnectListenerCountBucket: "0",
             nativeMessagingRequestCountBucket: "0",
-            nativeMessagingResultCategory: "notRequested"
+            nativeMessagingResultCategory: "notRequested",
+            swOutboxCapturedCountBucket: "0",
+            swOutboxDeliveredToPopupCountBucket: "0",
+            popupPortOnMessageListenerCategory: "notObserved",
+            pendingInboundPortMessagesBucket: "0",
+            portDisconnectCategory: "notObserved"
         )
         var trace = makeLivePopupBootstrapGapTrace()
         trace.loadingMode = "fileBacked"
@@ -1348,6 +1358,9 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
     @MainActor
     func testDebugLivePopupProductPathClassifierDetectsBridgeJSNotInjected() {
         var trace = makeLivePopupBootstrapGapTrace()
+        trace.stagedSnapshots = []
+        trace.scriptsExecuted = false
+        trace.firstJSCheckpointReached = false
         let routeEvents = [
             ChromeMV3PopupOptionsJSDebugRouteEventRecord(
                 sequence: 1,
@@ -1365,7 +1378,24 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 trace,
                 routeEvents: routeEvents
             ),
+            .popoverPresentedButScriptsNotExecuted
+        )
+        XCTAssertEqual(
+            ChromeMV3LivePopupProductPathTraceBuilder.classifyBootstrapFailure(
+                trace: trace,
+                routeEvents: routeEvents
+            ),
             .popupBridgeJSNotInjected
+        )
+
+        trace.scriptsExecuted = true
+        XCTAssertNotEqual(
+            ChromeMV3LivePopupProductPathTraceBuilder.classify(
+                trace,
+                routeEvents: routeEvents
+            ),
+            .popupBridgeJSNotInjected,
+            "Executed popup scripts must not be classified as bridge-not-injected when the bootstrap probe is missing."
         )
 
         trace.bridgeInstalled = false
@@ -1503,7 +1533,12 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             serviceWorkerOnMessageListenerCountBucket: "0",
             serviceWorkerOnConnectListenerCountBucket: "0",
             nativeMessagingRequestCountBucket: "0",
-            nativeMessagingResultCategory: "notRequested"
+            nativeMessagingResultCategory: "notRequested",
+            swOutboxCapturedCountBucket: "0",
+            swOutboxDeliveredToPopupCountBucket: "0",
+            popupPortOnMessageListenerCategory: "notObserved",
+            pendingInboundPortMessagesBucket: "0",
+            portDisconnectCategory: "notObserved"
         )
         return ChromeMV3LivePopupProductPathTrace(
             productPath: .urlHubActionClick,
@@ -1566,6 +1601,176 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
             lifecycleEventCategories: [],
             diagnostics: []
         )
+    }
+
+    @MainActor
+    func testDebugLivePopupProductPathClassifierDoesNotMisclassifyBitwardenLiveTraceShape()
+    {
+        let emptyDOM = ChromeMV3LivePopupDOMCheckpoint(
+            readyState: "complete",
+            visibleTextLengthBucket: "0",
+            controlCountBucket: "0",
+            bodyChildCount: 1,
+            appRootPresent: true,
+            navigationCommitted: true,
+            visibilityCategory: "unknown",
+            backgroundCategory: "white"
+        )
+        let staged = ChromeMV3LivePopupStagedSnapshot(
+            stage: "after3000ms",
+            readyState: "complete",
+            navigationStarted: true,
+            navigationFinished: true,
+            urlLoaded: true,
+            firstJSCheckpoint: true,
+            bridgeInstalled: true,
+            scriptsExecuted: true,
+            runtimeErrorCategory: "none",
+            consoleErrorCategory: "none",
+            unhandledRejectionCategory: "none",
+            appRootPresent: true,
+            bodyChildCountBucket: "1-3",
+            appRootChildCountBucket: "0",
+            visibleTextBucket: "0",
+            formControlCountBucket: "0",
+            buttonCountBucket: "0",
+            ariaBusyOrLoadingCategory: "none",
+            storageReadCountBucket: "1-3",
+            storageWriteCountBucket: "0",
+            runtimeSendMessageCountBucket: "0",
+            runtimeConnectCountBucket: "1-3",
+            portMessageCountBucket: "0",
+            tabsQueryCountBucket: "0",
+            tabsSendMessageCountBucket: "0",
+            scriptingExecuteScriptCountBucket: "0",
+            pendingBridgeRoutesBucket: "0",
+            serviceWorkerOnMessageListenerCountBucket: "0",
+            serviceWorkerOnConnectListenerCountBucket: "0",
+            nativeMessagingRequestCountBucket: "0",
+            nativeMessagingResultCategory: "notRequested",
+            swOutboxCapturedCountBucket: "1-3",
+            swOutboxDeliveredToPopupCountBucket: "1-3",
+            popupPortOnMessageListenerCategory: "listenerRegistered",
+            pendingInboundPortMessagesBucket: "0",
+            portDisconnectCategory: "none"
+        )
+        var trace = makeLivePopupBootstrapGapTrace()
+        trace.scriptsExecuted = true
+        trace.firstJSCheckpointReached = true
+        trace.extensionClassifier = "extensionLocalAppState"
+        trace.stagedSnapshots = [staged]
+        trace.finalDOMCheckpoint = emptyDOM
+        trace.firstDOMCheckpoint = emptyDOM
+        let routeEvents = [
+            ChromeMV3PopupOptionsJSDebugRouteEventRecord(
+                sequence: 1,
+                eventKind: "extensionMethodCalled",
+                apiName: "runtime.connect",
+                sourceContext: "actionPopup",
+                targetContext: "serviceWorker",
+                safeMessageShapeClassification: "shape=unknown",
+                safeCommandTypeActionFieldNames: [],
+                diagnostics: []
+            ),
+            ChromeMV3PopupOptionsJSDebugRouteEventRecord(
+                sequence: 2,
+                eventKind: "portSwOutboxReceived",
+                apiName: "Port.onMessage",
+                sourceContext: "serviceWorker",
+                targetContext: "actionPopup",
+                safeMessageShapeClassification: "shape=unknown",
+                safeCommandTypeActionFieldNames: [],
+                diagnostics: [
+                    "queuedSwOutboxCountBucket=1",
+                    "listenerRegistrationCategory=listenerRegistered",
+                ]
+            ),
+            ChromeMV3PopupOptionsJSDebugRouteEventRecord(
+                sequence: 3,
+                eventKind: "portSwOutboxDelivered",
+                apiName: "Port.onMessage",
+                sourceContext: "serviceWorker",
+                targetContext: "actionPopup",
+                safeMessageShapeClassification: "shape=unknown",
+                safeCommandTypeActionFieldNames: [],
+                diagnostics: [
+                    "deliveredSwToPopupCountBucket=1",
+                    "listenerRegistrationCategory=listenerRegistered",
+                ]
+            ),
+        ]
+
+        let classifier = ChromeMV3LivePopupProductPathTraceBuilder.classify(
+            trace,
+            routeEvents: routeEvents
+        )
+        XCTAssertNotEqual(classifier, .popupBridgeJSNotInjected)
+        XCTAssertEqual(classifier, .extensionLocalAppState)
+        XCTAssertTrue(
+            staged.compactSanitizedLogLine.contains(
+                "swOutboxCapturedCountBucket=1-3"
+            )
+        )
+        XCTAssertTrue(
+            staged.compactSanitizedLogLine.contains(
+                "swOutboxDeliveredToPopupCountBucket=1-3"
+            )
+        )
+        XCTAssertTrue(
+            staged.compactSanitizedLogLine.contains(
+                "popupPortOnMessageListenerCategory=listenerRegistered"
+            )
+        )
+    }
+
+    @MainActor
+    func testDebugLivePopupProductPathClassifierDetectsPortConnectedWithoutSwOutbox()
+    {
+        var trace = makeLivePopupBootstrapGapTrace()
+        trace.scriptsExecuted = true
+        trace.firstJSCheckpointReached = true
+        trace.stagedSnapshots = [
+            ChromeMV3LivePopupStagedSnapshot(
+                stage: "after3000ms",
+                readyState: "complete",
+                navigationStarted: true,
+                navigationFinished: true,
+                urlLoaded: true,
+                firstJSCheckpoint: true,
+                bridgeInstalled: true,
+                scriptsExecuted: true,
+                runtimeErrorCategory: "none",
+                consoleErrorCategory: "none",
+                unhandledRejectionCategory: "none",
+                appRootPresent: true,
+                bodyChildCountBucket: "1-3",
+                appRootChildCountBucket: "0",
+                visibleTextBucket: "0",
+                formControlCountBucket: "0",
+                buttonCountBucket: "0",
+                ariaBusyOrLoadingCategory: "none",
+                storageReadCountBucket: "1-3",
+                storageWriteCountBucket: "0",
+                runtimeSendMessageCountBucket: "0",
+                runtimeConnectCountBucket: "1-3",
+                portMessageCountBucket: "0",
+                tabsQueryCountBucket: "0",
+                tabsSendMessageCountBucket: "0",
+                scriptingExecuteScriptCountBucket: "0",
+                pendingBridgeRoutesBucket: "0",
+                serviceWorkerOnMessageListenerCountBucket: "0",
+                serviceWorkerOnConnectListenerCountBucket: "0",
+                nativeMessagingRequestCountBucket: "0",
+                nativeMessagingResultCategory: "notRequested",
+                swOutboxCapturedCountBucket: "0",
+                swOutboxDeliveredToPopupCountBucket: "0",
+                popupPortOnMessageListenerCategory: "listenerAbsent",
+                pendingInboundPortMessagesBucket: "0",
+                portDisconnectCategory: "none"
+            ),
+        ]
+        let classifier = ChromeMV3LivePopupProductPathTraceBuilder.classify(trace)
+        XCTAssertEqual(classifier, .portConnectedNoSwOutbox)
     }
 
     @MainActor

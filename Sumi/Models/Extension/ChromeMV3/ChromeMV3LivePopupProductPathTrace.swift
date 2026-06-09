@@ -72,6 +72,10 @@ enum ChromeMV3LivePopupFailureClassifier: String, Codable, Equatable, Sendable {
     case popupWaitingOnServiceWorkerListener
     case popupWaitingOnTabsOrScripting
     case popupMissingChromeAPIAbort
+    case appStateWaitWithNoWriter
+    case popupAppRootEmptyAfterBootstrap
+    case portConnectedNoSwOutbox
+    case runtimePortEnvelopeMismatch
     case unknown
 }
 
@@ -107,6 +111,11 @@ struct ChromeMV3LivePopupStagedSnapshot: Codable, Equatable, Sendable {
     var serviceWorkerOnConnectListenerCountBucket: String
     var nativeMessagingRequestCountBucket: String
     var nativeMessagingResultCategory: String
+    var swOutboxCapturedCountBucket: String
+    var swOutboxDeliveredToPopupCountBucket: String
+    var popupPortOnMessageListenerCategory: String
+    var pendingInboundPortMessagesBucket: String
+    var portDisconnectCategory: String
 
     var compactSanitizedLogLine: String {
         [
@@ -141,6 +150,11 @@ struct ChromeMV3LivePopupStagedSnapshot: Codable, Equatable, Sendable {
             "serviceWorkerOnConnectListenerCountBucket=\(serviceWorkerOnConnectListenerCountBucket)",
             "nativeMessagingRequestCountBucket=\(nativeMessagingRequestCountBucket)",
             "nativeMessagingResultCategory=\(nativeMessagingResultCategory)",
+            "swOutboxCapturedCountBucket=\(swOutboxCapturedCountBucket)",
+            "swOutboxDeliveredToPopupCountBucket=\(swOutboxDeliveredToPopupCountBucket)",
+            "popupPortOnMessageListenerCategory=\(popupPortOnMessageListenerCategory)",
+            "pendingInboundPortMessagesBucket=\(pendingInboundPortMessagesBucket)",
+            "portDisconnectCategory=\(portDisconnectCategory)",
         ].joined(separator: " ")
     }
 }
@@ -826,6 +840,132 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         return buckets
     }
 
+    struct PortDeliveryDiagnostics: Equatable, Sendable {
+        var swOutboxCaptured: Int = 0
+        var swOutboxDelivered: Int = 0
+        var pendingInbound: Int = 0
+        var listenerCategory: String = "notObserved"
+        var disconnectCategory: String = "notObserved"
+    }
+
+    static func portEventDiagnosticValue(
+        _ key: String,
+        from event: ChromeMV3PopupOptionsJSDebugRouteEventRecord
+    ) -> String? {
+        event.diagnostics.first(where: { $0.hasPrefix("\(key)=") }).map {
+            String($0.dropFirst("\(key)=".count))
+        }
+    }
+
+    static func diagnosticBucketLowerBound(_ bucket: String) -> Int {
+        switch bucket {
+        case "0":
+            return 0
+        case "1":
+            return 1
+        case "2plus":
+            return 2
+        case "1-3":
+            return 1
+        case "4-10":
+            return 4
+        case "10+":
+            return 10
+        default:
+            return 0
+        }
+    }
+
+    static func portDeliveryDiagnostics(
+        from events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
+    ) -> PortDeliveryDiagnostics {
+        var result = PortDeliveryDiagnostics()
+        var connectObserved = false
+        var listenerAdded = false
+
+        for event in events {
+            switch event.eventKind {
+            case "portSwOutboxReceived":
+                result.swOutboxCaptured += max(
+                    1,
+                    diagnosticBucketLowerBound(
+                        portEventDiagnosticValue(
+                            "queuedSwOutboxCountBucket",
+                            from: event
+                        ) ?? "1"
+                    )
+                )
+            case "portSwOutboxDelivered":
+                result.swOutboxDelivered += max(
+                    1,
+                    diagnosticBucketLowerBound(
+                        portEventDiagnosticValue(
+                            "deliveredSwToPopupCountBucket",
+                            from: event
+                        ) ?? "1"
+                    )
+                )
+            case "portSwOutboxQueued":
+                result.pendingInbound += max(
+                    1,
+                    diagnosticBucketLowerBound(
+                        portEventDiagnosticValue(
+                            "queuedSwOutboxCountBucket",
+                            from: event
+                        ) ?? "1"
+                    )
+                )
+            case "portListenerAdded":
+                guard event.apiName == "Port.onMessage" else { break }
+                listenerAdded = true
+                if let category = portEventDiagnosticValue(
+                    "listenerRegistrationCategory",
+                    from: event
+                ) {
+                    result.listenerCategory =
+                        category == "additionalListener"
+                        ? "additionalListener" : "listenerRegistered"
+                } else {
+                    result.listenerCategory = "listenerRegistered"
+                }
+            case "portDisconnected":
+                result.disconnectCategory =
+                    event.resultClassifier == "lastError"
+                    ? "disconnectedWithError" : "disconnected"
+            case "portObjectReturned":
+                if event.apiName == "runtime.connect" {
+                    connectObserved = true
+                }
+            default:
+                if event.apiName.lowercased().contains("runtime.connect") {
+                    connectObserved = true
+                }
+            }
+        }
+
+        if connectObserved,
+           listenerAdded == false,
+           result.listenerCategory == "notObserved"
+        {
+            if let received = events.last(where: {
+                $0.eventKind == "portSwOutboxReceived"
+            }),
+                let category = portEventDiagnosticValue(
+                    "listenerRegistrationCategory",
+                    from: received
+                )
+            {
+                result.listenerCategory = category
+            } else {
+                result.listenerCategory = "listenerAbsent"
+            }
+        }
+        if connectObserved == false, result.disconnectCategory == "notObserved" {
+            result.disconnectCategory = "none"
+        }
+        return result
+    }
+
     static func nativeMessagingRequestCategory(
         from events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
     ) -> String {
@@ -1051,6 +1191,7 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             from: routeEvents,
             pendingRoutes: pendingRoutes
         )
+        let portDelivery = portDeliveryDiagnostics(from: routeEvents)
         return ChromeMV3LivePopupStagedSnapshot(
             stage: stage,
             readyState: readyState,
@@ -1110,7 +1251,14 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             nativeMessagingResultCategory: nativeMessagingResultCategory(
                 from: routeEvents,
                 pendingRoutes: pendingRoutes
-            )
+            ),
+            swOutboxCapturedCountBucket: countBucket(portDelivery.swOutboxCaptured),
+            swOutboxDeliveredToPopupCountBucket: countBucket(
+                portDelivery.swOutboxDelivered
+            ),
+            popupPortOnMessageListenerCategory: portDelivery.listenerCategory,
+            pendingInboundPortMessagesBucket: countBucket(portDelivery.pendingInbound),
+            portDisconnectCategory: portDelivery.disconnectCategory
         )
     }
 
@@ -1331,11 +1479,26 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             || trace.stagedSnapshots.contains { $0.firstJSCheckpoint }
     }
 
+    static func bridgeInjectionProven(
+        trace: ChromeMV3LivePopupProductPathTrace
+    ) -> Bool {
+        guard trace.bridgeInstalled
+            || trace.stagedSnapshots.contains(where: { $0.bridgeInstalled })
+        else {
+            return false
+        }
+        return reconciledScriptsExecuted(trace: trace)
+            || reconciledFirstJSCheckpoint(trace: trace)
+    }
+
     static func reconcileTraceWithStagedSnapshots(
         _ trace: ChromeMV3LivePopupProductPathTrace
     ) -> ChromeMV3LivePopupProductPathTrace {
         guard trace.stagedSnapshots.isEmpty == false else { return trace }
         var reconciled = trace
+        if trace.stagedSnapshots.contains(where: { $0.bridgeInstalled }) {
+            reconciled.bridgeInstalled = true
+        }
         if stagedSnapshotShowsExecutedScripts(trace.stagedSnapshots) {
             reconciled.scriptsExecuted = true
         }
@@ -1383,7 +1546,8 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
                bridgeBootstrapProbeObserved(
                    phase: "atDocumentStartBridgeInjection",
                    from: routeEvents
-               ) == false
+               ) == false,
+               bridgeInjectionProven(trace: trace) == false
             {
                 return .popupBridgeJSNotInjected
             }
@@ -1477,6 +1641,72 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             return .popupAppRootPresentButEmpty
         }
         return nil
+    }
+
+    static func classifyPortDeliveryFailure(
+        trace: ChromeMV3LivePopupProductPathTrace,
+        routeEvents: [ChromeMV3PopupOptionsJSDebugRouteEventRecord] = []
+    ) -> ChromeMV3LivePopupFailureClassifier? {
+        let latest = preferredStagedSnapshot(trace.stagedSnapshots)
+        let portDelivery = latest.map {
+            PortDeliveryDiagnostics(
+                swOutboxCaptured: diagnosticBucketLowerBound(
+                    $0.swOutboxCapturedCountBucket
+                ),
+                swOutboxDelivered: diagnosticBucketLowerBound(
+                    $0.swOutboxDeliveredToPopupCountBucket
+                ),
+                pendingInbound: diagnosticBucketLowerBound(
+                    $0.pendingInboundPortMessagesBucket
+                ),
+                listenerCategory: $0.popupPortOnMessageListenerCategory,
+                disconnectCategory: $0.portDisconnectCategory
+            )
+        } ?? portDeliveryDiagnostics(from: routeEvents)
+        let runtimeConnectObserved =
+            (latest?.runtimeConnectCountBucket ?? "0") != "0"
+            || routeEvents.contains {
+                $0.apiName.lowercased().contains("runtime.connect")
+            }
+        guard runtimeConnectObserved else { return nil }
+
+        if portDelivery.swOutboxCaptured == 0 {
+            return .portConnectedNoSwOutbox
+        }
+        if portDelivery.swOutboxDelivered == 0 {
+            return .runtimePortEnvelopeMismatch
+        }
+        return nil
+    }
+
+    static func classifyAppStateBootstrapGap(
+        trace: ChromeMV3LivePopupProductPathTrace
+    ) -> ChromeMV3LivePopupFailureClassifier? {
+        if trace.extensionClassifier == "extensionLocalAppState" {
+            return .extensionLocalAppState
+        }
+        if trace.extensionClassifier == "extensionLocalRenderState" {
+            return .extensionLocalRenderState
+        }
+        if trace.extensionClassifier == "appStateWaitWithNoWriter" {
+            return .appStateWaitWithNoWriter
+        }
+
+        guard let latest = preferredStagedSnapshot(trace.stagedSnapshots) else {
+            return nil
+        }
+        guard latest.visibleTextBucket == "0",
+              latest.storageReadCountBucket != "0",
+              latest.storageWriteCountBucket == "0",
+              bridgeInjectionProven(trace: trace)
+        else {
+            return nil
+        }
+
+        if latest.appRootPresent {
+            return .popupAppRootEmptyAfterBootstrap
+        }
+        return .appStateWaitWithNoWriter
     }
 
     struct PostParseSanitizedDiagnostics: Equatable, Sendable {
@@ -1976,6 +2206,7 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         _ trace: ChromeMV3LivePopupProductPathTrace,
         routeEvents: [ChromeMV3PopupOptionsJSDebugRouteEventRecord] = []
     ) -> ChromeMV3LivePopupFailureClassifier {
+        let trace = reconcileTraceWithStagedSnapshots(trace)
         if let resourceClassifier = resourceFailureClassifier(
             blocker: trace.resourceLoadBlockerCategory,
             resourceCategory: trace.resourceFailureCategory,
@@ -2088,10 +2319,35 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             }
         }
 
-        if let bootstrapClassifier = classifyBootstrapFailure(
+        let bootstrapClassifier = classifyBootstrapFailure(
             trace: trace,
             routeEvents: routeEvents
-        ) {
+        )
+        if let bootstrapClassifier,
+           bootstrapClassifier != .popupAppRootPresentButEmpty,
+           bootstrapClassifier != .popupAppRootMountedButNoVisibleText
+        {
+            return bootstrapClassifier
+        }
+
+        if let portClassifier = classifyPortDeliveryFailure(
+            trace: trace,
+            routeEvents: routeEvents
+        ),
+            portClassifier == .runtimePortEnvelopeMismatch
+                || portClassifier == .portConnectedNoSwOutbox
+        {
+            return portClassifier
+        }
+
+        if let appStateClassifier = classifyAppStateBootstrapGap(trace: trace) {
+            return appStateClassifier
+        }
+
+        if let bootstrapClassifier,
+           bootstrapClassifier == .popupAppRootPresentButEmpty
+            || bootstrapClassifier == .popupAppRootMountedButNoVisibleText
+        {
             return bootstrapClassifier
         }
 
