@@ -1,0 +1,99 @@
+//
+//  SumiNativeMessagingRelayPolicy.swift
+//  Sumi
+//
+//  Gate native messaging relay to enabled Safari imports only.
+//
+
+import Foundation
+
+enum SumiNativeMessagingRelayPolicyDenial: String, Error, Sendable, Equatable {
+    case moduleDisabled
+    case extensionNotEnabled
+    case extensionNotSafariImport
+    case privateBrowsingDenied
+    case arbitraryNativeMessagingDenied
+}
+
+struct SumiNativeMessagingRelayPolicyContext {
+    let extensionsModuleEnabled: Bool
+    let extensionId: String
+    let installedExtension: InstalledExtension?
+    let isPrivateBrowsing: Bool
+    let requestedApplicationIdentifier: String?
+}
+
+enum SumiNativeMessagingRelayPolicy {
+    static func evaluate(
+        _ context: SumiNativeMessagingRelayPolicyContext
+    ) -> Result<Void, SumiNativeMessagingRelayPolicyDenial> {
+        guard context.extensionsModuleEnabled else {
+            return .failure(.moduleDisabled)
+        }
+
+        guard let installed = context.installedExtension else {
+            return .failure(.extensionNotSafariImport)
+        }
+
+        guard installed.isEnabled else {
+            return .failure(.extensionNotEnabled)
+        }
+
+        guard installed.sourceKind == .safariAppExtension else {
+            return .failure(.extensionNotSafariImport)
+        }
+
+        if context.isPrivateBrowsing,
+           installed.incognitoMode.allowsPrivateAccess == false
+        {
+            return .failure(.privateBrowsingDenied)
+        }
+
+        if isArbitraryNativeMessagingRequest(
+            requestedApplicationIdentifier: context.requestedApplicationIdentifier,
+            installed: installed
+        ) {
+            return .failure(.arbitraryNativeMessagingDenied)
+        }
+
+        return .success(())
+    }
+
+    /// Reject open-ended native messaging to bundle IDs unrelated to the imported Safari extension.
+    private static func isArbitraryNativeMessagingRequest(
+        requestedApplicationIdentifier: String?,
+        installed: InstalledExtension
+    ) -> Bool {
+        guard let requested = requestedApplicationIdentifier?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            requested.isEmpty == false
+        else {
+            return false
+        }
+
+        let normalized = SumiNativeMessagingAppResolver.normalizedHostBundleIdentifier(requested)
+        if let containing = SumiNativeMessagingAppResolver.containingApplicationBundleIdentifier(
+            forAppexPath: installed.sourceBundlePath
+        ),
+            normalized == containing
+        {
+            return false
+        }
+
+        if SumiNativeMessagingAppResolver.knownCompanionAliasBundleIdentifiers
+            .contains(normalized)
+        {
+            return false
+        }
+
+        if let appexBundleID = SumiNativeMessagingAppResolver.appexBundleIdentifier(
+            at: installed.sourceBundlePath
+        ),
+            normalized == appexBundleID
+        {
+            return false
+        }
+
+        return true
+    }
+}

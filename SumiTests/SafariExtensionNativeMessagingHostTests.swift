@@ -5,7 +5,7 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class SafariExtensionNativeMessagingHostTests: XCTestCase {
-    private final class MockHostLauncher: SafariHostApplicationLaunching {
+    private final class MockHostLauncher: SumiHostApplicationLaunching {
         var bundleURLs: [String: URL] = [:]
         var openedBundleIdentifiers: [String] = []
         var openError: Error?
@@ -85,7 +85,7 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
         XCTAssertEqual(hostID, "com.1password.safari")
     }
 
-    func testSendMessageWakesHostThenReturnsHostRelayUnavailable() async throws {
+    func testSendMessageWakesHostThenReturnsCompanionProtocolUnknown() async throws {
         let appexPath = try makeFixtureApp(
             appBundleID: "com.bitwarden.desktop",
             appexBundleID: "com.bitwarden.desktop.safari"
@@ -103,6 +103,7 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
         let host = SafariExtensionNativeMessagingHost(
             importStore: importStore,
             launcher: launcher,
+            extensionsModuleEnabled: { true },
             logDiagnostic: { diagnostics.append($0) }
         )
 
@@ -118,7 +119,7 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
         XCTAssertEqual(error.domain, SafariExtensionNativeMessagingHost.errorDomain)
         XCTAssertEqual(
             error.code,
-            SafariExtensionNativeMessagingHost.ErrorCode.hostRelayUnavailable.rawValue
+            SafariExtensionNativeMessagingHost.ErrorCode.companionAppProtocolUnknown.rawValue
         )
         XCTAssertTrue(
             diagnostics.contains {
@@ -127,7 +128,7 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
         )
         XCTAssertTrue(
             diagnostics.contains {
-                $0.outcome == .hostRelayUnavailable && $0.direction == .send
+                $0.outcome == .companionAppProtocolUnknown && $0.direction == .send
             }
         )
     }
@@ -146,6 +147,7 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
         let host = SafariExtensionNativeMessagingHost(
             importStore: importStore,
             launcher: launcher,
+            extensionsModuleEnabled: { true },
             logDiagnostic: { _ in }
         )
 
@@ -182,25 +184,25 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
     }
 
     func testProductNativeMessagingSourceAvoidsChromeShimAndSubprocessIO() throws {
-        let hostSource = try Self.source(
-            named: "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingHost.swift"
+        let relaySource = try Self.source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelay.swift"
         )
-        let handlerSource = try Self.source(
-            named: "Sumi/Managers/ExtensionManager/NativeMessagingHandler.swift"
+        let portSource = try Self.source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingPortSession.swift"
         )
         let delegateSource = try Self.source(
             named: "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"
         )
 
-        XCTAssertFalse(hostSource.contains("ChromeMV3NativeMessagingInternalRuntime"))
-        XCTAssertFalse(handlerSource.contains("ChromeMV3NativeMessagingInternalRuntime"))
+        XCTAssertFalse(relaySource.contains("ChromeMV3NativeMessagingInternalRuntime"))
+        XCTAssertFalse(portSource.contains("ChromeMV3NativeMessagingInternalRuntime"))
         XCTAssertTrue(delegateSource.contains("safariNativeMessagingHost.handleSendMessage"))
         XCTAssertTrue(delegateSource.contains("safariNativeMessagingHost.handleConnect"))
-        XCTAssertTrue(handlerSource.contains("WKWebExtension.MessagePort"))
+        XCTAssertTrue(portSource.contains("WKWebExtension.MessagePort"))
 
         let processCallToken = "Process" + "("
         assertSourceExcludes(
-            hostSource + handlerSource,
+            relaySource + portSource,
             [
                 processCallToken,
                 "NativeMessagingProcessSession",

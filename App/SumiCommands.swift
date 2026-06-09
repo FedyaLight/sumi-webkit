@@ -99,6 +99,10 @@ struct SumiCommands: Commands {
                 browserManager.extensionsModule.printSafariExtensionAcceptanceCheckToConsole()
             }
             .disabled(browserManager.extensionsModule.isEnabled == false)
+            Button("Run Safari Extension Native Messaging Probe") {
+                browserManager.extensionsModule.printSafariExtensionNativeMessagingProbeToConsole()
+            }
+            .disabled(browserManager.extensionsModule.isEnabled == false)
             #endif
         }
 

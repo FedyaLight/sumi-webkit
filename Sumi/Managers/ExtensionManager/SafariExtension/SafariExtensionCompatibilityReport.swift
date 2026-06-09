@@ -56,12 +56,14 @@ struct SafariExtensionCompatibilityEntry: Codable, Equatable, Sendable, Identifi
     let safariRuntimeLoadSource: SafariAppExtensionRuntimeLoadSource?
     let lastErrorBucket: SafariExtensionCompatibilityErrorBucket
     let platformBlockers: [SafariExtensionPlatformBlocker]
+    let nativeMessagingClassifications: [SafariExtensionNativeMessagingClassification]
 }
 
 struct SafariExtensionCompatibilityReport: Codable, Equatable, Sendable {
     let generatedAt: Date
     let entries: [SafariExtensionCompatibilityEntry]
     let platformBlockers: [SafariExtensionPlatformBlocker]
+    let nativeMessagingClassifications: [SafariExtensionNativeMessagingClassification]
     let sdkProbeNote: String
 }
 
@@ -206,16 +208,20 @@ enum SafariExtensionCompatibilityReportBuilder {
                 popupLoadStatus: popupLoadStatus,
                 safariRuntimeLoadSource: safariRuntimeLoadSource,
                 lastErrorBucket: lastErrorBucket,
-                platformBlockers: SafariExtensionPlatformBlocker.blockers(forTargetKey: target.key)
+                platformBlockers: [],
+                nativeMessagingClassifications:
+                    SafariExtensionNativeMessagingClassificationCatalog
+                    .classifications(forTargetKey: target.key)
             )
         }
 
         return SafariExtensionCompatibilityReport(
             generatedAt: Date(),
             entries: entries,
-            platformBlockers: SafariExtensionHostRelayAPIProbe.publicHostRelayAvailable
-                ? []
-                : [.hostApplicationMessageRelay],
+            platformBlockers: [],
+            nativeMessagingClassifications:
+                SafariExtensionNativeMessagingClassificationCatalog
+                .globalReportClassifications(sumiRelayImplemented: true),
             sdkProbeNote: SafariExtensionHostRelayAPIProbe.sdkProbeNote
         )
     }

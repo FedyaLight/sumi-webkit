@@ -224,18 +224,27 @@ final class SafariExtensionCompatibilityReportTests: XCTestCase {
         XCTAssertTrue(uiSource.contains("finalizeEnabledExtensionRuntime"))
     }
 
-    func testReportIncludesPlatformBlockersForPasswordManagers() throws {
+    func testReportIncludesNativeMessagingClassificationsForPasswordManagers() throws {
         let report = SafariExtensionCompatibilityReportBuilder.build(
             discovered: [],
             importStore: importStore
         )
 
-        XCTAssertEqual(report.platformBlockers, [.hostApplicationMessageRelay])
+        XCTAssertEqual(report.platformBlockers, [])
         XCTAssertFalse(report.sdkProbeNote.isEmpty)
+        XCTAssertTrue(
+            report.nativeMessagingClassifications.contains(.wkWebExtensionAppMessagingAvailable)
+        )
 
         let bitwarden = report.entries.first { $0.targetKey == "bitwarden" }
         let raindrop = report.entries.first { $0.targetKey == "raindrop" }
-        XCTAssertEqual(bitwarden?.platformBlockers, [.hostApplicationMessageRelay])
+        XCTAssertTrue(
+            bitwarden?.nativeMessagingClassifications.contains(.companionAppProtocolUnknown) ?? false
+        )
+        XCTAssertFalse(
+            raindrop?.nativeMessagingClassifications.contains(.companionAppProtocolUnknown) ?? true
+        )
+        XCTAssertEqual(bitwarden?.platformBlockers, [])
         XCTAssertEqual(raindrop?.platformBlockers, [])
     }
 

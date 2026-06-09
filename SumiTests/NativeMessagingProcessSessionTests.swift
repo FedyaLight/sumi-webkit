@@ -5,27 +5,27 @@ import XCTest
 @available(macOS 15.5, *)
 final class NativeMessagingProcessSessionTests: XCTestCase {
     func testProductNativeMessagingUsesSafariWebKitFoundation() throws {
-        let hostSource = try Self.source(
-            named: "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingHost.swift"
+        let relaySource = try Self.source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelay.swift"
         )
-        let handlerSource = try Self.source(
-            named: "Sumi/Managers/ExtensionManager/NativeMessagingHandler.swift"
+        let portSource = try Self.source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingPortSession.swift"
         )
         let delegateSource = try Self.source(
             named: "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"
         )
 
-        XCTAssertTrue(hostSource.contains("SafariExtensionNativeMessagingHost"))
-        XCTAssertTrue(hostSource.contains("NSWorkspace"))
-        XCTAssertFalse(hostSource.contains("ChromeMV3NativeMessagingInternalRuntime"))
-        XCTAssertTrue(handlerSource.contains("WKWebExtension.MessagePort"))
+        XCTAssertTrue(relaySource.contains("SumiNativeMessagingRelay"))
+        XCTAssertTrue(relaySource.contains("SumiNativeMessagingConnection"))
+        XCTAssertFalse(relaySource.contains("ChromeMV3NativeMessagingInternalRuntime"))
+        XCTAssertTrue(portSource.contains("WKWebExtension.MessagePort"))
         XCTAssertTrue(delegateSource.contains("safariNativeMessagingHost.handleSendMessage"))
         XCTAssertTrue(delegateSource.contains("safariNativeMessagingHost.handleConnect"))
 
         let processCallToken = "Process" + "("
         let uncheckedSendableToken = "@unchecked" + " Sendable"
         assertSourceExcludes(
-            hostSource + handlerSource,
+            relaySource + portSource,
             [
                 processCallToken,
                 "NativeMessagingProcessSession",

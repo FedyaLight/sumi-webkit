@@ -21,24 +21,23 @@ final class SafariExtensionAcceptanceMatrixTests: XCTestCase {
         importStore = nil
     }
 
-    func testPlatformBlockerEvidenceDocumentsHostRelay() {
-        let blocker = SafariExtensionPlatformBlocker.hostApplicationMessageRelay
-        XCTAssertTrue(blocker.evidence.contains("WKWebExtensionControllerDelegate.h"))
-        XCTAssertTrue(blocker.evidence.contains("hostRelayUnavailable"))
-        XCTAssertFalse(SafariExtensionHostRelayAPIProbe.publicHostRelayAvailable)
-        XCTAssertTrue(SafariExtensionHostRelayAPIProbe.sdkProbeNote.contains("macOS 27.0 SDK"))
-        XCTAssertTrue(SafariExtensionHostRelayAPIProbe.sdkProbeNote.contains("WKWebExtension.h"))
+    func testSDKProbeDocumentsWKWebExtensionDelegateMessaging() {
+        XCTAssertTrue(SafariExtensionHostRelayAPIProbe.wkWebExtensionAppMessagingAvailable)
+        XCTAssertTrue(SafariExtensionHostRelayAPIProbe.sdkProbeNote.contains("WKWebExtensionControllerDelegate.h"))
+        XCTAssertTrue(SafariExtensionHostRelayAPIProbe.sdkProbeNote.contains("macOS 15.4+"))
+        XCTAssertFalse(SafariExtensionHostRelayAPIProbe.sdkProbeNote.contains("hostRelayUnavailable"))
     }
 
-    func testPasswordManagersDeclareHostRelayBlockerRaindropDoesNot() {
-        XCTAssertEqual(
-            SafariExtensionPlatformBlocker.blockers(forTargetKey: "bitwarden"),
-            [.hostApplicationMessageRelay]
-        )
-        XCTAssertEqual(
-            SafariExtensionPlatformBlocker.blockers(forTargetKey: "raindrop"),
-            []
-        )
+    func testPasswordManagersClassifyCompanionProtocolUnknownRaindropDoesNot() {
+        let bitwarden = SafariExtensionNativeMessagingClassificationCatalog
+            .classifications(forTargetKey: "bitwarden")
+        XCTAssertTrue(bitwarden.contains(.companionAppProtocolUnknown))
+        XCTAssertTrue(bitwarden.contains(.noChromeStyleNativeHostRelay))
+        XCTAssertFalse(bitwarden.contains(.platformBlocked))
+
+        let raindrop = SafariExtensionNativeMessagingClassificationCatalog
+            .classifications(forTargetKey: "raindrop")
+        XCTAssertFalse(raindrop.contains(.companionAppProtocolUnknown))
     }
 
     func testSyntheticEnableActionSurfaceLogic() {
@@ -80,8 +79,14 @@ final class SafariExtensionAcceptanceMatrixTests: XCTestCase {
 
         XCTAssertEqual(matrix.entries.count, 1)
         XCTAssertEqual(matrix.entries[0].targetKey, "bitwarden")
-        XCTAssertEqual(matrix.entries[0].platformBlockers, [.hostApplicationMessageRelay])
-        XCTAssertEqual(matrix.globalPlatformBlockers, [.hostApplicationMessageRelay])
+        XCTAssertEqual(matrix.entries[0].platformBlockers, [])
+        XCTAssertTrue(
+            matrix.entries[0].nativeMessagingClassifications.contains(.companionAppProtocolUnknown)
+        )
+        XCTAssertEqual(matrix.globalPlatformBlockers, [])
+        XCTAssertTrue(
+            matrix.globalNativeMessagingClassifications.contains(.wkWebExtensionAppMessagingAvailable)
+        )
 
         let scannerResult = matrix.entries[0].results.first {
             $0.check == .scannerFindsInstalledTarget
@@ -89,16 +94,19 @@ final class SafariExtensionAcceptanceMatrixTests: XCTestCase {
         XCTAssertNotNil(scannerResult)
     }
 
-    func testCompatibilityReportIncludesPlatformBlockers() {
+    func testCompatibilityReportUsesNativeMessagingClassifications() {
         let report = SafariExtensionCompatibilityReportBuilder.build(
             targets: [SafariExtensionCompatibilityTargets.all[3]],
             discovered: [],
             importStore: importStore
         )
 
-        XCTAssertEqual(report.platformBlockers, [.hostApplicationMessageRelay])
+        XCTAssertEqual(report.platformBlockers, [])
         XCTAssertFalse(report.sdkProbeNote.isEmpty)
         XCTAssertEqual(report.entries[0].platformBlockers, [])
+        XCTAssertTrue(
+            report.nativeMessagingClassifications.contains(.noChromeStyleNativeHostRelay)
+        )
     }
 
     func testContentScriptTabReconcileProbeFindsWiring() {
@@ -188,12 +196,12 @@ final class SafariExtensionAcceptanceMatrixTests: XCTestCase {
             XCTAssertTrue(reconcileCheck?.passed ?? false, reconcileCheck?.detail ?? "missing check")
 
             installedTargetSummaries.append(
-                "\(target.key): scanner=\(scannerCheck?.passed == true) import=\(importCheck?.passed == true) blockers=\(entry.platformBlockers.map(\.rawValue).joined(separator: ","))"
+                "\(target.key): scanner=\(scannerCheck?.passed == true) import=\(importCheck?.passed == true) classifications=\(entry.nativeMessagingClassifications.map(\.rawValue).joined(separator: ","))"
             )
         }
 
         if installedTargetSummaries.isEmpty == false {
-            print("Cycle7 live acceptance matrix: \(installedTargetSummaries.joined(separator: "; "))")
+            print("Cycle8 live acceptance matrix: \(installedTargetSummaries.joined(separator: "; "))")
         }
     }
 

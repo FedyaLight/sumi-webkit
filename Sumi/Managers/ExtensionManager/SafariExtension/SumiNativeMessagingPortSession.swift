@@ -1,9 +1,8 @@
 //
-//  NativeMessagingHandler.swift
+//  SumiNativeMessagingPortSession.swift
 //  Sumi
 //
-//  Retains a WKWebExtension.MessagePort for Safari native messaging sessions.
-//  Never logs message bodies or credentials.
+//  Persistent WKWebExtension.MessagePort session for Safari native messaging.
 //
 
 import Foundation
@@ -11,25 +10,28 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
-final class NativeMessagingHandler: NSObject {
+final class SumiNativeMessagingPortSession: NSObject {
     private let port: WKWebExtension.MessagePort
     private let extensionId: String
     private let hostBundleIdentifier: String
+    private let resolverBucket: SumiNativeMessagingResolverBucket
     private let logDiagnostic: (SafariExtensionNativeMessagingDiagnostic) -> Void
-    private let hostRelayErrorProvider: () -> NSError
+    private let companionProtocolErrorProvider: () -> NSError
 
     init(
         port: WKWebExtension.MessagePort,
         extensionId: String,
         hostBundleIdentifier: String,
+        resolverBucket: SumiNativeMessagingResolverBucket,
         logDiagnostic: @escaping (SafariExtensionNativeMessagingDiagnostic) -> Void,
-        hostRelayErrorProvider: @escaping () -> NSError
+        companionProtocolErrorProvider: @escaping () -> NSError
     ) {
         self.port = port
         self.extensionId = extensionId
         self.hostBundleIdentifier = hostBundleIdentifier
+        self.resolverBucket = resolverBucket
         self.logDiagnostic = logDiagnostic
-        self.hostRelayErrorProvider = hostRelayErrorProvider
+        self.companionProtocolErrorProvider = companionProtocolErrorProvider
         super.init()
         wirePort()
     }
@@ -50,7 +52,8 @@ final class NativeMessagingHandler: NSObject {
                         direction: .portReceive,
                         requestedApplicationIdentifier: self.port.applicationIdentifier,
                         hostBundleIdentifier: self.hostBundleIdentifier,
-                        outcome: .hostRelayUnavailable,
+                        resolverBucket: self.resolverBucket,
+                        outcome: .companionAppProtocolUnknown,
                         errorDomain: nsError.domain,
                         errorCode: nsError.code
                     )
@@ -64,12 +67,13 @@ final class NativeMessagingHandler: NSObject {
                     direction: .portRelay,
                     requestedApplicationIdentifier: self.port.applicationIdentifier,
                     hostBundleIdentifier: self.hostBundleIdentifier,
-                    outcome: .hostRelayUnavailable,
-                    errorDomain: SafariExtensionNativeMessagingHost.errorDomain,
-                    errorCode: SafariExtensionNativeMessagingHost.ErrorCode.hostRelayUnavailable.rawValue
+                    resolverBucket: self.resolverBucket,
+                    outcome: .companionAppProtocolUnknown,
+                    errorDomain: SumiNativeMessagingRelay.errorDomain,
+                    errorCode: SumiNativeMessagingRelay.ErrorCode.companionAppProtocolUnknown.rawValue
                 )
             )
-            self.port.disconnect(throwing: self.hostRelayErrorProvider())
+            self.port.disconnect(throwing: self.companionProtocolErrorProvider())
         }
 
         port.disconnectHandler = { [weak self] error in
@@ -81,7 +85,8 @@ final class NativeMessagingHandler: NSObject {
                     direction: .portReceive,
                     requestedApplicationIdentifier: self.port.applicationIdentifier,
                     hostBundleIdentifier: self.hostBundleIdentifier,
-                    outcome: .hostRelayUnavailable,
+                    resolverBucket: self.resolverBucket,
+                    outcome: .companionAppProtocolUnknown,
                     errorDomain: nsError?.domain,
                     errorCode: nsError?.code
                 )
@@ -89,3 +94,6 @@ final class NativeMessagingHandler: NSObject {
         }
     }
 }
+
+// Legacy handler name retained for ExtensionManager port registry.
+typealias NativeMessagingHandler = SumiNativeMessagingPortSession

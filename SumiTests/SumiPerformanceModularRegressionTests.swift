@@ -669,24 +669,24 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let delegateSource = try Self.source(
             named: "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"
         )
-        let nativeMessagingSource = try Self.source(
-            named: "Sumi/Managers/ExtensionManager/NativeMessagingHandler.swift"
+        let portSessionSource = try Self.source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingPortSession.swift"
         )
-        let safariHostSource = try Self.source(
-            named: "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingHost.swift"
+        let relaySource = try Self.source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelay.swift"
         )
         XCTAssertTrue(delegateSource.contains("safariNativeMessagingHost.handleSendMessage"))
         XCTAssertTrue(delegateSource.contains("safariNativeMessagingHost.handleConnect"))
-        XCTAssertTrue(nativeMessagingSource.contains("WKWebExtension.MessagePort"))
-        XCTAssertTrue(safariHostSource.contains("SafariExtensionNativeMessagingHost"))
+        XCTAssertTrue(portSessionSource.contains("WKWebExtension.MessagePort"))
+        XCTAssertTrue(relaySource.contains("SumiNativeMessagingRelay"))
         XCTAssertFalse(
-            safariHostSource.contains(
+            relaySource.contains(
                 "ChromeMV3NativeMessagingInternalRuntime"
             )
         )
         let processCallToken = "Process" + "("
         assertSourceExcludes(
-            nativeMessagingSource + safariHostSource,
+            portSessionSource + relaySource,
             [
                 processCallToken,
                 "NativeMessagingProcessSession",

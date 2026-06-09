@@ -142,7 +142,12 @@ final class ExtensionManager: NSObject, ObservableObject {
     var externallyConnectablePolicies: [String: ExternallyConnectablePolicy] = [:]
     var nativeMessagePortHandlers: [ObjectIdentifier: NativeMessagingHandler] = [:]
     var nativeMessagePortExtensionIDs: [ObjectIdentifier: String] = [:]
-    lazy var safariNativeMessagingHost = SafariExtensionNativeMessagingHost()
+    lazy var nativeMessagingRelay = SumiNativeMessagingRelay(
+        isPrivateBrowsing: { [weak self] in
+            self?.browserManager?.windowRegistry?.activeWindow?.isIncognito ?? false
+        }
+    )
+    var safariNativeMessagingHost: SumiNativeMessagingRelay { nativeMessagingRelay }
     var profileExtensionStores: [UUID: WKWebsiteDataStore] = [:]
     var profileExtensionStoreOrder: [UUID] = []
     var recentExtensionTabOpenRequests = BoundedRecentDateTracker(

@@ -30,6 +30,7 @@ struct SafariExtensionAcceptanceMatrixEntry: Codable, Equatable, Sendable, Ident
     let displayName: String
     let results: [SafariExtensionAcceptanceCheckResult]
     let platformBlockers: [SafariExtensionPlatformBlocker]
+    let nativeMessagingClassifications: [SafariExtensionNativeMessagingClassification]
     let compatibilityEntry: SafariExtensionCompatibilityEntry?
 }
 
@@ -37,6 +38,7 @@ struct SafariExtensionAcceptanceMatrix: Codable, Equatable, Sendable {
     let generatedAt: Date
     let entries: [SafariExtensionAcceptanceMatrixEntry]
     let globalPlatformBlockers: [SafariExtensionPlatformBlocker]
+    let globalNativeMessagingClassifications: [SafariExtensionNativeMessagingClassification]
     let sdkProbeNote: String
 }
 
@@ -103,20 +105,21 @@ enum SafariExtensionAcceptanceMatrixBuilder {
                 targetKey: target.key,
                 displayName: target.displayName,
                 results: results,
-                platformBlockers: SafariExtensionPlatformBlocker.blockers(forTargetKey: target.key),
+                platformBlockers: [],
+                nativeMessagingClassifications:
+                    SafariExtensionNativeMessagingClassificationCatalog
+                    .classifications(forTargetKey: target.key),
                 compatibilityEntry: compatibilityEntry
             )
-        }
-
-        var globalBlockers: [SafariExtensionPlatformBlocker] = []
-        if SafariExtensionHostRelayAPIProbe.publicHostRelayAvailable == false {
-            globalBlockers.append(.hostApplicationMessageRelay)
         }
 
         return SafariExtensionAcceptanceMatrix(
             generatedAt: Date(),
             entries: entries,
-            globalPlatformBlockers: globalBlockers,
+            globalPlatformBlockers: [],
+            globalNativeMessagingClassifications:
+                SafariExtensionNativeMessagingClassificationCatalog
+                .globalReportClassifications(sumiRelayImplemented: true),
             sdkProbeNote: SafariExtensionHostRelayAPIProbe.sdkProbeNote
         )
     }
