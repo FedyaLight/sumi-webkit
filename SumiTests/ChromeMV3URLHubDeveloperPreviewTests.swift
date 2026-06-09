@@ -1672,7 +1672,20 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 "serviceWorkerMigrationWriteStillMissing",
             storageMirrorAfterAsyncDrainCategory: "storageMirrorNotNeeded",
             migrationWriteMissingAfterAsyncDrainCategory:
-                "serviceWorkerMigrationWriteStillMissing"
+                "serviceWorkerMigrationWriteStillMissing",
+            sdkLoadStartedCategory: "notObserved",
+            sdkWasmFetchCategory: "notObserved",
+            sdkWasmInstantiateCategory: "notObserved",
+            sdkWasmFallbackCategory: "notObserved",
+            sdkStorageReadCategory: "notObserved",
+            sdkRuntimeConnectCategory: "runtimeConnectObserved",
+            sdkPortAwaitCategory: "notObserved",
+            sdkNativeDependencyCategory: "notObserved",
+            sdkCryptoCapabilityCategory: "notObserved",
+            sdkAsyncContinuationCategory: "notObserved",
+            sdkTimerAwaitCategory: "notObserved",
+            sdkLoadCompletionSignalCategory: "sdkLoadCompletionObserved",
+            sdkLoadUnresolvedReasonCategory: "sdkLoadResolvedMigrationNotEntered"
         )
         let classifier = ChromeMV3LivePopupProductPathTraceBuilder.classify(
             trace,
@@ -2073,6 +2086,97 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 firstVisibleUIGate: gate
             ),
             .extensionLocalRenderState
+        )
+    }
+
+    @MainActor
+    func testDebugSdkReadyCategoryDoesNotContradictSdkLoadStillPending() {
+        let probe: [String: Any] = [
+            "ngVersionPresent": false,
+            "staticLoadingShellCount": 1,
+            "spinnerLikeCount": 1,
+            "routerOutletPresent": false,
+            "hyphenComponentCount": 0,
+            "visibleTextLength": 0,
+            "formControlCount": 0,
+            "buttonCount": 0,
+            "visibilityCategory": "unknown",
+            "pathnameDepth": 0,
+            "wasmShimEventCount": 0,
+            "wasmShimLatestCategory": "notObserved",
+            "webCryptoPresent": true,
+            "secureContextPresent": true,
+        ]
+        let staged = ChromeMV3LivePopupStagedSnapshot(
+            stage: "after3000ms",
+            readyState: "complete",
+            navigationStarted: true,
+            navigationFinished: true,
+            urlLoaded: true,
+            firstJSCheckpoint: true,
+            bridgeInstalled: true,
+            scriptsExecuted: true,
+            runtimeErrorCategory: "none",
+            consoleErrorCategory: "none",
+            unhandledRejectionCategory: "none",
+            appRootPresent: true,
+            bodyChildCountBucket: "1-3",
+            appRootChildCountBucket: "0",
+            visibleTextBucket: "0",
+            formControlCountBucket: "0",
+            buttonCountBucket: "0",
+            ariaBusyOrLoadingCategory: "busy",
+            storageReadCountBucket: "0",
+            storageWriteCountBucket: "0",
+            runtimeSendMessageCountBucket: "0",
+            runtimeConnectCountBucket: "0",
+            portMessageCountBucket: "0",
+            tabsQueryCountBucket: "0",
+            tabsSendMessageCountBucket: "0",
+            scriptingExecuteScriptCountBucket: "0",
+            pendingBridgeRoutesBucket: "0",
+            serviceWorkerOnMessageListenerCountBucket: "0",
+            serviceWorkerOnConnectListenerCountBucket: "0",
+            nativeMessagingRequestCountBucket: "0",
+            nativeMessagingResultCategory: "notRequested",
+            swOutboxCapturedCountBucket: "0",
+            swOutboxDeliveredToPopupCountBucket: "0",
+            popupPortOnMessageListenerCategory: "notObserved",
+            pendingInboundPortMessagesBucket: "0",
+            portDisconnectCategory: "none"
+        )
+        let gate = ChromeMV3LivePopupProductPathTraceBuilder
+            .deriveFirstVisibleUIGateDiagnostics(
+                bridgeSnapshot: nil,
+                finalDOM: ChromeMV3LivePopupDOMCheckpoint(
+                    readyState: "complete",
+                    visibleTextLengthBucket: "0",
+                    controlCountBucket: "0",
+                    bodyChildCount: 1,
+                    appRootPresent: true,
+                    navigationCommitted: true,
+                    visibilityCategory: "unknown",
+                    backgroundCategory: "white"
+                ),
+                stagedSnapshots: [staged],
+                probeObject: probe
+            )
+        XCTAssertEqual(gate?.sdkLoadAwaitCategory, "sdkLoadStillPending")
+        XCTAssertEqual(gate?.sdkReadyCategory, "sdkLoadStillPending")
+        XCTAssertNotEqual(gate?.sdkReadyCategory, "sdkReady")
+        XCTAssertTrue(
+            ChromeMV3FirstVisibleUIGateDiagnostics.sdkReadinessCategoriesAreConsistent(
+                sdkLoadAwaitCategory: gate?.sdkLoadAwaitCategory ?? "",
+                sdkReadyCategory: gate?.sdkReadyCategory ?? ""
+            )
+        )
+        XCTAssertEqual(
+            gate?.sdkLoadStartedCategory,
+            "started"
+        )
+        XCTAssertEqual(
+            gate?.sdkLoadUnresolvedReasonCategory,
+            "sdkWasmFetchMissing"
         )
     }
 

@@ -287,6 +287,19 @@ struct ChromeMV3FirstVisibleUIGateDiagnostics: Equatable, Sendable {
     var swMigrationWriteAfterAsyncDrainCategory: String
     var storageMirrorAfterAsyncDrainCategory: String
     var migrationWriteMissingAfterAsyncDrainCategory: String
+    var sdkLoadStartedCategory: String
+    var sdkWasmFetchCategory: String
+    var sdkWasmInstantiateCategory: String
+    var sdkWasmFallbackCategory: String
+    var sdkStorageReadCategory: String
+    var sdkRuntimeConnectCategory: String
+    var sdkPortAwaitCategory: String
+    var sdkNativeDependencyCategory: String
+    var sdkCryptoCapabilityCategory: String
+    var sdkAsyncContinuationCategory: String
+    var sdkTimerAwaitCategory: String
+    var sdkLoadCompletionSignalCategory: String
+    var sdkLoadUnresolvedReasonCategory: String
 
     var logLines: [String] {
         [
@@ -335,7 +348,34 @@ struct ChromeMV3FirstVisibleUIGateDiagnostics: Equatable, Sendable {
             "swMigrationWriteAfterAsyncDrainCategory=\(swMigrationWriteAfterAsyncDrainCategory)",
             "storageMirrorAfterAsyncDrainCategory=\(storageMirrorAfterAsyncDrainCategory)",
             "migrationWriteMissingAfterAsyncDrainCategory=\(migrationWriteMissingAfterAsyncDrainCategory)",
+            "sdkLoadStartedCategory=\(sdkLoadStartedCategory)",
+            "sdkWasmFetchCategory=\(sdkWasmFetchCategory)",
+            "sdkWasmInstantiateCategory=\(sdkWasmInstantiateCategory)",
+            "sdkWasmFallbackCategory=\(sdkWasmFallbackCategory)",
+            "sdkStorageReadCategory=\(sdkStorageReadCategory)",
+            "sdkRuntimeConnectCategory=\(sdkRuntimeConnectCategory)",
+            "sdkPortAwaitCategory=\(sdkPortAwaitCategory)",
+            "sdkNativeDependencyCategory=\(sdkNativeDependencyCategory)",
+            "sdkCryptoCapabilityCategory=\(sdkCryptoCapabilityCategory)",
+            "sdkAsyncContinuationCategory=\(sdkAsyncContinuationCategory)",
+            "sdkTimerAwaitCategory=\(sdkTimerAwaitCategory)",
+            "sdkLoadCompletionSignalCategory=\(sdkLoadCompletionSignalCategory)",
+            "sdkLoadUnresolvedReasonCategory=\(sdkLoadUnresolvedReasonCategory)",
         ]
+    }
+
+    static func sdkReadinessCategoriesAreConsistent(
+        sdkLoadAwaitCategory: String,
+        sdkReadyCategory: String
+    ) -> Bool {
+        if sdkLoadAwaitCategory == "sdkLoadStillPending" {
+            return sdkReadyCategory != "sdkReady"
+        }
+        if sdkLoadAwaitCategory == "sdkLoadResolved" {
+            return sdkReadyCategory == "sdkReady"
+                || sdkReadyCategory == "sdkBlocked"
+        }
+        return true
     }
 }
 
@@ -648,6 +688,30 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
                 && className.startsWith("locale_")
           )
         : false;
+      const wasmShimQueue =
+        globalThis.__sumiControlledPopupWasmShimDiagnostics;
+      const wasmShimEventCount = Array.isArray(wasmShimQueue)
+        ? wasmShimQueue.length
+        : 0;
+      const wasmShimLatestCategory = (() => {
+        if (!Array.isArray(wasmShimQueue) || wasmShimQueue.length === 0) {
+          return "notObserved";
+        }
+        const latest = wasmShimQueue[wasmShimQueue.length - 1];
+        const category =
+          latest && typeof latest.category === "string"
+            ? latest.category
+            : "";
+        return category.length > 0 ? category : "notObserved";
+      })();
+      const webCryptoPresent =
+        typeof globalThis.crypto === "object"
+          && globalThis.crypto !== null
+          && typeof globalThis.crypto.getRandomValues === "function";
+      const secureContextPresent =
+        typeof globalThis.isSecureContext === "boolean"
+          ? globalThis.isSecureContext
+          : false;
       return JSON.stringify({
         readyState: document.readyState || "unknown",
         visibleTextLength: text.length,
@@ -662,7 +726,11 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         hyphenComponentCount: hyphenComponentCount,
         pathnameDepth: pathnameDepth,
         visibilityCategory: visibilityCategory,
-        htmlLocaleClassPresent: htmlLocaleClassPresent
+        htmlLocaleClassPresent: htmlLocaleClassPresent,
+        wasmShimEventCount: wasmShimEventCount,
+        wasmShimLatestCategory: wasmShimLatestCategory,
+        webCryptoPresent: webCryptoPresent,
+        secureContextPresent: secureContextPresent
       });
     })();
     """
@@ -1514,6 +1582,256 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         )
     }
 
+    private static func routeEventDiagnosticValue(
+        _ key: String,
+        in diagnostics: [String]
+    ) -> String? {
+        let prefix = key + "="
+        for diagnostic in diagnostics {
+            guard diagnostic.hasPrefix(prefix) else { continue }
+            let value = String(diagnostic.dropFirst(prefix.count))
+            return value.isEmpty ? nil : value
+        }
+        return nil
+    }
+
+    private static func wasmResourceLoadSignals(
+        in events: [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
+    ) -> (loadedCount: Int, failedCount: Int) {
+        var loadedCount = 0
+        var failedCount = 0
+        for event in events {
+            let category =
+                routeEventDiagnosticValue("resourceCategory", in: event.diagnostics)
+                ?? ""
+            let isWasm = category == "wasm"
+                || event.diagnostics.contains { diagnostic in
+                    diagnostic.hasPrefix("resource=")
+                        && diagnostic.lowercased().contains(".wasm")
+                }
+            guard isWasm else { continue }
+            if event.eventKind == "resourceLoaded" {
+                loadedCount += 1
+            } else if event.eventKind == "resourceLoadError" {
+                failedCount += 1
+            }
+        }
+        return (loadedCount, failedCount)
+    }
+
+    private static func deriveSdkLoadDiagnostics(
+        routeEvents: [ChromeMV3PopupOptionsJSDebugRouteEventRecord],
+        bridgeSnapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?,
+        probeObject: [String: Any]?,
+        latestStagedSnapshot: ChromeMV3LivePopupStagedSnapshot?,
+        sdkLoadAwaitCategory: String,
+        scriptsExecuted: Bool,
+        staticLoadingShellCount: Int,
+        ngVersionPresent: Bool,
+        consoleErrorCategory: String,
+        unhandledRejectionCategory: String,
+        requiredResourceLoadFailure: Bool,
+        resourceFailureCategory: String?,
+        nativeMessagingCategory: String
+    ) -> (
+        sdkLoadStartedCategory: String,
+        sdkWasmFetchCategory: String,
+        sdkWasmInstantiateCategory: String,
+        sdkWasmFallbackCategory: String,
+        sdkStorageReadCategory: String,
+        sdkRuntimeConnectCategory: String,
+        sdkPortAwaitCategory: String,
+        sdkNativeDependencyCategory: String,
+        sdkCryptoCapabilityCategory: String,
+        sdkAsyncContinuationCategory: String,
+        sdkTimerAwaitCategory: String,
+        sdkLoadCompletionSignalCategory: String,
+        sdkLoadUnresolvedReasonCategory: String
+    ) {
+        let wasmSignals = wasmResourceLoadSignals(in: routeEvents)
+        let wasmShimEventCount = probeObject?["wasmShimEventCount"] as? Int ?? 0
+        let wasmShimLatestCategory =
+            probeObject?["wasmShimLatestCategory"] as? String ?? "notObserved"
+        let webCryptoPresent = probeObject?["webCryptoPresent"] as? Bool
+        let secureContextPresent = probeObject?["secureContextPresent"] as? Bool
+        let popupStorageReads =
+            bridgeSnapshot?.appStateDependencyTrace.storageOperations.filter {
+                $0.context == "popup" && $0.operation == "get"
+            } ?? []
+        let pendingPortRoutes =
+            bridgeSnapshot?.pendingUnresolvedJSDebugRoutes.filter {
+                $0.apiName.localizedCaseInsensitiveContains("port")
+            }.count ?? 0
+
+        let sdkLoadStartedCategory: String
+        if scriptsExecuted
+            && (
+                staticLoadingShellCount > 0
+                    || sdkLoadAwaitCategory == "sdkLoadStillPending"
+            )
+        {
+            sdkLoadStartedCategory = "started"
+        } else if scriptsExecuted {
+            sdkLoadStartedCategory = "notObserved"
+        } else {
+            sdkLoadStartedCategory = "notObserved"
+        }
+
+        let sdkWasmFetchCategory: String
+        if wasmSignals.failedCount > 0
+            || resourceFailureCategory == "wasm"
+            || requiredResourceLoadFailure
+                && resourceFailureCategory?.localizedCaseInsensitiveContains(
+                    "wasm"
+                ) == true
+        {
+            sdkWasmFetchCategory = "sdkWasmInstantiateFailed"
+        } else if wasmSignals.loadedCount > 0 {
+            sdkWasmFetchCategory = "fetched"
+        } else if wasmShimEventCount > 0 {
+            sdkWasmFetchCategory = "fetched"
+        } else if sdkLoadAwaitCategory == "sdkLoadStillPending" {
+            sdkWasmFetchCategory = "sdkWasmFetchMissing"
+        } else {
+            sdkWasmFetchCategory = "notObserved"
+        }
+
+        let sdkWasmFallbackCategory: String
+        switch wasmShimLatestCategory {
+        case "mimeMismatch":
+            sdkWasmFallbackCategory = "fallbackTriggered"
+        case "fallbackSucceeded":
+            sdkWasmFallbackCategory = "fallbackResolved"
+        case "fallbackFailed":
+            sdkWasmFallbackCategory = "fallbackFailed"
+        case "notObserved":
+            sdkWasmFallbackCategory = "notObserved"
+        default:
+            sdkWasmFallbackCategory =
+                wasmShimEventCount > 0 ? "fallbackTriggered" : "notObserved"
+        }
+
+        let sdkWasmInstantiateCategory: String
+        if wasmSignals.failedCount > 0 || wasmShimLatestCategory == "fallbackFailed"
+        {
+            sdkWasmInstantiateCategory = "sdkWasmInstantiateFailed"
+        } else if wasmShimLatestCategory == "fallbackSucceeded" {
+            sdkWasmInstantiateCategory = "instantiated"
+        } else if wasmShimLatestCategory == "mimeMismatch"
+            || wasmSignals.loadedCount > 0
+        {
+            sdkWasmInstantiateCategory = "sdkWasmInstantiatePending"
+        } else if sdkLoadAwaitCategory == "sdkLoadStillPending" {
+            sdkWasmInstantiateCategory = "sdkWasmInstantiatePending"
+        } else {
+            sdkWasmInstantiateCategory = "notObserved"
+        }
+
+        let sdkStorageReadCategory =
+            popupStorageReads.isEmpty ? "notObserved" : "sdkWaitingOnStorageRead"
+
+        let sdkRuntimeConnectCategory: String
+        if let latestStagedSnapshot,
+           latestStagedSnapshot.runtimeConnectCountBucket != "0"
+        {
+            sdkRuntimeConnectCategory = "runtimeConnectObserved"
+        } else {
+            sdkRuntimeConnectCategory = "notObserved"
+        }
+
+        let sdkPortAwaitCategory: String
+        if pendingPortRoutes > 0 {
+            sdkPortAwaitCategory = "sdkWaitingOnPortResponse"
+        } else if let latestStagedSnapshot,
+                  latestStagedSnapshot.pendingInboundPortMessagesBucket != "0"
+        {
+            sdkPortAwaitCategory = "sdkWaitingOnPortResponse"
+        } else {
+            sdkPortAwaitCategory = "notObserved"
+        }
+
+        let sdkNativeDependencyCategory: String
+        if nativeMessagingCategory != "notRequested" {
+            sdkNativeDependencyCategory = "sdkWaitingOnNativeDependency"
+        } else {
+            sdkNativeDependencyCategory = "notObserved"
+        }
+
+        let sdkCryptoCapabilityCategory: String
+        if webCryptoPresent == false {
+            sdkCryptoCapabilityCategory = "sdkWaitingOnCryptoCapability"
+        } else if secureContextPresent == false {
+            sdkCryptoCapabilityCategory = "sdkWaitingOnCryptoCapability"
+        } else if webCryptoPresent == true {
+            sdkCryptoCapabilityCategory = "cryptoCapabilityPresent"
+        } else {
+            sdkCryptoCapabilityCategory = "notObserved"
+        }
+
+        let sdkAsyncContinuationCategory =
+            sdkLoadAwaitCategory == "sdkLoadStillPending"
+                && wasmShimLatestCategory == "fallbackSucceeded"
+                ? "sdkAsyncContinuationNotDrained"
+                : "notObserved"
+
+        let sdkTimerAwaitCategory = "notObserved"
+
+        let sdkLoadCompletionSignalCategory: String
+        if sdkLoadAwaitCategory == "sdkLoadResolved" || ngVersionPresent {
+            sdkLoadCompletionSignalCategory = "sdkLoadCompletionObserved"
+        } else if sdkLoadAwaitCategory == "sdkLoadStillPending" {
+            sdkLoadCompletionSignalCategory = "sdkLoadCompletionPending"
+        } else {
+            sdkLoadCompletionSignalCategory = "notObserved"
+        }
+
+        let sdkLoadUnresolvedReasonCategory: String
+        if consoleErrorCategory != "none" || unhandledRejectionCategory != "none"
+        {
+            sdkLoadUnresolvedReasonCategory = "sdkBlocked"
+        } else if sdkLoadAwaitCategory == "sdkLoadResolved" {
+            sdkLoadUnresolvedReasonCategory = "sdkLoadResolvedMigrationNotEntered"
+        } else if sdkLoadAwaitCategory != "sdkLoadStillPending" {
+            sdkLoadUnresolvedReasonCategory = "notObserved"
+        } else if sdkWasmFetchCategory == "sdkWasmFetchMissing" {
+            sdkLoadUnresolvedReasonCategory = "sdkWasmFetchMissing"
+        } else if sdkWasmInstantiateCategory == "sdkWasmInstantiateFailed" {
+            sdkLoadUnresolvedReasonCategory = "sdkWasmInstantiateFailed"
+        } else if sdkWasmInstantiateCategory == "sdkWasmInstantiatePending" {
+            sdkLoadUnresolvedReasonCategory = "sdkWasmInstantiatePending"
+        } else if sdkPortAwaitCategory == "sdkWaitingOnPortResponse" {
+            sdkLoadUnresolvedReasonCategory = "sdkWaitingOnPortResponse"
+        } else if sdkStorageReadCategory == "sdkWaitingOnStorageRead" {
+            sdkLoadUnresolvedReasonCategory = "sdkWaitingOnStorageRead"
+        } else if sdkNativeDependencyCategory == "sdkWaitingOnNativeDependency" {
+            sdkLoadUnresolvedReasonCategory = "sdkWaitingOnNativeDependency"
+        } else if sdkCryptoCapabilityCategory == "sdkWaitingOnCryptoCapability" {
+            sdkLoadUnresolvedReasonCategory = "sdkWaitingOnCryptoCapability"
+        } else if sdkAsyncContinuationCategory
+            == "sdkAsyncContinuationNotDrained"
+        {
+            sdkLoadUnresolvedReasonCategory = "sdkAsyncContinuationNotDrained"
+        } else {
+            sdkLoadUnresolvedReasonCategory = "sdkSilentPending"
+        }
+
+        return (
+            sdkLoadStartedCategory: sdkLoadStartedCategory,
+            sdkWasmFetchCategory: sdkWasmFetchCategory,
+            sdkWasmInstantiateCategory: sdkWasmInstantiateCategory,
+            sdkWasmFallbackCategory: sdkWasmFallbackCategory,
+            sdkStorageReadCategory: sdkStorageReadCategory,
+            sdkRuntimeConnectCategory: sdkRuntimeConnectCategory,
+            sdkPortAwaitCategory: sdkPortAwaitCategory,
+            sdkNativeDependencyCategory: sdkNativeDependencyCategory,
+            sdkCryptoCapabilityCategory: sdkCryptoCapabilityCategory,
+            sdkAsyncContinuationCategory: sdkAsyncContinuationCategory,
+            sdkTimerAwaitCategory: sdkTimerAwaitCategory,
+            sdkLoadCompletionSignalCategory: sdkLoadCompletionSignalCategory,
+            sdkLoadUnresolvedReasonCategory: sdkLoadUnresolvedReasonCategory
+        )
+    }
+
     private static func deriveStorageMirrorDiagnostics(
         bridgeSnapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?,
         correlation: ChromeMV3AppStateDependencyCorrelationSummary,
@@ -1884,17 +2202,6 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             angularBootstrapCategory = "notStarted"
         }
 
-        let sdkReadyCategory: String
-        if consoleErrorCategory != "none"
-            || unhandledRejectionCategory != "none"
-        {
-            sdkReadyCategory = "sdkBlocked"
-        } else if latest?.scriptsExecuted == true {
-            sdkReadyCategory = "sdkReady"
-        } else {
-            sdkReadyCategory = "notObserved"
-        }
-
         let migrationStateCategory: String
         if migrationPopulatedReads > 0 {
             migrationStateCategory = "migrationStateVisible"
@@ -2086,10 +2393,49 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
                 asyncDrainDiagnostics.swMigrationWriteAfterAsyncDrainCategory
         )
 
+        let sdkReadyCategory: String
+        if consoleErrorCategory != "none"
+            || unhandledRejectionCategory != "none"
+        {
+            sdkReadyCategory = "sdkBlocked"
+        } else if appInitializerPhase.sdkLoadAwaitCategory == "sdkLoadResolved" {
+            sdkReadyCategory = "sdkReady"
+        } else if appInitializerPhase.sdkLoadAwaitCategory
+            == "sdkLoadStillPending"
+        {
+            sdkReadyCategory = "sdkLoadStillPending"
+        } else {
+            sdkReadyCategory = "notObserved"
+        }
+
+        let sdkLoadDiagnostics = deriveSdkLoadDiagnostics(
+            routeEvents: routeEvents,
+            bridgeSnapshot: bridgeSnapshot,
+            probeObject: probeObject,
+            latestStagedSnapshot: latest,
+            sdkLoadAwaitCategory: appInitializerPhase.sdkLoadAwaitCategory,
+            scriptsExecuted: latest?.scriptsExecuted == true
+                || latest?.firstJSCheckpoint == true,
+            staticLoadingShellCount: staticLoadingShellCount,
+            ngVersionPresent: ngVersionPresent,
+            consoleErrorCategory: consoleErrorCategory,
+            unhandledRejectionCategory: unhandledRejectionCategory,
+            requiredResourceLoadFailure: requiredResourceLoadFailure,
+            resourceFailureCategory: requiredResourceLoadFailure
+                ? ChromeMV3PopupOptionsHostResourceLoadDiagnostics.summarize(
+                    events: routeEvents,
+                    launchRecord: nil
+                ).firstFailingResource?.resourceCategory
+                : nil,
+            nativeMessagingCategory: nativeMessagingCategory
+        )
+
         let firstVisibleUIGateCategory: String
         if requiredResourceLoadFailure {
             firstVisibleUIGateCategory = "templateOrChunkLoadMissing"
-        } else if sdkReadyCategory == "sdkBlocked" {
+        } else if consoleErrorCategory != "none"
+            || unhandledRejectionCategory != "none"
+        {
             firstVisibleUIGateCategory = "sdkBlocked"
         } else if nativeMessagingRequests
             && nativeMessagingCategory != "notRequested"
@@ -2232,7 +2578,27 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             storageMirrorAfterAsyncDrainCategory:
                 asyncDrainDiagnostics.storageMirrorAfterAsyncDrainCategory,
             migrationWriteMissingAfterAsyncDrainCategory:
-                asyncDrainDiagnostics.migrationWriteMissingAfterAsyncDrainCategory
+                asyncDrainDiagnostics.migrationWriteMissingAfterAsyncDrainCategory,
+            sdkLoadStartedCategory: sdkLoadDiagnostics.sdkLoadStartedCategory,
+            sdkWasmFetchCategory: sdkLoadDiagnostics.sdkWasmFetchCategory,
+            sdkWasmInstantiateCategory:
+                sdkLoadDiagnostics.sdkWasmInstantiateCategory,
+            sdkWasmFallbackCategory: sdkLoadDiagnostics.sdkWasmFallbackCategory,
+            sdkStorageReadCategory: sdkLoadDiagnostics.sdkStorageReadCategory,
+            sdkRuntimeConnectCategory:
+                sdkLoadDiagnostics.sdkRuntimeConnectCategory,
+            sdkPortAwaitCategory: sdkLoadDiagnostics.sdkPortAwaitCategory,
+            sdkNativeDependencyCategory:
+                sdkLoadDiagnostics.sdkNativeDependencyCategory,
+            sdkCryptoCapabilityCategory:
+                sdkLoadDiagnostics.sdkCryptoCapabilityCategory,
+            sdkAsyncContinuationCategory:
+                sdkLoadDiagnostics.sdkAsyncContinuationCategory,
+            sdkTimerAwaitCategory: sdkLoadDiagnostics.sdkTimerAwaitCategory,
+            sdkLoadCompletionSignalCategory:
+                sdkLoadDiagnostics.sdkLoadCompletionSignalCategory,
+            sdkLoadUnresolvedReasonCategory:
+                sdkLoadDiagnostics.sdkLoadUnresolvedReasonCategory
         )
     }
 
@@ -2659,7 +3025,20 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             swStorageWriteAfterAsyncDrainCountBucket: "",
             swMigrationWriteAfterAsyncDrainCategory: "",
             storageMirrorAfterAsyncDrainCategory: "",
-            migrationWriteMissingAfterAsyncDrainCategory: ""
+            migrationWriteMissingAfterAsyncDrainCategory: "",
+            sdkLoadStartedCategory: "",
+            sdkWasmFetchCategory: "",
+            sdkWasmInstantiateCategory: "",
+            sdkWasmFallbackCategory: "",
+            sdkStorageReadCategory: "",
+            sdkRuntimeConnectCategory: "",
+            sdkPortAwaitCategory: "",
+            sdkNativeDependencyCategory: "",
+            sdkCryptoCapabilityCategory: "",
+            sdkAsyncContinuationCategory: "",
+            sdkTimerAwaitCategory: "",
+            sdkLoadCompletionSignalCategory: "",
+            sdkLoadUnresolvedReasonCategory: ""
         ).logLines.map { line in
             String(line.prefix(while: { $0 != "=" })) + "="
         }

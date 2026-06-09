@@ -5579,7 +5579,15 @@ final class SumiExtensionsModule {
             {
                 firstVisibleUIGateProbeObject = object
             }
+            bridgeSnapshot =
+                cachedChromeMV3PopupOptionsHostController?
+                .diagnosticsSnapshot(
+                    profileID: launchRecord?.profileID ?? profileID,
+                    extensionID: launchRecord?.extensionID ?? extensionId,
+                    surface: .actionPopup
+                ) ?? bridgeSnapshot
         }
+        let refreshedRouteEvents = bridgeSnapshot?.jsDebugRouteEvents ?? routeEvents
         let firstVisibleUIGateDiagnostics =
             ChromeMV3LivePopupProductPathTraceBuilder
             .deriveFirstVisibleUIGateDiagnostics(
@@ -5797,7 +5805,7 @@ final class SumiExtensionsModule {
             contentViewReplacedWebView: reconciled.contentViewReplacedWebView,
             failureClassifier: ChromeMV3LivePopupProductPathTraceBuilder.classify(
                 reconciled,
-                routeEvents: routeEvents,
+                routeEvents: refreshedRouteEvents,
                 routeRecords: bridgeSnapshot?.sanitizedBridgeRouteRecords ?? [],
                 harnessOnConnectCount:
                     ChromeMV3LivePopupProductPathTraceBuilder.harnessListenerCounts(
