@@ -316,7 +316,12 @@ extension ExtensionManager {
     func extensionID(
         for extensionContext: WKWebExtensionContext
     ) -> String? {
-        extensionContexts.first(where: { $0.value === extensionContext })?.key
+        for contexts in extensionContextsByProfile.values {
+            if let match = contexts.first(where: { $0.value === extensionContext })?.key {
+                return match
+            }
+        }
+        return nil
     }
 
     func computeOptionsPageURL(

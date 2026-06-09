@@ -82,6 +82,7 @@ extension Tab {
 
         browserManager?.extensionsModule.prepareWebViewConfigurationForExtensionRuntime(
             configuration,
+            profileId: resolveProfile()?.id ?? profileId,
             reason: "\(reason).configuration"
         )
 
@@ -249,6 +250,7 @@ extension Tab {
             if let auxiliaryOverrideConfiguration {
                 browserManager?.extensionsModule.prepareWebViewConfigurationForExtensionRuntime(
                     auxiliaryOverrideConfiguration,
+                    profileId: resolveProfile()?.id ?? profileId,
                     reason: "Tab.setupWebView.configuration"
                 )
                 let newWebView = FocusableWKWebView(frame: .zero, configuration: auxiliaryOverrideConfiguration)
@@ -340,6 +342,7 @@ extension Tab {
         )
         browserManager?.extensionsModule.prepareWebViewConfigurationForExtensionRuntime(
             isolatedConfiguration,
+            profileId: resolveProfile()?.id ?? profileId,
             reason: "Tab.applyWebViewConfigurationOverride"
         )
         webViewConfigurationOverride = isolatedConfiguration

@@ -46,7 +46,10 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
             let browserManager,
             let extensionManager,
             let windowState,
+            let contextProfileId = extensionManager.profileId(for: extensionContext),
+            extensionManager.windowMatchesProfile(windowState, profileId: contextProfileId),
             let tab = browserManager.currentTab(for: windowState),
+            extensionManager.resolvedProfileId(for: tab) == contextProfileId,
             extensionManager.isTabEligibleForCurrentExtensionRuntime(tab)
         else {
             return nil
@@ -56,13 +59,19 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     }
 
     func tabs(for extensionContext: WKWebExtensionContext) -> [any WKWebExtensionTab] {
-        guard let browserManager, let extensionManager, let windowState else { return [] }
+        guard let browserManager,
+              let extensionManager,
+              let windowState,
+              let contextProfileId = extensionManager.profileId(for: extensionContext),
+              extensionManager.windowMatchesProfile(windowState, profileId: contextProfileId)
+        else { return [] }
 
         return browserManager.shellSelectionService.tabsForWebExtensionWindow(
             in: windowState,
             tabStore: browserManager.tabManager.runtimeStore
         ).filter {
-            extensionManager.isTabEligibleForCurrentExtensionRuntime($0)
+            extensionManager.resolvedProfileId(for: $0) == contextProfileId
+                && extensionManager.isTabEligibleForCurrentExtensionRuntime($0)
         }.compactMap {
             extensionManager.stableAdapter(for: $0)
         }

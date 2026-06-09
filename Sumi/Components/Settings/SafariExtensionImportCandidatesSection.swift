@@ -18,7 +18,7 @@ struct SafariExtensionImportCandidatesSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Safari extensions installed in other macOS apps can be imported into Sumi. Import does not enable the extension until you turn it on.")
+                Text("Safari extensions installed in other macOS apps can be imported into Sumi. Import enables the extension immediately when the runtime loads successfully.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -58,12 +58,8 @@ struct SafariExtensionImportCandidatesSection: View {
 
     private var importableCandidates: [DiscoveredSafariExtensionCandidate] {
         let installedPaths = Set(installedExtensions.map(\.sourceBundlePath))
-        let importedIDs = Set(
-            SafariExtensionImportStore.shared.importedRecords().map(\.extensionBundleIdentifier)
-        )
         return candidates.filter { candidate in
-            importedIDs.contains(candidate.extensionBundleIdentifier) == false
-                && installedPaths.contains(candidate.appexURL.path) == false
+            installedPaths.contains(candidate.appexURL.path) == false
         }
     }
 
@@ -91,9 +87,7 @@ struct SafariExtensionImportCandidatesSection: View {
                 let installed = try await browserManager.extensionsModule.importSafariAppExtension(
                     from: candidate
                 )
-                onStatus(
-                    "Imported \(installed.name). Enable it in Installed Extensions to load the runtime."
-                )
+                onStatus("Imported and enabled \(installed.name).")
                 rescanCandidates()
             } catch {
                 onStatus(error.localizedDescription)

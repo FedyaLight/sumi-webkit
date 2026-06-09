@@ -122,8 +122,17 @@ extension ExtensionManager: NSPopoverDelegate {
     }
 
     /// After enable/load, wake background workers and seed action surface for URL-hub.
-    func finalizeEnabledExtensionRuntime(for extensionId: String) async {
-        guard let extensionContext = getExtensionContext(for: extensionId) else { return }
+    func finalizeEnabledExtensionRuntime(
+        for extensionId: String,
+        profileId: UUID? = nil
+    ) async {
+        let resolvedProfileId =
+            profileId ?? currentProfileId ?? browserManager?.currentProfile?.id
+        guard let resolvedProfileId,
+              let extensionContext = getExtensionContext(
+                  for: extensionId,
+                  profileId: resolvedProfileId
+              ) else { return }
 
         publishActionSurfaceStateForLoadedContext(extensionContext)
 
@@ -209,20 +218,30 @@ extension ExtensionManager: NSPopoverDelegate {
             "urlHubAction preflight passed extensionId=\(extensionId) localExperimentalRecordEnabled=true currentTabEligible=true currentPagePermission=true moduleWorkerUnsupported=false"
         )
 
+        guard let tabProfileId = resolvedProfileId(for: currentTab) else {
+            return .blocked(
+                .noEligibleTab,
+                message: "No profile is available for the active tab."
+            )
+        }
+        switchProfile(profileId: tabProfileId)
+
         guard await requestExtensionRuntimeAndWait(reason: .extensionAction) else {
             return .blocked(
                 runtimeState == .failed ? .runtimeLoadFailed : .runtimeUnavailable,
                 message: "\(installedExtension.name) could not load WebKit extension runtime for the action popup."
             )
         }
+        await ensureEnabledExtensionsLoaded(for: tabProfileId)
         extensionRuntimeTrace(
-            "urlHubAction runtime ready extensionId=\(extensionId) loadedContexts=\(extensionContexts.count) selectedContextLoaded=\(getExtensionContext(for: extensionId) != nil)"
+            "urlHubAction runtime ready extensionId=\(extensionId) profileId=\(tabProfileId.uuidString) loadedContexts=\(extensionContexts.count) selectedContextLoaded=\(getExtensionContext(for: extensionId, profileId: tabProfileId) != nil)"
         )
 
         let extensionContext: WKWebExtensionContext
         do {
             guard let loadedContext = try await loadActionPopupContextIfNeeded(
-                for: installedExtension
+                for: installedExtension,
+                profileId: tabProfileId
             ) else {
                 return .blocked(
                     .contextUnavailable,
@@ -293,9 +312,13 @@ extension ExtensionManager: NSPopoverDelegate {
     }
 
     private func loadActionPopupContextIfNeeded(
-        for installedExtension: InstalledExtension
+        for installedExtension: InstalledExtension,
+        profileId: UUID
     ) async throws -> WKWebExtensionContext? {
-        if let extensionContext = getExtensionContext(for: installedExtension.id) {
+        if let extensionContext = getExtensionContext(
+            for: installedExtension.id,
+            profileId: profileId
+        ) {
             return extensionContext
         }
 
@@ -306,13 +329,14 @@ extension ExtensionManager: NSPopoverDelegate {
         }
 
         extensionRuntimeTrace(
-            "urlHubAction loading selected missing context extensionId=\(installedExtension.id) runtimeState=\(runtimeState.rawValue) packagePath=\(entity.packagePath)"
+            "urlHubAction loading selected missing context extensionId=\(installedExtension.id) profileId=\(profileId.uuidString) runtimeState=\(runtimeState.rawValue) packagePath=\(entity.packagePath)"
         )
         _ = try await loadEnabledExtension(
             from: entity,
+            profileId: profileId,
             expectedLoadGeneration: extensionLoadGeneration
         )
-        return getExtensionContext(for: installedExtension.id)
+        return getExtensionContext(for: installedExtension.id, profileId: profileId)
     }
 
     private func sanitizedURLHubTraceURL(_ url: URL?) -> String {
@@ -381,21 +405,26 @@ extension ExtensionManager: NSPopoverDelegate {
 
     func prepareWebViewConfigurationForExtensionRuntime(
         _ configuration: WKWebViewConfiguration,
+        profileId: UUID? = nil,
         reason: String = #function
     ) {
-        let requestedController = requestExtensionRuntime(
-            reason: .webViewConfiguration
-        )
+        let resolvedProfileId =
+            profileId ?? currentProfileId ?? browserManager?.currentProfile?.id
+        guard let resolvedProfileId else { return }
+
+        _ = requestExtensionRuntime(reason: .webViewConfiguration)
+        let requestedController = ensureExtensionController(for: resolvedProfileId)
         let existingController = configuration.webExtensionController
-        let shouldAssignController = existingController == nil && requestedController != nil
+        let shouldAssignController = existingController == nil
 
         extensionRuntimeTrace(
-            "prepareConfiguration reason=\(reason) configuration=\(extensionRuntimeConfigurationDescription(configuration)) userContentController=\(extensionRuntimeUserContentControllerDescription(configuration.userContentController)) existingController=\(extensionRuntimeControllerDescription(existingController)) targetController=\(extensionRuntimeControllerDescription(requestedController)) willAssign=\(shouldAssignController)"
+            "prepareConfiguration reason=\(reason) profileId=\(resolvedProfileId.uuidString) configuration=\(extensionRuntimeConfigurationDescription(configuration)) userContentController=\(extensionRuntimeUserContentControllerDescription(configuration.userContentController)) existingController=\(extensionRuntimeControllerDescription(existingController)) targetController=\(extensionRuntimeControllerDescription(requestedController)) willAssign=\(shouldAssignController)"
         )
 
         if shouldAssignController {
             configuration.webExtensionController = requestedController
         }
+        configuration.websiteDataStore = getExtensionDataStore(for: resolvedProfileId)
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
     }
 
@@ -653,11 +682,17 @@ extension ExtensionManager: NSPopoverDelegate {
             ?? browserConfiguration.webViewConfiguration
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             from: baseConfiguration,
+            for: browserManager?.currentProfile,
             surface: .extensionOptions,
             additionalUserScripts: baseConfiguration.userContentController.userScripts
         )
+        let optionsProfileId =
+            profileId(for: extensionContext)
+            ?? currentProfileId
+            ?? browserManager?.currentProfile?.id
         prepareWebViewConfigurationForExtensionRuntime(
             configuration,
+            profileId: optionsProfileId,
             reason: "ExtensionManager.openOptionsPage.configuration"
         )
 
@@ -728,6 +763,35 @@ extension ExtensionManager: NSPopoverDelegate {
 
     func popoverDidClose(_ notification: Notification) {
         isPopupActive = false
+        if let extensionId = activePopupExtensionID {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let diagnostic = await SafariExtensionSessionDiagnosticsBuilder.build(
+                    extensionId: extensionId,
+                    phase: .closed,
+                    extensionManager: self
+                )
+                SafariExtensionSessionDiagnosticsBuilder.logIfDiagnosticsEnabled(diagnostic)
+                self.activePopupExtensionID = nil
+            }
+        }
+    }
+
+    func recordExtensionActionPopupPresentation(
+        for extensionId: String,
+        popupWebView: WKWebView?,
+        phase: SafariExtensionPopupLifecyclePhase
+    ) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let diagnostic = await SafariExtensionSessionDiagnosticsBuilder.build(
+                extensionId: extensionId,
+                phase: phase,
+                extensionManager: self,
+                popupWebView: popupWebView
+            )
+            SafariExtensionSessionDiagnosticsBuilder.logIfDiagnosticsEnabled(diagnostic)
+        }
     }
 
     private func removeAnchorObservers(for extensionId: String) {

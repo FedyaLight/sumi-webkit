@@ -18,24 +18,10 @@ final class ExtensionManager: NSObject, ObservableObject {
     static let logger = Logger.sumi(category: "Extensions")
     static let controllerIdentifierKey =
         "\(SumiAppIdentity.bundleIdentifier).WKWebExtensionController.Identifier"
-    nonisolated static let externallyConnectableBridgeFilename = "sumi_bridge.js"
-    nonisolated static let externallyConnectableBackgroundHelperFilename =
-        "sumi_external_runtime.js"
-    nonisolated static let externallyConnectableServiceWorkerWrapperFilename =
-        "sumi_external_worker.js"
-    // bitwardenIframeBridgeFilename removed (Bitwarden-specific iframe injection).
-    nonisolated static let webKitRuntimeCompatibilityPreludeFilename =
-        "sumi_webkit_runtime_compat.js"
-    nonisolated static let webKitRuntimeCompatibilityServiceWorkerWrapperFilename =
-        "sumi_webkit_runtime_compat_worker.js"
-    nonisolated static let selectiveContentScriptGuardTargetsKey =
-        "extensions.webkitRuntime.contentScriptGuard.targets"
     nonisolated static let externallyConnectableNativeBridgeHandlerName =
         "sumiExternallyConnectableRuntime"
     nonisolated static let externallyConnectableBridgeDebugLoggingKey =
         "debug.extensions.externallyConnectable.bridge.logging.enabled"
-    nonisolated static let manifestPatchCacheStorageKey =
-        "\(SumiAppIdentity.bundleIdentifier).extensions.webkitManifestPatchCache.v1"
     nonisolated static let orphanedExtensionCleanupDefaultsKey =
         "\(SumiAppIdentity.bundleIdentifier).extensions.orphanedPackageCleanup.lastRunAt"
     nonisolated static let orphanedExtensionCleanupInterval: TimeInterval =
@@ -63,6 +49,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         ExtensionUtils.isExtensionSupportAvailable
     @Published var extensionsLoaded = false
     @Published var isPopupActive = false
+    var activePopupExtensionID: String?
     @Published var pinnedToolbarExtensionIDs: [String] = []
 
     enum ExtensionBackgroundWakeReason: String, Codable, CaseIterable {
@@ -84,7 +71,6 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
 
     struct ExtensionRuntimeMetrics: Codable, Equatable {
-        var manifestPatchDuration: TimeInterval = 0
         var manifestValidationDuration: TimeInterval = 0
         var webExtensionCreationDuration: TimeInterval = 0
         var contextLoadDuration: TimeInterval = 0
@@ -122,10 +108,10 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
 
     weak var browserManager: BrowserManager?
-    var extensionController: WKWebExtensionController?
+    var extensionControllersByProfile: [UUID: WKWebExtensionController] = [:]
+    var extensionContextsByProfile: [UUID: [String: WKWebExtensionContext]] = [:]
     var runtimeState: ExtensionRuntimeState = .idle
     var runtimeInitializationTask: Task<Void, Never>?
-    var extensionContexts: [String: WKWebExtensionContext] = [:]
     var loadedExtensionManifests: [String: [String: Any]] = [:]
     var backgroundWakeTasks: [String: Task<Void, Error>] = [:]
     var backgroundRuntimeStateByExtensionID: [String: BackgroundRuntimeState] = [:]
@@ -142,6 +128,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     var externallyConnectablePolicies: [String: ExternallyConnectablePolicy] = [:]
     var nativeMessagePortHandlers: [ObjectIdentifier: NativeMessagingHandler] = [:]
     var nativeMessagePortExtensionIDs: [ObjectIdentifier: String] = [:]
+    var nativeMessagePortProfileIDs: [ObjectIdentifier: UUID] = [:]
     lazy var nativeMessagingRelay = SumiNativeMessagingRelay(
         isPrivateBrowsing: { [weak self] in
             self?.browserManager?.windowRegistry?.activeWindow?.isIncognito ?? false
@@ -303,10 +290,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         #endif
     }
 
-    func getExtensionContext(for extensionId: String) -> WKWebExtensionContext? {
-        extensionContexts[extensionId]
-    }
-
     func windowAdapter(for windowId: UUID) -> ExtensionWindowAdapter? {
         guard let browserManager else { return nil }
         guard browserManager.windowRegistry?.windows[windowId] != nil else {
@@ -343,13 +326,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
 
     func normalTabUserScripts() -> [SumiUserScript] {
-        guard externallyConnectablePolicies.isEmpty == false else { return [] }
-        return [
-            SumiExternallyConnectableUserScript(
-                manager: self,
-                policies: Array(externallyConnectablePolicies.values)
-            )
-        ]
+        []
     }
 
     static var isExternallyConnectableBridgeDebugLoggingEnabled: Bool {

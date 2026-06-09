@@ -125,10 +125,12 @@ final class SumiExtensionsModule {
 
     func prepareWebViewConfigurationForExtensionRuntime(
         _ configuration: WKWebViewConfiguration,
+        profileId: UUID? = nil,
         reason: String
     ) {
         managerIfNeededForNormalTabRuntime()?.prepareWebViewConfigurationForExtensionRuntime(
             configuration,
+            profileId: profileId,
             reason: reason
         )
     }
@@ -234,6 +236,9 @@ final class SumiExtensionsModule {
 
     func uninstallExtension(_ extensionId: String) async throws {
         guard let manager = managerIfEnabled() else { return }
+        SafariExtensionImportStore.shared.removeImportedRecord(
+            forInstalledExtensionId: extensionId
+        )
         try await manager.uninstallExtension(extensionId)
     }
 
@@ -252,7 +257,15 @@ final class SumiExtensionsModule {
             candidate: candidate,
             installedExtensionId: installed.id
         )
-        return installed
+
+        do {
+            return try await manager.enableExtension(installed.id)
+        } catch {
+            try? await manager.disableExtension(installed.id)
+            throw ExtensionError.importSucceededEnableFailed(
+                "\(installed.name) was imported but could not be enabled: \(error.localizedDescription)"
+            )
+        }
     }
 
     func orderedPinnedToolbarSlots(

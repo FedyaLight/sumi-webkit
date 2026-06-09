@@ -19,10 +19,7 @@ is_allowed() {
     Sumi/Favicons/DDG/SumiDDGFaviconSupport.swift:*MutationObserver*) return 0 ;;
     Sumi/Favicons/DDG/SumiDDGFaviconSupport.swift:*setTimeout*) return 0 ;;
     Sumi/Favicons/DDG/SumiDDGFaviconSupport.swift:*JSON.stringify*) return 0 ;;
-    # WebExtension bridge compatibility: one-shot lastError/port-open timers, no DOM-frequency native posts.
-    Sumi/Managers/ExtensionManager/ExtensionRuntimeResources/externally_connectable_page_bridge.js:*setTimeout*) return 0 ;;
     Sumi/Managers/ExtensionManager/ExtensionManager+ExternallyConnectableNativeMessaging.swift:*setTimeout*) return 0 ;;
-    Sumi/Managers/ExtensionManager/ExtensionRuntimeResources/externally_connectable_isolated_bridge.js:*JSON.stringify*) return 0 ;;
     # GM compatibility: caller-provided GM_addElement innerHTML and request-body normalization.
     Sumi/Managers/SumiScripts/UserScriptGMBridge+JSShim.swift:*innerHTML*) return 0 ;;
     Sumi/Managers/SumiScripts/UserScriptGMBridge+JSShim.swift:*JSON.stringify*) return 0 ;;

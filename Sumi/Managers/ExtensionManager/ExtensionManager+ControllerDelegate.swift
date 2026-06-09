@@ -145,9 +145,14 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         _ controller: WKWebExtensionController,
         openWindowsFor extensionContext: WKWebExtensionContext
     ) -> [any WKWebExtensionWindow] {
-        guard let browserManager else { return [] }
-        return browserManager.windowRegistry?.windows.keys.compactMap {
-            windowAdapter(for: $0)
+        guard let browserManager,
+              let contextProfileId = profileId(for: extensionContext)
+        else { return [] }
+        return browserManager.windowRegistry?.windows.compactMap { windowId, windowState in
+            guard windowMatchesProfile(windowState, profileId: contextProfileId) else {
+                return nil
+            }
+            return windowAdapter(for: windowId)
         } ?? []
     }
 
@@ -174,6 +179,8 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         )
 
         let extensionId = extensionID(for: extensionContext)
+        let popupPhase: SafariExtensionPopupLifecyclePhase =
+            isPopupActive ? .reopened : .opened
 
         let manifest = extensionId.flatMap { loadedExtensionManifests[$0] } ?? [:]
 
@@ -213,6 +220,15 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
            RuntimeDiagnostics.isDeveloperInspectionEnabled
         {
             popupWebView.isInspectable = true
+        }
+
+        if let extensionId {
+            activePopupExtensionID = extensionId
+            recordExtensionActionPopupPresentation(
+                for: extensionId,
+                popupWebView: popupWebView,
+                phase: popupPhase
+            )
         }
 
         DispatchQueue.main.async {
@@ -463,6 +479,9 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                 self.nativeMessagePortHandlers[portKey] = handler
                 if let extensionId {
                     self.nativeMessagePortExtensionIDs[portKey] = extensionId
+                }
+                if let profileId = self.profileId(for: extensionContext) {
+                    self.nativeMessagePortProfileIDs[portKey] = profileId
                 }
             },
             completionHandler: completionHandler

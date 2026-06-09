@@ -74,11 +74,21 @@ final class SafariExtensionImportStore: @unchecked Sendable {
     func importableCandidates(
         excludingInstalledBundlePaths installedBundlePaths: Set<String> = []
     ) -> [SafariExtensionImportCandidateRecord] {
-        let importedIDs = Set(loadImported().map(\.extensionBundleIdentifier))
-        return discoveredCandidates().filter { candidate in
-            importedIDs.contains(candidate.extensionBundleIdentifier) == false
-                && installedBundlePaths.contains(candidate.appexPath) == false
+        discoveredCandidates().filter { candidate in
+            installedBundlePaths.contains(candidate.appexPath) == false
         }
+    }
+
+    func removeImportedRecord(forInstalledExtensionId installedExtensionId: String) {
+        var imported = loadImported()
+        imported.removeAll { $0.installedExtensionId == installedExtensionId }
+        persistImported(imported)
+    }
+
+    func removeImportedRecord(extensionBundleIdentifier: String) {
+        var imported = loadImported()
+        imported.removeAll { $0.extensionBundleIdentifier == extensionBundleIdentifier }
+        persistImported(imported)
     }
 
     func markImported(

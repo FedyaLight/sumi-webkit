@@ -1,0 +1,47 @@
+import XCTest
+
+@testable import Sumi
+
+final class SafariExtensionSessionDiagnosticsTests: XCTestCase {
+    func testFailureBucketIncludesCookieStoreNotShared() {
+        XCTAssertTrue(
+            SafariExtensionSessionFailureBucket.allCases.contains(.cookieStoreNotShared)
+        )
+    }
+
+    func testDiagnosticEncodesWithoutSensitiveFields() throws {
+        let diagnostic = SafariExtensionSessionDiagnostic(
+            recordedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            extensionId: "example-extension",
+            phase: .opened,
+            safariRuntimeLoadSource: .originalAppexBundle,
+            popupUsesOriginalAppex: true,
+            extensionContextLoaded: true,
+            popupWebViewPresent: true,
+            isPopupActive: true,
+            activeTabStore: SafariExtensionWebsiteDataStoreSnapshot(
+                identifier: "PROFILE-ID",
+                isPersistent: true,
+                matchesProfileStore: true,
+                matchesExtensionControllerDefaultStore: true,
+                matchesActiveTabStore: true
+            ),
+            extensionControllerDefaultStore: nil,
+            extensionPageConfigurationStore: nil,
+            popupWebViewStore: nil,
+            cookieDomainCounts: [
+                SafariExtensionCookieDomainCount(domain: "raindrop.io", count: 2),
+            ],
+            permissionBucketSummary: "grantedHostPatterns=1 requestedPermissions=3",
+            inferredFailureBucket: .none,
+            note: "stores aligned"
+        )
+
+        let data = try JSONEncoder().encode(diagnostic)
+        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertTrue(json.contains("cookieDomainCounts"))
+        XCTAssertTrue(json.contains("\"count\":2"))
+        XCTAssertFalse(json.contains("token"))
+        XCTAssertFalse(json.contains("password"))
+    }
+}

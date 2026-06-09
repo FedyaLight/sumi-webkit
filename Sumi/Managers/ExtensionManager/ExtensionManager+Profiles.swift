@@ -18,13 +18,16 @@ extension ExtensionManager {
             extensionRuntimeTrace(
                 "attach browserManager controller=\(extensionRuntimeControllerDescription(controller)) windows=\(browserManager.windowRegistry?.allWindows.count ?? 0) tabs=\(browserManager.tabManager.allTabs().count)"
             )
-            updateExistingWebViewsWithController(controller)
+            if let profileId = currentProfileId {
+                updateWebViewsForProfile(profileId)
+            }
             registerExistingWindowStateIfAttached()
         }
     }
 
     func notifyWindowOpened(_ windowState: BrowserWindowState) {
-        guard let controller = extensionController,
+        guard let profileId = resolvedProfileId(for: windowState),
+              let controller = extensionControllersByProfile[profileId],
               let adapter = windowAdapter(for: windowState.id) else {
             return
         }
@@ -36,12 +39,6 @@ extension ExtensionManager {
     }
 
     func notifyWindowFocused(_ windowState: BrowserWindowState) {
-        guard let controller = extensionController,
-              let adapter = windowAdapter(for: windowState.id) else {
-            return
-        }
-        controller.didFocusWindow(adapter)
-
         if windowState.isIncognito, let profile = windowState.ephemeralProfile {
             switchProfile(profileId: profile.id)
         } else if let profileId = windowState.currentProfileId,
@@ -51,6 +48,13 @@ extension ExtensionManager {
         } else if let currentProfile = browserManager?.currentProfile {
             switchProfile(profileId: currentProfile.id)
         }
+
+        guard let profileId = resolvedProfileId(for: windowState),
+              let controller = extensionControllersByProfile[profileId],
+              let adapter = windowAdapter(for: windowState.id) else {
+            return
+        }
+        controller.didFocusWindow(adapter)
     }
 
     func switchProfile(_ profile: Profile) {
@@ -58,29 +62,37 @@ extension ExtensionManager {
     }
 
     func switchProfile(profileId: UUID) {
-        currentProfileId = profileId
-        reloadPinnedToolbarExtensionsForCurrentProfile()
-
-        guard let extensionController else { return }
-        let store = getExtensionDataStore(for: profileId)
-        if currentProfileId == profileId,
-           extensionController.configuration.defaultWebsiteDataStore?.identifier == store.identifier
-        {
-            return
-        }
-
         let signpostState = PerformanceTrace.beginInterval("ExtensionManager.switchProfile")
         defer {
             PerformanceTrace.endInterval("ExtensionManager.switchProfile", signpostState)
         }
 
-        extensionController.configuration.defaultWebsiteDataStore = store
-        verifyExtensionStorage(profileId: profileId)
+        currentProfileId = profileId
+        reloadPinnedToolbarExtensionsForCurrentProfile()
+
+        guard isExtensionSupportAvailable else { return }
+
+        let runtimeInitialized =
+            extensionControllersByProfile.isEmpty == false
+            || hasEnabledInstalledExtensions
+            || runtimeState == .ready
+            || runtimeState == .loading
+        guard runtimeInitialized else { return }
+
+        let controller = ensureExtensionController(for: profileId)
+        browserConfiguration.webViewConfiguration.webExtensionController = controller
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.ensureEnabledExtensionsLoaded(for: profileId)
+            self.updateWebViewsForProfile(profileId)
+            self.refreshActionSurfaceStateForCurrentProfile()
+        }
     }
 
     @discardableResult
     func notifyTabOpened(_ tab: Tab) -> Bool {
-        guard let controller = extensionController,
+        guard let controller = extensionController(for: tab),
               let adapter = stableAdapter(for: tab) else { return false }
         extensionRuntimeTrace(
             "didOpenTab start generation=\(extensionLoadGeneration) notifyGeneration=\(tabOpenNotificationGeneration) controller=\(extensionRuntimeControllerDescription(controller)) \(extensionRuntimeTabDescription(tab)) adapter=\(extensionRuntimeObjectDescription(adapter))"
@@ -144,7 +156,7 @@ extension ExtensionManager {
         ) else {
             return
         }
-        guard let controller = extensionController,
+        guard let controller = extensionController(for: newTab),
               let newAdapter = stableAdapter(for: newTab) else { return }
         let previousAdapter = previous.flatMap { tab in
             isTabEligibleForExtensionRuntime(tab, generation: tabOpenNotificationGeneration)
@@ -159,7 +171,7 @@ extension ExtensionManager {
     }
 
     func notifyTabClosed(_ tab: Tab) {
-        guard let controller = extensionController,
+        guard let controller = extensionController(for: tab),
               let adapter = stableAdapter(for: tab) else { return }
         controller.didCloseTab(adapter, windowIsClosing: false)
         tabAdapters.removeValue(forKey: tab.id)
@@ -190,7 +202,7 @@ extension ExtensionManager {
             return
         }
 
-        guard let controller = extensionController,
+        guard let controller = extensionController(for: tab),
               let adapter = stableAdapter(for: tab) else { return }
         controller.didChangeTabProperties(coalescedProperties, for: adapter)
         #if DEBUG
@@ -215,8 +227,8 @@ extension ExtensionManager {
             reason: reason,
             allowWhenExtensionsNotLoaded: allowWhenExtensionsNotLoaded
         )
-        if let extensionController {
-            updateExistingWebViewsWithController(extensionController)
+        if let profileId = currentProfileId {
+            updateWebViewsForProfile(profileId)
         }
         registerExistingWindowStateIfAttached()
     }
@@ -277,6 +289,7 @@ extension ExtensionManager {
     func prepareExtensionContextForRuntime(
         _ extensionContext: WKWebExtensionContext,
         extensionId: String,
+        profileId: UUID,
         manifest: [String: Any]? = nil
     ) {
         let resolvedManifest =
@@ -287,24 +300,24 @@ extension ExtensionManager {
             for: resolvedManifest
         )
 
+        let profileStore = getExtensionDataStore(for: profileId)
+        let profileController = extensionControllersByProfile[profileId]
+            ?? ensureExtensionController(for: profileId)
+
         guard let configuration = extensionContext.webViewConfiguration else {
             let fallbackConfiguration = browserConfiguration.webViewConfiguration
-            if fallbackConfiguration.webExtensionController == nil,
-               let extensionController
-            {
-                fallbackConfiguration.webExtensionController = extensionController
+            if fallbackConfiguration.webExtensionController == nil {
+                fallbackConfiguration.webExtensionController = profileController
             }
-
+            fallbackConfiguration.websiteDataStore = profileStore
             fallbackConfiguration.defaultWebpagePreferences.allowsContentJavaScript = true
             return
         }
 
-        if configuration.webExtensionController == nil,
-           let extensionController
-        {
-            configuration.webExtensionController = extensionController
+        if configuration.webExtensionController == nil {
+            configuration.webExtensionController = profileController
         }
-
+        configuration.websiteDataStore = profileStore
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
     }
 
@@ -339,7 +352,9 @@ extension ExtensionManager {
         }
 
         if runtimeState == .ready, forceReload == false {
-            updateExistingWebViewsWithController(controller)
+            if let profileId = currentProfileId {
+                updateWebViewsForProfile(profileId)
+            }
             return controller
         }
 
@@ -375,15 +390,16 @@ extension ExtensionManager {
     private func ensureExtensionController(
         reason: ExtensionRuntimeRequestReason
     ) -> WKWebExtensionController {
-        if let extensionController {
-            return extensionController
-        }
-
-        setupExtensionController(using: currentProfile())
+        let profileId =
+            currentProfileId
+            ?? currentProfile()?.id
+            ?? browserManager?.currentProfile?.id
+            ?? UUID()
+        let controller = ensureExtensionController(for: profileId)
         extensionRuntimeTrace(
-            "runtime controller initialized reason=\(reason.rawValue) controller=\(extensionRuntimeControllerDescription(extensionController))"
+            "runtime controller initialized reason=\(reason.rawValue) profile=\(profileId.uuidString) controller=\(extensionRuntimeControllerDescription(controller))"
         )
-        return extensionController!
+        return controller
     }
 
     private func startExtensionRuntimeLoad(
@@ -399,7 +415,7 @@ extension ExtensionManager {
         extensionLoadGeneration &+= 1
         let loadGeneration = extensionLoadGeneration
 
-        if forceReload || extensionContexts.isEmpty == false {
+        if forceReload || extensionContextsByProfile.isEmpty == false {
             resetLoadedExtensionRuntimeStateForReload()
         }
 
@@ -458,7 +474,7 @@ extension ExtensionManager {
             }
             self.tabOpenNotificationGeneration &+= 1
             self.extensionRuntimeTrace(
-                "lazyRuntime finalize reason=\(reason.rawValue) loadGeneration=\(loadGeneration) notifyGeneration=\(self.tabOpenNotificationGeneration) loadedContexts=\(self.extensionContexts.count)"
+                "lazyRuntime finalize reason=\(reason.rawValue) loadGeneration=\(loadGeneration) notifyGeneration=\(self.tabOpenNotificationGeneration) loadedContexts=\(self.extensionContexts.count) profiles=\(self.extensionContextsByProfile.count)"
             )
             self.resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
                 reason: "ExtensionManager.lazyRuntime.finalize"
@@ -467,7 +483,7 @@ extension ExtensionManager {
         }
     }
 
-    private func enabledPersistedExtensionEntities() -> [ExtensionEntity] {
+    func enabledPersistedExtensionEntities() -> [ExtensionEntity] {
         do {
             return try context.fetch(FetchDescriptor<ExtensionEntity>())
                 .filter(\.isEnabled)
@@ -528,9 +544,12 @@ extension ExtensionManager {
             )
         }
 
-        backgroundWakeTasks[extensionId]?.cancel()
-        backgroundWakeTasks.removeValue(forKey: extensionId)
-        backgroundRuntimeStateByExtensionID.removeValue(forKey: extensionId)
+        for profileId in extensionContextsByProfile.keys {
+            let wakeKey = backgroundScopedKey(extensionId: extensionId, profileId: profileId)
+            backgroundWakeTasks[wakeKey]?.cancel()
+            backgroundWakeTasks.removeValue(forKey: wakeKey)
+            backgroundRuntimeStateByExtensionID.removeValue(forKey: wakeKey)
+        }
         clearActionSurfaceState(for: extensionId)
         unloadExtensionContextIfNeeded(for: extensionId)
         removeExtensionErrorObserver(for: extensionId)
@@ -558,7 +577,7 @@ extension ExtensionManager {
             )
         }
 
-        let loadedIDs = Set(extensionContexts.keys)
+        let loadedIDs = allLoadedExtensionIDs()
             .union(loadedExtensionManifests.keys)
             .union(optionsWindows.keys)
             .union(nativeMessagePortExtensionIDs.values)
@@ -567,7 +586,7 @@ extension ExtensionManager {
             tearDownExtensionRuntimeState(for: extensionId, removeUIState: false)
         }
 
-        extensionContexts.removeAll()
+        extensionContextsByProfile.removeAll()
         loadedExtensionManifests.removeAll()
         actionStatesByExtensionID.removeAll()
         backgroundWakeTasks.values.forEach { $0.cancel() }
@@ -606,7 +625,7 @@ extension ExtensionManager {
         backgroundWakeTasks.values.forEach { $0.cancel() }
 
         let uiStateIDs = removeUIState ? Array(actionAnchors.keys) : []
-        let loadedIDs = Set(extensionContexts.keys)
+        let loadedIDs = allLoadedExtensionIDs()
             .union(loadedExtensionManifests.keys)
             .union(optionsWindows.keys)
             .union(nativeMessagePortExtensionIDs.values)
@@ -638,7 +657,7 @@ extension ExtensionManager {
         clearExternallyConnectablePendingRequests()
         ecRegistry.clearAllTrackedPageURLs()
 
-        extensionContexts.removeAll()
+        extensionContextsByProfile.removeAll()
         loadedExtensionManifests.removeAll()
         actionStatesByExtensionID.removeAll()
         backgroundWakeTasks.removeAll()
@@ -654,11 +673,11 @@ extension ExtensionManager {
         removeManagedExternallyConnectableScriptsAndHandlers()
 
         if releaseController {
-            if browserConfiguration.webViewConfiguration.webExtensionController === extensionController {
-                browserConfiguration.webViewConfiguration.webExtensionController = nil
+            browserConfiguration.webViewConfiguration.webExtensionController = nil
+            for controller in extensionControllersByProfile.values {
+                controller.delegate = nil
             }
-            extensionController?.delegate = nil
-            extensionController = nil
+            extensionControllersByProfile.removeAll()
             profileExtensionStores.removeAll()
             profileExtensionStoreOrder.removeAll()
             runtimeState = isExtensionSupportAvailable ? .idle : .unavailable
@@ -677,6 +696,7 @@ extension ExtensionManager {
         nativeMessagePortHandlers.values.forEach { $0.disconnect() }
         nativeMessagePortHandlers.removeAll()
         nativeMessagePortExtensionIDs.removeAll()
+        nativeMessagePortProfileIDs.removeAll()
     }
 
     private func removeManagedExternallyConnectableScriptsAndHandlers() {
@@ -710,46 +730,18 @@ extension ExtensionManager {
         }
     }
 
-    func setupExtensionController(using initialProfile: Profile?) {
-        let signpostState = PerformanceTrace.beginInterval("ExtensionManager.setupExtensionController")
-        defer {
-            PerformanceTrace.endInterval(
-                "ExtensionManager.setupExtensionController",
-                signpostState
-            )
-        }
-
-        let defaultDataStore =
-            initialProfile.map { getExtensionDataStore(for: $0.id) }
-            ?? currentProfileId.map { getExtensionDataStore(for: $0) }
-            ?? WKWebsiteDataStore(forIdentifier: stableControllerIdentifier())
-        let controller = makeExtensionController(defaultDataStore: defaultDataStore)
-        extensionRuntimeTrace(
-            "setupExtensionController controller=\(extensionRuntimeControllerDescription(controller)) profile=\(initialProfile?.id.uuidString ?? "nil")"
-        )
-        extensionController = controller
-        if let initialProfile {
-            currentProfileId = initialProfile.id
-        }
-        scheduleControllerDelegateRebind(for: controller)
-        updateExistingWebViewsWithController(controller)
-        verifyExtensionStorage(profileId: initialProfile?.id)
-    }
-
-    private func stableControllerIdentifier() -> UUID {
-        controllerIdentifier
-    }
-
-    private func makeExtensionController(
-        defaultDataStore: WKWebsiteDataStore
+    func makeExtensionController(
+        defaultDataStore: WKWebsiteDataStore,
+        profileId: UUID
     ) -> WKWebExtensionController {
         let configuration = WKWebExtensionController.Configuration(
-            identifier: stableControllerIdentifier()
+            identifier: extensionControllerIdentifier(for: profileId)
         )
         let runtimeWebConfiguration = browserConfiguration.webViewConfiguration
         let extensionPageConfiguration =
             makeExtensionPageBaseWebViewConfiguration(
-                from: runtimeWebConfiguration
+                from: runtimeWebConfiguration,
+                websiteDataStore: defaultDataStore
             )
         configuration.webViewConfiguration = extensionPageConfiguration
         configuration.defaultWebsiteDataStore = defaultDataStore
@@ -757,49 +749,79 @@ extension ExtensionManager {
         let controller = WKWebExtensionController(configuration: configuration)
         controller.delegate = self
 
-        runtimeWebConfiguration.webExtensionController = controller
+        if currentProfileId == profileId {
+            runtimeWebConfiguration.webExtensionController = controller
+        }
         runtimeWebConfiguration.defaultWebpagePreferences.allowsContentJavaScript = true
 
         return controller
     }
 
     private func makeExtensionPageBaseWebViewConfiguration(
-        from source: WKWebViewConfiguration
+        from source: WKWebViewConfiguration,
+        websiteDataStore: WKWebsiteDataStore
     ) -> WKWebViewConfiguration {
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             from: source,
             surface: .extensionOptions
         )
+        configuration.websiteDataStore = websiteDataStore
         configuration.sumiIsNormalTabWebViewConfiguration = false
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         return configuration
     }
 
-    private func scheduleControllerDelegateRebind(
+    func resolvedExtensionRuntimeWebsiteDataStore(
+        profileId: UUID? = nil
+    ) -> WKWebsiteDataStore? {
+        let resolvedProfileId =
+            profileId ?? currentProfileId ?? browserManager?.currentProfile?.id
+        guard let resolvedProfileId else { return nil }
+        if let store = extensionControllersByProfile[resolvedProfileId]?
+            .configuration.defaultWebsiteDataStore
+        {
+            return store
+        }
+        return getExtensionDataStore(for: resolvedProfileId)
+    }
+
+    func scheduleControllerDelegateRebind(
         for controller: WKWebExtensionController
     ) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak controller] in
             guard let self, let controller else { return }
-            guard self.extensionController === controller else { return }
+            guard self.extensionControllersByProfile.values.contains(where: { $0 === controller }) else {
+                return
+            }
             controller.delegate = self
         }
     }
 
-    private func verifyExtensionStorage(profileId: UUID?) {
+    func verifyExtensionStorage(profileId: UUID?) {
         guard RuntimeDiagnostics.isVerboseEnabled else {
             return
         }
-        guard let dataStore = extensionController?.configuration.defaultWebsiteDataStore else {
+        guard let profileId,
+              let dataStore = extensionControllersByProfile[profileId]?
+            .configuration.defaultWebsiteDataStore
+        else {
             return
         }
         dataStore.fetchDataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes()) { records in
-            Self.logger.debug("Extension data store ready for profile \(profileId?.uuidString ?? "none", privacy: .public): \(records.count) records")
+            Self.logger.debug("Extension data store ready for profile \(profileId.uuidString, privacy: .public): \(records.count) records")
         }
     }
 
-    private func getExtensionDataStore(
+    func getExtensionDataStore(
         for profileId: UUID
     ) -> WKWebsiteDataStore {
+        if let profile = browserManager?.profileManager.profiles.first(where: { $0.id == profileId }) {
+            let store = profile.dataStore
+            profileExtensionStores[profileId] = store
+            touchProfileExtensionStore(profileId)
+            return store
+        }
+
         if let store = profileExtensionStores[profileId] {
             touchProfileExtensionStore(profileId)
             return store
@@ -835,31 +857,7 @@ extension ExtensionManager {
         }
     }
 
-    private func updateExistingWebViewsWithController(
-        _ controller: WKWebExtensionController
-    ) {
-        guard browserManager != nil else { return }
-        for tab in allKnownTabs() {
-            for webView in liveWebViews(for: tab) {
-                let existingController = webView.configuration.webExtensionController
-                let canLateBind = canLateBindExtensionController(to: webView)
-                let willAssign = existingController == nil && canLateBind
-                extensionRuntimeTrace(
-                    "updateExistingWebViewsWithController webView=\(extensionRuntimeWebViewDescription(webView)) configuration=\(extensionRuntimeConfigurationDescription(webView.configuration)) userContentController=\(extensionRuntimeUserContentControllerDescription(webView.configuration.userContentController)) existingController=\(extensionRuntimeControllerDescription(existingController)) targetController=\(extensionRuntimeControllerDescription(controller)) canLateBind=\(canLateBind) willAssign=\(willAssign) \(extensionRuntimeTabDescription(tab))"
-                )
-                if willAssign {
-                    webView.configuration.webExtensionController = controller
-                    webView.configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-                } else if existingController == nil {
-                    extensionRuntimeTrace(
-                        "updateExistingWebViewsWithController skipped lateBindExistingWebView webView=\(extensionRuntimeWebViewDescription(webView)) currentURL=\(webView.url?.absoluteString ?? "nil") \(extensionRuntimeTabDescription(tab))"
-                    )
-                }
-            }
-        }
-    }
-
-    private func canLateBindExtensionController(to webView: WKWebView) -> Bool {
+    func canLateBindExtensionController(to webView: WKWebView) -> Bool {
         guard webView.configuration.webExtensionController == nil else {
             return false
         }
@@ -874,7 +872,7 @@ extension ExtensionManager {
         return normalizedURL.isEmpty || normalizedURL == "about:blank"
     }
 
-    private func allKnownTabs() -> [Tab] {
+    func allKnownTabs() -> [Tab] {
         guard let browserManager else { return [] }
 
         var tabs = browserManager.tabManager.allTabs()
@@ -885,7 +883,7 @@ extension ExtensionManager {
         return tabs
     }
 
-    private func liveWebViews(for tab: Tab) -> [WKWebView] {
+    func liveWebViews(for tab: Tab) -> [WKWebView] {
         var webViews = [tab.assignedWebView, tab.existingWebView].compactMap { $0 }
 
         if let browserManager,
@@ -1088,21 +1086,24 @@ extension ExtensionManager {
             nativeMessagePortHandlers[handlerID]?.disconnect()
             nativeMessagePortHandlers.removeValue(forKey: handlerID)
             nativeMessagePortExtensionIDs.removeValue(forKey: handlerID)
+            nativeMessagePortProfileIDs.removeValue(forKey: handlerID)
         }
     }
 
     private func unloadExtensionContextIfNeeded(for extensionId: String) {
-        backgroundRuntimeStateByExtensionID.removeValue(forKey: extensionId)
-        guard let context = extensionContexts.removeValue(forKey: extensionId) else {
-            return
-        }
-
-        do {
-            try extensionController?.unload(context)
-        } catch {
-            extensionRuntimeTrace(
-                "Ignoring failed unload for extension \(extensionId): \(error.localizedDescription)"
+        for (profileId, contexts) in extensionContextsByProfile {
+            guard let context = contexts[extensionId] else { continue }
+            backgroundRuntimeStateByExtensionID.removeValue(
+                forKey: backgroundScopedKey(extensionId: extensionId, profileId: profileId)
             )
+            removeExtensionContext(extensionId: extensionId, profileId: profileId)
+            do {
+                try extensionControllersByProfile[profileId]?.unload(context)
+            } catch {
+                extensionRuntimeTrace(
+                    "Ignoring failed unload for extension \(extensionId) profile \(profileId.uuidString): \(error.localizedDescription)"
+                )
+            }
         }
     }
 }

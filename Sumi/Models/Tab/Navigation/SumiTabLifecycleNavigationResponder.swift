@@ -151,6 +151,10 @@ final class SumiTabLifecycleNavigationResponder:
             tab.setMuted(true)
         }
 
+        tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(
+            tab,
+            properties: [.URL, .title, .loading]
+        )
         tab.browserManager?.enforceSiteDataPolicyAfterNavigation(for: tab)
     }
 

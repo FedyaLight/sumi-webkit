@@ -495,20 +495,10 @@ struct SumiExtensionsSettingsPane: View {
             }
 
             SettingsSection(
-                title: "Import from Safari Apps",
-                subtitle: "Discover Safari Web Extensions bundled in installed macOS apps"
-            ) {
-                SafariExtensionImportCandidatesSection(
-                    installedExtensions: installedExtensions,
-                    onStatus: { statusMessage = $0 }
-                )
-            }
-
-            SettingsSection(
                 title: "Installed Extensions",
                 subtitle: installedExtensions.isEmpty
                     ? "No extensions are installed"
-                    : "Manage enabled state and uninstall installed extensions"
+                    : "Imported and sideloaded extensions managed by Sumi"
             ) {
                 if installedExtensions.isEmpty {
                     Text("Sumi did not find any installed extensions in its local runtime store.")
@@ -530,6 +520,16 @@ struct SumiExtensionsSettingsPane: View {
                         }
                     }
                 }
+            }
+
+            SettingsSection(
+                title: "Import from Safari Apps",
+                subtitle: "Discover Safari Web Extensions bundled in installed macOS apps"
+            ) {
+                SafariExtensionImportCandidatesSection(
+                    installedExtensions: installedExtensions,
+                    onStatus: { statusMessage = $0 }
+                )
             }
         }
     }
@@ -594,6 +594,8 @@ private struct ExtensionCatalogRow: View {
     let onToggleEnabled: () -> Void
     let onUninstall: () -> Void
 
+    @State private var isEnabled = false
+
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Group {
@@ -629,36 +631,42 @@ private struct ExtensionCatalogRow: View {
 
             Spacer()
 
-            HStack(spacing: 8) {
+            HStack(spacing: 12) {
                 if isBusy {
                     ProgressView()
                         .scaleEffect(0.75)
                 }
 
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(extensionRecord.sourceBundlePath, forType: .string)
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                }
-                .buttonStyle(.bordered)
-                .help("Copy source path")
+                Toggle("", isOn: $isEnabled)
+                    .labelsHidden()
+                    .disabled(isBusy)
+                    .help(extensionRecord.isEnabled ? "Disable extension" : "Enable extension")
+                    .onChange(of: isEnabled) { oldValue, newValue in
+                        guard oldValue != newValue, newValue != extensionRecord.isEnabled else {
+                            return
+                        }
+                        onToggleEnabled()
+                    }
 
-                Button(extensionRecord.isEnabled ? "Disable" : "Enable") {
-                    onToggleEnabled()
-                }
-                .buttonStyle(.bordered)
-                .disabled(isBusy)
-
-                Button("Remove", role: .destructive) {
+                Button(role: .destructive) {
                     onUninstall()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 14, weight: .regular))
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(NavButtonStyle(size: .small))
                 .disabled(isBusy)
+                .help("Remove extension")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 4)
+        .onAppear {
+            isEnabled = extensionRecord.isEnabled
+        }
+        .onChange(of: extensionRecord.isEnabled) { _, newValue in
+            isEnabled = newValue
+        }
     }
 }
 

@@ -380,6 +380,7 @@ extension ExtensionManager {
 
     func loadEnabledExtension(
         from entity: ExtensionEntity,
+        profileId: UUID? = nil,
         expectedLoadGeneration: UInt64? = nil
     ) async throws -> InstalledExtension {
         let signpostState = PerformanceTrace.beginInterval("ExtensionManager.loadEnabledExtension")
@@ -388,23 +389,22 @@ extension ExtensionManager {
         }
 
         do {
-            guard let extensionController else {
+            let resolvedProfileId =
+                profileId
+                ?? currentProfileId
+                ?? browserManager?.currentProfile?.id
+            guard let resolvedProfileId else {
                 throw ExtensionError.installationFailed(
-                    "Extension runtime controller is unavailable"
+                    "Extension runtime profile is unavailable"
                 )
             }
+            let extensionController = ensureExtensionController(for: resolvedProfileId)
 
             let extensionRoot = URL(fileURLWithPath: entity.packagePath)
             let manifestURL = extensionRoot.appendingPathComponent("manifest.json")
             extensionRuntimeTrace(
-                "loadEnabledExtension start extensionId=\(entity.id) expectedGeneration=\(expectedLoadGeneration.map(String.init) ?? "nil") currentGeneration=\(extensionLoadGeneration) packagePath=\(entity.packagePath)"
+                "loadEnabledExtension start extensionId=\(entity.id) profileId=\(resolvedProfileId.uuidString) expectedGeneration=\(expectedLoadGeneration.map(String.init) ?? "nil") currentGeneration=\(extensionLoadGeneration) packagePath=\(entity.packagePath)"
             )
-            let patchStart = CFAbsoluteTimeGetCurrent()
-            patchManifestForWebKit(at: manifestURL)
-            recordRuntimeMetric(for: entity.id) {
-                $0.manifestPatchDuration = CFAbsoluteTimeGetCurrent() - patchStart
-            }
-
             let validationStart = CFAbsoluteTimeGetCurrent()
             let manifest = try ExtensionUtils.validateManifest(at: manifestURL)
             recordRuntimeMetric(for: entity.id) {
@@ -428,7 +428,11 @@ extension ExtensionManager {
             }
             try validateExpectedExtensionLoadGeneration(expectedLoadGeneration)
             let extensionContext = WKWebExtensionContext(for: webExtension)
-            configureContextIdentity(extensionContext, extensionId: entity.id)
+            configureContextIdentity(
+                extensionContext,
+                extensionId: entity.id,
+                profileId: resolvedProfileId
+            )
             grantRequestedPermissions(
                 to: extensionContext,
                 webExtension: webExtension,
@@ -440,21 +444,25 @@ extension ExtensionManager {
             prepareExtensionContextForRuntime(
                 extensionContext,
                 extensionId: entity.id,
+                profileId: resolvedProfileId,
                 manifest: manifest
             )
-            ensureWebExtensionStorageDirectoryExists(for: entity.id)
+            ensureWebExtensionStorageDirectoryExists(
+                for: entity.id,
+                profileId: resolvedProfileId
+            )
             traceWebExtensionStoreLifecycle(
                 phase: "before-loadEnabledExtension-controller-load",
                 extensionId: entity.id,
                 manifest: manifest
             )
 
-            extensionContexts[entity.id] = extensionContext
-            loadedExtensionManifests[entity.id] = manifest
-            setupExternallyConnectableBridge(
+            setExtensionContext(
+                extensionContext,
                 extensionId: entity.id,
-                packagePath: entity.packagePath
+                profileId: resolvedProfileId
             )
+            loadedExtensionManifests[entity.id] = manifest
 
             do {
                 #if DEBUG
@@ -478,7 +486,10 @@ extension ExtensionManager {
                 "loadEnabledExtension loaded extensionId=\(entity.id) context=\(extensionRuntimeObjectDescription(extensionContext)) controller=\(extensionRuntimeControllerDescription(extensionController))"
             )
 
-            await finalizeEnabledExtensionRuntime(for: entity.id)
+            await finalizeEnabledExtensionRuntime(
+                for: entity.id,
+                profileId: resolvedProfileId
+            )
 
             let refreshed = try refreshedRecord(for: entity, manifest: manifest)
             await applyInstalledExtensionsMutationOnNextRunLoop { manager in
@@ -598,24 +609,34 @@ extension ExtensionManager {
     private func backgroundWakeKey(
         for extensionContext: WKWebExtensionContext
     ) -> String {
-        extensionID(for: extensionContext)
-            ?? "context:\(ObjectIdentifier(extensionContext))"
+        if let extensionId = extensionID(for: extensionContext),
+           let profileId = profileId(for: extensionContext)
+        {
+            return backgroundScopedKey(extensionId: extensionId, profileId: profileId)
+        }
+        return "context:\(ObjectIdentifier(extensionContext))"
     }
 
     func backgroundRuntimeState(
-        for extensionId: String
+        for extensionId: String,
+        profileId: UUID? = nil
     ) -> BackgroundRuntimeState {
-        backgroundRuntimeStateByExtensionID[extensionId] ?? .neverLoaded
+        let resolvedProfileId =
+            profileId ?? currentProfileId ?? browserManager?.currentProfile?.id
+        guard let resolvedProfileId else { return .neverLoaded }
+        return backgroundRuntimeStateByExtensionID[
+            backgroundScopedKey(extensionId: extensionId, profileId: resolvedProfileId)
+        ] ?? .neverLoaded
     }
 
     private func setBackgroundRuntimeState(
         _ state: BackgroundRuntimeState,
-        for extensionId: String
+        for wakeKey: String
     ) {
         if state == .neverLoaded {
-            backgroundRuntimeStateByExtensionID.removeValue(forKey: extensionId)
+            backgroundRuntimeStateByExtensionID.removeValue(forKey: wakeKey)
         } else {
-            backgroundRuntimeStateByExtensionID[extensionId] = state
+            backgroundRuntimeStateByExtensionID[wakeKey] = state
         }
     }
 
@@ -671,7 +692,6 @@ extension ExtensionManager {
             let manifestURL = temporaryDirectory.appendingPathComponent("manifest.json")
             let manifest = try ExtensionUtils.validateManifest(at: manifestURL)
             try validateMV3Requirements(manifest: manifest, baseURL: temporaryDirectory)
-            patchManifestForWebKit(at: manifestURL)
 
             let extensionId: String
             let allEntities = try context.fetch(FetchDescriptor<ExtensionEntity>())
@@ -749,6 +769,16 @@ extension ExtensionManager {
             )
 
             if enableOnInstall {
+                let installProfileId =
+                    currentProfileId
+                    ?? browserManager?.currentProfile?.id
+                guard let installProfileId else {
+                    throw ExtensionError.installationFailed(
+                        "Extension runtime profile is unavailable"
+                    )
+                }
+                let installController = ensureExtensionController(for: installProfileId)
+
                 let (webExtension, runtimeLoadSource) = try await SafariAppExtensionResources.makeWebExtension(
                     sourceKind: resolvedSource.sourceKind,
                     sourceBundlePath: resolvedSource.sourceBundlePath.path,
@@ -758,7 +788,11 @@ extension ExtensionManager {
                     "performInstallation webExtension source=\(runtimeLoadSource.rawValue) packagePath=\(destinationDirectory.path) sourceBundlePath=\(resolvedSource.sourceBundlePath.path)"
                 )
                 let extensionContext = WKWebExtensionContext(for: webExtension)
-                configureContextIdentity(extensionContext, extensionId: extensionId)
+                configureContextIdentity(
+                    extensionContext,
+                    extensionId: extensionId,
+                    profileId: installProfileId
+                )
                 grantRequestedPermissions(
                     to: extensionContext,
                     webExtension: webExtension,
@@ -770,21 +804,25 @@ extension ExtensionManager {
                 prepareExtensionContextForRuntime(
                     extensionContext,
                     extensionId: extensionId,
+                    profileId: installProfileId,
                     manifest: finalManifest
                 )
-                ensureWebExtensionStorageDirectoryExists(for: extensionId)
+                ensureWebExtensionStorageDirectoryExists(
+                    for: extensionId,
+                    profileId: installProfileId
+                )
                 traceWebExtensionStoreLifecycle(
                     phase: "before-install-controller-load",
                     extensionId: extensionId,
                     manifest: finalManifest
                 )
 
-                extensionContexts[extensionId] = extensionContext
-                loadedExtensionManifests[extensionId] = finalManifest
-                setupExternallyConnectableBridge(
+                setExtensionContext(
+                    extensionContext,
                     extensionId: extensionId,
-                    packagePath: destinationDirectory.path
+                    profileId: installProfileId
                 )
+                loadedExtensionManifests[extensionId] = finalManifest
 
                 do {
                     #if DEBUG
@@ -793,12 +831,7 @@ extension ExtensionManager {
                             webExtensionStorageSnapshot(for: extensionId)
                         )
                     #endif
-                    guard let extensionController else {
-                        throw ExtensionError.installationFailed(
-                            "Extension runtime controller is unavailable"
-                        )
-                    }
-                    try extensionController.load(extensionContext)
+                    try installController.load(extensionContext)
                 } catch {
                     tearDownExtensionRuntimeState(for: extensionId, removeUIState: false)
                     throw error
@@ -929,22 +962,23 @@ extension ExtensionManager {
             }
         #endif
 
-        guard let extensionController else {
-            extensionRuntimeTrace(
-                "Skipped WebExtension data cleanup for \(extensionId): no controller"
+        let dataTypes = WKWebExtensionController.allExtensionDataTypes
+        var matchingRecords: [WKWebExtension.DataRecord] = []
+        for (profileId, controller) in extensionControllersByProfile {
+            let records = await withCheckedContinuation { continuation in
+                controller.fetchDataRecords(ofTypes: dataTypes) { records in
+                    continuation.resume(returning: records)
+                }
+            }
+            let scopedIdentifier = "\(profileId.uuidString):\(extensionId)"
+            matchingRecords.append(
+                contentsOf: records.filter {
+                    $0.uniqueIdentifier == extensionId
+                        || $0.uniqueIdentifier == scopedIdentifier
+                }
             )
-            return
         }
 
-        let dataTypes = WKWebExtensionController.allExtensionDataTypes
-        let dataRecords = await withCheckedContinuation { continuation in
-            extensionController.fetchDataRecords(ofTypes: dataTypes) { records in
-                continuation.resume(returning: records)
-            }
-        }
-        let matchingRecords = dataRecords.filter {
-            $0.uniqueIdentifier == extensionId
-        }
         let preCleanupSnapshot = webExtensionStorageSnapshot(for: extensionId)
 
         guard matchingRecords.isEmpty == false else {
@@ -961,12 +995,20 @@ extension ExtensionManager {
             return
         }
 
-        await withCheckedContinuation { continuation in
-            extensionController.removeData(
-                ofTypes: dataTypes,
-                from: matchingRecords
-            ) {
-                continuation.resume(returning: ())
+        for (profileId, controller) in extensionControllersByProfile {
+            let scopedIdentifier = "\(profileId.uuidString):\(extensionId)"
+            let profileRecords = matchingRecords.filter {
+                $0.uniqueIdentifier == extensionId
+                    || $0.uniqueIdentifier == scopedIdentifier
+            }
+            guard profileRecords.isEmpty == false else { continue }
+            await withCheckedContinuation { continuation in
+                controller.removeData(
+                    ofTypes: dataTypes,
+                    from: profileRecords
+                ) {
+                    continuation.resume(returning: ())
+                }
             }
         }
 
@@ -1050,7 +1092,13 @@ extension ExtensionManager {
         }
     }
 
-    func webExtensionStorageDirectory(for extensionId: String) -> URL? {
+    func webExtensionStorageDirectory(
+        for extensionId: String,
+        profileId: UUID? = nil
+    ) -> URL? {
+        let resolvedProfileId =
+            profileId ?? currentProfileId ?? browserManager?.currentProfile?.id
+        guard let resolvedProfileId else { return nil }
         guard let libraryDirectory = FileManager.default.urls(
             for: .libraryDirectory,
             in: .userDomainMask
@@ -1058,17 +1106,24 @@ extension ExtensionManager {
             return nil
         }
 
+        let controllerStorageId = extensionControllerIdentifier(for: resolvedProfileId)
         return libraryDirectory
             .appendingPathComponent("WebKit", isDirectory: true)
             .appendingPathComponent(SumiAppIdentity.runtimeBundleIdentifier, isDirectory: true)
             .appendingPathComponent("WebExtensions", isDirectory: true)
-            .appendingPathComponent(controllerIdentifier.uuidString.uppercased(), isDirectory: true)
+            .appendingPathComponent(controllerStorageId.uuidString.uppercased(), isDirectory: true)
             .appendingPathComponent(extensionId, isDirectory: true)
     }
 
     @discardableResult
-    func ensureWebExtensionStorageDirectoryExists(for extensionId: String) -> Bool {
-        guard let storageDirectory = webExtensionStorageDirectory(for: extensionId) else {
+    func ensureWebExtensionStorageDirectoryExists(
+        for extensionId: String,
+        profileId: UUID? = nil
+    ) -> Bool {
+        guard let storageDirectory = webExtensionStorageDirectory(
+            for: extensionId,
+            profileId: profileId
+        ) else {
             return false
         }
 
@@ -1134,9 +1189,7 @@ extension ExtensionManager {
         let unsupportedAPIs = Self.webKitRuntimeUnsupportedAPIs(for: manifest).sorted()
 
         return WebExtensionStoreCapabilitySnapshot(
-            usesWebKitCompatibilityPrelude: Self.shouldInstallWebKitRuntimeCompatibilityPrelude(
-                for: manifest
-            ),
+            usesWebKitCompatibilityPrelude: false,
             mayTouchDynamicContentScriptStore: permissions.contains("scripting"),
             mayTouchSyncStorageStore: permissions.contains("storage"),
             declaredPermissions: permissions.sorted(),
@@ -1248,10 +1301,14 @@ extension ExtensionManager {
 
     func configureContextIdentity(
         _ extensionContext: WKWebExtensionContext,
-        extensionId: String
+        extensionId: String,
+        profileId: UUID
     ) {
-        extensionContext.uniqueIdentifier = extensionId
-        let host = "ext-" + extensionId.utf8.map { String(format: "%02x", $0) }.joined()
+        let scopedIdentifier = "\(profileId.uuidString):\(extensionId)"
+        extensionContext.uniqueIdentifier = scopedIdentifier
+        let host =
+            "ext-"
+            + scopedIdentifier.utf8.map { String(format: "%02x", $0) }.joined()
         if let baseURL = URL(string: "webkit-extension://\(host)") {
             extensionContext.baseURL = baseURL
         }
@@ -1277,7 +1334,7 @@ extension ExtensionManager {
         _ permission: WKWebExtension.Permission,
         manifest: [String: Any]
     ) -> Bool {
-        guard Self.shouldInstallWebKitRuntimeCompatibilityPrelude(for: manifest) else {
+        guard Self.manifestDeclaresWebKitBrowserTarget(for: manifest) else {
             return false
         }
 
@@ -1287,7 +1344,7 @@ extension ExtensionManager {
     static func webKitRuntimeUnsupportedAPIs(
         for manifest: [String: Any]
     ) -> Set<String> {
-        guard shouldInstallWebKitRuntimeCompatibilityPrelude(for: manifest) else {
+        guard Self.manifestDeclaresWebKitBrowserTarget(for: manifest) else {
             return []
         }
 

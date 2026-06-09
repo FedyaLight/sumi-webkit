@@ -656,7 +656,7 @@ extension ExtensionManager {
             return nil
         }
 
-        guard extensionContexts[extensionId] != nil else {
+        guard getExtensionContext(for: extensionId) != nil else {
             logExternallyConnectableBridgeEvent(
                 "Native \(operation) validation failed for \(extensionId): context unavailable"
             )
@@ -720,7 +720,7 @@ extension ExtensionManager {
             return nil
         }
 
-        guard extensionContexts[session.extensionId] != nil else {
+        guard getExtensionContext(for: session.extensionId) != nil else {
             logExternallyConnectableBridgeEvent(
                 "Native connect validation failed for \(portId): context unavailable"
             )
@@ -786,7 +786,7 @@ extension ExtensionManager {
             "Starting isolated-world delivery for native sendMessage ext=\(extensionId)"
         )
 
-        guard let extensionContext = extensionContexts[extensionId] else {
+        guard let extensionContext = getExtensionContext(for: extensionId) else {
             throw NSError(
                 domain: "ExternallyConnectable",
                 code: 1004,

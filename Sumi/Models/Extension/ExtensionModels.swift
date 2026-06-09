@@ -305,6 +305,7 @@ enum ExtensionError: LocalizedError {
     case unsupportedManifest(String)
     case unsupportedCapability(String)
     case installationFailed(String)
+    case importSucceededEnableFailed(String)
     case permissionDenied
 
     var errorDescription: String? {
@@ -319,6 +320,8 @@ enum ExtensionError: LocalizedError {
             return "Unsupported extension capability: \(reason)"
         case .installationFailed(let reason):
             return "Installation failed: \(reason)"
+        case .importSucceededEnableFailed(let reason):
+            return reason
         case .permissionDenied:
             return "Permission denied"
         }
