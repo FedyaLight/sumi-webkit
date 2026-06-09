@@ -1181,9 +1181,32 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
                 "runtime.connect returned a popup/options-scoped synthetic Port object.",
             ]
         )
+        // When the staged snapshots captured live service-worker onConnect
+        // listeners (bucket 1-3), a connect route that reported no receiving end
+        // is a connect/startup ordering issue, not a permanently missing
+        // listener. The classifier must reconcile the staged listener evidence
+        // and must not return .serviceWorkerOnConnectListenerMissing using a
+        // stale top-level harness count of zero.
         XCTAssertEqual(
             ChromeMV3LivePopupProductPathTraceBuilder.classifyServiceWorkerConnectBlocker(
                 trace: trace,
+                routeEvents: popupOnMessageRegistration,
+                routeRecords: [missingListenerRoute]
+            ),
+            .serviceWorkerConnectDispatchedBeforeStartup
+        )
+
+        // A genuinely missing listener (staged onConnect bucket 0 and a connect
+        // route with no receiving end) is still classified as missing.
+        var genuinelyMissingTrace = trace
+        genuinelyMissingTrace.stagedSnapshots = trace.stagedSnapshots.map {
+            var snapshot = $0
+            snapshot.serviceWorkerOnConnectListenerCountBucket = "0"
+            return snapshot
+        }
+        XCTAssertEqual(
+            ChromeMV3LivePopupProductPathTraceBuilder.classifyServiceWorkerConnectBlocker(
+                trace: genuinelyMissingTrace,
                 routeEvents: popupOnMessageRegistration,
                 routeRecords: [missingListenerRoute]
             ),
@@ -1995,7 +2018,20 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
 
         let root = try makeTemporaryDirectory()
         let profileID = UUID()
-        let module = try makeModule(enabled: true, includesModelContext: true)
+        // This DEBUG diagnostic test specifically exercises the
+        // `diagnosticCustomScheme` popup host. The live controlled-popup default
+        // is now `.fileBacked` (see
+        // ChromeMV3ProductPopupOptionsLoadingMode.controlledCompatibilityDefault),
+        // so the diagnostic custom-scheme path must be requested explicitly.
+        let module = try makeModule(
+            enabled: true,
+            includesModelContext: true,
+            popupOptionsWebViewFactory: {
+                ChromeMV3ProductPopupOptionsWKWebViewFactory(
+                    loadingMode: .diagnosticCustomScheme
+                )
+            }
+        )
         let install = module.chromeMV3InstallUnpackedThroughManager(
             rootURL: root,
             sourceURL: bitwardenRoot,

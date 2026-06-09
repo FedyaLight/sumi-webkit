@@ -3912,6 +3912,11 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 return "appStateWaitWithSuppressedEvent"
             }
             if serviceWorkerStorageWriteCountAfterConnect > 0
+                && popupReadWrittenByServiceWorker.isEmpty
+            {
+                return "serviceWorkerStorageWriteNotMirrored"
+            }
+            if serviceWorkerStorageWriteCountAfterConnect > 0
                 && popupReadWrittenByServiceWorker.isEmpty == false
             {
                 return "appStateWaitWithDelayedWriter"
@@ -4536,6 +4541,34 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         )
     }
 
+    private func synchronizePopupLocalStorageFromServiceWorkerMirror()
+        -> ChromeMV3StorageOnChangedEventPayload?
+    {
+        guard sharedLifecycleSession != nil else { return nil }
+        guard
+            let onChanged =
+                sharedLifecycleSession?
+                .mirrorServiceWorkerLocalStorageIfNeeded(),
+            onChanged.changedKeys.isEmpty == false
+        else { return nil }
+        refreshPopupLocalStorageBrokerFromSharedBackingStore()
+        onChangedPayloads.append(onChanged)
+        #if DEBUG
+            recordAppStateStorageChangeDispatch(
+                payload: onChanged,
+                elapsedMilliseconds: 0,
+                lifecycleResult: nil
+            )
+        #endif
+        return onChanged
+    }
+
+    private func refreshPopupLocalStorageBrokerFromSharedBackingStore() {
+        guard sharedLifecycleSession != nil else { return }
+        guard localStorageBroker.snapshotURL != nil else { return }
+        _ = try? localStorageBroker.loadHostSnapshotIfPresent()
+    }
+
     private func runtimeLastErrorContract(
         for resultKind: ChromeMV3ServiceWorkerJSDispatchResultKind
     ) -> ChromeMV3RuntimeLastErrorContract {
@@ -4577,14 +4610,20 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             payloadSummary: "popup/options runtime.sendMessage"
         ) {
             if jsResult.dispatched {
+                let mirroredOnChanged =
+                    synchronizePopupLocalStorageFromServiceWorkerMirror()
                 return response(
                     request: request,
                     succeeded: true,
                     payload: jsResult.responsePayload ?? .null,
+                    onChangedPayload: mirroredOnChanged,
                     serviceWorkerLifecycleWakeResult:
                         jsResult.lifecycleWakeResult,
                     diagnostics:
                         jsResult.diagnostics
+                        + serviceWorkerStorageMirrorDiagnostics(
+                            mirroredOnChanged
+                        )
                         + [
                             "runtime.sendMessage dispatched to a captured service-worker runtime.onMessage JavaScript listener.",
                         ]
@@ -4766,6 +4805,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             syntheticPortIDs.insert(portID)
             serviceWorkerLifecyclePortIDs.insert(portID)
             let serviceWorkerPortOutbox = jsResult.serviceWorkerPortOutbox
+            let mirroredOnChanged =
+                synchronizePopupLocalStorageFromServiceWorkerMirror()
             return response(
                 request: request,
                 succeeded: true,
@@ -4775,6 +4816,7 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     name: connectName,
                     serviceWorkerPortOutbox: serviceWorkerPortOutbox
                 ),
+                onChangedPayload: mirroredOnChanged,
                 serviceWorkerLifecycleWakeResult:
                     jsResult.lifecycleWakeResult,
                 diagnostics:
@@ -4791,6 +4833,9 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     )
                     + runtimeConnectOutboxDiagnostics(
                         serviceWorkerPortOutbox
+                    )
+                    + serviceWorkerStorageMirrorDiagnostics(
+                        mirroredOnChanged
                     )
                     + [
                         "runtime.connect delivered a named Port to captured service-worker runtime.onConnect JavaScript listener(s).",
@@ -5007,6 +5052,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                     ]
             )
         }
+        let mirroredOnChanged =
+            synchronizePopupLocalStorageFromServiceWorkerMirror()
         return response(
             request: request,
             succeeded: true,
@@ -5014,10 +5061,12 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 delivery,
                 direction: "popupOptionsToServiceWorker"
             ),
+            onChangedPayload: mirroredOnChanged,
             serviceWorkerLifecycleWakeResult:
                 delivery.lifecycleWakeResult,
             diagnostics:
                 delivery.diagnostics
+                + serviceWorkerStorageMirrorDiagnostics(mirroredOnChanged)
                 + [
                     "popup/options Port.postMessage reached service-worker Port.onMessage.",
                 ]
@@ -5477,6 +5526,8 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             #endif
             switch area {
             case .local:
+                refreshPopupLocalStorageBrokerFromSharedBackingStore()
+                _ = synchronizePopupLocalStorageFromServiceWorkerMirror()
                 envelope = storageOperationHandler.handle(
                     input,
                     broker: &localStorageBroker
@@ -8498,6 +8549,22 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
             return .number(Double(bytes))
         }
         return envelope.resultPayload.voidResult ? .null : nil
+    }
+
+    private func serviceWorkerStorageMirrorDiagnostics(
+        _ onChanged: ChromeMV3StorageOnChangedEventPayload?
+    ) -> [String] {
+        guard let onChanged else {
+            return [
+                "serviceWorkerStorageMirror=none",
+            ]
+        }
+        return [
+            "serviceWorkerStorageMirror=applied",
+            "mirroredChangedKeyCount=\(onChanged.changedKeys.count)",
+            "mirroredStorageArea=\(onChanged.areaName)",
+            "No raw storage keys or values are logged.",
+        ]
     }
 
     private func popupOnChangedPayload(

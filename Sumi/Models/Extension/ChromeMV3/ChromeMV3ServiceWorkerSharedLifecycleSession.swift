@@ -212,6 +212,8 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
     private var nextAttachSequence = 1
     private var nextJSListenerDispatchSequence = 1
     private var nextRuntimePortDeliverySequence = 1
+    private var serviceWorkerLocalStorageMirror:
+        (() -> ChromeMV3StorageOnChangedEventPayload?)?
     #if DEBUG
         private var initialAppStateServiceWorkerSnapshot:
             ChromeMV3ServiceWorkerJSExecutionSnapshot?
@@ -584,6 +586,7 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
         detachAll(reason: .reset)
         runtimeOwner.reset()
         componentRecords.removeAll()
+        clearServiceWorkerLocalStorageMirror()
         #if DEBUG
             initialAppStateServiceWorkerSnapshot = nil
             latestAppStateServiceWorkerSnapshot = nil
@@ -591,6 +594,22 @@ final class ChromeMV3ServiceWorkerSharedLifecycleSession {
         nextAttachSequence = 1
         nextJSListenerDispatchSequence = 1
         nextRuntimePortDeliverySequence = 1
+    }
+
+    func setServiceWorkerLocalStorageMirror(
+        _ mirror: @escaping () -> ChromeMV3StorageOnChangedEventPayload?
+    ) {
+        serviceWorkerLocalStorageMirror = mirror
+    }
+
+    func clearServiceWorkerLocalStorageMirror() {
+        serviceWorkerLocalStorageMirror = nil
+    }
+
+    func mirrorServiceWorkerLocalStorageIfNeeded()
+        -> ChromeMV3StorageOnChangedEventPayload?
+    {
+        serviceWorkerLocalStorageMirror?()
     }
 
     #if DEBUG

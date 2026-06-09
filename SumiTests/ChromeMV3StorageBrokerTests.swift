@@ -861,6 +861,12 @@ final class ChromeMV3StorageBrokerTests: XCTestCase {
                     && $0.relativePath
                         != "Sumi/Models/Extension/ChromeMV3/ChromeMV3ContentScriptProductAttachment.swift"
                     && $0.relativePath
+                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3PopupOptionsWebAssemblyStreamingCompatibilityShim.swift"
+                    && $0.relativePath
+                        != "Sumi/Models/Extension/ChromeMV3/ChromeMV3LivePopupProductPathTrace.swift"
+                    && $0.relativePath
+                        != "SumiTests/ChromeMV3ControlledPopupBaselineFixture.swift"
+                    && $0.relativePath
                         != "SumiTests/ChromeMV3NativeMessagingInternalRuntimeTests.swift"
                     && $0.relativePath
                         != "SumiTests/ChromeMV3PopupOptionsJSBridgeTests.swift"

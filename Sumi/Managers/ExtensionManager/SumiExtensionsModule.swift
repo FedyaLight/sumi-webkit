@@ -10,6 +10,7 @@ private final class ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore {
     private struct Record {
         var session: ChromeMV3ServiceWorkerSharedLifecycleSession
         var harness: ChromeMV3ServiceWorkerJSExecutionHarness
+        var localStorageBroker: ChromeMV3StorageBroker
         var profileID: String
         var extensionID: String
         var generatedPackageID: String
@@ -26,9 +27,14 @@ private final class ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore {
         trace: (String) -> Void
     ) -> ChromeMV3ServiceWorkerSharedLifecycleSession? {
         let recordKey = makeRecordKey(launchRecord: launchRecord)
-        if let existing = records[recordKey] {
+        if var existing = records[recordKey] {
+            registerServiceWorkerLocalStorageMirror(
+                recordKey: recordKey,
+                record: &existing
+            )
+            records[recordKey] = existing
             trace(
-                "[controlled-action-popup-service-worker] extension=\(existing.extensionID) profile=\(existing.profileID) generatedPackageID=\(existing.generatedPackageID) popupSession=\(existing.popupSessionID) lifecycleSession=\(existing.lifecycleSessionID) action=reuse workerState=retained onConnectListenerCount=\(listenerCount(.runtimeOnConnect, in: existing.session)) onMessageListenerCount=\(listenerCount(.runtimeOnMessage, in: existing.session)) onConnectDispatcherCount=\(existing.session.jsListenerDispatcherCount(for: .runtimeOnConnect)) keepaliveCount=\(existing.session.runtimeOwner.snapshot.activeKeepaliveRecords.count) gate=allowed nativeHost=false runtimeLoadable=false"
+                "[controlled-action-popup-service-worker] extension=\(existing.extensionID) profile=\(existing.profileID) generatedPackageID=\(existing.generatedPackageID) popupSession=\(existing.popupSessionID) lifecycleSession=\(existing.lifecycleSessionID) action=reuse workerState=retained onConnectListenerCount=\(listenerCount(.runtimeOnConnect, in: existing.session)) onMessageListenerCount=\(listenerCount(.runtimeOnMessage, in: existing.session)) onConnectDispatcherCount=\(existing.session.jsListenerDispatcherCount(for: .runtimeOnConnect)) keepaliveCount=\(existing.session.runtimeOwner.snapshot.activeKeepaliveRecords.count) gate=allowed nativeHost=false runtimeLoadable=false storageMirror=registered"
             )
             return existing.session
         }
@@ -122,7 +128,20 @@ private final class ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore {
                     dynamicImportRewriteExperimentAllowed: true
                 )
         )
+        var localStorageBroker = makeControlledActionPopupLocalStorageBroker(
+            launchRecord: launchRecord
+        )
+        let seededStorageValues =
+            localStorageBroker.exportSnapshot().values
         let start = harness.start()
+        let storageSeededIntoWorker =
+            seededStorageValues.isEmpty
+                ? true
+                : ChromeMV3ServiceWorkerLocalStorageMirror.seedBrokerSnapshot(
+                    seededStorageValues,
+                    into: harness,
+                    area: .local
+                )
         let canDispatch =
             start.status == .running || harness.canDispatchCapturedListeners
         if canDispatch {
@@ -138,19 +157,83 @@ private final class ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore {
         let onMessageCaptured = harness.capturedListener(
             for: .runtimeOnMessage
         )
-        records[recordKey] = Record(
+        var record = Record(
             session: session,
             harness: harness,
+            localStorageBroker: localStorageBroker,
             profileID: launchRecord.profileID,
             extensionID: launchRecord.extensionID,
             generatedPackageID: generatedRecord.id,
             popupSessionID: recordKey,
             lifecycleSessionID: key.lifecycleSessionID
         )
+        registerServiceWorkerLocalStorageMirror(
+            recordKey: recordKey,
+            record: &record
+        )
+        records[recordKey] = record
         trace(
-            "[controlled-action-popup-service-worker] extension=\(launchRecord.extensionID) profile=\(launchRecord.profileID) generatedPackageID=\(generatedRecord.id) generatedBundleVersion=\(launchRecord.generatedBundleVersionID ?? "none") popupSession=\(recordKey) lifecycleSession=\(key.lifecycleSessionID) action=create workerStart=\(start.status.rawValue) workerDispatchReady=\(canDispatch) capturedListenerCount=\(harness.snapshot.capturedListeners.count) onConnectCaptured=\(onConnectCaptured) onMessageCaptured=\(onMessageCaptured) onConnectListenerCount=\(listenerCount(.runtimeOnConnect, in: session)) onMessageListenerCount=\(listenerCount(.runtimeOnMessage, in: session)) onConnectDispatcherCount=\(session.jsListenerDispatcherCount(for: .runtimeOnConnect)) nativePortKeepalive=false permanentBackground=false nativeHost=false runtimeLoadable=false portName=callerProvided"
+            "[controlled-action-popup-service-worker] extension=\(launchRecord.extensionID) profile=\(launchRecord.profileID) generatedPackageID=\(generatedRecord.id) generatedBundleVersion=\(launchRecord.generatedBundleVersionID ?? "none") popupSession=\(recordKey) lifecycleSession=\(key.lifecycleSessionID) action=create workerStart=\(start.status.rawValue) workerDispatchReady=\(canDispatch) capturedListenerCount=\(harness.snapshot.capturedListeners.count) onConnectCaptured=\(onConnectCaptured) onMessageCaptured=\(onMessageCaptured) onConnectListenerCount=\(listenerCount(.runtimeOnConnect, in: session)) onMessageListenerCount=\(listenerCount(.runtimeOnMessage, in: session)) onConnectDispatcherCount=\(session.jsListenerDispatcherCount(for: .runtimeOnConnect)) nativePortKeepalive=false permanentBackground=false nativeHost=false runtimeLoadable=false portName=callerProvided storageSeededIntoWorker=\(storageSeededIntoWorker) storageMirror=registered seededKeyCount=\(seededStorageValues.count)"
         )
         return session
+    }
+
+    private func makeControlledActionPopupLocalStorageBroker(
+        launchRecord: ChromeMV3ProductPopupOptionsLaunchRecord
+    ) -> ChromeMV3StorageBroker {
+        let storageNamespace = ChromeMV3StorageNamespace(
+            profileID: launchRecord.profileID,
+            extensionID: launchRecord.extensionID,
+            area: .local
+        )
+        let persistenceMode: ChromeMV3StorageBrokerPersistenceMode
+        if let managerStoreRootPath = launchRecord.managerStoreRootPath,
+           managerStoreRootPath.isEmpty == false
+        {
+            let storageRootURL = URL(
+                fileURLWithPath: managerStoreRootPath,
+                isDirectory: true
+            ).standardizedFileURL.appendingPathComponent(
+                "DeveloperPreviewStorageLocal",
+                isDirectory: true
+            )
+            persistenceMode = .hostBacked(rootURL: storageRootURL)
+        } else {
+            persistenceMode = .inMemory
+        }
+        var broker = ChromeMV3StorageBroker(
+            namespace: storageNamespace,
+            persistenceMode: persistenceMode
+        )
+        _ = try? broker.loadHostSnapshotIfPresent()
+        return broker
+    }
+
+    private func registerServiceWorkerLocalStorageMirror(
+        recordKey: String,
+        record: inout Record
+    ) {
+        record.session.setServiceWorkerLocalStorageMirror { [weak self] in
+            guard let self else { return nil }
+            return self.mirrorServiceWorkerLocalStorage(for: recordKey)
+        }
+    }
+
+    private func mirrorServiceWorkerLocalStorage(
+        for recordKey: String
+    ) -> ChromeMV3StorageOnChangedEventPayload? {
+        guard var record = records[recordKey] else { return nil }
+        guard
+            let exported = record.harness.exportStorageValues(area: .local)
+        else { return nil }
+        let mirror = ChromeMV3ServiceWorkerLocalStorageMirror
+            .mirrorExportedValues(
+                exported,
+                into: &record.localStorageBroker,
+                writerContextCategory: "popupWakeSW"
+            )
+        records[recordKey] = record
+        return mirror.onChangedPayload
     }
 
     func releaseControlledActionPopupRuntimePortSession(

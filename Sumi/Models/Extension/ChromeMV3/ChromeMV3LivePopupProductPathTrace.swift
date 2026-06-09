@@ -1606,6 +1606,60 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         return snapshots.last
     }
 
+    /// Lower-bound service-worker listener counts observed across the staged
+    /// snapshots. Staged buckets are derived from real service-worker harness
+    /// listener state captured at each stage, so they remain authoritative even
+    /// when a single top-level reading is taken after the shared lifecycle
+    /// session has already been released and reports zero.
+    static func stagedServiceWorkerListenerLowerBounds(
+        _ snapshots: [ChromeMV3LivePopupStagedSnapshot]
+    ) -> (onMessage: Int, onConnect: Int) {
+        var onMessage = 0
+        var onConnect = 0
+        for snapshot in snapshots {
+            onMessage = max(
+                onMessage,
+                diagnosticBucketLowerBound(
+                    snapshot.serviceWorkerOnMessageListenerCountBucket
+                )
+            )
+            onConnect = max(
+                onConnect,
+                diagnosticBucketLowerBound(
+                    snapshot.serviceWorkerOnConnectListenerCountBucket
+                )
+            )
+        }
+        return (onMessage, onConnect)
+    }
+
+    /// Port outbox delivery diagnostics derived from the preferred staged
+    /// snapshot when present, otherwise reconstructed from the route events.
+    /// Mirrors the extraction used by `classifyPortDeliveryFailure` so the
+    /// connect-blocker and port-delivery classifiers reason from the same
+    /// authoritative evidence.
+    static func connectBlockerPortDelivery(
+        trace: ChromeMV3LivePopupProductPathTrace,
+        routeEvents: [ChromeMV3PopupOptionsJSDebugRouteEventRecord]
+    ) -> PortDeliveryDiagnostics {
+        if let latest = preferredStagedSnapshot(trace.stagedSnapshots) {
+            return PortDeliveryDiagnostics(
+                swOutboxCaptured: diagnosticBucketLowerBound(
+                    latest.swOutboxCapturedCountBucket
+                ),
+                swOutboxDelivered: diagnosticBucketLowerBound(
+                    latest.swOutboxDeliveredToPopupCountBucket
+                ),
+                pendingInbound: diagnosticBucketLowerBound(
+                    latest.pendingInboundPortMessagesBucket
+                ),
+                listenerCategory: latest.popupPortOnMessageListenerCategory,
+                disconnectCategory: latest.portDisconnectCategory
+            )
+        }
+        return portDeliveryDiagnostics(from: routeEvents)
+    }
+
     static func classifyServiceWorkerConnectBlocker(
         trace: ChromeMV3LivePopupProductPathTrace,
         routeEvents: [ChromeMV3PopupOptionsJSDebugRouteEventRecord] = [],
@@ -1624,6 +1678,37 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             }
         guard runtimeConnectObserved else { return nil }
 
+        // Service-worker Port outbox delivery is authoritative proof that the
+        // service-worker runtime.onConnect listener fired and the Port
+        // round-trips. Per the Chrome messaging docs, a Port created by
+        // runtime.connect immediately reaches runtime.onConnect in the
+        // receiving end, and messages posted back from that end only exist if a
+        // listener ran. When any outbox was captured or delivered, a "missing
+        // listener" / "connect dispatched before startup" classification is
+        // provably wrong, so defer to the port-delivery / app-state classifiers.
+        let portDelivery = connectBlockerPortDelivery(
+            trace: trace,
+            routeEvents: routeEvents
+        )
+        if portDelivery.swOutboxCaptured > 0
+            || portDelivery.swOutboxDelivered > 0
+        {
+            return nil
+        }
+
+        // Reconcile the (possibly stale) top-level harness listener counts with
+        // the listener state captured in the staged snapshots. A top-level
+        // reading of zero must not override staged evidence that the
+        // service-worker runtime.onConnect/onMessage listeners were live, or the
+        // classifier reports a missing listener when the real condition is a
+        // connect/startup ordering issue or a pending port response.
+        let stagedListeners =
+            stagedServiceWorkerListenerLowerBounds(trace.stagedSnapshots)
+        let harnessOnConnectCount =
+            max(harnessOnConnectCount, stagedListeners.onConnect)
+        let harnessOnMessageCount =
+            max(harnessOnMessageCount, stagedListeners.onMessage)
+
         let serviceWorkerListeners = serviceWorkerListenerCounts(
             from: routeRecords,
             harnessOnMessageListenerCount: harnessOnMessageCount,
@@ -1636,10 +1721,19 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         let connectDelivered = popupConnectRoutes.contains(where: \.listenerInvoked)
 
         if harnessOnConnectCount == 0, serviceWorkerListeners.onConnect == 0 {
-            if connectFailedRoutes.isEmpty, connectDelivered == false,
-               latest.pendingBridgeRoutesBucket != "0"
-            {
-                return .serviceWorkerConnectDispatchedBeforeStartup
+            if connectFailedRoutes.isEmpty {
+                if connectDelivered == false,
+                   latest.pendingBridgeRoutesBucket != "0"
+                {
+                    return .serviceWorkerConnectDispatchedBeforeStartup
+                }
+                // No observed failed runtime.connect route record. The popup
+                // context cannot directly observe service-worker onConnect
+                // listener registration, so the absence of staged listener
+                // evidence is not proof of a missing listener. Defer to the
+                // port-delivery classifier (for example .portConnectedNoSwOutbox)
+                // rather than asserting a missing listener from stale state.
+                return nil
             }
             return .serviceWorkerOnConnectListenerMissing
         }
@@ -2205,6 +2299,9 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             return "popupToServiceWorkerRouteDropped"
         }
 
+        if trace.classification == "serviceWorkerStorageWriteNotMirrored" {
+            return "serviceWorkerStorageWriteNotMirrored"
+        }
         if trace.classification == "appStateWaitWithNoWriter"
             || (
                 trace.repeatedEmptyReadKeyHashes.isEmpty == false
