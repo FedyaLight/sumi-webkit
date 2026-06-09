@@ -1883,12 +1883,19 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         } else {
             storageOnChangedDeliveryCategory = "notObserved"
         }
+        let mirrorApplied =
+            bridgeSnapshot?.diagnostics.contains {
+                $0 == "serviceWorkerStorageMirror=applied"
+            } ?? false
         let swStorageWriteMirroredCountBucket: String
         if swWrites.isEmpty {
             swStorageWriteMirroredCountBucket = "0"
         } else if mirroredWriteCount > 0 {
             swStorageWriteMirroredCountBucket =
                 countBucket(mirroredWriteCount)
+        } else if mirrorApplied {
+            swStorageWriteMirroredCountBucket =
+                countBucket(swWrites.count)
         } else {
             swStorageWriteMirroredCountBucket = "0"
         }
@@ -1948,7 +1955,14 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             migrationShapedReadObserved || i18nRouteCount > 0 || ngVersionPresent
         let migrationWaitEntered = migrationShapedReadObserved
         let migrationWaitResolved =
-            migrationPopulatedReads > 0 || i18nRouteCount > 0 || ngVersionPresent
+            migrationWaitEntered
+            && (
+                migrationPopulatedReads > 0
+                    || (
+                        ngVersionPresent
+                            && staticLoadingShellCount == 0
+                    )
+            )
         let initializerEntered =
             scriptsExecuted
             && (
@@ -2231,7 +2245,7 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
 
         let storageMigrationWriteVisibilityCategory: String
         if serviceWorkerWrites > 0 {
-            storageMigrationWriteVisibilityCategory = "serviceWorkerWriteVisible"
+            storageMigrationWriteVisibilityCategory = "writeVisibleToPopup"
         } else if swWritesAfterConnect {
             storageMigrationWriteVisibilityCategory = "serviceWorkerWriteNotMirrored"
         } else if neverWrittenReads > 0 {
@@ -2345,8 +2359,14 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         let migrationWaitEnteredForAsyncDrain =
             migrationReadsForAsyncDrain.isEmpty == false
         let migrationWaitResolvedForAsyncDrain =
-            migrationReadsForAsyncDrain.filter(\.populatedResult).count > 0
-            || ngVersionPresent
+            migrationWaitEnteredForAsyncDrain
+            && (
+                migrationReadsForAsyncDrain.filter(\.populatedResult).count > 0
+                    || (
+                        ngVersionPresent
+                            && staticLoadingShellCount == 0
+                    )
+            )
         let asyncDrainDiagnostics = deriveAsyncDrainDiagnostics(
             bridgeSnapshot: bridgeSnapshot,
             swStorageWriteCapturedCountBucket:

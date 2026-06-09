@@ -215,6 +215,134 @@ final class ChromeMV3ServiceWorkerLocalStorageMirrorTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(drained.iterationCount, 0)
     }
 
+    func testLazySessionProviderMirrorsAsyncServiceWorkerWriteOnStorageRead()
+        throws
+    {
+        let storageRoot = try makeTemporaryDirectory()
+        let profileID = "lazy-async-storage-profile"
+        let extensionID = "lazy-async-storage-extension"
+        let harness = try makeHarnessWritingStorageAsyncOnConnect(
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        let session = try XCTUnwrap(
+            ChromeMV3ServiceWorkerSharedLifecycleSessionRegistry()
+                .session(profileID: profileID, extensionID: extensionID)
+        )
+        harness.attachCapturedListenerDispatchers(
+            to: session,
+            clearingExisting: true
+        )
+        try registerAsyncStorageMirror(
+            harness: harness,
+            session: session,
+            storageRoot: storageRoot,
+            profileID: profileID,
+            extensionID: extensionID
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                extensionID: extensionID,
+                profileID: profileID,
+                allowlist: .controlledActionPopupPolicy,
+                storageLocalRootPath: storageRoot.path
+            ),
+            sharedLifecycleSessionProvider: { session }
+        )
+
+        let connect = handler.handle(request(
+            namespace: "runtime",
+            methodName: "connect",
+            arguments: [.object(["name": .string("lazy-async-storage")])],
+            invocationMode: .fireAndForget
+        ))
+        XCTAssertTrue(connect.succeeded)
+        XCTAssertTrue(
+            connect.diagnostics.contains("serviceWorkerStorageMirror=applied")
+                || connect.onChangedPayload != nil
+        )
+
+        let read = handler.handle(request(
+            namespace: "storage",
+            methodName: "local.get",
+            arguments: [.string("mv3AsyncStartupStorageMarker")]
+        ))
+        XCTAssertTrue(read.succeeded)
+        XCTAssertEqual(
+            stringValue(objectValue(read.resultPayload)?["mv3AsyncStartupStorageMarker"]),
+            "async-startup"
+        )
+    }
+
+    func testStorageReadBeforeConnectMirrorIsEmptyAfterConnectReadIsPopulated()
+        throws
+    {
+        let storageRoot = try makeTemporaryDirectory()
+        let profileID = "ordering-async-storage-profile"
+        let extensionID = "ordering-async-storage-extension"
+        let harness = try makeHarnessWritingStorageAsyncOnConnect(
+            extensionID: extensionID,
+            profileID: profileID
+        )
+        let session = try XCTUnwrap(
+            ChromeMV3ServiceWorkerSharedLifecycleSessionRegistry()
+                .session(profileID: profileID, extensionID: extensionID)
+        )
+        harness.attachCapturedListenerDispatchers(
+            to: session,
+            clearingExisting: true
+        )
+        try registerAsyncStorageMirror(
+            harness: harness,
+            session: session,
+            storageRoot: storageRoot,
+            profileID: profileID,
+            extensionID: extensionID
+        )
+        let handler = ChromeMV3PopupOptionsJSBridgeHandler(
+            configuration: configuration(
+                extensionID: extensionID,
+                profileID: profileID,
+                allowlist: .controlledActionPopupPolicy,
+                storageLocalRootPath: storageRoot.path
+            ),
+            sharedLifecycleSessionProvider: { session }
+        )
+
+        let beforeConnect = handler.handle(request(
+            namespace: "storage",
+            methodName: "local.get",
+            arguments: [.string("mv3AsyncStartupStorageMarker")]
+        ))
+        XCTAssertTrue(beforeConnect.succeeded)
+        XCTAssertNil(
+            objectValue(beforeConnect.resultPayload)?["mv3AsyncStartupStorageMarker"]
+        )
+
+        let connect = handler.handle(request(
+            namespace: "runtime",
+            methodName: "connect",
+            arguments: [.object(["name": .string("ordering-async-storage")])],
+            invocationMode: .fireAndForget
+        ))
+        XCTAssertTrue(connect.succeeded)
+
+        let afterConnect = handler.handle(request(
+            namespace: "storage",
+            methodName: "local.get",
+            arguments: [.string("mv3AsyncStartupStorageMarker")]
+        ))
+        XCTAssertTrue(afterConnect.succeeded)
+        XCTAssertEqual(
+            stringValue(
+                objectValue(afterConnect.resultPayload)?[
+                    "mv3AsyncStartupStorageMarker"
+                ]
+            ),
+            "async-startup"
+        )
+    }
+
     func testControlledPopupAsyncServiceWorkerWriteIsVisibleToPopupBroker()
         throws
     {
@@ -449,6 +577,48 @@ final class ChromeMV3ServiceWorkerLocalStorageMirrorTests: XCTestCase {
             start.diagnostics.joined(separator: "\n")
         )
         return harness
+    }
+
+    private func registerAsyncStorageMirror(
+        harness: ChromeMV3ServiceWorkerJSExecutionHarness,
+        session: ChromeMV3ServiceWorkerSharedLifecycleSession,
+        storageRoot: URL,
+        profileID: String,
+        extensionID: String
+    ) throws {
+        let namespace = ChromeMV3StorageNamespace(
+            profileID: profileID,
+            extensionID: extensionID,
+            area: .local
+        )
+        final class BrokerHolder: @unchecked Sendable {
+            var broker: ChromeMV3StorageBroker
+            init(broker: ChromeMV3StorageBroker) {
+                self.broker = broker
+            }
+        }
+        let brokerHolder = BrokerHolder(
+            broker: ChromeMV3StorageBroker(
+                namespace: namespace,
+                persistenceMode: .hostBacked(rootURL: storageRoot)
+            )
+        )
+        session.setServiceWorkerLocalStorageMirror {
+            let asyncFlush =
+                ChromeMV3ServiceWorkerLocalStorageMirror
+                .flushDeferredServiceWorkerWork(in: harness)
+            XCTAssertTrue(asyncFlush.attempted)
+            guard
+                let exported = harness.exportStorageValues(area: .local)
+            else { return nil }
+            let mirror = ChromeMV3ServiceWorkerLocalStorageMirror
+                .mirrorExportedValues(
+                    exported,
+                    into: &brokerHolder.broker,
+                    writerContextCategory: "popupWakeSW"
+                )
+            return mirror.onChangedPayload
+        }
     }
 
     private func configuration(

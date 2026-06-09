@@ -4549,14 +4549,14 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
     private func synchronizePopupLocalStorageFromServiceWorkerMirror()
         -> ChromeMV3StorageOnChangedEventPayload?
     {
-        guard sharedLifecycleSession != nil else { return nil }
-        guard
-            let onChanged =
-                sharedLifecycleSession?
-                .mirrorServiceWorkerLocalStorageIfNeeded(),
-            onChanged.changedKeys.isEmpty == false
-        else { return nil }
+        guard sharedLifecycleSessionForRuntimeWake() != nil else { return nil }
+        let onChanged =
+            sharedLifecycleSession?
+            .mirrorServiceWorkerLocalStorageIfNeeded()
         refreshPopupLocalStorageBrokerFromSharedBackingStore()
+        guard let onChanged, onChanged.changedKeys.isEmpty == false else {
+            return nil
+        }
         onChangedPayloads.append(onChanged)
         #if DEBUG
             recordAppStateStorageChangeDispatch(
@@ -5529,20 +5529,23 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 let appStateStorageStartedAt =
                     DispatchTime.now().uptimeNanoseconds
             #endif
+            var mirroredOnChanged: ChromeMV3StorageOnChangedEventPayload?
             switch area {
             case .local:
-                refreshPopupLocalStorageBrokerFromSharedBackingStore()
-                _ = synchronizePopupLocalStorageFromServiceWorkerMirror()
+                mirroredOnChanged =
+                    synchronizePopupLocalStorageFromServiceWorkerMirror()
                 envelope = storageOperationHandler.handle(
                     input,
                     broker: &localStorageBroker
                 )
             case .session:
+                mirroredOnChanged = nil
                 envelope = storageOperationHandler.handle(
                     input,
                     broker: &sessionStorageBroker
                 )
             case .sync:
+                mirroredOnChanged = nil
                 var broker = preparedSyncStorageBroker()
                 envelope = storageOperationHandler.handle(
                     input,
@@ -5603,7 +5606,11 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                 )
             }
             let resultPayload = storageResultPayload(from: envelope)
-            let onChanged = popupOnChangedPayload(from: envelope)
+            let operationOnChanged = popupOnChangedPayload(from: envelope)
+            let onChanged = combinedStorageOnChangedPayload(
+                operation: operationOnChanged,
+                mirrored: mirroredOnChanged
+            )
             if let onChanged {
                 onChangedPayloads.append(onChanged)
             }
@@ -5652,6 +5659,9 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
                             resultPayload: resultPayload,
                             onChangedPayload: onChanged,
                             serviceWorkerWakeAttempted: lifecycleResult != nil
+                        )
+                        + serviceWorkerStorageMirrorDiagnostics(
+                            mirroredOnChanged
                         )
                         + (lifecycleResult?.diagnostics ?? [])
                         + [
@@ -8572,6 +8582,48 @@ final class ChromeMV3PopupOptionsJSBridgeHandler {
         ]
     }
 
+    private func combinedStorageOnChangedPayload(
+        operation: ChromeMV3StorageOnChangedEventPayload?,
+        mirrored: ChromeMV3StorageOnChangedEventPayload?
+    ) -> ChromeMV3StorageOnChangedEventPayload? {
+        switch (operation, mirrored) {
+        case (nil, nil):
+            return nil
+        case (let operation?, nil):
+            return operation
+        case (nil, let mirrored?):
+            return mirrored
+        case (let operation?, let mirrored?)
+            where operation.areaName == mirrored.areaName:
+            var mergedChanges = [String: ChromeMV3StorageChangeRecord]()
+            for change in operation.changes {
+                mergedChanges[change.key] = change
+            }
+            for change in mirrored.changes {
+                mergedChanges[change.key] = change
+            }
+            let changes = mergedChanges.values.sorted { $0.key < $1.key }
+            guard changes.isEmpty == false else { return nil }
+            return ChromeMV3StorageOnChangedEventPayload(
+                areaName: operation.areaName,
+                changedKeys: changes.map(\.key),
+                changes: changes,
+                extensionID: operation.extensionID,
+                profileID: operation.profileID,
+                wouldDispatchNow: true,
+                listenerRegistrationRequired: false,
+                serviceWorkerWakeRequired: false,
+                blockers: uniqueSortedPopupOptionsBridge(
+                    operation.blockers + mirrored.blockers
+                ),
+                serviceWorkerWakePreflight: operation.serviceWorkerWakePreflight
+            )
+        case (let operation?, let mirrored?):
+            return operation.changedKeys.count >= mirrored.changedKeys.count
+                ? operation : mirrored
+        }
+    }
+
     private func popupOnChangedPayload(
         from envelope: ChromeMV3StorageAPIOperationResultEnvelope
     ) -> ChromeMV3StorageOnChangedEventPayload? {
@@ -9241,6 +9293,13 @@ enum ChromeMV3PopupOptionsJSShimSource {
             const promise = bridgePost(namespace, methodName, mode, bridgeArgs)
               .then((response) => {
                 if (response.succeeded && namespace === "storage") {
+                  dispatchSyntheticStorageEvent(response);
+                }
+                if (
+                  response.succeeded
+                  && namespace === "runtime"
+                  && response.onChangedPayload
+                ) {
                   dispatchSyntheticStorageEvent(response);
                 }
                 if (response.succeeded && namespace === "permissions") {
@@ -9952,6 +10011,9 @@ enum ChromeMV3PopupOptionsJSShimSource {
                   if (!response.succeeded) {
                     state.markDisconnected(response.lastErrorMessage);
                     return;
+                  }
+                  if (response.onChangedPayload) {
+                    dispatchSyntheticStorageEvent(response);
                   }
                   const payload = response.resultPayload || {};
                   state.id = payload.portID || state.id;
