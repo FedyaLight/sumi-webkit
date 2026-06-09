@@ -279,6 +279,14 @@ struct ChromeMV3FirstVisibleUIGateDiagnostics: Equatable, Sendable {
     var storageOnChangedDeliveryCategory: String
     var installStoragePersistedCategory: String
     var popupWakeStorageSeededCategory: String
+    var swAsyncDrainAttemptedCategory: String
+    var swAsyncDrainIterationCountBucket: String
+    var swPromiseContinuationObservedCategory: String
+    var swTimerDrainCountBucket: String
+    var swStorageWriteAfterAsyncDrainCountBucket: String
+    var swMigrationWriteAfterAsyncDrainCategory: String
+    var storageMirrorAfterAsyncDrainCategory: String
+    var migrationWriteMissingAfterAsyncDrainCategory: String
 
     var logLines: [String] {
         [
@@ -319,6 +327,14 @@ struct ChromeMV3FirstVisibleUIGateDiagnostics: Equatable, Sendable {
             "storageOnChangedDeliveryCategory=\(storageOnChangedDeliveryCategory)",
             "installStoragePersistedCategory=\(installStoragePersistedCategory)",
             "popupWakeStorageSeededCategory=\(popupWakeStorageSeededCategory)",
+            "swAsyncDrainAttemptedCategory=\(swAsyncDrainAttemptedCategory)",
+            "swAsyncDrainIterationCountBucket=\(swAsyncDrainIterationCountBucket)",
+            "swPromiseContinuationObservedCategory=\(swPromiseContinuationObservedCategory)",
+            "swTimerDrainCountBucket=\(swTimerDrainCountBucket)",
+            "swStorageWriteAfterAsyncDrainCountBucket=\(swStorageWriteAfterAsyncDrainCountBucket)",
+            "swMigrationWriteAfterAsyncDrainCategory=\(swMigrationWriteAfterAsyncDrainCategory)",
+            "storageMirrorAfterAsyncDrainCategory=\(storageMirrorAfterAsyncDrainCategory)",
+            "migrationWriteMissingAfterAsyncDrainCategory=\(migrationWriteMissingAfterAsyncDrainCategory)",
         ]
     }
 }
@@ -1392,6 +1408,112 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         }
     }
 
+    private static func deriveAsyncDrainDiagnostics(
+        bridgeSnapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?,
+        swStorageWriteCapturedCountBucket: String,
+        swStorageWriteMirroredCountBucket: String,
+        popupReadWrittenByServiceWorkerCountBucket: String,
+        migrationWaitEntered: Bool,
+        migrationWaitResolved: Bool
+    ) -> (
+        swAsyncDrainAttemptedCategory: String,
+        swAsyncDrainIterationCountBucket: String,
+        swPromiseContinuationObservedCategory: String,
+        swTimerDrainCountBucket: String,
+        swStorageWriteAfterAsyncDrainCountBucket: String,
+        swMigrationWriteAfterAsyncDrainCategory: String,
+        storageMirrorAfterAsyncDrainCategory: String,
+        migrationWriteMissingAfterAsyncDrainCategory: String
+    ) {
+        let asyncFlush =
+            bridgeSnapshot?.appStateDependencyTrace
+            .serviceWorkerLatestAsyncFlush
+        let swAsyncDrainAttemptedCategory: String
+        if let asyncFlush {
+            swAsyncDrainAttemptedCategory =
+                asyncFlush.attempted ? "attempted" : "notAttempted"
+        } else {
+            swAsyncDrainAttemptedCategory = "notObserved"
+        }
+        let swAsyncDrainIterationCountBucket =
+            asyncFlush.map {
+                countBucket($0.iterationCount)
+            } ?? "notObserved"
+        let swPromiseContinuationObservedCategory: String
+        if let asyncFlush {
+            swPromiseContinuationObservedCategory =
+                asyncFlush.promiseContinuationObserved
+                    ? "observed" : "notObserved"
+        } else {
+            swPromiseContinuationObservedCategory = "notObserved"
+        }
+        let swTimerDrainCountBucket =
+            asyncFlush.map {
+                countBucket($0.totalTimerCallbacks)
+            } ?? "notObserved"
+        let swStorageWriteAfterAsyncDrainCountBucket =
+            asyncFlush.map {
+                countBucket($0.storageSetOperationCountAfterFlush)
+            } ?? "notObserved"
+        let swMigrationWriteAfterAsyncDrainCategory: String
+        if let asyncFlush,
+           asyncFlush.storageSetOperationCountAfterFlush > 0
+        {
+            swMigrationWriteAfterAsyncDrainCategory =
+                "serviceWorkerMigrationWriteCapturedAfterAsyncDrain"
+        } else if asyncFlush?.attempted == true {
+            swMigrationWriteAfterAsyncDrainCategory =
+                "serviceWorkerMigrationWriteStillMissing"
+        } else {
+            swMigrationWriteAfterAsyncDrainCategory = "notObserved"
+        }
+        let storageMirrorAfterAsyncDrainCategory: String
+        if swStorageWriteMirroredCountBucket != "0"
+            && popupReadWrittenByServiceWorkerCountBucket != "0"
+        {
+            storageMirrorAfterAsyncDrainCategory =
+                "storageMirrorAfterAsyncDrainFixed"
+        } else if swStorageWriteCapturedCountBucket != "0"
+            && popupReadWrittenByServiceWorkerCountBucket == "0"
+        {
+            storageMirrorAfterAsyncDrainCategory =
+                "storageMirrorAfterAsyncDrainPending"
+        } else if asyncFlush?.attempted == true {
+            storageMirrorAfterAsyncDrainCategory = "storageMirrorNotNeeded"
+        } else {
+            storageMirrorAfterAsyncDrainCategory = "notObserved"
+        }
+        let migrationWriteMissingAfterAsyncDrainCategory: String
+        if migrationWaitResolved {
+            migrationWriteMissingAfterAsyncDrainCategory = "migrationWaitResolved"
+        } else if migrationWaitEntered
+            && swStorageWriteAfterAsyncDrainCountBucket == "0"
+        {
+            migrationWriteMissingAfterAsyncDrainCategory =
+                "serviceWorkerMigrationWriteStillMissing"
+        } else if migrationWaitEntered {
+            migrationWriteMissingAfterAsyncDrainCategory =
+                "migrationWaitStillPending"
+        } else {
+            migrationWriteMissingAfterAsyncDrainCategory = "notObserved"
+        }
+        return (
+            swAsyncDrainAttemptedCategory: swAsyncDrainAttemptedCategory,
+            swAsyncDrainIterationCountBucket: swAsyncDrainIterationCountBucket,
+            swPromiseContinuationObservedCategory:
+                swPromiseContinuationObservedCategory,
+            swTimerDrainCountBucket: swTimerDrainCountBucket,
+            swStorageWriteAfterAsyncDrainCountBucket:
+                swStorageWriteAfterAsyncDrainCountBucket,
+            swMigrationWriteAfterAsyncDrainCategory:
+                swMigrationWriteAfterAsyncDrainCategory,
+            storageMirrorAfterAsyncDrainCategory:
+                storageMirrorAfterAsyncDrainCategory,
+            migrationWriteMissingAfterAsyncDrainCategory:
+                migrationWriteMissingAfterAsyncDrainCategory
+        )
+    }
+
     private static func deriveStorageMirrorDiagnostics(
         bridgeSnapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?,
         correlation: ChromeMV3AppStateDependencyCorrelationSummary,
@@ -1488,7 +1610,10 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         swStorageWriteCapturedCountBucket: String,
         popupReadWrittenByServiceWorkerCountBucket: String,
         storageSnapshotImportedCategory: String,
-        storageOnChangedDeliveryCategory: String
+        storageOnChangedDeliveryCategory: String,
+        swAsyncDrainAttemptedCategory: String,
+        swPromiseContinuationObservedCategory: String,
+        swMigrationWriteAfterAsyncDrainCategory: String
     ) -> (
         appInitializerEnteredCategory: String,
         sdkLoadAwaitCategory: String,
@@ -1576,6 +1701,21 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         {
             appInitializerUnresolvedAwaitCategory =
                 "serviceWorkerStorageWriteNotMirrored"
+        } else if swMigrationWriteAfterAsyncDrainCategory
+            == "serviceWorkerMigrationWriteStillMissing"
+            && migrationWaitEntered
+            && migrationWaitResolved == false
+        {
+            appInitializerUnresolvedAwaitCategory =
+                "serviceWorkerMigrationWriteStillMissing"
+        } else if swAsyncDrainAttemptedCategory == "attempted"
+            && swPromiseContinuationObservedCategory == "notObserved"
+            && swStorageWriteCapturedCountBucket == "0"
+            && migrationWaitEntered
+            && migrationWaitResolved == false
+        {
+            appInitializerUnresolvedAwaitCategory =
+                "serviceWorkerAsyncContinuationNotDrained"
         } else if swStorageWriteCapturedCountBucket == "0"
             && installStoragePersistedCategory == "installDispatchedNoWrite"
             && migrationWaitEntered
@@ -1892,6 +2032,26 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             correlation: correlation,
             storageLifecycleContext: storageLifecycleContext
         )
+        let migrationReadsForAsyncDrain = migrationShapedPopupReads(
+            in: bridgeSnapshot?.appStateDependencyTrace.storageOperations ?? []
+        )
+        let migrationWaitEnteredForAsyncDrain =
+            migrationReadsForAsyncDrain.isEmpty == false
+        let migrationWaitResolvedForAsyncDrain =
+            migrationReadsForAsyncDrain.filter(\.populatedResult).count > 0
+            || ngVersionPresent
+        let asyncDrainDiagnostics = deriveAsyncDrainDiagnostics(
+            bridgeSnapshot: bridgeSnapshot,
+            swStorageWriteCapturedCountBucket:
+                storageMirrorDiagnostics.swStorageWriteCapturedCountBucket,
+            swStorageWriteMirroredCountBucket:
+                storageMirrorDiagnostics.swStorageWriteMirroredCountBucket,
+            popupReadWrittenByServiceWorkerCountBucket:
+                storageMirrorDiagnostics
+                .popupReadWrittenByServiceWorkerCountBucket,
+            migrationWaitEntered: migrationWaitEnteredForAsyncDrain,
+            migrationWaitResolved: migrationWaitResolvedForAsyncDrain
+        )
         let appInitializerPhase = deriveAppInitializerPhaseDiagnostics(
             scriptsExecuted: latest?.scriptsExecuted == true
                 || latest?.firstJSCheckpoint == true,
@@ -1917,7 +2077,13 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             storageSnapshotImportedCategory:
                 storageMirrorDiagnostics.storageSnapshotImportedCategory,
             storageOnChangedDeliveryCategory:
-                storageMirrorDiagnostics.storageOnChangedDeliveryCategory
+                storageMirrorDiagnostics.storageOnChangedDeliveryCategory,
+            swAsyncDrainAttemptedCategory:
+                asyncDrainDiagnostics.swAsyncDrainAttemptedCategory,
+            swPromiseContinuationObservedCategory:
+                asyncDrainDiagnostics.swPromiseContinuationObservedCategory,
+            swMigrationWriteAfterAsyncDrainCategory:
+                asyncDrainDiagnostics.swMigrationWriteAfterAsyncDrainCategory
         )
 
         let firstVisibleUIGateCategory: String
@@ -2050,7 +2216,23 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             installStoragePersistedCategory:
                 storageMirrorDiagnostics.installStoragePersistedCategory,
             popupWakeStorageSeededCategory:
-                storageMirrorDiagnostics.popupWakeStorageSeededCategory
+                storageMirrorDiagnostics.popupWakeStorageSeededCategory,
+            swAsyncDrainAttemptedCategory:
+                asyncDrainDiagnostics.swAsyncDrainAttemptedCategory,
+            swAsyncDrainIterationCountBucket:
+                asyncDrainDiagnostics.swAsyncDrainIterationCountBucket,
+            swPromiseContinuationObservedCategory:
+                asyncDrainDiagnostics.swPromiseContinuationObservedCategory,
+            swTimerDrainCountBucket:
+                asyncDrainDiagnostics.swTimerDrainCountBucket,
+            swStorageWriteAfterAsyncDrainCountBucket:
+                asyncDrainDiagnostics.swStorageWriteAfterAsyncDrainCountBucket,
+            swMigrationWriteAfterAsyncDrainCategory:
+                asyncDrainDiagnostics.swMigrationWriteAfterAsyncDrainCategory,
+            storageMirrorAfterAsyncDrainCategory:
+                asyncDrainDiagnostics.storageMirrorAfterAsyncDrainCategory,
+            migrationWriteMissingAfterAsyncDrainCategory:
+                asyncDrainDiagnostics.migrationWriteMissingAfterAsyncDrainCategory
         )
     }
 
@@ -2844,6 +3026,8 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
                "migrationStateMissing",
                "migrationStateShapeMismatch",
                "serviceWorkerMigrationWriteMissing",
+               "serviceWorkerMigrationWriteStillMissing",
+               "serviceWorkerAsyncContinuationNotDrained",
                "serviceWorkerStorageWriteNotMirrored",
                "storageSnapshotNotImported",
                "storageOnChangedDeliveryFailure",
@@ -3071,6 +3255,8 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
                "migrationStateMissing",
                "migrationStateShapeMismatch",
                "serviceWorkerMigrationWriteMissing",
+               "serviceWorkerMigrationWriteStillMissing",
+               "serviceWorkerAsyncContinuationNotDrained",
                "serviceWorkerStorageWriteNotMirrored",
                "storageSnapshotNotImported",
                "storageOnChangedDeliveryFailure",

@@ -134,7 +134,7 @@ private final class ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore {
         let seededStorageValues =
             localStorageBroker.exportSnapshot().values
         let start = harness.start()
-        let deferredStartupCallbacks =
+        let startupAsyncFlush =
             ChromeMV3ServiceWorkerLocalStorageMirror
             .flushDeferredServiceWorkerWork(in: harness)
         let storageSeededIntoWorker =
@@ -153,7 +153,7 @@ private final class ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore {
                 clearingExisting: true
             )
         }
-        if deferredStartupCallbacks > 0 {
+        if startupAsyncFlush.attempted {
             let startupMirror =
                 ChromeMV3ServiceWorkerLocalStorageMirror
                 .mirrorExportedValues(
@@ -236,8 +236,11 @@ private final class ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore {
         for recordKey: String
     ) -> ChromeMV3StorageOnChangedEventPayload? {
         guard var record = records[recordKey] else { return nil }
-        _ = ChromeMV3ServiceWorkerLocalStorageMirror
+        let asyncFlush = ChromeMV3ServiceWorkerLocalStorageMirror
             .flushDeferredServiceWorkerWork(in: record.harness)
+        record.session.recordAppStateServiceWorkerSnapshot(
+            record.harness.snapshot
+        )
         guard
             let exported = record.harness.exportStorageValues(area: .local)
         else { return nil }
@@ -248,6 +251,7 @@ private final class ChromeMV3ControlledActionPopupServiceWorkerLifecycleStore {
                 writerContextCategory: "popupWakeSW"
             )
         records[recordKey] = record
+        _ = asyncFlush
         return mirror.onChangedPayload
     }
 

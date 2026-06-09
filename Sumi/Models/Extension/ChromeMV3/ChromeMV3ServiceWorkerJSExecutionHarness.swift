@@ -1728,6 +1728,60 @@ struct ChromeMV3ServiceWorkerJSTimerDrainRecord:
     var diagnostics: [String]
 }
 
+struct ChromeMV3ServiceWorkerJSAsyncFlushCheckpoint:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var pendingAsyncCompletionCount: Int
+    var fulfilledAsyncCompletionCount: Int
+    var storageOperationCount: Int
+    var storageSetOperationCount: Int
+    var pendingTimeoutCount: Int
+    var activeIntervalCount: Int
+
+    static let empty = ChromeMV3ServiceWorkerJSAsyncFlushCheckpoint(
+        pendingAsyncCompletionCount: 0,
+        fulfilledAsyncCompletionCount: 0,
+        storageOperationCount: 0,
+        storageSetOperationCount: 0,
+        pendingTimeoutCount: 0,
+        activeIntervalCount: 0
+    )
+}
+
+struct ChromeMV3ServiceWorkerAsyncFlushResult:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var attempted: Bool
+    var iterationCount: Int
+    var totalTimerCallbacks: Int
+    var promiseContinuationObserved: Bool
+    var storageSetOperationCountAfterFlush: Int
+    var budgetExceeded: Bool
+    var elapsedMilliseconds: Int
+    var diagnostics: [String]
+
+    static let notAttempted = ChromeMV3ServiceWorkerAsyncFlushResult(
+        attempted: false,
+        iterationCount: 0,
+        totalTimerCallbacks: 0,
+        promiseContinuationObserved: false,
+        storageSetOperationCountAfterFlush: 0,
+        budgetExceeded: false,
+        elapsedMilliseconds: 0,
+        diagnostics: [
+            "Service-worker async flush was not attempted because the harness was unavailable.",
+        ]
+    )
+
+    var totalDeferredCallbacks: Int {
+        totalTimerCallbacks
+    }
+}
+
 enum ChromeMV3ServiceWorkerJSDynamicImportBlocker:
     String,
     Codable,
@@ -2586,6 +2640,7 @@ struct ChromeMV3ServiceWorkerJSExecutionSnapshot:
     var ports: [ChromeMV3ServiceWorkerJSPortRecord]
     var timers: [ChromeMV3ServiceWorkerJSTimerRecord]
     var timerDrainRecords: [ChromeMV3ServiceWorkerJSTimerDrainRecord]
+    var asyncFlushRecords: [ChromeMV3ServiceWorkerAsyncFlushResult]
     var lifecycleSnapshot: ChromeMV3ServiceWorkerInternalLifecycleSnapshot?
     var documentationSources:
         [ChromeMV3ServiceWorkerJSExecutionDocumentationSource]
@@ -2634,6 +2689,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
     private var timers: [ChromeMV3ServiceWorkerJSTimerRecord] = []
     private var timerDrainRecords:
         [ChromeMV3ServiceWorkerJSTimerDrainRecord] = []
+    private var asyncFlushRecords:
+        [ChromeMV3ServiceWorkerAsyncFlushResult] = []
     private var lifecycleKeepaliveIDsByPort: [String: String] = [:]
     private var nextPortSequence = 1
     private var nextImportEvaluationOrder = 1
@@ -2739,6 +2796,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             ports: ports.values.sorted { $0.portID < $1.portID },
             timers: timers.sorted { $0.timerID < $1.timerID },
             timerDrainRecords: timerDrainRecords,
+            asyncFlushRecords: asyncFlushRecords,
             lifecycleSnapshot: lifecycleSession?.runtimeOwner.snapshot,
             documentationSources:
                 ChromeMV3ServiceWorkerJSExecutionDocumentationSource
@@ -3333,6 +3391,128 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         #endif
     }
 
+    func asyncFlushCheckpoint()
+        -> ChromeMV3ServiceWorkerJSAsyncFlushCheckpoint?
+    {
+        guard start().status == .running else { return nil }
+        #if canImport(JavaScriptCore)
+            return callJSON("__sumiHarness.asyncFlushCheckpoint()")
+        #else
+            return nil
+        #endif
+    }
+
+    @discardableResult
+    func pumpMicrotaskGeneration()
+        -> ChromeMV3ServiceWorkerJSAsyncFlushCheckpoint?
+    {
+        guard start().status == .running else { return nil }
+        #if canImport(JavaScriptCore)
+            let checkpoint: ChromeMV3ServiceWorkerJSAsyncFlushCheckpoint? =
+                callJSON("__sumiHarness.pumpMicrotaskGeneration()")
+            refreshJSSnapshot()
+            return checkpoint
+        #else
+            return nil
+        #endif
+    }
+
+    @discardableResult
+    func flushBoundedAsyncContinuations(
+        maxDrainPasses: Int = 8,
+        maxCallbacksPerPass: Int = 200,
+        maxElapsedMilliseconds: Int = 50
+    ) -> ChromeMV3ServiceWorkerAsyncFlushResult {
+        guard start().status == .running else {
+            return .notAttempted
+        }
+        let started = Date()
+        var iterationCount = 0
+        var totalTimerCallbacks = 0
+        var promiseContinuationObserved = false
+        var budgetExceeded = false
+        var previousCheckpoint =
+            asyncFlushCheckpoint() ?? .empty
+        let passes = max(0, maxDrainPasses)
+        for pass in 0 ..< passes {
+            let elapsedMilliseconds = Int(
+                Date().timeIntervalSince(started) * 1000
+            )
+            if elapsedMilliseconds >= max(0, maxElapsedMilliseconds) {
+                budgetExceeded = true
+                break
+            }
+            iterationCount = pass + 1
+            _ = pumpMicrotaskGeneration()
+            let afterPump =
+                asyncFlushCheckpoint() ?? previousCheckpoint
+            if afterPump.fulfilledAsyncCompletionCount
+                > previousCheckpoint.fulfilledAsyncCompletionCount
+                || afterPump.pendingAsyncCompletionCount
+                    < previousCheckpoint.pendingAsyncCompletionCount
+            {
+                promiseContinuationObserved = true
+            }
+            var timerCallbacksThisPass = 0
+            if let drain = drainQueuedTimeouts(
+                maxCallbacks: maxCallbacksPerPass
+            ) {
+                timerCallbacksThisPass = drain.callbackCount
+                totalTimerCallbacks += drain.callbackCount
+            }
+            let currentCheckpoint =
+                asyncFlushCheckpoint() ?? afterPump
+            let workObserved =
+                timerCallbacksThisPass > 0
+                || currentCheckpoint.storageOperationCount
+                    > previousCheckpoint.storageOperationCount
+                || currentCheckpoint.fulfilledAsyncCompletionCount
+                    > previousCheckpoint.fulfilledAsyncCompletionCount
+                || currentCheckpoint.pendingAsyncCompletionCount
+                    < previousCheckpoint.pendingAsyncCompletionCount
+            if workObserved == false {
+                break
+            }
+            previousCheckpoint = currentCheckpoint
+        }
+        refreshJSSnapshot()
+        let storageSetOperationCountAfterFlush =
+            storageOperationRecords.filter {
+                $0.area == ChromeMV3StorageAreaKind.local.chromeAreaName
+                    && $0.operation == "set"
+            }.count
+        let elapsedMilliseconds = Int(
+            Date().timeIntervalSince(started) * 1000
+        )
+        let result = ChromeMV3ServiceWorkerAsyncFlushResult(
+            attempted: true,
+            iterationCount: iterationCount,
+            totalTimerCallbacks: totalTimerCallbacks,
+            promiseContinuationObserved: promiseContinuationObserved,
+            storageSetOperationCountAfterFlush:
+                storageSetOperationCountAfterFlush,
+            budgetExceeded: budgetExceeded,
+            elapsedMilliseconds: elapsedMilliseconds,
+            diagnostics: [
+                "Bounded async flush drains one JavaScriptCore microtask generation per pass, then queued timeout callbacks.",
+                "Chrome documents chrome.storage.local as shared extension state across contexts; MV3 service workers may schedule Promise continuations and timers after listener dispatch.",
+                "iterationCount=\(iterationCount)",
+                "totalTimerCallbacks=\(totalTimerCallbacks)",
+                "promiseContinuationObserved=\(promiseContinuationObserved)",
+                "storageSetOperationCountAfterFlush=\(storageSetOperationCountAfterFlush)",
+                "budgetExceeded=\(budgetExceeded)",
+                "elapsedMilliseconds=\(elapsedMilliseconds)",
+                "No raw storage keys, values, messages, or credentials are logged.",
+            ]
+        )
+        asyncFlushRecords.append(result)
+        return result
+    }
+
+    var latestAsyncFlushResult: ChromeMV3ServiceWorkerAsyncFlushResult? {
+        asyncFlushRecords.last
+    }
+
     @discardableResult
     func triggerIdleRelease()
         -> ChromeMV3ServiceWorkerInternalWakeResult?
@@ -3397,6 +3577,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         ports.removeAll()
         timers.removeAll()
         timerDrainRecords.removeAll()
+        asyncFlushRecords.removeAll()
         lifecycleKeepaliveIDsByPort.removeAll()
         nextPortSequence = 1
         nextImportEvaluationOrder = 1
@@ -8051,6 +8232,19 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           activeIntervals.length > callbackCount
         );
       };
+      const asyncFlushCheckpoint = () => ({
+        pendingAsyncCompletionCount: asyncCompletions.filter((item) => item.state === 'pending').length,
+        fulfilledAsyncCompletionCount: asyncCompletions.filter((item) => item.state === 'fulfilled').length,
+        storageOperationCount: storageOperations.length,
+        storageSetOperationCount: storageOperations.filter((item) => item.operation === 'set').length,
+        pendingTimeoutCount: pendingTimeoutIDs.filter((timerID) => timers.has(timerID)).length,
+        activeIntervalCount: [...timers.values()].filter((state) =>
+          state.kind === 'interval' && state.active).length
+      });
+      const pumpMicrotaskGeneration = () => {
+        Promise.resolve().then(() => {});
+        return asyncFlushCheckpoint();
+      };
       globalThis.setTimeout = (callback, delay, ...args) =>
         scheduleQueuedCallback('timeout', callback, delay, args);
       globalThis.clearTimeout = clearTimer;
@@ -8550,6 +8744,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         disconnectPort,
         drainTimeouts,
         tickIntervals,
+        asyncFlushCheckpoint,
+        pumpMicrotaskGeneration,
         seedStorageArea,
         exportStorageArea
       };

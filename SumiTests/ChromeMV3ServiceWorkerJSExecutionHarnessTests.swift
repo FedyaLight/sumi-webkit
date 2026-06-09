@@ -2198,6 +2198,29 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         )
     }
 
+    func testBoundedAsyncFlushObservesPromiseContinuationBeforeMirror() throws {
+        let harness = try startedHarness(
+            source: """
+            chrome.runtime.onConnect.addListener(async (port) => {
+              await Promise.resolve();
+              chrome.storage.local.set({ asyncFlushMarker: "ready" });
+              port.postMessage({ ready: true });
+            });
+            """
+        )
+        _ = harness.connectRuntime(name: "async-flush")
+        let flush = harness.flushBoundedAsyncContinuations(
+            maxDrainPasses: 8,
+            maxElapsedMilliseconds: 50
+        )
+        XCTAssertTrue(flush.attempted)
+        XCTAssertGreaterThan(flush.storageSetOperationCountAfterFlush, 0)
+        XCTAssertEqual(
+            harness.exportStorageValues(area: .local)?["asyncFlushMarker"],
+            .string("ready")
+        )
+    }
+
     func testDeterministicTimerShimQueuesDrainsCancelsAndTicksManually()
         throws
     {
