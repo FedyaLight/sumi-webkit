@@ -2345,6 +2345,18 @@ struct ChromeMV3ServiceWorkerJSMemorySessionGetTraceRecord:
     var localGetStartedCategory: String
     var localGetCallbackCategory: String
     var localGetPromiseCategory: String
+    var localGetCallShapeCategory: String
+    var localGetKeyShapeCategory: String
+    var localGetCallbackRegisteredCategory: String
+    var localGetQueuedCategory: String
+    var localGetQueueNamespaceCategory: String
+    var localGetDrainAttemptedCategory: String
+    var localGetDrainResultCategory: String
+    var localGetCallbackInvokedCategory: String
+    var localGetCallbackResultShapeCategory: String
+    var localGetLastErrorCategory: String
+    var localGetPromiseResolvedCategory: String
+    var continuationAfterLocalGetCategory: String
     var cryptoAwaitCategory: String
     var timerAwaitCategory: String
     var microtaskContinuationCategory: String
@@ -2374,6 +2386,18 @@ struct ChromeMV3ServiceWorkerJSMemorySessionGetTraceRecord:
         localGetStartedCategory: "notObserved",
         localGetCallbackCategory: "notObserved",
         localGetPromiseCategory: "notObserved",
+        localGetCallShapeCategory: "notObserved",
+        localGetKeyShapeCategory: "notObserved",
+        localGetCallbackRegisteredCategory: "notObserved",
+        localGetQueuedCategory: "notObserved",
+        localGetQueueNamespaceCategory: "notObserved",
+        localGetDrainAttemptedCategory: "notObserved",
+        localGetDrainResultCategory: "notObserved",
+        localGetCallbackInvokedCategory: "notObserved",
+        localGetCallbackResultShapeCategory: "notObserved",
+        localGetLastErrorCategory: "notObserved",
+        localGetPromiseResolvedCategory: "notObserved",
+        continuationAfterLocalGetCategory: "notObserved",
         cryptoAwaitCategory: "notObserved",
         timerAwaitCategory: "notObserved",
         microtaskContinuationCategory: "notObserved",
@@ -2381,6 +2405,52 @@ struct ChromeMV3ServiceWorkerJSMemorySessionGetTraceRecord:
         responseConstructionReachedCategory: "notObserved",
         diagnostics: [
             "No service-worker memory-session Port get trace was recorded.",
+        ]
+    )
+}
+
+struct ChromeMV3ServiceWorkerJSStorageLocalGetTraceRecord:
+    Codable,
+    Equatable,
+    Sendable
+{
+    var shimEnteredCategory: String
+    var invocationSourceCategory: String
+    var argumentCountBucket: String
+    var firstArgShapeCategory: String
+    var callbackArgPositionCategory: String
+    var hasCallbackCategory: String
+    var returnsPromiseCategory: String
+    var promiseCreatedCategory: String
+    var promiseResolvedCategory: String
+    var callbackRegisteredCategory: String
+    var callbackQueuedCategory: String
+    var callbackInvokedCategory: String
+    var resultShapeCategory: String
+    var lastErrorCategory: String
+    var areaCategory: String
+    var sessionScopedEntryCountBucket: String
+    var diagnostics: [String]
+
+    static let empty = ChromeMV3ServiceWorkerJSStorageLocalGetTraceRecord(
+        shimEnteredCategory: "notObserved",
+        invocationSourceCategory: "notObserved",
+        argumentCountBucket: "notObserved",
+        firstArgShapeCategory: "notObserved",
+        callbackArgPositionCategory: "notObserved",
+        hasCallbackCategory: "notObserved",
+        returnsPromiseCategory: "notObserved",
+        promiseCreatedCategory: "notObserved",
+        promiseResolvedCategory: "notObserved",
+        callbackRegisteredCategory: "notObserved",
+        callbackQueuedCategory: "notObserved",
+        callbackInvokedCategory: "notObserved",
+        resultShapeCategory: "notObserved",
+        lastErrorCategory: "notObserved",
+        areaCategory: "notObserved",
+        sessionScopedEntryCountBucket: "notObserved",
+        diagnostics: [
+            "No service-worker storage.local.get shim trace was recorded.",
         ]
     )
 }
@@ -2709,6 +2779,8 @@ struct ChromeMV3ServiceWorkerJSExecutionSnapshot:
     var asyncFlushRecords: [ChromeMV3ServiceWorkerAsyncFlushResult]
     var memorySessionGetTrace:
         ChromeMV3ServiceWorkerJSMemorySessionGetTraceRecord
+    var storageLocalGetTrace:
+        ChromeMV3ServiceWorkerJSStorageLocalGetTraceRecord
     var lifecycleSnapshot: ChromeMV3ServiceWorkerInternalLifecycleSnapshot?
     var documentationSources:
         [ChromeMV3ServiceWorkerJSExecutionDocumentationSource]
@@ -2761,6 +2833,9 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         [ChromeMV3ServiceWorkerAsyncFlushResult] = []
     private var memorySessionGetTrace:
         ChromeMV3ServiceWorkerJSMemorySessionGetTraceRecord =
+        .empty
+    private var storageLocalGetTrace:
+        ChromeMV3ServiceWorkerJSStorageLocalGetTraceRecord =
         .empty
     private var lifecycleKeepaliveIDsByPort: [String: String] = [:]
     private var nextPortSequence = 1
@@ -2869,6 +2944,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             timerDrainRecords: timerDrainRecords,
             asyncFlushRecords: asyncFlushRecords,
             memorySessionGetTrace: memorySessionGetTrace,
+            storageLocalGetTrace: storageLocalGetTrace,
             lifecycleSnapshot: lifecycleSession?.runtimeOwner.snapshot,
             documentationSources:
                 ChromeMV3ServiceWorkerJSExecutionDocumentationSource
@@ -3347,6 +3423,10 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                 break
             }
         }
+        _ = drainPendingStorageCallbacks()
+        _ = pumpMicrotaskGeneration()
+        _ = drainPendingStorageCallbacks()
+        _ = finalizeMemorySessionGetTrace(portID: portID)
         refreshJSSnapshot()
         return ports[portID]
     }
@@ -6139,6 +6219,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             timers = wire.timers.sorted { $0.timerID < $1.timerID }
             memorySessionGetTrace =
                 wire.memorySessionGetTrace ?? .empty
+            storageLocalGetTrace =
+                wire.storageLocalGetTrace ?? .empty
         }
 
         private func callJSON<T: Decodable>(_ expression: String) -> T? {
@@ -6700,11 +6782,18 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             diagnostics: diagnostics.map((value) => String(value))
           });
           if (memorySessionGetTrace.sessionGetStarted
-              && !memorySessionGetTrace.getResolved) {
+              && !memorySessionGetTrace.getResolved
+              && (memorySessionGetTrace.localGetPromiseResolved
+                  || !memorySessionGetTrace.localGetStarted)) {
             memorySessionGetTrace.cryptoAwaitObserved = true;
-            if (memorySessionGetTrace.sessionGetCallbackInvoked
+            if (memorySessionGetTrace.localGetPromiseResolved
                 && memorySessionGetTrace.stepAfterSessionGetCategory
-                   === 'continuationPending') {
+                   === 'localGetAwaited') {
+              memorySessionGetTrace.stepAfterSessionGetCategory = 'cryptoAwaited';
+            } else if (memorySessionGetTrace.sessionGetCallbackInvoked
+                       && memorySessionGetTrace.stepAfterSessionGetCategory
+                          === 'continuationPending'
+                       && !memorySessionGetTrace.localGetStarted) {
               memorySessionGetTrace.stepAfterSessionGetCategory = 'cryptoAwaited';
             }
           }
@@ -6981,6 +7070,18 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         nextAwaitedApiCategory: 'notObserved',
         localGetStarted: false,
         localGetPromiseResolved: false,
+        localGetCallShapeCategory: 'notObserved',
+        localGetKeyShapeCategory: 'notObserved',
+        localGetCallbackRegisteredCategory: 'notObserved',
+        localGetQueuedCategory: 'notObserved',
+        localGetQueueNamespaceCategory: 'notObserved',
+        localGetDrainAttemptedCategory: 'notObserved',
+        localGetDrainResultCategory: 'notObserved',
+        localGetCallbackInvokedCategory: 'notObserved',
+        localGetCallbackResultShapeCategory: 'notObserved',
+        localGetLastErrorCategory: 'notObserved',
+        localGetPromiseResolvedCategory: 'notObserved',
+        continuationAfterLocalGetCategory: 'notObserved',
         cryptoAwaitObserved: false,
         timerAwaitObserved: false,
         microtaskContinuationCategory: 'notObserved',
@@ -7034,6 +7135,103 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       };
       const memorySessionAwaitedApi = (areaName, operation) =>
         `chrome.storage.${String(areaName)}.${String(operation)}`;
+      const storageLocalGetTrace = {
+        shimEntered: false,
+        sessionScopedEntryCount: 0,
+        invocationSourceCategory: 'notObserved',
+        argumentCountBucket: 'notObserved',
+        firstArgShapeCategory: 'notObserved',
+        callbackArgPositionCategory: 'notObserved',
+        hasCallbackCategory: 'notObserved',
+        returnsPromiseCategory: 'notObserved',
+        promiseCreated: false,
+        promiseResolvedCategory: 'notObserved',
+        callbackRegisteredCategory: 'notObserved',
+        callbackQueuedCategory: 'notObserved',
+        callbackInvokedCategory: 'notObserved',
+        resultShapeCategory: 'notObserved',
+        lastErrorCategory: 'notObserved',
+        areaCategory: 'notObserved',
+        callShapeCategory: 'notObserved',
+        keyShapeCategory: 'notObserved'
+      };
+      const storageLocalGetArgumentCountBucket = (count) => {
+        if (count <= 0) return 'zero';
+        if (count === 1) return 'one';
+        if (count === 2) return 'two';
+        return 'many';
+      };
+      const storageLocalGetCallbackArgPositionCategory = (parsed, argCount) => {
+        if (typeof parsed.callback !== 'function') return 'notPresent';
+        if (parsed.callShape === 'callbackOnly') return 'first';
+        if (argCount === 2) return 'second';
+        return 'unknown';
+      };
+      const storageLocalGetSessionScopedEntryCountBucket = (count) => {
+        if (count <= 0) return 'zero';
+        if (count === 1) return 'one';
+        if (count <= 4) return 'few';
+        return 'many';
+      };
+      const storageLocalGetTraceSnapshot = () => ({
+        shimEnteredCategory:
+          storageLocalGetTrace.shimEntered ? 'entered' : 'notEntered',
+        invocationSourceCategory: storageLocalGetTrace.invocationSourceCategory,
+        argumentCountBucket: storageLocalGetTrace.argumentCountBucket,
+        firstArgShapeCategory: storageLocalGetTrace.firstArgShapeCategory,
+        callbackArgPositionCategory:
+          storageLocalGetTrace.callbackArgPositionCategory,
+        hasCallbackCategory: storageLocalGetTrace.hasCallbackCategory,
+        returnsPromiseCategory: storageLocalGetTrace.returnsPromiseCategory,
+        promiseCreatedCategory:
+          storageLocalGetTrace.promiseCreated ? 'created' : 'notCreated',
+        promiseResolvedCategory: storageLocalGetTrace.promiseResolvedCategory,
+        callbackRegisteredCategory:
+          storageLocalGetTrace.callbackRegisteredCategory,
+        callbackQueuedCategory: storageLocalGetTrace.callbackQueuedCategory,
+        callbackInvokedCategory: storageLocalGetTrace.callbackInvokedCategory,
+        resultShapeCategory: storageLocalGetTrace.resultShapeCategory,
+        lastErrorCategory: storageLocalGetTrace.lastErrorCategory,
+        areaCategory: storageLocalGetTrace.areaCategory,
+        sessionScopedEntryCountBucket:
+          storageLocalGetSessionScopedEntryCountBucket(
+            storageLocalGetTrace.sessionScopedEntryCount
+          ),
+        diagnostics: [
+          'Service-worker storage.local.get shim trace omits raw keys, values, and message payloads.',
+          `sessionScopedEntryCount=${storageLocalGetTrace.sessionScopedEntryCount}`,
+        ]
+      });
+      const syncMemorySessionLocalGetDiagnosticsFromShim = () => {
+        if (!memorySessionGetTrace.sessionGetStarted
+            || memorySessionGetTrace.getResolved
+            || storageLocalGetTrace.sessionScopedEntryCount <= 0) {
+          return;
+        }
+        memorySessionGetTrace.localGetStarted = true;
+        memorySessionGetTrace.localGetCallShapeCategory =
+          storageLocalGetTrace.callShapeCategory;
+        memorySessionGetTrace.localGetKeyShapeCategory =
+          storageLocalGetTrace.keyShapeCategory;
+        memorySessionGetTrace.localGetCallbackRegisteredCategory =
+          storageLocalGetTrace.callbackRegisteredCategory;
+        memorySessionGetTrace.localGetQueuedCategory =
+          storageLocalGetTrace.callbackQueuedCategory;
+        memorySessionGetTrace.localGetCallbackInvokedCategory =
+          storageLocalGetTrace.callbackInvokedCategory;
+        memorySessionGetTrace.localGetPromiseResolvedCategory =
+          storageLocalGetTrace.promiseResolvedCategory;
+        memorySessionGetTrace.localGetLastErrorCategory =
+          storageLocalGetTrace.lastErrorCategory;
+        if (storageLocalGetTrace.callbackInvokedCategory === 'invoked'
+            || storageLocalGetTrace.promiseResolvedCategory === 'resolved') {
+          memorySessionGetTrace.continuationAfterLocalGetCategory = 'continued';
+        }
+      };
+      const storageOperationsSinceBaseline = () =>
+        storageOperations.slice(
+          Math.max(0, memorySessionGetTrace.storageOpsBaseline)
+        );
       const noteMemorySessionAwaitedApi = (areaName, operation) => {
         if (!memorySessionGetTrace.sessionGetStarted
             || memorySessionGetTrace.getResolved
@@ -7043,27 +7241,19 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         const api = memorySessionAwaitedApi(areaName, operation);
         if (memorySessionGetTrace.awaitedApiCategory === 'notObserved') {
           memorySessionGetTrace.awaitedApiCategory = api;
-          memorySessionGetTrace.pendingCallbackApiCategory = api;
-          return;
         }
-        if (areaName === 'local' && memorySessionGetTrace.localGetStarted === false) {
-          memorySessionGetTrace.localGetStarted = true;
-          memorySessionGetTrace.nextAwaitedApiCategory = api;
-          memorySessionGetTrace.pendingCallbackApiCategory = api;
-          if (memorySessionGetTrace.sessionGetCallbackInvoked) {
-            memorySessionGetTrace.continuationAfterSessionGetCategory = 'continued';
-            memorySessionGetTrace.stepAfterSessionGetCategory = 'localGetAwaited';
-          }
-        }
+        memorySessionGetTrace.pendingCallbackApiCategory = api;
       };
       const refreshLocalBackedSessionContinuationDiagnostics = () => {
         if (!memorySessionGetTrace.sessionGetStarted
             || memorySessionGetTrace.getResolved) {
           return;
         }
-        const sessionGetCount = storageOperations.filter((item) =>
+        syncMemorySessionLocalGetDiagnosticsFromShim();
+        const scopedStorageOps = storageOperationsSinceBaseline();
+        const sessionGetCount = scopedStorageOps.filter((item) =>
           item.area === 'session' && item.operation === 'get').length;
-        const localGetCount = storageOperations.filter((item) =>
+        const localGetCount = scopedStorageOps.filter((item) =>
           item.area === 'local' && item.operation === 'get').length;
         const cryptoSinceBaseline =
           cryptoOperations.length - memorySessionGetTrace.cryptoOpsBaseline;
@@ -7083,17 +7273,26 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             memorySessionGetTrace.stepAfterSessionGetCategory = 'continuationPending';
           }
         }
-        if (localGetCount > 0) {
+        if (storageLocalGetTrace.sessionScopedEntryCount > 0) {
           memorySessionGetTrace.localGetStarted = true;
-          if (memorySessionGetTrace.nextAwaitedApiCategory === 'notObserved') {
-            memorySessionGetTrace.nextAwaitedApiCategory =
-              memorySessionAwaitedApi('local', 'get');
+          memorySessionGetTrace.nextAwaitedApiCategory =
+            memorySessionAwaitedApi('local', 'get');
+        } else if (localGetCount > 0) {
+          memorySessionGetTrace.nextAwaitedApiCategory =
+            memorySessionGetTrace.nextAwaitedApiCategory === 'notObserved'
+              ? memorySessionAwaitedApi('local', 'get')
+              : memorySessionGetTrace.nextAwaitedApiCategory;
+        }
+        if (memorySessionGetTrace.localGetCallbackInvoked
+            || memorySessionGetTrace.localGetPromiseResolvedCategory === 'resolved') {
+          memorySessionGetTrace.localGetPromiseResolved = true;
+          if (memorySessionGetTrace.continuationAfterLocalGetCategory === 'notObserved') {
+            memorySessionGetTrace.continuationAfterLocalGetCategory = 'continued';
           }
         }
-        if (memorySessionGetTrace.localGetCallbackInvoked) {
-          memorySessionGetTrace.localGetPromiseResolved = true;
-        }
-        if (cryptoSinceBaseline > 0) {
+        if (cryptoSinceBaseline > 0
+            && (memorySessionGetTrace.localGetPromiseResolved
+                || !memorySessionGetTrace.localGetStarted)) {
           memorySessionGetTrace.cryptoAwaitObserved = true;
         }
         if (timerSinceBaseline > 0) {
@@ -7127,6 +7326,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         memorySessionGetTrace.storageOpsBaseline = storageOperations.length;
         memorySessionGetTrace.cryptoOpsBaseline = cryptoOperations.length;
         memorySessionGetTrace.timerCountBaseline = timers.size;
+        storageLocalGetTrace.sessionScopedEntryCount = 0;
         if (!memorySessionGetTrace.sessionGetStarted) {
           memorySessionGetTrace.getPendingReasonCategory =
             memorySessionGetTrace.requestShapeCategory === 'foregroundGet'
@@ -7153,6 +7353,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         }
       };
       const finalizeMemorySessionGetTrace = (portID) => {
+        refreshLocalBackedSessionContinuationDiagnostics();
         const state = ports.get(portID);
         const outbox = state && Array.isArray(state.outbox) ? state.outbox : [];
         const newMessages = outbox.slice(
@@ -7188,12 +7389,40 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
                      && memorySessionGetTrace.timerAwaitObserved === false) {
             memorySessionGetTrace.getPendingReasonCategory =
               'continuationAfterSessionGetNotDrained';
-          } else if (memorySessionGetTrace.localGetStarted
-                     && !memorySessionGetTrace.localGetCallbackInvoked) {
+          } else if (memorySessionGetTrace.stepAfterSessionGetCategory
+                     === 'localGetAwaited'
+                     && storageLocalGetTrace.sessionScopedEntryCount === 0) {
             memorySessionGetTrace.getPendingReasonCategory =
-              pendingCallbacks > 0
-                ? 'localGetCallbackNotInvoked'
-                : 'localGetNotStarted';
+              'localGetShimNotEntered';
+          } else if (storageLocalGetTrace.sessionScopedEntryCount > 0
+                     && storageLocalGetTrace.hasCallbackCategory === 'no'
+                     && storageLocalGetTrace.returnsPromiseCategory !== 'yes') {
+            memorySessionGetTrace.getPendingReasonCategory =
+              'localGetNoCompletionPath';
+          } else if (memorySessionGetTrace.localGetStarted
+                     && storageLocalGetTrace.sessionScopedEntryCount > 0) {
+            if (storageLocalGetTrace.hasCallbackCategory === 'no'
+                && storageLocalGetTrace.returnsPromiseCategory === 'yes'
+                && storageLocalGetTrace.promiseResolvedCategory !== 'resolved') {
+              memorySessionGetTrace.getPendingReasonCategory =
+                'localGetPromiseNotResolved';
+            } else if (storageLocalGetTrace.hasCallbackCategory === 'yes'
+                       && storageLocalGetTrace.callbackInvokedCategory
+                          !== 'invoked'
+                       && storageLocalGetTrace.promiseResolvedCategory
+                          !== 'resolved') {
+              if (storageLocalGetTrace.callbackRegisteredCategory
+                  === 'notRegistered') {
+                memorySessionGetTrace.getPendingReasonCategory =
+                  'localGetCallbackNotRegistered';
+              } else {
+                memorySessionGetTrace.getPendingReasonCategory =
+                  'localGetCallbackNotInvoked';
+              }
+            } else if (!memorySessionGetTrace.responseConstructionReached) {
+              memorySessionGetTrace.getPendingReasonCategory =
+                'continuationAfterLocalGetNotDrained';
+            }
           } else if (memorySessionGetTrace.localGetCallbackInvoked
                      && !memorySessionGetTrace.localGetPromiseResolved) {
             memorySessionGetTrace.getPendingReasonCategory =
@@ -7270,6 +7499,25 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           memorySessionGetTrace.localGetCallbackInvoked ? 'invoked' : 'notInvoked',
         localGetPromiseCategory:
           memorySessionGetTrace.localGetPromiseResolved ? 'resolved' : 'notResolved',
+        localGetCallShapeCategory: memorySessionGetTrace.localGetCallShapeCategory,
+        localGetKeyShapeCategory: memorySessionGetTrace.localGetKeyShapeCategory,
+        localGetCallbackRegisteredCategory:
+          memorySessionGetTrace.localGetCallbackRegisteredCategory,
+        localGetQueuedCategory: memorySessionGetTrace.localGetQueuedCategory,
+        localGetQueueNamespaceCategory:
+          memorySessionGetTrace.localGetQueueNamespaceCategory,
+        localGetDrainAttemptedCategory:
+          memorySessionGetTrace.localGetDrainAttemptedCategory,
+        localGetDrainResultCategory: memorySessionGetTrace.localGetDrainResultCategory,
+        localGetCallbackInvokedCategory:
+          memorySessionGetTrace.localGetCallbackInvokedCategory,
+        localGetCallbackResultShapeCategory:
+          memorySessionGetTrace.localGetCallbackResultShapeCategory,
+        localGetLastErrorCategory: memorySessionGetTrace.localGetLastErrorCategory,
+        localGetPromiseResolvedCategory:
+          memorySessionGetTrace.localGetPromiseResolvedCategory,
+        continuationAfterLocalGetCategory:
+          memorySessionGetTrace.continuationAfterLocalGetCategory,
         cryptoAwaitCategory:
           memorySessionGetTrace.cryptoAwaitObserved ? 'awaited' : 'notObserved',
         timerAwaitCategory:
@@ -7290,6 +7538,14 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
       });
       const pendingStorageCallbackInvokers = [];
       const drainPendingStorageCallbacks = () => {
+        const pendingBefore = pendingStorageCallbackInvokers.length;
+        if (memorySessionGetTrace.localGetStarted
+            && memorySessionGetTrace.localGetCallbackInvokedCategory
+               !== 'invoked'
+            && memorySessionGetTrace.localGetPromiseResolvedCategory
+               !== 'resolved') {
+          memorySessionGetTrace.localGetDrainAttemptedCategory = 'attempted';
+        }
         let drained = 0;
         while (pendingStorageCallbackInvokers.length > 0 && drained < 200) {
           const batch = pendingStorageCallbackInvokers.splice(0);
@@ -7303,6 +7559,19 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
             }
           }
         }
+        if (memorySessionGetTrace.localGetStarted) {
+          if (memorySessionGetTrace.localGetCallbackInvokedCategory === 'invoked'
+              || memorySessionGetTrace.localGetPromiseResolvedCategory === 'resolved') {
+            memorySessionGetTrace.localGetDrainResultCategory = 'callbackInvoked';
+          } else if (pendingBefore > 0 && drained > 0) {
+            memorySessionGetTrace.localGetDrainResultCategory =
+              'drainedWithoutLocalCallback';
+          } else if (pendingBefore > 0) {
+            memorySessionGetTrace.localGetDrainResultCategory = 'pendingRemain';
+          } else {
+            memorySessionGetTrace.localGetDrainResultCategory = 'noPendingCallbacks';
+          }
+        }
         if (memorySessionGetTrace.sessionGetStarted
             && memorySessionGetTrace.storageCallbackInvoked) {
           memorySessionGetTrace.storagePromiseResolved = true;
@@ -7310,8 +7579,16 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         refreshLocalBackedSessionContinuationDiagnostics();
         return drained;
       };
-      const callbackLater = (callback, ...values) => {
+      const callbackLater = (callback, ...args) => {
         if (typeof callback !== 'function') return;
+        let capturedApiCategory = null;
+        let values = args;
+        if (args.length > 0
+            && typeof args[0] === 'string'
+            && args[0].startsWith('chrome.storage.')) {
+          capturedApiCategory = args[0];
+          values = args.slice(1);
+        }
         let invoked = false;
         const invoke = () => {
           if (invoked) return;
@@ -7320,7 +7597,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           if (index >= 0) pendingStorageCallbackInvokers.splice(index, 1);
           if (memorySessionGetTrace.sessionGetStarted
               && !memorySessionGetTrace.getResolved) {
-            const api = memorySessionGetTrace.pendingCallbackApiCategory;
+            const api = capturedApiCategory
+              || memorySessionGetTrace.pendingCallbackApiCategory;
             memorySessionGetTrace.storageCallbackInvoked = true;
             memorySessionGetTrace.storagePromiseResolved = true;
             if (api === memorySessionAwaitedApi('session', 'get')) {
@@ -7330,7 +7608,20 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
               }
             } else if (api === memorySessionAwaitedApi('local', 'get')) {
               memorySessionGetTrace.localGetCallbackInvoked = true;
+              memorySessionGetTrace.localGetCallbackInvokedCategory = 'invoked';
               memorySessionGetTrace.localGetPromiseResolved = true;
+              memorySessionGetTrace.localGetPromiseResolvedCategory = 'resolved';
+              memorySessionGetTrace.localGetCallbackResultShapeCategory =
+                storageValueShape(values[0]);
+              memorySessionGetTrace.localGetLastErrorCategory =
+                runtimeLastErrorValue ? 'set' : 'notSet';
+              memorySessionGetTrace.continuationAfterLocalGetCategory = 'continued';
+              storageLocalGetTrace.callbackInvokedCategory = 'invoked';
+              storageLocalGetTrace.resultShapeCategory =
+                storageValueShape(values[0]);
+              storageLocalGetTrace.lastErrorCategory =
+                runtimeLastErrorValue ? 'set' : 'notSet';
+              storageLocalGetTrace.promiseResolvedCategory = 'resolved';
             }
           }
           invokeCallbackNow(callback, null, ...values);
@@ -7407,6 +7698,22 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         sync: Object.create(null),
         session: Object.create(null),
         managed: Object.create(null)
+      };
+      const parseStorageGetArgs = (first, second) => {
+        if (typeof first === 'function') {
+          return {
+            keys: null,
+            callback: first,
+            callShape: 'callbackOnly'
+          };
+        }
+        return {
+          keys: first,
+          callback: typeof second === 'function' ? second : null,
+          callShape: typeof second === 'function'
+            ? (first == null ? 'allWithCallback' : 'keysWithCallback')
+            : (first == null ? 'allPromise' : 'keysPromise')
+        };
       };
       const storageKeys = (keys, store) => {
         if (keys == null) return Object.keys(store);
@@ -7540,22 +7847,130 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           ]
         });
       };
+      const invokeStorageAreaGet = (
+        areaName,
+        store,
+        invocationSource,
+        keys,
+        callback,
+        argCount
+      ) => {
+        const resolvedArgCount = Number.isFinite(argCount)
+          ? Math.max(0, Math.floor(argCount))
+          : (typeof callback === 'function' ? 2 : 1);
+        const parsed = parseStorageGetArgs(keys, callback);
+        const startedAt = Date.now();
+        const result = storageGet(parsed.keys, store);
+        const api = memorySessionAwaitedApi(areaName, 'get');
+        noteMemorySessionAwaitedApi(areaName, 'get');
+        if (areaName === 'local') {
+          storageLocalGetTrace.shimEntered = true;
+          storageLocalGetTrace.invocationSourceCategory = invocationSource;
+          storageLocalGetTrace.argumentCountBucket =
+            storageLocalGetArgumentCountBucket(resolvedArgCount);
+          storageLocalGetTrace.firstArgShapeCategory =
+            storageSelectorKind(parsed.keys);
+          storageLocalGetTrace.callbackArgPositionCategory =
+            storageLocalGetCallbackArgPositionCategory(parsed, resolvedArgCount);
+          storageLocalGetTrace.hasCallbackCategory =
+            typeof parsed.callback === 'function' ? 'yes' : 'no';
+          storageLocalGetTrace.returnsPromiseCategory = 'yes';
+          storageLocalGetTrace.areaCategory = areaName;
+          storageLocalGetTrace.callShapeCategory = parsed.callShape;
+          storageLocalGetTrace.keyShapeCategory =
+            storageSelectorKind(parsed.keys);
+          storageLocalGetTrace.callbackRegisteredCategory =
+            typeof parsed.callback === 'function' ? 'registered' : 'notRegistered';
+          if (memorySessionGetTrace.sessionGetStarted
+              && !memorySessionGetTrace.getResolved) {
+            storageLocalGetTrace.sessionScopedEntryCount += 1;
+          }
+        }
+        recordStorageOperation(
+          areaName,
+          'get',
+          parsed.keys,
+          store,
+          parsed.callback,
+          { startedAt, result }
+        );
+        const cloned = clone(result);
+        const promise = Promise.resolve(cloned);
+        if (areaName === 'local') {
+          storageLocalGetTrace.promiseCreated = true;
+          promise.then((resolvedResult) => {
+            storageLocalGetTrace.promiseResolvedCategory = 'resolved';
+            storageLocalGetTrace.resultShapeCategory =
+              storageValueShape(resolvedResult);
+            if (memorySessionGetTrace.sessionGetStarted
+                && !memorySessionGetTrace.getResolved) {
+              memorySessionGetTrace.localGetPromiseResolved = true;
+              memorySessionGetTrace.localGetPromiseResolvedCategory = 'resolved';
+              if (storageLocalGetTrace.hasCallbackCategory === 'no') {
+                memorySessionGetTrace.continuationAfterLocalGetCategory =
+                  'continued';
+              }
+            }
+            syncMemorySessionLocalGetDiagnosticsFromShim();
+            refreshLocalBackedSessionContinuationDiagnostics();
+          });
+        }
+        if (typeof parsed.callback === 'function') {
+          callbackLater(parsed.callback, api, cloned);
+          if (areaName === 'local') {
+            storageLocalGetTrace.callbackQueuedCategory = 'queued';
+            if (memorySessionGetTrace.sessionGetStarted
+                && !memorySessionGetTrace.getResolved) {
+              memorySessionGetTrace.localGetQueuedCategory = 'queued';
+              memorySessionGetTrace.localGetQueueNamespaceCategory = areaName;
+            }
+          }
+        }
+        syncMemorySessionLocalGetDiagnosticsFromShim();
+        return promise;
+      };
       const storageArea = (areaName, readOnly = false) => {
         const store = storageStores[areaName];
+        const chromeGet = function(keys, callback) {
+          return invokeStorageAreaGet(
+            areaName,
+            store,
+            `chrome.storage.${areaName}.get`,
+            keys,
+            callback,
+            arguments.length
+          );
+        };
+        const browserGet = function(keys, callback) {
+          return invokeStorageAreaGet(
+            areaName,
+            store,
+            `browser.storage.${areaName}.get`,
+            keys,
+            callback,
+            arguments.length
+          );
+        };
         return {
-          get(keys, callback) {
-            const startedAt = Date.now();
-            const result = storageGet(keys, store);
-            noteMemorySessionAwaitedApi(areaName, 'get');
-            recordStorageOperation(areaName, 'get', keys, store, callback, { startedAt, result });
-            callbackLater(callback, clone(result));
-            return Promise.resolve(clone(result));
-          },
+          get: chromeGet,
+          __sumiBrowserGet: browserGet,
           getBytesInUse(keys, callback) {
+            const parsed = parseStorageGetArgs(keys, callback);
             const startedAt = Date.now();
-            const result = storageBytes(keys, store);
-            recordStorageOperation(areaName, 'getBytesInUse', keys, store, callback, { startedAt, result });
-            callbackLater(callback, result);
+            const result = storageBytes(parsed.keys, store);
+            recordStorageOperation(
+              areaName,
+              'getBytesInUse',
+              parsed.keys,
+              store,
+              parsed.callback,
+              { startedAt, result }
+            );
+            callbackLater(
+              parsed.callback,
+              memorySessionAwaitedApi(areaName, 'getBytesInUse'),
+              result
+            );
             return Promise.resolve(result);
           },
           getKeys(callback) {
@@ -8092,13 +8507,41 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         onStartup: event('runtimeOnStartup'),
         onUpdateAvailable: event('runtimeOnUpdateAvailable')
       }, 'chrome.runtime');
+      const localStorageArea = storageArea('local');
+      const syncStorageArea = storageArea('sync');
+      const sessionStorageArea = storageArea('session');
+      const managedStorageArea = storageArea('managed', true);
+      const storageOnChanged = event('storageOnChanged');
       const storage = proxiedNamespace({
-        onChanged: event('storageOnChanged'),
-        local: storageArea('local'),
-        sync: storageArea('sync'),
-        session: storageArea('session'),
-        managed: storageArea('managed', true)
+        onChanged: storageOnChanged,
+        local: localStorageArea,
+        sync: syncStorageArea,
+        session: sessionStorageArea,
+        managed: managedStorageArea
       }, 'chrome.storage');
+      const browserLocalStorageArea = {
+        get: localStorageArea.__sumiBrowserGet,
+        getBytesInUse: localStorageArea.getBytesInUse,
+        getKeys: localStorageArea.getKeys,
+        set: localStorageArea.set,
+        remove: localStorageArea.remove,
+        clear: localStorageArea.clear,
+        setAccessLevel: localStorageArea.setAccessLevel
+      };
+      const browserSessionStorageArea = {
+        get: sessionStorageArea.__sumiBrowserGet,
+        getBytesInUse: sessionStorageArea.getBytesInUse,
+        getKeys: sessionStorageArea.getKeys,
+        set: sessionStorageArea.set,
+        remove: sessionStorageArea.remove,
+        clear: sessionStorageArea.clear,
+        setAccessLevel: sessionStorageArea.setAccessLevel
+      };
+      const browserStorage = {
+        onChanged: storageOnChanged,
+        local: browserLocalStorageArea,
+        session: browserSessionStorageArea
+      };
       const permissions = proxiedNamespace({
         onAdded: event('permissionsOnAdded'),
         onRemoved: event('permissionsOnRemoved')
@@ -8670,6 +9113,14 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
         webNavigation,
         webRequest
       }, 'chrome');
+      Object.defineProperty(globalThis, 'browser', {
+        value: Object.freeze({
+          storage: Object.freeze(browserStorage)
+        }),
+        configurable: true,
+        enumerable: true,
+        writable: false
+      });
       globalThis.importScripts = function (...urls) {
         if (typeof globalThis.__sumiImportScriptsHost !== 'function') {
           noteBlocked('importScripts.hostMissing');
@@ -9328,7 +9779,8 @@ final class ChromeMV3ServiceWorkerJSExecutionHarness {
           queued: state.queued,
           invocationCount: state.invocationCount
         })),
-        memorySessionGetTrace: memorySessionGetTraceSnapshot()
+        memorySessionGetTrace: memorySessionGetTraceSnapshot(),
+        storageLocalGetTrace: storageLocalGetTraceSnapshot()
       });
       globalThis.__sumiHarness = {
         snapshot,
@@ -9392,6 +9844,8 @@ private struct ChromeMV3ServiceWorkerJSWireSnapshot: Decodable {
     var timers: [ChromeMV3ServiceWorkerJSTimerRecord]
     var memorySessionGetTrace:
         ChromeMV3ServiceWorkerJSMemorySessionGetTraceRecord?
+    var storageLocalGetTrace:
+        ChromeMV3ServiceWorkerJSStorageLocalGetTraceRecord?
 }
 
 private struct ChromeMV3ServiceWorkerJSWireCryptoOperation: Decodable {

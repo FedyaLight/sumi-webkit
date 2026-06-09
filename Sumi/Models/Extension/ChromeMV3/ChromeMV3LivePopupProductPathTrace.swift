@@ -453,11 +453,38 @@ struct ChromeMV3FirstVisibleUIGateDiagnostics: Equatable, Sendable {
     var swLocalBackedSessionLocalGetStartedCategory: String
     var swLocalBackedSessionLocalGetCallbackCategory: String
     var swLocalBackedSessionLocalGetPromiseCategory: String
+    var swLocalBackedSessionLocalGetCallShapeCategory: String
+    var swLocalBackedSessionLocalGetKeyShapeCategory: String
+    var swLocalBackedSessionLocalGetCallbackRegisteredCategory: String
+    var swLocalBackedSessionLocalGetQueuedCategory: String
+    var swLocalBackedSessionLocalGetQueueNamespaceCategory: String
+    var swLocalBackedSessionLocalGetDrainAttemptedCategory: String
+    var swLocalBackedSessionLocalGetDrainResultCategory: String
+    var swLocalBackedSessionLocalGetCallbackInvokedCategory: String
+    var swLocalBackedSessionLocalGetCallbackResultShapeCategory: String
+    var swLocalBackedSessionLocalGetLastErrorCategory: String
+    var swLocalBackedSessionLocalGetPromiseResolvedCategory: String
+    var swLocalBackedSessionContinuationAfterLocalGetCategory: String
     var swLocalBackedSessionCryptoAwaitCategory: String
     var swLocalBackedSessionTimerAwaitCategory: String
     var swLocalBackedSessionMicrotaskContinuationCategory: String
     var swLocalBackedSessionGetReturnValueCategory: String
     var swMemorySessionResponseConstructionReachedCategory: String
+    var swStorageLocalGetShimEnteredCategory: String
+    var swStorageLocalGetInvocationSourceCategory: String
+    var swStorageLocalGetArgumentCountBucket: String
+    var swStorageLocalGetFirstArgShapeCategory: String
+    var swStorageLocalGetCallbackArgPositionCategory: String
+    var swStorageLocalGetHasCallbackCategory: String
+    var swStorageLocalGetReturnsPromiseCategory: String
+    var swStorageLocalGetPromiseCreatedCategory: String
+    var swStorageLocalGetPromiseResolvedCategory: String
+    var swStorageLocalGetCallbackRegisteredCategory: String
+    var swStorageLocalGetCallbackQueuedCategory: String
+    var swStorageLocalGetCallbackInvokedCategory: String
+    var swStorageLocalGetResultShapeCategory: String
+    var swStorageLocalGetLastErrorCategory: String
+    var swStorageLocalGetAreaCategory: String
 
     var logLines: [String] {
         [
@@ -604,11 +631,38 @@ struct ChromeMV3FirstVisibleUIGateDiagnostics: Equatable, Sendable {
             "swLocalBackedSessionLocalGetStartedCategory=\(swLocalBackedSessionLocalGetStartedCategory)",
             "swLocalBackedSessionLocalGetCallbackCategory=\(swLocalBackedSessionLocalGetCallbackCategory)",
             "swLocalBackedSessionLocalGetPromiseCategory=\(swLocalBackedSessionLocalGetPromiseCategory)",
+            "swLocalBackedSessionLocalGetCallShapeCategory=\(swLocalBackedSessionLocalGetCallShapeCategory)",
+            "swLocalBackedSessionLocalGetKeyShapeCategory=\(swLocalBackedSessionLocalGetKeyShapeCategory)",
+            "swLocalBackedSessionLocalGetCallbackRegisteredCategory=\(swLocalBackedSessionLocalGetCallbackRegisteredCategory)",
+            "swLocalBackedSessionLocalGetQueuedCategory=\(swLocalBackedSessionLocalGetQueuedCategory)",
+            "swLocalBackedSessionLocalGetQueueNamespaceCategory=\(swLocalBackedSessionLocalGetQueueNamespaceCategory)",
+            "swLocalBackedSessionLocalGetDrainAttemptedCategory=\(swLocalBackedSessionLocalGetDrainAttemptedCategory)",
+            "swLocalBackedSessionLocalGetDrainResultCategory=\(swLocalBackedSessionLocalGetDrainResultCategory)",
+            "swLocalBackedSessionLocalGetCallbackInvokedCategory=\(swLocalBackedSessionLocalGetCallbackInvokedCategory)",
+            "swLocalBackedSessionLocalGetCallbackResultShapeCategory=\(swLocalBackedSessionLocalGetCallbackResultShapeCategory)",
+            "swLocalBackedSessionLocalGetLastErrorCategory=\(swLocalBackedSessionLocalGetLastErrorCategory)",
+            "swLocalBackedSessionLocalGetPromiseResolvedCategory=\(swLocalBackedSessionLocalGetPromiseResolvedCategory)",
+            "swLocalBackedSessionContinuationAfterLocalGetCategory=\(swLocalBackedSessionContinuationAfterLocalGetCategory)",
             "swLocalBackedSessionCryptoAwaitCategory=\(swLocalBackedSessionCryptoAwaitCategory)",
             "swLocalBackedSessionTimerAwaitCategory=\(swLocalBackedSessionTimerAwaitCategory)",
             "swLocalBackedSessionMicrotaskContinuationCategory=\(swLocalBackedSessionMicrotaskContinuationCategory)",
             "swLocalBackedSessionGetReturnValueCategory=\(swLocalBackedSessionGetReturnValueCategory)",
             "swMemorySessionResponseConstructionReachedCategory=\(swMemorySessionResponseConstructionReachedCategory)",
+            "swStorageLocalGetShimEnteredCategory=\(swStorageLocalGetShimEnteredCategory)",
+            "swStorageLocalGetInvocationSourceCategory=\(swStorageLocalGetInvocationSourceCategory)",
+            "swStorageLocalGetArgumentCountBucket=\(swStorageLocalGetArgumentCountBucket)",
+            "swStorageLocalGetFirstArgShapeCategory=\(swStorageLocalGetFirstArgShapeCategory)",
+            "swStorageLocalGetCallbackArgPositionCategory=\(swStorageLocalGetCallbackArgPositionCategory)",
+            "swStorageLocalGetHasCallbackCategory=\(swStorageLocalGetHasCallbackCategory)",
+            "swStorageLocalGetReturnsPromiseCategory=\(swStorageLocalGetReturnsPromiseCategory)",
+            "swStorageLocalGetPromiseCreatedCategory=\(swStorageLocalGetPromiseCreatedCategory)",
+            "swStorageLocalGetPromiseResolvedCategory=\(swStorageLocalGetPromiseResolvedCategory)",
+            "swStorageLocalGetCallbackRegisteredCategory=\(swStorageLocalGetCallbackRegisteredCategory)",
+            "swStorageLocalGetCallbackQueuedCategory=\(swStorageLocalGetCallbackQueuedCategory)",
+            "swStorageLocalGetCallbackInvokedCategory=\(swStorageLocalGetCallbackInvokedCategory)",
+            "swStorageLocalGetResultShapeCategory=\(swStorageLocalGetResultShapeCategory)",
+            "swStorageLocalGetLastErrorCategory=\(swStorageLocalGetLastErrorCategory)",
+            "swStorageLocalGetAreaCategory=\(swStorageLocalGetAreaCategory)",
         ]
     }
 
@@ -2222,6 +2276,18 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         swLocalBackedSessionLocalGetStartedCategory: String,
         swLocalBackedSessionLocalGetCallbackCategory: String,
         swLocalBackedSessionLocalGetPromiseCategory: String,
+        swLocalBackedSessionLocalGetCallShapeCategory: String,
+        swLocalBackedSessionLocalGetKeyShapeCategory: String,
+        swLocalBackedSessionLocalGetCallbackRegisteredCategory: String,
+        swLocalBackedSessionLocalGetQueuedCategory: String,
+        swLocalBackedSessionLocalGetQueueNamespaceCategory: String,
+        swLocalBackedSessionLocalGetDrainAttemptedCategory: String,
+        swLocalBackedSessionLocalGetDrainResultCategory: String,
+        swLocalBackedSessionLocalGetCallbackInvokedCategory: String,
+        swLocalBackedSessionLocalGetCallbackResultShapeCategory: String,
+        swLocalBackedSessionLocalGetLastErrorCategory: String,
+        swLocalBackedSessionLocalGetPromiseResolvedCategory: String,
+        swLocalBackedSessionContinuationAfterLocalGetCategory: String,
         swLocalBackedSessionCryptoAwaitCategory: String,
         swLocalBackedSessionTimerAwaitCategory: String,
         swLocalBackedSessionMicrotaskContinuationCategory: String,
@@ -2275,6 +2341,30 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
                 trace.localGetCallbackCategory,
             swLocalBackedSessionLocalGetPromiseCategory:
                 trace.localGetPromiseCategory,
+            swLocalBackedSessionLocalGetCallShapeCategory:
+                trace.localGetCallShapeCategory,
+            swLocalBackedSessionLocalGetKeyShapeCategory:
+                trace.localGetKeyShapeCategory,
+            swLocalBackedSessionLocalGetCallbackRegisteredCategory:
+                trace.localGetCallbackRegisteredCategory,
+            swLocalBackedSessionLocalGetQueuedCategory:
+                trace.localGetQueuedCategory,
+            swLocalBackedSessionLocalGetQueueNamespaceCategory:
+                trace.localGetQueueNamespaceCategory,
+            swLocalBackedSessionLocalGetDrainAttemptedCategory:
+                trace.localGetDrainAttemptedCategory,
+            swLocalBackedSessionLocalGetDrainResultCategory:
+                trace.localGetDrainResultCategory,
+            swLocalBackedSessionLocalGetCallbackInvokedCategory:
+                trace.localGetCallbackInvokedCategory,
+            swLocalBackedSessionLocalGetCallbackResultShapeCategory:
+                trace.localGetCallbackResultShapeCategory,
+            swLocalBackedSessionLocalGetLastErrorCategory:
+                trace.localGetLastErrorCategory,
+            swLocalBackedSessionLocalGetPromiseResolvedCategory:
+                trace.localGetPromiseResolvedCategory,
+            swLocalBackedSessionContinuationAfterLocalGetCategory:
+                trace.continuationAfterLocalGetCategory,
             swLocalBackedSessionCryptoAwaitCategory:
                 trace.cryptoAwaitCategory,
             swLocalBackedSessionTimerAwaitCategory:
@@ -2285,6 +2375,53 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
                 trace.getReturnValueCategory,
             swMemorySessionResponseConstructionReachedCategory:
                 trace.responseConstructionReachedCategory
+        )
+    }
+
+    private static func deriveSwStorageLocalGetDiagnostics(
+        bridgeSnapshot: ChromeMV3PopupOptionsJSBridgeDiagnosticsSnapshot?
+    ) -> (
+        swStorageLocalGetShimEnteredCategory: String,
+        swStorageLocalGetInvocationSourceCategory: String,
+        swStorageLocalGetArgumentCountBucket: String,
+        swStorageLocalGetFirstArgShapeCategory: String,
+        swStorageLocalGetCallbackArgPositionCategory: String,
+        swStorageLocalGetHasCallbackCategory: String,
+        swStorageLocalGetReturnsPromiseCategory: String,
+        swStorageLocalGetPromiseCreatedCategory: String,
+        swStorageLocalGetPromiseResolvedCategory: String,
+        swStorageLocalGetCallbackRegisteredCategory: String,
+        swStorageLocalGetCallbackQueuedCategory: String,
+        swStorageLocalGetCallbackInvokedCategory: String,
+        swStorageLocalGetResultShapeCategory: String,
+        swStorageLocalGetLastErrorCategory: String,
+        swStorageLocalGetAreaCategory: String
+    ) {
+        let trace =
+            bridgeSnapshot?.appStateDependencyTrace
+            .serviceWorkerStorageLocalGetTrace ?? .empty
+        return (
+            swStorageLocalGetShimEnteredCategory: trace.shimEnteredCategory,
+            swStorageLocalGetInvocationSourceCategory:
+                trace.invocationSourceCategory,
+            swStorageLocalGetArgumentCountBucket: trace.argumentCountBucket,
+            swStorageLocalGetFirstArgShapeCategory: trace.firstArgShapeCategory,
+            swStorageLocalGetCallbackArgPositionCategory:
+                trace.callbackArgPositionCategory,
+            swStorageLocalGetHasCallbackCategory: trace.hasCallbackCategory,
+            swStorageLocalGetReturnsPromiseCategory:
+                trace.returnsPromiseCategory,
+            swStorageLocalGetPromiseCreatedCategory: trace.promiseCreatedCategory,
+            swStorageLocalGetPromiseResolvedCategory:
+                trace.promiseResolvedCategory,
+            swStorageLocalGetCallbackRegisteredCategory:
+                trace.callbackRegisteredCategory,
+            swStorageLocalGetCallbackQueuedCategory: trace.callbackQueuedCategory,
+            swStorageLocalGetCallbackInvokedCategory:
+                trace.callbackInvokedCategory,
+            swStorageLocalGetResultShapeCategory: trace.resultShapeCategory,
+            swStorageLocalGetLastErrorCategory: trace.lastErrorCategory,
+            swStorageLocalGetAreaCategory: trace.areaCategory
         )
     }
 
@@ -3848,6 +3985,9 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
                 viewCachePortShapeDiagnostics
                 .viewCachePortGetResponseDeliveredCategory
         )
+        let swStorageLocalGetDiagnostics = deriveSwStorageLocalGetDiagnostics(
+            bridgeSnapshot: bridgeSnapshot
+        )
         let viewCacheDiagnostics = deriveViewCacheDiagnostics(
             routeEvents: routeEvents,
             apiBuckets: apiBuckets,
@@ -4299,6 +4439,37 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
                 swMemorySessionGetDiagnostics.swLocalBackedSessionLocalGetCallbackCategory,
             swLocalBackedSessionLocalGetPromiseCategory:
                 swMemorySessionGetDiagnostics.swLocalBackedSessionLocalGetPromiseCategory,
+            swLocalBackedSessionLocalGetCallShapeCategory:
+                swMemorySessionGetDiagnostics.swLocalBackedSessionLocalGetCallShapeCategory,
+            swLocalBackedSessionLocalGetKeyShapeCategory:
+                swMemorySessionGetDiagnostics.swLocalBackedSessionLocalGetKeyShapeCategory,
+            swLocalBackedSessionLocalGetCallbackRegisteredCategory:
+                swMemorySessionGetDiagnostics
+                .swLocalBackedSessionLocalGetCallbackRegisteredCategory,
+            swLocalBackedSessionLocalGetQueuedCategory:
+                swMemorySessionGetDiagnostics.swLocalBackedSessionLocalGetQueuedCategory,
+            swLocalBackedSessionLocalGetQueueNamespaceCategory:
+                swMemorySessionGetDiagnostics
+                .swLocalBackedSessionLocalGetQueueNamespaceCategory,
+            swLocalBackedSessionLocalGetDrainAttemptedCategory:
+                swMemorySessionGetDiagnostics
+                .swLocalBackedSessionLocalGetDrainAttemptedCategory,
+            swLocalBackedSessionLocalGetDrainResultCategory:
+                swMemorySessionGetDiagnostics.swLocalBackedSessionLocalGetDrainResultCategory,
+            swLocalBackedSessionLocalGetCallbackInvokedCategory:
+                swMemorySessionGetDiagnostics
+                .swLocalBackedSessionLocalGetCallbackInvokedCategory,
+            swLocalBackedSessionLocalGetCallbackResultShapeCategory:
+                swMemorySessionGetDiagnostics
+                .swLocalBackedSessionLocalGetCallbackResultShapeCategory,
+            swLocalBackedSessionLocalGetLastErrorCategory:
+                swMemorySessionGetDiagnostics.swLocalBackedSessionLocalGetLastErrorCategory,
+            swLocalBackedSessionLocalGetPromiseResolvedCategory:
+                swMemorySessionGetDiagnostics
+                .swLocalBackedSessionLocalGetPromiseResolvedCategory,
+            swLocalBackedSessionContinuationAfterLocalGetCategory:
+                swMemorySessionGetDiagnostics
+                .swLocalBackedSessionContinuationAfterLocalGetCategory,
             swLocalBackedSessionCryptoAwaitCategory:
                 swMemorySessionGetDiagnostics.swLocalBackedSessionCryptoAwaitCategory,
             swLocalBackedSessionTimerAwaitCategory:
@@ -4310,7 +4481,37 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
                 swMemorySessionGetDiagnostics.swLocalBackedSessionGetReturnValueCategory,
             swMemorySessionResponseConstructionReachedCategory:
                 swMemorySessionGetDiagnostics
-                .swMemorySessionResponseConstructionReachedCategory
+                .swMemorySessionResponseConstructionReachedCategory,
+            swStorageLocalGetShimEnteredCategory:
+                swStorageLocalGetDiagnostics.swStorageLocalGetShimEnteredCategory,
+            swStorageLocalGetInvocationSourceCategory:
+                swStorageLocalGetDiagnostics.swStorageLocalGetInvocationSourceCategory,
+            swStorageLocalGetArgumentCountBucket:
+                swStorageLocalGetDiagnostics.swStorageLocalGetArgumentCountBucket,
+            swStorageLocalGetFirstArgShapeCategory:
+                swStorageLocalGetDiagnostics.swStorageLocalGetFirstArgShapeCategory,
+            swStorageLocalGetCallbackArgPositionCategory:
+                swStorageLocalGetDiagnostics.swStorageLocalGetCallbackArgPositionCategory,
+            swStorageLocalGetHasCallbackCategory:
+                swStorageLocalGetDiagnostics.swStorageLocalGetHasCallbackCategory,
+            swStorageLocalGetReturnsPromiseCategory:
+                swStorageLocalGetDiagnostics.swStorageLocalGetReturnsPromiseCategory,
+            swStorageLocalGetPromiseCreatedCategory:
+                swStorageLocalGetDiagnostics.swStorageLocalGetPromiseCreatedCategory,
+            swStorageLocalGetPromiseResolvedCategory:
+                swStorageLocalGetDiagnostics.swStorageLocalGetPromiseResolvedCategory,
+            swStorageLocalGetCallbackRegisteredCategory:
+                swStorageLocalGetDiagnostics.swStorageLocalGetCallbackRegisteredCategory,
+            swStorageLocalGetCallbackQueuedCategory:
+                swStorageLocalGetDiagnostics.swStorageLocalGetCallbackQueuedCategory,
+            swStorageLocalGetCallbackInvokedCategory:
+                swStorageLocalGetDiagnostics.swStorageLocalGetCallbackInvokedCategory,
+            swStorageLocalGetResultShapeCategory:
+                swStorageLocalGetDiagnostics.swStorageLocalGetResultShapeCategory,
+            swStorageLocalGetLastErrorCategory:
+                swStorageLocalGetDiagnostics.swStorageLocalGetLastErrorCategory,
+            swStorageLocalGetAreaCategory:
+                swStorageLocalGetDiagnostics.swStorageLocalGetAreaCategory
         )
     }
 
@@ -4836,11 +5037,38 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             swLocalBackedSessionLocalGetStartedCategory: "",
             swLocalBackedSessionLocalGetCallbackCategory: "",
             swLocalBackedSessionLocalGetPromiseCategory: "",
+            swLocalBackedSessionLocalGetCallShapeCategory: "",
+            swLocalBackedSessionLocalGetKeyShapeCategory: "",
+            swLocalBackedSessionLocalGetCallbackRegisteredCategory: "",
+            swLocalBackedSessionLocalGetQueuedCategory: "",
+            swLocalBackedSessionLocalGetQueueNamespaceCategory: "",
+            swLocalBackedSessionLocalGetDrainAttemptedCategory: "",
+            swLocalBackedSessionLocalGetDrainResultCategory: "",
+            swLocalBackedSessionLocalGetCallbackInvokedCategory: "",
+            swLocalBackedSessionLocalGetCallbackResultShapeCategory: "",
+            swLocalBackedSessionLocalGetLastErrorCategory: "",
+            swLocalBackedSessionLocalGetPromiseResolvedCategory: "",
+            swLocalBackedSessionContinuationAfterLocalGetCategory: "",
             swLocalBackedSessionCryptoAwaitCategory: "",
             swLocalBackedSessionTimerAwaitCategory: "",
             swLocalBackedSessionMicrotaskContinuationCategory: "",
             swLocalBackedSessionGetReturnValueCategory: "",
-            swMemorySessionResponseConstructionReachedCategory: ""
+            swMemorySessionResponseConstructionReachedCategory: "",
+            swStorageLocalGetShimEnteredCategory: "",
+            swStorageLocalGetInvocationSourceCategory: "",
+            swStorageLocalGetArgumentCountBucket: "",
+            swStorageLocalGetFirstArgShapeCategory: "",
+            swStorageLocalGetCallbackArgPositionCategory: "",
+            swStorageLocalGetHasCallbackCategory: "",
+            swStorageLocalGetReturnsPromiseCategory: "",
+            swStorageLocalGetPromiseCreatedCategory: "",
+            swStorageLocalGetPromiseResolvedCategory: "",
+            swStorageLocalGetCallbackRegisteredCategory: "",
+            swStorageLocalGetCallbackQueuedCategory: "",
+            swStorageLocalGetCallbackInvokedCategory: "",
+            swStorageLocalGetResultShapeCategory: "",
+            swStorageLocalGetLastErrorCategory: "",
+            swStorageLocalGetAreaCategory: ""
         ).logLines.map { line in
             String(line.prefix(while: { $0 != "=" })) + "="
         }

@@ -627,7 +627,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
             result.responsePayload,
             .object([
                 "base64": .string("ok"),
-                "browserType": .string("undefined"),
+                "browserType": .string("object"),
                 "documentType": .string("undefined"),
                 "domName": .string("InvalidStateError"),
                 "getURL": .bool(true),
@@ -1533,7 +1533,7 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertEqual(
             result.responsePayload,
             .object([
-                "browserType": .string("undefined"),
+                "browserType": .string("object"),
                 "extensionID": .string(
                     "service-worker-js-fixture-extension"
                 ),
@@ -2452,6 +2452,513 @@ final class ChromeMV3ServiceWorkerJSExecutionHarnessTests: XCTestCase {
         XCTAssertEqual(trace.responsePostMessageCalledCategory, "called")
         XCTAssertEqual(trace.responseOutboxCapturedCategory, "captured")
         XCTAssertEqual(trace.getPendingReasonCategory, "notObserved")
+        XCTAssertEqual(trace.localGetCallShapeCategory, "keysWithCallback")
+        XCTAssertEqual(trace.localGetCallbackRegisteredCategory, "registered")
+        XCTAssertEqual(trace.localGetQueuedCategory, "queued")
+        XCTAssertEqual(trace.localGetQueueNamespaceCategory, "local")
+        XCTAssertEqual(trace.localGetCallbackInvokedCategory, "invoked")
+        XCTAssertEqual(trace.continuationAfterLocalGetCategory, "continued")
+    }
+
+    func testSessionThenLocalMemoryPortGetResponseWithArrayKeySelector()
+        throws
+    {
+        let harness = try startedHarness(
+            source: """
+            chrome.runtime.onConnect.addListener((port) => {
+              if (port.name !== "session") {
+                return;
+              }
+              port.onMessage.addListener(async (message) => {
+                if (message && message.originator === "background") {
+                  return;
+                }
+                let result = null;
+                if (message.action === "get" || message.action === "has") {
+                  await new Promise((resolve) => {
+                    chrome.storage.session.get("session-key", (items) => {
+                      resolve(items["session-key"] ?? null);
+                    });
+                  });
+                  result = await new Promise((resolve) => {
+                    const localKey = "session_" + message.key;
+                    chrome.storage.local.get([localKey], (items) => {
+                      resolve(items[localKey] ?? null);
+                    });
+                  });
+                }
+                port.postMessage({
+                  originator: "background",
+                  id: message.id,
+                  key: message.key,
+                  data: JSON.stringify(result)
+                });
+              });
+            });
+            """
+        )
+        let connect = harness.connectRuntime(
+            name: "session",
+            sender: ChromeMV3ServiceWorkerEventSenderMetadata(
+                tabID: nil,
+                frameID: nil,
+                documentID: nil,
+                sourceURL: "chrome-extension://test-extension-id/",
+                urlRedacted: false,
+                redactionState: "harness sender"
+            )
+        )
+        let portID = try XCTUnwrap(connect.portID)
+        let port = try XCTUnwrap(
+            harness.deliverPortMessageFlushingAsyncContinuations(
+                portID: portID,
+                message: .object([
+                    "originator": .string("foreground"),
+                    "id": .string("session-local-array-id"),
+                    "key": .string("global_popupViewMemory_popup-view-cache"),
+                    "action": .string("get"),
+                ])
+            )
+        )
+        XCTAssertEqual(port.postedMessages.count, 1)
+        let trace = try XCTUnwrap(harness.finalizeMemorySessionGetTrace(portID: portID))
+        XCTAssertEqual(trace.localGetKeyShapeCategory, "array")
+        XCTAssertEqual(trace.localGetCallbackInvokedCategory, "invoked")
+        XCTAssertEqual(trace.localGetPromiseResolvedCategory, "resolved")
+        XCTAssertEqual(trace.continuationAfterLocalGetCategory, "continued")
+        XCTAssertEqual(trace.responseOutboxCapturedCategory, "captured")
+    }
+
+    func testMemorySessionGetTraceNeverClassifiesLocalGetNotStartedWhenLocalGetStarted()
+        throws
+    {
+        let harness = try startedHarness(
+            source: """
+            chrome.runtime.onConnect.addListener((port) => {
+              if (port.name !== "session") {
+                return;
+              }
+              port.onMessage.addListener(async (message) => {
+                if (message && message.originator === "background") {
+                  return;
+                }
+                await new Promise((resolve) => {
+                  chrome.storage.session.get("session-key", (items) => {
+                    resolve(items["session-key"] ?? null);
+                  });
+                });
+                await chrome.storage.local.get("session_" + message.key);
+                await new Promise(() => {});
+              });
+            });
+            """
+        )
+        let connect = harness.connectRuntime(
+            name: "session",
+            sender: ChromeMV3ServiceWorkerEventSenderMetadata(
+                tabID: nil,
+                frameID: nil,
+                documentID: nil,
+                sourceURL: "chrome-extension://test-extension-id/",
+                urlRedacted: false,
+                redactionState: "harness sender"
+            )
+        )
+        let portID = try XCTUnwrap(connect.portID)
+        _ = harness.deliverPortMessage(
+            portID: portID,
+            message: .object([
+                "originator": .string("foreground"),
+                "id": .string("local-get-promise-only-id"),
+                "key": .string("global_popupViewMemory_popup-view-cache"),
+                "action": .string("get"),
+            ])
+        )
+        let trace = try XCTUnwrap(harness.finalizeMemorySessionGetTrace(portID: portID))
+        XCTAssertEqual(trace.localGetStartedCategory, "started")
+        XCTAssertEqual(trace.localGetCallbackRegisteredCategory, "notRegistered")
+        XCTAssertEqual(trace.localGetPromiseResolvedCategory, "resolved")
+        XCTAssertEqual(trace.continuationAfterLocalGetCategory, "continued")
+        XCTAssertNotEqual(trace.getPendingReasonCategory, "localGetNotStarted")
+        XCTAssertNotEqual(trace.getPendingReasonCategory, "localGetCallbackNotInvoked")
+    }
+
+    func testMemorySessionGetTraceClassifiesPromiseOnlyLocalGetWithoutCallback()
+        throws
+    {
+        let harness = try startedHarness(
+            source: """
+            chrome.runtime.onConnect.addListener((port) => {
+              if (port.name !== "session") {
+                return;
+              }
+              port.onMessage.addListener(async (message) => {
+                if (message && message.originator === "background") {
+                  return;
+                }
+                await new Promise((resolve) => {
+                  chrome.storage.session.get("session-key", (items) => {
+                    resolve(items["session-key"] ?? null);
+                  });
+                });
+                chrome.storage.local.get("session_" + message.key);
+              });
+            });
+            """
+        )
+        let connect = harness.connectRuntime(
+            name: "session",
+            sender: ChromeMV3ServiceWorkerEventSenderMetadata(
+                tabID: nil,
+                frameID: nil,
+                documentID: nil,
+                sourceURL: "chrome-extension://test-extension-id/",
+                urlRedacted: false,
+                redactionState: "harness sender"
+            )
+        )
+        let portID = try XCTUnwrap(connect.portID)
+        _ = harness.deliverPortMessage(
+            portID: portID,
+            message: .object([
+                "originator": .string("foreground"),
+                "id": .string("local-get-no-callback-id"),
+                "key": .string("global_popupViewMemory_popup-view-cache"),
+                "action": .string("get"),
+            ])
+        )
+        let trace = try XCTUnwrap(harness.finalizeMemorySessionGetTrace(portID: portID))
+        let shimTrace = harness.snapshot.storageLocalGetTrace
+        XCTAssertEqual(trace.localGetStartedCategory, "started")
+        XCTAssertEqual(trace.localGetCallbackRegisteredCategory, "notRegistered")
+        XCTAssertEqual(shimTrace.hasCallbackCategory, "no")
+        XCTAssertEqual(shimTrace.returnsPromiseCategory, "yes")
+        XCTAssertNotEqual(trace.getPendingReasonCategory, "localGetCallbackNotInvoked")
+        XCTAssertNotEqual(trace.getPendingReasonCategory, "localGetCallbackNotRegistered")
+    }
+
+    func testBitwardenShapedLocalGetCallbackWithCapturedStorageAreaReference()
+        throws
+    {
+        let harness = try startedHarness(
+            source: """
+            const localStorageApi = chrome.storage.local;
+            chrome.runtime.onConnect.addListener((port) => {
+              if (port.name !== "session") {
+                return;
+              }
+              port.onMessage.addListener(async (message) => {
+                if (message && message.originator === "background") {
+                  return;
+                }
+                await new Promise((resolve) => {
+                  chrome.storage.session.get("session-key", () => resolve());
+                });
+                const result = await new Promise((resolve) => {
+                  const localKey = "session_" + message.key;
+                  localStorageApi.get(localKey, (items) => {
+                    resolve(items[localKey] ?? null);
+                  });
+                });
+                port.postMessage({
+                  originator: "background",
+                  id: message.id,
+                  key: message.key,
+                  data: JSON.stringify(result)
+                });
+              });
+            });
+            """
+        )
+        XCTAssertTrue(
+            harness.importStorageValues(
+                ["session-key": .string("present")],
+                area: .session
+            )
+        )
+        let connect = harness.connectRuntime(
+            name: "session",
+            sender: ChromeMV3ServiceWorkerEventSenderMetadata(
+                tabID: nil,
+                frameID: nil,
+                documentID: nil,
+                sourceURL: "chrome-extension://test-extension-id/",
+                urlRedacted: false,
+                redactionState: "harness sender"
+            )
+        )
+        let portID = try XCTUnwrap(connect.portID)
+        let port = try XCTUnwrap(
+            harness.deliverPortMessageFlushingAsyncContinuations(
+                portID: portID,
+                message: .object([
+                    "originator": .string("foreground"),
+                    "id": .string("captured-local-api-id"),
+                    "key": .string("global_popupViewMemory_popup-view-cache"),
+                    "action": .string("get"),
+                ])
+            )
+        )
+        XCTAssertEqual(port.postedMessages.count, 1)
+        let trace = try XCTUnwrap(harness.finalizeMemorySessionGetTrace(portID: portID))
+        let shimTrace = harness.snapshot.storageLocalGetTrace
+        XCTAssertEqual(shimTrace.shimEnteredCategory, "entered")
+        XCTAssertEqual(shimTrace.invocationSourceCategory, "chrome.storage.local.get")
+        XCTAssertEqual(shimTrace.argumentCountBucket, "two")
+        XCTAssertEqual(shimTrace.firstArgShapeCategory, "string")
+        XCTAssertEqual(shimTrace.callbackArgPositionCategory, "second")
+        XCTAssertEqual(shimTrace.hasCallbackCategory, "yes")
+        XCTAssertEqual(trace.localGetCallShapeCategory, "keysWithCallback")
+        XCTAssertEqual(trace.localGetCallbackInvokedCategory, "invoked")
+        XCTAssertEqual(trace.responseOutboxCapturedCategory, "captured")
+    }
+
+    func testBrowserStorageLocalGetUsesSharedHarnessShim() throws {
+        let harness = try startedHarness(
+            source: """
+            chrome.runtime.onConnect.addListener((port) => {
+              if (port.name !== "session") {
+                return;
+              }
+              port.onMessage.addListener(async (message) => {
+                if (message && message.originator === "background") {
+                  return;
+                }
+                await new Promise((resolve) => {
+                  chrome.storage.session.get("session-key", () => resolve());
+                });
+                const result = await new Promise((resolve) => {
+                  const localKey = "session_" + message.key;
+                  browser.storage.local.get(localKey, (items) => {
+                    resolve(items[localKey] ?? null);
+                  });
+                });
+                port.postMessage({
+                  originator: "background",
+                  id: message.id,
+                  key: message.key,
+                  data: JSON.stringify(result)
+                });
+              });
+            });
+            """
+        )
+        XCTAssertTrue(
+            harness.importStorageValues(
+                ["session-key": .string("present")],
+                area: .session
+            )
+        )
+        let connect = harness.connectRuntime(
+            name: "session",
+            sender: ChromeMV3ServiceWorkerEventSenderMetadata(
+                tabID: nil,
+                frameID: nil,
+                documentID: nil,
+                sourceURL: "chrome-extension://test-extension-id/",
+                urlRedacted: false,
+                redactionState: "harness sender"
+            )
+        )
+        let portID = try XCTUnwrap(connect.portID)
+        _ = harness.deliverPortMessageFlushingAsyncContinuations(
+            portID: portID,
+            message: .object([
+                "originator": .string("foreground"),
+                "id": .string("browser-local-get-id"),
+                "key": .string("global_popupViewMemory_popup-view-cache"),
+                "action": .string("get"),
+            ])
+        )
+        let shimTrace = harness.snapshot.storageLocalGetTrace
+        XCTAssertEqual(shimTrace.shimEnteredCategory, "entered")
+        XCTAssertEqual(shimTrace.invocationSourceCategory, "browser.storage.local.get")
+        XCTAssertEqual(shimTrace.callbackInvokedCategory, "invoked")
+    }
+
+    func testAliasedChromeStorageLocalGetReferenceCompletesMemorySessionTrace() throws {
+        let harness = try startedHarness(
+            source: """
+            const get = chrome.storage.local.get;
+            chrome.runtime.onConnect.addListener((port) => {
+              if (port.name !== "session") {
+                return;
+              }
+              port.onMessage.addListener(async (message) => {
+                if (message && message.originator === "background") {
+                  return;
+                }
+                await new Promise((resolve) => {
+                  chrome.storage.session.get("session-key", () => resolve());
+                });
+                const result = await new Promise((resolve) => {
+                  const localKey = "session_" + message.key;
+                  get(localKey, (items) => {
+                    resolve(items[localKey] ?? null);
+                  });
+                });
+                port.postMessage({
+                  originator: "background",
+                  id: message.id,
+                  key: message.key,
+                  data: JSON.stringify(result)
+                });
+              });
+            });
+            """
+        )
+        XCTAssertTrue(
+            harness.importStorageValues(
+                ["session-key": .string("present")],
+                area: .session
+            )
+        )
+        let connect = harness.connectRuntime(
+            name: "session",
+            sender: ChromeMV3ServiceWorkerEventSenderMetadata(
+                tabID: nil,
+                frameID: nil,
+                documentID: nil,
+                sourceURL: "chrome-extension://test-extension-id/",
+                urlRedacted: false,
+                redactionState: "harness sender"
+            )
+        )
+        let portID = try XCTUnwrap(connect.portID)
+        _ = harness.deliverPortMessageFlushingAsyncContinuations(
+            portID: portID,
+            message: .object([
+                "originator": .string("foreground"),
+                "id": .string("aliased-local-get-id"),
+                "key": .string("global_popupViewMemory_popup-view-cache"),
+                "action": .string("get"),
+            ])
+        )
+        let trace = try XCTUnwrap(harness.finalizeMemorySessionGetTrace(portID: portID))
+        XCTAssertEqual(harness.snapshot.storageLocalGetTrace.shimEnteredCategory, "entered")
+        XCTAssertEqual(trace.localGetCallbackInvokedCategory, "invoked")
+        XCTAssertEqual(trace.responseOutboxCapturedCategory, "captured")
+    }
+
+    func testPreRequestLocalGetDoesNotInferSessionScopedLocalGetStarted() throws {
+        let harness = try startedHarness(
+            source: """
+            chrome.storage.local.get("warmup", () => {});
+            chrome.runtime.onConnect.addListener((port) => {
+              if (port.name !== "session") {
+                return;
+              }
+              port.onMessage.addListener(async (message) => {
+                if (message && message.originator === "background") {
+                  return;
+                }
+                await new Promise((resolve) => {
+                  chrome.storage.session.get("session-key", (items) => {
+                    resolve(items["session-key"] ?? null);
+                  });
+                });
+              });
+            });
+            """
+        )
+        XCTAssertTrue(
+            harness.importStorageValues(
+                ["session-key": .string("present")],
+                area: .session
+            )
+        )
+        let connect = harness.connectRuntime(
+            name: "session",
+            sender: ChromeMV3ServiceWorkerEventSenderMetadata(
+                tabID: nil,
+                frameID: nil,
+                documentID: nil,
+                sourceURL: "chrome-extension://test-extension-id/",
+                urlRedacted: false,
+                redactionState: "harness sender"
+            )
+        )
+        let portID = try XCTUnwrap(connect.portID)
+        _ = harness.deliverPortMessage(
+            portID: portID,
+            message: .object([
+                "originator": .string("foreground"),
+                "id": .string("pre-request-local-get-id"),
+                "key": .string("global_popupViewMemory_popup-view-cache"),
+                "action": .string("get"),
+            ])
+        )
+        _ = harness.drainPendingStorageCallbacks()
+        let trace = try XCTUnwrap(harness.finalizeMemorySessionGetTrace(portID: portID))
+        XCTAssertEqual(harness.snapshot.storageLocalGetTrace.shimEnteredCategory, "entered")
+        XCTAssertEqual(harness.snapshot.storageLocalGetTrace.sessionScopedEntryCountBucket, "zero")
+        XCTAssertEqual(trace.localGetStartedCategory, "notStarted")
+        XCTAssertEqual(trace.localGetCallShapeCategory, "notObserved")
+        XCTAssertEqual(trace.stepAfterSessionGetCategory, "continuationPending")
+        XCTAssertNotEqual(trace.getPendingReasonCategory, "localGetCallbackNotInvoked")
+    }
+
+    func testStorageLocalGetTraceRecordsPromiseOnlyShape() throws {
+        let harness = try startedHarness(
+            source: """
+            chrome.runtime.onConnect.addListener((port) => {
+              if (port.name !== "session") {
+                return;
+              }
+              port.onMessage.addListener(async (message) => {
+                if (message && message.originator === "background") {
+                  return;
+                }
+                await new Promise((resolve) => {
+                  chrome.storage.session.get("session-key", () => resolve());
+                });
+                await chrome.storage.local.get("session_" + message.key);
+                port.postMessage({
+                  originator: "background",
+                  id: message.id,
+                  key: message.key,
+                  data: JSON.stringify(null)
+                });
+              });
+            });
+            """
+        )
+        XCTAssertTrue(
+            harness.importStorageValues(
+                ["session-key": .string("present")],
+                area: .session
+            )
+        )
+        let connect = harness.connectRuntime(
+            name: "session",
+            sender: ChromeMV3ServiceWorkerEventSenderMetadata(
+                tabID: nil,
+                frameID: nil,
+                documentID: nil,
+                sourceURL: "chrome-extension://test-extension-id/",
+                urlRedacted: false,
+                redactionState: "harness sender"
+            )
+        )
+        let portID = try XCTUnwrap(connect.portID)
+        _ = harness.deliverPortMessageFlushingAsyncContinuations(
+            portID: portID,
+            message: .object([
+                "originator": .string("foreground"),
+                "id": .string("promise-only-local-get-id"),
+                "key": .string("global_popupViewMemory_popup-view-cache"),
+                "action": .string("get"),
+            ])
+        )
+        let shimTrace = harness.snapshot.storageLocalGetTrace
+        XCTAssertEqual(shimTrace.shimEnteredCategory, "entered")
+        XCTAssertEqual(shimTrace.hasCallbackCategory, "no")
+        XCTAssertEqual(shimTrace.returnsPromiseCategory, "yes")
+        XCTAssertEqual(shimTrace.promiseCreatedCategory, "created")
+        XCTAssertEqual(shimTrace.promiseResolvedCategory, "resolved")
+        let trace = try XCTUnwrap(harness.finalizeMemorySessionGetTrace(portID: portID))
+        XCTAssertEqual(trace.localGetCallShapeCategory, "keysPromise")
+        XCTAssertNotEqual(trace.getPendingReasonCategory, "localGetCallbackNotInvoked")
     }
 
     func testMemorySessionGetTraceClassifiesContinuationAfterSessionGetNotDrained()
