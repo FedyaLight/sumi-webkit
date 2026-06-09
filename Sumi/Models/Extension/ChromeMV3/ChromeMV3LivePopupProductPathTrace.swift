@@ -2613,6 +2613,71 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
         return lines
     }
 
+    static let firstVisibleUIGateDiagnosticPrefixes: [String] =
+        ChromeMV3FirstVisibleUIGateDiagnostics(
+            firstVisibleUIGateCategory: "",
+            appInitializerGateCategory: "",
+            angularBootstrapCategory: "",
+            routerActivationCategory: "",
+            redirectGuardCategory: "",
+            loginRouteActivationCategory: "",
+            firstVisibleComponentCategory: "",
+            staticLoadingShellCategory: "",
+            migrationWaitCategory: "",
+            migrationStateCategory: "",
+            migrationStateShapeCategory: "",
+            accountScaffoldCategory: "",
+            viewCacheStateCategory: "",
+            sdkReadyCategory: "",
+            i18nReadyCategory: "",
+            themeReadyCategory: "",
+            popupSizeReadyCategory: "",
+            storageMigrationReadCategory: "",
+            storageMigrationWriteVisibilityCategory: "",
+            nativeDependencyForVisibleUICategory: "",
+            appInitializerEnteredCategory: "",
+            sdkLoadAwaitCategory: "",
+            migrationWaitEnteredCategory: "",
+            migrationWaitResolvedCategory: "",
+            i18nInitCategory: "",
+            viewCacheInitCategory: "",
+            popupSizeInitCategory: "",
+            themeInitCategory: "",
+            appInitializerUnresolvedAwaitCategory: "",
+            swStorageWriteCapturedCountBucket: "",
+            swStorageWriteMirroredCountBucket: "",
+            popupReadWrittenByServiceWorkerCountBucket: "",
+            storageNamespaceMatchCategory: "",
+            storageSnapshotImportedCategory: "",
+            storageOnChangedDeliveryCategory: "",
+            installStoragePersistedCategory: "",
+            popupWakeStorageSeededCategory: "",
+            swAsyncDrainAttemptedCategory: "",
+            swAsyncDrainIterationCountBucket: "",
+            swPromiseContinuationObservedCategory: "",
+            swTimerDrainCountBucket: "",
+            swStorageWriteAfterAsyncDrainCountBucket: "",
+            swMigrationWriteAfterAsyncDrainCategory: "",
+            storageMirrorAfterAsyncDrainCategory: "",
+            migrationWriteMissingAfterAsyncDrainCategory: ""
+        ).logLines.map { line in
+            String(line.prefix(while: { $0 != "=" })) + "="
+        }
+
+    static func firstVisibleUIGateSummaryLogLines(
+        from trace: ChromeMV3LivePopupProductPathTrace
+    ) -> [String] {
+        let matched = trace.diagnostics.filter { line in
+            firstVisibleUIGateDiagnosticPrefixes.contains { line.hasPrefix($0) }
+        }
+        guard matched.isEmpty == false else { return [] }
+        return [
+            "BEGIN live-popup-first-visible-ui-gate",
+        ]
+            + matched.sorted()
+            + ["END live-popup-first-visible-ui-gate"]
+    }
+
     static func stagedSnapshotIndicatesVisible(
         _ snapshot: ChromeMV3LivePopupStagedSnapshot
     ) -> Bool {
@@ -3007,6 +3072,60 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             return .runtimePortEnvelopeMismatch
         }
         return nil
+    }
+
+    static func pendingRouteClassifierSuppressedByMigrationOrAppStateWait(
+        trace: ChromeMV3LivePopupProductPathTrace,
+        firstVisibleUIGate: ChromeMV3FirstVisibleUIGateDiagnostics?
+    ) -> Bool {
+        let latest = preferredStagedSnapshot(trace.stagedSnapshots)
+        let swOutboxCaptured =
+            latest.map {
+                diagnosticBucketLowerBound($0.swOutboxCapturedCountBucket) > 0
+            } ?? false
+        guard swOutboxCaptured == false else { return false }
+
+        if let firstVisibleUIGate {
+            if firstVisibleUIGate.migrationWaitEnteredCategory == "entered",
+               firstVisibleUIGate.migrationWaitResolvedCategory == "stillPending"
+            {
+                return true
+            }
+            let migrationUnresolvedAwaits: Set<String> = [
+                "migrationStateMissing",
+                "migrationWaitEnteredAndPending",
+                "serviceWorkerMigrationWriteMissing",
+                "serviceWorkerMigrationWriteStillMissing",
+                "serviceWorkerAsyncContinuationNotDrained",
+                "serviceWorkerStorageWriteNotMirrored",
+                "storageSnapshotNotImported",
+                "storageOnChangedDeliveryFailure",
+            ]
+            if migrationUnresolvedAwaits.contains(
+                firstVisibleUIGate.appInitializerUnresolvedAwaitCategory
+            ) {
+                return true
+            }
+            if firstVisibleUIGate.migrationWriteMissingAfterAsyncDrainCategory
+                == "serviceWorkerMigrationWriteStillMissing"
+            {
+                return true
+            }
+        }
+
+        guard let latest else { return false }
+        let storageReadsObserved =
+            diagnosticBucketLowerBound(latest.storageReadCountBucket) > 0
+        let storageWritesObserved =
+            diagnosticBucketLowerBound(latest.storageWriteCountBucket) > 0
+        if storageReadsObserved,
+           storageWritesObserved == false,
+           trace.extensionClassifier == "extensionLocalRenderState"
+                || trace.extensionClassifier == "appStateWaitWithNoWriter"
+        {
+            return true
+        }
+        return false
     }
 
     static func classifyAppStateBootstrapGap(
@@ -3737,7 +3856,20 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
            bootstrapClassifier != .popupAppRootPresentButEmpty,
            bootstrapClassifier != .popupAppRootMountedButNoVisibleText
         {
-            return bootstrapClassifier
+            if [
+                ChromeMV3LivePopupFailureClassifier.popupWaitingOnPortResponse,
+                .popupWaitingOnStorageState,
+            ].contains(bootstrapClassifier),
+               pendingRouteClassifierSuppressedByMigrationOrAppStateWait(
+                   trace: trace,
+                   firstVisibleUIGate: firstVisibleUIGate
+               )
+            {
+                // Migration/app-state wait dominates when no SW outbox response
+                // was captured and popup storage reads remain unresolved.
+            } else {
+                return bootstrapClassifier
+            }
         }
 
         if let portClassifier = classifyPortDeliveryFailure(
@@ -3747,7 +3879,17 @@ enum ChromeMV3LivePopupProductPathTraceBuilder {
             portClassifier == .runtimePortEnvelopeMismatch
                 || portClassifier == .portConnectedNoSwOutbox
         {
-            return portClassifier
+            if portClassifier == .portConnectedNoSwOutbox,
+               pendingRouteClassifierSuppressedByMigrationOrAppStateWait(
+                   trace: trace,
+                   firstVisibleUIGate: firstVisibleUIGate
+               )
+            {
+                // Port connected without outbox can be a side effect of migration
+                // storage wait when the SW never writes migration state.
+            } else {
+                return portClassifier
+            }
         }
 
         if let appStateClassifier = classifyAppStateBootstrapGap(

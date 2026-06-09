@@ -5381,6 +5381,15 @@ final class SumiExtensionsModule {
                 RuntimeDiagnostics.logger(category: "LivePopupProductPath")
                     .debug("\(message, privacy: .public)")
             }
+            for line in ChromeMV3LivePopupProductPathTraceBuilder
+                .firstVisibleUIGateSummaryLogLines(from: trace)
+            {
+                let message = "[live-popup-product-path] \(line)"
+                self.cachedManager?.extensionRuntimeTrace(message)
+                print(message)
+                RuntimeDiagnostics.logger(category: "LivePopupProductPath")
+                    .debug("\(message, privacy: .public)")
+            }
         }
     }
 

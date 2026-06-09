@@ -1548,6 +1548,141 @@ final class ChromeMV3URLHubDeveloperPreviewTests: XCTestCase {
     }
 
     @MainActor
+    func testDebugLivePopupFirstVisibleUIGateSummaryIncludesAsyncDrainFields() {
+        var trace = makeLivePopupBootstrapGapTrace()
+        trace.diagnostics = [
+            "firstVisibleUIGateCategory=extensionLocalRenderState",
+            "migrationWaitEnteredCategory=entered",
+            "migrationWaitResolvedCategory=stillPending",
+            "swAsyncDrainAttemptedCategory=attempted",
+            "swAsyncDrainIterationCountBucket=1-3",
+            "swPromiseContinuationObservedCategory=notObserved",
+            "swTimerDrainCountBucket=0",
+            "swStorageWriteAfterAsyncDrainCountBucket=0",
+            "swMigrationWriteAfterAsyncDrainCategory=serviceWorkerMigrationWriteStillMissing",
+            "storageMirrorAfterAsyncDrainCategory=storageMirrorNotNeeded",
+            "migrationWriteMissingAfterAsyncDrainCategory=serviceWorkerMigrationWriteStillMissing",
+        ]
+        let lines =
+            ChromeMV3LivePopupProductPathTraceBuilder
+            .firstVisibleUIGateSummaryLogLines(from: trace)
+        XCTAssertEqual(lines.first, "BEGIN live-popup-first-visible-ui-gate")
+        XCTAssertEqual(lines.last, "END live-popup-first-visible-ui-gate")
+        XCTAssertTrue(
+            lines.contains("swAsyncDrainAttemptedCategory=attempted")
+        )
+        XCTAssertTrue(
+            lines.contains(
+                "migrationWriteMissingAfterAsyncDrainCategory=serviceWorkerMigrationWriteStillMissing"
+            )
+        )
+    }
+
+    @MainActor
+    func testDebugLivePopupClassifierPrefersMigrationWaitOverPortResponse() {
+        var trace = makeLivePopupBootstrapGapTrace()
+        trace.scriptsExecuted = true
+        trace.firstJSCheckpointReached = true
+        trace.extensionClassifier = "extensionLocalRenderState"
+        trace.stagedSnapshots = [
+            ChromeMV3LivePopupStagedSnapshot(
+                stage: "after3000ms",
+                readyState: "complete",
+                navigationStarted: true,
+                navigationFinished: true,
+                urlLoaded: true,
+                firstJSCheckpoint: true,
+                bridgeInstalled: true,
+                scriptsExecuted: true,
+                runtimeErrorCategory: "none",
+                consoleErrorCategory: "none",
+                unhandledRejectionCategory: "none",
+                appRootPresent: true,
+                bodyChildCountBucket: "1-3",
+                appRootChildCountBucket: "0",
+                visibleTextBucket: "0",
+                formControlCountBucket: "0",
+                buttonCountBucket: "0",
+                ariaBusyOrLoadingCategory: "busy",
+                storageReadCountBucket: "1-3",
+                storageWriteCountBucket: "0",
+                runtimeSendMessageCountBucket: "0",
+                runtimeConnectCountBucket: "1-3",
+                portMessageCountBucket: "1-3",
+                tabsQueryCountBucket: "0",
+                tabsSendMessageCountBucket: "0",
+                scriptingExecuteScriptCountBucket: "0",
+                pendingBridgeRoutesBucket: "1-3",
+                serviceWorkerOnMessageListenerCountBucket: "1-3",
+                serviceWorkerOnConnectListenerCountBucket: "1-3",
+                nativeMessagingRequestCountBucket: "0",
+                nativeMessagingResultCategory: "notRequested",
+                swOutboxCapturedCountBucket: "0",
+                swOutboxDeliveredToPopupCountBucket: "0",
+                popupPortOnMessageListenerCategory: "listenerRegistered",
+                pendingInboundPortMessagesBucket: "0",
+                portDisconnectCategory: "none"
+            ),
+        ]
+        let firstVisibleUIGate = ChromeMV3FirstVisibleUIGateDiagnostics(
+            firstVisibleUIGateCategory: "extensionLocalRenderState",
+            appInitializerGateCategory: "appInitializerWaitingForMigration",
+            angularBootstrapCategory: "bootstrapNotObserved",
+            routerActivationCategory: "routerNotStarted",
+            redirectGuardCategory: "redirectGuardNotRun",
+            loginRouteActivationCategory: "notObserved",
+            firstVisibleComponentCategory: "firstVisibleComponentWaiting",
+            staticLoadingShellCategory: "staticLoadingPresent",
+            migrationWaitCategory: "stillPending",
+            migrationStateCategory: "migrationStateMissing",
+            migrationStateShapeCategory: "notObserved",
+            accountScaffoldCategory: "notObserved",
+            viewCacheStateCategory: "notObserved",
+            sdkReadyCategory: "notObserved",
+            i18nReadyCategory: "notObserved",
+            themeReadyCategory: "notObserved",
+            popupSizeReadyCategory: "notObserved",
+            storageMigrationReadCategory: "migrationReadObserved",
+            storageMigrationWriteVisibilityCategory: "noWriterObserved",
+            nativeDependencyForVisibleUICategory: "notRequested",
+            appInitializerEnteredCategory: "entered",
+            sdkLoadAwaitCategory: "sdkLoadResolved",
+            migrationWaitEnteredCategory: "entered",
+            migrationWaitResolvedCategory: "stillPending",
+            i18nInitCategory: "notObserved",
+            viewCacheInitCategory: "notObserved",
+            popupSizeInitCategory: "notObserved",
+            themeInitCategory: "notObserved",
+            appInitializerUnresolvedAwaitCategory:
+                "serviceWorkerMigrationWriteMissing",
+            swStorageWriteCapturedCountBucket: "0",
+            swStorageWriteMirroredCountBucket: "0",
+            popupReadWrittenByServiceWorkerCountBucket: "0",
+            storageNamespaceMatchCategory: "namespaceMatched",
+            storageSnapshotImportedCategory: "storageSnapshotImported",
+            storageOnChangedDeliveryCategory: "notObserved",
+            installStoragePersistedCategory: "installDispatchedNoWrite",
+            popupWakeStorageSeededCategory: "notObserved",
+            swAsyncDrainAttemptedCategory: "attempted",
+            swAsyncDrainIterationCountBucket: "1-3",
+            swPromiseContinuationObservedCategory: "notObserved",
+            swTimerDrainCountBucket: "0",
+            swStorageWriteAfterAsyncDrainCountBucket: "0",
+            swMigrationWriteAfterAsyncDrainCategory:
+                "serviceWorkerMigrationWriteStillMissing",
+            storageMirrorAfterAsyncDrainCategory: "storageMirrorNotNeeded",
+            migrationWriteMissingAfterAsyncDrainCategory:
+                "serviceWorkerMigrationWriteStillMissing"
+        )
+        let classifier = ChromeMV3LivePopupProductPathTraceBuilder.classify(
+            trace,
+            firstVisibleUIGate: firstVisibleUIGate
+        )
+        XCTAssertEqual(classifier, .extensionLocalRenderState)
+        XCTAssertNotEqual(classifier, .popupWaitingOnPortResponse)
+    }
+
+    @MainActor
     func testDebugLivePopupProductPathClassifierReconcilesLatestStagedSnapshot()
     {
         let staged = ChromeMV3LivePopupStagedSnapshot(
