@@ -222,7 +222,9 @@ final class SumiExtensionsModule {
         guard let manager = managerIfEnabled() else {
             throw ExtensionError.unsupportedOS
         }
-        return try await manager.enableExtension(extensionId)
+        let enabled = try await manager.enableExtension(extensionId)
+        _ = safariExtensionCompatibilityReport()
+        return enabled
     }
 
     func disableExtension(_ extensionId: String) async throws {
@@ -233,6 +235,24 @@ final class SumiExtensionsModule {
     func uninstallExtension(_ extensionId: String) async throws {
         guard let manager = managerIfEnabled() else { return }
         try await manager.uninstallExtension(extensionId)
+    }
+
+    func importSafariAppExtension(
+        from candidate: DiscoveredSafariExtensionCandidate
+    ) async throws -> InstalledExtension {
+        guard let manager = managerIfEnabled() else {
+            throw ExtensionError.unsupportedOS
+        }
+
+        let installed = try await manager.performInstallation(
+            from: candidate.appexURL,
+            enableOnInstall: false
+        )
+        SafariExtensionImportStore.shared.markImported(
+            candidate: candidate,
+            installedExtensionId: installed.id
+        )
+        return installed
     }
 
     func orderedPinnedToolbarSlots(
@@ -380,4 +400,28 @@ final class SumiExtensionsModule {
         self.cachedManager = nil
         surfaceStore.bind(nil)
     }
+
+    #if DEBUG
+    /// Prints the acceptance matrix to stdout (Extensions menu, DEBUG builds).
+    func printSafariExtensionAcceptanceCheckToConsole() {
+        guard isEnabled else {
+            print("SafariExtensionAcceptanceMatrix: skipped — Extensions module is disabled")
+            return
+        }
+
+        let matrix = safariExtensionAcceptanceMatrix()
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
+        guard let data = try? encoder.encode(matrix),
+              let json = String(data: data, encoding: .utf8)
+        else {
+            print("SafariExtensionAcceptanceMatrix: encode failed")
+            return
+        }
+
+        print("SafariExtensionAcceptanceMatrix:\n\(json)")
+        SafariExtensionAcceptanceMatrixBuilder.logIfDiagnosticsEnabled(matrix)
+    }
+    #endif
 }

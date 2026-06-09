@@ -68,6 +68,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     enum ExtensionBackgroundWakeReason: String, Codable, CaseIterable {
         case startup
         case install
+        case enable
         case actionPopup
         case toolbarAction
         case externallyConnectable
@@ -141,6 +142,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     var externallyConnectablePolicies: [String: ExternallyConnectablePolicy] = [:]
     var nativeMessagePortHandlers: [ObjectIdentifier: NativeMessagingHandler] = [:]
     var nativeMessagePortExtensionIDs: [ObjectIdentifier: String] = [:]
+    lazy var safariNativeMessagingHost = SafariExtensionNativeMessagingHost()
     var profileExtensionStores: [UUID: WKWebsiteDataStore] = [:]
     var profileExtensionStoreOrder: [UUID] = []
     var recentExtensionTabOpenRequests = BoundedRecentDateTracker(

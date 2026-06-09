@@ -37,6 +37,7 @@ enum IncognitoExtensionMode: String, Codable, CaseIterable {
 
 enum WebExtensionSourceKind: String, Codable, CaseIterable, Sendable {
     case directory
+    case safariAppExtension
 }
 
 enum WebExtensionBackgroundModel: String, Codable, CaseIterable {

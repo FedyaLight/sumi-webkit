@@ -467,6 +467,10 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
         true
     }
 
+    func shouldBypassPermissions(for extensionContext: WKWebExtensionContext) -> Bool {
+        false
+    }
+
     func window(for extensionContext: WKWebExtensionContext) -> (any WKWebExtensionWindow)? {
         guard eligibleTab() != nil else { return nil }
         guard let windowId = resolvedWindowState()?.id else { return nil }

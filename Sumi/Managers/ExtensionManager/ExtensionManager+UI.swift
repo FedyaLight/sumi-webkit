@@ -48,6 +48,40 @@ final class ExtensionOptionsWindowDelegate: NSObject, NSWindowDelegate, WKUIDele
 @MainActor
 extension ExtensionManager: NSPopoverDelegate {
 
+    static let extensionActionPopupMinimumContentSize = NSSize(width: 320, height: 480)
+
+    func prepareExtensionActionPopupPresentation(_ popover: NSPopover) {
+        if popover.contentSize.width < 8 || popover.contentSize.height < 8 {
+            popover.contentSize = Self.extensionActionPopupMinimumContentSize
+        }
+    }
+
+    func extensionActionPopupAnchorRect(for anchorView: NSView) -> CGRect {
+        let bounds = anchorView.bounds
+        guard bounds.width < 4 || bounds.height < 4 else {
+            return bounds
+        }
+        let side = max(28, max(bounds.width, bounds.height))
+        return CGRect(
+            x: bounds.midX - side / 2,
+            y: bounds.midY - side / 2,
+            width: side,
+            height: side
+        )
+    }
+
+    func showExtensionActionPopup(
+        _ popover: NSPopover,
+        relativeTo anchorView: NSView,
+        preferredEdge: NSRectEdge
+    ) {
+        prepareExtensionActionPopupPresentation(popover)
+        popover.show(
+            relativeTo: extensionActionPopupAnchorRect(for: anchorView),
+            of: anchorView,
+            preferredEdge: preferredEdge
+        )
+    }
 
     func updateActionSurfaceState(
         for action: WKWebExtension.Action,
@@ -71,6 +105,44 @@ extension ExtensionManager: NSPopoverDelegate {
 
     func clearActionSurfaceState(for extensionId: String) {
         actionStatesByExtensionID.removeValue(forKey: extensionId)
+    }
+
+    /// Publishes URL-hub action metadata when WebKit has not yet delivered `didUpdate action`.
+    func publishActionSurfaceStateForLoadedContext(
+        _ extensionContext: WKWebExtensionContext,
+        preferredTab: Tab? = nil
+    ) {
+        guard extensionID(for: extensionContext) != nil else { return }
+
+        let tab = preferredTab ?? browserManager?.currentTabForActiveWindow()
+        let adapter = tab.flatMap { stableAdapter(for: $0) }
+        guard let action = extensionContext.action(for: adapter) else { return }
+
+        updateActionSurfaceState(for: action, extensionContext: extensionContext)
+    }
+
+    /// After enable/load, wake background workers and seed action surface for URL-hub.
+    func finalizeEnabledExtensionRuntime(for extensionId: String) async {
+        guard let extensionContext = getExtensionContext(for: extensionId) else { return }
+
+        publishActionSurfaceStateForLoadedContext(extensionContext)
+
+        let webExtension = extensionContext.webExtension
+        do {
+            _ = try await ensureBackgroundAvailableIfRequired(
+                for: webExtension,
+                context: extensionContext,
+                reason: .enable
+            )
+        } catch {
+            Self.logger.error(
+                "Failed to wake background after enable for \(extensionId, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+        }
+
+        reconcileOpenTabsAfterExtensionContextLoad(
+            reason: "ExtensionManager.finalizeEnabledExtensionRuntime"
+        )
     }
 
     func openActionPopupFromURLHub(
@@ -193,6 +265,21 @@ extension ExtensionManager: NSPopoverDelegate {
                 message: "\(action.label) has no WebKit action popup for the current page."
             )
         }
+
+        grantActiveTabURLAccess(
+            for: extensionContext,
+            tab: currentTab,
+            manifest: installedExtension.manifest
+        )
+        grantRequestedPermissions(
+            to: extensionContext,
+            webExtension: extensionContext.webExtension,
+            manifest: installedExtension.manifest
+        )
+        grantRequestedMatchPatterns(
+            to: extensionContext,
+            webExtension: extensionContext.webExtension
+        )
 
         extensionRuntimeTrace(
             "urlHubAction performAction extensionId=\(extensionId) actionLabel=\(action.label) actionEnabled=\(action.isEnabled) presentsPopup=\(action.presentsPopup)"

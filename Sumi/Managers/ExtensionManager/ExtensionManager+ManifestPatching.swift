@@ -23,9 +23,12 @@ import WebKit
 extension ExtensionManager {
     struct ResolvedInstallSource {
         let sourceKind: WebExtensionSourceKind
+        /// Unpacked resources root (directory install) or in-bundle resources root (appex).
         let resourcesURL: URL
         let sourceBundlePath: URL
         let sourceFingerprintURL: URL
+        /// Non-nil when `sourceKind` is `.safariAppExtension`.
+        let appexBundleURL: URL?
     }
 
     private struct ManifestPatchCacheEntry: Codable {
@@ -64,13 +67,25 @@ extension ExtensionManager {
         }
     }
 
-    static func resolveInstallSource(at url: URL) throws -> ResolvedInstallSource {
+    nonisolated static func resolveInstallSource(at url: URL) throws -> ResolvedInstallSource {
+        let standardized = url.standardizedFileURL
+        switch standardized.pathExtension.lowercased() {
+        case "appex":
+            return try resolveSafariAppExtensionInstallSource(at: standardized)
+        case "app":
+            return try resolveContainingAppInstallSource(at: standardized)
+        default:
+            return try resolveDirectoryInstallSource(at: standardized)
+        }
+    }
+
+    private nonisolated static func resolveDirectoryInstallSource(at url: URL) throws -> ResolvedInstallSource {
         let fileManager = FileManager.default
 
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
             throw ExtensionError.installationFailed(
-                "Sumi currently accepts unpacked extension directories only"
+                "Sumi accepts unpacked extension directories, Safari app extensions (.appex), or containing apps (.app)"
             )
         }
 
@@ -85,8 +100,86 @@ extension ExtensionManager {
             sourceKind: .directory,
             resourcesURL: url,
             sourceBundlePath: url,
-            sourceFingerprintURL: url
+            sourceFingerprintURL: url,
+            appexBundleURL: nil
         )
+    }
+
+    private nonisolated static func resolveSafariAppExtensionInstallSource(
+        at appexURL: URL
+    ) throws -> ResolvedInstallSource {
+        var issues: [SafariExtensionScannerIssue] = []
+        let scanner = SafariExtensionScanner()
+        guard let candidate = scanner.inspectAppexBundle(at: appexURL, issues: &issues) else {
+            if let issue = issues.first {
+                throw ExtensionError.installationFailed(
+                    safariExtensionScannerIssueDescription(issue)
+                )
+            }
+            throw ExtensionError.installationFailed(
+                "The selected bundle is not a Safari Web Extension"
+            )
+        }
+
+        let resourcesURL = try SafariAppExtensionResources.resourcesRoot(in: appexURL)
+        return ResolvedInstallSource(
+            sourceKind: .safariAppExtension,
+            resourcesURL: resourcesURL,
+            sourceBundlePath: appexURL,
+            sourceFingerprintURL: appexURL,
+            appexBundleURL: candidate.appexURL
+        )
+    }
+
+    private nonisolated static func resolveContainingAppInstallSource(at appURL: URL) throws -> ResolvedInstallSource {
+        var issues: [SafariExtensionScannerIssue] = []
+        let scanner = SafariExtensionScanner()
+        let candidates = scanner.inspectContainingAppBundle(at: appURL, issues: &issues)
+
+        guard candidates.isEmpty == false else {
+            if let issue = issues.first {
+                throw ExtensionError.installationFailed(
+                    safariExtensionScannerIssueDescription(issue)
+                )
+            }
+            throw ExtensionError.installationFailed(
+                "The selected app does not contain a Safari Web Extension"
+            )
+        }
+
+        guard candidates.count == 1, let candidate = candidates.first else {
+            let names = candidates.map(\.displayName).joined(separator: ", ")
+            throw ExtensionError.installationFailed(
+                "The selected app contains multiple Safari Web Extensions (\(names)). Select a specific .appex bundle instead."
+            )
+        }
+
+        let resourcesURL = try SafariAppExtensionResources.resourcesRoot(in: candidate.appexURL)
+        return ResolvedInstallSource(
+            sourceKind: .safariAppExtension,
+            resourcesURL: resourcesURL,
+            sourceBundlePath: candidate.appexURL,
+            sourceFingerprintURL: candidate.appexURL,
+            appexBundleURL: candidate.appexURL
+        )
+    }
+
+    private nonisolated static func safariExtensionScannerIssueDescription(
+        _ issue: SafariExtensionScannerIssue
+    ) -> String {
+        switch issue {
+        case .unreadableBundle(let url):
+            return "Safari extension bundle is not readable: \(url.lastPathComponent)"
+        case .invalidExtensionPoint(let url, let found):
+            if let found {
+                return "\(url.lastPathComponent) is not a Safari Web Extension (found \(found))"
+            }
+            return "\(url.lastPathComponent) is not a Safari Web Extension"
+        case .missingManifest(let url):
+            return "Safari extension bundle is missing manifest.json: \(url.lastPathComponent)"
+        case .duplicateExtensionIdentifier(let identifier):
+            return "Duplicate Safari extension identifier: \(identifier)"
+        }
     }
 
     private nonisolated static func patchExternallyConnectableBackgroundSupport(

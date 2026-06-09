@@ -4,18 +4,28 @@ import XCTest
 
 @available(macOS 15.5, *)
 final class NativeMessagingProcessSessionTests: XCTestCase {
-    func testProductNativeMessagingHandlerIsInertCompatibilityShell() throws {
-        let source = try Self.source(named: "Sumi/Managers/ExtensionManager/NativeMessagingHandler.swift")
+    func testProductNativeMessagingUsesSafariWebKitFoundation() throws {
+        let hostSource = try Self.source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingHost.swift"
+        )
+        let handlerSource = try Self.source(
+            named: "Sumi/Managers/ExtensionManager/NativeMessagingHandler.swift"
+        )
+        let delegateSource = try Self.source(
+            named: "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"
+        )
 
-        XCTAssertTrue(source.contains("Product native messaging remains unavailable"))
-        XCTAssertFalse(source.contains("ChromeMV3NativeMessagingInternalRuntime"))
-        XCTAssertTrue(source.contains("final class NativeMessagingHandler"))
-        XCTAssertTrue(source.contains("func disconnect() {}"))
+        XCTAssertTrue(hostSource.contains("SafariExtensionNativeMessagingHost"))
+        XCTAssertTrue(hostSource.contains("NSWorkspace"))
+        XCTAssertFalse(hostSource.contains("ChromeMV3NativeMessagingInternalRuntime"))
+        XCTAssertTrue(handlerSource.contains("WKWebExtension.MessagePort"))
+        XCTAssertTrue(delegateSource.contains("safariNativeMessagingHost.handleSendMessage"))
+        XCTAssertTrue(delegateSource.contains("safariNativeMessagingHost.handleConnect"))
 
         let processCallToken = "Process" + "("
         let uncheckedSendableToken = "@unchecked" + " Sendable"
         assertSourceExcludes(
-            source,
+            hostSource + handlerSource,
             [
                 processCallToken,
                 "NativeMessagingProcessSession",
@@ -27,18 +37,8 @@ final class NativeMessagingProcessSessionTests: XCTestCase {
                 "waitUntilExit",
                 uncheckedSendableToken,
             ],
-            context: "Product native messaging compatibility shell"
+            context: "Safari native messaging foundation"
         )
-    }
-
-    func testProductDelegateNativeMessagingMethodsRemainBlocked() throws {
-        let source = try Self.source(
-            named: "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"
-        )
-
-        XCTAssertTrue(source.contains("Product native messaging is unavailable"))
-        XCTAssertFalse(source.contains("NativeMessagingHandler("))
-        XCTAssertFalse(source.contains("NativeMessagingProcessSession"))
     }
 
     private static func source(named relativePath: String) throws -> String {

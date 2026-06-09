@@ -93,6 +93,13 @@ struct SumiCommands: Commands {
             Button("Manage Extensions...") {
                 browserManager.openSettingsTab(selecting: .extensions)
             }
+            #if DEBUG
+            Divider()
+            Button("Run Safari Extension Acceptance Check") {
+                browserManager.extensionsModule.printSafariExtensionAcceptanceCheckToConsole()
+            }
+            .disabled(browserManager.extensionsModule.isEnabled == false)
+            #endif
         }
 
         CommandMenu("Privacy") {

@@ -672,25 +672,21 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let nativeMessagingSource = try Self.source(
             named: "Sumi/Managers/ExtensionManager/NativeMessagingHandler.swift"
         )
-        XCTAssertFalse(delegateSource.contains("NativeMessagingHandler("))
-        XCTAssertTrue(
-            delegateSource.contains(
-                "Product native messaging is unavailable"
-            )
+        let safariHostSource = try Self.source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingHost.swift"
         )
-        XCTAssertTrue(
-            nativeMessagingSource.contains(
-                "Product native messaging remains unavailable"
-            )
-        )
+        XCTAssertTrue(delegateSource.contains("safariNativeMessagingHost.handleSendMessage"))
+        XCTAssertTrue(delegateSource.contains("safariNativeMessagingHost.handleConnect"))
+        XCTAssertTrue(nativeMessagingSource.contains("WKWebExtension.MessagePort"))
+        XCTAssertTrue(safariHostSource.contains("SafariExtensionNativeMessagingHost"))
         XCTAssertFalse(
-            nativeMessagingSource.contains(
+            safariHostSource.contains(
                 "ChromeMV3NativeMessagingInternalRuntime"
             )
         )
         let processCallToken = "Process" + "("
         assertSourceExcludes(
-            nativeMessagingSource,
+            nativeMessagingSource + safariHostSource,
             [
                 processCallToken,
                 "NativeMessagingProcessSession",
@@ -704,7 +700,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
                 "group.wait",
                 ".write(contentsOf",
             ],
-            context: "NativeMessagingHandler"
+            context: "Safari native messaging foundation"
         )
     }
 

@@ -160,8 +160,15 @@ extension ExtensionManager {
         loadInstalledExtensionMetadata()
         _ = await requestExtensionRuntimeAndWait(
             reason: .enable,
+            forceReload: getExtensionContext(for: extensionId) == nil,
             allowWithoutEnabledExtensions: true
         )
+
+        if getExtensionContext(for: extensionId) == nil {
+            return try await loadEnabledExtension(from: entity)
+        }
+
+        await finalizeEnabledExtensionRuntime(for: extensionId)
         return refreshed
     }
 
@@ -404,8 +411,17 @@ extension ExtensionManager {
                 $0.manifestValidationDuration = CFAbsoluteTimeGetCurrent() - validationStart
             }
 
+            let sourceKind =
+                WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
             let webExtensionStart = CFAbsoluteTimeGetCurrent()
-            let webExtension = try await WKWebExtension(resourceBaseURL: extensionRoot)
+            let (webExtension, runtimeLoadSource) = try await SafariAppExtensionResources.makeWebExtension(
+                sourceKind: sourceKind,
+                sourceBundlePath: entity.sourceBundlePath,
+                packageRoot: extensionRoot
+            )
+            extensionRuntimeTrace(
+                "loadEnabledExtension webExtension source=\(runtimeLoadSource.rawValue) packagePath=\(entity.packagePath) sourceBundlePath=\(entity.sourceBundlePath)"
+            )
             recordRuntimeMetric(for: entity.id) {
                 $0.webExtensionCreationDuration =
                     CFAbsoluteTimeGetCurrent() - webExtensionStart
@@ -461,6 +477,8 @@ extension ExtensionManager {
             extensionRuntimeTrace(
                 "loadEnabledExtension loaded extensionId=\(entity.id) context=\(extensionRuntimeObjectDescription(extensionContext)) controller=\(extensionRuntimeControllerDescription(extensionController))"
             )
+
+            await finalizeEnabledExtensionRuntime(for: entity.id)
 
             let refreshed = try refreshedRecord(for: entity, manifest: manifest)
             await applyInstalledExtensionsMutationOnNextRunLoop { manager in
@@ -602,12 +620,15 @@ extension ExtensionManager {
     }
 
     func performInstallation(
-        from sourceURL: URL
+        from sourceURL: URL,
+        enableOnInstall: Bool = true
     ) async throws -> InstalledExtension {
-        _ = await requestExtensionRuntimeAndWait(
-            reason: .install,
-            allowWithoutEnabledExtensions: true
-        )
+        if enableOnInstall {
+            _ = await requestExtensionRuntimeAndWait(
+                reason: .install,
+                allowWithoutEnabledExtensions: true
+            )
+        }
 
         let extensionsDirectory = ExtensionUtils.extensionsDirectory()
         let resolvedSource = try Self.resolveInstallSource(at: sourceURL)
@@ -627,10 +648,25 @@ extension ExtensionManager {
         var shouldRestoreExistingRuntime = false
 
         do {
-            try FileManager.default.copyItem(
-                at: resolvedSource.resourcesURL,
-                to: temporaryDirectory
-            )
+            if resolvedSource.sourceKind == .safariAppExtension,
+               let appexBundleURL = resolvedSource.appexBundleURL
+            {
+                guard let bundle = Bundle(url: appexBundleURL) else {
+                    throw ExtensionError.installationFailed(
+                        "Safari app extension bundle could not be opened"
+                    )
+                }
+                _ = try await WKWebExtension(appExtensionBundle: bundle)
+                try SafariAppExtensionResources.copyResources(
+                    from: resolvedSource.resourcesURL,
+                    to: temporaryDirectory
+                )
+            } else {
+                try FileManager.default.copyItem(
+                    at: resolvedSource.resourcesURL,
+                    to: temporaryDirectory
+                )
+            }
 
             let manifestURL = temporaryDirectory.appendingPathComponent("manifest.json")
             let manifest = try ExtensionUtils.validateManifest(at: manifestURL)
@@ -701,73 +737,100 @@ extension ExtensionManager {
             let finalManifestURL = destinationDirectory.appendingPathComponent("manifest.json")
             let finalManifest = try ExtensionUtils.validateManifest(at: finalManifestURL)
 
-            let webExtension = try await WKWebExtension(resourceBaseURL: destinationDirectory)
-            let extensionContext = WKWebExtensionContext(for: webExtension)
-            configureContextIdentity(extensionContext, extensionId: extensionId)
-            grantRequestedPermissions(
-                to: extensionContext,
-                webExtension: webExtension,
-                manifest: finalManifest
-            )
-            grantRequestedMatchPatterns(to: extensionContext, webExtension: webExtension)
-            extensionContext.isInspectable = RuntimeDiagnostics.isDeveloperInspectionEnabled
-            observeExtensionErrors(for: extensionContext, extensionId: extensionId)
-            prepareExtensionContextForRuntime(
-                extensionContext,
-                extensionId: extensionId,
-                manifest: finalManifest
-            )
-            ensureWebExtensionStorageDirectoryExists(for: extensionId)
-            traceWebExtensionStoreLifecycle(
-                phase: "before-install-controller-load",
-                extensionId: extensionId,
-                manifest: finalManifest
-            )
-
             let record = try makeInstalledRecord(
                 extensionId: extensionId,
                 manifest: finalManifest,
                 extensionRoot: destinationDirectory,
-                isEnabled: true,
+                isEnabled: enableOnInstall,
                 sourceKind: resolvedSource.sourceKind,
                 sourceBundlePath: resolvedSource.sourceBundlePath.path,
                 sourceFingerprintURL: resolvedSource.sourceFingerprintURL,
                 existingEntity: existingEntitySnapshot
             )
 
-            extensionContexts[extensionId] = extensionContext
-            loadedExtensionManifests[extensionId] = finalManifest
-            setupExternallyConnectableBridge(
-                extensionId: extensionId,
-                packagePath: destinationDirectory.path
-            )
+            if enableOnInstall {
+                let (webExtension, runtimeLoadSource) = try await SafariAppExtensionResources.makeWebExtension(
+                    sourceKind: resolvedSource.sourceKind,
+                    sourceBundlePath: resolvedSource.sourceBundlePath.path,
+                    packageRoot: destinationDirectory
+                )
+                extensionRuntimeTrace(
+                    "performInstallation webExtension source=\(runtimeLoadSource.rawValue) packagePath=\(destinationDirectory.path) sourceBundlePath=\(resolvedSource.sourceBundlePath.path)"
+                )
+                let extensionContext = WKWebExtensionContext(for: webExtension)
+                configureContextIdentity(extensionContext, extensionId: extensionId)
+                grantRequestedPermissions(
+                    to: extensionContext,
+                    webExtension: webExtension,
+                    manifest: finalManifest
+                )
+                grantRequestedMatchPatterns(to: extensionContext, webExtension: webExtension)
+                extensionContext.isInspectable = RuntimeDiagnostics.isDeveloperInspectionEnabled
+                observeExtensionErrors(for: extensionContext, extensionId: extensionId)
+                prepareExtensionContextForRuntime(
+                    extensionContext,
+                    extensionId: extensionId,
+                    manifest: finalManifest
+                )
+                ensureWebExtensionStorageDirectoryExists(for: extensionId)
+                traceWebExtensionStoreLifecycle(
+                    phase: "before-install-controller-load",
+                    extensionId: extensionId,
+                    manifest: finalManifest
+                )
 
-            do {
-                #if DEBUG
-                    try testHooks.beforeControllerLoad?(
-                        extensionId,
-                        webExtensionStorageSnapshot(for: extensionId)
+                extensionContexts[extensionId] = extensionContext
+                loadedExtensionManifests[extensionId] = finalManifest
+                setupExternallyConnectableBridge(
+                    extensionId: extensionId,
+                    packagePath: destinationDirectory.path
+                )
+
+                do {
+                    #if DEBUG
+                        try testHooks.beforeControllerLoad?(
+                            extensionId,
+                            webExtensionStorageSnapshot(for: extensionId)
+                        )
+                    #endif
+                    guard let extensionController else {
+                        throw ExtensionError.installationFailed(
+                            "Extension runtime controller is unavailable"
+                        )
+                    }
+                    try extensionController.load(extensionContext)
+                } catch {
+                    tearDownExtensionRuntimeState(for: extensionId, removeUIState: false)
+                    throw error
+                }
+
+                // New contexts must see existing windows even before `loadInstalledExtensions` sets
+                // `extensionsLoaded`, or MV3 onboarding (`tabs.create`) may not run reliably.
+                tabOpenNotificationGeneration &+= 1
+                resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
+                    reason: "ExtensionManager.performInstallation.afterLoad",
+                    allowWhenExtensionsNotLoaded: true
+                )
+                registerExistingWindowStateIfAttached()
+
+                // Await background load so `runtime.onInstalled` / `tabs.create` can run in this install cycle
+                // (fire-and-forget was returning before the service worker finished starting).
+                let installedWebExtension = extensionContext.webExtension
+                let installedDisplayName = installedWebExtension.displayName ?? record.id
+                do {
+                    _ = try await ensureBackgroundAvailableIfRequired(
+                        for: installedWebExtension,
+                        context: extensionContext,
+                        reason: .install
                     )
-                #endif
-                guard let extensionController else {
-                    throw ExtensionError.installationFailed(
-                        "Extension runtime controller is unavailable"
+                } catch {
+                    Self.logger.error(
+                        "Failed to wake background worker after install for \(installedDisplayName, privacy: .public): \(error.localizedDescription, privacy: .public)"
                     )
                 }
-                try extensionController.load(extensionContext)
-            } catch {
-                tearDownExtensionRuntimeState(for: extensionId, removeUIState: false)
-                throw error
+            } else {
+                ensureWebExtensionStorageDirectoryExists(for: extensionId)
             }
-
-            // New contexts must see existing windows even before `loadInstalledExtensions` sets
-            // `extensionsLoaded`, or MV3 onboarding (`tabs.create`) may not run reliably.
-            tabOpenNotificationGeneration &+= 1
-            resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
-                reason: "ExtensionManager.performInstallation.afterLoad",
-                allowWhenExtensionsNotLoaded: true
-            )
-            registerExistingWindowStateIfAttached()
 
             #if DEBUG
                 try testHooks.beforePersistInstalledRecord?(record)
@@ -775,22 +838,6 @@ extension ExtensionManager {
             try persist(record: record)
             await applyInstalledExtensionsMutationOnNextRunLoop { manager in
                 manager.upsertInstalledExtension(record)
-            }
-
-            // Await background load so `runtime.onInstalled` / `tabs.create` can run in this install cycle
-            // (fire-and-forget was returning before the service worker finished starting).
-            let installedWebExtension = extensionContext.webExtension
-            let installedDisplayName = installedWebExtension.displayName ?? record.id
-            do {
-                _ = try await ensureBackgroundAvailableIfRequired(
-                    for: installedWebExtension,
-                    context: extensionContext,
-                    reason: .install
-                )
-            } catch {
-                Self.logger.error(
-                    "Failed to wake background worker after install for \(installedDisplayName, privacy: .public): \(error.localizedDescription, privacy: .public)"
-                )
             }
 
             if let backupDirectory {
@@ -1263,6 +1310,26 @@ extension ExtensionManager {
         ) {
             extensionContext.setPermissionStatus(.grantedExplicitly, for: matchPattern)
         }
+    }
+
+    /// Grants temporary host access for the active tab when the manifest declares `activeTab`.
+    func grantActiveTabURLAccess(
+        for extensionContext: WKWebExtensionContext,
+        tab: Tab,
+        manifest: [String: Any]
+    ) {
+        let url = tab.url
+        guard let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https"
+        else {
+            return
+        }
+
+        let permissions = (manifest["permissions"] as? [String] ?? [])
+            + (manifest["optional_permissions"] as? [String] ?? [])
+        guard permissions.contains("activeTab") else { return }
+
+        extensionContext.setPermissionStatus(.grantedExplicitly, for: url)
     }
 
     func isGrantedPermissionStatus(

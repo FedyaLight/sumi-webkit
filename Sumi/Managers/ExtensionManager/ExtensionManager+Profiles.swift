@@ -204,6 +204,23 @@ extension ExtensionManager {
     ///
     /// - Parameter allowWhenExtensionsNotLoaded: Use during `performInstallation` so tabs re-bind
     ///   after `load(extensionContext:)` even before `loadInstalledExtensions` sets `extensionsLoaded`.
+    /// Re-binds open tabs and late-assigns the extension controller after a context load
+    /// so WebKit can inject content scripts on already-open normal tabs.
+    func reconcileOpenTabsAfterExtensionContextLoad(
+        reason: String,
+        allowWhenExtensionsNotLoaded: Bool = false
+    ) {
+        tabOpenNotificationGeneration &+= 1
+        resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
+            reason: reason,
+            allowWhenExtensionsNotLoaded: allowWhenExtensionsNotLoaded
+        )
+        if let extensionController {
+            updateExistingWebViewsWithController(extensionController)
+        }
+        registerExistingWindowStateIfAttached()
+    }
+
     func resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
         reason: String,
         allowWhenExtensionsNotLoaded: Bool = false

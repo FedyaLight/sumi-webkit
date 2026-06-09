@@ -495,6 +495,16 @@ struct SumiExtensionsSettingsPane: View {
             }
 
             SettingsSection(
+                title: "Import from Safari Apps",
+                subtitle: "Discover Safari Web Extensions bundled in installed macOS apps"
+            ) {
+                SafariExtensionImportCandidatesSection(
+                    installedExtensions: installedExtensions,
+                    onStatus: { statusMessage = $0 }
+                )
+            }
+
+            SettingsSection(
                 title: "Installed Extensions",
                 subtitle: installedExtensions.isEmpty
                     ? "No extensions are installed"

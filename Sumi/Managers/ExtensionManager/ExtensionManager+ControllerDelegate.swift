@@ -186,6 +186,13 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             to: extensionContext,
             webExtension: extensionContext.webExtension
         )
+        if let activeTab = browserManager?.currentTabForActiveWindow() {
+            grantActiveTabURLAccess(
+                for: extensionContext,
+                tab: activeTab,
+                manifest: manifest
+            )
+        }
 
         guard let popover = action.popupPopover else {
             completionHandler(
@@ -213,6 +220,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
 
             popover.behavior = .transient
             popover.delegate = self
+            self.prepareExtensionActionPopupPresentation(popover)
             self.isPopupActive = true
 
             if let extensionId,
@@ -226,9 +234,9 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                    let view = match.view,
                    view.window != nil
                 {
-                    popover.show(
-                        relativeTo: view.bounds,
-                        of: view,
+                    self.showExtensionActionPopup(
+                        popover,
+                        relativeTo: view,
                         preferredEdge: .maxY
                     )
                     completionHandler(nil)
@@ -238,9 +246,9 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                 if let validAnchor = anchors.first(where: { $0.view?.window != nil }),
                    let view = validAnchor.view
                 {
-                    popover.show(
-                        relativeTo: view.bounds,
-                        of: view,
+                    self.showExtensionActionPopup(
+                        popover,
+                        relativeTo: view,
                         preferredEdge: .maxY
                     )
                     completionHandler(nil)
@@ -409,23 +417,22 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         for extensionContext: WKWebExtensionContext,
         replyHandler: @escaping (Any?, (any Error)?) -> Void
     ) {
-        let applicationId = applicationIdentifier ?? ""
         _ = controller
-        _ = message
-        _ = extensionContext
-        let lastErrorMessage =
-            "Native messaging is unavailable in this Sumi build."
-        replyHandler(
-            nil,
-            NSError(
-                domain: "ExtensionManager.NativeMessaging",
-                code: 50,
-                userInfo: [
-                    NSLocalizedDescriptionKey: lastErrorMessage,
-                    "SumiNativeMessagingDiagnostic":
-                        "Product native messaging is unavailable; \(applicationId) can only be exercised by DEBUG/internal fixture diagnostics. No native host process was launched.",
-                ]
+        let extensionId = extensionID(for: extensionContext)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = try? await self.ensureBackgroundAvailableIfRequired(
+                for: extensionContext.webExtension,
+                context: extensionContext,
+                reason: .nativeMessaging
             )
+        }
+        safariNativeMessagingHost.handleSendMessage(
+            applicationIdentifier: applicationIdentifier,
+            message: message,
+            extensionId: extensionId,
+            installedExtensions: installedExtensions,
+            replyHandler: replyHandler
         )
     }
 
@@ -436,21 +443,29 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         completionHandler: @escaping ((any Error)?) -> Void
     ) {
         _ = controller
-        _ = extensionContext
-        let applicationId = port.applicationIdentifier ?? "unknown"
-        let lastErrorMessage =
-            "Native messaging is unavailable in this Sumi build."
-        port.disconnect()
-        completionHandler(
-            NSError(
-                domain: "ExtensionManager.NativeMessaging",
-                code: 50,
-                userInfo: [
-                    NSLocalizedDescriptionKey: lastErrorMessage,
-                    "SumiNativeMessagingDiagnostic":
-                        "Product native messaging Port is unavailable; \(applicationId) can only be exercised by DEBUG/internal fixture diagnostics. No native host process was launched.",
-                ]
+        let extensionId = extensionID(for: extensionContext)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = try? await self.ensureBackgroundAvailableIfRequired(
+                for: extensionContext.webExtension,
+                context: extensionContext,
+                reason: .nativeMessaging
             )
+        }
+
+        let portKey = ObjectIdentifier(port)
+        _ = safariNativeMessagingHost.handleConnect(
+            port: port,
+            extensionId: extensionId,
+            installedExtensions: installedExtensions,
+            registerHandler: { [weak self] handler in
+                guard let self else { return }
+                self.nativeMessagePortHandlers[portKey] = handler
+                if let extensionId {
+                    self.nativeMessagePortExtensionIDs[portKey] = extensionId
+                }
+            },
+            completionHandler: completionHandler
         )
     }
 

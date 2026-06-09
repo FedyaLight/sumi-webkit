@@ -533,6 +533,8 @@ private struct ActionAnchorView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
+        view.translatesAutoresizingMaskIntoConstraints = true
+        view.autoresizingMask = [.width, .height]
         extensionsModule.setActionAnchorIfLoaded(for: extensionId, anchorView: view)
         return view
     }
