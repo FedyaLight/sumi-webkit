@@ -86,14 +86,6 @@ extension Tab {
         )
 
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
-        #if DEBUG
-            if #available(macOS 15.5, *) {
-                noteChromeMV3LiveNormalTabWebViewCreated(
-                    configuration: configuration,
-                    reason: reason
-                )
-            }
-        #endif
         configureNormalTabWebView(webView, reason: reason)
         return webView
     }
@@ -374,29 +366,6 @@ extension Tab {
         )
         let userScriptsProvider = normalTabUserScriptsProvider(for: url)
 
-        #if DEBUG
-            if #available(macOS 15.5, *) {
-                let result = BrowserConfiguration.shared
-                    .normalTabWebViewConfigurationWithChromeMV3AttachmentGate(
-                        for: profile,
-                        url: url,
-                        autoplayPolicy: autoplayPolicy,
-                        userScriptsProvider: userScriptsProvider,
-                        contentBlockingService:
-                            protectionDecision?.contentBlockingService,
-                        chromeMV3AttachmentRequest:
-                            chromeMV3LiveNormalTabAttachmentRequest(
-                                reason: reason,
-                                profile: profile
-                            )
-                    )
-                emitChromeMV3LiveNormalTabAttachmentDiagnostics(
-                    result.diagnostics,
-                    reason: reason
-                )
-                return result.configuration
-            }
-        #endif
 
         return BrowserConfiguration.shared.normalTabWebViewConfiguration(
             for: profile,
@@ -407,61 +376,7 @@ extension Tab {
         )
     }
 
-    var chromeMV3NormalTabAttachmentSurface: ChromeMV3WebViewSurface {
-        if let chromeMV3AttachmentSurfaceOverride {
-            return chromeMV3AttachmentSurfaceOverride
-        }
 
-        if isShortcutLiveInstance {
-            return .pinnedEssentialsLiveNormalBrowsing
-        }
-
-        return .normalTab
-    }
-
-    #if DEBUG
-        @available(macOS 15.5, *)
-        private func chromeMV3LiveNormalTabAttachmentRequest(
-            reason: String,
-            profile: Profile
-        )
-            -> ChromeMV3NormalTabConfigurationAttachmentRequest?
-        {
-            browserManager?.extensionsModule
-                .chromeMV3NormalTabConfigurationAttachmentRequestForLiveNormalTabIfEnabled(
-                    surface: chromeMV3NormalTabAttachmentSurface,
-                    attemptMetadata:
-                        ChromeMV3NormalTabConfigurationAttachmentAttemptMetadata(
-                            tabIdentifier: id,
-                            windowIdentifier: primaryWindowId,
-                            profileIdentifier: profile.id,
-                            creationReason: reason
-                        )
-                )
-        }
-
-        @available(macOS 15.5, *)
-        private func noteChromeMV3LiveNormalTabWebViewCreated(
-            configuration: WKWebViewConfiguration,
-            reason: String
-        ) {
-            browserManager?.extensionsModule
-                .markChromeMV3LiveNormalTabWebViewCreatedIfTracked(
-                    configuration: configuration,
-                    reason: reason
-                )
-        }
-
-        @available(macOS 15.5, *)
-        private func emitChromeMV3LiveNormalTabAttachmentDiagnostics(
-            _ diagnostics: ChromeMV3NormalTabConfigurationAttachmentDiagnostics,
-            reason: String
-        ) {
-            RuntimeDiagnostics.debug(category: "ChromeMV3") {
-                "[normal-tab-config] reason=\(reason) requested=\(diagnostics.attachmentRequested) gateAllowed=\(diagnostics.canAttachNormalTabConfigurationNow) surface=\(diagnostics.targetSurface.rawValue) attached=\(diagnostics.normalTabConfigurationAttached) controllerIdentity=\(diagnostics.attachedControllerIdentity ?? "none") contextCount=\(diagnostics.contextCount) runtimeLoadable=\(diagnostics.runtimeLoadable) nativeMessagingPortCount=\(diagnostics.nativeMessagingPortCount) userScriptRegistrationCount=\(diagnostics.userScriptRegistrationCount)"
-            }
-        }
-    #endif
 
     private func deferNormalTabWebViewCreationUntilProfileAvailable() {
         guard profileAwaitCancellable == nil else { return }

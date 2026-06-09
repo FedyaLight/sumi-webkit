@@ -70,9 +70,29 @@ struct ExtensionUtils {
     }
 
     static func validateManifest(at url: URL) throws -> [String: Any] {
-        _ = try ChromeMV3ManifestValidator.validateManifestFile(at: url)
         let manifest = try loadJSONObject(at: url)
+        guard let name = manifest["name"] as? String, name.isEmpty == false else {
+            throw ExtensionError.invalidManifest("Manifest is missing a non-empty name.")
+        }
+        guard let version = manifest["version"] as? String, version.isEmpty == false else {
+            throw ExtensionError.invalidManifest("Manifest is missing a non-empty version.")
+        }
+        guard let manifestVersion = manifest["manifest_version"] as? Int else {
+            throw ExtensionError.invalidManifest("Manifest is missing manifest_version.")
+        }
+        guard manifestVersion == 3 else {
+            throw ExtensionError.invalidManifest(
+                "Unsupported manifest_version \(manifestVersion); only manifest version 3 is accepted."
+            )
+        }
         return manifest
+    }
+
+    static func hostPatternMatchesURL(_ pattern: String, url: URL) -> Bool {
+        guard let matchPattern = try? WKWebExtension.MatchPattern(string: pattern) else {
+            return false
+        }
+        return matchPattern.matches(url)
     }
 
     static func loadJSONObject(at url: URL) throws -> [String: Any] {

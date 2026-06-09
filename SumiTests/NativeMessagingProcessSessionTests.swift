@@ -8,7 +8,7 @@ final class NativeMessagingProcessSessionTests: XCTestCase {
         let source = try Self.source(named: "Sumi/Managers/ExtensionManager/NativeMessagingHandler.swift")
 
         XCTAssertTrue(source.contains("Product native messaging remains unavailable"))
-        XCTAssertTrue(source.contains("ChromeMV3NativeMessagingInternalRuntime.swift"))
+        XCTAssertFalse(source.contains("ChromeMV3NativeMessagingInternalRuntime"))
         XCTAssertTrue(source.contains("final class NativeMessagingHandler"))
         XCTAssertTrue(source.contains("func disconnect() {}"))
 
@@ -29,19 +29,6 @@ final class NativeMessagingProcessSessionTests: XCTestCase {
             ],
             context: "Product native messaging compatibility shell"
         )
-    }
-
-    func testInternalFixtureRuntimeOwnsNativeMessagingProcessLaunch() throws {
-        let source = try Self.source(
-            named: "Sumi/Models/Extension/ChromeMV3/ChromeMV3NativeMessagingInternalRuntime.swift"
-        )
-
-        let processInitializerToken = "Process" + "()"
-        XCTAssertTrue(source.contains("ChromeMV3NativeMessagingFixtureProcess"))
-        XCTAssertTrue(source.contains("private let process = \(processInitializerToken)"))
-        XCTAssertTrue(source.contains("debugFixtureBuildAllowsProcessLaunch"))
-        XCTAssertTrue(source.contains("processLaunchAllowedInProduct"))
-        XCTAssertTrue(source.contains("nativeMessagingAvailableInProduct"))
     }
 
     func testProductDelegateNativeMessagingMethodsRemainBlocked() throws {

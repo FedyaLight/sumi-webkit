@@ -683,9 +683,9 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
                 "Product native messaging remains unavailable"
             )
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             nativeMessagingSource.contains(
-                "ChromeMV3NativeMessagingInternalRuntime.swift"
+                "ChromeMV3NativeMessagingInternalRuntime"
             )
         )
         let processCallToken = "Process" + "("

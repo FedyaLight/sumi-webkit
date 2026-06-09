@@ -145,7 +145,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     var shortcutPinId: UUID?
     var shortcutPinRole: ShortcutPinRole?
     var isShortcutLiveInstance: Bool = false
-    var chromeMV3AttachmentSurfaceOverride: ChromeMV3WebViewSurface?
     
     // MARK: - Ephemeral State
     /// Whether this tab belongs to an ephemeral/incognito session
@@ -1109,15 +1108,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         guard let replacementWebView = makeNormalTabWebView(reason: reason) else {
             return false
         }
-        browserManager?.extensionsModule
-            .noteChromeMV3ContentScriptLifecycleEntrypointIfLoaded(
-                self,
-                webView: previousWebView,
-                url: targetURL ?? previousWebView.url,
-                entrypoint: .webViewReplaced,
-                reason: "Tab.rebuildNormalWebViewForProtectionIfNeeded.\(reason)"
-            )
-
         invalidateCurrentPermissionPageForWebViewReplacement(reason: reason)
 
         let removedTrackedWebViews = coordinator?.removeAllWebViews(for: self) ?? false
@@ -1163,15 +1153,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         guard let replacementWebView = makeNormalTabWebView(reason: reason) else {
             return false
         }
-        browserManager?.extensionsModule
-            .noteChromeMV3ContentScriptLifecycleEntrypointIfLoaded(
-                self,
-                webView: previousWebView,
-                url: targetURL ?? previousWebView.url,
-                entrypoint: .webViewReplaced,
-                reason: "Tab.rebuildNormalWebViewForAutoplayIfNeeded.\(reason)"
-            )
-
         invalidateCurrentPermissionPageForWebViewReplacement(reason: reason)
 
         let removedTrackedWebViews = coordinator?.removeAllWebViews(for: self) ?? false
@@ -1368,13 +1349,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
         if let webView = _webView {
             browserManager?.extensionsModule
-                .noteChromeMV3ContentScriptLifecycleEntrypointIfLoaded(
-                    self,
-                    webView: webView,
-                    url: webView.url ?? url,
-                    entrypoint: .webViewDiscarded,
-                    reason: "Tab.performComprehensiveWebViewCleanup"
-                )
             cleanupCloneWebView(webView)
         }
 

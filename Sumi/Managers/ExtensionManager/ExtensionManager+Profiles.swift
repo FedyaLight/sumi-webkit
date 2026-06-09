@@ -58,13 +58,6 @@ extension ExtensionManager {
     }
 
     func switchProfile(profileId: UUID) {
-        #if DEBUG
-            if currentProfileId != profileId {
-                tearDownChromeMV3LivePreparedContentScripts(
-                    reason: "ExtensionManager.switchProfile"
-                )
-            }
-        #endif
         currentProfileId = profileId
         reloadPinnedToolbarExtensionsForCurrentProfile()
 
@@ -166,13 +159,6 @@ extension ExtensionManager {
     }
 
     func notifyTabClosed(_ tab: Tab) {
-        noteChromeMV3ContentScriptLifecycleEntrypoint(
-            tab: tab,
-            webView: tab.existingWebView,
-            url: tab.url,
-            entrypoint: .tabClosed,
-            reason: "ExtensionManager.notifyTabClosed"
-        )
         guard let controller = extensionController,
               let adapter = stableAdapter(for: tab) else { return }
         controller.didCloseTab(adapter, windowIsClosing: false)
@@ -525,13 +511,6 @@ extension ExtensionManager {
             )
         }
 
-        #if DEBUG
-            tearDownChromeMV3LivePreparedContentScripts(
-                for: extensionId,
-                reason:
-                    "ExtensionManager.tearDownExtensionRuntimeState(\(extensionId))"
-            )
-        #endif
         backgroundWakeTasks[extensionId]?.cancel()
         backgroundWakeTasks.removeValue(forKey: extensionId)
         backgroundRuntimeStateByExtensionID.removeValue(forKey: extensionId)
@@ -562,12 +541,6 @@ extension ExtensionManager {
             )
         }
 
-        #if DEBUG
-            tearDownChromeMV3LivePreparedContentScripts(
-                reason:
-                    "ExtensionManager.resetLoadedExtensionRuntimeStateForReload"
-            )
-        #endif
         let loadedIDs = Set(extensionContexts.keys)
             .union(loadedExtensionManifests.keys)
             .union(optionsWindows.keys)
@@ -611,11 +584,6 @@ extension ExtensionManager {
             "runtimeTeardown start reason=\(reason) removeUIState=\(removeUIState) releaseController=\(releaseController)"
         )
 
-        #if DEBUG
-            tearDownChromeMV3LivePreparedContentScripts(
-                reason: "ExtensionManager.runtimeTeardown.\(reason)"
-            )
-        #endif
         runtimeInitializationTask?.cancel()
         runtimeInitializationTask = nil
         backgroundWakeTasks.values.forEach { $0.cancel() }
@@ -674,9 +642,6 @@ extension ExtensionManager {
             }
             extensionController?.delegate = nil
             extensionController = nil
-            #if DEBUG
-                nativeActionPopupPreludeInstalledInControllerConfiguration = false
-            #endif
             profileExtensionStores.removeAll()
             profileExtensionStoreOrder.removeAll()
             runtimeState = isExtensionSupportAvailable ? .idle : .unavailable
@@ -790,13 +755,6 @@ extension ExtensionManager {
         )
         configuration.sumiIsNormalTabWebViewConfiguration = false
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-        #if DEBUG
-            nativeActionPopupPreludeInstalledInControllerConfiguration =
-                installNativeActionPopupPreludeIfEnabled(
-                    into: configuration,
-                    reason: "ExtensionManager.makeExtensionController"
-                )
-        #endif
         return configuration
     }
 

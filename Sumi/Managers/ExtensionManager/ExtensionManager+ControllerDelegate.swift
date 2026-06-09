@@ -135,19 +135,6 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         _ controller: WKWebExtensionController,
         focusedWindowFor extensionContext: WKWebExtensionContext
     ) -> (any WKWebExtensionWindow)? {
-        #if DEBUG
-            recordNativeActionPopupRouteObservation(
-                for: extensionContext,
-                apiName: "webExtensionController.focusedWindowFor",
-                sourceContext: "nativeActionPopupOrExtensionContext",
-                targetContext: "SumiWindowAdapter",
-                nativeBoundary: "WKWebExtensionControllerDelegate",
-                metadataAvailable: false,
-                notes: [
-                    "WebKit requested focused-window state; the delegate does not expose the originating Chrome API.",
-                ]
-            )
-        #endif
         if let windowId = browserManager?.windowRegistry?.activeWindow?.id {
             return windowAdapter(for: windowId)
         }
@@ -158,19 +145,6 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         _ controller: WKWebExtensionController,
         openWindowsFor extensionContext: WKWebExtensionContext
     ) -> [any WKWebExtensionWindow] {
-        #if DEBUG
-            recordNativeActionPopupRouteObservation(
-                for: extensionContext,
-                apiName: "webExtensionController.openWindowsFor",
-                sourceContext: "nativeActionPopupOrExtensionContext",
-                targetContext: "SumiWindowAdapter",
-                nativeBoundary: "WKWebExtensionControllerDelegate",
-                metadataAvailable: false,
-                notes: [
-                    "WebKit requested ordered-window state; this can support tabs/window queries but is not API-attributed.",
-                ]
-            )
-        #endif
         guard let browserManager else { return [] }
         return browserManager.windowRegistry?.windows.keys.compactMap {
             windowAdapter(for: $0)
@@ -214,12 +188,6 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         )
 
         guard let popover = action.popupPopover else {
-            #if DEBUG
-                recordNativeActionPopupPresentationFailed(
-                    extensionID: extensionId,
-                    reason: "action.popupPopover unavailable"
-                )
-            #endif
             completionHandler(
                 NSError(
                     domain: "ExtensionManager",
@@ -233,14 +201,6 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         popover.behavior = .transient
 
         let popupWebView = action.popupWebView
-        #if DEBUG
-            recordNativeActionPopupPresentationBoundary(
-                action: action,
-                extensionContext: extensionContext,
-                popover: popover,
-                webView: popupWebView
-            )
-        #endif
 
         if let popupWebView,
            RuntimeDiagnostics.isDeveloperInspectionEnabled
@@ -271,12 +231,6 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                         of: view,
                         preferredEdge: .maxY
                     )
-                    #if DEBUG
-                        self.recordNativeActionPopupPopoverPresented(
-                            extensionID: extensionId,
-                            anchorKind: "storedAnchor.keyWindow"
-                        )
-                    #endif
                     completionHandler(nil)
                     return
                 }
@@ -289,12 +243,6 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                         of: view,
                         preferredEdge: .maxY
                     )
-                    #if DEBUG
-                        self.recordNativeActionPopupPopoverPresented(
-                            extensionID: extensionId,
-                            anchorKind: "storedAnchor.fallbackWindow"
-                        )
-                    #endif
                     completionHandler(nil)
                     return
                 }
@@ -312,24 +260,9 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                     of: contentView,
                     preferredEdge: .minY
                 )
-                #if DEBUG
-                    if let extensionId {
-                        self.recordNativeActionPopupPopoverPresented(
-                            extensionID: extensionId,
-                            anchorKind: "windowContentFallback"
-                        )
-                    }
-                #endif
                 completionHandler(nil)
                 return
             }
-
-            #if DEBUG
-                self.recordNativeActionPopupPresentationFailed(
-                    extensionID: extensionId,
-                    reason: "No window available"
-                )
-            #endif
             completionHandler(
                 NSError(
                     domain: "ExtensionManager",
@@ -477,30 +410,11 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         replyHandler: @escaping (Any?, (any Error)?) -> Void
     ) {
         let applicationId = applicationIdentifier ?? ""
-        #if DEBUG
-            recordNativeActionPopupRouteObservation(
-                for: extensionContext,
-                apiName: "runtime.sendNativeMessage",
-                sourceContext: "nativeActionPopupOrExtensionContext",
-                targetContext: "nativeApplication",
-                nativeBoundary: "WKWebExtensionControllerDelegate.sendMessageToApplication",
-                metadataAvailable: true,
-                payloadShape: sanitizedNativeActionPopupPayloadShape(message),
-                resultClassifier: "nativeMessagingUnavailable",
-                notes: [
-                    applicationIdentifier == nil
-                        ? "applicationIdentifier absent"
-                        : "applicationIdentifier present",
-                    "No native host process is launched by this product delegate path.",
-                ]
-            )
-        #endif
         _ = controller
         _ = message
         _ = extensionContext
         let lastErrorMessage =
-            ChromeMV3NativeMessagingRuntimeErrorCode
-            .hostManifestMissing.lastErrorMessage
+            "Native messaging is unavailable in this Sumi build."
         replyHandler(
             nil,
             NSError(
@@ -524,27 +438,8 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         _ = controller
         _ = extensionContext
         let applicationId = port.applicationIdentifier ?? "unknown"
-        #if DEBUG
-            recordNativeActionPopupRouteObservation(
-                for: extensionContext,
-                apiName: "runtime.connectNative",
-                sourceContext: "nativeActionPopupOrExtensionContext",
-                targetContext: "nativeApplicationPort",
-                nativeBoundary: "WKWebExtensionControllerDelegate.connectUsingMessagePort",
-                metadataAvailable: true,
-                payloadShape: port.applicationIdentifier == nil
-                    ? "applicationIdentifier(absent)"
-                    : "applicationIdentifier(present,length:\(port.applicationIdentifier?.count ?? 0))",
-                resultClassifier: "nativeMessagingUnavailable",
-                notes: [
-                    "WKWebExtension.MessagePort is the native-application messaging port surface.",
-                    "No native host process is launched by this product delegate path.",
-                ]
-            )
-        #endif
         let lastErrorMessage =
-            ChromeMV3NativeMessagingRuntimeErrorCode
-            .hostManifestMissing.lastErrorMessage
+            "Native messaging is unavailable in this Sumi build."
         port.disconnect()
         completionHandler(
             NSError(

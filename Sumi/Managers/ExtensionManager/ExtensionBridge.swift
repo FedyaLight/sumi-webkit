@@ -42,19 +42,6 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     }
 
     func activeTab(for extensionContext: WKWebExtensionContext) -> (any WKWebExtensionTab)? {
-        #if DEBUG
-            extensionManager?.recordNativeActionPopupRouteObservation(
-                for: extensionContext,
-                apiName: "webExtensionWindow.activeTab",
-                sourceContext: "nativeActionPopupOrExtensionContext",
-                targetContext: "SumiTabAdapter",
-                nativeBoundary: "WKWebExtensionWindow",
-                metadataAvailable: false,
-                notes: [
-                    "WebKit requested active-tab state; the adapter does not expose the originating Chrome API.",
-                ]
-            )
-        #endif
         guard
             let browserManager,
             let extensionManager,
@@ -69,19 +56,6 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     }
 
     func tabs(for extensionContext: WKWebExtensionContext) -> [any WKWebExtensionTab] {
-        #if DEBUG
-            extensionManager?.recordNativeActionPopupRouteObservation(
-                for: extensionContext,
-                apiName: "webExtensionWindow.tabs",
-                sourceContext: "nativeActionPopupOrExtensionContext",
-                targetContext: "SumiTabAdapter",
-                nativeBoundary: "WKWebExtensionWindow",
-                metadataAvailable: false,
-                notes: [
-                    "WebKit requested window tab list; this is a tab-query boundary but not API-attributed.",
-                ]
-            )
-        #endif
         guard let browserManager, let extensionManager, let windowState else { return [] }
 
         return browserManager.shellSelectionService.tabsForWebExtensionWindow(
@@ -313,36 +287,10 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
     }
 
     func url(for extensionContext: WKWebExtensionContext) -> URL? {
-        #if DEBUG
-            extensionManager?.recordNativeActionPopupRouteObservation(
-                for: extensionContext,
-                apiName: "webExtensionTab.url",
-                sourceContext: "nativeActionPopupOrExtensionContext",
-                targetContext: "SumiTabAdapter",
-                nativeBoundary: "WKWebExtensionTab",
-                metadataAvailable: false,
-                notes: [
-                    "WebKit requested tab URL state; Sumi records no raw URL.",
-                ]
-            )
-        #endif
         return eligibleTab()?.url
     }
 
     func title(for extensionContext: WKWebExtensionContext) -> String? {
-        #if DEBUG
-            extensionManager?.recordNativeActionPopupRouteObservation(
-                for: extensionContext,
-                apiName: "webExtensionTab.title",
-                sourceContext: "nativeActionPopupOrExtensionContext",
-                targetContext: "SumiTabAdapter",
-                nativeBoundary: "WKWebExtensionTab",
-                metadataAvailable: false,
-                notes: [
-                    "WebKit requested tab title state; Sumi records no title text.",
-                ]
-            )
-        #endif
         return eligibleTab()?.name
     }
 
@@ -399,20 +347,6 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
             let browserManager,
             let tab = eligibleTab()
         else {
-            #if DEBUG
-                extensionManager?.recordNativeActionPopupRouteObservation(
-                    for: extensionContext,
-                    apiName: "webExtensionTab.webView",
-                    sourceContext: "nativeActionPopupOrExtensionContext",
-                    targetContext: "normalTabWebView",
-                    nativeBoundary: "WKWebExtensionTab",
-                    metadataAvailable: false,
-                    resultClassifier: "noEligibleTab",
-                    notes: [
-                        "WebKit requested a tab web view, but no eligible tab was available.",
-                    ]
-                )
-            #endif
             return nil
         }
         let webView: WKWebView?
@@ -423,22 +357,6 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
         } else {
             webView = tab.assignedWebView ?? tab.existingWebView
         }
-        #if DEBUG
-            extensionManager?.recordNativeActionPopupRouteObservation(
-                for: extensionContext,
-                apiName: "webExtensionTab.webView",
-                sourceContext: "nativeActionPopupOrExtensionContext",
-                targetContext: "normalTabWebView",
-                nativeBoundary: "WKWebExtensionTab",
-                metadataAvailable: false,
-                resultClassifier: webView == nil
-                    ? "normalTabWebViewUnavailable"
-                    : "normalTabWebViewAvailable",
-                notes: [
-                    "WebKit requested the tab WKWebView; this can support content-script delivery but carries no message metadata.",
-                ]
-            )
-        #endif
         return webView
     }
 

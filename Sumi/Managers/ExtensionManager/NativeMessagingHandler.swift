@@ -3,7 +3,7 @@
 //  Sumi
 //
 //  Product native messaging remains unavailable. The DEBUG/internal fixture
-//  bridge lives in ChromeMV3NativeMessagingInternalRuntime.swift.
+//  Product native messaging remains unavailable; this handler tears down ports safely.
 //
 
 import Foundation

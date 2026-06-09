@@ -164,40 +164,6 @@ class BrowserConfiguration {
         return config
     }
 
-    #if DEBUG
-        @available(macOS 15.5, *)
-        @MainActor
-        func normalTabWebViewConfigurationWithChromeMV3AttachmentGate(
-            for profile: Profile,
-            url: URL?,
-            autoplayPolicy: SumiAutoplayPolicy? = nil,
-            userScriptsProvider: SumiNormalTabUserScripts? = nil,
-            contentBlockingService: SumiContentBlockingService? = nil,
-            additionalContentBlockingServices: [SumiContentBlockingService] = [],
-            chromeMV3AttachmentRequest:
-                ChromeMV3NormalTabConfigurationAttachmentRequest? = nil
-        ) -> ChromeMV3NormalTabConfigurationAttachmentResult {
-            let configuration = normalTabWebViewConfiguration(
-                for: profile,
-                url: url,
-                autoplayPolicy: autoplayPolicy,
-                userScriptsProvider: userScriptsProvider,
-                contentBlockingService: contentBlockingService,
-                additionalContentBlockingServices:
-                    additionalContentBlockingServices
-            )
-            let diagnostics = ChromeMV3NormalTabConfigurationAttachmentBridge
-                .attachIfAllowed(
-                    configuration: configuration,
-                    request: chromeMV3AttachmentRequest
-                )
-            return ChromeMV3NormalTabConfigurationAttachmentResult(
-                configuration: configuration,
-                diagnostics: diagnostics
-            )
-        }
-    #endif
-
     // MARK: - Auxiliary Surface Configuration
 
     /// Auxiliary WebViews are intentionally separate from primary normal tabs:
@@ -232,10 +198,7 @@ class BrowserConfiguration {
         config.preferences.javaScriptCanOpenWindowsAutomatically =
             surface.javaScriptCanOpenWindowsAutomatically
 
-        if surface == .extensionOptions,
-           let source,
-           source.sumiHasChromeMV3NormalTabConfigurationAttachment == false
-        {
+        if surface == .extensionOptions, let source {
             config.webExtensionController = source.webExtensionController
         }
 

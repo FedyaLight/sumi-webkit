@@ -34,16 +34,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         "sumiExternallyConnectableRuntime"
     nonisolated static let externallyConnectableBridgeDebugLoggingKey =
         "debug.extensions.externallyConnectable.bridge.logging.enabled"
-    #if DEBUG
-        nonisolated static let nativeActionPopupBoundaryObservationDefaultsKey =
-            "debug.extensions.nativeActionPopupBoundaryObservation.enabled"
-        nonisolated static let forceNativeCompatibilityActionPopupDefaultsKey =
-            "debug.extensions.forceNativeCompatibilityActionPopup.enabled"
-        nonisolated static let forceControlledCompatibilityActionPopupOffDefaultsKey =
-            "debug.extensions.controlledCompatibilityActionPopup.forceOff"
-        nonisolated static let nativeActionPopupPreludeMessageHandlerName =
-            "sumiNativeActionPopupRouteObserver"
-    #endif
     nonisolated static let manifestPatchCacheStorageKey =
         "\(SumiAppIdentity.bundleIdentifier).extensions.webkitManifestPatchCache.v1"
     nonisolated static let orphanedExtensionCleanupDefaultsKey =
@@ -158,15 +148,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         maxKeys: 128,
         maxDatesPerKey: 4
     )
-    #if DEBUG
-        var chromeMV3LivePreparedContentScriptRuntime:
-            ChromeMV3LivePreparedContentScriptRuntime?
-        var nativeActionPopupBoundaryRecorders:
-            [String: ChromeMV3NativeActionPopupBoundaryRecorder] = [:]
-        var lastNativeActionPopupBoundarySnapshots:
-            [String: ChromeMV3NativeActionPopupBoundarySnapshot] = [:]
-        var nativeActionPopupPreludeInstalledInControllerConfiguration = false
-    #endif
     let ecRegistry = ExternallyConnectablePortRegistry()
     var extensionLoadGeneration: UInt64 = 0
     var tabOpenNotificationGeneration: UInt64 = 1
@@ -385,17 +366,6 @@ final class ExtensionManager: NSObject, ObservableObject {
 
     nonisolated static var shouldObserveExtensionErrors: Bool {
         RuntimeDiagnostics.isVerboseEnabled
-    }
-
-    nonisolated static var isNativeActionPopupBoundaryObservationEnabled: Bool {
-        #if DEBUG
-            RuntimeDiagnostics.isVerboseEnabled
-                || RuntimeDiagnostics.debugDefaultBool(
-                    forKey: nativeActionPopupBoundaryObservationDefaultsKey
-                )
-        #else
-            false
-        #endif
     }
 
     nonisolated static func isExtensionOwnedURL(_ url: URL?) -> Bool {

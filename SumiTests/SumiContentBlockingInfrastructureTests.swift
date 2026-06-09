@@ -546,22 +546,10 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
     }
 
     func testNormalPageInterceptionIsNotRegisteredInSumiSources() throws {
-        let source = try Self.sumiSourceCorpus(excluding: [
-            "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift",
-        ])
-        let popupDiagnosticSource = try Self.source(
-            named: "Sumi/Models/Extension/ChromeMV3/ChromeMV3ProductPopupOptionsUI.swift"
-        )
+        let source = try Self.sumiSourceCorpus()
 
         XCTAssertFalse(source.contains("setURLSchemeHandler("))
         XCTAssertFalse(source.contains("WKURLSchemeHandler"))
-        XCTAssertTrue(popupDiagnosticSource.contains("#if DEBUG"))
-        XCTAssertTrue(popupDiagnosticSource.contains("WKURLSchemeHandler"))
-        XCTAssertTrue(
-            popupDiagnosticSource.contains(
-                "sumi-extension-page-diagnostic"
-            )
-        )
     }
 
     private static func validRuleListDefinition() -> SumiContentRuleListDefinition {

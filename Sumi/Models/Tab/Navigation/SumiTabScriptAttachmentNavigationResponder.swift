@@ -25,13 +25,6 @@ final class SumiTabScriptAttachmentNavigationResponder: SumiNavigationActionWebV
         }
 
         tab.browserManager?.extensionsModule
-            .noteChromeMV3ContentScriptLifecycleEntrypointIfLoaded(
-                tab,
-                webView: webView,
-                url: navigationAction.url,
-                entrypoint: .initialPageLoadEligibility,
-                reason: "SumiTabScriptAttachmentNavigationResponder.decidePolicy"
-            )
         await tab.replaceNormalTabUserScripts(
             on: webView.configuration.userContentController,
             for: navigationAction.url
