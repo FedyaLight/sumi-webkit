@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import WebKit
 
 enum SumiNativeMessagingErrorMapper {
     static let relayErrorDomain = "Sumi.SafariNativeMessaging"
@@ -75,7 +74,9 @@ enum SumiNativeMessagingErrorMapper {
         code: SumiNativeMessagingRelay.ErrorCode,
         diagnostic: SafariExtensionNativeMessagingDiagnostic?
     ) -> NSError {
-        relayError(code: code, diagnostic: diagnostic)
+        webExtensionCallbackError(
+            from: relayError(code: code, diagnostic: diagnostic)
+        )
     }
 
     static func messagePortNotConnectedError(
@@ -86,9 +87,30 @@ enum SumiNativeMessagingErrorMapper {
             diagnostic: diagnostic
         )
         return NSError(
-            domain: WKWebExtension.MessagePort.errorDomain,
-            code: WKWebExtension.MessagePort.Error.notConnected.rawValue,
-            userInfo: relayError.userInfo
+            domain: SumiWebExtensionCallbackErrorMapper.webExtensionMessagePortErrorDomain,
+            code: 2,
+            userInfo: relayError.userInfo.merging(
+                [NSLocalizedDescriptionKey: relayError.localizedDescription],
+                uniquingKeysWith: { _, new in new }
+            )
+        )
+    }
+
+    static func webExtensionCallbackError(from error: any Error) -> NSError {
+        SumiWebExtensionCallbackErrorMapper.webExtensionCallbackError(from: error)
+    }
+
+    static func webExtensionCallbackError(
+        code: SumiNativeMessagingRelay.ErrorCode,
+        description: String? = nil,
+        diagnostic: SafariExtensionNativeMessagingDiagnostic?
+    ) -> NSError {
+        webExtensionCallbackError(
+            from: relayError(
+                code: code,
+                description: description,
+                diagnostic: diagnostic
+            )
         )
     }
 }

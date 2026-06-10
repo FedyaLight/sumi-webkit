@@ -434,7 +434,10 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             )
             completionHandler(stableAdapter(for: newTab), nil)
         } catch {
-            completionHandler(nil, error)
+            completionHandler(
+                nil,
+                SumiWebExtensionCallbackErrorMapper.webExtensionCallbackError(from: error)
+            )
         }
     }
 
@@ -503,7 +506,11 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             extensionId: extensionId,
             profileId: profileId,
             installedExtensions: installedExtensions,
-            replyHandler: replyHandler
+            replyHandler: SumiWebExtensionCallbackRelay.wrapNativeMessagingReplyHandler(
+                api: .runtimeSendNativeMessage,
+                extensionId: extensionId,
+                replyHandler
+            )
         )
     }
 
@@ -557,7 +564,11 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                     self.nativeMessagePortProfileIDs[portKey] = profileId
                 }
             },
-            completionHandler: completionHandler
+            completionHandler: SumiWebExtensionCallbackRelay.wrapCompletionHandler(
+                api: .connectNativePort,
+                extensionId: extensionId,
+                completionHandler
+            )
         )
     }
 

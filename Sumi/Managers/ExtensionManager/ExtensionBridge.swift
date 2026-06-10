@@ -11,6 +11,34 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
+private enum ExtensionBridgeCallbackSupport {
+    static func complete(
+        _ completionHandler: @escaping (Error?) -> Void,
+        api: SafariExtensionWebExtensionCallbackAPI,
+        error: (any Error)?
+    ) {
+        if let error {
+            let mapped = SumiWebExtensionCallbackErrorMapper.webExtensionCallbackError(from: error)
+            SafariExtensionWebExtensionCallbackDiagnostics.recordFailure(
+                api: api,
+                extensionId: nil,
+                error: mapped
+            )
+            completionHandler(mapped)
+            return
+        }
+
+        SafariExtensionWebExtensionCallbackDiagnostics.recordSuccess(
+            api: api,
+            extensionId: nil,
+            value: true
+        )
+        completionHandler(nil)
+    }
+}
+
+@available(macOS 15.5, *)
+@MainActor
 final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     let windowId: UUID
 
@@ -101,8 +129,10 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         completionHandler: @escaping (Error?) -> Void
     ) {
         guard let windowState else {
-            completionHandler(
-                NSError(
+            ExtensionBridgeCallbackSupport.complete(
+                completionHandler,
+                api: .windowAdapterCompletion,
+                error: NSError(
                     domain: "ExtensionWindowAdapter",
                     code: 1,
                     userInfo: [NSLocalizedDescriptionKey: "Window is no longer available"]
@@ -114,7 +144,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         windowState.window?.makeKeyAndOrderFront(nil)
         browserManager?.windowRegistry?.setActive(windowState)
         NSApp.activate(ignoringOtherApps: true)
-        completionHandler(nil)
+        ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
     }
 
     func isPrivate(for extensionContext: WKWebExtensionContext) -> Bool {
@@ -138,8 +168,10 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         completionHandler: @escaping (Error?) -> Void
     ) {
         guard let window = self.windowState?.window else {
-            completionHandler(
-                NSError(
+            ExtensionBridgeCallbackSupport.complete(
+                completionHandler,
+                api: .windowAdapterCompletion,
+                error: NSError(
                     domain: "ExtensionWindowAdapter",
                     code: 2,
                     userInfo: [NSLocalizedDescriptionKey: "Window is no longer available"]
@@ -170,7 +202,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
             break
         }
 
-        completionHandler(nil)
+        ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
     }
 
     func setFrame(
@@ -179,8 +211,10 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         completionHandler: @escaping (Error?) -> Void
     ) {
         guard let window = windowState?.window else {
-            completionHandler(
-                NSError(
+            ExtensionBridgeCallbackSupport.complete(
+                completionHandler,
+                api: .windowAdapterCompletion,
+                error: NSError(
                     domain: "ExtensionWindowAdapter",
                     code: 3,
                     userInfo: [NSLocalizedDescriptionKey: "Window is no longer available"]
@@ -190,7 +224,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         }
 
         window.setFrame(frame, display: true)
-        completionHandler(nil)
+        ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
     }
 
     func close(
@@ -198,8 +232,10 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         completionHandler: @escaping (Error?) -> Void
     ) {
         guard let window = windowState?.window else {
-            completionHandler(
-                NSError(
+            ExtensionBridgeCallbackSupport.complete(
+                completionHandler,
+                api: .windowAdapterCompletion,
+                error: NSError(
                     domain: "ExtensionWindowAdapter",
                     code: 4,
                     userInfo: [NSLocalizedDescriptionKey: "Window is no longer available"]
@@ -209,7 +245,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         }
 
         window.performClose(nil)
-        completionHandler(nil)
+        ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
     }
 }
 
@@ -390,7 +426,11 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
         completionHandler: @escaping (Error?) -> Void
     ) {
         guard let browserManager, let tab = eligibleTab() else {
-            completionHandler(tabUnavailableError)
+            ExtensionBridgeCallbackSupport.complete(
+                completionHandler,
+                api: .tabAdapterCompletion,
+                error: tabUnavailableError
+            )
             return
         }
 
@@ -399,7 +439,7 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
         } else {
             browserManager.selectTab(tab)
         }
-        completionHandler(nil)
+        ExtensionBridgeCallbackSupport.complete(completionHandler, api: .tabAdapterCompletion, error: nil)
     }
 
     func close(
@@ -407,11 +447,15 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
         completionHandler: @escaping (Error?) -> Void
     ) {
         guard let tab = eligibleTab() else {
-            completionHandler(tabUnavailableUntilReloadError)
+            ExtensionBridgeCallbackSupport.complete(
+                completionHandler,
+                api: .tabAdapterCompletion,
+                error: tabUnavailableUntilReloadError
+            )
             return
         }
         tab.closeTab()
-        completionHandler(nil)
+        ExtensionBridgeCallbackSupport.complete(completionHandler, api: .tabAdapterCompletion, error: nil)
     }
 
     func reload(
@@ -420,12 +464,18 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
         completionHandler: @escaping (Error?) -> Void
     ) {
         guard let tab = eligibleTab() else {
-            completionHandler(tabUnavailableUntilReloadError)
+            ExtensionBridgeCallbackSupport.complete(
+                completionHandler,
+                api: .tabAdapterCompletion,
+                error: tabUnavailableUntilReloadError
+            )
             return
         }
         guard let webView = webView(for: extensionContext) else {
-            completionHandler(
-                NSError(
+            ExtensionBridgeCallbackSupport.complete(
+                completionHandler,
+                api: .tabAdapterCompletion,
+                error: NSError(
                     domain: "ExtensionTabAdapter",
                     code: 2,
                     userInfo: [NSLocalizedDescriptionKey: "No live web view is available for this tab"]
@@ -442,7 +492,7 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
             webView.reload()
         }
 
-        completionHandler(nil)
+        ExtensionBridgeCallbackSupport.complete(completionHandler, api: .tabAdapterCompletion, error: nil)
     }
 
     func loadURL(
@@ -451,11 +501,15 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
         completionHandler: @escaping (Error?) -> Void
     ) {
         guard let tab = eligibleTab() else {
-            completionHandler(tabUnavailableUntilReloadError)
+            ExtensionBridgeCallbackSupport.complete(
+                completionHandler,
+                api: .tabAdapterCompletion,
+                error: tabUnavailableUntilReloadError
+            )
             return
         }
         tab.loadURL(url)
-        completionHandler(nil)
+        ExtensionBridgeCallbackSupport.complete(completionHandler, api: .tabAdapterCompletion, error: nil)
     }
 
     func setMuted(
@@ -464,11 +518,15 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
         completionHandler: @escaping (Error?) -> Void
     ) {
         guard let tab = eligibleTab() else {
-            completionHandler(tabUnavailableUntilReloadError)
+            ExtensionBridgeCallbackSupport.complete(
+                completionHandler,
+                api: .tabAdapterCompletion,
+                error: tabUnavailableUntilReloadError
+            )
             return
         }
         tab.setMuted(muted)
-        completionHandler(nil)
+        ExtensionBridgeCallbackSupport.complete(completionHandler, api: .tabAdapterCompletion, error: nil)
     }
 
     func setZoomFactor(
@@ -477,11 +535,15 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
         completionHandler: @escaping (Error?) -> Void
     ) {
         guard let webView = webView(for: extensionContext) else {
-            completionHandler(tabUnavailableError)
+            ExtensionBridgeCallbackSupport.complete(
+                completionHandler,
+                api: .tabAdapterCompletion,
+                error: tabUnavailableError
+            )
             return
         }
         webView.pageZoom = zoomFactor
-        completionHandler(nil)
+        ExtensionBridgeCallbackSupport.complete(completionHandler, api: .tabAdapterCompletion, error: nil)
     }
 
     func zoomFactor(for extensionContext: WKWebExtensionContext) -> Double {
