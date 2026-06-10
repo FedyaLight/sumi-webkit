@@ -3,9 +3,9 @@ contact_links:
   - name: Roadmap
     url: https://github.com/FedyaLight/sumi-webkit/blob/main/docs/roadmap.md
     about: Check planned work before filing a feature request.
-  - name: MV3 extension status
-    url: https://github.com/FedyaLight/sumi-webkit/blob/main/docs/mv3-extensions.md
-    about: Review current Chrome MV3 extension compatibility notes.
+  - name: Safari extension status
+    url: https://github.com/FedyaLight/sumi-webkit/blob/main/docs/SumiSafariExtensionCompatibility.md
+    about: Review current Safari extension compatibility notes.
   - name: Security policy
     url: https://github.com/FedyaLight/sumi-webkit/blob/main/SECURITY.md
     about: Report security-sensitive issues privately, not in public issues.

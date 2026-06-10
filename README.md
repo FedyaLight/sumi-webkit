@@ -22,7 +22,7 @@ Sumi is in alpha. The browser shell builds and runs locally, but it is not recom
 
 The first public preview is planned after the remaining user-safety pieces are in place:
 
-- MV3 password-manager extension compatibility.
+- Safari password-manager extension compatibility.
 - An update mechanism or update notification path.
 
 Completed user-safety pieces:
@@ -71,20 +71,19 @@ Current developer-preview builds include:
 
 Privacy tools are available as optional modules, not mandatory background systems. Tracking protection and adblock are implemented and being validated; the public docs avoid benchmark-style blocking claims until there is documented methodology.
 
-## Extensions And MV3
+## Extensions And Safari
 
-Chrome Manifest V3 compatibility is the active engineering milestone. Sumi is targeting Chrome MV3 because it is the modern extension architecture and better matches the project's performance and energy goals than older background-page models.
+Safari Extension compatibility is the active engineering milestone. Sumi is targeting Safari Extensions because they are supported natively by WebKit and match the project's performance and energy goals.
 
 The current direction is:
 
-- Chrome MV3 extensions on top of `WKWebExtensions` plus a compatibility layer where needed.
-- Current installation paths for development: unpacked directory and zip.
-- Future goal: Chrome Web Store installation support.
+- Safari extensions on top of `WKWebExtensions`.
+- Current installation paths for development: scanning and importing installed `.app` / `.appex` extensions.
 - Near-term validation target: real-world password-manager extensions.
 
-Sumi does not currently claim that Bitwarden, Proton Pass, 1Password, or other password managers work. The near-term target is that a user can install an unpacked or zipped password-manager extension and use it from the browser UI.
+Sumi does not currently claim that Bitwarden, Proton Pass, 1Password, or other password managers work. The near-term target is that a user can import Safari password-manager extensions and use them from the browser UI.
 
-See [docs/mv3-extensions.md](docs/mv3-extensions.md) for the current capability and blocker summary.
+See [docs/SumiSafariExtensionCompatibility.md](docs/SumiSafariExtensionCompatibility.md) for the current capability and blocker summary.
 
 ## Architecture Principles
 
@@ -105,7 +104,7 @@ The high-level architecture notes live in [docs/architecture.md](docs/architectu
 
 Near-term work:
 
-- MV3 password-manager extension compatibility.
+- Safari password-manager extension compatibility.
 - Update mechanism or update notification.
 
 Later work under consideration:

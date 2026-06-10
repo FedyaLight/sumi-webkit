@@ -7,7 +7,7 @@ body:
       value: |
         Thanks for suggesting an improvement.
 
-        Please check the README and roadmap before filing. Sumi is currently in developer preview, and the first public preview is planned after MV3 password-manager compatibility, backup/restore for user data, and an update path are in place.
+        Please check the README and roadmap before filing. Sumi is currently in developer preview, and the first public preview is planned after Safari password-manager compatibility, backup/restore for user data, and an update path are in place.
 
         Requests are most useful when they describe a user problem and a concrete workflow. Please avoid requests that only ask to clone another product.
   - type: checkboxes
@@ -62,7 +62,7 @@ body:
         - Memory modes / Tab unloading
         - Tracking protection
         - Adblock
-        - Extensions / MV3
+        - Extensions / Safari
         - Password-manager extension compatibility
         - Backup / Restore
         - Import

@@ -47,7 +47,7 @@ Current principles:
 - Avoid background services and timers unless they are necessary.
 - Preserve visible tab, pinned, essential, and folder organization when
   inactive live page runtimes are unloaded.
-- Keep extension service-worker behavior aligned with MV3's event-driven model.
+- Keep extension service-worker behavior aligned with Safari's event-driven model.
 
 Memory modes exist in the UI, and inactive tab unloading exists. The goal is to
 preserve user organization while reducing unnecessary live runtime state.
@@ -64,9 +64,8 @@ documented.
 
 ## Extensions
 
-Chrome MV3 support is built around `WKWebExtensions` plus a compatibility layer
-where needed. The active milestone is real-world password-manager extension
-compatibility.
+Safari extension support is built around `WKWebExtensions`. The active milestone
+is real-world password-manager extension compatibility.
 
 Normal browsing views are the default extension participation surface. Helper
 surfaces such as favicon downloads, previews, and mini windows should not
@@ -76,4 +75,4 @@ participate unless a future design explicitly opts them in.
 
 Sumi does not include a built-in AI panel. AI tools can be added later through
 extensions once extension compatibility matures, for example through official
-Chrome extensions.
+Safari extensions.

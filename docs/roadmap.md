@@ -6,11 +6,11 @@ Sumi Browser is a developer-preview project. This roadmap is a planning snapshot
 
 - Sumi builds and runs locally as a working native macOS browser shell.
 - It is not recommended as a primary browser yet.
-- The first public preview is planned after MV3 password-manager compatibility and update mechanism/notification.
+- The first public preview is planned after Safari password-manager compatibility and update mechanism/notification.
 
 ## Current Milestone
 
-Chrome MV3 password-manager extension compatibility.
+Safari password-manager extension compatibility.
 
 The near-term target is that a user can install an unpacked or zipped password-manager extension and use it from the browser UI. Sumi does not currently claim that Bitwarden, Proton Pass, or 1Password already work.
 
@@ -43,14 +43,14 @@ Sumi now has first-class Arc/Zen migration and Sumi backup/restore surfaces in S
 - Optional adblock module.
 - Automatic cleanup settings.
 - Extension manager UI.
-- MV3 compatibility report UI.
+- Safari extension compatibility report UI.
 - Real password-manager package trials.
 - Data & Recovery import/export/backup/restore.
 
 ## Experimental Or In Validation
 
-- Chrome MV3 scripting API.
-- MV3 service-worker lifecycle.
+- Safari extension scripting API.
+- Safari extension service-worker lifecycle.
 - Native messaging.
 - Tracking protection behavior and protection-bundle workflow.
 - Adblock behavior and validation.
@@ -61,7 +61,7 @@ Additional details:
 - Automatic cleanup intervals include 1, 7, 30, and 90 days. Cleanup is intended to remove browser leftovers and site data where possible, not only history.
 - The Mini Player does not currently include next/previous track controls or a timeline.
 
-## Remaining MV3 Blockers
+## Remaining Safari Extension Blockers
 
 - Service-worker lifecycle on real extension events.
 - MAIN world bridge.
@@ -72,12 +72,12 @@ Additional details:
 
 ## Public Preview Blockers
 
-- MV3 password-manager compatibility.
+- Safari password-manager compatibility.
 - Update mechanism or update notification.
 
 ## Near-Term
 
-- MV3 password-manager support.
+- Safari password-manager support.
 - Update mechanism or update notification.
 
 ## Later

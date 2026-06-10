@@ -20,8 +20,8 @@ This is a draft 60-90 second demo outline for the first public preview.
 11. Show bookmarks, history, and settings search briefly.
 12. Show memory modes and inactive tab unloading settings.
 13. Show tracking/adblock modules as optional settings.
-14. If safe, show the extension UI and MV3 compatibility report.
-15. End with the first-public-preview blockers: MV3 password-manager support,
+14. If safe, show the extension UI and Safari compatibility report.
+15. End with the first-public-preview blockers: Safari password-manager support,
     backup/restore, and update notification.
 
 ## Do Not Show

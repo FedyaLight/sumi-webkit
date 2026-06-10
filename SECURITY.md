@@ -22,7 +22,7 @@ Security-sensitive areas include:
 
 - Browser session, profile, and site data
 - WebKit configuration and navigation handling
-- Chrome MV3 extension compatibility
+- Safari extension compatibility
 - Native messaging
 - Content script, MAIN world, and isolated world boundaries
 - Privacy and adblock modules
