@@ -160,12 +160,23 @@ final class SumiNativeMessagingOnceReplyCoordinator {
         replyHandler = nil
     }
 
+    func cancel() {
+        complete(
+            nil,
+            SumiNativeMessagingErrorMapper.relayError(
+                code: .relayCancelled,
+                diagnostic: nil
+            )
+        )
+    }
+
     var isFulfilled: Bool { fulfilled }
 }
 
 @MainActor
 enum SumiNativeMessagingConnection {
     static let defaultReplyTimeout: Duration = .seconds(30)
+    static let defaultPortInactivityTimeout: Duration = .seconds(30)
 
     static func relayOneShot(
         applicationIdentifier: String?,
@@ -181,7 +192,8 @@ enum SumiNativeMessagingConnection {
         extensionContextActive: Bool? = nil,
         logDiagnostic: @escaping (SafariExtensionNativeMessagingDiagnostic) -> Void,
         replyHandler: @escaping (Any?, (any Error)?) -> Void,
-        replyTimeout: Duration = defaultReplyTimeout
+        replyTimeout: Duration = defaultReplyTimeout,
+        registerCoordinator: ((SumiNativeMessagingOnceReplyCoordinator) -> Void)? = nil
     ) {
         guard let detail = evaluation.detail else {
             let diagnostic = Self.diagnostic(
@@ -267,6 +279,7 @@ enum SumiNativeMessagingConnection {
         )
 
         let coordinator = SumiNativeMessagingOnceReplyCoordinator(replyHandler)
+        registerCoordinator?(coordinator)
         let request = SumiNativeMessagingOneShotRequest(
             applicationIdentifier: applicationIdentifier,
             extensionId: extensionId,

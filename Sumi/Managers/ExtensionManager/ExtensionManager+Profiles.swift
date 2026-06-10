@@ -1125,6 +1125,25 @@ extension ExtensionManager {
         #endif
     }
 
+    func pruneNativeMessagePortHandlerEntries(
+        forExtensionId extensionId: String,
+        profileId: UUID? = nil
+    ) {
+        let handlerIDs = nativeMessagePortExtensionIDs.compactMap { entry -> ObjectIdentifier? in
+            guard entry.value == extensionId else { return nil }
+            if let profileId, nativeMessagePortProfileIDs[entry.key] != profileId {
+                return nil
+            }
+            return entry.key
+        }
+
+        for handlerID in handlerIDs {
+            nativeMessagePortHandlers.removeValue(forKey: handlerID)
+            nativeMessagePortExtensionIDs.removeValue(forKey: handlerID)
+            nativeMessagePortProfileIDs.removeValue(forKey: handlerID)
+        }
+    }
+
     private func tearDownNativeMessageHandlers(for extensionId: String) {
         let handlerIDs = nativeMessagePortExtensionIDs.compactMap { entry in
             entry.value == extensionId ? entry.key : nil

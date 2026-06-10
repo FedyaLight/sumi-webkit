@@ -105,10 +105,11 @@ final class BitwardenNativeMessagingAdapter: SumiNativeMessagingProtocolAdapter 
                 replyTimeout: replyTimeout
             )
             portSessions[sessionKey] = state
+            SumiNativeMessagingRuntimeCounters.recordAdapterPortSessionOpened()
 
             transport.onDisconnect = { [weak self] in
                 guard let self else { return }
-                self.portSessions.removeValue(forKey: sessionKey)?.disconnectAssociatedSession()
+                self.removePortSession(forKey: sessionKey)?.disconnectAssociatedSession()
             }
 
             do {
@@ -119,16 +120,13 @@ final class BitwardenNativeMessagingAdapter: SumiNativeMessagingProtocolAdapter 
                 completionHandler(nil)
                 return
             } catch let error as BitwardenDesktopProxyTransportError where error == .desktopNotRunning {
-                transport.shutdown()
-                portSessions.removeValue(forKey: sessionKey)
+                removePortSession(forKey: sessionKey)?.shutdown()
             } catch let error as BitwardenDesktopProxyTransportError {
-                portSessions.removeValue(forKey: sessionKey)
-                transport.shutdown()
+                removePortSession(forKey: sessionKey)?.shutdown()
                 completionHandler(BitwardenDesktopProxyTransportErrorMapper.relayError(for: error))
                 return
             } catch {
-                portSessions.removeValue(forKey: sessionKey)
-                transport.shutdown()
+                removePortSession(forKey: sessionKey)?.shutdown()
                 completionHandler(error)
                 return
             }
@@ -154,7 +152,7 @@ final class BitwardenNativeMessagingAdapter: SumiNativeMessagingProtocolAdapter 
 
             transport.onDisconnect = { [weak self] in
                 guard let self else { return }
-                self.portSessions.removeValue(forKey: sessionKey)?.disconnectAssociatedSession()
+                self.removePortSession(forKey: sessionKey)?.disconnectAssociatedSession()
             }
 
             do {
@@ -164,15 +162,23 @@ final class BitwardenNativeMessagingAdapter: SumiNativeMessagingProtocolAdapter 
                 )
                 completionHandler(nil)
             } catch let error as BitwardenDesktopProxyTransportError {
-                portSessions.removeValue(forKey: sessionKey)
-                transport.shutdown()
+                removePortSession(forKey: sessionKey)?.shutdown()
                 completionHandler(BitwardenDesktopProxyTransportErrorMapper.relayError(for: error))
             } catch {
-                portSessions.removeValue(forKey: sessionKey)
-                transport.shutdown()
+                removePortSession(forKey: sessionKey)?.shutdown()
                 completionHandler(error)
             }
         }
+    }
+
+    func disconnectPort(session: SumiNativeMessagingPortSession) {
+        removePortSession(forKey: ObjectIdentifier(session))?.shutdown()
+    }
+
+    private func removePortSession(forKey sessionKey: ObjectIdentifier) -> BitwardenPortSessionState? {
+        guard let state = portSessions.removeValue(forKey: sessionKey) else { return nil }
+        SumiNativeMessagingRuntimeCounters.recordAdapterPortSessionClosed()
+        return state
     }
 
     func relayPortMessage(
@@ -216,13 +222,27 @@ private final class BitwardenPortSessionState {
     }
 
     func disconnectAssociatedSession() {
+        shutdown()
         session?.disconnect()
     }
 
+    func shutdown() {
+        pendingReplies.values.forEach { $0.cancel() }
+        pendingReplies.removeAll()
+        transport.shutdown()
+    }
+
     func relayExtensionMessage(_ payload: [String: Any]) {
-        let command = payload["command"] as? String
-        if let command, BitwardenPortCommand.isRelaySupported(command) == false {
-            BitwardenDesktopTransportDiagnostics.log(outcome: .unsupportedCommand, command: command)
+        let command = payload["command"] as? String ?? ""
+        switch BitwardenPortCommand.relayOutcome(for: command) {
+        case .relay:
+            break
+        case .unsupportedCommand, .commandNotYetImplemented, .blockedPublicProtocolGap:
+            BitwardenDesktopTransportDiagnostics.log(
+                outcome: BitwardenPortCommand.transportOutcome(for: command),
+                command: command
+            )
+            return
         }
 
         let wrapped: [String: Any] = [
@@ -244,7 +264,9 @@ private final class BitwardenPortSessionState {
 
     private func handleDesktopMessage(_ incoming: [String: Any]) {
         if let command = incoming["command"] as? String, command == "disconnected" {
-            BitwardenDesktopTransportDiagnostics.log(outcome: .desktopIntegrationDisabled, command: command)
+            BitwardenDesktopTransportDiagnostics.log(outcome: .browserIntegrationDisabled, command: command)
+            pendingReplies.values.forEach { $0.cancel() }
+            pendingReplies.removeAll()
             session?.disconnect()
             return
         }
@@ -264,16 +286,12 @@ private final class BitwardenPortSessionState {
         if let command = replyObject["command"] as? String {
             switch command {
             case BitwardenPortCommand.getBiometricsStatus:
+                classifyBiometricsStatusReply(replyObject, command: command)
+            case BitwardenPortCommand.setupEncryption:
                 if replyObject["response"] != nil {
-                    BitwardenDesktopTransportDiagnostics.log(
-                        outcome: .realDesktopStatusSucceeded,
-                        command: command
-                    )
+                    BitwardenDesktopTransportDiagnostics.log(outcome: .realDesktopStatusSucceeded, command: command)
                 } else {
-                    BitwardenDesktopTransportDiagnostics.log(
-                        outcome: .desktopReplyMalformed,
-                        command: command
-                    )
+                    BitwardenDesktopTransportDiagnostics.log(outcome: .desktopReplyMalformed, command: command)
                 }
             default:
                 break
@@ -285,6 +303,37 @@ private final class BitwardenPortSessionState {
         }
 
         session?.sendReplyToExtension(replyObject)
+    }
+
+    private func classifyBiometricsStatusReply(_ replyObject: [String: Any], command: String) {
+        guard let response = replyObject["response"] else {
+            BitwardenDesktopTransportDiagnostics.log(outcome: .desktopReplyMalformed, command: command)
+            return
+        }
+
+        let statusCode: Int? = {
+            if let value = response as? Int { return value }
+            if let value = response as? NSNumber { return value.intValue }
+            return nil
+        }()
+
+        guard let statusCode else {
+            BitwardenDesktopTransportDiagnostics.log(outcome: .desktopReplyMalformed, command: command)
+            return
+        }
+
+        switch statusCode {
+        case BitwardenPublicBiometricsStatus.available.rawValue:
+            BitwardenDesktopTransportDiagnostics.log(outcome: .realDesktopStatusSucceeded, command: command)
+        case BitwardenPublicBiometricsStatus.unlockNeeded.rawValue:
+            BitwardenDesktopTransportDiagnostics.log(outcome: .setupEncryptionRequired, command: command)
+        case BitwardenPublicBiometricsStatus.desktopDisconnected.rawValue:
+            BitwardenDesktopTransportDiagnostics.log(outcome: .browserIntegrationDisabled, command: command)
+        case BitwardenPublicBiometricsStatus.notEnabledInConnectedDesktopApp.rawValue:
+            BitwardenDesktopTransportDiagnostics.log(outcome: .browserIntegrationDisabled, command: command)
+        default:
+            BitwardenDesktopTransportDiagnostics.log(outcome: .realDesktopStatusSucceeded, command: command)
+        }
     }
 
     private func scheduleReplyTimeout(for messageId: Int, command: String?) {
@@ -302,18 +351,52 @@ private final class BitwardenPortSessionState {
     }
 }
 
+/// Public port command names from bitwarden/clients native messaging IPC.
 private enum BitwardenPortCommand {
     static let getBiometricsStatus = "getBiometricsStatus"
     static let setupEncryption = "setupEncryption"
+    static let biometricUnlock = "biometricUnlock"
 
-    static func isRelaySupported(_ command: String) -> Bool {
+    enum RelayOutcome {
+        case relay
+        case unsupportedCommand
+        case commandNotYetImplemented
+        case blockedPublicProtocolGap
+    }
+
+    static func relayOutcome(for command: String) -> RelayOutcome {
         switch command {
         case getBiometricsStatus, setupEncryption:
-            return true
+            return .relay
+        case biometricUnlock:
+            return .commandNotYetImplemented
+        case "":
+            return .unsupportedCommand
         default:
-            return false
+            return .unsupportedCommand
         }
     }
+
+    static func transportOutcome(for command: String) -> BitwardenDesktopTransportOutcome {
+        switch relayOutcome(for: command) {
+        case .relay:
+            return .unsupportedCommand
+        case .unsupportedCommand:
+            return .unsupportedCommand
+        case .commandNotYetImplemented:
+            return .commandNotYetImplemented
+        case .blockedPublicProtocolGap:
+            return .blockedPublicProtocolGap
+        }
+    }
+}
+
+/// Public `BiometricsStatus` ordinals from bitwarden/clients key-management.
+private enum BitwardenPublicBiometricsStatus: Int {
+    case available = 0
+    case unlockNeeded = 1
+    case desktopDisconnected = 6
+    case notEnabledInConnectedDesktopApp = 8
 }
 
 @MainActor

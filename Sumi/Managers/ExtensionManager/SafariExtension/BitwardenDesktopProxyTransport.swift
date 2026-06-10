@@ -3,6 +3,8 @@
 //  Sumi
 //
 //  Length-prefixed JSON stdio transport for Bitwarden desktop_proxy.
+//  Public protocol: browser spawns desktop_proxy (stdio, 4-byte LE JSON frames);
+//  proxy forwards to Desktop over node-ipc Unix socket (bitwarden/desktop PR #566).
 //
 
 import Foundation
@@ -12,6 +14,8 @@ import Foundation
 enum BitwardenDesktopTransportOutcome: String, Codable, Sendable, Equatable {
     case realDesktopHandshakeSucceeded
     case realDesktopStatusSucceeded
+    /// Browser integration disabled in Bitwarden Desktop settings (handshake `disconnected`).
+    case browserIntegrationDisabled
     case desktopIntegrationDisabled
     case desktopAppNotInstalled
     case desktopAppNotRunning
@@ -22,6 +26,12 @@ enum BitwardenDesktopTransportOutcome: String, Codable, Sendable, Equatable {
     case desktopTimeout
     case desktopPermissionDenied
     case unsupportedCommand
+    /// Public `BiometricsStatus.UnlockNeeded` — vault unlock required before biometrics.
+    case setupEncryptionRequired
+    /// Public command name is known but not implemented in this adapter cycle.
+    case commandNotYetImplemented
+    /// Public protocol cannot be bridged on this WebKit path without undocumented behavior.
+    case blockedPublicProtocolGap
 }
 
 enum BitwardenDesktopProxyTransportError: Error, Equatable {
@@ -132,6 +142,7 @@ final class BitwardenDesktopProxyProcessTransport: BitwardenDesktopProxyTranspor
 
         self.process = process
         stdinHandle = stdinPipe.fileHandleForWriting
+        SumiNativeMessagingRuntimeCounters.recordDesktopTransportStarted()
         startReadLoop(stdoutPipe.fileHandleForReading)
 
         let command = try await waitForHandshakeCommand(timeout: handshakeTimeout)
@@ -142,7 +153,7 @@ final class BitwardenDesktopProxyProcessTransport: BitwardenDesktopProxyTranspor
             BitwardenDesktopTransportDiagnostics.log(outcome: .realDesktopHandshakeSucceeded)
         case "disconnected":
             shutdown()
-            BitwardenDesktopTransportDiagnostics.log(outcome: .desktopIntegrationDisabled)
+            BitwardenDesktopTransportDiagnostics.log(outcome: .browserIntegrationDisabled)
             throw BitwardenDesktopProxyTransportError.desktopIntegrationDisabled
         default:
             shutdown()
@@ -161,6 +172,7 @@ final class BitwardenDesktopProxyProcessTransport: BitwardenDesktopProxyTranspor
     }
 
     func shutdown() {
+        let wasActive = isConnected || process != nil || readTask != nil
         isConnected = false
         handshakeCommand = nil
         readTask?.cancel()
@@ -172,19 +184,24 @@ final class BitwardenDesktopProxyProcessTransport: BitwardenDesktopProxyTranspor
         }
         process = nil
         pendingBuffer.removeAll()
+        if wasActive {
+            SumiNativeMessagingRuntimeCounters.recordDesktopTransportStopped()
+        }
     }
 
     private func startReadLoop(_ handle: FileHandle) {
-        readTask = Task { @MainActor [weak self] in
-            while let self, Task.isCancelled == false {
-                let chunk = await Task.detached(priority: .utility) {
-                    handle.availableData
-                }.value
+        readTask = Task.detached(priority: .utility) { [weak self] in
+            while Task.isCancelled == false {
+                let chunk = handle.availableData
                 if chunk.isEmpty {
-                    self.handleTransportEnded()
+                    await MainActor.run {
+                        self?.handleTransportEnded()
+                    }
                     return
                 }
-                self.ingest(chunk)
+                await MainActor.run {
+                    self?.ingest(chunk)
+                }
             }
         }
     }
@@ -237,6 +254,9 @@ final class BitwardenDesktopProxyProcessTransport: BitwardenDesktopProxyTranspor
 }
 
 enum BitwardenDesktopProxyFraming {
+    /// Chrome native messaging frame cap (1 MiB). Oversized length prefixes are discarded.
+    static let maxFrameBytes = 1_048_576
+
     static func encode(_ object: [String: Any]) throws -> Data {
         guard JSONSerialization.isValidJSONObject(object) else {
             throw BitwardenDesktopProxyTransportError.malformedReply
@@ -254,7 +274,15 @@ enum BitwardenDesktopProxyFraming {
             raw.load(as: UInt32.self).littleEndian
         }
         let frameSize = Int(length)
-        guard frameSize >= 0, buffer.count >= MemoryLayout<UInt32>.size + frameSize else {
+        guard frameSize >= 0 else {
+            buffer.removeAll(keepingCapacity: false)
+            return NSNull()
+        }
+        guard frameSize <= maxFrameBytes else {
+            buffer.removeAll(keepingCapacity: false)
+            return NSNull()
+        }
+        guard buffer.count >= MemoryLayout<UInt32>.size + frameSize else {
             return nil
         }
         let jsonStart = MemoryLayout<UInt32>.size
@@ -313,7 +341,7 @@ enum BitwardenDesktopProxyTransportErrorMapper {
         case .desktopNotRunning:
             return .desktopAppNotRunning
         case .desktopIntegrationDisabled:
-            return .desktopIntegrationDisabled
+            return .browserIntegrationDisabled
         case .processLaunchFailed:
             return .desktopTransportUnavailable
         case .permissionDenied:

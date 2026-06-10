@@ -487,6 +487,10 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             "com.bitwarden.desktop"
         )
         XCTAssertEqual(
+            SumiNativeMessagingAppResolver.normalizedHostBundleIdentifier("com.8bit.bitwarden.desktop"),
+            "com.bitwarden.desktop"
+        )
+        XCTAssertEqual(
             SumiNativeMessagingAppResolver.normalizedHostBundleIdentifier("me.proton.pass.nm"),
             "me.proton.pass.catalyst"
         )

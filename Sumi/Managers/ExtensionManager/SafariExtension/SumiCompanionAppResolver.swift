@@ -120,7 +120,8 @@ enum SumiCompanionAppResolver {
             forAppexPath: installed.sourceBundlePath
         ) {
             return IdentityResolution(
-                resolvedBundleIdentifier: containing,
+                resolvedBundleIdentifier: SumiCompanionAppIdentityMetadata
+                    .normalizedHostBundleIdentifier(containing),
                 resolutionSource: .containingAppOfImportedAppex,
                 isContainingApp: true
             )
@@ -135,7 +136,8 @@ enum SumiCompanionAppResolver {
            )
         {
             return IdentityResolution(
-                resolvedBundleIdentifier: containing,
+                resolvedBundleIdentifier: SumiCompanionAppIdentityMetadata
+                    .normalizedHostBundleIdentifier(containing),
                 resolutionSource: .containingAppOfImportedAppex,
                 isContainingApp: true
             )
@@ -308,7 +310,8 @@ enum SumiCompanionAppResolver {
         }
 
         return IdentityResolution(
-            resolvedBundleIdentifier: bundleID,
+            resolvedBundleIdentifier: SumiCompanionAppIdentityMetadata
+                .normalizedHostBundleIdentifier(bundleID),
             resolutionSource: .appGroupsMetadata,
             isContainingApp: true
         )

@@ -34,6 +34,7 @@ struct SafariExtensionRuntimeStatusSnapshot: Codable, Equatable, Sendable {
     let hostPermissionStatus: SafariExtensionCapabilityStatus
     let tabFrameMappingStatus: SafariExtensionCapabilityStatus
     let popupAnchorStatus: SafariExtensionCapabilityStatus
+    let autofillInfrastructureBlocker: SafariExtensionAutofillBlocker
     let nativeMessagingSessionState: SumiNativeMessagingSessionState?
     let launchSuppressionExpected: Bool
     let suppressionReport: SafariExtensionNativeMessagingSuppressionReport
@@ -183,6 +184,14 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
         let sessionState: SumiNativeMessagingSessionState? =
             isPasswordManager ? .unknownProtocolInitial : nil
 
+        let autofillInfrastructure = SafariExtensionAutofillInfrastructureClassifier
+            .classifyInfrastructure(extensionsModuleEnabled: extensionsModuleEnabled)
+        if autofillInfrastructure.isReady == false {
+            notes.append(
+                "autofill blocker=\(autofillInfrastructure.primaryBlocker.rawValue): \(autofillInfrastructure.detail)"
+            )
+        }
+
         if isPasswordManager {
             if target.key == "bitwarden",
                SumiNativeMessagingAdapterRegistry.shared.adapter(
@@ -195,6 +204,11 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
             } else {
                 notes.append("companionAppProtocolUnknown expected until companion IPC is documented")
             }
+            if autofillInfrastructure.isReady {
+                notes.append(
+                    "autofill infrastructure ready; tab-level blockers require active tab probe (file:// needs http://127.0.0.1 fixture server)"
+                )
+            }
         }
 
         return SafariExtensionRuntimeStatusSnapshot(
@@ -203,6 +217,7 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
             hostPermissionStatus: hostPermissionStatus,
             tabFrameMappingStatus: tabFrameMappingStatus,
             popupAnchorStatus: popupAnchorStatus,
+            autofillInfrastructureBlocker: autofillInfrastructure.primaryBlocker,
             nativeMessagingSessionState: sessionState,
             launchSuppressionExpected: launchSuppressionExpected,
             suppressionReport: suppressionReport,
@@ -447,7 +462,7 @@ enum SafariExtensionPasswordManagerFormFixtureProbe {
 
         return Result(
             passed: true,
-            detail: "Local login-form.html fixture available for PM autofill manual probe"
+            detail: "Local login-form.html fixture available; serve via http://127.0.0.1 (file:// is not covered by <all_urls>)"
         )
     }
 }

@@ -43,6 +43,13 @@ protocol SumiNativeMessagingProtocolAdapter: AnyObject {
         session: SumiNativeMessagingPortSession,
         message: Any
     ) -> Bool
+
+    /// Tear down adapter-owned resources for a port session (desktop transports, timers, etc.).
+    func disconnectPort(session: SumiNativeMessagingPortSession)
+}
+
+extension SumiNativeMessagingProtocolAdapter {
+    func disconnectPort(session: SumiNativeMessagingPortSession) {}
 }
 
 @MainActor
@@ -62,7 +69,9 @@ final class SumiNativeMessagingAdapterRegistry {
     func adapter(forHostBundleIdentifier hostBundleIdentifier: String)
         -> SumiNativeMessagingProtocolAdapter?
     {
-        adapters.first { $0.supports(hostBundleIdentifier: hostBundleIdentifier) }
+        let normalized = SumiCompanionAppIdentityMetadata
+            .normalizedHostBundleIdentifier(hostBundleIdentifier)
+        return adapters.first { $0.supports(hostBundleIdentifier: normalized) }
     }
 
     func adapter(forApplicationIdentifier applicationIdentifier: String?)

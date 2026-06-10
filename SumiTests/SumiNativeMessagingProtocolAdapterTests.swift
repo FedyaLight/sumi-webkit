@@ -327,8 +327,16 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
         let registry = SumiNativeMessagingAdapterRegistry(adapters: [adapter])
 
         XCTAssertNotNil(registry.adapter(forApplicationIdentifier: "com.8bit.bitwarden"))
+        XCTAssertNotNil(registry.adapter(forApplicationIdentifier: "com.8bit.bitwarden.desktop"))
+        XCTAssertNotNil(registry.adapter(forHostBundleIdentifier: "com.8bit.bitwarden.desktop"))
         XCTAssertNotNil(registry.adapter(forProtocolIdentifier: adapter.protocolIdentifier))
         XCTAssertTrue(registry.isAdapterAvailable(forApplicationIdentifier: "com.8bit.bitwarden"))
+        XCTAssertTrue(
+            registry.isAdapterAvailable(
+                forApplicationIdentifier: nil,
+                hostBundleIdentifier: "com.8bit.bitwarden.desktop"
+            )
+        )
     }
 
     // MARK: - Helpers

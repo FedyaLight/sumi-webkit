@@ -1,0 +1,60 @@
+{
+  "object" : {
+    "artifacts" : [
+      {
+        "kind" : {
+          "xcframework" : {
+
+          }
+        },
+        "packageRef" : {
+          "identity" : "urlpredictor",
+          "kind" : "fileSystem",
+          "location" : "/Users/fedaefimov/Downloads/Aura/Sumi-webkit/Vendor/DDG/URLPredictor",
+          "name" : "URLPredictor"
+        },
+        "path" : "/Users/fedaefimov/Downloads/Aura/Sumi-webkit/.derivedData/SourcePackages/artifacts/urlpredictor/URLPredictorRust/URLPredictorRust.xcframework",
+        "source" : {
+          "checksum" : "64a9158d40ceb86946638a98206a736cfc32dff5af1a544250d506686ea4459a",
+          "type" : "remote",
+          "url" : "https://github.com/duckduckgo/url_predictor/releases/download/0.3.13/URLPredictorRust.xcframework.zip"
+        },
+        "targetName" : "URLPredictorRust"
+      }
+    ],
+    "dependencies" : [
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "browserserviceskit",
+          "kind" : "fileSystem",
+          "location" : "/Users/fedaefimov/Downloads/Aura/Sumi-webkit/Vendor/DDG/BrowserServicesKit",
+          "name" : "BrowserServicesKit"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/fedaefimov/Downloads/Aura/Sumi-webkit/Vendor/DDG/BrowserServicesKit"
+        },
+        "subpath" : "browserserviceskit"
+      },
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "urlpredictor",
+          "kind" : "fileSystem",
+          "location" : "/Users/fedaefimov/Downloads/Aura/Sumi-webkit/Vendor/DDG/URLPredictor",
+          "name" : "URLPredictor"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Users/fedaefimov/Downloads/Aura/Sumi-webkit/Vendor/DDG/URLPredictor"
+        },
+        "subpath" : "urlpredictor"
+      }
+    ],
+    "prebuilts" : [
+
+    ]
+  },
+  "version" : 7
+}

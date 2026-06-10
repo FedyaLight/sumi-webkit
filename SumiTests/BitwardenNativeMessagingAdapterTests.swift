@@ -178,7 +178,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         )
         XCTAssertEqual(
             BitwardenDesktopProxyTransportErrorMapper.outcome(for: .desktopIntegrationDisabled),
-            .desktopIntegrationDisabled
+            .browserIntegrationDisabled
         )
         XCTAssertEqual(
             BitwardenDesktopProxyTransportErrorMapper.outcome(for: .protocolMismatch),
@@ -188,6 +188,110 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
             BitwardenDesktopProxyTransportErrorMapper.outcome(for: .permissionDenied),
             .desktopPermissionDenied
         )
+    }
+
+    func testUnsupportedPortCommandDoesNotRelayOrScheduleTimeout() async throws {
+        let fake = BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected)
+        let adapter = BitwardenNativeMessagingAdapter(
+            transportFactory: { fake },
+            handshakeTimeout: .milliseconds(200),
+            replyTimeout: .milliseconds(80)
+        )
+        let launcher = makeLauncherWithProxy()
+        let port = MockNativeMessagingPort()
+        let session = makeSession(port: port, adapter: adapter)
+
+        _ = await connect(adapter: adapter, session: session, launcher: launcher)
+
+        let relayed = adapter.relayPortMessage(
+            session: session,
+            message: [
+                "command": "vaultExport",
+                "messageId": 99,
+            ]
+        )
+
+        XCTAssertTrue(relayed)
+        XCTAssertTrue(fake.sentMessages.isEmpty)
+        XCTAssertTrue(port.repliesSent.isEmpty)
+        XCTAssertFalse(port.isDisconnected)
+
+        try await Task.sleep(for: .milliseconds(120))
+        XCTAssertFalse(port.isDisconnected)
+    }
+
+    func testCommandNotYetImplementedDoesNotRelay() async throws {
+        let fake = BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected)
+        let adapter = BitwardenNativeMessagingAdapter(
+            transportFactory: { fake },
+            handshakeTimeout: .milliseconds(200)
+        )
+        let launcher = makeLauncherWithProxy()
+        let port = MockNativeMessagingPort()
+        let session = makeSession(port: port, adapter: adapter)
+
+        _ = await connect(adapter: adapter, session: session, launcher: launcher)
+        _ = adapter.relayPortMessage(
+            session: session,
+            message: [
+                "command": "biometricUnlock",
+                "messageId": 2,
+            ]
+        )
+
+        XCTAssertTrue(fake.sentMessages.isEmpty)
+    }
+
+    func testDisconnectCancelsPendingReplyTimeout() async throws {
+        let fake = BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected)
+        let adapter = BitwardenNativeMessagingAdapter(
+            transportFactory: { fake },
+            handshakeTimeout: .milliseconds(200),
+            replyTimeout: .milliseconds(80)
+        )
+        let launcher = makeLauncherWithProxy()
+        let port = MockNativeMessagingPort()
+        let session = makeSession(port: port, adapter: adapter)
+
+        _ = await connect(adapter: adapter, session: session, launcher: launcher)
+        _ = adapter.relayPortMessage(
+            session: session,
+            message: [
+                "command": "setupEncryption",
+                "messageId": 3,
+            ]
+        )
+        XCTAssertEqual(fake.sentMessages.count, 1)
+        fake.simulateDisconnect()
+
+        XCTAssertTrue(port.isDisconnected)
+        try await Task.sleep(for: .milliseconds(120))
+        XCTAssertEqual(port.repliesSent.count, 0)
+    }
+
+    func testRepeatedUnsupportedCommandsDoNotAccumulateTransportSends() async throws {
+        let fake = BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected)
+        let adapter = BitwardenNativeMessagingAdapter(
+            transportFactory: { fake },
+            handshakeTimeout: .milliseconds(200)
+        )
+        let launcher = makeLauncherWithProxy()
+        let port = MockNativeMessagingPort()
+        let session = makeSession(port: port, adapter: adapter)
+
+        _ = await connect(adapter: adapter, session: session, launcher: launcher)
+
+        for index in 0..<5 {
+            _ = adapter.relayPortMessage(
+                session: session,
+                message: [
+                    "command": "unknownCommand\(index)",
+                    "messageId": index,
+                ]
+            )
+        }
+
+        XCTAssertTrue(fake.sentMessages.isEmpty)
     }
 
     func testAdapterSourcesDoNotLogPayloads() throws {
@@ -256,7 +360,190 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         )
     }
 
+    func testRegistryResolvesAllBitwardenPublicApplicationIdentifiers() {
+        let registry = SumiNativeMessagingAdapterRegistry(adapters: [
+            BitwardenNativeMessagingAdapter(),
+        ])
+
+        for applicationIdentifier in BitwardenNativeMessagingIdentifiers.publicApplicationIdentifiers {
+            XCTAssertNotNil(
+                registry.adapter(forApplicationIdentifier: applicationIdentifier),
+                "Expected adapter for \(applicationIdentifier)"
+            )
+            XCTAssertTrue(registry.isAdapterAvailable(forApplicationIdentifier: applicationIdentifier))
+        }
+    }
+
+    func testRegistryResolvesByLegacyContainingHostBundleIdentifier() {
+        let registry = SumiNativeMessagingAdapterRegistry(adapters: [
+            BitwardenNativeMessagingAdapter(),
+        ])
+
+        XCTAssertNotNil(
+            registry.adapter(forHostBundleIdentifier: "com.8bit.bitwarden.desktop")
+        )
+        XCTAssertTrue(
+            registry.isAdapterAvailable(
+                forApplicationIdentifier: nil,
+                hostBundleIdentifier: "com.8bit.bitwarden.desktop"
+            )
+        )
+    }
+
+    func testRelaySelectsBitwardenAdapterForAllPublicIdentifiers() async throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.bitwarden.desktop",
+            appexBundleID: "com.bitwarden.desktop.safari"
+        )
+        let installed = try makeInstalledExtension(id: "ext-bitwarden", sourceBundlePath: appexPath)
+        let launcher = makeLauncherWithProxy()
+        let adapter = BitwardenNativeMessagingAdapter(
+            transportFactory: { BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected) },
+            handshakeTimeout: .milliseconds(200)
+        )
+
+        for applicationIdentifier in BitwardenNativeMessagingIdentifiers.publicApplicationIdentifiers {
+            var diagnostics: [SafariExtensionNativeMessagingDiagnostic] = []
+            let relay = SumiNativeMessagingRelay(
+                launcher: launcher,
+                adapterRegistry: SumiNativeMessagingAdapterRegistry(adapters: [adapter]),
+                launchPolicy: SumiCompanionAppLaunchPolicy(),
+                loopGuard: SumiNativeMessagingRelayLoopGuard(),
+                extensionsModuleEnabled: { true },
+                logDiagnostic: { diagnostics.append($0) }
+            )
+            let port = MockNativeMessagingPort()
+            port.applicationIdentifier = applicationIdentifier
+
+            let connectResult = await connectReply(
+                relay: relay,
+                port: port,
+                installed: installed
+            )
+
+            XCTAssertNil(
+                connectResult.error,
+                "Expected connect success for \(applicationIdentifier)"
+            )
+            XCTAssertTrue(
+                diagnostics.contains { $0.adapterSelected == true },
+                "Expected adapterSelected=true for \(applicationIdentifier)"
+            )
+            XCTAssertTrue(
+                diagnostics.contains {
+                    $0.adapterIdentifier == BitwardenNativeMessagingIdentifiers.protocolIdentifier
+                }
+            )
+        }
+    }
+
+    func testContainingAppLegacyBundleSelectsBitwardenAdapterWithoutExplicitAppId() async throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.8bit.bitwarden.desktop",
+            appexBundleID: "com.8bit.bitwarden.desktop.safari"
+        )
+        let installed = try makeInstalledExtension(id: "ext-bitwarden-legacy", sourceBundlePath: appexPath)
+        let launcher = makeLauncherWithProxy()
+        let adapter = BitwardenNativeMessagingAdapter(
+            transportFactory: { BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected) },
+            handshakeTimeout: .milliseconds(200)
+        )
+        var diagnostics: [SafariExtensionNativeMessagingDiagnostic] = []
+        let relay = SumiNativeMessagingRelay(
+            launcher: launcher,
+            adapterRegistry: SumiNativeMessagingAdapterRegistry(adapters: [adapter]),
+            launchPolicy: SumiCompanionAppLaunchPolicy(),
+            loopGuard: SumiNativeMessagingRelayLoopGuard(),
+            extensionsModuleEnabled: { true },
+            logDiagnostic: { diagnostics.append($0) }
+        )
+
+        let evaluation = SumiCompanionAppResolver.evaluate(
+            requestedApplicationIdentifier: nil,
+            extensionId: installed.id,
+            installedExtensions: [installed],
+            importStore: SafariExtensionImportStore(defaults: makeDefaults()),
+            launcher: launcher,
+            adapterRegistry: SumiNativeMessagingAdapterRegistry(adapters: [adapter])
+        )
+
+        XCTAssertEqual(evaluation.detail?.resolvedBundleIdentifier, "com.bitwarden.desktop")
+        XCTAssertTrue(evaluation.detail?.protocolAdapterAvailable == true)
+
+        let port = MockNativeMessagingPort()
+        let connectResult = await connectReply(relay: relay, port: port, installed: installed)
+
+        XCTAssertNil(connectResult.error)
+        XCTAssertTrue(diagnostics.contains { $0.adapterSelected == true })
+    }
+
+    func testUnsupportedHostFailsSafelyWithoutLaunch() async throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.vendor.unknown.desktop",
+            appexBundleID: "com.vendor.unknown.desktop.safari"
+        )
+        let installed = try makeInstalledExtension(id: "ext-unknown", sourceBundlePath: appexPath)
+        let launcher = MockHostLauncher()
+        launcher.bundleURLs["com.vendor.unknown.desktop"] = URL(
+            fileURLWithPath: "/Applications/Unknown.app"
+        )
+        let relay = SumiNativeMessagingRelay(
+            launcher: launcher,
+            adapterRegistry: SumiNativeMessagingAdapterRegistry(adapters: [BitwardenNativeMessagingAdapter()]),
+            launchPolicy: SumiCompanionAppLaunchPolicy(),
+            loopGuard: SumiNativeMessagingRelayLoopGuard(),
+            extensionsModuleEnabled: { true }
+        )
+
+        let reply = await sendMessageReply(
+            relay: relay,
+            installed: installed,
+            applicationIdentifier: "com.vendor.unknown.desktop"
+        )
+
+        XCTAssertTrue(launcher.openedBundleIdentifiers.isEmpty)
+        XCTAssertNil(reply.value)
+        let error = try XCTUnwrap(reply.error as NSError?)
+        XCTAssertEqual(
+            error.code,
+            SumiNativeMessagingRelay.ErrorCode.companionAppProtocolUnknown.rawValue
+        )
+        XCTAssertEqual(
+            error.localizedDescription,
+            "Companion host application messaging protocol is not implemented in Sumi."
+        )
+    }
+
     // MARK: - Helpers
+
+    private func makeDefaults() -> UserDefaults {
+        let suiteName = "BitwardenNativeMessagingAdapterTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        return defaults
+    }
+
+    private func connectReply(
+        relay: SumiNativeMessagingRelay,
+        port: MockNativeMessagingPort,
+        installed: InstalledExtension
+    ) async -> (session: SumiNativeMessagingPortSession?, error: (any Error)?) {
+        let expectation = expectation(description: "nativeMessagingConnect")
+        var connectError: (any Error)?
+        var session: SumiNativeMessagingPortSession?
+        _ = relay.handleConnect(
+            port: port,
+            extensionId: installed.id,
+            installedExtensions: [installed],
+            registerHandler: { session = $0 },
+            completionHandler: { error in
+                connectError = error
+                expectation.fulfill()
+            }
+        )
+        await fulfillment(of: [expectation], timeout: 5)
+        return (session, connectError)
+    }
 
     private func makeLauncherWithProxy() -> MockHostLauncher {
         let launcher = MockHostLauncher()

@@ -16,6 +16,7 @@ enum BitwardenNativeMessagingIdentifiers {
     static let publicApplicationIdentifiers: [String] = [
         "com.bitwarden.desktop",
         "com.8bit.bitwarden",
+        "com.8bit.bitwarden.desktop",
     ]
 
     /// Registry lookup keys: normalized host bundle `hostBundleIdentifier` only.

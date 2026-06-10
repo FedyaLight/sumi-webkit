@@ -34,6 +34,13 @@ final class SumiNativeMessagingRelay {
     private let profileRuntimeLoaded: () -> Bool
     private let rawLogDiagnostic: @MainActor (SafariExtensionNativeMessagingDiagnostic) -> Void
     private var trackedPortSessions: [ObjectIdentifier: SumiNativeMessagingPortSession] = [:]
+    private var pendingOneShotRelays: [ObjectIdentifier: PendingOneShotRelay] = [:]
+
+    private struct PendingOneShotRelay {
+        let extensionId: String
+        let profileId: UUID?
+        let coordinator: SumiNativeMessagingOnceReplyCoordinator
+    }
 
     init(
         importStore: SafariExtensionImportStore = .shared,
@@ -62,6 +69,9 @@ final class SumiNativeMessagingRelay {
                 case .detailed:
                     resolvedLogger(diagnostic)
                 case .summarized(let repeatCount, let retryCountBucket):
+                    SumiNativeMessagingRuntimeCounters.recordCoalescedDiagnosticEmit(
+                        repeatCount: repeatCount
+                    )
                     resolvedLogger(
                         SafariExtensionNativeMessagingDiagnostic(
                             extensionId: diagnostic.extensionId,
@@ -115,6 +125,9 @@ final class SumiNativeMessagingRelay {
         installedExtensions: [InstalledExtension],
         replyHandler: @escaping (Any?, (any Error)?) -> Void
     ) {
+        SumiNativeMessagingRuntimeCounters.recordSendMessage(
+            applicationIdentifier: applicationIdentifier
+        )
         logRoutingEntry(
             delegateMethod: "sendMessage",
             direction: .send,
@@ -487,6 +500,10 @@ final class SumiNativeMessagingRelay {
             hostBundleIdentifier: detail.resolvedBundleIdentifier
         )
         let once = OnceReplyHandler(replyHandler)
+        final class PendingOneShotCoordinatorRef {
+            var coordinator: SumiNativeMessagingOnceReplyCoordinator?
+        }
+        let pendingCoordinatorRef = PendingOneShotCoordinatorRef()
         SumiNativeMessagingConnection.relayOneShot(
             applicationIdentifier: applicationIdentifier,
             message: message,
@@ -501,6 +518,9 @@ final class SumiNativeMessagingRelay {
             extensionContextActive: profileRuntimeLoaded(),
             logDiagnostic: makeConnectionLogger(profileId: profileId),
             replyHandler: { [self] value, error in
+                if let coordinator = pendingCoordinatorRef.coordinator {
+                    self.untrackPendingOneShot(coordinator)
+                }
                 if error != nil {
                     self.loopGuard.recordCompanionAppProtocolUnknown(
                         key: loopKey,
@@ -510,6 +530,14 @@ final class SumiNativeMessagingRelay {
                     self.loopGuard.recordSupportedAdapterLaunchAttempt(key: loopKey)
                 }
                 once.call(value, error)
+            },
+            registerCoordinator: { [self] coordinator in
+                pendingCoordinatorRef.coordinator = coordinator
+                self.trackPendingOneShot(
+                    coordinator,
+                    extensionId: extensionId,
+                    profileId: profileId
+                )
             }
         )
     }
@@ -525,6 +553,9 @@ final class SumiNativeMessagingRelay {
     ) -> SumiNativeMessagingPortSession? {
         let applicationIdentifier = port.applicationIdentifier
 
+        SumiNativeMessagingRuntimeCounters.recordConnect(
+            applicationIdentifier: applicationIdentifier
+        )
         logRoutingEntry(
             delegateMethod: "connectUsing",
             direction: .connect,
@@ -780,6 +811,7 @@ final class SumiNativeMessagingRelay {
             }
         )
         trackPortSession(session)
+        SumiNativeMessagingRuntimeCounters.recordPortOpened()
         registerHandler(session)
 
         guard launcher.urlForApplication(withBundleIdentifier: hostBundleIdentifier) != nil else {
@@ -798,7 +830,8 @@ final class SumiNativeMessagingRelay {
                 loopKey: nil,
                 hostBundleIdentifier: nil
             )
-            session.disconnect()
+            teardownPortSession(session)
+            trackedPortSessions.removeValue(forKey: ObjectIdentifier(session))
             completionHandler(
                 SumiNativeMessagingErrorMapper.relayError(code: .hostNotFound, diagnostic: diagnostic)
             )
@@ -859,7 +892,8 @@ final class SumiNativeMessagingRelay {
                     loopKey: loopKey,
                     hostBundleIdentifier: hostBundleIdentifier
                 )
-                session.disconnect()
+                self.teardownPortSession(session)
+                self.trackedPortSessions.removeValue(forKey: ObjectIdentifier(session))
                 completionHandler(error)
                 return
             }
@@ -910,10 +944,15 @@ final class SumiNativeMessagingRelay {
         forExtensionId extensionId: String,
         profileId: UUID? = nil
     ) {
+        SumiNativeMessagingRuntimeCounters.recordContextUnload(extensionId: extensionId)
+        cancelPendingOneShotRelays(forExtensionId: extensionId, profileId: profileId)
         launchPolicy.clearSessionKeys(forExtensionId: extensionId, profileId: profileId)
         loopGuard.clear(forExtensionId: extensionId, profileId: profileId)
         diagnosticCoalescer.clear(forExtensionId: extensionId, profileId: profileId)
         disconnectTrackedPortSessions(forExtensionId: extensionId, profileId: profileId)
+        SumiNativeMessagingRuntimeCounters.logSnapshotIfVerbose(
+            context: "contextUnload ext=\(extensionId)"
+        )
     }
 
     func clearLoopGuard(forExtensionId extensionId: String, profileId: UUID? = nil) {
@@ -1122,6 +1161,34 @@ final class SumiNativeMessagingRelay {
         trackedPortSessions[ObjectIdentifier(session)] = session
     }
 
+    private func trackPendingOneShot(
+        _ coordinator: SumiNativeMessagingOnceReplyCoordinator,
+        extensionId: String,
+        profileId: UUID?
+    ) {
+        pendingOneShotRelays[ObjectIdentifier(coordinator)] = PendingOneShotRelay(
+            extensionId: extensionId,
+            profileId: profileId,
+            coordinator: coordinator
+        )
+    }
+
+    private func untrackPendingOneShot(_ coordinator: SumiNativeMessagingOnceReplyCoordinator) {
+        pendingOneShotRelays.removeValue(forKey: ObjectIdentifier(coordinator))
+    }
+
+    private func cancelPendingOneShotRelays(
+        forExtensionId extensionId: String,
+        profileId: UUID?
+    ) {
+        for (key, pending) in pendingOneShotRelays {
+            guard pending.extensionId == extensionId else { continue }
+            if let profileId, pending.profileId != profileId { continue }
+            pending.coordinator.cancel()
+            pendingOneShotRelays.removeValue(forKey: key)
+        }
+    }
+
     private func disconnectTrackedPortSessions(
         forExtensionId extensionId: String,
         profileId: UUID?
@@ -1129,14 +1196,24 @@ final class SumiNativeMessagingRelay {
         for (key, session) in trackedPortSessions {
             guard session.extensionId == extensionId else { continue }
             if let profileId, session.profileId != profileId { continue }
-            session.disconnect()
+            teardownPortSession(session)
             trackedPortSessions.removeValue(forKey: key)
         }
     }
 
     private func disconnectAllTrackedPortSessions() {
-        trackedPortSessions.values.forEach { $0.disconnect() }
+        trackedPortSessions.values.forEach { teardownPortSession($0) }
         trackedPortSessions.removeAll()
+    }
+
+    private func teardownPortSession(_ session: SumiNativeMessagingPortSession) {
+        if let adapter = adapterRegistry.adapter(
+            forHostBundleIdentifier: session.resolvedHostBundleIdentifier
+        ) {
+            adapter.disconnectPort(session: session)
+        }
+        session.disconnect()
+        SumiNativeMessagingRuntimeCounters.recordPortClosed()
     }
 
     private struct RegisteredAdapterLookup {

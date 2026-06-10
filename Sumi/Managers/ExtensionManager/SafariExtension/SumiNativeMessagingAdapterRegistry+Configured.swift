@@ -12,7 +12,7 @@ import Foundation
 enum SumiNativeMessagingConfiguredAdapters {
     /// Production adapters registered by normalized host bundle key.
     /// Bitwarden: registry key `com.bitwarden.desktop`; public application identifiers
-    /// `com.bitwarden.desktop`, `com.8bit.bitwarden` (alias table).
+    /// `com.bitwarden.desktop`, `com.8bit.bitwarden`, `com.8bit.bitwarden.desktop` (alias table).
     static let all: [SumiNativeMessagingProtocolAdapter] = [
         BitwardenNativeMessagingAdapter(),
     ]

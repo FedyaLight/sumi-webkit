@@ -834,6 +834,11 @@ extension ExtensionManager: NSPopoverDelegate {
         isPopupActive = false
         if let extensionId = activePopupExtensionID {
             let profileId = browserManager?.currentProfile?.id
+            SumiNativeMessagingRuntimeCounters.recordPopupClosed(extensionId: extensionId)
+            pruneNativeMessagePortHandlerEntries(
+                forExtensionId: extensionId,
+                profileId: profileId
+            )
             safariNativeMessagingHost.clearLaunchSessionOnExtensionContextUnload(
                 forExtensionId: extensionId,
                 profileId: profileId
@@ -856,6 +861,9 @@ extension ExtensionManager: NSPopoverDelegate {
         popupWebView: WKWebView?,
         phase: SafariExtensionPopupLifecyclePhase
     ) {
+        if phase == .opened || phase == .reopened {
+            SumiNativeMessagingRuntimeCounters.recordPopupOpened(extensionId: extensionId)
+        }
         Task { @MainActor [weak self] in
             guard let self else { return }
             let diagnostic = await SafariExtensionSessionDiagnosticsBuilder.build(

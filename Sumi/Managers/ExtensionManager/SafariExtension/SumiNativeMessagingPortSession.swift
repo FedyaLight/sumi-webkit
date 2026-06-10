@@ -19,6 +19,8 @@ final class SumiNativeMessagingPortSession: NSObject {
     private let resolverBucket: SumiNativeMessagingResolverBucket
     private let logDiagnostic: (SafariExtensionNativeMessagingDiagnostic) -> Void
     private let companionProtocolErrorProvider: () -> NSError
+    private let portInactivityTimeout: Duration
+    private var inactivityTask: Task<Void, Never>?
 
     init(
         port: any SumiNativeMessagingPortControlling,
@@ -28,7 +30,8 @@ final class SumiNativeMessagingPortSession: NSObject {
         hostBundleIdentifier: String,
         resolverBucket: SumiNativeMessagingResolverBucket,
         logDiagnostic: @escaping (SafariExtensionNativeMessagingDiagnostic) -> Void,
-        companionProtocolErrorProvider: @escaping () -> NSError
+        companionProtocolErrorProvider: @escaping () -> NSError,
+        portInactivityTimeout: Duration = SumiNativeMessagingConnection.defaultPortInactivityTimeout
     ) {
         self.port = port
         self.adapter = adapter
@@ -38,13 +41,20 @@ final class SumiNativeMessagingPortSession: NSObject {
         self.resolverBucket = resolverBucket
         self.logDiagnostic = logDiagnostic
         self.companionProtocolErrorProvider = companionProtocolErrorProvider
+        self.portInactivityTimeout = portInactivityTimeout
         super.init()
         wirePort()
+        armPortInactivityTimeout()
     }
 
     func disconnect() {
+        cancelPortInactivityTimeout()
         guard port.isDisconnected == false else { return }
         port.disconnect()
+    }
+
+    func touchPortActivity() {
+        armPortInactivityTimeout()
     }
 
     func disconnectDueToUnsupportedProtocol() {
@@ -66,6 +76,7 @@ final class SumiNativeMessagingPortSession: NSObject {
     private func wirePort() {
         port.messageHandler = { [weak self] message, error in
             guard let self else { return }
+            self.touchPortActivity()
             if let error {
                 let nsError = error as NSError
                 self.logDiagnostic(
@@ -120,6 +131,7 @@ final class SumiNativeMessagingPortSession: NSObject {
 
         port.disconnectHandler = { [weak self] error in
             guard let self else { return }
+            self.cancelPortInactivityTimeout()
             let nsError = error as NSError?
             self.logDiagnostic(
                 self.makeDiagnostic(
@@ -130,6 +142,29 @@ final class SumiNativeMessagingPortSession: NSObject {
                 )
             )
         }
+    }
+
+    private func armPortInactivityTimeout() {
+        inactivityTask?.cancel()
+        inactivityTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(for: self.portInactivityTimeout)
+            guard self.port.isDisconnected == false else { return }
+            self.logDiagnostic(
+                self.makeDiagnostic(
+                    direction: .portReceive,
+                    outcome: .relayCancelled,
+                    errorDomain: SumiNativeMessagingRelay.errorDomain,
+                    errorCode: SumiNativeMessagingRelay.ErrorCode.relayCancelled.rawValue
+                )
+            )
+            self.disconnect()
+        }
+    }
+
+    private func cancelPortInactivityTimeout() {
+        inactivityTask?.cancel()
+        inactivityTask = nil
     }
 
     private func makeDiagnostic(

@@ -1,0 +1,4 @@
+module URLPredictorRust {
+  header "ddg_url_predictor.h"
+  export *
+}
