@@ -29,10 +29,8 @@ public extension WKError.Code {
 #endif
 }
 
-extension WKError: LocalizedError {
-
-    public var errorDescription: String? {
-        "<WKError \((self as NSError).domain) error \(code.rawValue) \"\(self.localizedDescription)\">"
+public extension WKError {
+    var webKitErrorDescription: String {
+        "<WKError \((self as NSError).domain) error \(code.rawValue) \"\(localizedDescription)\">"
     }
-
 }

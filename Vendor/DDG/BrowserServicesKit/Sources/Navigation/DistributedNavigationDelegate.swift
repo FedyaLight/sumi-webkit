@@ -829,7 +829,7 @@ extension DistributedNavigationDelegate: WKNavigationDelegate {
         let navigation = wkNavigation?.navigation ?? startedNavigation
 
         guard let navigation, navigation.identity == wkNavigation.map(NavigationIdentity.init) || wkNavigation == nil else {
-            NavigationLogPolicy.verbose("dropping didFail \(isProvisional ? "Provisional" : "") Navigation: \(wkNavigation?.description ?? "<nil>") with: \(error.errorDescription ?? error.localizedDescription), as another navigation is active: \(navigation?.debugDescription ?? "<nil>")")
+            NavigationLogPolicy.verbose("dropping didFail \(isProvisional ? "Provisional" : "") Navigation: \(wkNavigation?.description ?? "<nil>") with: \(error.webKitErrorDescription), as another navigation is active: \(navigation?.debugDescription ?? "<nil>")")
             return
         }
 
@@ -841,7 +841,7 @@ extension DistributedNavigationDelegate: WKNavigationDelegate {
             navigation.didResignCurrent()
         }
         navigation.didFail(wkNavigation, with: error)
-        NavigationLogPolicy.verbose("didFail \(navigation.debugDescription): \(error.errorDescription ?? error.localizedDescription)")
+        NavigationLogPolicy.verbose("didFail \(navigation.debugDescription): \(error.webKitErrorDescription)")
 
         for responder in navigation.navigationResponders {
             responder.navigation(navigation, didFailWith: error)

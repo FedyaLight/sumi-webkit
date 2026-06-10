@@ -1348,7 +1348,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         RuntimeDiagnostics.debug("Performing comprehensive WebView cleanup for '\(name)'.", category: "Tab")
 
         if let webView = _webView {
-            browserManager?.extensionsModule
             cleanupCloneWebView(webView)
         }
 

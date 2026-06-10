@@ -76,7 +76,7 @@ final class SumiNativeMessagingRelayLoopGuard {
             )
         }
 
-        if let cached, withinCooldown {
+        if withinCooldown {
             return Evaluation(
                 shouldLaunchHost: false,
                 launchSuppressed: true,

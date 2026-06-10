@@ -409,13 +409,12 @@ extension Tab: WKUIDelegate {
         )
     }
 
-    @available(macOS 12.0, *)
-    @objc(_webView:requestGeolocationPermissionForOrigin:initiatedByFrame:decisionHandler:)
-    func webView(
+    @available(macOS 27.0, *)
+    public func webView(
         _ webView: WKWebView,
         requestGeolocationPermissionFor origin: WKSecurityOrigin,
-        initiatedBy frame: WKFrameInfo,
-        decisionHandler: @escaping (WKPermissionDecision) -> Void
+        initiatedByFrame frame: WKFrameInfo,
+        decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void
     ) {
         RuntimeDiagnostics.emit(
             "🔐 [Tab] Geolocation authorization requested from origin: \(origin)"

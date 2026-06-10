@@ -116,6 +116,7 @@ private extension SumiNavigationContext {
     }
 }
 
+@MainActor
 private final class SumiWebKitNavigationDownload: SumiNavigationDownload {
     private let download: WebKitDownload
     let response: URLResponse?
@@ -146,7 +147,7 @@ private final class SumiWebKitNavigationDownload: SumiNavigationDownload {
         set { download.delegate = newValue }
     }
 
-    func cancel(_ completionHandler: ((Data?) -> Void)?) {
+    func cancel(_ completionHandler: (@MainActor @Sendable (Data?) -> Void)?) {
         download.cancel(completionHandler)
     }
 }

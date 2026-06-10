@@ -2954,6 +2954,7 @@ private final class SumiNavigationDownloadProbeResponder: SumiNavigationDownload
     }
 }
 
+@MainActor
 private final class SumiWebKitDownloadMock: NSObject, WebKitDownload {
     let originalRequest: URLRequest?
     let originatingWebView: WKWebView?
@@ -2971,7 +2972,7 @@ private final class SumiWebKitDownloadMock: NSObject, WebKitDownload {
         self.targetWebView = targetWebView
     }
 
-    func cancel(_ completionHandler: ((Data?) -> Void)?) {
+    func cancel(_ completionHandler: (@MainActor @Sendable (Data?) -> Void)?) {
         cancelCount += 1
         completionHandler?(nil)
     }

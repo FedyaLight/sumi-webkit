@@ -24,7 +24,6 @@ final class SumiTabScriptAttachmentNavigationResponder: SumiNavigationActionWebV
             PerformanceTrace.endInterval("NavigationPolicy.scriptAttachmentResponder", signpostState)
         }
 
-        tab.browserManager?.extensionsModule
         await tab.replaceNormalTabUserScripts(
             on: webView.configuration.userContentController,
             for: navigationAction.url

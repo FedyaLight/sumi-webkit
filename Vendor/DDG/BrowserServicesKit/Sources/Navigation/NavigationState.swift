@@ -108,7 +108,7 @@ extension NavigationState: CustomStringConvertible {
         case .redirected: return "redirected"
         case .responseReceived: return "responseReceived"
         case .finished: return "finished"
-        case .failed(let error): return "failed(\(error.errorDescription ?? error.localizedDescription))"
+        case .failed(let error): return "failed(\(error.webKitErrorDescription))"
         }
     }
 }

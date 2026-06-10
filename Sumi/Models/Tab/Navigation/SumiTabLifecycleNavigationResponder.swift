@@ -31,7 +31,6 @@ final class SumiTabLifecycleNavigationResponder:
         }
         tab.resetPageSuspensionRuntimeState()
         tab.browserManager?.tabSuspensionService.resetRevisitProtection(for: tab)
-        tab.browserManager?.extensionsModule
 
         if let url = context.url {
             tab.browserManager?.extensionsModule.prepareWebViewForExtensionRuntime(
@@ -83,7 +82,6 @@ final class SumiTabLifecycleNavigationResponder:
 
         tab.loadingState = .didCommit
         tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.loading])
-        tab.browserManager?.extensionsModule
 
         if let newURL = webView.url {
             tab.url = newURL
@@ -125,7 +123,6 @@ final class SumiTabLifecycleNavigationResponder:
 
         tab.loadingState = .didFinish
         tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.loading])
-        tab.browserManager?.extensionsModule
 
         if let newURL = webView.url {
             tab.url = newURL
@@ -169,7 +166,6 @@ final class SumiTabLifecycleNavigationResponder:
         else { return }
 
         tab.handleSameDocumentNavigation(to: newURL)
-        tab.browserManager?.extensionsModule
         tab.historyRecorder.didSameDocumentNavigation(
             to: newURL,
             type: navigationType,
@@ -192,7 +188,6 @@ final class SumiTabLifecycleNavigationResponder:
         else { return }
 
         let webView = context?.webView
-        tab.browserManager?.extensionsModule
         let isBackForwardNavigation = context?.action?.navigationType.isBackForward == true
         if isBackForwardNavigation {
             tab.finishBackForwardNavigationTracking(using: webView)

@@ -125,10 +125,7 @@ struct ExtensionUtils {
     }
 
     static func hostPatternMatchesURL(_ pattern: String, url: URL) -> Bool {
-        guard let matchPattern = try? WKWebExtension.MatchPattern(string: pattern) else {
-            return false
-        }
-        return matchPattern.matches(url)
+        UserScriptMatchEngine.matchPattern(pattern, matches: url)
     }
 
     static func loadJSONObject(at url: URL) throws -> [String: Any] {

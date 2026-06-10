@@ -143,6 +143,7 @@ protocol SumiNavigationDownloadResponding: AnyObject {
     func navigationResponse(_ navigationResponse: SumiNavigationResponse, didBecome download: SumiNavigationDownload)
 }
 
+@MainActor
 protocol SumiNavigationDownload: AnyObject {
     var webKitDownload: WKDownload? { get }
     var response: URLResponse? { get }
@@ -150,5 +151,5 @@ protocol SumiNavigationDownload: AnyObject {
     var originatingWebView: WKWebView? { get }
     var targetWebView: WKWebView? { get }
     var delegate: WKDownloadDelegate? { get set }
-    func cancel(_ completionHandler: ((Data?) -> Void)?)
+    func cancel(_ completionHandler: (@MainActor @Sendable (Data?) -> Void)?)
 }

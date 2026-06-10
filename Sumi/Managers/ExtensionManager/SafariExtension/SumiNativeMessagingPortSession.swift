@@ -92,7 +92,17 @@ final class SumiNativeMessagingPortSession: NSObject {
                 return
             }
 
-            _ = message
+            guard let message else {
+                self.logDiagnostic(
+                    self.makeDiagnostic(
+                        direction: .portRelay,
+                        outcome: .companionAppProtocolUnknown,
+                        errorDomain: SumiNativeMessagingRelay.errorDomain,
+                        errorCode: SumiNativeMessagingRelay.ErrorCode.companionAppProtocolUnknown.rawValue
+                    )
+                )
+                return
+            }
             let relayed = adapter.relayPortMessage(session: self, message: message)
             if relayed == false {
                 self.logDiagnostic(

@@ -297,7 +297,11 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
         XCTAssertFalse(combined.contains("print(message"))
         XCTAssertFalse(combined.contains("debug(\"message"))
         XCTAssertFalse(combined.contains("RuntimeDiagnostics.debug(message"))
-        XCTAssertTrue(combined.contains("_ = message") || combined.contains("_ = request"))
+        XCTAssertTrue(
+            combined.contains("_ = message")
+                || combined.contains("_ = request")
+                || combined.contains("guard let message")
+        )
     }
 
     // 9. No extension-specific branch in generic runtime path

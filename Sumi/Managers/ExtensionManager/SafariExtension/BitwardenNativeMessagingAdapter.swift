@@ -78,7 +78,8 @@ final class BitwardenNativeMessagingAdapter: SumiNativeMessagingProtocolAdapter 
         completionHandler: @escaping ((any Error)?) -> Void
     ) {
         let sessionKey = ObjectIdentifier(session)
-        Task { @MainActor in
+        Task { @MainActor [weak self] in
+            guard let self else { return }
             guard BitwardenDesktopProxyPathResolver.isHostApplicationInstalled(launcher: launcher) else {
                 BitwardenDesktopTransportDiagnostics.log(outcome: .desktopAppNotInstalled)
                 completionHandler(
@@ -105,10 +106,9 @@ final class BitwardenNativeMessagingAdapter: SumiNativeMessagingProtocolAdapter 
             )
             portSessions[sessionKey] = state
 
-            transport.onDisconnect = { [weak self, weak session] in
-                guard let self, let session else { return }
-                self.portSessions.removeValue(forKey: ObjectIdentifier(session))
-                session.disconnect()
+            transport.onDisconnect = { [weak self] in
+                guard let self else { return }
+                self.portSessions.removeValue(forKey: sessionKey)?.disconnectAssociatedSession()
             }
 
             do {
@@ -152,10 +152,9 @@ final class BitwardenNativeMessagingAdapter: SumiNativeMessagingProtocolAdapter 
             )
             portSessions[sessionKey] = relaunchedState
 
-            transport.onDisconnect = { [weak self, weak session] in
-                guard let self, let session else { return }
-                self.portSessions.removeValue(forKey: ObjectIdentifier(session))
-                session.disconnect()
+            transport.onDisconnect = { [weak self] in
+                guard let self else { return }
+                self.portSessions.removeValue(forKey: sessionKey)?.disconnectAssociatedSession()
             }
 
             do {
@@ -214,6 +213,10 @@ private final class BitwardenPortSessionState {
         transport.onReceive = { [weak self] incoming in
             self?.handleDesktopMessage(incoming)
         }
+    }
+
+    func disconnectAssociatedSession() {
+        session?.disconnect()
     }
 
     func relayExtensionMessage(_ payload: [String: Any]) {
