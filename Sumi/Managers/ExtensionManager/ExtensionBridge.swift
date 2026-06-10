@@ -352,21 +352,15 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
     }
 
     func webView(for extensionContext: WKWebExtensionContext) -> WKWebView? {
-        guard
-            let browserManager,
-            let tab = eligibleTab()
+        guard let tab = eligibleTab(),
+              let extensionManager
         else {
             return nil
         }
-        let webView: WKWebView?
-        if let windowState = resolvedWindowState() {
-            webView = browserManager.getWebView(for: tab.id, in: windowState.id)
-                ?? tab.assignedWebView
-                ?? tab.existingWebView
-        } else {
-            webView = tab.assignedWebView ?? tab.existingWebView
-        }
-        return webView
+        return extensionManager.extensionWebView(
+            for: tab,
+            extensionContext: extensionContext
+        )
     }
 
     func activate(

@@ -115,6 +115,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     var lastExtensionLoadErrors: [String: Error] = [:]
     var liveExtensionContextOrder: [String] = []
     var runtimeState: ExtensionRuntimeState = .idle
+    var extensionRuntimeAllowsWithoutEnabledExtensions = false
     var runtimeInitializationTask: Task<Void, Never>?
     var loadedExtensionManifests: [String: [String: Any]] = [:]
     var backgroundWakeTasks: [String: Task<Void, Error>] = [:]
@@ -133,12 +134,25 @@ final class ExtensionManager: NSObject, ObservableObject {
     var nativeMessagePortHandlers: [ObjectIdentifier: NativeMessagingHandler] = [:]
     var nativeMessagePortExtensionIDs: [ObjectIdentifier: String] = [:]
     var nativeMessagePortProfileIDs: [ObjectIdentifier: UUID] = [:]
-    lazy var nativeMessagingRelay = SumiNativeMessagingRelay(
-        isPrivateBrowsing: { [weak self] in
-            self?.browserManager?.windowRegistry?.activeWindow?.isIncognito ?? false
+    private var nativeMessagingRelayStorage: SumiNativeMessagingRelay?
+    var nativeMessagingRelay: SumiNativeMessagingRelay {
+        if let nativeMessagingRelayStorage {
+            return nativeMessagingRelayStorage
         }
-    )
+        let relay = SumiNativeMessagingRelay(
+            isPrivateBrowsing: { [weak self] in
+                self?.browserManager?.windowRegistry?.activeWindow?.isIncognito ?? false
+            }
+        )
+        nativeMessagingRelayStorage = relay
+        return relay
+    }
+
     var safariNativeMessagingHost: SumiNativeMessagingRelay { nativeMessagingRelay }
+
+    var loadedNativeMessagingRelay: SumiNativeMessagingRelay? {
+        nativeMessagingRelayStorage
+    }
     var profileExtensionStores: [UUID: WKWebsiteDataStore] = [:]
     var profileExtensionStoreOrder: [UUID] = []
     var recentExtensionTabOpenRequests = BoundedRecentDateTracker(

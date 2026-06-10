@@ -24,6 +24,8 @@ enum SafariExtensionNativeMessagingOutcome: String, Codable, Sendable {
     case hostLaunchFailed
     case portConnected
     case companionAppProtocolUnknown
+    case launchSuppressed
+    case launchRateLimited
     case relayTimeout
     case relayCancelled
     case extensionContextMissing
@@ -40,6 +42,44 @@ struct SafariExtensionNativeMessagingDiagnostic: Sendable, Equatable, Codable {
     let outcome: SafariExtensionNativeMessagingOutcome
     let errorDomain: String?
     let errorCode: Int?
+    let launchAttempted: Bool?
+    let launchSuppressed: Bool?
+    let retryCountBucket: SumiNativeMessagingRetryCountBucket?
+    let isContainingApp: Bool?
+    let protocolAdapterAvailable: Bool?
+    let launchAllowed: Bool?
+
+    init(
+        extensionId: String,
+        direction: SafariExtensionNativeMessagingDirection,
+        requestedApplicationIdentifier: String?,
+        hostBundleIdentifier: String?,
+        resolverBucket: SumiNativeMessagingResolverBucket?,
+        outcome: SafariExtensionNativeMessagingOutcome,
+        errorDomain: String?,
+        errorCode: Int?,
+        launchAttempted: Bool? = nil,
+        launchSuppressed: Bool? = nil,
+        retryCountBucket: SumiNativeMessagingRetryCountBucket? = nil,
+        isContainingApp: Bool? = nil,
+        protocolAdapterAvailable: Bool? = nil,
+        launchAllowed: Bool? = nil
+    ) {
+        self.extensionId = extensionId
+        self.direction = direction
+        self.requestedApplicationIdentifier = requestedApplicationIdentifier
+        self.hostBundleIdentifier = hostBundleIdentifier
+        self.resolverBucket = resolverBucket
+        self.outcome = outcome
+        self.errorDomain = errorDomain
+        self.errorCode = errorCode
+        self.launchAttempted = launchAttempted
+        self.launchSuppressed = launchSuppressed
+        self.retryCountBucket = retryCountBucket
+        self.isContainingApp = isContainingApp
+        self.protocolAdapterAvailable = protocolAdapterAvailable
+        self.launchAllowed = launchAllowed
+    }
 }
 
 enum SafariExtensionNativeMessagingConnectionBucket: String, Codable, Sendable {

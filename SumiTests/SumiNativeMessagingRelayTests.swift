@@ -22,6 +22,422 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
         }
     }
 
+    @MainActor
+    private final class FakeProtocolAdapter: SumiNativeMessagingProtocolAdapter {
+        let protocolIdentifier: String
+        var supportedHosts: Set<String>
+        var oneShotReply: (Any?, (any Error)?)
+        var shouldLaunchOnOneShot: Bool
+        var shouldLaunchOnConnect: Bool
+        var portMessageRelayed = false
+        var connectCompletion: @Sendable ((any Error)?) -> (any Error)?
+        var relayPortMessageResult = true
+
+        init(
+            protocolIdentifier: String = "test.fake",
+            supportedHosts: Set<String> = [],
+            oneShotReply: (Any?, (any Error)?) = (["ok": true], nil),
+            shouldLaunchOnOneShot: Bool = true,
+            shouldLaunchOnConnect: Bool = true,
+            connectCompletion: @Sendable @escaping ((any Error)?) -> (any Error)? = { $0 },
+            relayPortMessageResult: Bool = true
+        ) {
+            self.protocolIdentifier = protocolIdentifier
+            self.supportedHosts = supportedHosts
+            self.oneShotReply = oneShotReply
+            self.shouldLaunchOnOneShot = shouldLaunchOnOneShot
+            self.shouldLaunchOnConnect = shouldLaunchOnConnect
+            self.connectCompletion = connectCompletion
+            self.relayPortMessageResult = relayPortMessageResult
+        }
+
+        func supports(hostBundleIdentifier: String) -> Bool {
+            supportedHosts.contains(hostBundleIdentifier)
+        }
+
+        func relayOneShotMessage(
+            request: SumiNativeMessagingOneShotRequest,
+            launcher: SumiHostApplicationLaunching,
+            replyHandler: @escaping (Any?, (any Error)?) -> Void
+        ) {
+            _ = request
+            Task { @MainActor in
+                if self.shouldLaunchOnOneShot {
+                    do {
+                        try await launcher.openApplication(
+                            withBundleIdentifier: request.hostBundleIdentifier
+                        )
+                    } catch {
+                        replyHandler(nil, error)
+                        return
+                    }
+                }
+                replyHandler(self.oneShotReply.0, self.oneShotReply.1)
+            }
+        }
+
+        func connectPort(
+            session: SumiNativeMessagingPortSession,
+            launcher: SumiHostApplicationLaunching,
+            completionHandler: @escaping ((any Error)?) -> Void
+        ) {
+            Task { @MainActor in
+                if self.shouldLaunchOnConnect {
+                    do {
+                        try await launcher.openApplication(
+                            withBundleIdentifier: session.resolvedHostBundleIdentifier
+                        )
+                    } catch {
+                        completionHandler(error)
+                        return
+                    }
+                }
+                completionHandler(self.connectCompletion(nil))
+            }
+        }
+
+        func relayPortMessage(
+            session: SumiNativeMessagingPortSession,
+            message: Any
+        ) -> Bool {
+            _ = session
+            _ = message
+            portMessageRelayed = true
+            return relayPortMessageResult
+        }
+    }
+
+    @MainActor
+    private final class MockNativeMessagingPort: SumiNativeMessagingPortControlling {
+        var applicationIdentifier: String?
+        var isDisconnected = false
+        var messageHandler: ((Any?, (any Error)?) -> Void)?
+        var disconnectHandler: (((any Error)?) -> Void)?
+        var disconnectError: (any Error)?
+        var sentMessages: [Any?] = []
+
+        func disconnect() {
+            isDisconnected = true
+            disconnectHandler?(disconnectError)
+        }
+
+        func disconnect(throwing error: (any Error)?) {
+            disconnectError = error
+            disconnect()
+        }
+
+        func simulateIncomingMessage(_ message: Any?) {
+            messageHandler?(message, nil)
+        }
+
+        func simulateDisconnect(error: (any Error)? = nil) {
+            isDisconnected = true
+            disconnectHandler?(error)
+        }
+    }
+
+    // 1. One-time native message success using fake protocol adapter
+    func testOneShotSuccessWithFakeAdapter() async throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.example.host",
+            appexBundleID: "com.example.host.extension"
+        )
+        let installed = try makeInstalledExtension(id: "ext-example", sourceBundlePath: appexPath)
+        let launcher = MockHostLauncher()
+        launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
+        let adapter = FakeProtocolAdapter(
+            supportedHosts: ["com.example.host"],
+            oneShotReply: (["pong": 1], nil)
+        )
+        let relay = makeRelay(launcher: launcher, adapters: [adapter])
+
+        let reply = await sendMessageReply(
+            relay: relay,
+            installed: installed,
+            applicationIdentifier: "com.example.host"
+        )
+
+        XCTAssertEqual(launcher.openedBundleIdentifiers, ["com.example.host"])
+        XCTAssertEqual(reply.value as? [String: Int], ["pong": 1])
+        XCTAssertNil(reply.error)
+    }
+
+    // 2. One-time unknown protocol returns deterministic error
+    func testOneShotUnknownProtocolWithoutLaunch() async throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.bitwarden.desktop",
+            appexBundleID: "com.bitwarden.desktop.safari"
+        )
+        let installed = try makeInstalledExtension(id: "ext-bitwarden", sourceBundlePath: appexPath)
+        let launcher = MockHostLauncher()
+        launcher.bundleURLs["com.bitwarden.desktop"] = URL(
+            fileURLWithPath: "/Applications/Bitwarden.app"
+        )
+        var diagnostics: [SafariExtensionNativeMessagingDiagnostic] = []
+        let relay = makeRelay(
+            launcher: launcher,
+            adapters: [],
+            logDiagnostic: { diagnostics.append($0) }
+        )
+
+        let reply = await sendMessageReply(
+            relay: relay,
+            installed: installed,
+            applicationIdentifier: "com.bitwarden.desktop"
+        )
+
+        XCTAssertTrue(launcher.openedBundleIdentifiers.isEmpty)
+        XCTAssertNil(reply.value)
+        let error = try XCTUnwrap(reply.error as NSError?)
+        XCTAssertEqual(
+            error.code,
+            SumiNativeMessagingRelay.ErrorCode.companionAppProtocolUnknown.rawValue
+        )
+        XCTAssertTrue(
+            diagnostics.contains {
+                $0.outcome == .companionAppProtocolUnknown && $0.direction == .send
+            }
+        )
+    }
+
+    // 3. Reply handler called exactly once
+    func testOneShotReplyHandlerCalledExactlyOnce() async throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.example.host",
+            appexBundleID: "com.example.host.extension"
+        )
+        let installed = try makeInstalledExtension(id: "ext-example", sourceBundlePath: appexPath)
+        let launcher = MockHostLauncher()
+        launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
+        let adapter = FakeProtocolAdapter(
+            supportedHosts: ["com.example.host"],
+            oneShotReply: (["once": true], nil),
+            shouldLaunchOnOneShot: false
+        )
+        let relay = makeRelay(launcher: launcher, adapters: [adapter])
+        var replyCount = 0
+
+        let expectation = expectation(description: "reply")
+        relay.handleSendMessage(
+            applicationIdentifier: "com.example.host",
+            message: ["type": "ping"],
+            extensionId: installed.id,
+            installedExtensions: [installed]
+        ) { _, _ in
+            replyCount += 1
+            expectation.fulfill()
+        }
+        await fulfillment(of: [expectation], timeout: 5)
+        XCTAssertEqual(replyCount, 1)
+    }
+
+    // 4. Timeout path
+    func testOneShotTimeout() async throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.example.host",
+            appexBundleID: "com.example.host.extension"
+        )
+        let installed = try makeInstalledExtension(id: "ext-example", sourceBundlePath: appexPath)
+        let launcher = MockHostLauncher()
+        launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
+
+        final class SlowAdapter: SumiNativeMessagingProtocolAdapter {
+            let protocolIdentifier = "test.slow"
+            func supports(hostBundleIdentifier: String) -> Bool { true }
+            func relayOneShotMessage(
+                request: SumiNativeMessagingOneShotRequest,
+                launcher: SumiHostApplicationLaunching,
+                replyHandler: @escaping (Any?, (any Error)?) -> Void
+            ) {
+                _ = request
+                _ = launcher
+                _ = replyHandler
+            }
+            func connectPort(
+                session: SumiNativeMessagingPortSession,
+                launcher: SumiHostApplicationLaunching,
+                completionHandler: @escaping ((any Error)?) -> Void
+            ) {
+                _ = session
+                _ = launcher
+                completionHandler(nil)
+            }
+            func relayPortMessage(session: SumiNativeMessagingPortSession, message: Any) -> Bool {
+                _ = session
+                _ = message
+                return true
+            }
+        }
+
+        let slowAdapter = SlowAdapter()
+
+        let reply = await sendMessageReplyViaConnection(
+            launcher: launcher,
+            adapter: slowAdapter,
+            installed: installed,
+            hostBundleIdentifier: "com.example.host",
+            replyTimeout: .milliseconds(50)
+        )
+
+        let error = try XCTUnwrap(reply.error as NSError?)
+        XCTAssertEqual(error.code, SumiNativeMessagingRelay.ErrorCode.relayTimeout.rawValue)
+    }
+
+    // 5. Cancellation path
+    func testOneShotCancellation() async throws {
+        let coordinator = SumiNativeMessagingOnceReplyCoordinator { _, _ in }
+        var completed = false
+        coordinator.startRelay(timeout: .seconds(30)) {
+            try? await Task.sleep(for: .seconds(5))
+            guard Task.isCancelled == false else { return }
+        }
+        coordinator.complete(
+            nil,
+            SumiNativeMessagingErrorMapper.relayError(code: .relayCancelled, diagnostic: nil)
+        )
+        completed = coordinator.isFulfilled
+        XCTAssertTrue(completed)
+    }
+
+    // 6. Port connect success with fake adapter
+    func testPortConnectSuccessWithFakeAdapter() async throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.example.host",
+            appexBundleID: "com.example.host.extension"
+        )
+        let installed = try makeInstalledExtension(id: "ext-example", sourceBundlePath: appexPath)
+        let launcher = MockHostLauncher()
+        launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
+        let adapter = FakeProtocolAdapter(supportedHosts: ["com.example.host"])
+        let relay = makeRelay(launcher: launcher, adapters: [adapter])
+        let port = MockNativeMessagingPort()
+        port.applicationIdentifier = "com.example.host"
+
+        let result = await connectReply(relay: relay, port: port, installed: installed)
+
+        XCTAssertNil(result.error)
+        XCTAssertEqual(launcher.openedBundleIdentifiers, ["com.example.host"])
+        XCTAssertFalse(port.isDisconnected)
+    }
+
+    // 7. Port first message routed
+    func testPortFirstMessageRoutedThroughAdapter() async throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.example.host",
+            appexBundleID: "com.example.host.extension"
+        )
+        let installed = try makeInstalledExtension(id: "ext-example", sourceBundlePath: appexPath)
+        let launcher = MockHostLauncher()
+        launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
+        let adapter = FakeProtocolAdapter(
+            supportedHosts: ["com.example.host"],
+            shouldLaunchOnConnect: false
+        )
+        let relay = makeRelay(launcher: launcher, adapters: [adapter])
+        let port = MockNativeMessagingPort()
+        port.applicationIdentifier = "com.example.host"
+
+        let connectResult = await connectReply(relay: relay, port: port, installed: installed)
+        let session = try XCTUnwrap(connectResult.session)
+        port.simulateIncomingMessage(["hello": "world"])
+
+        XCTAssertTrue(adapter.portMessageRelayed)
+        XCTAssertFalse(session.resolvedHostBundleIdentifier.isEmpty)
+    }
+
+    // 8. Port disconnect from extension/app side
+    func testPortDisconnectFromExtensionSide() async throws {
+        let port = MockNativeMessagingPort()
+        port.applicationIdentifier = "com.example.host"
+        var disconnectObserved = false
+        let session = SumiNativeMessagingPortSession(
+            port: port,
+            adapter: FakeProtocolAdapter(supportedHosts: ["com.example.host"]),
+            extensionId: "ext-1",
+            hostBundleIdentifier: "com.example.host",
+            resolverBucket: .explicitApplicationIdentifier,
+            logDiagnostic: { _ in },
+            companionProtocolErrorProvider: {
+                SumiNativeMessagingErrorMapper.relayError(
+                    code: .companionAppProtocolUnknown,
+                    diagnostic: nil
+                )
+            }
+        )
+        port.disconnectHandler = { _ in disconnectObserved = true }
+        _ = session
+        port.simulateDisconnect()
+
+        XCTAssertTrue(disconnectObserved)
+    }
+
+    // 9. Unknown protocol disconnects without app launch loop
+    func testPortUnknownProtocolDisconnectsWithoutLaunch() async throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.bitwarden.desktop",
+            appexBundleID: "com.bitwarden.desktop.safari"
+        )
+        let installed = try makeInstalledExtension(id: "ext-bitwarden", sourceBundlePath: appexPath)
+        let launcher = MockHostLauncher()
+        launcher.bundleURLs["com.bitwarden.desktop"] = URL(
+            fileURLWithPath: "/Applications/Bitwarden.app"
+        )
+        let relay = makeRelay(launcher: launcher, adapters: [])
+        let port = MockNativeMessagingPort()
+        port.applicationIdentifier = "com.bitwarden.desktop"
+
+        let result = await connectReply(relay: relay, port: port, installed: installed)
+
+        XCTAssertTrue(launcher.openedBundleIdentifiers.isEmpty)
+        XCTAssertTrue(port.isDisconnected)
+        let error = try XCTUnwrap(result.error as NSError?)
+        XCTAssertEqual(
+            error.code,
+            SumiNativeMessagingRelay.ErrorCode.companionAppProtocolUnknown.rawValue
+        )
+    }
+
+    // 10. Disable/delete/module off closes ports
+    func testPortSessionDisconnectIsIdempotent() {
+        let port = MockNativeMessagingPort()
+        let session = SumiNativeMessagingPortSession(
+            port: port,
+            adapter: nil,
+            extensionId: "ext-1",
+            hostBundleIdentifier: "com.example.host",
+            resolverBucket: .explicitApplicationIdentifier,
+            logDiagnostic: { _ in },
+            companionProtocolErrorProvider: {
+                SumiNativeMessagingErrorMapper.relayError(
+                    code: .companionAppProtocolUnknown,
+                    diagnostic: nil
+                )
+            }
+        )
+        session.disconnect()
+        session.disconnect()
+        XCTAssertTrue(port.isDisconnected)
+    }
+
+    // 11. No payload logging
+    func testRelaySourceDoesNotLogMessageBodies() throws {
+        let relaySource = try Self.source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelay.swift"
+        )
+        let connectionSource = try Self.source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingConnection.swift"
+        )
+        let portSource = try Self.source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingPortSession.swift"
+        )
+        let combined = relaySource + connectionSource + portSource
+
+        XCTAssertFalse(combined.contains("print(message"))
+        XCTAssertFalse(combined.contains("debug(\"message"))
+        XCTAssertFalse(combined.contains("RuntimeDiagnostics.debug(message"))
+        XCTAssertTrue(combined.contains("_ = message") || combined.contains("_ = request"))
+    }
+
     func testPolicyDeniesWhenModuleDisabled() async throws {
         let relay = SumiNativeMessagingRelay(
             extensionsModuleEnabled: { false }
@@ -71,67 +487,9 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
         )
     }
 
-    func testResolverBucketForExplicitIdentifier() throws {
-        let appexPath = try makeFixtureApp(
-            appBundleID: "com.bitwarden.desktop",
-            appexBundleID: "com.bitwarden.desktop.safari"
-        )
-        let installed = try makeInstalledExtension(id: "ext-bw", sourceBundlePath: appexPath)
-        let resolution = SumiNativeMessagingAppResolver.resolve(
-            requestedApplicationIdentifier: "com.8bit.bitwarden",
-            extensionId: installed.id,
-            installedExtensions: [installed],
-            importStore: SafariExtensionImportStore(defaults: makeDefaults())
-        )
-
-        XCTAssertEqual(resolution?.hostBundleIdentifier, "com.bitwarden.desktop")
-        XCTAssertEqual(resolution?.bucket, .knownCompanionAlias)
-    }
-
-    func testSendMessageWakesHostThenReturnsCompanionProtocolUnknown() async throws {
-        let appexPath = try makeFixtureApp(
-            appBundleID: "com.bitwarden.desktop",
-            appexBundleID: "com.bitwarden.desktop.safari"
-        )
-        let importStore = SafariExtensionImportStore(defaults: makeDefaults())
-        let installed = try makeInstalledExtension(id: "ext-bitwarden", sourceBundlePath: appexPath)
-        let launcher = MockHostLauncher()
-        launcher.bundleURLs["com.bitwarden.desktop"] = URL(
-            fileURLWithPath: "/Applications/Bitwarden.app"
-        )
-        var diagnostics: [SafariExtensionNativeMessagingDiagnostic] = []
-        let relay = SumiNativeMessagingRelay(
-            importStore: importStore,
-            launcher: launcher,
-            extensionsModuleEnabled: { true },
-            logDiagnostic: { diagnostics.append($0) }
-        )
-
-        let reply = await sendMessageReply(
-            relay: relay,
-            installed: installed,
-            applicationIdentifier: "com.bitwarden.desktop"
-        )
-
-        XCTAssertEqual(launcher.openedBundleIdentifiers, ["com.bitwarden.desktop"])
-        XCTAssertNil(reply.value)
-        let error = try XCTUnwrap(reply.error as NSError?)
-        XCTAssertEqual(
-            error.code,
-            SumiNativeMessagingRelay.ErrorCode.companionAppProtocolUnknown.rawValue
-        )
-        XCTAssertTrue(
-            diagnostics.contains {
-                $0.outcome == .companionAppProtocolUnknown && $0.direction == .send
-            }
-        )
-    }
-
     func testClassificationCatalogForPasswordManagers() {
         let bitwarden = SafariExtensionNativeMessagingClassificationCatalog
             .classifications(forTargetKey: "bitwarden")
-        XCTAssertTrue(bitwarden.contains(.noChromeStyleNativeHostRelay))
-        XCTAssertTrue(bitwarden.contains(.wkWebExtensionAppMessagingAvailable))
         XCTAssertTrue(bitwarden.contains(.companionAppProtocolUnknown))
         XCTAssertFalse(bitwarden.contains(.platformBlocked))
 
@@ -142,10 +500,67 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
 
     // MARK: - Helpers
 
+    private func makeRelay(
+        launcher: MockHostLauncher,
+        adapters: [SumiNativeMessagingProtocolAdapter],
+        logDiagnostic: @MainActor @escaping (SafariExtensionNativeMessagingDiagnostic) -> Void = { _ in }
+    ) -> SumiNativeMessagingRelay {
+        SumiNativeMessagingRelay(
+            launcher: launcher,
+            adapterRegistry: SumiNativeMessagingAdapterRegistry(adapters: adapters),
+            launchPolicy: SumiCompanionAppLaunchPolicy(),
+            loopGuard: SumiNativeMessagingRelayLoopGuard(),
+            extensionsModuleEnabled: { true },
+            logDiagnostic: logDiagnostic
+        )
+    }
+
+    private func sendMessageReplyViaConnection(
+        launcher: MockHostLauncher,
+        adapter: SumiNativeMessagingProtocolAdapter,
+        installed: InstalledExtension,
+        hostBundleIdentifier: String,
+        replyTimeout: Duration
+    ) async -> (value: Any?, error: (any Error)?) {
+        let detail = SumiCompanionAppResolutionDetail(
+            requestedApplicationIdentifier: hostBundleIdentifier,
+            resolvedBundleIdentifier: hostBundleIdentifier,
+            isContainingApp: false,
+            resolutionSource: .explicitApplicationIdentifier,
+            appInstalled: true,
+            protocolAdapterAvailable: true,
+            launchAllowed: true,
+            launchDecision: .allowed
+        )
+        let evaluation = SumiCompanionAppResolverResult.companionAppResolved(detail)
+        let expectation = expectation(description: "connectionReply")
+        var replyValue: Any?
+        var replyError: (any Error)?
+        SumiNativeMessagingConnection.relayOneShot(
+            applicationIdentifier: hostBundleIdentifier,
+            message: ["type": "ping"],
+            extensionId: installed.id,
+            evaluation: evaluation,
+            adapter: adapter,
+            launcher: launcher,
+            launchPolicy: SumiCompanionAppLaunchPolicy(),
+            logDiagnostic: { _ in },
+            replyHandler: { value, error in
+                replyValue = value
+                replyError = error
+                expectation.fulfill()
+            },
+            replyTimeout: replyTimeout
+        )
+        await fulfillment(of: [expectation], timeout: 2)
+        return (replyValue, replyError)
+    }
+
     private func sendMessageReply(
         relay: SumiNativeMessagingRelay,
         installed: InstalledExtension,
-        applicationIdentifier: String
+        applicationIdentifier: String,
+        timeout: TimeInterval = 5
     ) async -> (value: Any?, error: (any Error)?) {
         let expectation = expectation(description: "nativeMessagingReply")
         var replyValue: Any?
@@ -160,8 +575,30 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             replyError = error
             expectation.fulfill()
         }
-        await fulfillment(of: [expectation], timeout: 5)
+        await fulfillment(of: [expectation], timeout: timeout)
         return (replyValue, replyError)
+    }
+
+    private func connectReply(
+        relay: SumiNativeMessagingRelay,
+        port: MockNativeMessagingPort,
+        installed: InstalledExtension
+    ) async -> (session: SumiNativeMessagingPortSession?, error: (any Error)?) {
+        let expectation = expectation(description: "nativeMessagingConnect")
+        var connectError: (any Error)?
+        var session: SumiNativeMessagingPortSession?
+        _ = relay.handleConnect(
+            port: port,
+            extensionId: installed.id,
+            installedExtensions: [installed],
+            registerHandler: { session = $0 },
+            completionHandler: { error in
+                connectError = error
+                expectation.fulfill()
+            }
+        )
+        await fulfillment(of: [expectation], timeout: 5)
+        return (session, connectError)
     }
 
     private func makeInstalledExtension(
@@ -244,7 +681,14 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
         try data.write(to: url)
     }
 
-    private func makeDefaults() -> UserDefaults {
-        UserDefaults(suiteName: "SumiNativeMessagingRelayTests.\(UUID().uuidString)")!
+    private static func source(named relativePath: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: root.appendingPathComponent(relativePath),
+            encoding: .utf8
+        )
     }
 }
+

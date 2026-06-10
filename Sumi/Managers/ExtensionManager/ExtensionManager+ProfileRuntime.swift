@@ -142,7 +142,11 @@ extension ExtensionManager {
         if let controller = extensionControllersByProfile[profileId] {
             return controller
         }
-        guard hasEnabledInstalledExtensions else { return nil }
+        guard hasEnabledInstalledExtensions
+            || extensionRuntimeAllowsWithoutEnabledExtensions
+        else {
+            return nil
+        }
         return ensureExtensionController(for: profileId)
     }
 
@@ -375,23 +379,118 @@ extension ExtensionManager {
         markExtensionRuntimeReadyIfProfileContextsLoaded(for: profileId)
     }
 
+    func tabMatchesExtensionContext(
+        _ tab: Tab,
+        extensionContext: WKWebExtensionContext
+    ) -> Bool {
+        guard tab.isEphemeral == false else { return false }
+        guard let contextProfileId = profileId(for: extensionContext),
+              let tabProfileId = resolvedProfileId(for: tab)
+        else {
+            return false
+        }
+        return contextProfileId == tabProfileId
+    }
+
+    func resolvedLiveWebView(for tab: Tab) -> WKWebView? {
+        if let browserManager,
+           let windowState = browserManager.windowState(containing: tab)
+           ?? tab.primaryWindowId.flatMap({ browserManager.windowRegistry?.windows[$0] })
+        {
+            if let webView = browserManager.getWebView(
+                for: tab.id,
+                in: windowState.id
+            ) {
+                return webView
+            }
+        }
+
+        return tab.assignedWebView ?? tab.existingWebView
+    }
+
+    @discardableResult
+    func attachExtensionControllerIfNeeded(
+        to webView: WKWebView,
+        for tab: Tab
+    ) -> Bool {
+        guard tab.isEphemeral == false else { return false }
+        guard let profileId = resolvedProfileId(for: tab) else { return false }
+
+        let expectedController: WKWebExtensionController
+        if let existing = extensionControllersByProfile[profileId] {
+            expectedController = existing
+        } else if hasEnabledInstalledExtensions
+            || extensionRuntimeAllowsWithoutEnabledExtensions
+        {
+            expectedController = ensureExtensionController(for: profileId)
+        } else {
+            return false
+        }
+
+        if let existingController = webView.configuration.webExtensionController {
+            return existingController === expectedController
+        }
+
+        guard canLateBindExtensionController(to: webView) else { return false }
+
+        webView.configuration.webExtensionController = expectedController
+        webView.configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        return true
+    }
+
+    func extensionWebView(
+        for tab: Tab,
+        extensionContext: WKWebExtensionContext
+    ) -> WKWebView? {
+        guard tabMatchesExtensionContext(tab, extensionContext: extensionContext),
+              let webView = resolvedLiveWebView(for: tab)
+        else {
+            return nil
+        }
+
+        guard attachExtensionControllerIfNeeded(to: webView, for: tab),
+              let profileId = resolvedProfileId(for: tab),
+              let expectedController = extensionControllersByProfile[profileId],
+              webView.configuration.webExtensionController === expectedController
+        else {
+            return nil
+        }
+
+        return webView
+    }
+
     func updateWebViewsForProfile(_ profileId: UUID) {
         guard let controller = extensionControllersByProfile[profileId] else { return }
-        guard browserManager != nil else { return }
+        guard let browserManager else { return }
 
         for tab in allKnownTabs() {
             guard resolvedProfileId(for: tab) == profileId else { continue }
+            guard tab.isEphemeral == false else { continue }
+
+            var needsRebuild = false
             for webView in liveWebViews(for: tab) {
                 let existingController = webView.configuration.webExtensionController
-                let canLateBind = canLateBindExtensionController(to: webView)
-                let willAssign = existingController == nil && canLateBind
+                let attached = attachExtensionControllerIfNeeded(to: webView, for: tab)
                 extensionRuntimeTrace(
-                    "updateWebViewsForProfile webView=\(extensionRuntimeWebViewDescription(webView)) profile=\(profileId.uuidString) existingController=\(extensionRuntimeControllerDescription(existingController)) targetController=\(extensionRuntimeControllerDescription(controller)) canLateBind=\(canLateBind) willAssign=\(willAssign) \(extensionRuntimeTabDescription(tab))"
+                    "updateWebViewsForProfile webView=\(extensionRuntimeWebViewDescription(webView)) profile=\(profileId.uuidString) existingController=\(extensionRuntimeControllerDescription(existingController)) targetController=\(extensionRuntimeControllerDescription(controller)) attached=\(attached) \(extensionRuntimeTabDescription(tab))"
                 )
-                if willAssign {
-                    webView.configuration.webExtensionController = controller
-                    webView.configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+                if attached == false,
+                   webView.configuration.webExtensionController == nil,
+                   canLateBindExtensionController(to: webView) == false
+                {
+                    needsRebuild = true
+                    break
                 }
+            }
+
+            if needsRebuild,
+               let coordinator = browserManager.webViewCoordinator
+            {
+                coordinator.rebuildLiveWebViews(for: tab)
+                registerTabWithExtensionRuntime(
+                    tab,
+                    reason: "updateWebViewsForProfile.rebuild"
+                )
             }
         }
     }

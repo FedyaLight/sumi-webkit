@@ -346,6 +346,10 @@ extension ExtensionManager {
             return nil
         }
 
+        if allowWithoutEnabledExtensions {
+            extensionRuntimeAllowsWithoutEnabledExtensions = true
+        }
+
         let resolvedProfileId =
             profileId ?? currentProfileId ?? browserManager?.currentProfile?.id
         let controller: WKWebExtensionController
@@ -583,6 +587,7 @@ extension ExtensionManager {
         lastLoggedExtensionErrorFingerprints.removeValue(forKey: extensionId)
         closeOptionsWindow(for: extensionId)
         tearDownNativeMessageHandlers(for: extensionId)
+        loadedNativeMessagingRelay?.clearLoopGuard(forExtensionId: extensionId)
 
         if removeUIState {
             clearActionAnchors(for: extensionId)
@@ -711,6 +716,7 @@ extension ExtensionManager {
             extensionControllersByProfile.removeAll()
             profileExtensionStores.removeAll()
             profileExtensionStoreOrder.removeAll()
+            extensionRuntimeAllowsWithoutEnabledExtensions = false
             runtimeState = isExtensionSupportAvailable ? .idle : .unavailable
             extensionsLoaded = true
         }
@@ -719,15 +725,16 @@ extension ExtensionManager {
     }
 
     func cancelNativeMessagingSessions(reason: String) {
-        guard nativeMessagePortHandlers.isEmpty == false else { return }
-
         extensionRuntimeTrace(
             "nativeMessagingCancelSessions reason=\(reason) count=\(nativeMessagePortHandlers.count)"
         )
-        nativeMessagePortHandlers.values.forEach { $0.disconnect() }
-        nativeMessagePortHandlers.removeAll()
-        nativeMessagePortExtensionIDs.removeAll()
-        nativeMessagePortProfileIDs.removeAll()
+        if nativeMessagePortHandlers.isEmpty == false {
+            nativeMessagePortHandlers.values.forEach { $0.disconnect() }
+            nativeMessagePortHandlers.removeAll()
+            nativeMessagePortExtensionIDs.removeAll()
+            nativeMessagePortProfileIDs.removeAll()
+        }
+        loadedNativeMessagingRelay?.clearAllLoopGuardState()
     }
 
     private func removeManagedExternallyConnectableScriptsAndHandlers() {
@@ -981,7 +988,8 @@ extension ExtensionManager {
     }
 
     func isTabEligibleForCurrentExtensionRuntime(_ tab: Tab) -> Bool {
-        isTabEligibleForExtensionRuntime(
+        guard tab.isEphemeral == false else { return false }
+        return isTabEligibleForExtensionRuntime(
             tab,
             generation: tabOpenNotificationGeneration
         )

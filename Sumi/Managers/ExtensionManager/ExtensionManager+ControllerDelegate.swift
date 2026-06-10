@@ -443,10 +443,12 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                 reason: .nativeMessaging
             )
         }
+        let profileId = profileId(for: extensionContext)
         safariNativeMessagingHost.handleSendMessage(
             applicationIdentifier: applicationIdentifier,
             message: message,
             extensionId: extensionId,
+            profileId: profileId,
             installedExtensions: installedExtensions,
             replyHandler: replyHandler
         )
@@ -470,9 +472,11 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         }
 
         let portKey = ObjectIdentifier(port)
+        let profileId = profileId(for: extensionContext)
         _ = safariNativeMessagingHost.handleConnect(
             port: port,
             extensionId: extensionId,
+            profileId: profileId,
             installedExtensions: installedExtensions,
             registerHandler: { [weak self] handler in
                 guard let self else { return }

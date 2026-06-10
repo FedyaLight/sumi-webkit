@@ -80,9 +80,7 @@ enum SumiNativeMessagingRelayPolicy {
             return false
         }
 
-        if SumiNativeMessagingAppResolver.knownCompanionAliasBundleIdentifiers
-            .contains(normalized)
-        {
+        if SumiCompanionAppIdentityMetadata.isRecognizedPublicIdentity(normalized) {
             return false
         }
 

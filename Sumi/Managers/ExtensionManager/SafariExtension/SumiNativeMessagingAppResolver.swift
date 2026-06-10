@@ -2,7 +2,7 @@
 //  SumiNativeMessagingAppResolver.swift
 //  Sumi
 //
-//  Resolves companion host `.app` bundle identifiers for Safari native messaging.
+//  Legacy resolver surface — delegates to SumiCompanionAppResolver.
 //
 
 import Foundation
@@ -21,19 +21,13 @@ struct SumiNativeMessagingAppResolution: Sendable, Equatable {
 }
 
 enum SumiNativeMessagingAppResolver {
-    /// Stable public companion-app bundle IDs (no extension-specific runtime hacks).
-    static let knownCompanionAliasBundleIdentifiers: Set<String> = [
-        "com.bitwarden.desktop",
-        "com.1password.safari",
-        "me.proton.pass.catalyst",
-        "io.raindrop.safari",
-    ]
+    static var knownCompanionAliasBundleIdentifiers: Set<String> {
+        SumiCompanionAppIdentityMetadata.knownPublicHostBundleIdentifiers
+    }
 
-    /// Extension-requested identifiers that differ from the containing `.app` bundle ID.
-    static let hostApplicationIdentifierAliases: [String: String] = [
-        "com.8bit.bitwarden": "com.bitwarden.desktop",
-        "me.proton.pass.nm": "me.proton.pass.catalyst",
-    ]
+    static var hostApplicationIdentifierAliases: [String: String] {
+        SumiCompanionAppIdentityMetadata.publicHostBundleIdentifierAliases
+    }
 
     static func resolve(
         requestedApplicationIdentifier: String?,
@@ -41,115 +35,46 @@ enum SumiNativeMessagingAppResolver {
         installedExtensions: [InstalledExtension],
         importStore: SafariExtensionImportStore
     ) -> SumiNativeMessagingAppResolution? {
-        let trimmedRequest = requestedApplicationIdentifier?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if let trimmedRequest, trimmedRequest.isEmpty == false {
-            let normalized = normalizedHostBundleIdentifier(trimmedRequest)
-            let bucket: SumiNativeMessagingResolverBucket =
-                hostApplicationIdentifierAliases[trimmedRequest] != nil
-                ? .knownCompanionAlias
-                : .explicitApplicationIdentifier
-            return SumiNativeMessagingAppResolution(
-                hostBundleIdentifier: normalized,
-                bucket: bucket
-            )
-        }
-
-        guard let extensionId, extensionId.isEmpty == false else {
-            return nil
-        }
-
-        guard let installed = installedExtensions.first(where: { $0.id == extensionId }),
-              installed.sourceKind == .safariAppExtension
-        else {
-            return nil
-        }
-
-        if let containing = containingApplicationBundleIdentifier(
-            forAppexPath: installed.sourceBundlePath
-        ) {
-            return SumiNativeMessagingAppResolution(
-                hostBundleIdentifier: containing,
-                bucket: .containingAppOfImportedAppex
-            )
-        }
-
-        if let appexBundleID = appexBundleIdentifier(at: installed.sourceBundlePath),
-           let discovered = importStore.discoveredCandidates().first(where: {
-               $0.extensionBundleIdentifier == appexBundleID
-           }),
-           let containing = containingApplicationBundleIdentifier(
-               forAppexPath: discovered.appexPath
-           )
-        {
-            return SumiNativeMessagingAppResolution(
-                hostBundleIdentifier: containing,
-                bucket: .containingAppOfImportedAppex
-            )
-        }
-
-        if let metadataHost = resolveFromAppGroupsMetadata(
-            appexPath: installed.sourceBundlePath
-        ) {
-            return metadataHost
-        }
-
-        return nil
-    }
-
-    static func normalizedHostBundleIdentifier(_ identifier: String) -> String {
-        let trimmed = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
-        return hostApplicationIdentifierAliases[trimmed] ?? trimmed
-    }
-
-    static func containingApplicationBundleIdentifier(forAppexPath path: String) -> String? {
-        var current = URL(fileURLWithPath: path).standardizedFileURL
-        while current.path != "/" {
-            if current.pathExtension == "app" {
-                return Bundle(url: current)?.bundleIdentifier
-            }
-            current.deleteLastPathComponent()
-        }
-        return nil
-    }
-
-    static func appexBundleIdentifier(at path: String) -> String? {
-        Bundle(url: URL(fileURLWithPath: path))?.bundleIdentifier
-    }
-
-    private static func resolveFromAppGroupsMetadata(
-        appexPath: String
-    ) -> SumiNativeMessagingAppResolution? {
-        guard let containingPath = containingApplicationURL(forAppexPath: appexPath) else {
-            return nil
-        }
-
-        let entitlementsURL = containingPath
-            .appendingPathComponent("Contents/Library/Preferences")
-        guard FileManager.default.fileExists(atPath: entitlementsURL.path) else {
-            return nil
-        }
-
-        guard let bundleID = Bundle(url: containingPath)?.bundleIdentifier else {
+        guard let identity = SumiCompanionAppResolver.resolveIdentity(
+            requestedApplicationIdentifier: requestedApplicationIdentifier,
+            extensionId: extensionId,
+            installedExtensions: installedExtensions,
+            importStore: importStore
+        ) else {
             return nil
         }
 
         return SumiNativeMessagingAppResolution(
-            hostBundleIdentifier: bundleID,
-            bucket: .appGroupsMetadata
+            hostBundleIdentifier: identity.resolvedBundleIdentifier,
+            bucket: legacyBucket(for: identity.resolutionSource)
         )
     }
 
-    private static func containingApplicationURL(forAppexPath path: String) -> URL? {
-        var current = URL(fileURLWithPath: path).standardizedFileURL
-        while current.path != "/" {
-            if current.pathExtension == "app" {
-                return current
-            }
-            current.deleteLastPathComponent()
+    static func normalizedHostBundleIdentifier(_ identifier: String) -> String {
+        SumiCompanionAppIdentityMetadata.normalizedHostBundleIdentifier(identifier)
+    }
+
+    static func containingApplicationBundleIdentifier(forAppexPath path: String) -> String? {
+        SumiCompanionAppResolver.containingApplicationBundleIdentifier(forAppexPath: path)
+    }
+
+    static func appexBundleIdentifier(at path: String) -> String? {
+        SumiCompanionAppResolver.appexBundleIdentifier(at: path)
+    }
+
+    private static func legacyBucket(
+        for source: SumiCompanionAppResolutionSource
+    ) -> SumiNativeMessagingResolverBucket {
+        switch source {
+        case .containingAppOfImportedAppex:
+            return .containingAppOfImportedAppex
+        case .publicBundleIdentityAlias:
+            return .knownCompanionAlias
+        case .explicitApplicationIdentifier:
+            return .explicitApplicationIdentifier
+        case .appGroupsMetadata:
+            return .appGroupsMetadata
         }
-        return nil
     }
 }
 

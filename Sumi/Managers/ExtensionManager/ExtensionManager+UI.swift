@@ -563,9 +563,13 @@ extension ExtensionManager: NSPopoverDelegate {
         reason: String = #function
     ) {
         let existingController = webView.configuration.webExtensionController
+        let owningTab = (webView as? FocusableWKWebView)?.owningTab
+        let didAttach = owningTab.map {
+            attachExtensionControllerIfNeeded(to: webView, for: $0)
+        } ?? false
 
         extensionRuntimeTrace(
-            "prepareWebView reason=\(reason) webView=\(extensionRuntimeWebViewDescription(webView)) configuration=\(extensionRuntimeConfigurationDescription(webView.configuration)) userContentController=\(extensionRuntimeUserContentControllerDescription(webView.configuration.userContentController)) currentURL=\(currentURL?.absoluteString ?? "nil") existingController=\(extensionRuntimeControllerDescription(existingController)) extensionController=\(extensionRuntimeControllerDescription(extensionController)) willAssign=false"
+            "prepareWebView reason=\(reason) webView=\(extensionRuntimeWebViewDescription(webView)) configuration=\(extensionRuntimeConfigurationDescription(webView.configuration)) userContentController=\(extensionRuntimeUserContentControllerDescription(webView.configuration.userContentController)) currentURL=\(currentURL?.absoluteString ?? "nil") existingController=\(extensionRuntimeControllerDescription(existingController)) extensionController=\(extensionRuntimeControllerDescription(extensionController)) willAssign=\(didAttach)"
         )
 
         webView.configuration.defaultWebpagePreferences.allowsContentJavaScript = true

@@ -85,7 +85,7 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
         XCTAssertEqual(hostID, "com.1password.safari")
     }
 
-    func testSendMessageWakesHostThenReturnsCompanionProtocolUnknown() async throws {
+    func testSendMessageUnknownProtocolWithoutLaunch() async throws {
         let appexPath = try makeFixtureApp(
             appBundleID: "com.bitwarden.desktop",
             appexBundleID: "com.bitwarden.desktop.safari"
@@ -113,7 +113,7 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
             applicationIdentifier: "com.bitwarden.desktop"
         )
 
-        XCTAssertEqual(launcher.openedBundleIdentifiers, ["com.bitwarden.desktop"])
+        XCTAssertTrue(launcher.openedBundleIdentifiers.isEmpty)
         XCTAssertNil(reply.value)
         let error = try XCTUnwrap(reply.error as NSError?)
         XCTAssertEqual(error.domain, SafariExtensionNativeMessagingHost.errorDomain)
@@ -123,13 +123,11 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
         )
         XCTAssertTrue(
             diagnostics.contains {
-                $0.outcome == .hostLaunched && $0.direction == .send
-            }
-        )
-        XCTAssertTrue(
-            diagnostics.contains {
                 $0.outcome == .companionAppProtocolUnknown && $0.direction == .send
             }
+        )
+        XCTAssertFalse(
+            diagnostics.contains { $0.outcome == .hostLaunched }
         )
     }
 
