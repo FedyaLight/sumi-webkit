@@ -15,6 +15,9 @@ enum SafariExtensionAcceptanceCheck: String, Codable, CaseIterable, Sendable {
     case syntheticEnableActionSurfaceReady
     case contentScriptTabReconcileWired
     case raindropTabAdapterPrerequisites
+    case popupAnchorPresentationWired
+    case nativeMessagingSuppressionReportWired
+    case passwordManagerLocalFormFixtureAvailable
 }
 
 struct SafariExtensionAcceptanceCheckResult: Codable, Equatable, Sendable {
@@ -37,8 +40,10 @@ struct SafariExtensionAcceptanceMatrixEntry: Codable, Equatable, Sendable, Ident
 struct SafariExtensionAcceptanceMatrix: Codable, Equatable, Sendable {
     let generatedAt: Date
     let entries: [SafariExtensionAcceptanceMatrixEntry]
+    let globalChecks: [SafariExtensionAcceptanceCheckResult]
     let globalPlatformBlockers: [SafariExtensionPlatformBlocker]
     let globalNativeMessagingClassifications: [SafariExtensionNativeMessagingClassification]
+    let globalSuppressionReport: SafariExtensionNativeMessagingSuppressionReport
     let sdkProbeNote: String
 }
 
@@ -64,6 +69,12 @@ enum SafariExtensionAcceptanceMatrixBuilder {
         let compatibilityByKey = Dictionary(
             uniqueKeysWithValues: compatibilityReport.entries.map { ($0.targetKey, $0) }
         )
+
+        let globalChecks: [SafariExtensionAcceptanceCheckResult] = [
+            evaluatePopupAnchorPresentationWired(),
+            evaluateNativeMessagingSuppressionReportWired(),
+            evaluatePasswordManagerLocalFormFixtureAvailable(),
+        ]
 
         let entries = targets.map { target in
             let candidate = discovered.first {
@@ -116,10 +127,12 @@ enum SafariExtensionAcceptanceMatrixBuilder {
         return SafariExtensionAcceptanceMatrix(
             generatedAt: Date(),
             entries: entries,
+            globalChecks: globalChecks,
             globalPlatformBlockers: [],
             globalNativeMessagingClassifications:
                 SafariExtensionNativeMessagingClassificationCatalog
                 .globalReportClassifications(sumiRelayImplemented: true),
+            globalSuppressionReport: SafariExtensionNativeMessagingSuppressionProbe.evaluate(),
             sdkProbeNote: SafariExtensionHostRelayAPIProbe.sdkProbeNote
         )
     }
@@ -277,6 +290,40 @@ enum SafariExtensionAcceptanceMatrixBuilder {
         let probe = SafariExtensionRaindropTabAdapterProbe.evaluate()
         return SafariExtensionAcceptanceCheckResult(
             check: .raindropTabAdapterPrerequisites,
+            passed: probe.passed,
+            detail: probe.detail
+        )
+    }
+
+    static func evaluatePopupAnchorPresentationWired() -> SafariExtensionAcceptanceCheckResult {
+        let probe = SafariExtensionPopupAnchorProbe.evaluate()
+        return SafariExtensionAcceptanceCheckResult(
+            check: .popupAnchorPresentationWired,
+            passed: probe.passed,
+            detail: probe.detail
+        )
+    }
+
+    static func evaluateNativeMessagingSuppressionReportWired() -> SafariExtensionAcceptanceCheckResult {
+        let report = SafariExtensionNativeMessagingSuppressionProbe.evaluate()
+        let passed =
+            report.repeatedCallSuppressionEnabled
+            && report.coalescedLoggingEnabled
+            && report.sessionStateTrackingEnabled
+            && report.companionProtocolUnknownDeterministic
+        return SafariExtensionAcceptanceCheckResult(
+            check: .nativeMessagingSuppressionReportWired,
+            passed: passed,
+            detail: passed
+                ? "NM repeated-call suppression + coalesced logging + sessionState wired"
+                : "NM suppression report incomplete: repeated=\(report.repeatedCallSuppressionEnabled) coalesced=\(report.coalescedLoggingEnabled) sessionState=\(report.sessionStateTrackingEnabled)"
+        )
+    }
+
+    static func evaluatePasswordManagerLocalFormFixtureAvailable() -> SafariExtensionAcceptanceCheckResult {
+        let probe = SafariExtensionPasswordManagerFormFixtureProbe.evaluate()
+        return SafariExtensionAcceptanceCheckResult(
+            check: .passwordManagerLocalFormFixtureAvailable,
             passed: probe.passed,
             detail: probe.detail
         )

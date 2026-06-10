@@ -352,6 +352,19 @@ final class SumiExtensionsModule {
         )
     }
 
+    @discardableResult
+    func captureActionPopupAnchor(
+        extensionId: String,
+        windowId: UUID,
+        profileId: UUID?
+    ) -> UUID {
+        managerIfEnabled()?.captureActionPopupAnchor(
+            extensionId: extensionId,
+            windowId: windowId,
+            profileId: profileId
+        ) ?? UUID()
+    }
+
     func cancelNativeMessagingSessionsIfLoaded(reason: String) {
         cachedManager?.cancelNativeMessagingSessions(reason: reason)
     }
@@ -379,14 +392,11 @@ final class SumiExtensionsModule {
         }
     }
 
+    /// Boots the profile-scoped `WKWebExtensionController` for normal-tab WebViews when
+    /// persisted extensions are enabled. Does not require extension contexts to be loaded.
     private func managerIfNeededForNormalTabRuntime() -> ExtensionManager? {
-        guard isEnabled else { return nil }
-        guard let cachedManager,
-              cachedManager.extensionController != nil
-        else {
-            return nil
-        }
-        return cachedManager.hasEnabledInstalledExtensions ? cachedManager : nil
+        guard isEnabled, hasEnabledPersistedExtensions() else { return nil }
+        return managerIfEnabled()
     }
 
     private func hasEnabledPersistedExtensions() -> Bool {

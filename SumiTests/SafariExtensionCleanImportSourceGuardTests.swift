@@ -10,8 +10,13 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         "Sumi/Managers/ExtensionManager/SafariExtension/SafariAppExtensionResources.swift",
         "Sumi/Managers/ExtensionManager/ExtensionManager.swift",
         "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift",
+        "Sumi/Managers/ExtensionManager/ExtensionManager+Profiles.swift",
+        "Sumi/Managers/ExtensionManager/ExtensionManager+ActionPopupAnchor.swift",
         "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelay.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingPortSession.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelayLoopGuard.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingDiagnosticCoalescer.swift",
     ]
 
     private let deletedCompatArtifacts = [
@@ -96,16 +101,20 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
     }
 
     func testNativeMessagingUsesSwiftRelayNotCompatJS() throws {
-        let delegateSource = try source(named: extensionManagerPaths[5])
-        let relaySource = try source(named: extensionManagerPaths[6])
+        let delegateSource = try source(named: extensionManagerPaths[7])
+        let relaySource = try source(named: extensionManagerPaths[8])
+        let portSessionSource = try source(named: extensionManagerPaths[9])
 
         XCTAssertTrue(
             delegateSource.contains("safariNativeMessagingHost.handleSendMessage")
                 || delegateSource.contains("SumiNativeMessagingRelay")
         )
-        XCTAssertTrue(relaySource.contains("WKWebExtension.MessagePort"))
+        XCTAssertTrue(
+            relaySource.contains("SumiNativeMessagingRelay")
+                || portSessionSource.contains("WKWebExtension.MessagePort")
+        )
         assertExcludes(
-            relaySource + delegateSource,
+            relaySource + portSessionSource + delegateSource,
             deletedCompatArtifacts,
             context: "Safari native messaging relay"
         )
@@ -157,6 +166,33 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
             installationSource.contains("finalizeEnabledExtensionRuntime"),
             "Enable/load finalize path must remain for content scripts"
         )
+    }
+
+    func testLazyRuntimeDoesNotEagerlyLoadAllExtensions() throws {
+        let profilesSource = try source(named: extensionManagerPaths[5])
+        let uiSource = try source(named: extensionManagerPaths[4])
+
+        XCTAssertTrue(profilesSource.contains("if forceReload {"))
+        XCTAssertFalse(
+            profilesSource.contains("await self.ensureEnabledExtensionsLoaded(for: profileId)"),
+            "Profile switches must not eagerly load every enabled extension"
+        )
+        XCTAssertFalse(
+            uiSource.contains("await ensureEnabledExtensionsLoaded(for: tabProfileId)"),
+            "Action popup must not eagerly load every enabled extension"
+        )
+    }
+
+    func testPopupAnchorAndSuppressionProbesHaveNoExtensionSpecificBranches() throws {
+        let anchorSource = try source(named: extensionManagerPaths[6])
+        let loopGuardSource = try source(named: extensionManagerPaths[10])
+        let coalescerSource = try source(named: extensionManagerPaths[11])
+
+        for token in ["bitwarden", "1password", "proton", "raindrop", "com.bitwarden.desktop"] {
+            XCTAssertFalse(anchorSource.localizedCaseInsensitiveContains(token))
+            XCTAssertFalse(loopGuardSource.localizedCaseInsensitiveContains(token))
+            XCTAssertFalse(coalescerSource.localizedCaseInsensitiveContains(token))
+        }
     }
 
     func testRaindropAndRescanPathsDoNotRestoreMV3Shims() throws {

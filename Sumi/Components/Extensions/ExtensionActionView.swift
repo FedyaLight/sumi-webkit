@@ -481,6 +481,15 @@ struct ExtensionActionButton: View {
 
     private func showExtensionPopup() {
         let currentTab = browserManager.currentTab(for: windowState)
+        let profileId =
+            currentTab?.profileId
+            ?? windowState.currentProfileId
+            ?? browserManager.currentProfile?.id
+        browserManager.extensionsModule.captureActionPopupAnchor(
+            extensionId: ext.id,
+            windowId: windowState.id,
+            profileId: profileId
+        )
         Task { @MainActor in
             let result = await browserManager.extensionsModule
                 .openActionPopupFromURLHub(

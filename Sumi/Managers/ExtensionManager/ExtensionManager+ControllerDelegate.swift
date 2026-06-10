@@ -232,68 +232,45 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         }
 
         DispatchQueue.main.async {
-            let targetWindow = NSApp.keyWindow ?? NSApp.mainWindow
-
             popover.behavior = .transient
             popover.delegate = self
-            self.prepareExtensionActionPopupPresentation(popover)
             self.isPopupActive = true
 
-            if let extensionId,
-               var anchors = self.actionAnchors[extensionId]
-            {
-                anchors.removeAll { $0.view == nil || $0.view?.window == nil }
-                self.actionAnchors[extensionId] = anchors
-
-                if let targetWindow,
-                   let match = anchors.first(where: { $0.window === targetWindow }),
-                   let view = match.view,
-                   view.window != nil
-                {
-                    self.showExtensionActionPopup(
-                        popover,
-                        relativeTo: view,
-                        preferredEdge: .maxY
+            guard let extensionId else {
+                completionHandler(
+                    NSError(
+                        domain: "ExtensionManager",
+                        code: 2,
+                        userInfo: [NSLocalizedDescriptionKey: "No extension identifier is available"]
                     )
-                    completionHandler(nil)
-                    return
-                }
-
-                if let validAnchor = anchors.first(where: { $0.view?.window != nil }),
-                   let view = validAnchor.view
-                {
-                    self.showExtensionActionPopup(
-                        popover,
-                        relativeTo: view,
-                        preferredEdge: .maxY
-                    )
-                    completionHandler(nil)
-                    return
-                }
-            }
-
-            if let window = targetWindow, let contentView = window.contentView {
-                let rect = CGRect(
-                    x: contentView.bounds.midX - 10,
-                    y: contentView.bounds.maxY - 50,
-                    width: 20,
-                    height: 20
                 )
-                popover.show(
-                    relativeTo: rect,
-                    of: contentView,
-                    preferredEdge: .minY
-                )
-                completionHandler(nil)
                 return
             }
-            completionHandler(
-                NSError(
-                    domain: "ExtensionManager",
-                    code: 2,
-                    userInfo: [NSLocalizedDescriptionKey: "No window available"]
-                )
+
+            let profileId = self.profileId(for: extensionContext)
+            let preferredWindowId = self.browserManager?.windowRegistry?.activeWindow?.id
+            let resolution = self.presentResolvedExtensionActionPopup(
+                popover,
+                for: extensionId,
+                profileId: profileId,
+                preferredWindowId: preferredWindowId
             )
+
+            guard resolution.anchorResolved else {
+                completionHandler(
+                    NSError(
+                        domain: "ExtensionManager",
+                        code: 2,
+                        userInfo: [
+                            NSLocalizedDescriptionKey: "No URL-hub anchor is available for the extension action popup",
+                            "anchorSource": resolution.anchorSource?.rawValue ?? "nil",
+                        ]
+                    )
+                )
+                return
+            }
+
+            completionHandler(nil)
         }
     }
 

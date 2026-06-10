@@ -37,7 +37,7 @@ final class SumiNativeMessagingRelayLoopGuard {
 
     /// Public host bundle IDs with a documented Sumi relay implementation.
     /// Empty until a supported companion protocol path exists.
-    static let supportedRelayProtocolHostBundleIdentifiers: Set<String> = []
+    nonisolated static let supportedRelayProtocolHostBundleIdentifiers: Set<String> = []
 
     private static let baseCooldown: TimeInterval = 30
     private static let maxCooldown: TimeInterval = 300
@@ -107,6 +107,31 @@ final class SumiNativeMessagingRelayLoopGuard {
             retryCount: 1,
             lastFailureAt: Date(),
             launchAttempted: launchAttempted
+        )
+    }
+
+    /// Increments retry count for coalesced logging without extending the cooldown window.
+    func recordSuppressedRetry(key: SessionKey) {
+        guard var existing = cache[key] else { return }
+        existing.retryCount += 1
+        cache[key] = existing
+    }
+
+    func sessionState(
+        policyDenial: SumiNativeMessagingRelayPolicyDenial?,
+        profileRuntimeLoaded: Bool,
+        evaluation: SumiCompanionAppResolverResult?,
+        hostBundleIdentifier: String,
+        key: SessionKey
+    ) -> SumiNativeMessagingSessionState? {
+        let loopEvaluation = evaluate(key: key, hostBundleIdentifier: hostBundleIdentifier)
+        let adapterAvailable = evaluation?.detail?.protocolAdapterAvailable ?? false
+        return SumiNativeMessagingSessionStateMachine.resolve(
+            policyDenial: policyDenial,
+            profileRuntimeLoaded: profileRuntimeLoaded,
+            evaluation: evaluation,
+            loopEvaluation: loopEvaluation,
+            adapterAvailable: adapterAvailable
         )
     }
 

@@ -50,6 +50,18 @@ if [[ -d Sumi/Managers/ExtensionManager/ExtensionRuntimeResources ]]; then
   fi
 fi
 
+check_absent \
+  "extension-specific native messaging branches" \
+  'if extensionId ==|switch extensionId' \
+  Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelayLoopGuard.swift \
+  Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingDiagnosticCoalescer.swift \
+  Sumi/Managers/ExtensionManager/ExtensionManager+ActionPopupAnchor.swift
+
+if [[ ! -f SumiTests/Fixtures/Extensions/login-form.html ]]; then
+  printf 'missing PM autofill manual fixture: SumiTests/Fixtures/Extensions/login-form.html\n' >&2
+  status=1
+fi
+
 if [[ "$status" -ne 0 ]]; then
   echo "Safari extension clean-import audit failed" >&2
   exit "$status"

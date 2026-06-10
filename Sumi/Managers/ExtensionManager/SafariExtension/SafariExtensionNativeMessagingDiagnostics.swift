@@ -48,6 +48,7 @@ struct SafariExtensionNativeMessagingDiagnostic: Sendable, Equatable, Codable {
     let isContainingApp: Bool?
     let protocolAdapterAvailable: Bool?
     let launchAllowed: Bool?
+    let sessionState: SumiNativeMessagingSessionState?
 
     init(
         extensionId: String,
@@ -63,7 +64,8 @@ struct SafariExtensionNativeMessagingDiagnostic: Sendable, Equatable, Codable {
         retryCountBucket: SumiNativeMessagingRetryCountBucket? = nil,
         isContainingApp: Bool? = nil,
         protocolAdapterAvailable: Bool? = nil,
-        launchAllowed: Bool? = nil
+        launchAllowed: Bool? = nil,
+        sessionState: SumiNativeMessagingSessionState? = nil
     ) {
         self.extensionId = extensionId
         self.direction = direction
@@ -79,6 +81,7 @@ struct SafariExtensionNativeMessagingDiagnostic: Sendable, Equatable, Codable {
         self.isContainingApp = isContainingApp
         self.protocolAdapterAvailable = protocolAdapterAvailable
         self.launchAllowed = launchAllowed
+        self.sessionState = sessionState
     }
 }
 
@@ -123,12 +126,15 @@ struct SafariExtensionNativeMessagingProbeEntry: Codable, Equatable, Sendable, I
     let connectionBucket: SafariExtensionNativeMessagingConnectionBucket
     let errorBucket: SafariExtensionNativeMessagingErrorBucket
     let classifications: [SafariExtensionNativeMessagingClassification]
+    let launchSuppressionExpected: Bool
+    let expectedSessionState: SumiNativeMessagingSessionState?
 }
 
 struct SafariExtensionNativeMessagingProbeReport: Codable, Equatable, Sendable {
     let generatedAt: Date
     let entries: [SafariExtensionNativeMessagingProbeEntry]
     let globalClassifications: [SafariExtensionNativeMessagingClassification]
+    let suppressionReport: SafariExtensionNativeMessagingSuppressionReport
     let sdkProbeNote: String
     let delegateMethodsRegistered: Bool
 }
@@ -189,6 +195,9 @@ enum SafariExtensionNativeMessagingProbeBuilder {
                 return .notAttempted
             }()
 
+            let isPasswordManager = SafariExtensionNativeMessagingClassificationCatalog
+                .passwordManagerTargetKeys.contains(target.key)
+
             return SafariExtensionNativeMessagingProbeEntry(
                 targetKey: target.key,
                 displayName: target.displayName,
@@ -202,7 +211,9 @@ enum SafariExtensionNativeMessagingProbeBuilder {
                 connectionBucket: connectionBucket,
                 errorBucket: errorBucket,
                 classifications: SafariExtensionNativeMessagingClassificationCatalog
-                    .classifications(forTargetKey: target.key)
+                    .classifications(forTargetKey: target.key),
+                launchSuppressionExpected: isPasswordManager,
+                expectedSessionState: isPasswordManager ? .unknownProtocolInitial : nil
             )
         }
 
@@ -211,6 +222,7 @@ enum SafariExtensionNativeMessagingProbeBuilder {
             entries: entries,
             globalClassifications: SafariExtensionNativeMessagingClassificationCatalog
                 .globalReportClassifications(sumiRelayImplemented: true),
+            suppressionReport: SafariExtensionNativeMessagingSuppressionProbe.evaluate(),
             sdkProbeNote: SafariExtensionHostRelaySDKProbeMetadata.sdkProbeNote,
             delegateMethodsRegistered: SumiNativeMessagingRelay.delegateMethodsRegistered
         )

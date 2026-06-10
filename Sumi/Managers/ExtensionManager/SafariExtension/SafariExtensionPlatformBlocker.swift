@@ -29,7 +29,9 @@ enum SafariExtensionHostRelaySDKProbeMetadata {
     sendMessage:toApplicationWithIdentifier:for:replyHandler: and \
     connectUsingMessagePort:for:completionHandler: available macOS 15.4+; \
     no API_AVAILABLE(macos(26|27)) third-party-host IPC additions in WKWebExtension*.h; \
-    Chrome-style native host manifests are not used on Safari.
+    Chrome-style native host manifests are not used on Safari. \
+    WebKit logs \"Runtime error reported:\" for each delegate reply error returned to \
+    runtime.sendNativeMessage()/connectNative(); Sumi cannot suppress that console output.
     """
 }
 

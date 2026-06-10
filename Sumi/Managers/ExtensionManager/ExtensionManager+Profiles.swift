@@ -68,6 +68,7 @@ extension ExtensionManager {
         }
 
         currentProfileId = profileId
+        clearActionPopupAnchors(notMatching: profileId)
         reloadPinnedToolbarExtensionsForCurrentProfile()
 
         guard isExtensionSupportAvailable else { return }
@@ -220,15 +221,23 @@ extension ExtensionManager {
     /// so WebKit can inject content scripts on already-open normal tabs.
     func reconcileOpenTabsAfterExtensionContextLoad(
         reason: String,
-        allowWhenExtensionsNotLoaded: Bool = false
+        allowWhenExtensionsNotLoaded: Bool = false,
+        profileId: UUID? = nil
     ) {
         tabOpenNotificationGeneration &+= 1
         resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
             reason: reason,
             allowWhenExtensionsNotLoaded: allowWhenExtensionsNotLoaded
         )
-        if let profileId = currentProfileId {
-            updateWebViewsForProfile(profileId)
+        var profileIds = Set(extensionControllersByProfile.keys)
+        if let profileId {
+            profileIds.insert(profileId)
+        }
+        if let currentProfileId {
+            profileIds.insert(currentProfileId)
+        }
+        for resolvedProfileId in profileIds {
+            updateWebViewsForProfile(resolvedProfileId)
         }
         registerExistingWindowStateIfAttached()
     }

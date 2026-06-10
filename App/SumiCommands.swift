@@ -103,6 +103,10 @@ struct SumiCommands: Commands {
                 browserManager.extensionsModule.printSafariExtensionNativeMessagingProbeToConsole()
             }
             .disabled(browserManager.extensionsModule.isEnabled == false)
+            Button("Run Safari Extension Dev Diagnostics Report") {
+                browserManager.extensionsModule.printSafariExtensionDevDiagnosticsReportToConsole()
+            }
+            .disabled(browserManager.extensionsModule.isEnabled == false)
             #endif
         }
 

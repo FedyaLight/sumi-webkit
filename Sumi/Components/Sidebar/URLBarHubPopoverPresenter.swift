@@ -156,6 +156,19 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         activeSessions[windowState.id]?.popover.isShown == true
     }
 
+    /// URL-bar site-controls anchor used when an extension action button anchor is stale.
+    func anchorView(for windowID: UUID) -> NSView? {
+        guard let view = anchors[windowID]?.view,
+              PopoverPresenterChromeSupport.isAnchorViewReady(
+                  view,
+                  checkHiddenAncestors: true
+              )
+        else {
+            return nil
+        }
+        return view
+    }
+
     func popoverDidClose(_ notification: Notification) {
         guard let popover = notification.object as? NSPopover,
               let windowID = activeSessions.first(where: { $0.value.popover === popover })?.key

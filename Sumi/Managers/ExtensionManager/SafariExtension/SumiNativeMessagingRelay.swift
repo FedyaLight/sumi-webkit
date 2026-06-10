@@ -28,9 +28,11 @@ final class SumiNativeMessagingRelay {
     private let adapterRegistry: SumiNativeMessagingAdapterRegistry
     private let launchPolicy: SumiCompanionAppLaunchPolicy
     private let loopGuard: SumiNativeMessagingRelayLoopGuard
+    private let diagnosticCoalescer: SumiNativeMessagingDiagnosticCoalescer
     private let extensionsModuleEnabled: () -> Bool
     private let isPrivateBrowsing: () -> Bool
-    private let logDiagnostic: @MainActor (SafariExtensionNativeMessagingDiagnostic) -> Void
+    private let profileRuntimeLoaded: () -> Bool
+    private let rawLogDiagnostic: @MainActor (SafariExtensionNativeMessagingDiagnostic) -> Void
 
     init(
         importStore: SafariExtensionImportStore = .shared,
@@ -40,6 +42,7 @@ final class SumiNativeMessagingRelay {
         loopGuard: SumiNativeMessagingRelayLoopGuard = SumiNativeMessagingRelayLoopGuard(),
         extensionsModuleEnabled: @escaping @MainActor () -> Bool = { SumiExtensionsModule.shared.isEnabled },
         isPrivateBrowsing: @escaping @MainActor () -> Bool = { false },
+        profileRuntimeLoaded: @escaping @MainActor () -> Bool = { true },
         logDiagnostic: (@MainActor (SafariExtensionNativeMessagingDiagnostic) -> Void)? = nil
     ) {
         self.importStore = importStore
@@ -49,7 +52,46 @@ final class SumiNativeMessagingRelay {
         self.loopGuard = loopGuard
         self.extensionsModuleEnabled = extensionsModuleEnabled
         self.isPrivateBrowsing = isPrivateBrowsing
-        self.logDiagnostic = logDiagnostic ?? Self.defaultDiagnosticLogger
+        self.profileRuntimeLoaded = profileRuntimeLoaded
+        let resolvedLogger = logDiagnostic ?? Self.defaultDiagnosticLogger
+        self.rawLogDiagnostic = resolvedLogger
+        self.diagnosticCoalescer = SumiNativeMessagingDiagnosticCoalescer(
+            downstream: { diagnostic, style in
+                switch style {
+                case .detailed:
+                    resolvedLogger(diagnostic)
+                case .summarized(let repeatCount, let retryCountBucket):
+                    resolvedLogger(
+                        SafariExtensionNativeMessagingDiagnostic(
+                            extensionId: diagnostic.extensionId,
+                            direction: diagnostic.direction,
+                            requestedApplicationIdentifier: diagnostic.requestedApplicationIdentifier,
+                            hostBundleIdentifier: diagnostic.hostBundleIdentifier,
+                            resolverBucket: diagnostic.resolverBucket,
+                            outcome: diagnostic.outcome,
+                            errorDomain: diagnostic.errorDomain,
+                            errorCode: diagnostic.errorCode,
+                            launchAttempted: diagnostic.launchAttempted,
+                            launchSuppressed: true,
+                            retryCountBucket: retryCountBucket,
+                            isContainingApp: diagnostic.isContainingApp,
+                            protocolAdapterAvailable: diagnostic.protocolAdapterAvailable,
+                            launchAllowed: diagnostic.launchAllowed,
+                            sessionState: diagnostic.sessionState
+                        )
+                    )
+                    RuntimeDiagnostics.debug(category: "SafariNativeMessaging") {
+                        """
+                        coalesced ext=\(diagnostic.extensionId) \
+                        dir=\(diagnostic.direction.rawValue) \
+                        outcome=\(diagnostic.outcome.rawValue) \
+                        repeatCount=\(repeatCount) \
+                        bucket=\(retryCountBucket.rawValue)
+                        """
+                    }
+                }
+            }
+        )
     }
 
     func handleSendMessage(
@@ -71,7 +113,14 @@ final class SumiNativeMessagingRelay {
                 errorDomain: Self.errorDomain,
                 errorCode: ErrorCode.extensionContextMissing.rawValue
             )
-            logDiagnostic(diagnostic)
+            recordDiagnostic(
+                diagnostic,
+                profileId: profileId,
+                policyDenial: nil,
+                evaluation: nil,
+                loopKey: nil,
+                hostBundleIdentifier: nil
+            )
             replyHandler(
                 nil,
                 SumiNativeMessagingErrorMapper.relayError(
@@ -95,7 +144,11 @@ final class SumiNativeMessagingRelay {
                 requestedApplicationIdentifier: applicationIdentifier,
                 denial: denial
             )
-            logDiagnostic(diagnostic)
+            recordDiagnostic(
+                diagnostic,
+                profileId: profileId,
+                policyDenial: denial
+            )
             replyHandler(
                 nil,
                 SumiNativeMessagingErrorMapper.relayError(code: .policyDenied, diagnostic: diagnostic)
@@ -127,7 +180,14 @@ final class SumiNativeMessagingRelay {
                 requestedApplicationIdentifier: applicationIdentifier,
                 evaluation: evaluation
             )
-            logDiagnostic(diagnostic)
+            recordDiagnostic(
+                diagnostic,
+                profileId: profileId,
+                policyDenial: nil,
+                evaluation: nil,
+                loopKey: nil,
+                hostBundleIdentifier: nil
+            )
             replyHandler(
                 nil,
                 SumiNativeMessagingErrorMapper.relayError(
@@ -146,7 +206,14 @@ final class SumiNativeMessagingRelay {
                 evaluation: evaluation,
                 outcome: .hostNotFound
             )
-            logDiagnostic(diagnostic)
+            recordDiagnostic(
+                diagnostic,
+                profileId: profileId,
+                policyDenial: nil,
+                evaluation: nil,
+                loopKey: nil,
+                hostBundleIdentifier: nil
+            )
             replyHandler(
                 nil,
                 SumiNativeMessagingErrorMapper.relayError(code: .hostNotFound, diagnostic: diagnostic)
@@ -168,6 +235,11 @@ final class SumiNativeMessagingRelay {
         )
 
         if loopEvaluation.launchSuppressed {
+            loopGuard.recordSuppressedRetry(key: loopKey)
+            let refreshedLoopEvaluation = loopGuard.evaluate(
+                key: loopKey,
+                hostBundleIdentifier: detail.resolvedBundleIdentifier
+            )
             let diagnostic = SumiNativeMessagingConnection.diagnostic(
                 extensionId: extensionId,
                 direction: .send,
@@ -175,9 +247,15 @@ final class SumiNativeMessagingRelay {
                 evaluation: .launchSuppressed(detail),
                 outcome: .launchSuppressed,
                 launchSuppressed: true,
-                retryCountBucket: loopEvaluation.retryCountBucket
+                retryCountBucket: refreshedLoopEvaluation.retryCountBucket
             )
-            logDiagnostic(diagnostic)
+            recordDiagnostic(
+                diagnostic,
+                profileId: profileId,
+                evaluation: evaluation,
+                loopKey: loopKey,
+                hostBundleIdentifier: detail.resolvedBundleIdentifier
+            )
             replyHandler(
                 nil,
                 SumiNativeMessagingErrorMapper.relayError(
@@ -201,7 +279,13 @@ final class SumiNativeMessagingRelay {
                 launchSuppressed: false,
                 retryCountBucket: loopEvaluation.retryCountBucket
             )
-            logDiagnostic(diagnostic)
+            recordDiagnostic(
+                diagnostic,
+                profileId: profileId,
+                evaluation: evaluation,
+                loopKey: loopKey,
+                hostBundleIdentifier: detail.resolvedBundleIdentifier
+            )
             replyHandler(
                 nil,
                 SumiNativeMessagingErrorMapper.relayError(
@@ -226,7 +310,13 @@ final class SumiNativeMessagingRelay {
                 launchSuppressed: rateLimited,
                 retryCountBucket: loopEvaluation.retryCountBucket
             )
-            logDiagnostic(diagnostic)
+            recordDiagnostic(
+                diagnostic,
+                profileId: profileId,
+                evaluation: evaluation,
+                loopKey: loopKey,
+                hostBundleIdentifier: detail.resolvedBundleIdentifier
+            )
             replyHandler(
                 nil,
                 SumiNativeMessagingErrorMapper.relayError(
@@ -248,7 +338,7 @@ final class SumiNativeMessagingRelay {
             launchPolicy: launchPolicy,
             launchSuppressed: loopEvaluation.launchSuppressed,
             retryCountBucket: loopEvaluation.retryCountBucket,
-            logDiagnostic: logDiagnostic,
+            logDiagnostic: makeConnectionLogger(profileId: profileId),
             replyHandler: { [self] value, error in
                 if error != nil {
                     self.loopGuard.recordCompanionAppProtocolUnknown(
@@ -283,7 +373,14 @@ final class SumiNativeMessagingRelay {
                 errorDomain: Self.errorDomain,
                 errorCode: ErrorCode.extensionContextMissing.rawValue
             )
-            logDiagnostic(diagnostic)
+            recordDiagnostic(
+                diagnostic,
+                profileId: profileId,
+                policyDenial: nil,
+                evaluation: nil,
+                loopKey: nil,
+                hostBundleIdentifier: nil
+            )
             port.disconnect()
             completionHandler(
                 SumiNativeMessagingErrorMapper.relayError(
@@ -307,7 +404,11 @@ final class SumiNativeMessagingRelay {
                 requestedApplicationIdentifier: applicationIdentifier,
                 denial: denial
             )
-            logDiagnostic(diagnostic)
+            recordDiagnostic(
+                diagnostic,
+                profileId: profileId,
+                policyDenial: denial
+            )
             port.disconnect()
             completionHandler(
                 SumiNativeMessagingErrorMapper.relayError(code: .policyDenied, diagnostic: diagnostic)
@@ -334,7 +435,14 @@ final class SumiNativeMessagingRelay {
                 requestedApplicationIdentifier: applicationIdentifier,
                 evaluation: evaluation
             )
-            logDiagnostic(diagnostic)
+            recordDiagnostic(
+                diagnostic,
+                profileId: profileId,
+                policyDenial: nil,
+                evaluation: nil,
+                loopKey: nil,
+                hostBundleIdentifier: nil
+            )
             port.disconnect()
             completionHandler(
                 SumiNativeMessagingErrorMapper.relayError(
@@ -348,16 +456,6 @@ final class SumiNativeMessagingRelay {
         let hostBundleIdentifier = detail.resolvedBundleIdentifier
         let resolverBucket = evaluation.legacyResolverBucket
 
-        logDiagnostic(
-            SumiNativeMessagingConnection.diagnostic(
-                extensionId: extensionId,
-                direction: .connect,
-                requestedApplicationIdentifier: applicationIdentifier,
-                evaluation: evaluation,
-                outcome: .hostResolved
-            )
-        )
-
         let loopKey = SumiNativeMessagingRelayLoopGuard.SessionKey(
             profileId: profileId,
             extensionId: extensionId,
@@ -366,12 +464,32 @@ final class SumiNativeMessagingRelay {
                 hostBundleIdentifier: hostBundleIdentifier
             )
         )
+
+        recordDiagnostic(
+            SumiNativeMessagingConnection.diagnostic(
+                extensionId: extensionId,
+                direction: .connect,
+                requestedApplicationIdentifier: applicationIdentifier,
+                evaluation: evaluation,
+                outcome: .hostResolved
+            ),
+            profileId: profileId,
+            evaluation: evaluation,
+            loopKey: loopKey,
+            hostBundleIdentifier: hostBundleIdentifier
+        )
+
         let loopEvaluation = loopGuard.evaluate(
             key: loopKey,
             hostBundleIdentifier: hostBundleIdentifier
         )
 
         if loopEvaluation.launchSuppressed {
+            loopGuard.recordSuppressedRetry(key: loopKey)
+            let refreshedLoopEvaluation = loopGuard.evaluate(
+                key: loopKey,
+                hostBundleIdentifier: hostBundleIdentifier
+            )
             let diagnostic = SumiNativeMessagingConnection.diagnostic(
                 extensionId: extensionId,
                 direction: .connect,
@@ -379,9 +497,15 @@ final class SumiNativeMessagingRelay {
                 evaluation: .launchSuppressed(detail),
                 outcome: .launchSuppressed,
                 launchSuppressed: true,
-                retryCountBucket: loopEvaluation.retryCountBucket
+                retryCountBucket: refreshedLoopEvaluation.retryCountBucket
             )
-            logDiagnostic(diagnostic)
+            recordDiagnostic(
+                diagnostic,
+                profileId: profileId,
+                evaluation: evaluation,
+                loopKey: loopKey,
+                hostBundleIdentifier: hostBundleIdentifier
+            )
             port.disconnect(
                 throwing: SumiNativeMessagingErrorMapper.messagePortDisconnectError(
                     code: .companionAppProtocolUnknown,
@@ -406,7 +530,13 @@ final class SumiNativeMessagingRelay {
                 evaluation: evaluation,
                 outcome: .companionAppProtocolUnknown
             )
-            logDiagnostic(diagnostic)
+            recordDiagnostic(
+                diagnostic,
+                profileId: profileId,
+                evaluation: evaluation,
+                loopKey: loopKey,
+                hostBundleIdentifier: hostBundleIdentifier
+            )
             port.disconnect(
                 throwing: SumiNativeMessagingErrorMapper.messagePortDisconnectError(
                     code: .companionAppProtocolUnknown,
@@ -428,7 +558,7 @@ final class SumiNativeMessagingRelay {
             extensionId: extensionId,
             hostBundleIdentifier: hostBundleIdentifier,
             resolverBucket: resolverBucket,
-            logDiagnostic: logDiagnostic,
+            logDiagnostic: makeConnectionLogger(profileId: profileId),
             companionProtocolErrorProvider: {
                 SumiNativeMessagingErrorMapper.messagePortDisconnectError(
                     code: .companionAppProtocolUnknown,
@@ -458,7 +588,14 @@ final class SumiNativeMessagingRelay {
                 evaluation: .appNotFound(detail),
                 outcome: .hostNotFound
             )
-            logDiagnostic(diagnostic)
+            recordDiagnostic(
+                diagnostic,
+                profileId: profileId,
+                policyDenial: nil,
+                evaluation: nil,
+                loopKey: nil,
+                hostBundleIdentifier: nil
+            )
             session.disconnect()
             completionHandler(
                 SumiNativeMessagingErrorMapper.relayError(code: .hostNotFound, diagnostic: diagnostic)
@@ -491,13 +628,19 @@ final class SumiNativeMessagingRelay {
                     protocolAdapterAvailable: detail.protocolAdapterAvailable,
                     launchAllowed: detail.launchAllowed
                 )
-                self.logDiagnostic(diagnostic)
+                self.recordDiagnostic(
+                    diagnostic,
+                    profileId: profileId,
+                    evaluation: evaluation,
+                    loopKey: loopKey,
+                    hostBundleIdentifier: hostBundleIdentifier
+                )
                 session.disconnect()
                 completionHandler(error)
                 return
             }
 
-            self.logDiagnostic(
+            self.recordDiagnostic(
                 SafariExtensionNativeMessagingDiagnostic(
                     extensionId: extensionId,
                     direction: .connect,
@@ -510,7 +653,11 @@ final class SumiNativeMessagingRelay {
                     isContainingApp: detail.isContainingApp,
                     protocolAdapterAvailable: detail.protocolAdapterAvailable,
                     launchAllowed: detail.launchAllowed
-                )
+                ),
+                profileId: profileId,
+                evaluation: evaluation,
+                loopKey: loopKey,
+                hostBundleIdentifier: hostBundleIdentifier
             )
             completionHandler(nil)
         }
@@ -521,6 +668,7 @@ final class SumiNativeMessagingRelay {
     func clearCompanionState(forExtensionId extensionId: String, profileId: UUID? = nil) {
         launchPolicy.clearPendingState()
         loopGuard.clear(forExtensionId: extensionId, profileId: profileId)
+        diagnosticCoalescer.clear(forExtensionId: extensionId, profileId: profileId)
     }
 
     func clearLoopGuard(forExtensionId extensionId: String, profileId: UUID? = nil) {
@@ -530,6 +678,7 @@ final class SumiNativeMessagingRelay {
     func clearAllLoopGuardState() {
         launchPolicy.clearPendingState()
         loopGuard.clearAll()
+        diagnosticCoalescer.clearAll()
     }
 
     static func makeError(
@@ -609,6 +758,61 @@ final class SumiNativeMessagingRelay {
         )
     }
 
+    private func recordDiagnostic(
+        _ diagnostic: SafariExtensionNativeMessagingDiagnostic,
+        profileId: UUID? = nil,
+        policyDenial: SumiNativeMessagingRelayPolicyDenial? = nil,
+        evaluation: SumiCompanionAppResolverResult? = nil,
+        loopKey: SumiNativeMessagingRelayLoopGuard.SessionKey? = nil,
+        hostBundleIdentifier: String? = nil
+    ) {
+        let sessionState: SumiNativeMessagingSessionState?
+        if let loopKey, let host = hostBundleIdentifier ?? diagnostic.hostBundleIdentifier {
+            sessionState = loopGuard.sessionState(
+                policyDenial: policyDenial,
+                profileRuntimeLoaded: profileRuntimeLoaded(),
+                evaluation: evaluation,
+                hostBundleIdentifier: host,
+                key: loopKey
+            )
+        } else {
+            sessionState = SumiNativeMessagingSessionStateMachine.resolve(
+                policyDenial: policyDenial,
+                profileRuntimeLoaded: profileRuntimeLoaded(),
+                evaluation: evaluation,
+                loopEvaluation: nil,
+                adapterAvailable: diagnostic.protocolAdapterAvailable ?? false
+            )
+        }
+
+        let enriched = SafariExtensionNativeMessagingDiagnostic(
+            extensionId: diagnostic.extensionId,
+            direction: diagnostic.direction,
+            requestedApplicationIdentifier: diagnostic.requestedApplicationIdentifier,
+            hostBundleIdentifier: diagnostic.hostBundleIdentifier,
+            resolverBucket: diagnostic.resolverBucket,
+            outcome: diagnostic.outcome,
+            errorDomain: diagnostic.errorDomain,
+            errorCode: diagnostic.errorCode,
+            launchAttempted: diagnostic.launchAttempted,
+            launchSuppressed: diagnostic.launchSuppressed,
+            retryCountBucket: diagnostic.retryCountBucket,
+            isContainingApp: diagnostic.isContainingApp,
+            protocolAdapterAvailable: diagnostic.protocolAdapterAvailable,
+            launchAllowed: diagnostic.launchAllowed,
+            sessionState: sessionState
+        )
+        diagnosticCoalescer.record(enriched, profileId: profileId)
+    }
+
+    private func makeConnectionLogger(
+        profileId: UUID?
+    ) -> @MainActor (SafariExtensionNativeMessagingDiagnostic) -> Void {
+        { [weak self] diagnostic in
+            self?.recordDiagnostic(diagnostic, profileId: profileId)
+        }
+    }
+
     private static let defaultDiagnosticLogger: @MainActor (
         SafariExtensionNativeMessagingDiagnostic
     ) -> Void = { diagnostic in
@@ -627,6 +831,7 @@ final class SumiNativeMessagingRelay {
             launch=\(diagnostic.launchAttempted.map(String.init) ?? "-") \
             suppressed=\(diagnostic.launchSuppressed.map(String.init) ?? "-") \
             retry=\(diagnostic.retryCountBucket?.rawValue ?? "-") \
+            state=\(diagnostic.sessionState?.rawValue ?? "-") \
             err=\(diagnostic.errorDomain ?? "-")/\(diagnostic.errorCode.map(String.init) ?? "-")
             """
         }

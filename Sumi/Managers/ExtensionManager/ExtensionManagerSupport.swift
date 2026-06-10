@@ -75,6 +75,66 @@ struct BrowserExtensionActionPopupRequestResult:
     }
 }
 
+/// How an extension action popup anchor was resolved at presentation time.
+enum ExtensionActionPopupAnchorSource: String, Codable, Equatable, Sendable {
+    case button
+    case current
+    case fallback
+    case stale
+}
+
+/// Sanitized anchor resolution diagnostics for extension runtime traces.
+struct ExtensionActionPopupAnchorResolution: Equatable, Sendable {
+    var anchorResolved: Bool
+    var anchorSource: ExtensionActionPopupAnchorSource?
+    var windowMatch: Bool
+    var profileMatch: Bool
+    var sessionToken: UUID?
+
+    static let unresolved = ExtensionActionPopupAnchorResolution(
+        anchorResolved: false,
+        anchorSource: nil,
+        windowMatch: false,
+        profileMatch: false,
+        sessionToken: nil
+    )
+
+    var traceLine: String {
+        "anchorResolved=\(anchorResolved) anchorSource=\(anchorSource?.rawValue ?? "nil") windowMatch=\(windowMatch) profileMatch=\(profileMatch) sessionToken=\(sessionToken?.uuidString ?? "nil")"
+    }
+}
+
+/// Click-time anchor captured before async extension runtime work.
+@available(macOS 15.5, *)
+@MainActor
+final class ExtensionActionPopupAnchor {
+    let extensionID: String
+    let profileID: UUID
+    let windowID: UUID
+    let sessionToken: UUID
+    let capturedAt: Date
+    weak var buttonView: NSView?
+    var validatedRectInWindow: CGRect?
+
+    init(
+        extensionID: String,
+        profileID: UUID,
+        windowID: UUID,
+        sessionToken: UUID = UUID(),
+        capturedAt: Date = Date(),
+        buttonView: NSView?,
+        validatedRectInWindow: CGRect?
+    ) {
+        self.extensionID = extensionID
+        self.profileID = profileID
+        self.windowID = windowID
+        self.sessionToken = sessionToken
+        self.capturedAt = capturedAt
+        self.buttonView = buttonView
+        self.validatedRectInWindow = validatedRectInWindow
+    }
+}
+
 @available(macOS 15.5, *)
 final class WeakAnchor {
     weak var view: NSView?

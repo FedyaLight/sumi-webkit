@@ -229,7 +229,196 @@ final class SumiNativeMessagingRelayLoopGuardTests: XCTestCase {
         XCTAssertFalse(relaySource.contains("String(describing: message)"))
     }
 
+    func testRepeated100SendNativeMessageCoalescesDiagnostics() async throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.example.host",
+            appexBundleID: "com.example.host.extension"
+        )
+        let installed = try makeInstalledExtension(id: "ext-coalesce", sourceBundlePath: appexPath)
+        let launcher = MockHostLauncher()
+        launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
+        var diagnostics: [SafariExtensionNativeMessagingDiagnostic] = []
+        let relay = SumiNativeMessagingRelay(
+            importStore: SafariExtensionImportStore(defaults: makeDefaults()),
+            launcher: launcher,
+            logDiagnostic: { diagnostics.append($0) }
+        )
+
+        for _ in 0..<100 {
+            _ = await sendMessageReply(
+                relay: relay,
+                installed: installed,
+                applicationIdentifier: "com.example.host"
+            )
+        }
+
+        XCTAssertTrue(launcher.openedBundleIdentifiers.isEmpty)
+        XCTAssertLessThan(diagnostics.count, 10)
+        XCTAssertGreaterThanOrEqual(diagnostics.count, 2)
+        let detailedUnknownProtocolLogs = diagnostics.filter {
+            $0.outcome == .companionAppProtocolUnknown && $0.launchSuppressed != true
+        }
+        XCTAssertEqual(detailedUnknownProtocolLogs.count, 1)
+        XCTAssertTrue(
+            diagnostics.contains {
+                $0.sessionState == .protocolAdapterUnavailable
+                    || $0.sessionState == .unknownProtocolSuppressed
+            }
+        )
+    }
+
+    func testPopupReopenDoesNotResetSuppressionLoop() async throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.example.host",
+            appexBundleID: "com.example.host.extension"
+        )
+        let installed = try makeInstalledExtension(id: "ext-popup", sourceBundlePath: appexPath)
+        let launcher = MockHostLauncher()
+        launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
+        let loopGuard = SumiNativeMessagingRelayLoopGuard()
+        var diagnostics: [SafariExtensionNativeMessagingDiagnostic] = []
+        let relay = SumiNativeMessagingRelay(
+            importStore: SafariExtensionImportStore(defaults: makeDefaults()),
+            launcher: launcher,
+            loopGuard: loopGuard,
+            logDiagnostic: { diagnostics.append($0) }
+        )
+
+        _ = await sendMessageReply(
+            relay: relay,
+            installed: installed,
+            applicationIdentifier: "com.example.host"
+        )
+        let countAfterFirst = diagnostics.count
+
+        _ = await sendMessageReply(
+            relay: relay,
+            installed: installed,
+            applicationIdentifier: "com.example.host"
+        )
+        let second = await sendMessageReply(
+            relay: relay,
+            installed: installed,
+            applicationIdentifier: "com.example.host"
+        )
+
+        XCTAssertTrue(launcher.openedBundleIdentifiers.isEmpty)
+        XCTAssertEqual(
+            (second.error as NSError?)?.code,
+            SumiNativeMessagingRelay.ErrorCode.companionAppProtocolUnknown.rawValue
+        )
+        XCTAssertLessThanOrEqual(diagnostics.count - countAfterFirst, 2)
+        XCTAssertTrue(
+            diagnostics.contains { $0.sessionState == .unknownProtocolSuppressed }
+                || diagnostics.contains { $0.launchSuppressed == true }
+        )
+    }
+
+    func testConnectNativeUnknownProtocolAlsoSuppressedOnRepeat() async throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.example.host",
+            appexBundleID: "com.example.host.extension"
+        )
+        let installed = try makeInstalledExtension(id: "ext-connect", sourceBundlePath: appexPath)
+        let launcher = MockHostLauncher()
+        launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
+        var diagnostics: [SafariExtensionNativeMessagingDiagnostic] = []
+        let relay = SumiNativeMessagingRelay(
+            importStore: SafariExtensionImportStore(defaults: makeDefaults()),
+            launcher: launcher,
+            logDiagnostic: { diagnostics.append($0) }
+        )
+
+        let port = MockNativeMessagingPort()
+        port.applicationIdentifier = "com.example.host"
+
+        _ = await connectReply(relay: relay, port: port, installed: installed)
+        let port2 = MockNativeMessagingPort()
+        port2.applicationIdentifier = "com.example.host"
+        _ = await connectReply(relay: relay, port: port2, installed: installed)
+
+        XCTAssertTrue(launcher.openedBundleIdentifiers.isEmpty)
+        let connectUnknownLogs = diagnostics.filter {
+            $0.direction == .connect
+                && ($0.outcome == .companionAppProtocolUnknown || $0.outcome == .launchSuppressed)
+        }
+        XCTAssertEqual(connectUnknownLogs.filter { $0.launchSuppressed != true }.count, 1)
+    }
+
+    func testStateMachineResolvesModuleOffAndExtensionDisabled() {
+        XCTAssertEqual(
+            SumiNativeMessagingSessionStateMachine.resolve(
+                policyDenial: .moduleDisabled,
+                profileRuntimeLoaded: true,
+                evaluation: nil,
+                loopEvaluation: nil,
+                adapterAvailable: false
+            ),
+            .moduleOff
+        )
+        XCTAssertEqual(
+            SumiNativeMessagingSessionStateMachine.resolve(
+                policyDenial: .extensionNotEnabled,
+                profileRuntimeLoaded: true,
+                evaluation: nil,
+                loopEvaluation: nil,
+                adapterAvailable: false
+            ),
+            .extensionDisabled
+        )
+        XCTAssertEqual(
+            SumiNativeMessagingSessionStateMachine.resolve(
+                policyDenial: nil,
+                profileRuntimeLoaded: false,
+                evaluation: nil,
+                loopEvaluation: nil,
+                adapterAvailable: false
+            ),
+            .profileRuntimeUnloaded
+        )
+    }
+
     // MARK: - Helpers
+
+    private final class MockNativeMessagingPort: SumiNativeMessagingPortControlling {
+        var applicationIdentifier: String?
+        var isDisconnected = false
+        var messageHandler: ((Any?, (any Error)?) -> Void)?
+        var disconnectHandler: (((any Error)?) -> Void)?
+        var disconnectError: (any Error)?
+
+        func disconnect() {
+            isDisconnected = true
+            disconnectHandler?(disconnectError)
+        }
+
+        func disconnect(throwing error: (any Error)?) {
+            disconnectError = error
+            disconnect()
+        }
+    }
+
+    private func connectReply(
+        relay: SumiNativeMessagingRelay,
+        port: MockNativeMessagingPort,
+        installed: InstalledExtension
+    ) async -> (session: SumiNativeMessagingPortSession?, error: (any Error)?) {
+        let expectation = expectation(description: "nativeMessagingConnect")
+        var connectError: (any Error)?
+        var session: SumiNativeMessagingPortSession?
+        _ = relay.handleConnect(
+            port: port,
+            extensionId: installed.id,
+            installedExtensions: [installed],
+            registerHandler: { session = $0 },
+            completionHandler: { error in
+                connectError = error
+                expectation.fulfill()
+            }
+        )
+        await fulfillment(of: [expectation], timeout: 5)
+        return (session, connectError)
+    }
 
     private func sendMessageReply(
         relay: SumiNativeMessagingRelay,

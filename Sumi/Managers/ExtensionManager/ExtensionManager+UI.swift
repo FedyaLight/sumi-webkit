@@ -224,6 +224,18 @@ extension ExtensionManager: NSPopoverDelegate {
                 message: "No profile is available for the active tab."
             )
         }
+        if latestActionPopupAnchorSessionByExtensionID[extensionId] == nil {
+            let windowId =
+                currentTab.primaryWindowId
+                ?? browserManager?.windowRegistry?.activeWindow?.id
+            if let windowId {
+                _ = captureActionPopupAnchor(
+                    extensionId: extensionId,
+                    windowId: windowId,
+                    profileId: tabProfileId
+                )
+            }
+        }
         switchProfile(profileId: tabProfileId)
         _ = ensureExtensionController(for: tabProfileId)
 
@@ -454,7 +466,8 @@ extension ExtensionManager: NSPopoverDelegate {
         _ = requestExtensionRuntime(reason: .webViewConfiguration)
         let requestedController = ensureExtensionController(for: resolvedProfileId)
         let existingController = configuration.webExtensionController
-        let shouldAssignController = existingController == nil
+        let shouldAssignController =
+            existingController == nil || existingController !== requestedController
 
         extensionRuntimeTrace(
             "prepareConfiguration reason=\(reason) profileId=\(resolvedProfileId.uuidString) configuration=\(extensionRuntimeConfigurationDescription(configuration)) userContentController=\(extensionRuntimeUserContentControllerDescription(configuration.userContentController)) existingController=\(extensionRuntimeControllerDescription(existingController)) targetController=\(extensionRuntimeControllerDescription(requestedController)) willAssign=\(shouldAssignController)"
@@ -567,6 +580,19 @@ extension ExtensionManager: NSPopoverDelegate {
         let didAttach = owningTab.map {
             attachExtensionControllerIfNeeded(to: webView, for: $0)
         } ?? false
+
+        if let owningTab,
+           didAttach == false,
+           webView.configuration.webExtensionController == nil,
+           canLateBindExtensionController(to: webView) == false,
+           let coordinator = browserManager?.webViewCoordinator
+        {
+            coordinator.rebuildLiveWebViews(for: owningTab)
+            registerTabWithExtensionRuntime(
+                owningTab,
+                reason: "prepareWebViewForExtensionRuntime.rebuild"
+            )
+        }
 
         extensionRuntimeTrace(
             "prepareWebView reason=\(reason) webView=\(extensionRuntimeWebViewDescription(webView)) configuration=\(extensionRuntimeConfigurationDescription(webView.configuration)) userContentController=\(extensionRuntimeUserContentControllerDescription(webView.configuration.userContentController)) currentURL=\(currentURL?.absoluteString ?? "nil") existingController=\(extensionRuntimeControllerDescription(existingController)) extensionController=\(extensionRuntimeControllerDescription(extensionController)) willAssign=\(didAttach)"

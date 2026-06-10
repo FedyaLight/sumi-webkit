@@ -122,6 +122,8 @@ final class ExtensionManager: NSObject, ObservableObject {
     var backgroundRuntimeStateByExtensionID: [String: BackgroundRuntimeState] = [:]
     var runtimeMetricsByExtensionID: [String: ExtensionRuntimeMetrics] = [:]
     var actionAnchors: [String: [WeakAnchor]] = [:]
+    var pendingActionPopupAnchors: [UUID: ExtensionActionPopupAnchor] = [:]
+    var latestActionPopupAnchorSessionByExtensionID: [String: UUID] = [:]
     var anchorObserverTokens: [String: [ObjectIdentifier: NSObjectProtocol]] = [:]
     var extensionErrorObserverTokens: [String: NSObjectProtocol] = [:]
     var lastLoggedExtensionErrorFingerprints: [String: String] = [:]
