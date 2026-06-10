@@ -251,6 +251,14 @@ struct InstalledExtensionRecord {
         )
     }
 
+    static let legacyManifestWarningTooltip =
+        "This extension uses the older Manifest V2 format and may be less energy-efficient."
+
+    /// Informational hint for settings UI — MV2 Safari extensions may use more energy.
+    var legacyManifestMayUseMoreEnergy: Bool {
+        manifestVersion == 2
+    }
+
     var encodedActivationSummary: String {
         Self.encode(activationSummary)
     }

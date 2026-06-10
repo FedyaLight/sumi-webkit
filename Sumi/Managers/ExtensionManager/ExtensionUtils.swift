@@ -9,6 +9,22 @@ import CryptoKit
 import Foundation
 import WebKit
 
+enum WebExtensionManifestValidationPolicy: Equatable, Sendable {
+    /// Safari `.app` / `.appex` imports — WebKit accepts manifest version 2 and 3.
+    case safariWebExtension
+    /// Unpacked directory sideload — Sumi only supports manifest version 3.
+    case unpackedDirectory
+
+    static func forSourceKind(_ sourceKind: WebExtensionSourceKind) -> Self {
+        switch sourceKind {
+        case .safariAppExtension:
+            return .safariWebExtension
+        case .directory:
+            return .unpackedDirectory
+        }
+    }
+}
+
 struct ExtensionUtils {
     static let commonOptionsPageRelativePaths = [
         "ui/options/index.html",
@@ -69,8 +85,19 @@ struct ExtensionUtils {
         return directory
     }
 
-    static func validateManifest(at url: URL) throws -> [String: Any] {
+    static func validateManifest(
+        at url: URL,
+        policy: WebExtensionManifestValidationPolicy = .unpackedDirectory
+    ) throws -> [String: Any] {
         let manifest = try loadJSONObject(at: url)
+        try validateManifestContents(manifest, policy: policy)
+        return manifest
+    }
+
+    static func validateManifestContents(
+        _ manifest: [String: Any],
+        policy: WebExtensionManifestValidationPolicy
+    ) throws {
         guard let name = manifest["name"] as? String, name.isEmpty == false else {
             throw ExtensionError.invalidManifest("Manifest is missing a non-empty name.")
         }
@@ -80,12 +107,21 @@ struct ExtensionUtils {
         guard let manifestVersion = manifest["manifest_version"] as? Int else {
             throw ExtensionError.invalidManifest("Manifest is missing manifest_version.")
         }
-        guard manifestVersion == 3 else {
-            throw ExtensionError.invalidManifest(
-                "Unsupported manifest_version \(manifestVersion); only manifest version 3 is accepted."
-            )
+
+        switch policy {
+        case .safariWebExtension:
+            guard manifestVersion == 2 || manifestVersion == 3 else {
+                throw ExtensionError.invalidManifest(
+                    "Unsupported manifest_version \(manifestVersion); Safari Web Extensions support manifest_version 2 and 3."
+                )
+            }
+        case .unpackedDirectory:
+            guard manifestVersion == 3 else {
+                throw ExtensionError.invalidManifest(
+                    "Unsupported manifest_version \(manifestVersion); only manifest version 3 is accepted."
+                )
+            }
         }
-        return manifest
     }
 
     static func hostPatternMatchesURL(_ pattern: String, url: URL) -> Bool {

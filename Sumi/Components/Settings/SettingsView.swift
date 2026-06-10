@@ -612,8 +612,18 @@ private struct ExtensionCatalogRow: View {
             .frame(width: 24, height: 24)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(extensionRecord.name)
-                    .font(.headline)
+                HStack(spacing: 6) {
+                    Text(extensionRecord.name)
+                        .font(.headline)
+
+                    if extensionRecord.legacyManifestMayUseMoreEnergy {
+                        Image(systemName: "battery.100percent.bolt")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                            .help(InstalledExtensionRecord.legacyManifestWarningTooltip)
+                            .accessibilityLabel(InstalledExtensionRecord.legacyManifestWarningTooltip)
+                    }
+                }
 
                 Text("Version \(extensionRecord.version)")
                     .font(.caption)

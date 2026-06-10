@@ -80,7 +80,7 @@ enum SafariExtensionScannerTestSupport {
                 .appendingPathComponent("Resources", isDirectory: true)
                 .appendingPathComponent("manifest.json")
             let manifest: [String: Any] = [
-                "manifest_version": 3,
+                "manifest_version": specification.manifestVersion,
                 "name": specification.displayName,
                 "version": specification.version,
             ]
@@ -135,5 +135,6 @@ enum SafariExtensionScannerTestSupport {
         var includeManifest: Bool = true
         var includeExtensionAttributes: Bool = true
         var corruptPlist: Bool = false
+        var manifestVersion: Int = 3
     }
 }

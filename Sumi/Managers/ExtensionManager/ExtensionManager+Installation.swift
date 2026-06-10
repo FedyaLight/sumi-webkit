@@ -150,8 +150,11 @@ extension ExtensionManager {
         entity.isEnabled = true
         entity.lastUpdateDate = Date()
         try context.save()
+        let sourceKind =
+            WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
         let manifest = try ExtensionUtils.validateManifest(
-            at: URL(fileURLWithPath: entity.packagePath).appendingPathComponent("manifest.json")
+            at: URL(fileURLWithPath: entity.packagePath).appendingPathComponent("manifest.json"),
+            policy: WebExtensionManifestValidationPolicy.forSourceKind(sourceKind)
         )
         let refreshed = try refreshedRecord(for: entity, manifest: manifest)
         await applyInstalledExtensionsMutationOnNextRunLoop { manager in
@@ -402,17 +405,19 @@ extension ExtensionManager {
 
             let extensionRoot = URL(fileURLWithPath: entity.packagePath)
             let manifestURL = extensionRoot.appendingPathComponent("manifest.json")
+            let sourceKind =
+                WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
             extensionRuntimeTrace(
                 "loadEnabledExtension start extensionId=\(entity.id) profileId=\(resolvedProfileId.uuidString) expectedGeneration=\(expectedLoadGeneration.map(String.init) ?? "nil") currentGeneration=\(extensionLoadGeneration) packagePath=\(entity.packagePath)"
             )
             let validationStart = CFAbsoluteTimeGetCurrent()
-            let manifest = try ExtensionUtils.validateManifest(at: manifestURL)
+            let manifest = try ExtensionUtils.validateManifest(
+                at: manifestURL,
+                policy: WebExtensionManifestValidationPolicy.forSourceKind(sourceKind)
+            )
             recordRuntimeMetric(for: entity.id) {
                 $0.manifestValidationDuration = CFAbsoluteTimeGetCurrent() - validationStart
             }
-
-            let sourceKind =
-                WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
             let webExtensionStart = CFAbsoluteTimeGetCurrent()
             let (webExtension, runtimeLoadSource) = try await SafariAppExtensionResources.makeWebExtension(
                 sourceKind: sourceKind,
@@ -689,8 +694,14 @@ extension ExtensionManager {
                 )
             }
 
+            let manifestPolicy = WebExtensionManifestValidationPolicy.forSourceKind(
+                resolvedSource.sourceKind
+            )
             let manifestURL = temporaryDirectory.appendingPathComponent("manifest.json")
-            let manifest = try ExtensionUtils.validateManifest(at: manifestURL)
+            let manifest = try ExtensionUtils.validateManifest(
+                at: manifestURL,
+                policy: manifestPolicy
+            )
             try validateMV3Requirements(manifest: manifest, baseURL: temporaryDirectory)
 
             let extensionId: String
@@ -755,7 +766,10 @@ extension ExtensionManager {
             try FileManager.default.moveItem(at: temporaryDirectory, to: destinationDirectory)
 
             let finalManifestURL = destinationDirectory.appendingPathComponent("manifest.json")
-            let finalManifest = try ExtensionUtils.validateManifest(at: finalManifestURL)
+            let finalManifest = try ExtensionUtils.validateManifest(
+                at: finalManifestURL,
+                policy: manifestPolicy
+            )
 
             let record = try makeInstalledRecord(
                 extensionId: extensionId,
