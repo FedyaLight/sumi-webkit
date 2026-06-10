@@ -86,18 +86,20 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
     }
 
     func testSendMessageUnknownProtocolWithoutLaunch() async throws {
+        // Use a resolvable host with no registered protocol adapter (Bitwarden has one now).
+        let hostBundleID = "com.example.passwordmanager.desktop"
         let appexPath = try makeFixtureApp(
-            appBundleID: "com.bitwarden.desktop",
-            appexBundleID: "com.bitwarden.desktop.safari"
+            appBundleID: hostBundleID,
+            appexBundleID: "com.example.passwordmanager.desktop.safari"
         )
         let importStore = SafariExtensionImportStore(defaults: makeDefaults())
         let installed = makeInstalledExtension(
-            id: "ext-bitwarden",
+            id: "ext-example-passwordmanager",
             sourceBundlePath: appexPath
         )
         let launcher = MockHostLauncher()
-        launcher.bundleURLs["com.bitwarden.desktop"] = URL(
-            fileURLWithPath: "/Applications/Bitwarden.app"
+        launcher.bundleURLs[hostBundleID] = URL(
+            fileURLWithPath: "/Applications/ExamplePasswordManager.app"
         )
         var diagnostics: [SafariExtensionNativeMessagingDiagnostic] = []
         let host = SafariExtensionNativeMessagingHost(
@@ -110,7 +112,7 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
         let reply = await sendMessageReply(
             host: host,
             installed: installed,
-            applicationIdentifier: "com.bitwarden.desktop"
+            applicationIdentifier: hostBundleID
         )
 
         XCTAssertTrue(launcher.openedBundleIdentifiers.isEmpty)

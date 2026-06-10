@@ -18,4 +18,9 @@ protocol SumiNativeMessagingPortControlling: AnyObject {
     func disconnect(throwing error: (any Error)?)
 }
 
+@MainActor
+protocol SumiNativeMessagingPortReplyRecording: SumiNativeMessagingPortControlling {
+    func recordReplyToExtension(_ message: Any)
+}
+
 extension WKWebExtension.MessagePort: SumiNativeMessagingPortControlling {}

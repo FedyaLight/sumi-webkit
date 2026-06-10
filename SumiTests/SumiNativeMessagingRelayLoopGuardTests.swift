@@ -208,9 +208,12 @@ final class SumiNativeMessagingRelayLoopGuardTests: XCTestCase {
             encoding: .utf8
         )
 
-        for token in ["bitwarden", "1password", "proton", "raindrop", "com.bitwarden.desktop"] {
+        for token in ["1password", "proton", "raindrop"] {
             XCTAssertFalse(loopGuardSource.localizedCaseInsensitiveContains(token))
         }
+        XCTAssertTrue(
+            loopGuardSource.contains("supportedRelayProtocolHostBundleIdentifiers")
+        )
         XCTAssertFalse(relaySource.contains("if extensionId =="))
         XCTAssertFalse(relaySource.contains("switch extensionId"))
     }
@@ -396,6 +399,7 @@ final class SumiNativeMessagingRelayLoopGuardTests: XCTestCase {
             disconnectError = error
             disconnect()
         }
+
     }
 
     private func connectReply(

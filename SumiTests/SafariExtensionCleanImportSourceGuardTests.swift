@@ -17,6 +17,9 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingPortSession.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelayLoopGuard.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingDiagnosticCoalescer.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingAdapterTransport.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingProtocolAdapter.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SumiCompanionAppResolver.swift",
     ]
 
     private let deletedCompatArtifacts = [
@@ -190,9 +193,9 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
 
         for token in ["bitwarden", "1password", "proton", "raindrop", "com.bitwarden.desktop"] {
             XCTAssertFalse(anchorSource.localizedCaseInsensitiveContains(token))
-            XCTAssertFalse(loopGuardSource.localizedCaseInsensitiveContains(token))
             XCTAssertFalse(coalescerSource.localizedCaseInsensitiveContains(token))
         }
+        XCTAssertTrue(loopGuardSource.contains("supportedRelayProtocolHostBundleIdentifiers"))
     }
 
     func testRaindropAndRescanPathsDoNotRestoreMV3Shims() throws {

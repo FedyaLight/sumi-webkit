@@ -69,7 +69,9 @@ final class SafariExtensionRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertTrue(report.coalescedLoggingEnabled)
         XCTAssertTrue(report.sessionStateTrackingEnabled)
         XCTAssertTrue(report.companionProtocolUnknownDeterministic)
-        XCTAssertEqual(report.supportedRelayProtocolHostCount, 0)
+        XCTAssertEqual(report.supportedRelayProtocolHostCount, 1)
+        XCTAssertTrue(report.note.contains("coalesced ext="))
+        XCTAssertTrue(report.note.contains("WebKit extension console"))
     }
 
     func testPasswordManagerFormFixtureProbePasses() {
@@ -128,12 +130,32 @@ final class SafariExtensionRuntimeDiagnosticsTests: XCTestCase {
         )
 
         XCTAssertTrue(report.suppressionReport.coalescedLoggingEnabled)
+        XCTAssertEqual(report.adapterCompatibility.count, SafariExtensionCompatibilityTargets.all.count)
+        XCTAssertEqual(
+            report.registeredAdapterIdentifiers,
+            [BitwardenNativeMessagingIdentifiers.protocolIdentifier]
+        )
         let bitwarden = report.entries.first { $0.targetKey == "bitwarden" }
         XCTAssertEqual(bitwarden?.launchSuppressionExpected, true)
         XCTAssertEqual(bitwarden?.expectedSessionState, .unknownProtocolInitial)
+        XCTAssertEqual(bitwarden?.adapterSelected, true)
+        XCTAssertEqual(bitwarden?.adapterIdentifier, BitwardenNativeMessagingIdentifiers.protocolIdentifier)
+        XCTAssertEqual(bitwarden?.protocolStatus, .notApplicable)
+        XCTAssertEqual(bitwarden?.failureBucket, .extensionNotImported)
         XCTAssertTrue(
             bitwarden?.classifications.contains(.companionAppProtocolUnknown) ?? false
         )
+        let adapterRow = report.adapterCompatibility.first { $0.targetKey == "bitwarden" }
+        XCTAssertEqual(adapterRow?.desktopResolved, true)
+        XCTAssertEqual(adapterRow?.realTransportAttempted, false)
+        XCTAssertEqual(adapterRow?.biometricsStatusProbe, .notAttempted)
+        XCTAssertEqual(
+            adapterRow?.repeatedCallCountBucket,
+            SumiNativeMessagingRetryCountBucket.none
+        )
+        let raindropRow = report.adapterCompatibility.first { $0.targetKey == "raindrop" }
+        XCTAssertEqual(raindropRow?.protocolStatus, .notApplicable)
+        XCTAssertEqual(raindropRow?.biometricsStatusProbe, .notApplicable)
     }
 
     func testCompatibilityReportIncludesManualVerification() {

@@ -833,6 +833,11 @@ extension ExtensionManager: NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         isPopupActive = false
         if let extensionId = activePopupExtensionID {
+            let profileId = browserManager?.currentProfile?.id
+            safariNativeMessagingHost.clearLaunchSessionOnExtensionContextUnload(
+                forExtensionId: extensionId,
+                profileId: profileId
+            )
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let diagnostic = await SafariExtensionSessionDiagnosticsBuilder.build(

@@ -181,9 +181,10 @@ enum SumiCompanionAppResolver {
 
         let hostBundleIdentifier = identity.resolvedBundleIdentifier
         let appInstalled = launcher.urlForApplication(withBundleIdentifier: hostBundleIdentifier) != nil
-        let adapterAvailable = adapterRegistry.adapter(
-            forHostBundleIdentifier: hostBundleIdentifier
-        ) != nil
+        let adapterAvailable = adapterRegistry.isAdapterAvailable(
+            forApplicationIdentifier: trimmedRequest,
+            hostBundleIdentifier: hostBundleIdentifier
+        )
 
         let launchDecision = launchPolicy.evaluateLaunch(
             hostBundleIdentifier: hostBundleIdentifier,
@@ -209,14 +210,15 @@ enum SumiCompanionAppResolver {
         switch launchDecision {
         case .suppressedNoProtocolAdapter:
             return .protocolAdapterUnavailable(detail)
-        case .suppressedProtocolUnknown:
+        case .suppressedProtocolUnknown,
+             .suppressedConnectIfNotRunning,
+             .suppressedSessionLaunchAttempted,
+             .refusedArbitraryPath:
             return .launchSuppressed(detail)
         case .rateLimited:
             return .launchRateLimited(detail)
         case .appNotInstalled:
             return .appNotFound(detail)
-        case .refusedArbitraryPath:
-            return .launchSuppressed(detail)
         case .allowed:
             break
         }

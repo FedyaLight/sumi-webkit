@@ -48,9 +48,15 @@ protocol SumiNativeMessagingProtocolAdapter: AnyObject {
 @MainActor
 final class SumiNativeMessagingAdapterRegistry {
     private let adapters: [SumiNativeMessagingProtocolAdapter]
+    private let adaptersByProtocolIdentifier: [String: SumiNativeMessagingProtocolAdapter]
 
     init(adapters: [SumiNativeMessagingProtocolAdapter] = []) {
         self.adapters = adapters
+        var byProtocol: [String: SumiNativeMessagingProtocolAdapter] = [:]
+        for adapter in adapters {
+            byProtocol[adapter.protocolIdentifier] = adapter
+        }
+        self.adaptersByProtocolIdentifier = byProtocol
     }
 
     func adapter(forHostBundleIdentifier hostBundleIdentifier: String)
@@ -59,5 +65,50 @@ final class SumiNativeMessagingAdapterRegistry {
         adapters.first { $0.supports(hostBundleIdentifier: hostBundleIdentifier) }
     }
 
-    static let shared = SumiNativeMessagingAdapterRegistry()
+    func adapter(forApplicationIdentifier applicationIdentifier: String?)
+        -> SumiNativeMessagingProtocolAdapter?
+    {
+        guard let applicationIdentifier else { return nil }
+        let normalized = SumiCompanionAppIdentityMetadata
+            .normalizedHostBundleIdentifier(applicationIdentifier)
+        return adapter(forHostBundleIdentifier: normalized)
+    }
+
+    func adapter(
+        forApplicationIdentifier applicationIdentifier: String?,
+        hostBundleIdentifier: String
+    ) -> SumiNativeMessagingProtocolAdapter? {
+        if let adapter = adapter(forHostBundleIdentifier: hostBundleIdentifier) {
+            return adapter
+        }
+        return adapter(forApplicationIdentifier: applicationIdentifier)
+    }
+
+    func isAdapterAvailable(
+        forApplicationIdentifier applicationIdentifier: String?,
+        hostBundleIdentifier: String
+    ) -> Bool {
+        adapter(
+            forApplicationIdentifier: applicationIdentifier,
+            hostBundleIdentifier: hostBundleIdentifier
+        ) != nil
+    }
+
+    func adapter(forProtocolIdentifier protocolIdentifier: String)
+        -> SumiNativeMessagingProtocolAdapter?
+    {
+        adaptersByProtocolIdentifier[protocolIdentifier]
+    }
+
+    func isAdapterAvailable(forHostBundleIdentifier hostBundleIdentifier: String) -> Bool {
+        adapter(forHostBundleIdentifier: hostBundleIdentifier) != nil
+    }
+
+    func isAdapterAvailable(forApplicationIdentifier applicationIdentifier: String?) -> Bool {
+        adapter(forApplicationIdentifier: applicationIdentifier) != nil
+    }
+
+    var registeredProtocolIdentifiers: [String] {
+        adapters.map(\.protocolIdentifier).sorted()
+    }
 }

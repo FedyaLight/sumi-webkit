@@ -36,8 +36,9 @@ final class SumiNativeMessagingRelayLoopGuard {
     }
 
     /// Public host bundle IDs with a documented Sumi relay implementation.
-    /// Empty until a supported companion protocol path exists.
-    nonisolated static let supportedRelayProtocolHostBundleIdentifiers: Set<String> = []
+    nonisolated static let supportedRelayProtocolHostBundleIdentifiers: Set<String> = [
+        BitwardenNativeMessagingIdentifiers.hostBundleIdentifier,
+    ]
 
     private static let baseCooldown: TimeInterval = 30
     private static let maxCooldown: TimeInterval = 300
@@ -66,9 +67,10 @@ final class SumiNativeMessagingRelayLoopGuard {
 
         if Self.supportedRelayProtocolHostBundleIdentifiers.contains(hostBundleIdentifier) {
             let launchAttempted = cached?.launchAttempted ?? false
+            let suppressLaunch = launchAttempted || withinCooldown
             return Evaluation(
-                shouldLaunchHost: launchAttempted == false,
-                launchSuppressed: false,
+                shouldLaunchHost: suppressLaunch == false,
+                launchSuppressed: suppressLaunch,
                 retryCountBucket: retryBucket,
                 isWithinCooldown: withinCooldown
             )
@@ -88,6 +90,21 @@ final class SumiNativeMessagingRelayLoopGuard {
             launchSuppressed: false,
             retryCountBucket: retryBucket,
             isWithinCooldown: false
+        )
+    }
+
+    func recordSupportedAdapterLaunchAttempt(key: SessionKey) {
+        if var existing = cache[key] {
+            existing.launchAttempted = true
+            existing.lastFailureAt = Date()
+            cache[key] = existing
+            return
+        }
+
+        cache[key] = CachedFailure(
+            retryCount: 0,
+            lastFailureAt: Date(),
+            launchAttempted: true
         )
     }
 

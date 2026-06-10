@@ -184,7 +184,17 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
             isPasswordManager ? .unknownProtocolInitial : nil
 
         if isPasswordManager {
-            notes.append("companionAppProtocolUnknown expected until companion IPC is documented")
+            if target.key == "bitwarden",
+               SumiNativeMessagingAdapterRegistry.shared.adapter(
+                   forHostBundleIdentifier: BitwardenNativeMessagingIdentifiers.hostBundleIdentifier
+               ) != nil
+            {
+                notes.append(
+                    "Bitwarden adapter registered; use adapterCompatibility routing fields and failure buckets instead of companionAppProtocolUnknown"
+                )
+            } else {
+                notes.append("companionAppProtocolUnknown expected until companion IPC is documented")
+            }
         }
 
         return SafariExtensionRuntimeStatusSnapshot(
@@ -386,7 +396,11 @@ enum SafariExtensionNativeMessagingSuppressionProbe {
             companionProtocolUnknownDeterministic: relay?.contains("companionAppProtocolUnknown") == true,
             supportedRelayProtocolHostCount: SumiNativeMessagingRelayLoopGuard
                 .supportedRelayProtocolHostBundleIdentifiers.count,
-            note: "Repeated companionAppProtocolUnknown / launchSuppressed diagnostics are coalesced when verbose logging is enabled."
+            note: """
+            Repeated companionAppProtocolUnknown / launchSuppressed diagnostics are coalesced when verbose logging is enabled. \
+            WebKit extension console may still log one NSError per delegate callback; Sumi coalesces duplicate SafariNativeMessaging \
+            lines (coalesced ext=… repeatCount=… bucket=…) after the first detailed line per session key.
+            """
         )
     }
 
@@ -475,12 +489,14 @@ extension SumiExtensionsModule {
             let acceptanceMatrix: SafariExtensionAcceptanceMatrix
             let runtimeDiagnostics: SafariExtensionRuntimeDiagnosticReport
             let nativeMessagingProbe: SafariExtensionNativeMessagingProbeReport
+            let adapterCompatibility: [SafariExtensionNativeMessagingAdapterCompatibilityStatus]
         }
 
         let report = DevReport(
             acceptanceMatrix: acceptance,
             runtimeDiagnostics: runtime,
-            nativeMessagingProbe: nativeMessaging
+            nativeMessagingProbe: nativeMessaging,
+            adapterCompatibility: nativeMessaging.adapterCompatibility
         )
 
         guard let data = try? encoder.encode(report),

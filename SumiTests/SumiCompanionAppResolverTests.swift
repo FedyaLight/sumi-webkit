@@ -290,7 +290,15 @@ final class SumiCompanionAppResolverTests: XCTestCase {
             applicationIdentifier: "com.example.host"
         )
         loopGuard.recordCompanionAppProtocolUnknown(key: key, launchAttempted: false)
-        launchPolicy.recordLaunchAttempt(forHostBundleIdentifier: "com.example.host")
+        launchPolicy.recordLaunchAttempt(
+            forHostBundleIdentifier: "com.example.host",
+            sessionKey: SumiCompanionAppLaunchPolicy.sessionKey(
+                profileId: nil,
+                extensionId: "ext",
+                requestedApplicationIdentifier: "com.example.host",
+                hostBundleIdentifier: "com.example.host"
+            )
+        )
 
         relay.clearCompanionState(forExtensionId: "ext")
         moduleEnabled = false

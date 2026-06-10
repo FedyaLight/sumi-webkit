@@ -134,6 +134,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             isDisconnected = true
             disconnectHandler?(error)
         }
+
     }
 
     // 1. One-time native message success using fake protocol adapter

@@ -56,17 +56,25 @@ final class SumiLaunchPolicyGatedHostApplicationLauncher: SumiHostApplicationLau
     private let launchPolicy: SumiCompanionAppLaunchPolicy
     private let hostBundleIdentifier: String
     private let protocolAdapterAvailable: Bool
+    private let sessionKey: SumiCompanionAppLaunchSessionKey?
+    private let launchReason: SumiCompanionAppLaunchReason
+    var lastLaunchDecision: SumiCompanionAppLaunchDecision?
+    var lastLaunchSuppressed = false
 
     init(
         underlying: SumiHostApplicationLaunching,
         launchPolicy: SumiCompanionAppLaunchPolicy,
         hostBundleIdentifier: String,
-        protocolAdapterAvailable: Bool
+        protocolAdapterAvailable: Bool,
+        sessionKey: SumiCompanionAppLaunchSessionKey? = nil,
+        launchReason: SumiCompanionAppLaunchReason = .adapterConnect
     ) {
         self.underlying = underlying
         self.launchPolicy = launchPolicy
         self.hostBundleIdentifier = hostBundleIdentifier
         self.protocolAdapterAvailable = protocolAdapterAvailable
+        self.sessionKey = sessionKey
+        self.launchReason = launchReason
     }
 
     func urlForApplication(withBundleIdentifier bundleIdentifier: String) -> URL? {
@@ -86,9 +94,16 @@ final class SumiLaunchPolicyGatedHostApplicationLauncher: SumiHostApplicationLau
         let decision = launchPolicy.evaluateLaunch(
             hostBundleIdentifier: hostBundleIdentifier,
             appInstalled: appInstalled,
-            protocolAdapterAvailable: protocolAdapterAvailable
+            protocolAdapterAvailable: protocolAdapterAvailable,
+            sessionKey: sessionKey,
+            isHostRunning: launchPolicy.isHostApplicationRunning(hostBundleIdentifier: hostBundleIdentifier)
         )
+        lastLaunchDecision = decision
+        lastLaunchSuppressed = decision != .allowed
         guard decision == .allowed else {
+            if let sessionKey {
+                launchPolicy.recordLaunchSuppressed(sessionKey: sessionKey, decision: decision)
+            }
             throw SumiNativeMessagingRelay.makeError(
                 code: .companionAppProtocolUnknown,
                 diagnostic: nil
@@ -96,8 +111,10 @@ final class SumiLaunchPolicyGatedHostApplicationLauncher: SumiHostApplicationLau
         }
         try await launchPolicy.launchInstalledApplication(
             hostBundleIdentifier: bundleIdentifier,
+            sessionKey: sessionKey,
             launcher: underlying
         )
+        _ = launchReason
     }
 }
 
@@ -158,8 +175,10 @@ enum SumiNativeMessagingConnection {
         adapter: SumiNativeMessagingProtocolAdapter,
         launcher: SumiHostApplicationLaunching,
         launchPolicy: SumiCompanionAppLaunchPolicy,
+        launchSessionKey: SumiCompanionAppLaunchSessionKey? = nil,
         launchSuppressed: Bool = false,
         retryCountBucket: SumiNativeMessagingRetryCountBucket = .none,
+        extensionContextActive: Bool? = nil,
         logDiagnostic: @escaping (SafariExtensionNativeMessagingDiagnostic) -> Void,
         replyHandler: @escaping (Any?, (any Error)?) -> Void,
         replyTimeout: Duration = defaultReplyTimeout
@@ -242,7 +261,9 @@ enum SumiNativeMessagingConnection {
             underlying: launcher,
             launchPolicy: launchPolicy,
             hostBundleIdentifier: hostBundleIdentifier,
-            protocolAdapterAvailable: detail.protocolAdapterAvailable
+            protocolAdapterAvailable: detail.protocolAdapterAvailable,
+            sessionKey: launchSessionKey,
+            launchReason: .adapterOneShot
         )
 
         let coordinator = SumiNativeMessagingOnceReplyCoordinator(replyHandler)
@@ -271,7 +292,8 @@ enum SumiNativeMessagingConnection {
                         errorCode: nsError.code,
                         launchAttempted: true,
                         launchSuppressed: launchSuppressed,
-                        retryCountBucket: retryCountBucket
+                        retryCountBucket: retryCountBucket,
+                        adapter: adapter
                     )
                     logDiagnostic(diagnostic)
                     coordinator.complete(
@@ -293,7 +315,8 @@ enum SumiNativeMessagingConnection {
                         outcome: .portConnected,
                         launchAttempted: true,
                         launchSuppressed: launchSuppressed,
-                        retryCountBucket: retryCountBucket
+                        retryCountBucket: retryCountBucket,
+                        adapter: adapter
                     )
                 )
                 coordinator.complete(value, nil)
@@ -310,7 +333,8 @@ enum SumiNativeMessagingConnection {
                     errorCode: SumiNativeMessagingRelay.ErrorCode.relayCancelled.rawValue,
                     launchAttempted: true,
                     launchSuppressed: launchSuppressed,
-                    retryCountBucket: retryCountBucket
+                    retryCountBucket: retryCountBucket,
+                    adapter: adapter
                 )
                 logDiagnostic(diagnostic)
                 coordinator.complete(
@@ -335,10 +359,15 @@ enum SumiNativeMessagingConnection {
         errorCode: Int? = nil,
         launchAttempted: Bool? = nil,
         launchSuppressed: Bool? = nil,
-        retryCountBucket: SumiNativeMessagingRetryCountBucket? = nil
+        retryCountBucket: SumiNativeMessagingRetryCountBucket? = nil,
+        launchReason: SumiCompanionAppLaunchReason? = nil,
+        launchRequestedByAdapter: Bool? = nil,
+        launchCooldownBucket: SumiNativeMessagingRetryCountBucket? = nil,
+        extensionContextActive: Bool? = nil,
+        adapter: SumiNativeMessagingProtocolAdapter? = nil
     ) -> SafariExtensionNativeMessagingDiagnostic {
         let detail = evaluation.detail
-        return SafariExtensionNativeMessagingDiagnostic(
+        let base = SafariExtensionNativeMessagingDiagnostic(
             extensionId: extensionId,
             direction: direction,
             requestedApplicationIdentifier: requestedApplicationIdentifier,
@@ -350,9 +379,21 @@ enum SumiNativeMessagingConnection {
             launchAttempted: launchAttempted,
             launchSuppressed: launchSuppressed,
             retryCountBucket: retryCountBucket,
+            launchReason: launchReason,
+            launchRequestedByAdapter: launchRequestedByAdapter,
+            launchCooldownBucket: launchCooldownBucket,
+            extensionContextActive: extensionContextActive,
             isContainingApp: detail?.isContainingApp,
             protocolAdapterAvailable: detail?.protocolAdapterAvailable,
-            launchAllowed: detail?.launchAllowed
+            launchAllowed: detail?.launchAllowed,
+            appResolved: detail != nil,
+            appLaunched: launchAttempted
+        )
+        return SafariExtensionNativeMessagingDiagnosticEnrichment.enrich(
+            base,
+            adapter: adapter,
+            adapterIdentifier: adapter?.protocolIdentifier,
+            evaluation: evaluation
         )
     }
 

@@ -12,6 +12,7 @@ enum SumiCompanionAppIdentityMetadata {
     /// Extension-requested identifiers that differ from the containing `.app` bundle ID.
     static let publicHostBundleIdentifierAliases: [String: String] = [
         "com.8bit.bitwarden": "com.bitwarden.desktop",
+        "com.8bit.bitwarden.desktop": "com.bitwarden.desktop",
         "me.proton.pass.nm": "me.proton.pass.catalyst",
     ]
 

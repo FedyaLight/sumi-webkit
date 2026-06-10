@@ -421,6 +421,18 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             )
         }
         let profileId = profileId(for: extensionContext)
+        #if DEBUG || SUMI_DIAGNOSTICS
+            if RuntimeDiagnostics.isVerboseEnabled {
+                RuntimeDiagnostics.debug(category: "SafariNativeMessagingRouting") {
+                    """
+                    WKWebExtensionControllerDelegate.sendMessage \
+                    ext=\(extensionId ?? "unknown") \
+                    profile=\(SafariExtensionNativeMessagingRoutingProbe.profileIdBucket(profileId)) \
+                    appId=\(applicationIdentifier ?? "(nil)")
+                    """
+                }
+            }
+        #endif
         safariNativeMessagingHost.handleSendMessage(
             applicationIdentifier: applicationIdentifier,
             message: message,
@@ -450,6 +462,18 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
 
         let portKey = ObjectIdentifier(port)
         let profileId = profileId(for: extensionContext)
+        #if DEBUG || SUMI_DIAGNOSTICS
+            if RuntimeDiagnostics.isVerboseEnabled {
+                RuntimeDiagnostics.debug(category: "SafariNativeMessagingRouting") {
+                    """
+                    WKWebExtensionControllerDelegate.connectUsing \
+                    ext=\(extensionId ?? "unknown") \
+                    profile=\(SafariExtensionNativeMessagingRoutingProbe.profileIdBucket(profileId)) \
+                    appId=\(port.applicationIdentifier ?? "(nil)")
+                    """
+                }
+            }
+        #endif
         _ = safariNativeMessagingHost.handleConnect(
             port: port,
             extensionId: extensionId,

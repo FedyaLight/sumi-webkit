@@ -13,7 +13,8 @@ import WebKit
 final class SumiNativeMessagingPortSession: NSObject {
     private let port: any SumiNativeMessagingPortControlling
     private let adapter: SumiNativeMessagingProtocolAdapter?
-    private let extensionId: String
+    let profileId: UUID?
+    let extensionId: String
     private(set) var resolvedHostBundleIdentifier: String
     private let resolverBucket: SumiNativeMessagingResolverBucket
     private let logDiagnostic: (SafariExtensionNativeMessagingDiagnostic) -> Void
@@ -23,6 +24,7 @@ final class SumiNativeMessagingPortSession: NSObject {
         port: any SumiNativeMessagingPortControlling,
         adapter: SumiNativeMessagingProtocolAdapter?,
         extensionId: String,
+        profileId: UUID? = nil,
         hostBundleIdentifier: String,
         resolverBucket: SumiNativeMessagingResolverBucket,
         logDiagnostic: @escaping (SafariExtensionNativeMessagingDiagnostic) -> Void,
@@ -30,6 +32,7 @@ final class SumiNativeMessagingPortSession: NSObject {
     ) {
         self.port = port
         self.adapter = adapter
+        self.profileId = profileId
         self.extensionId = extensionId
         self.resolvedHostBundleIdentifier = hostBundleIdentifier
         self.resolverBucket = resolverBucket
@@ -49,18 +52,25 @@ final class SumiNativeMessagingPortSession: NSObject {
         port.disconnect(throwing: companionProtocolErrorProvider())
     }
 
+    func sendReplyToExtension(_ message: Any) {
+        guard port.isDisconnected == false else { return }
+        if let recordingPort = port as? any SumiNativeMessagingPortReplyRecording {
+            recordingPort.recordReplyToExtension(message)
+            return
+        }
+        if let messagePort = port as? WKWebExtension.MessagePort {
+            messagePort.sendMessage(message) { _ in }
+        }
+    }
+
     private func wirePort() {
         port.messageHandler = { [weak self] message, error in
             guard let self else { return }
             if let error {
                 let nsError = error as NSError
                 self.logDiagnostic(
-                    SafariExtensionNativeMessagingDiagnostic(
-                        extensionId: self.extensionId,
+                    self.makeDiagnostic(
                         direction: .portReceive,
-                        requestedApplicationIdentifier: self.port.applicationIdentifier,
-                        hostBundleIdentifier: self.resolvedHostBundleIdentifier,
-                        resolverBucket: self.resolverBucket,
                         outcome: .companionAppProtocolUnknown,
                         errorDomain: nsError.domain,
                         errorCode: nsError.code
@@ -71,12 +81,8 @@ final class SumiNativeMessagingPortSession: NSObject {
 
             guard let adapter = self.adapter else {
                 self.logDiagnostic(
-                    SafariExtensionNativeMessagingDiagnostic(
-                        extensionId: self.extensionId,
+                    self.makeDiagnostic(
                         direction: .portRelay,
-                        requestedApplicationIdentifier: self.port.applicationIdentifier,
-                        hostBundleIdentifier: self.resolvedHostBundleIdentifier,
-                        resolverBucket: self.resolverBucket,
                         outcome: .companionAppProtocolUnknown,
                         errorDomain: SumiNativeMessagingRelay.errorDomain,
                         errorCode: SumiNativeMessagingRelay.ErrorCode.companionAppProtocolUnknown.rawValue
@@ -90,15 +96,12 @@ final class SumiNativeMessagingPortSession: NSObject {
             let relayed = adapter.relayPortMessage(session: self, message: message)
             if relayed == false {
                 self.logDiagnostic(
-                    SafariExtensionNativeMessagingDiagnostic(
-                        extensionId: self.extensionId,
+                    self.makeDiagnostic(
                         direction: .portRelay,
-                        requestedApplicationIdentifier: self.port.applicationIdentifier,
-                        hostBundleIdentifier: self.resolvedHostBundleIdentifier,
-                        resolverBucket: self.resolverBucket,
                         outcome: .companionAppProtocolUnknown,
                         errorDomain: SumiNativeMessagingRelay.errorDomain,
-                        errorCode: SumiNativeMessagingRelay.ErrorCode.companionAppProtocolUnknown.rawValue
+                        errorCode: SumiNativeMessagingRelay.ErrorCode.companionAppProtocolUnknown.rawValue,
+                        adapter: adapter
                     )
                 )
                 self.disconnectDueToUnsupportedProtocol()
@@ -109,18 +112,41 @@ final class SumiNativeMessagingPortSession: NSObject {
             guard let self else { return }
             let nsError = error as NSError?
             self.logDiagnostic(
-                SafariExtensionNativeMessagingDiagnostic(
-                    extensionId: self.extensionId,
+                self.makeDiagnostic(
                     direction: .portReceive,
-                    requestedApplicationIdentifier: self.port.applicationIdentifier,
-                    hostBundleIdentifier: self.resolvedHostBundleIdentifier,
-                    resolverBucket: self.resolverBucket,
                     outcome: .relayCancelled,
                     errorDomain: nsError?.domain,
                     errorCode: nsError?.code
                 )
             )
         }
+    }
+
+    private func makeDiagnostic(
+        direction: SafariExtensionNativeMessagingDirection,
+        outcome: SafariExtensionNativeMessagingOutcome,
+        errorDomain: String? = nil,
+        errorCode: Int? = nil,
+        adapter: SumiNativeMessagingProtocolAdapter? = nil
+    ) -> SafariExtensionNativeMessagingDiagnostic {
+        let resolvedAdapter = adapter ?? self.adapter
+        let base = SafariExtensionNativeMessagingDiagnostic(
+            extensionId: extensionId,
+            direction: direction,
+            requestedApplicationIdentifier: port.applicationIdentifier,
+            hostBundleIdentifier: resolvedHostBundleIdentifier,
+            resolverBucket: resolverBucket,
+            outcome: outcome,
+            errorDomain: errorDomain,
+            errorCode: errorCode,
+            protocolAdapterAvailable: resolvedAdapter != nil,
+            appResolved: true
+        )
+        return SafariExtensionNativeMessagingDiagnosticEnrichment.enrich(
+            base,
+            adapter: resolvedAdapter,
+            adapterIdentifier: resolvedAdapter?.protocolIdentifier
+        )
     }
 }
 
