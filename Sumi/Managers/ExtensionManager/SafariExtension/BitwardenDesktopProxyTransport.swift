@@ -84,9 +84,16 @@ enum BitwardenDesktopProxyPathResolver {
 
 @MainActor
 enum BitwardenDesktopTransportDiagnostics {
+    private static var lastUnsupportedCommandLog: [String: ContinuousClock.Instant] = [:]
+    private static let unsupportedCommandCoalesceWindow: Duration = .seconds(5)
+
     static func log(outcome: BitwardenDesktopTransportOutcome, command: String? = nil) {
         #if DEBUG || SUMI_DIAGNOSTICS
             guard RuntimeDiagnostics.isVerboseEnabled else { return }
+            if let command, outcome == .unsupportedCommand || outcome == .commandNotYetImplemented {
+                logUnsupportedCommandCoalesced(command: command, outcome: outcome)
+                return
+            }
             RuntimeDiagnostics.debug(category: "BitwardenDesktopTransport") {
                 if let command {
                     return "outcome=\(outcome.rawValue) command=\(command)"
@@ -97,6 +104,24 @@ enum BitwardenDesktopTransportDiagnostics {
             _ = (outcome, command)
         #endif
     }
+
+    #if DEBUG || SUMI_DIAGNOSTICS
+    private static func logUnsupportedCommandCoalesced(
+        command: String,
+        outcome: BitwardenDesktopTransportOutcome
+    ) {
+        let now = ContinuousClock.now
+        if let last = lastUnsupportedCommandLog[command],
+           now - last < unsupportedCommandCoalesceWindow
+        {
+            return
+        }
+        lastUnsupportedCommandLog[command] = now
+        RuntimeDiagnostics.debug(category: "BitwardenDesktopTransport") {
+            "outcome=\(outcome.rawValue) command=\(command)"
+        }
+    }
+    #endif
 }
 
 @MainActor
@@ -298,19 +323,62 @@ enum BitwardenDesktopProxyFraming {
 
 @MainActor
 enum BitwardenDesktopProxyTransportErrorMapper {
+    static let failureBucketUserInfoKey = "SumiNativeMessagingFailureBucket"
+
     static func relayError(for error: BitwardenDesktopProxyTransportError) -> NSError {
+        let relayError: NSError
         switch error {
-        case .appNotInstalled, .proxyBinaryMissing, .desktopNotRunning:
-            return SumiNativeMessagingRelay.makeError(code: .hostNotFound, diagnostic: nil)
-        case .desktopIntegrationDisabled, .processLaunchFailed, .permissionDenied:
-            return SumiNativeMessagingRelay.makeError(code: .companionAppProtocolUnknown, diagnostic: nil)
+        case .appNotInstalled, .proxyBinaryMissing:
+            relayError = SumiNativeMessagingRelay.makeError(
+                code: .hostNotFound,
+                description: "Bitwarden Desktop is not installed.",
+                diagnostic: nil
+            )
+        case .desktopNotRunning:
+            relayError = SumiNativeMessagingRelay.makeError(
+                code: .hostNotFound,
+                description: "Bitwarden Desktop is not running.",
+                diagnostic: nil
+            )
+        case .desktopIntegrationDisabled:
+            relayError = SumiNativeMessagingRelay.makeError(
+                code: .hostLaunchFailed,
+                description: "Bitwarden Desktop browser integration is disabled.",
+                diagnostic: nil
+            )
+        case .processLaunchFailed:
+            relayError = SumiNativeMessagingRelay.makeError(
+                code: .hostLaunchFailed,
+                description: "Bitwarden Desktop native messaging transport is unavailable.",
+                diagnostic: nil
+            )
+        case .permissionDenied:
+            relayError = SumiNativeMessagingRelay.makeError(
+                code: .hostLaunchFailed,
+                description: "Permission denied when starting Bitwarden Desktop native messaging.",
+                diagnostic: nil
+            )
         case .timeout:
-            return SumiNativeMessagingRelay.makeError(code: .relayTimeout, diagnostic: nil)
-        case .malformedReply, .protocolMismatch:
-            return SumiNativeMessagingRelay.makeError(code: .companionAppProtocolUnknown, diagnostic: nil)
+            relayError = SumiNativeMessagingRelay.makeError(code: .relayTimeout, diagnostic: nil)
+        case .malformedReply:
+            relayError = SumiNativeMessagingRelay.makeError(
+                code: .companionAppProtocolUnknown,
+                description: "Bitwarden Desktop returned a malformed native messaging reply.",
+                diagnostic: nil
+            )
+        case .protocolMismatch:
+            relayError = SumiNativeMessagingRelay.makeError(
+                code: .companionAppProtocolUnknown,
+                description: "Bitwarden Desktop native messaging protocol mismatch.",
+                diagnostic: nil
+            )
         case .portDisconnected:
-            return SumiNativeMessagingRelay.makeError(code: .relayCancelled, diagnostic: nil)
+            relayError = SumiNativeMessagingRelay.makeError(code: .relayCancelled, diagnostic: nil)
         }
+
+        var userInfo = relayError.userInfo
+        userInfo[failureBucketUserInfoKey] = outcome(for: error).rawValue
+        return NSError(domain: relayError.domain, code: relayError.code, userInfo: userInfo)
     }
 
     static func capability(for error: BitwardenDesktopProxyTransportError)

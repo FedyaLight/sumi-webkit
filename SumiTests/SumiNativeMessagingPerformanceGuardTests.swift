@@ -44,6 +44,16 @@ final class SumiNativeMessagingPerformanceGuardTests: XCTestCase {
 
     // MARK: - Repeated failure coalescing
 
+    func testDelegateInvocationCountersTrackWKDelegateEntry() {
+        SumiNativeMessagingRuntimeCounters.recordDelegateSendMessageInvoked()
+        SumiNativeMessagingRuntimeCounters.recordDelegateConnectInvoked()
+        SumiNativeMessagingRuntimeCounters.recordDelegateConnectInvoked()
+
+        let snapshot = SumiNativeMessagingRuntimeCounters.snapshot()
+        XCTAssertEqual(snapshot.delegateSendMessageInvokedCount, 1)
+        XCTAssertEqual(snapshot.delegateConnectInvokedCount, 2)
+    }
+
     func testRepeatedFailureDiagnosticsAreCoalesced() async throws {
         let appexPath = try makeFixtureApp(
             appBundleID: "com.example.host",

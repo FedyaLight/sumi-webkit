@@ -216,10 +216,19 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
 
         let popupWebView = action.popupWebView
 
-        if let popupWebView,
-           RuntimeDiagnostics.isDeveloperInspectionEnabled
-        {
-            popupWebView.isInspectable = true
+        if let popupWebView {
+            if RuntimeDiagnostics.isDeveloperInspectionEnabled {
+                popupWebView.isInspectable = true
+            }
+            if let profileId = self.profileId(for: extensionContext),
+               let controller = self.extensionControllersByProfile[profileId]
+            {
+                if popupWebView.configuration.webExtensionController == nil {
+                    popupWebView.configuration.webExtensionController = controller
+                }
+                popupWebView.configuration.websiteDataStore = self.getExtensionDataStore(for: profileId)
+                popupWebView.configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+            }
         }
 
         if let extensionId {
@@ -411,6 +420,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         replyHandler: @escaping (Any?, (any Error)?) -> Void
     ) {
         _ = controller
+        SumiNativeMessagingRuntimeCounters.recordDelegateSendMessageInvoked()
         let extensionId = extensionID(for: extensionContext)
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -450,6 +460,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         completionHandler: @escaping ((any Error)?) -> Void
     ) {
         _ = controller
+        SumiNativeMessagingRuntimeCounters.recordDelegateConnectInvoked()
         let extensionId = extensionID(for: extensionContext)
         Task { @MainActor [weak self] in
             guard let self else { return }

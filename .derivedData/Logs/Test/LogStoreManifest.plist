@@ -6,10 +6,10 @@
 	<integer>12</integer>
 	<key>logs</key>
 	<dict>
-		<key>6746B6C6-5591-4343-B001-1826D1403EB4</key>
+		<key>0D9C7DD1-0B64-402D-9125-8555054213D8</key>
 		<dict>
 			<key>auxiliaryLogUniqueIdentifier</key>
-			<string>20B61DFF-65F4-4AC1-B35B-B9896DEC5BC7</string>
+			<string>E272DC63-964C-47B5-91C9-B9D5E3689456</string>
 			<key>auxiliaryObservable</key>
 			<dict>
 				<key>highLevelStatus</key>
@@ -21,7 +21,7 @@
 				<key>totalNumberOfTestFailures</key>
 				<integer>0</integer>
 				<key>totalNumberOfWarnings</key>
-				<integer>10</integer>
+				<integer>9</integer>
 			</dict>
 			<key>className</key>
 			<string>IDESchemeActionsInvocationRecord</string>
@@ -30,7 +30,7 @@
 			<key>domainType</key>
 			<string>com.apple.dt.unit.cocoaUnitTest</string>
 			<key>fileName</key>
-			<string>Test-Sumi-2026.06.10_11-34-04-+0300.xcresult</string>
+			<string>Test-Sumi-2026.06.10_13-09-26-+0300.xcresult</string>
 			<key>hasAuxiliaryLog</key>
 			<true/>
 			<key>hasCoverageData</key>
@@ -40,17 +40,17 @@
 			<key>primaryObservable</key>
 			<dict>
 				<key>highLevelStatus</key>
-				<string>W</string>
+				<string>T</string>
 				<key>totalCodeCoverage</key>
-				<real>0.12275964689359994</real>
+				<real>0.13185142885934784</real>
 				<key>totalNumberOfAnalyzerIssues</key>
 				<integer>0</integer>
 				<key>totalNumberOfErrors</key>
 				<integer>0</integer>
 				<key>totalNumberOfTestFailures</key>
-				<integer>0</integer>
+				<integer>3</integer>
 				<key>totalNumberOfWarnings</key>
-				<integer>10</integer>
+				<integer>9</integer>
 			</dict>
 			<key>schemeIdentifier-containerName</key>
 			<string>Sumi project</string>
@@ -61,18 +61,81 @@
 			<key>signature</key>
 			<string>Test Sumi</string>
 			<key>timeStartedRecording</key>
-			<real>802773244.223086</real>
+			<real>802778966.70407295</real>
 			<key>timeStoppedRecording</key>
-			<real>802773272.75497401</real>
+			<real>802779007.91521704</real>
 			<key>title</key>
 			<string>Test Sumi</string>
 			<key>uniqueIdentifier</key>
-			<string>6746B6C6-5591-4343-B001-1826D1403EB4</string>
+			<string>0D9C7DD1-0B64-402D-9125-8555054213D8</string>
 		</dict>
-		<key>E55E80E3-4F34-42ED-88D4-CFC6BD4EC35C</key>
+		<key>19C2E3DC-97F9-4B67-BFEA-968AAA190054</key>
 		<dict>
 			<key>auxiliaryLogUniqueIdentifier</key>
-			<string>F03D581F-EB4C-4C52-BE44-E97F2ACD91B7</string>
+			<string>6E8D6FFF-1F80-476B-9AB4-124DB86FE9E3</string>
+			<key>auxiliaryObservable</key>
+			<dict>
+				<key>highLevelStatus</key>
+				<string>W</string>
+				<key>totalNumberOfAnalyzerIssues</key>
+				<integer>0</integer>
+				<key>totalNumberOfErrors</key>
+				<integer>0</integer>
+				<key>totalNumberOfTestFailures</key>
+				<integer>0</integer>
+				<key>totalNumberOfWarnings</key>
+				<integer>9</integer>
+			</dict>
+			<key>className</key>
+			<string>IDESchemeActionsInvocationRecord</string>
+			<key>documentTypeString</key>
+			<string>&lt;nil&gt;</string>
+			<key>domainType</key>
+			<string>com.apple.dt.unit.cocoaUnitTest</string>
+			<key>fileName</key>
+			<string>Test-Sumi-2026.06.10_13-13-42-+0300.xcresult</string>
+			<key>hasAuxiliaryLog</key>
+			<true/>
+			<key>hasCoverageData</key>
+			<true/>
+			<key>hasPrimaryLog</key>
+			<true/>
+			<key>primaryObservable</key>
+			<dict>
+				<key>highLevelStatus</key>
+				<string>W</string>
+				<key>totalCodeCoverage</key>
+				<real>0.10860632657403042</real>
+				<key>totalNumberOfAnalyzerIssues</key>
+				<integer>0</integer>
+				<key>totalNumberOfErrors</key>
+				<integer>0</integer>
+				<key>totalNumberOfTestFailures</key>
+				<integer>0</integer>
+				<key>totalNumberOfWarnings</key>
+				<integer>9</integer>
+			</dict>
+			<key>schemeIdentifier-containerName</key>
+			<string>Sumi project</string>
+			<key>schemeIdentifier-schemeName</key>
+			<string>Sumi</string>
+			<key>schemeIdentifier-sharedScheme</key>
+			<integer>1</integer>
+			<key>signature</key>
+			<string>Test Sumi</string>
+			<key>timeStartedRecording</key>
+			<real>802779222.29254401</real>
+			<key>timeStoppedRecording</key>
+			<real>802779231.76571703</real>
+			<key>title</key>
+			<string>Test Sumi</string>
+			<key>uniqueIdentifier</key>
+			<string>19C2E3DC-97F9-4B67-BFEA-968AAA190054</string>
+		</dict>
+		<key>45C9891E-CB0F-40EB-AB29-D756CB3ABEE5</key>
+		<dict>
+			<key>auxiliaryLogUniqueIdentifier</key>
+			<string>A57EA1D8-A743-44E9-AFA7-2E141B0C7187</string>
 			<key>auxiliaryObservable</key>
 			<dict>
 				<key>highLevelStatus</key>
@@ -93,7 +156,7 @@
 			<key>domainType</key>
 			<string>com.apple.dt.unit.cocoaUnitTest</string>
 			<key>fileName</key>
-			<string>Test-Sumi-2026.06.10_11-23-42-+0300.xcresult</string>
+			<string>Test-Sumi-2026.06.10_13-14-00-+0300.xcresult</string>
 			<key>hasAuxiliaryLog</key>
 			<true/>
 			<key>hasCoverageData</key>
@@ -103,13 +166,137 @@
 			<key>primaryObservable</key>
 			<dict>
 				<key>highLevelStatus</key>
-				<string>S</string>
+				<string>T</string>
 				<key>totalCodeCoverage</key>
-				<real>0.15901079393924097</real>
+				<real>0.14292039689802183</real>
 				<key>totalNumberOfAnalyzerIssues</key>
 				<integer>0</integer>
 				<key>totalNumberOfErrors</key>
 				<integer>0</integer>
+				<key>totalNumberOfTestFailures</key>
+				<integer>2</integer>
+				<key>totalNumberOfWarnings</key>
+				<integer>0</integer>
+			</dict>
+			<key>schemeIdentifier-containerName</key>
+			<string>Sumi project</string>
+			<key>schemeIdentifier-schemeName</key>
+			<string>Sumi</string>
+			<key>schemeIdentifier-sharedScheme</key>
+			<integer>1</integer>
+			<key>signature</key>
+			<string>Test Sumi</string>
+			<key>timeStartedRecording</key>
+			<real>802779240.64365697</real>
+			<key>timeStoppedRecording</key>
+			<real>802779253.82896101</real>
+			<key>title</key>
+			<string>Test Sumi</string>
+			<key>uniqueIdentifier</key>
+			<string>45C9891E-CB0F-40EB-AB29-D756CB3ABEE5</string>
+		</dict>
+		<key>5A444243-7732-4F9E-B884-084C63ED7349</key>
+		<dict>
+			<key>auxiliaryLogUniqueIdentifier</key>
+			<string>11A16372-4B5D-4503-8BB3-F85EA3F00EE2</string>
+			<key>auxiliaryObservable</key>
+			<dict>
+				<key>highLevelStatus</key>
+				<string>W</string>
+				<key>totalNumberOfAnalyzerIssues</key>
+				<integer>0</integer>
+				<key>totalNumberOfErrors</key>
+				<integer>0</integer>
+				<key>totalNumberOfTestFailures</key>
+				<integer>0</integer>
+				<key>totalNumberOfWarnings</key>
+				<integer>2</integer>
+			</dict>
+			<key>className</key>
+			<string>IDESchemeActionsInvocationRecord</string>
+			<key>documentTypeString</key>
+			<string>&lt;nil&gt;</string>
+			<key>domainType</key>
+			<string>com.apple.dt.unit.cocoaUnitTest</string>
+			<key>fileName</key>
+			<string>Test-Sumi-2026.06.10_13-14-44-+0300.xcresult</string>
+			<key>hasAuxiliaryLog</key>
+			<true/>
+			<key>hasCoverageData</key>
+			<true/>
+			<key>hasPrimaryLog</key>
+			<true/>
+			<key>primaryObservable</key>
+			<dict>
+				<key>highLevelStatus</key>
+				<string>W</string>
+				<key>totalCodeCoverage</key>
+				<real>0.14068215895202377</real>
+				<key>totalNumberOfAnalyzerIssues</key>
+				<integer>0</integer>
+				<key>totalNumberOfErrors</key>
+				<integer>0</integer>
+				<key>totalNumberOfTestFailures</key>
+				<integer>0</integer>
+				<key>totalNumberOfWarnings</key>
+				<integer>2</integer>
+			</dict>
+			<key>schemeIdentifier-containerName</key>
+			<string>Sumi project</string>
+			<key>schemeIdentifier-schemeName</key>
+			<string>Sumi</string>
+			<key>schemeIdentifier-sharedScheme</key>
+			<integer>1</integer>
+			<key>signature</key>
+			<string>Test Sumi</string>
+			<key>timeStartedRecording</key>
+			<real>802779284.06651795</real>
+			<key>timeStoppedRecording</key>
+			<real>802779297.60084605</real>
+			<key>title</key>
+			<string>Test Sumi</string>
+			<key>uniqueIdentifier</key>
+			<string>5A444243-7732-4F9E-B884-084C63ED7349</string>
+		</dict>
+		<key>9264FAD6-8AFD-46B9-A08C-BC13D6D1A8D0</key>
+		<dict>
+			<key>auxiliaryLogUniqueIdentifier</key>
+			<string>B1C0D7CA-8365-4379-8468-F615AC65C22F</string>
+			<key>auxiliaryObservable</key>
+			<dict>
+				<key>highLevelStatus</key>
+				<string>E</string>
+				<key>totalNumberOfAnalyzerIssues</key>
+				<integer>0</integer>
+				<key>totalNumberOfErrors</key>
+				<integer>1</integer>
+				<key>totalNumberOfTestFailures</key>
+				<integer>0</integer>
+				<key>totalNumberOfWarnings</key>
+				<integer>0</integer>
+			</dict>
+			<key>className</key>
+			<string>IDESchemeActionsInvocationRecord</string>
+			<key>documentTypeString</key>
+			<string>&lt;nil&gt;</string>
+			<key>domainType</key>
+			<string>com.apple.dt.unit.cocoaUnitTest</string>
+			<key>fileName</key>
+			<string>Test-Sumi-2026.06.10_13-11-31-+0300.xcresult</string>
+			<key>hasAuxiliaryLog</key>
+			<true/>
+			<key>hasCoverageData</key>
+			<true/>
+			<key>hasPrimaryLog</key>
+			<true/>
+			<key>primaryObservable</key>
+			<dict>
+				<key>highLevelStatus</key>
+				<string>E</string>
+				<key>totalNumberOfAnalyzerIssues</key>
+				<integer>0</integer>
+				<key>totalNumberOfErrors</key>
+				<integer>2</integer>
 				<key>totalNumberOfTestFailures</key>
 				<integer>0</integer>
 				<key>totalNumberOfWarnings</key>
@@ -124,13 +311,76 @@
 			<key>signature</key>
 			<string>Test Sumi</string>
 			<key>timeStartedRecording</key>
-			<real>802772622.32748103</real>
+			<real>802779091.01368701</real>
 			<key>timeStoppedRecording</key>
-			<real>802772633.10995996</real>
+			<real>802779101.27119696</real>
 			<key>title</key>
 			<string>Test Sumi</string>
 			<key>uniqueIdentifier</key>
-			<string>E55E80E3-4F34-42ED-88D4-CFC6BD4EC35C</string>
+			<string>9264FAD6-8AFD-46B9-A08C-BC13D6D1A8D0</string>
+		</dict>
+		<key>D21DFF78-29F8-4AC9-969F-F93A06313CE6</key>
+		<dict>
+			<key>auxiliaryLogUniqueIdentifier</key>
+			<string>F4DFB8AD-81A1-4AAE-A338-A0D03790897C</string>
+			<key>auxiliaryObservable</key>
+			<dict>
+				<key>highLevelStatus</key>
+				<string>W</string>
+				<key>totalNumberOfAnalyzerIssues</key>
+				<integer>0</integer>
+				<key>totalNumberOfErrors</key>
+				<integer>0</integer>
+				<key>totalNumberOfTestFailures</key>
+				<integer>0</integer>
+				<key>totalNumberOfWarnings</key>
+				<integer>9</integer>
+			</dict>
+			<key>className</key>
+			<string>IDESchemeActionsInvocationRecord</string>
+			<key>documentTypeString</key>
+			<string>&lt;nil&gt;</string>
+			<key>domainType</key>
+			<string>com.apple.dt.unit.cocoaUnitTest</string>
+			<key>fileName</key>
+			<string>Test-Sumi-2026.06.10_13-12-08-+0300.xcresult</string>
+			<key>hasAuxiliaryLog</key>
+			<true/>
+			<key>hasCoverageData</key>
+			<true/>
+			<key>hasPrimaryLog</key>
+			<true/>
+			<key>primaryObservable</key>
+			<dict>
+				<key>highLevelStatus</key>
+				<string>T</string>
+				<key>totalCodeCoverage</key>
+				<real>0.1239785255728391</real>
+				<key>totalNumberOfAnalyzerIssues</key>
+				<integer>0</integer>
+				<key>totalNumberOfErrors</key>
+				<integer>0</integer>
+				<key>totalNumberOfTestFailures</key>
+				<integer>3</integer>
+				<key>totalNumberOfWarnings</key>
+				<integer>9</integer>
+			</dict>
+			<key>schemeIdentifier-containerName</key>
+			<string>Sumi project</string>
+			<key>schemeIdentifier-schemeName</key>
+			<string>Sumi</string>
+			<key>schemeIdentifier-sharedScheme</key>
+			<integer>1</integer>
+			<key>signature</key>
+			<string>Test Sumi</string>
+			<key>timeStartedRecording</key>
+			<real>802779128.33538496</real>
+			<key>timeStoppedRecording</key>
+			<real>802779146.18082905</real>
+			<key>title</key>
+			<string>Test Sumi</string>
+			<key>uniqueIdentifier</key>
+			<string>D21DFF78-29F8-4AC9-969F-F93A06313CE6</string>
 		</dict>
 	</dict>
 </dict>

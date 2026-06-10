@@ -212,13 +212,16 @@ enum SumiCompanionAppResolver {
         switch launchDecision {
         case .suppressedNoProtocolAdapter:
             return .protocolAdapterUnavailable(detail)
-        case .suppressedProtocolUnknown,
-             .suppressedConnectIfNotRunning,
-             .suppressedSessionLaunchAttempted,
-             .refusedArbitraryPath:
+        case .suppressedProtocolUnknown, .refusedArbitraryPath:
             return .launchSuppressed(detail)
+        case .suppressedConnectIfNotRunning, .suppressedSessionLaunchAttempted:
+            if adapterAvailable == false {
+                return .launchSuppressed(detail)
+            }
         case .rateLimited:
-            return .launchRateLimited(detail)
+            if adapterAvailable == false {
+                return .launchRateLimited(detail)
+            }
         case .appNotInstalled:
             return .appNotFound(detail)
         case .allowed:

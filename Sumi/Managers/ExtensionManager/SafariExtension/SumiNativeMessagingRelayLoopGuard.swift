@@ -67,10 +67,11 @@ final class SumiNativeMessagingRelayLoopGuard {
 
         if Self.supportedRelayProtocolHostBundleIdentifiers.contains(hostBundleIdentifier) {
             let launchAttempted = cached?.launchAttempted ?? false
-            let suppressLaunch = launchAttempted || withinCooldown
+            // Supported adapters own protocol routing; never block send/connect on loop guard.
+            // Launch gating is handled by SumiCompanionAppLaunchPolicy + gated launcher.
             return Evaluation(
-                shouldLaunchHost: suppressLaunch == false,
-                launchSuppressed: suppressLaunch,
+                shouldLaunchHost: launchAttempted == false && withinCooldown == false,
+                launchSuppressed: false,
                 retryCountBucket: retryBucket,
                 isWithinCooldown: withinCooldown
             )

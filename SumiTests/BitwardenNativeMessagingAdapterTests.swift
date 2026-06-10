@@ -1,3 +1,4 @@
+import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -63,7 +64,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         XCTAssertTrue(fake.isConnected)
     }
 
-    func testStatusWithFakeTransport() async throws {
+    func testPortGetBiometricsStatusHandledLocallyWithoutDesktopRelay() async throws {
         let fake = BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected)
         let adapter = BitwardenNativeMessagingAdapter(
             transportFactory: { fake },
@@ -83,12 +84,41 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         )
 
         XCTAssertTrue(relayed)
+        XCTAssertTrue(fake.sentMessages.isEmpty)
+        XCTAssertEqual(port.repliesSent.count, 1)
+        let reply = try XCTUnwrap(port.repliesSent.first as? [String: Any])
+        XCTAssertEqual(reply["command"] as? String, "getBiometricsStatus")
+        XCTAssertEqual(reply["messageId"] as? Int, 1)
+        XCTAssertNotNil(reply["response"])
+    }
+
+    func testSetupEncryptionRelaysToDesktopProxy() async throws {
+        let fake = BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected)
+        let adapter = BitwardenNativeMessagingAdapter(
+            transportFactory: { fake },
+            handshakeTimeout: .milliseconds(200)
+        )
+        let launcher = makeLauncherWithProxy()
+        let port = MockNativeMessagingPort()
+        let session = makeSession(port: port, adapter: adapter)
+
+        _ = await connect(adapter: adapter, session: session, launcher: launcher)
+        let relayed = adapter.relayPortMessage(
+            session: session,
+            message: [
+                "command": "setupEncryption",
+                "messageId": 1,
+                "publicKey": "abc",
+                "userId": "user-1",
+            ]
+        )
+
+        XCTAssertTrue(relayed)
         XCTAssertEqual(fake.sentMessages.count, 1)
         XCTAssertEqual(
             (fake.sentMessages.first?["message"] as? [String: Any])?["command"] as? String,
-            "getBiometricsStatus"
+            "setupEncryption"
         )
-        XCTAssertEqual(port.repliesSent.count, 1)
     }
 
     func testConnectLaunchesDesktopWhenHandshakeReportsAppNotRunning() async throws {
@@ -122,12 +152,83 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         let port = MockNativeMessagingPort()
         let session = makeSession(port: port, adapter: adapter)
 
-        let error = await connect(adapter: adapter, session: session, launcher: launcher)
-
-        let nsError = try XCTUnwrap(error as NSError?)
+        let handshakeError = await connectAndWaitForHandshakeDisconnect(
+            adapter: adapter,
+            session: session,
+            launcher: launcher,
+            port: port
+        )
+        let nsError = try XCTUnwrap(handshakeError as NSError?)
         XCTAssertEqual(
             nsError.code,
             SumiNativeMessagingRelay.ErrorCode.companionAppProtocolUnknown.rawValue
+        )
+        XCTAssertEqual(
+            nsError.localizedDescription,
+            "Bitwarden Desktop returned a malformed native messaging reply."
+        )
+    }
+
+    func testDesktopIntegrationDisabledReturnsSpecificErrorMessage() async throws {
+        let fake = BitwardenFakeDesktopProxyTransport(mode: .handshakeDisconnected)
+        let adapter = BitwardenNativeMessagingAdapter(
+            transportFactory: { fake },
+            handshakeTimeout: .milliseconds(200)
+        )
+        let launcher = makeLauncherWithProxy()
+        let port = MockNativeMessagingPort()
+        let session = makeSession(port: port, adapter: adapter)
+
+        let handshakeError = await connectAndWaitForHandshakeDisconnect(
+            adapter: adapter,
+            session: session,
+            launcher: launcher,
+            port: port
+        )
+        let nsError = try XCTUnwrap(handshakeError as NSError?)
+        XCTAssertEqual(
+            nsError.code,
+            SumiNativeMessagingRelay.ErrorCode.hostLaunchFailed.rawValue
+        )
+        XCTAssertEqual(
+            nsError.localizedDescription,
+            "Bitwarden Desktop browser integration is disabled."
+        )
+        XCTAssertEqual(
+            nsError.userInfo[BitwardenDesktopProxyTransportErrorMapper.failureBucketUserInfoKey] as? String,
+            BitwardenDesktopTransportOutcome.browserIntegrationDisabled.rawValue
+        )
+    }
+
+    func testUnsupportedOneShotCommandReturnsSpecificErrorMessage() async throws {
+        let adapter = BitwardenNativeMessagingAdapter()
+        let launcher = makeLauncherWithProxy()
+        let expectation = expectation(description: "unsupportedOneShot")
+        var replyError: (any Error)?
+
+        adapter.relayOneShotMessage(
+            request: SumiNativeMessagingOneShotRequest(
+                applicationIdentifier: "com.8bit.bitwarden",
+                extensionId: "ext-bitwarden",
+                hostBundleIdentifier: "com.bitwarden.desktop",
+                resolverBucket: .knownCompanionAlias,
+                message: ["command": "unknownCommand"]
+            ),
+            launcher: launcher
+        ) { _, error in
+            replyError = error
+            expectation.fulfill()
+        }
+
+        await fulfillment(of: [expectation], timeout: 2)
+        let nsError = try XCTUnwrap(replyError as NSError?)
+        XCTAssertEqual(
+            nsError.localizedDescription,
+            "Unsupported Bitwarden native messaging command."
+        )
+        XCTAssertNotEqual(
+            nsError.localizedDescription,
+            "Companion host application messaging protocol is not implemented in Sumi."
         )
     }
 
@@ -141,9 +242,13 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         let port = MockNativeMessagingPort()
         let session = makeSession(port: port, adapter: adapter)
 
-        let error = await connect(adapter: adapter, session: session, launcher: launcher)
-
-        let nsError = try XCTUnwrap(error as NSError?)
+        let handshakeError = await connectAndWaitForHandshakeDisconnect(
+            adapter: adapter,
+            session: session,
+            launcher: launcher,
+            port: port
+        )
+        let nsError = try XCTUnwrap(handshakeError as NSError?)
         XCTAssertEqual(nsError.code, SumiNativeMessagingRelay.ErrorCode.relayTimeout.rawValue)
         XCTAssertEqual(
             BitwardenDesktopProxyTransportErrorMapper.capability(for: .timeout),
@@ -190,7 +295,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         )
     }
 
-    func testUnsupportedPortCommandDoesNotRelayOrScheduleTimeout() async throws {
+    func testUnsupportedPortCommandRepliesWithoutDesktopRelay() async throws {
         let fake = BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected)
         let adapter = BitwardenNativeMessagingAdapter(
             transportFactory: { fake },
@@ -213,14 +318,18 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
 
         XCTAssertTrue(relayed)
         XCTAssertTrue(fake.sentMessages.isEmpty)
-        XCTAssertTrue(port.repliesSent.isEmpty)
+        XCTAssertEqual(port.repliesSent.count, 1)
+        let reply = try XCTUnwrap(port.repliesSent.first as? [String: Any])
+        XCTAssertEqual(reply["command"] as? String, "vaultExport")
+        XCTAssertEqual(reply["messageId"] as? Int, 99)
+        XCTAssertEqual(reply["response"] as? Bool, false)
         XCTAssertFalse(port.isDisconnected)
 
         try await Task.sleep(for: .milliseconds(120))
         XCTAssertFalse(port.isDisconnected)
     }
 
-    func testCommandNotYetImplementedDoesNotRelay() async throws {
+    func testBiometricUnlockHandledLocallyViaPort() async throws {
         let fake = BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected)
         let adapter = BitwardenNativeMessagingAdapter(
             transportFactory: { fake },
@@ -240,6 +349,9 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         )
 
         XCTAssertTrue(fake.sentMessages.isEmpty)
+        XCTAssertEqual(port.repliesSent.count, 1)
+        let reply = try XCTUnwrap(port.repliesSent.first as? [String: Any])
+        XCTAssertEqual(reply["response"] as? String, "not enabled")
     }
 
     func testDisconnectCancelsPendingReplyTimeout() async throws {
@@ -292,6 +404,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         }
 
         XCTAssertTrue(fake.sentMessages.isEmpty)
+        XCTAssertEqual(port.repliesSent.count, 5)
     }
 
     func testAdapterSourcesDoNotLogPayloads() throws {
@@ -477,6 +590,289 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         XCTAssertTrue(diagnostics.contains { $0.adapterSelected == true })
     }
 
+    func testSupportedBitwardenSendAfterConnectNeverReturnsGenericProtocolUnknown() async throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.bitwarden.desktop",
+            appexBundleID: "com.bitwarden.desktop.safari"
+        )
+        let installed = try makeInstalledExtension(id: "ext-bitwarden-send", sourceBundlePath: appexPath)
+        let launcher = makeLauncherWithProxy()
+        let adapter = BitwardenNativeMessagingAdapter(
+            transportFactory: { BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected) },
+            handshakeTimeout: .milliseconds(200)
+        )
+        let relay = SumiNativeMessagingRelay(
+            launcher: launcher,
+            adapterRegistry: SumiNativeMessagingAdapterRegistry(adapters: [adapter]),
+            launchPolicy: SumiCompanionAppLaunchPolicy(),
+            loopGuard: SumiNativeMessagingRelayLoopGuard(),
+            extensionsModuleEnabled: { true }
+        )
+
+        let port = MockNativeMessagingPort()
+        port.applicationIdentifier = "com.8bit.bitwarden"
+        let connectResult = await connectReply(relay: relay, port: port, installed: installed)
+        XCTAssertNil(connectResult.error)
+
+        let reply = await sendMessageReply(
+            relay: relay,
+            installed: installed,
+            applicationIdentifier: "com.8bit.bitwarden",
+            message: [
+                "command": "getBiometricsStatus",
+                "messageId": 1,
+            ]
+        )
+
+        XCTAssertNotNil(reply.value)
+        XCTAssertNil(reply.error)
+    }
+
+    func testRelayPreservesBitwardenSpecificErrorDescription() async throws {
+        let adapter = BitwardenNativeMessagingAdapter()
+        let launcher = makeLauncherWithProxy()
+        let relay = SumiNativeMessagingRelay(
+            launcher: launcher,
+            adapterRegistry: SumiNativeMessagingAdapterRegistry(adapters: [adapter]),
+            launchPolicy: SumiCompanionAppLaunchPolicy(),
+            loopGuard: SumiNativeMessagingRelayLoopGuard(),
+            extensionsModuleEnabled: { true }
+        )
+        let installed = try makeInstalledExtension(
+            id: "ext-bitwarden-desc",
+            sourceBundlePath: try makeFixtureApp(
+                appBundleID: "com.bitwarden.desktop",
+                appexBundleID: "com.bitwarden.desktop.safari"
+            )
+        )
+
+        let reply = await sendMessageReply(
+            relay: relay,
+            installed: installed,
+            applicationIdentifier: "com.bitwarden.desktop",
+            message: ["command": "unknownCommand"]
+        )
+
+        let error = try XCTUnwrap(reply.error as NSError?)
+        XCTAssertEqual(
+            error.localizedDescription,
+            "Unsupported Bitwarden native messaging command."
+        )
+        XCTAssertNotEqual(
+            error.localizedDescription,
+            "Companion host application messaging protocol is not implemented in Sumi."
+        )
+    }
+
+    func testBitwardenPublicOneShotCommandsNeverReturnGenericProtocolUnknown() async throws {
+        let adapter = BitwardenNativeMessagingAdapter()
+        let launcher = makeLauncherWithProxy()
+        let relay = SumiNativeMessagingRelay(
+            launcher: launcher,
+            adapterRegistry: SumiNativeMessagingAdapterRegistry(adapters: [adapter]),
+            launchPolicy: SumiCompanionAppLaunchPolicy(),
+            loopGuard: SumiNativeMessagingRelayLoopGuard(),
+            extensionsModuleEnabled: { true }
+        )
+        let installed = try makeInstalledExtension(
+            id: "ext-bitwarden-oneshot",
+            sourceBundlePath: try makeFixtureApp(
+                appBundleID: "com.bitwarden.desktop",
+                appexBundleID: "com.bitwarden.desktop.safari"
+            )
+        )
+
+        let commands = [
+            "getBiometricsStatus",
+            "getBiometricsStatusForUser",
+            "authenticateWithBiometrics",
+            "unlockWithBiometricsForUser",
+            "biometricUnlockAvailable",
+            "biometricUnlock",
+            "canEnableBiometricUnlock",
+            "showPopover",
+            "readFromClipboard",
+            "copyToClipboard",
+        ]
+
+        for command in commands {
+            var message: [String: Any] = [
+                "command": command,
+                "messageId": 1,
+                "userId": "user-1",
+            ]
+            if command == "copyToClipboard" {
+                message["data"] = "copied"
+            }
+            let reply = await sendMessageReply(
+                relay: relay,
+                installed: installed,
+                applicationIdentifier: "com.bitwarden.desktop",
+                message: message
+            )
+            XCTAssertNil(
+                reply.error,
+                "Expected success for \(command), got \(String(describing: reply.error))"
+            )
+            XCTAssertNotNil(reply.value, "Expected value for \(command)")
+        }
+    }
+
+    func testShowPopoverOneShotMatchesSafariWebExtensionHandler() async throws {
+        let adapter = BitwardenNativeMessagingAdapter()
+        let expectation = expectation(description: "showPopover")
+        var replyValue: Any?
+
+        adapter.relayOneShotMessage(
+            request: SumiNativeMessagingOneShotRequest(
+                applicationIdentifier: "com.8bit.bitwarden",
+                extensionId: "ext-bitwarden",
+                hostBundleIdentifier: "com.bitwarden.desktop",
+                resolverBucket: .knownCompanionAlias,
+                message: ["command": "showPopover", "data": NSNull()]
+            ),
+            launcher: makeLauncherWithProxy()
+        ) { value, error in
+            replyValue = value
+            XCTAssertNil(error)
+            expectation.fulfill()
+        }
+
+        await fulfillment(of: [expectation], timeout: 2)
+        XCTAssertTrue(replyValue is NSNull)
+    }
+
+    func testSleepOneShotCompletesAsynchronously() async throws {
+        let priorDelay = BitwardenSafariOneShotHandler.sleepDelay
+        defer { BitwardenSafariOneShotHandler.sleepDelay = priorDelay }
+        BitwardenSafariOneShotHandler.sleepDelay = .milliseconds(50)
+
+        let adapter = BitwardenNativeMessagingAdapter()
+        let expectation = expectation(description: "sleep")
+        var replyValue: Any?
+
+        adapter.relayOneShotMessage(
+            request: SumiNativeMessagingOneShotRequest(
+                applicationIdentifier: "com.8bit.bitwarden",
+                extensionId: "ext-bitwarden",
+                hostBundleIdentifier: "com.bitwarden.desktop",
+                resolverBucket: .knownCompanionAlias,
+                message: ["command": "sleep"]
+            ),
+            launcher: makeLauncherWithProxy()
+        ) { value, error in
+            replyValue = value
+            XCTAssertNil(error)
+            expectation.fulfill()
+        }
+
+        await fulfillment(of: [expectation], timeout: 2)
+        XCTAssertTrue(replyValue is NSNull)
+    }
+
+    func testPopupOpenPortSequenceGetBiometricsStatusBeforeHandshake() async throws {
+        let fake = BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected, startDelay: .milliseconds(150))
+        let adapter = BitwardenNativeMessagingAdapter(
+            transportFactory: { fake },
+            handshakeTimeout: .milliseconds(500)
+        )
+        let launcher = makeLauncherWithProxy()
+        let port = MockNativeMessagingPort()
+        let session = makeSession(port: port, adapter: adapter)
+
+        let connectExpectation = expectation(description: "connectCompletesEarly")
+        adapter.connectPort(session: session, launcher: launcher) { _ in
+            connectExpectation.fulfill()
+        }
+        await fulfillment(of: [connectExpectation], timeout: 1)
+
+        let relayed = adapter.relayPortMessage(
+            session: session,
+            message: [
+                "command": "getBiometricsStatus",
+                "messageId": 42,
+            ]
+        )
+        XCTAssertTrue(relayed)
+        XCTAssertTrue(fake.sentMessages.isEmpty)
+        XCTAssertEqual(port.repliesSent.count, 1)
+    }
+
+    func testConnectCompletesBeforeHandshakeAcceptsEarlyPortMessage() async throws {
+        let fake = BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected, startDelay: .milliseconds(150))
+        let adapter = BitwardenNativeMessagingAdapter(
+            transportFactory: { fake },
+            handshakeTimeout: .milliseconds(500)
+        )
+        let launcher = makeLauncherWithProxy()
+        let port = MockNativeMessagingPort()
+        let session = makeSession(port: port, adapter: adapter)
+
+        let connectExpectation = expectation(description: "connectCompletesEarly")
+        var connectError: (any Error)?
+        adapter.connectPort(session: session, launcher: launcher) { error in
+            connectError = error
+            connectExpectation.fulfill()
+        }
+        await fulfillment(of: [connectExpectation], timeout: 1)
+        XCTAssertNil(connectError)
+
+        let relayed = adapter.relayPortMessage(
+            session: session,
+            message: [
+                "command": "setupEncryption",
+                "messageId": 42,
+                "publicKey": "abc",
+                "userId": "user-1",
+            ]
+        )
+        XCTAssertTrue(relayed)
+
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(fake.sentMessages.count, 1)
+    }
+
+    func testDelegateNativeMessagingSelectorsVisibleToObjC() throws {
+        let container = try ModelContainer(
+            for: ExtensionEntity.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let manager = ExtensionManager(
+            context: ModelContext(container),
+            initialProfile: nil
+        )
+        XCTAssertTrue(
+            manager.responds(
+                to: NSSelectorFromString(
+                    "webExtensionController:sendMessage:toApplicationWithIdentifier:forExtensionContext:replyHandler:"
+                )
+            )
+        )
+        XCTAssertTrue(
+            manager.responds(
+                to: NSSelectorFromString(
+                    "webExtensionController:connectUsingMessagePort:forExtensionContext:completionHandler:"
+                )
+            )
+        )
+    }
+
+    func testDelegateImplementsWebKitNativeMessagingSelectors() throws {
+        let delegateSource = try source(
+            named: "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"
+        )
+        XCTAssertTrue(
+            delegateSource.contains(
+                "func webExtensionController(\n        _ controller: WKWebExtensionController,\n        sendMessage message: Any,\n        toApplicationWithIdentifier applicationIdentifier: String?,"
+            )
+        )
+        XCTAssertTrue(
+            delegateSource.contains(
+                "func webExtensionController(\n        _ controller: WKWebExtensionController,\n        connectUsing port: WKWebExtension.MessagePort,"
+            )
+        )
+    }
+
     func testUnsupportedHostFailsSafelyWithoutLaunch() async throws {
         let appexPath = try makeFixtureApp(
             appBundleID: "com.vendor.unknown.desktop",
@@ -599,17 +995,38 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         return connectError
     }
 
+    private func connectAndWaitForHandshakeDisconnect(
+        adapter: BitwardenNativeMessagingAdapter,
+        session: SumiNativeMessagingPortSession,
+        launcher: MockHostLauncher,
+        port: MockNativeMessagingPort
+    ) async -> (any Error)? {
+        let connectError = await connect(adapter: adapter, session: session, launcher: launcher)
+        XCTAssertNil(connectError)
+
+        let deadline = ContinuousClock.now + .seconds(2)
+        while ContinuousClock.now < deadline {
+            await Task.yield()
+            if port.isDisconnected {
+                return port.disconnectError
+            }
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+        return nil
+    }
+
     private func sendMessageReply(
         relay: SumiNativeMessagingRelay,
         installed: InstalledExtension,
-        applicationIdentifier: String
+        applicationIdentifier: String,
+        message: Any = ["type": "ping"]
     ) async -> (value: Any?, error: (any Error)?) {
         let expectation = expectation(description: "nativeMessagingReply")
         var replyValue: Any?
         var replyError: (any Error)?
         relay.handleSendMessage(
             applicationIdentifier: applicationIdentifier,
-            message: ["type": "ping"],
+            message: message,
             extensionId: installed.id,
             installedExtensions: [installed]
         ) { value, error in

@@ -121,6 +121,7 @@ final class SumiCompanionAppLaunchPolicy {
         protocolAdapterAvailable: Bool,
         sessionKey: SumiCompanionAppLaunchSessionKey? = nil,
         isHostRunning: Bool? = nil,
+        launchReason: SumiCompanionAppLaunchReason? = nil,
         now: Date = Date()
     ) -> SumiCompanionAppLaunchDecision {
         guard appInstalled else {
@@ -138,7 +139,16 @@ final class SumiCompanionAppLaunchPolicy {
         if prefersConnectIfRunning(hostBundleIdentifier: hostBundleIdentifier) {
             let running = isHostRunning ?? isHostApplicationRunning(hostBundleIdentifier: hostBundleIdentifier)
             if running == false {
-                return .suppressedConnectIfNotRunning
+                switch launchReason {
+                case .adapterConnect, .adapterOneShot:
+                    if let sessionKey,
+                       sessionStateByKey[sessionKey]?.launchAttempted == true
+                    {
+                        return .suppressedSessionLaunchAttempted
+                    }
+                default:
+                    return .suppressedConnectIfNotRunning
+                }
             }
         }
 

@@ -108,7 +108,8 @@ final class SumiCompanionAppLaunchPolicyTests: XCTestCase {
         secondPort.applicationIdentifier = "com.8bit.bitwarden"
         let second = await connectReply(relay: relay, port: secondPort, installed: installed)
 
-        XCTAssertNotNil(second.error)
+        XCTAssertNil(second.error)
+        XCTAssertNotNil(second.session)
         XCTAssertTrue(launcher.openedBundleIdentifiers.isEmpty)
     }
 
@@ -229,7 +230,7 @@ final class SumiCompanionAppLaunchPolicyTests: XCTestCase {
         )
 
         XCTAssertFalse(evaluation.shouldLaunchHost)
-        XCTAssertTrue(evaluation.launchSuppressed)
+        XCTAssertFalse(evaluation.launchSuppressed)
     }
 
     // MARK: - Helpers

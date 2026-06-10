@@ -48,9 +48,13 @@ final class SumiNativeMessagingPortSession: NSObject {
     }
 
     func disconnect() {
+        disconnect(throwing: nil)
+    }
+
+    func disconnect(throwing error: (any Error)?) {
         cancelPortInactivityTimeout()
         guard port.isDisconnected == false else { return }
-        port.disconnect()
+        port.disconnect(throwing: error)
     }
 
     func touchPortActivity() {

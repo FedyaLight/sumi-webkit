@@ -220,10 +220,11 @@ final class SumiCompanionAppResolverTests: XCTestCase {
             adapterRegistry: registry,
             launchPolicy: launchPolicy
         )
-        if case .launchRateLimited = second {
-            XCTAssertTrue(true)
+        if case .companionAppResolved(let detail) = second {
+            XCTAssertTrue(detail.protocolAdapterAvailable)
+            XCTAssertFalse(detail.launchAllowed)
         } else {
-            XCTFail("Expected launchRateLimited, got \(second)")
+            XCTFail("Expected companionAppResolved with launch suppressed, got \(second)")
         }
     }
 

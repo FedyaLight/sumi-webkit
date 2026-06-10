@@ -312,7 +312,12 @@ final class SumiNativeMessagingRelay {
             hostBundleIdentifier: detail.resolvedBundleIdentifier
         )
 
-        if loopEvaluation.launchSuppressed {
+        let adapterLookup = resolveRegisteredAdapter(
+            applicationIdentifier: applicationIdentifier,
+            hostBundleIdentifier: detail.resolvedBundleIdentifier
+        )
+
+        if loopEvaluation.launchSuppressed, adapterLookup.adapter == nil {
             loopGuard.recordSuppressedRetry(key: loopKey)
             let refreshedLoopEvaluation = loopGuard.evaluate(
                 key: loopKey,
@@ -355,10 +360,6 @@ final class SumiNativeMessagingRelay {
             return
         }
 
-        let adapterLookup = resolveRegisteredAdapter(
-            applicationIdentifier: applicationIdentifier,
-            hostBundleIdentifier: detail.resolvedBundleIdentifier
-        )
         guard let adapter = adapterLookup.adapter else {
             loopGuard.recordCompanionAppProtocolUnknown(key: loopKey, launchAttempted: false)
             let diagnostic = SumiNativeMessagingConnection.diagnostic(
@@ -388,87 +389,6 @@ final class SumiNativeMessagingRelay {
                 adapter: nil,
                 adapterByApplicationIdentifier: adapterLookup.adapterByApplicationIdentifier,
                 fallbackReason: "registryMiss"
-            )
-            replyHandler(
-                nil,
-                SumiNativeMessagingErrorMapper.relayError(
-                    code: .companionAppProtocolUnknown,
-                    diagnostic: diagnostic
-                )
-            )
-            return
-        }
-
-        guard SumiCompanionAppResolver.shouldLaunchApp(for: evaluation) else {
-            loopGuard.recordCompanionAppProtocolUnknown(key: loopKey, launchAttempted: false)
-            let rateLimited: Bool = {
-                if case .launchRateLimited = evaluation { return true }
-                return false
-            }()
-            let diagnostic = SumiNativeMessagingConnection.diagnostic(
-                extensionId: extensionId,
-                direction: .send,
-                requestedApplicationIdentifier: applicationIdentifier,
-                evaluation: evaluation,
-                launchSuppressed: rateLimited,
-                retryCountBucket: loopEvaluation.retryCountBucket
-            )
-            recordDiagnostic(
-                diagnostic,
-                profileId: profileId,
-                evaluation: evaluation,
-                loopKey: loopKey,
-                hostBundleIdentifier: detail.resolvedBundleIdentifier
-            )
-            logRoutingOutcome(
-                delegateMethod: "sendMessage",
-                direction: .send,
-                applicationIdentifier: applicationIdentifier,
-                extensionId: extensionId,
-                profileId: profileId,
-                resolvedHostBundleIdentifier: detail.resolvedBundleIdentifier,
-                registryLookupAttempted: true,
-                adapter: adapter,
-                adapterByApplicationIdentifier: adapterLookup.adapterByApplicationIdentifier,
-                fallbackReason: "launchNotAllowed:\(String(describing: evaluation))"
-            )
-            replyHandler(
-                nil,
-                SumiNativeMessagingErrorMapper.relayError(
-                    code: SumiCompanionAppResolver.relayErrorCode(for: evaluation),
-                    diagnostic: diagnostic
-                )
-            )
-            return
-        }
-
-        if loopEvaluation.launchSuppressed {
-            loopGuard.recordSuppressedRetry(key: loopKey)
-            let diagnostic = SumiNativeMessagingConnection.diagnostic(
-                extensionId: extensionId,
-                direction: .send,
-                requestedApplicationIdentifier: applicationIdentifier,
-                evaluation: .launchSuppressed(detail),
-                outcome: .launchSuppressed,
-                launchSuppressed: true,
-                retryCountBucket: loopEvaluation.retryCountBucket,
-                launchCooldownBucket: launchPolicy.launchCooldownBucket(
-                    hostBundleIdentifier: detail.resolvedBundleIdentifier,
-                    sessionKey: launchSessionKey(
-                        profileId: profileId,
-                        extensionId: extensionId,
-                        applicationIdentifier: applicationIdentifier,
-                        hostBundleIdentifier: detail.resolvedBundleIdentifier
-                    )
-                ),
-                extensionContextActive: profileRuntimeLoaded()
-            )
-            recordDiagnostic(
-                diagnostic,
-                profileId: profileId,
-                evaluation: evaluation,
-                loopKey: loopKey,
-                hostBundleIdentifier: detail.resolvedBundleIdentifier
             )
             replyHandler(
                 nil,
@@ -521,11 +441,16 @@ final class SumiNativeMessagingRelay {
                 if let coordinator = pendingCoordinatorRef.coordinator {
                     self.untrackPendingOneShot(coordinator)
                 }
-                if error != nil {
-                    self.loopGuard.recordCompanionAppProtocolUnknown(
-                        key: loopKey,
-                        launchAttempted: true
-                    )
+                if let error {
+                    let nsError = error as NSError
+                    if nsError.domain == Self.errorDomain,
+                       nsError.code == ErrorCode.companionAppProtocolUnknown.rawValue
+                    {
+                        self.loopGuard.recordCompanionAppProtocolUnknown(
+                            key: loopKey,
+                            launchAttempted: true
+                        )
+                    }
                 } else {
                     self.loopGuard.recordSupportedAdapterLaunchAttempt(key: loopKey)
                 }
@@ -686,7 +611,12 @@ final class SumiNativeMessagingRelay {
             hostBundleIdentifier: hostBundleIdentifier
         )
 
-        if loopEvaluation.launchSuppressed {
+        let adapterLookup = resolveRegisteredAdapter(
+            applicationIdentifier: applicationIdentifier,
+            hostBundleIdentifier: hostBundleIdentifier
+        )
+
+        if loopEvaluation.launchSuppressed, adapterLookup.adapter == nil {
             loopGuard.recordSuppressedRetry(key: loopKey)
             let refreshedLoopEvaluation = loopGuard.evaluate(
                 key: loopKey,
@@ -723,10 +653,6 @@ final class SumiNativeMessagingRelay {
             return nil
         }
 
-        let adapterLookup = resolveRegisteredAdapter(
-            applicationIdentifier: applicationIdentifier,
-            hostBundleIdentifier: hostBundleIdentifier
-        )
         guard let adapter = adapterLookup.adapter else {
             loopGuard.recordCompanionAppProtocolUnknown(key: loopKey, launchAttempted: false)
             let diagnostic = SumiNativeMessagingConnection.diagnostic(

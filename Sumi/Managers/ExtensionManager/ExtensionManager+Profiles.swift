@@ -1138,6 +1138,7 @@ extension ExtensionManager {
         }
 
         for handlerID in handlerIDs {
+            nativeMessagePortHandlers[handlerID]?.disconnect()
             nativeMessagePortHandlers.removeValue(forKey: handlerID)
             nativeMessagePortExtensionIDs.removeValue(forKey: handlerID)
             nativeMessagePortProfileIDs.removeValue(forKey: handlerID)

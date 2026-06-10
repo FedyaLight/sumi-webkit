@@ -28,6 +28,9 @@ enum SafariExtensionHostRelaySDKProbeMetadata {
     WKWebExtensionControllerDelegate.h, WKWebExtensionMessagePort.h, WKWebExtension.h — \
     sendMessage:toApplicationWithIdentifier:for:replyHandler: and \
     connectUsingMessagePort:for:completionHandler: available macOS 15.4+; \
+    Swift delegate signatures verified: \
+    webExtensionController(_:sendMessage:toApplicationWithIdentifier:for:replyHandler:), \
+    webExtensionController(_:connectUsing:for:completionHandler:); \
     no API_AVAILABLE(macos(26|27)) third-party-host IPC additions in WKWebExtension*.h; \
     Chrome-style native host manifests are not used on Safari. \
     WebKit logs \"Runtime error reported:\" for each delegate reply error returned to \

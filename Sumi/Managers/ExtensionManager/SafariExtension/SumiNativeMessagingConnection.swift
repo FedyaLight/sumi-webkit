@@ -81,6 +81,49 @@ final class SumiLaunchPolicyGatedHostApplicationLauncher: SumiHostApplicationLau
         underlying.urlForApplication(withBundleIdentifier: bundleIdentifier)
     }
 
+    private static func launchDeniedError(
+        decision: SumiCompanionAppLaunchDecision,
+        hostBundleIdentifier: String
+    ) -> NSError {
+        _ = hostBundleIdentifier
+        switch decision {
+        case .appNotInstalled:
+            return SumiNativeMessagingRelay.makeError(
+                code: .hostNotFound,
+                description: "The native messaging host application is not installed.",
+                diagnostic: nil
+            )
+        case .suppressedConnectIfNotRunning:
+            return SumiNativeMessagingRelay.makeError(
+                code: .hostNotFound,
+                description: "The native messaging host application is not running.",
+                diagnostic: nil
+            )
+        case .rateLimited, .suppressedSessionLaunchAttempted:
+            return SumiNativeMessagingRelay.makeError(
+                code: .hostLaunchFailed,
+                description: "The native messaging host application launch is temporarily suppressed.",
+                diagnostic: nil
+            )
+        case .suppressedNoProtocolAdapter, .suppressedProtocolUnknown:
+            return SumiNativeMessagingRelay.makeError(
+                code: .companionAppProtocolUnknown,
+                diagnostic: nil
+            )
+        case .refusedArbitraryPath:
+            return SumiNativeMessagingRelay.makeError(
+                code: .hostLaunchFailed,
+                description: "Refusing to launch an application outside the resolved host bundle identifier.",
+                diagnostic: nil
+            )
+        case .allowed:
+            return SumiNativeMessagingRelay.makeError(
+                code: .hostLaunchFailed,
+                diagnostic: nil
+            )
+        }
+    }
+
     func openApplication(withBundleIdentifier bundleIdentifier: String) async throws {
         guard bundleIdentifier == hostBundleIdentifier else {
             throw SumiNativeMessagingRelay.makeError(
@@ -96,7 +139,8 @@ final class SumiLaunchPolicyGatedHostApplicationLauncher: SumiHostApplicationLau
             appInstalled: appInstalled,
             protocolAdapterAvailable: protocolAdapterAvailable,
             sessionKey: sessionKey,
-            isHostRunning: launchPolicy.isHostApplicationRunning(hostBundleIdentifier: hostBundleIdentifier)
+            isHostRunning: launchPolicy.isHostApplicationRunning(hostBundleIdentifier: hostBundleIdentifier),
+            launchReason: launchReason
         )
         lastLaunchDecision = decision
         lastLaunchSuppressed = decision != .allowed
@@ -104,9 +148,9 @@ final class SumiLaunchPolicyGatedHostApplicationLauncher: SumiHostApplicationLau
             if let sessionKey {
                 launchPolicy.recordLaunchSuppressed(sessionKey: sessionKey, decision: decision)
             }
-            throw SumiNativeMessagingRelay.makeError(
-                code: .companionAppProtocolUnknown,
-                diagnostic: nil
+            throw Self.launchDeniedError(
+                decision: decision,
+                hostBundleIdentifier: hostBundleIdentifier
             )
         }
         try await launchPolicy.launchInstalledApplication(
@@ -248,27 +292,6 @@ enum SumiNativeMessagingConnection {
             return
         }
 
-        guard SumiCompanionAppResolver.shouldLaunchApp(for: evaluation) else {
-            let diagnostic = Self.diagnostic(
-                extensionId: extensionId,
-                direction: .send,
-                requestedApplicationIdentifier: applicationIdentifier,
-                evaluation: evaluation,
-                launchAttempted: false,
-                launchSuppressed: true,
-                retryCountBucket: retryCountBucket
-            )
-            logDiagnostic(diagnostic)
-            replyHandler(
-                nil,
-                SumiNativeMessagingErrorMapper.relayError(
-                    code: SumiCompanionAppResolver.relayErrorCode(for: evaluation),
-                    diagnostic: diagnostic
-                )
-            )
-            return
-        }
-
         let gatedLauncher = SumiLaunchPolicyGatedHostApplicationLauncher(
             underlying: launcher,
             launchPolicy: launchPolicy,
@@ -312,7 +335,7 @@ enum SumiNativeMessagingConnection {
                     coordinator.complete(
                         nil,
                         SumiNativeMessagingErrorMapper.relayError(
-                            code: Self.relayCode(for: nsError),
+                            from: nsError,
                             diagnostic: diagnostic
                         )
                     )

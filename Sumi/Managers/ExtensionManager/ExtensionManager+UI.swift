@@ -835,11 +835,11 @@ extension ExtensionManager: NSPopoverDelegate {
         if let extensionId = activePopupExtensionID {
             let profileId = browserManager?.currentProfile?.id
             SumiNativeMessagingRuntimeCounters.recordPopupClosed(extensionId: extensionId)
-            pruneNativeMessagePortHandlerEntries(
+            safariNativeMessagingHost.clearLaunchSessionOnExtensionContextUnload(
                 forExtensionId: extensionId,
                 profileId: profileId
             )
-            safariNativeMessagingHost.clearLaunchSessionOnExtensionContextUnload(
+            pruneNativeMessagePortHandlerEntries(
                 forExtensionId: extensionId,
                 profileId: profileId
             )

@@ -25,6 +25,7 @@ final class BitwardenFakeDesktopProxyTransport: BitwardenDesktopProxyTransportin
     var onReceive: (([String: Any]) -> Void)?
 
     var mode: Mode
+    var startDelay: Duration
     private(set) var sentMessages: [[String: Any]] = []
     var statusReply: [String: Any] = [
         "message": [
@@ -35,8 +36,9 @@ final class BitwardenFakeDesktopProxyTransport: BitwardenDesktopProxyTransportin
         ],
     ]
 
-    init(mode: Mode = .handshakeConnected) {
+    init(mode: Mode = .handshakeConnected, startDelay: Duration = .zero) {
         self.mode = mode
+        self.startDelay = startDelay
     }
 
     func start(
@@ -45,6 +47,9 @@ final class BitwardenFakeDesktopProxyTransport: BitwardenDesktopProxyTransportin
     ) async throws {
         _ = proxyExecutableURL
         _ = handshakeTimeout
+        if startDelay > .zero {
+            try await Task.sleep(for: startDelay)
+        }
         switch mode {
         case .handshakeConnected:
             isConnected = true

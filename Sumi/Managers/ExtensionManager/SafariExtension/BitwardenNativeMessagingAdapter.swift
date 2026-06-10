@@ -43,33 +43,25 @@ final class BitwardenNativeMessagingAdapter: SumiNativeMessagingProtocolAdapter 
         launcher: SumiHostApplicationLaunching,
         replyHandler: @escaping (Any?, (any Error)?) -> Void
     ) {
-        _ = request.message
-        Task { @MainActor in
-            do {
-                try await launcher.openApplication(
-                    withBundleIdentifier: request.hostBundleIdentifier
-                )
-            } catch {
-                replyHandler(nil, error)
-                return
-            }
-
-            guard let reply = BitwardenSafariOneShotHandler.handle(message: request.message) else {
-                BitwardenDesktopTransportDiagnostics.log(
-                    outcome: .unsupportedCommand,
-                    command: BitwardenSafariOneShotHandler.publicCommandName(in: request.message)
-                )
-                replyHandler(
-                    nil,
-                    SumiNativeMessagingRelay.makeError(
-                        code: .companionAppProtocolUnknown,
-                        diagnostic: nil
-                    )
-                )
-                return
-            }
-            replyHandler(reply, nil)
+        _ = launcher
+        if BitwardenSafariOneShotHandler.handleAsync(
+            message: request.message,
+            replyHandler: { replyHandler($0, nil) }
+        ) {
+            return
         }
+        if let reply = BitwardenSafariOneShotHandler.handle(message: request.message) {
+            replyHandler(reply, nil)
+            return
+        }
+
+        let command = BitwardenSafariOneShotHandler.publicCommandName(in: request.message)
+        let outcome = BitwardenSafariOneShotHandler.relayOutcome(for: command)
+        BitwardenDesktopTransportDiagnostics.log(
+            outcome: outcome,
+            command: command
+        )
+        replyHandler(nil, BitwardenSafariOneShotHandler.relayError(for: outcome))
     }
 
     func connectPort(
@@ -79,7 +71,15 @@ final class BitwardenNativeMessagingAdapter: SumiNativeMessagingProtocolAdapter 
     ) {
         let sessionKey = ObjectIdentifier(session)
         Task { @MainActor [weak self] in
-            guard let self else { return }
+            guard let self else {
+                completionHandler(
+                    SumiNativeMessagingErrorMapper.relayError(
+                        code: .relayCancelled,
+                        diagnostic: nil
+                    )
+                )
+                return
+            }
             guard BitwardenDesktopProxyPathResolver.isHostApplicationInstalled(launcher: launcher) else {
                 BitwardenDesktopTransportDiagnostics.log(outcome: .desktopAppNotInstalled)
                 completionHandler(
@@ -97,7 +97,7 @@ final class BitwardenNativeMessagingAdapter: SumiNativeMessagingProtocolAdapter 
             }
 
             let appId = UUID().uuidString
-            var transport = transportFactory()
+            let transport = transportFactory()
             let state = BitwardenPortSessionState(
                 session: session,
                 transport: transport,
@@ -112,62 +112,86 @@ final class BitwardenNativeMessagingAdapter: SumiNativeMessagingProtocolAdapter 
                 self.removePortSession(forKey: sessionKey)?.disconnectAssociatedSession()
             }
 
-            do {
-                try await transport.start(
-                    proxyExecutableURL: proxyURL,
-                    handshakeTimeout: handshakeTimeout
-                )
-                completionHandler(nil)
-                return
-            } catch let error as BitwardenDesktopProxyTransportError where error == .desktopNotRunning {
-                removePortSession(forKey: sessionKey)?.shutdown()
-            } catch let error as BitwardenDesktopProxyTransportError {
-                removePortSession(forKey: sessionKey)?.shutdown()
-                completionHandler(BitwardenDesktopProxyTransportErrorMapper.relayError(for: error))
-                return
-            } catch {
-                removePortSession(forKey: sessionKey)?.shutdown()
-                completionHandler(error)
-                return
-            }
+            // Safari Bitwarden treats connectNative as immediately ready; complete WebKit before
+            // desktop_proxy handshake so early port.postMessage calls are queued, not dropped.
+            completionHandler(nil)
 
-            do {
-                try await launcher.openApplication(
-                    withBundleIdentifier: session.resolvedHostBundleIdentifier
-                )
-            } catch {
-                BitwardenDesktopTransportDiagnostics.log(outcome: .desktopAppNotRunning)
-                completionHandler(error)
-                return
-            }
-
-            transport = transportFactory()
-            let relaunchedState = BitwardenPortSessionState(
+            let handshakeError = await self.establishDesktopTransport(
+                sessionKey: sessionKey,
                 session: session,
                 transport: transport,
-                appId: appId,
-                replyTimeout: replyTimeout
+                state: state,
+                proxyURL: proxyURL,
+                launcher: launcher
             )
-            portSessions[sessionKey] = relaunchedState
-
-            transport.onDisconnect = { [weak self] in
-                guard let self else { return }
-                self.removePortSession(forKey: sessionKey)?.disconnectAssociatedSession()
-            }
-
-            do {
-                try await transport.start(
-                    proxyExecutableURL: proxyURL,
-                    handshakeTimeout: handshakeTimeout
+            if let handshakeError {
+                self.removePortSession(forKey: sessionKey)?.disconnectAssociatedSession(
+                    throwing: handshakeError
                 )
-                completionHandler(nil)
-            } catch let error as BitwardenDesktopProxyTransportError {
-                removePortSession(forKey: sessionKey)?.shutdown()
-                completionHandler(BitwardenDesktopProxyTransportErrorMapper.relayError(for: error))
-            } catch {
-                removePortSession(forKey: sessionKey)?.shutdown()
-                completionHandler(error)
             }
+        }
+    }
+
+    private func establishDesktopTransport(
+        sessionKey: ObjectIdentifier,
+        session: SumiNativeMessagingPortSession,
+        transport: any BitwardenDesktopProxyTransporting,
+        state: BitwardenPortSessionState,
+        proxyURL: URL,
+        launcher: SumiHostApplicationLaunching
+    ) async -> NSError? {
+        do {
+            try await transport.start(
+                proxyExecutableURL: proxyURL,
+                handshakeTimeout: handshakeTimeout
+            )
+            state.markTransportReady()
+            return nil
+        } catch let error as BitwardenDesktopProxyTransportError where error == .desktopNotRunning {
+            removePortSession(forKey: sessionKey)?.shutdown()
+        } catch let error as BitwardenDesktopProxyTransportError {
+            return BitwardenDesktopProxyTransportErrorMapper.relayError(for: error)
+        } catch {
+            return error as NSError
+        }
+
+        do {
+            try await launcher.openApplication(
+                withBundleIdentifier: session.resolvedHostBundleIdentifier
+            )
+        } catch {
+            BitwardenDesktopTransportDiagnostics.log(outcome: .desktopAppNotRunning)
+            return error as NSError
+        }
+
+        let queued = state.drainQueuedExtensionMessages()
+        let relaunchTransport = transportFactory()
+        let relaunchedState = BitwardenPortSessionState(
+            session: session,
+            transport: relaunchTransport,
+            appId: state.appId,
+            replyTimeout: replyTimeout
+        )
+        relaunchedState.enqueueExtensionMessages(queued)
+        portSessions[sessionKey] = relaunchedState
+        SumiNativeMessagingRuntimeCounters.recordAdapterPortSessionOpened()
+
+        relaunchTransport.onDisconnect = { [weak self] in
+            guard let self else { return }
+            self.removePortSession(forKey: sessionKey)?.disconnectAssociatedSession()
+        }
+
+        do {
+            try await relaunchTransport.start(
+                proxyExecutableURL: proxyURL,
+                handshakeTimeout: handshakeTimeout
+            )
+            relaunchedState.markTransportReady()
+            return nil
+        } catch let error as BitwardenDesktopProxyTransportError {
+            return BitwardenDesktopProxyTransportErrorMapper.relayError(for: error)
+        } catch {
+            return error as NSError
         }
     }
 
@@ -202,9 +226,11 @@ final class BitwardenNativeMessagingAdapter: SumiNativeMessagingProtocolAdapter 
 private final class BitwardenPortSessionState {
     private weak var session: SumiNativeMessagingPortSession?
     private let transport: any BitwardenDesktopProxyTransporting
-    private let appId: String
+    let appId: String
     private let replyTimeout: Duration
     private var pendingReplies: [Int: Task<Void, Never>] = [:]
+    private var transportReady = false
+    private var queuedExtensionMessages: [[String: Any]] = []
 
     init(
         session: SumiNativeMessagingPortSession,
@@ -221,9 +247,38 @@ private final class BitwardenPortSessionState {
         }
     }
 
-    func disconnectAssociatedSession() {
+    func markTransportReady() {
+        guard transportReady == false else { return }
+        transportReady = true
+        flushQueuedExtensionMessages()
+    }
+
+    func drainQueuedExtensionMessages() -> [[String: Any]] {
+        let queued = queuedExtensionMessages
+        queuedExtensionMessages.removeAll()
+        return queued
+    }
+
+    func enqueueExtensionMessages(_ payloads: [[String: Any]]) {
+        guard payloads.isEmpty == false else { return }
+        if transportReady {
+            payloads.forEach { relayExtensionMessage($0) }
+        } else {
+            queuedExtensionMessages.append(contentsOf: payloads)
+        }
+    }
+
+    private func flushQueuedExtensionMessages() {
+        let queued = queuedExtensionMessages
+        queuedExtensionMessages.removeAll()
+        for payload in queued {
+            relayExtensionMessage(payload)
+        }
+    }
+
+    func disconnectAssociatedSession(throwing error: NSError? = nil) {
         shutdown()
-        session?.disconnect()
+        session?.disconnect(throwing: error)
     }
 
     func shutdown() {
@@ -235,13 +290,27 @@ private final class BitwardenPortSessionState {
     func relayExtensionMessage(_ payload: [String: Any]) {
         let command = payload["command"] as? String ?? ""
         switch BitwardenPortCommand.relayOutcome(for: command) {
-        case .relay:
-            break
+        case .localSafari:
+            if let reply = BitwardenSafariOneShotHandler.portReply(for: payload) {
+                if let messageId = payload["messageId"] as? Int {
+                    pendingReplies.removeValue(forKey: messageId)?.cancel()
+                }
+                session?.sendReplyToExtension(reply)
+            }
+            return
         case .unsupportedCommand, .commandNotYetImplemented, .blockedPublicProtocolGap:
             BitwardenDesktopTransportDiagnostics.log(
                 outcome: BitwardenPortCommand.transportOutcome(for: command),
                 command: command
             )
+            replyPortUnavailable(payload: payload, command: command)
+            return
+        case .relay:
+            break
+        }
+
+        guard transportReady else {
+            queuedExtensionMessages.append(payload)
             return
         }
 
@@ -336,6 +405,29 @@ private final class BitwardenPortSessionState {
         }
     }
 
+    private func replyPortUnavailable(payload: [String: Any], command: String) {
+        guard let messageId = payload["messageId"] as? Int else { return }
+        pendingReplies.removeValue(forKey: messageId)?.cancel()
+        let outcome = BitwardenPortCommand.transportOutcome(for: command)
+        let response: Any = {
+            switch command {
+            case BitwardenPortCommand.getBiometricsStatus, BitwardenPortCommand.getBiometricsStatusForUser:
+                return BitwardenBiometricsStatus.desktopDisconnected.rawValue
+            default:
+                return false
+            }
+        }()
+        session?.sendReplyToExtension(
+            BitwardenSafariOneShotHandler.portMessage(
+                command: command,
+                response: response,
+                messageId: messageId,
+                timestamp: BitwardenSafariOneShotHandler.currentTimestampMillis
+            )
+        )
+        _ = outcome
+    }
+
     private func scheduleReplyTimeout(for messageId: Int, command: String?) {
         pendingReplies[messageId]?.cancel()
         pendingReplies[messageId] = Task { @MainActor [weak self] in
@@ -354,11 +446,17 @@ private final class BitwardenPortSessionState {
 /// Public port command names from bitwarden/clients native messaging IPC.
 private enum BitwardenPortCommand {
     static let getBiometricsStatus = "getBiometricsStatus"
+    static let getBiometricsStatusForUser = "getBiometricsStatusForUser"
+    static let authenticateWithBiometrics = "authenticateWithBiometrics"
+    static let unlockWithBiometricsForUser = "unlockWithBiometricsForUser"
+    static let canEnableBiometricUnlock = "canEnableBiometricUnlock"
     static let setupEncryption = "setupEncryption"
     static let biometricUnlock = "biometricUnlock"
 
     enum RelayOutcome {
         case relay
+        /// Safari posts biometrics IPC unencrypted to the native handler (public SafariWebExtensionHandler).
+        case localSafari
         case unsupportedCommand
         case commandNotYetImplemented
         case blockedPublicProtocolGap
@@ -366,10 +464,15 @@ private enum BitwardenPortCommand {
 
     static func relayOutcome(for command: String) -> RelayOutcome {
         switch command {
-        case getBiometricsStatus, setupEncryption:
+        case getBiometricsStatus,
+             getBiometricsStatusForUser,
+             authenticateWithBiometrics,
+             unlockWithBiometricsForUser,
+             canEnableBiometricUnlock,
+             biometricUnlock:
+            return .localSafari
+        case setupEncryption:
             return .relay
-        case biometricUnlock:
-            return .commandNotYetImplemented
         case "":
             return .unsupportedCommand
         default:
@@ -379,7 +482,7 @@ private enum BitwardenPortCommand {
 
     static func transportOutcome(for command: String) -> BitwardenDesktopTransportOutcome {
         switch relayOutcome(for: command) {
-        case .relay:
+        case .relay, .localSafari:
             return .unsupportedCommand
         case .unsupportedCommand:
             return .unsupportedCommand
@@ -401,12 +504,35 @@ private enum BitwardenPublicBiometricsStatus: Int {
 
 @MainActor
 enum BitwardenSafariOneShotHandler {
+    /// Public `sleep` command delay from SafariWebExtensionHandler.
+    static var sleepDelay: Duration = .seconds(10)
+
+    static func handleAsync(
+        message: Any,
+        replyHandler: @escaping (Any?) -> Void
+    ) -> Bool {
+        guard let payload = message as? [String: Any],
+              let command = payload["command"] as? String,
+              command == "sleep"
+        else {
+            return false
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: sleepDelay)
+            replyHandler(NSNull())
+        }
+        return true
+    }
+
     static func handle(message: Any) -> Any? {
         guard let payload = message as? [String: Any],
               let command = payload["command"] as? String
         else {
             return nil
         }
+
+        let messageId = payload["messageId"]
+        let timestamp = currentTimestampMillis
 
         switch command {
         case "readFromClipboard":
@@ -416,28 +542,165 @@ enum BitwardenSafariOneShotHandler {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(data, forType: .string)
             return NSNull()
+        case "showPopover":
+            return NSNull()
+        case "downloadFile":
+            guard handleDownloadFile(payload: payload) else { return nil }
+            return NSNull()
         case "biometricUnlockAvailable":
             let available = LAContext().bitwardenBiometricsAvailable
-            return [
-                "message": [
-                    "command": command,
-                    "response": available ? "available" : "not available",
-                    "timestamp": currentTimestampMillis,
-                ],
-            ]
+            return safariMessageEnvelope(
+                command: command,
+                response: available ? "available" : "not available",
+                messageId: messageId,
+                timestamp: timestamp
+            )
         case "getBiometricsStatus":
-            let messageId = payload["messageId"]
-            return [
-                "message": [
-                    "command": command,
-                    "response": BitwardenBiometricsStatus.available.rawValue,
-                    "timestamp": currentTimestampMillis,
-                    "messageId": messageId as Any,
-                ],
-            ]
+            return safariMessageEnvelope(
+                command: command,
+                response: BitwardenBiometricsStatus.available.rawValue,
+                messageId: messageId,
+                timestamp: timestamp
+            )
+        case "getBiometricsStatusForUser":
+            let status = LAContext().bitwardenBiometricsAvailable
+                ? BitwardenBiometricsStatus.notEnabledInConnectedDesktopApp.rawValue
+                : BitwardenBiometricsStatus.hardwareUnavailable.rawValue
+            return safariMessageEnvelope(
+                command: command,
+                response: status,
+                messageId: messageId,
+                timestamp: timestamp
+            )
+        case "authenticateWithBiometrics":
+            return safariMessageEnvelope(
+                command: command,
+                response: false,
+                messageId: messageId,
+                timestamp: timestamp
+            )
+        case "unlockWithBiometricsForUser":
+            return safariMessageEnvelope(
+                command: command,
+                response: false,
+                messageId: messageId,
+                timestamp: timestamp
+            )
+        case "biometricUnlock":
+            return safariMessageEnvelope(
+                command: command,
+                response: "not enabled",
+                messageId: messageId,
+                timestamp: timestamp
+            )
+        case "canEnableBiometricUnlock":
+            let available = LAContext().bitwardenBiometricsAvailable
+            return safariMessageEnvelope(
+                command: command,
+                response: available,
+                messageId: messageId,
+                timestamp: timestamp
+            )
         default:
             return nil
         }
+    }
+
+    static func portReply(for payload: [String: Any]) -> [String: Any]? {
+        guard let command = payload["command"] as? String else { return nil }
+        let messageId = payload["messageId"]
+        let timestamp = currentTimestampMillis
+        guard let response = biometricsResponse(for: command, payload: payload) else { return nil }
+        return portMessage(
+            command: command,
+            response: response,
+            messageId: messageId,
+            timestamp: timestamp
+        )
+    }
+
+    static func portMessage(
+        command: String,
+        response: Any,
+        messageId: Any?,
+        timestamp: Int64
+    ) -> [String: Any] {
+        var message: [String: Any] = [
+            "command": command,
+            "response": response,
+            "timestamp": timestamp,
+        ]
+        if let messageId {
+            message["messageId"] = messageId
+        }
+        return message
+    }
+
+    static var currentTimestampMillis: Int64 {
+        Int64(Date().timeIntervalSince1970 * 1000)
+    }
+
+    private static func safariMessageEnvelope(
+        command: String,
+        response: Any,
+        messageId: Any?,
+        timestamp: Int64
+    ) -> [String: Any] {
+        ["message": portMessage(command: command, response: response, messageId: messageId, timestamp: timestamp)]
+    }
+
+    private static func biometricsResponse(for command: String, payload: [String: Any]) -> Any? {
+        switch command {
+        case "getBiometricsStatus":
+            return BitwardenBiometricsStatus.available.rawValue
+        case "getBiometricsStatusForUser":
+            return LAContext().bitwardenBiometricsAvailable
+                ? BitwardenBiometricsStatus.notEnabledInConnectedDesktopApp.rawValue
+                : BitwardenBiometricsStatus.hardwareUnavailable.rawValue
+        case "authenticateWithBiometrics":
+            return false
+        case "unlockWithBiometricsForUser":
+            return false
+        case "biometricUnlock":
+            return "not enabled"
+        case "canEnableBiometricUnlock":
+            return LAContext().bitwardenBiometricsAvailable
+        default:
+            return nil
+        }
+    }
+
+    private static func handleDownloadFile(payload: [String: Any]) -> Bool {
+        guard let jsonData = payload["data"] as? String,
+              let json = jsonData.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: json) as? [String: Any],
+              let fileName = object["fileName"] as? String
+        else {
+            return false
+        }
+
+        var blobData: Data?
+        if let blobOptions = object["blobOptions"] as? [String: Any],
+           blobOptions["type"] as? String == "text/plain",
+           let blob = object["blobData"] as? String
+        {
+            blobData = blob.data(using: .utf8)
+        } else if let blob = object["blobData"] as? String {
+            blobData = Data(base64Encoded: blob)
+        }
+        guard let data = blobData else { return false }
+
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = fileName
+        guard panel.runModal() == .OK, let url = panel.url else { return true }
+
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: url.path) == false {
+            fileManager.createFile(atPath: url.path, contents: Data(), attributes: nil)
+        }
+        try? data.write(to: url)
+        return true
     }
 
     static func publicCommandName(in message: Any) -> String? {
@@ -445,13 +708,44 @@ enum BitwardenSafariOneShotHandler {
         return payload["command"] as? String
     }
 
-    private static var currentTimestampMillis: Int64 {
-        Int64(Date().timeIntervalSince1970 * 1000)
+    static func relayOutcome(for command: String?) -> BitwardenDesktopTransportOutcome {
+        guard let command, command.isEmpty == false else {
+            return .unsupportedCommand
+        }
+        return .unsupportedCommand
+    }
+
+    static func relayError(for outcome: BitwardenDesktopTransportOutcome) -> NSError {
+        let description: String
+        let code: SumiNativeMessagingRelay.ErrorCode
+        switch outcome {
+        case .unsupportedCommand:
+            description = "Unsupported Bitwarden native messaging command."
+            code = .companionAppProtocolUnknown
+        case .commandNotYetImplemented:
+            description = "Bitwarden native messaging command is not yet implemented."
+            code = .companionAppProtocolUnknown
+        case .setupEncryptionRequired:
+            description = "Bitwarden vault unlock is required before this command can run."
+            code = .hostLaunchFailed
+        default:
+            description = "Unsupported Bitwarden native messaging command."
+            code = .companionAppProtocolUnknown
+        }
+        var error = SumiNativeMessagingRelay.makeError(code: code, description: description, diagnostic: nil)
+        var userInfo = error.userInfo
+        userInfo[BitwardenDesktopProxyTransportErrorMapper.failureBucketUserInfoKey] = outcome.rawValue
+        error = NSError(domain: error.domain, code: error.code, userInfo: userInfo)
+        return error
     }
 }
 
 private enum BitwardenBiometricsStatus: Int {
     case available = 0
+    case unlockNeeded = 1
+    case hardwareUnavailable = 2
+    case desktopDisconnected = 6
+    case notEnabledInConnectedDesktopApp = 8
 }
 
 private extension LAContext {

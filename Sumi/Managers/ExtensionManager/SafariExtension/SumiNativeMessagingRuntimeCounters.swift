@@ -9,6 +9,8 @@
 import Foundation
 
 struct SumiNativeMessagingRuntimeSnapshot: Sendable, Equatable, Codable {
+    let delegateSendMessageInvokedCount: Int
+    let delegateConnectInvokedCount: Int
     let sendMessageCount: Int
     let connectCount: Int
     let portOpenCount: Int
@@ -27,6 +29,8 @@ struct SumiNativeMessagingRuntimeSnapshot: Sendable, Equatable, Codable {
 
 @MainActor
 enum SumiNativeMessagingRuntimeCounters {
+    private static var delegateSendMessageInvokedCount = 0
+    private static var delegateConnectInvokedCount = 0
     private static var sendMessageCount = 0
     private static var connectCount = 0
     private static var portOpenCount = 0
@@ -41,6 +45,16 @@ enum SumiNativeMessagingRuntimeCounters {
     private static var popupCloseCount = 0
     private static var contextUnloadCount = 0
     private static var repeatedIdenticalErrorCount = 0
+
+    static func recordDelegateSendMessageInvoked() {
+        delegateSendMessageInvokedCount += 1
+        PerformanceTrace.emitEvent("nativeMessaging.delegate.sendMessage")
+    }
+
+    static func recordDelegateConnectInvoked() {
+        delegateConnectInvokedCount += 1
+        PerformanceTrace.emitEvent("nativeMessaging.delegate.connect")
+    }
 
     static func recordSendMessage(applicationIdentifier: String?) {
         sendMessageCount += 1
@@ -118,6 +132,8 @@ enum SumiNativeMessagingRuntimeCounters {
 
     static func snapshot() -> SumiNativeMessagingRuntimeSnapshot {
         SumiNativeMessagingRuntimeSnapshot(
+            delegateSendMessageInvokedCount: delegateSendMessageInvokedCount,
+            delegateConnectInvokedCount: delegateConnectInvokedCount,
             sendMessageCount: sendMessageCount,
             connectCount: connectCount,
             portOpenCount: portOpenCount,
@@ -185,6 +201,8 @@ enum SumiNativeMessagingRuntimeCounters {
                 RuntimeDiagnostics.debug(category: "SafariNativeMessagingMetrics") {
                     """
                     context=\(context) \
+                    delegateSend=\(snap.delegateSendMessageInvokedCount) \
+                    delegateConnect=\(snap.delegateConnectInvokedCount) \
                     send=\(snap.sendMessageCount) \
                     connect=\(snap.connectCount) \
                     portsOpen=\(snap.portOpenCount) \
@@ -209,6 +227,8 @@ enum SumiNativeMessagingRuntimeCounters {
 
     #if DEBUG
     static func resetForTesting() {
+        delegateSendMessageInvokedCount = 0
+        delegateConnectInvokedCount = 0
         sendMessageCount = 0
         connectCount = 0
         portOpenCount = 0

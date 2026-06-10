@@ -13,102 +13,213 @@
 				<key>testAdapterSourcesDoNotLogPayloads</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0022110939025878906</real>
+					<real>0.0018479824066162109</real>
 				</dict>
 				<key>testAdapterUnavailableReturnsCompanionAppProtocolUnknown</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0075980424880981445</real>
+					<real>0.0049530267715454102</real>
+				</dict>
+				<key>testBitwardenPublicOneShotCommandsNeverReturnGenericProtocolUnknown</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.17593097686767578</real>
 				</dict>
 				<key>testCommandNotYetImplementedDoesNotRelay</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0051900148391723633</real>
+					<real>0.024513006210327148</real>
+				</dict>
+				<key>testConnectCompletesBeforeHandshakeAcceptsEarlyPortMessage</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.21151602268218994</real>
 				</dict>
 				<key>testConnectLaunchesDesktopWhenHandshakeReportsAppNotRunning</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0025029182434082031</real>
+					<real>0.0059370994567871094</real>
 				</dict>
 				<key>testContainingAppLegacyBundleSelectsBitwardenAdapterWithoutExplicitAppId</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.013846993446350098</real>
+					<real>0.027992010116577148</real>
+				</dict>
+				<key>testDelegateImplementsWebKitNativeMessagingSelectors</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0036079883575439453</real>
+				</dict>
+				<key>testDelegateNativeMessagingSelectorsVisibleToObjC</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0457000732421875</real>
+				</dict>
+				<key>testDesktopIntegrationDisabledReturnsSpecificErrorMessage</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.011078953742980957</real>
 				</dict>
 				<key>testDisconnectCancelsPendingReplyTimeout</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.12825000286102295</real>
+					<real>0.13364005088806152</real>
 				</dict>
 				<key>testGenericRuntimeHasNoBitwardenBranchesExceptRegistration</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0074090957641601562</real>
+					<real>0.008831024169921875</real>
 				</dict>
 				<key>testHandshakeWithFakeDesktopTransport</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.005150914192199707</real>
+					<real>0.018703937530517578</real>
 				</dict>
 				<key>testMalformedResponseHandledSafely</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0063409805297851562</real>
+					<real>0.076107025146484375</real>
 				</dict>
 				<key>testPortDisconnectHandledSafely</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0039659738540649414</real>
+					<real>0.0023870468139648438</real>
 				</dict>
 				<key>testRegistryRegistersBitwardenAdapter</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0099729299545288086</real>
+					<real>0.00083100795745849609</real>
 				</dict>
 				<key>testRegistryResolvesAllBitwardenPublicApplicationIdentifiers</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.00051605701446533203</real>
+					<real>0.00052094459533691406</real>
 				</dict>
 				<key>testRegistryResolvesByLegacyContainingHostBundleIdentifier</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.00065696239471435547</real>
+					<real>0.0021209716796875</real>
+				</dict>
+				<key>testRelayPreservesBitwardenSpecificErrorDescription</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.12540602684020996</real>
 				</dict>
 				<key>testRelaySelectsBitwardenAdapterForAllPublicIdentifiers</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.03245699405670166</real>
+					<real>0.038320064544677734</real>
 				</dict>
 				<key>testRepeatedUnsupportedCommandsDoNotAccumulateTransportSends</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0030739307403564453</real>
+					<real>0.0019040107727050781</real>
 				</dict>
 				<key>testStatusWithFakeTransport</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0040899515151977539</real>
+					<real>0.0021599531173706055</real>
+				</dict>
+				<key>testSupportedBitwardenSendAfterConnectNeverReturnsGenericProtocolUnknown</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.017673969268798828</real>
 				</dict>
 				<key>testTimeoutHandledSafely</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0018900632858276367</real>
+					<real>0.13927996158599854</real>
 				</dict>
 				<key>testTransportOutcomeMappingCoversFailureBuckets</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.00052094459533691406</real>
+					<real>0.0012189149856567383</real>
 				</dict>
 				<key>testUnsupportedHostFailsSafelyWithoutLaunch</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0043189525604248047</real>
+					<real>0.0035250186920166016</real>
+				</dict>
+				<key>testUnsupportedOneShotCommandReturnsSpecificErrorMessage</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0021970272064208984</real>
 				</dict>
 				<key>testUnsupportedPortCommandDoesNotRelayOrScheduleTimeout</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.13047194480895996</real>
+					<real>0.12923300266265869</real>
+				</dict>
+			</dict>
+			<key>BitwardenNativeMessagingCPUTeardownTests</key>
+			<dict>
+				<key>testClearLaunchSessionShutsDownBitwardenDesktopTransport</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0023399591445922852</real>
+				</dict>
+				<key>testDesktopTransportReadLoopDoesNotSpinOnMainActor</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.030829071998596191</real>
+				</dict>
+				<key>testRelayContextUnloadInvokesAdapterDisconnectPort</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.010704994201660156</real>
+				</dict>
+				<key>testRuntimeCountersTrackPopupAndPortLifecycle</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0036029815673828125</real>
+				</dict>
+			</dict>
+			<key>SafariExtensionAcceptanceMatrixTests</key>
+			<dict>
+				<key>testCompatibilityReportUsesNativeMessagingClassifications</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0026930570602416992</real>
+				</dict>
+				<key>testContentScriptTabReconcileProbeFindsWiring</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.069919943809509277</real>
+				</dict>
+				<key>testLiveAcceptanceMatrixAgainstInstalledTargets</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.044668912887573242</real>
+				</dict>
+				<key>testMatrixBuildsForUndiscoveredTarget</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0097689628601074219</real>
+				</dict>
+				<key>testMatrixSyntheticEnableSkippedWhenDisabled</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.049134969711303711</real>
+				</dict>
+				<key>testPasswordManagersClassifyCompanionProtocolUnknownRaindropDoesNot</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0013370513916015625</real>
+				</dict>
+				<key>testRaindropTabAdapterProbePasses</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0028820037841796875</real>
+				</dict>
+				<key>testSDKProbeDocumentsWKWebExtensionDelegateMessaging</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0011370182037353516</real>
+				</dict>
+				<key>testSyntheticEnableActionSurfaceLogic</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0021079778671264648</real>
 				</dict>
 			</dict>
 			<key>SafariExtensionAutofillInfrastructureTests</key>
@@ -195,6 +306,29 @@
 				<dict>
 					<key>mrnet</key>
 					<real>0.1036219596862793</real>
+				</dict>
+			</dict>
+			<key>SafariExtensionPopupNativeMessagingLifecycleTests</key>
+			<dict>
+				<key>testContextUnloadCancelsPendingOneShotRelay</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.046101093292236328</real>
+				</dict>
+				<key>testGenericPopupCloseReleasesPortAndAllowsReconnect</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0049159526824951172</real>
+				</dict>
+				<key>testPopoverDidCloseUsesGenericNativeMessagingTeardown</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.016394972801208496</real>
+				</dict>
+				<key>testPortInactivityTimeoutDisconnectsIdlePort</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.12710809707641602</real>
 				</dict>
 			</dict>
 			<key>SafariExtensionRuntimeDiagnosticsTests</key>
@@ -298,82 +432,342 @@
 					<real>0.02948606014251709</real>
 				</dict>
 			</dict>
+			<key>SumiCompanionAppLaunchPolicyTests</key>
+			<dict>
+				<key>testClosingDesktopDoesNotCauseRelaunchLoop</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.3327789306640625</real>
+				</dict>
+				<key>testConnectIfRunningSuppressesLaunchWhenDesktopNotRunning</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0017390251159667969</real>
+				</dict>
+				<key>testPendingNativeMessagingAfterPopupCloseDoesNotRepeatedlyLaunchDesktop</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.036918044090270996</real>
+				</dict>
+				<key>testRaindropDoesNotTriggerBitwardenLaunch</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.014204025268554688</real>
+				</dict>
+				<key>testSupportedAdapterLaunchBoundedPerSession</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0011069774627685547</real>
+				</dict>
+				<key>testSupportedAdapterLoopGuardSuppressesRepeatLaunch</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.00047898292541503906</real>
+				</dict>
+				<key>testUnknownProtocolLaunchSuppressed</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.013996005058288574</real>
+				</dict>
+			</dict>
+			<key>SumiCompanionAppResolverTests</key>
+			<dict>
+				<key>testAppFoundButProtocolUnknownDoesNotLaunchRepeatedly</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0054050683975219727</real>
+				</dict>
+				<key>testAppNotFoundReturnsStableError</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0048079490661621094</real>
+				</dict>
+				<key>testDiagnosticsSanitized</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0028029680252075195</real>
+				</dict>
+				<key>testDisableModuleClearsPendingLaunchState</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.10095608234405518</real>
+				</dict>
+				<key>testLaunchPolicyRateLimitsRepeatedCalls</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.000885009765625</real>
+				</dict>
+				<key>testLaunchPolicyRefusesArbitraryPaths</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0033000707626342773</real>
+				</dict>
+				<key>testNoExtensionSpecificBehaviorBranchesInResolverSources</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0014029741287231445</real>
+				</dict>
+				<key>testResolverResolvesContainingAppFromSyntheticAppex</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0023139715194702148</real>
+				</dict>
+				<key>testResolverResolvesPublicBundleIDMetadata</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0018329620361328125</real>
+				</dict>
+			</dict>
+			<key>SumiNativeMessagingPerformanceGuardTests</key>
+			<dict>
+				<key>testContextUnloadClearsLiveNativeMessagingSessions</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.03066098690032959</real>
+				</dict>
+				<key>testDelegateInvocationCountersTrackWKDelegateEntry</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.00055599212646484375</real>
+				</dict>
+				<key>testDiagnosticCoalescerBoundsEmissionToDetailedThenSummarized</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.00077795982360839844</real>
+				</dict>
+				<key>testIdlePortSessionDisconnectsAfterInactivityTimeout</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.12898993492126465</real>
+				</dict>
+				<key>testPerformanceReportIsPayloadFree</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.00081300735473632812</real>
+				</dict>
+				<key>testProxyFramingRejectsOversizedLengthPrefix</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.00055801868438720703</real>
+				</dict>
+				<key>testProxyFramingWaitsForCompleteFrameBeforeDecode</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.000514984130859375</real>
+				</dict>
+				<key>testRepeatedFailureDiagnosticsAreCoalesced</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.10618495941162109</real>
+				</dict>
+				<key>testRetryCooldownSuppressesRepeatedLaunchAttempts</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.10285604000091553</real>
+				</dict>
+				<key>testSupportedAdapterLaunchIsBoundedToOneAttemptPerSessionKey</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.018339037895202637</real>
+				</dict>
+				<key>testTransportShutdownClearsPendingReadBuffer</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0016230344772338867</real>
+				</dict>
+			</dict>
+			<key>SumiNativeMessagingProtocolAdapterTests</key>
+			<dict>
+				<key>testAdapterBoundarySourcesDoNotLogPayloads</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.042806029319763184</real>
+				</dict>
+				<key>testAdapterDisconnectCleansProfileScopedSessions</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0021150112152099609</real>
+				</dict>
+				<key>testAdapterTimeoutMapsToDeterministicError</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.055669069290161133</real>
+				</dict>
+				<key>testAdapterUnavailableDoesNotLaunchAppRepeatedly</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0042300224304199219</real>
+				</dict>
+				<key>testClearCompanionStateDisconnectsTrackedPortSessions</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0050809383392333984</real>
+				</dict>
+				<key>testFakePublicAdapterHandlesOneShotMessage</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.013188958168029785</real>
+				</dict>
+				<key>testFakePublicAdapterHandlesPersistentPort</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0093929767608642578</real>
+				</dict>
+				<key>testGenericRuntimeHasNoExtensionSpecificBranches</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.022531986236572266</real>
+				</dict>
+				<key>testRegistryResolvesByApplicationIdentifierAlias</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0022789239883422852</real>
+				</dict>
+				<key>testUnknownAdapterReturnsCompanionAppProtocolUnknown</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0035279989242553711</real>
+				</dict>
+			</dict>
+			<key>SumiNativeMessagingRelayLoopGuardTests</key>
+			<dict>
+				<key>testConnectNativeUnknownProtocolAlsoSuppressedOnRepeat</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.032789111137390137</real>
+				</dict>
+				<key>testDiagnosticsLoggerDoesNotIncludeMessageBodies</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0049210786819458008</real>
+				</dict>
+				<key>testDisablingExtensionClearsLoopGuardState</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0040239095687866211</real>
+				</dict>
+				<key>testErrorResponseIsDeterministicAndSanitized</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.005807042121887207</real>
+				</dict>
+				<key>testFirstCallRecordsCompanionAppProtocolUnknown</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0028150081634521484</real>
+				</dict>
+				<key>testModuleOffPreventsRelayAndLaunch</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0019649267196655273</real>
+				</dict>
+				<key>testPopupReopenDoesNotResetSuppressionLoop</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0040590763092041016</real>
+				</dict>
+				<key>testRelaySourceHasNoExtensionSpecificBranches</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0039359331130981445</real>
+				</dict>
+				<key>testRepeated100SendNativeMessageCoalescesDiagnostics</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.10033106803894043</real>
+				</dict>
+				<key>testRepeatedSendNativeMessageDoesNotRepeatedlyLaunchApp</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0041290521621704102</real>
+				</dict>
+				<key>testStateMachineResolvesModuleOffAndExtensionDisabled</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.00089800357818603516</real>
+				</dict>
+				<key>testSubsequentCallsWithinCooldownAreSuppressed</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.10313093662261963</real>
+				</dict>
+			</dict>
 			<key>SumiNativeMessagingRelayTests</key>
 			<dict>
 				<key>testClassificationCatalogForPasswordManagers</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.000926971435546875</real>
+					<real>0.0012940168380737305</real>
 				</dict>
 				<key>testOneShotCancellation</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0010900497436523438</real>
+					<real>0.0024789571762084961</real>
 				</dict>
 				<key>testOneShotReplyHandlerCalledExactlyOnce</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.036247014999389648</real>
+					<real>0.10490500926971436</real>
 				</dict>
 				<key>testOneShotSuccessWithFakeAdapter</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.011273026466369629</real>
+					<real>0.013001918792724609</real>
 				</dict>
 				<key>testOneShotTimeout</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.057258009910583496</real>
+					<real>0.056854963302612305</real>
 				</dict>
 				<key>testOneShotUnknownProtocolWithoutLaunch</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0041639804840087891</real>
+					<real>0.0028510093688964844</real>
 				</dict>
 				<key>testPolicyDeniesPrivateBrowsingWhenIncognitoNotAllowed</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0023241043090820312</real>
+					<real>0.0018960237503051758</real>
 				</dict>
 				<key>testPolicyDeniesWhenModuleDisabled</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0010349750518798828</real>
+					<real>0.0019949674606323242</real>
 				</dict>
 				<key>testPortConnectSuccessWithFakeAdapter</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0094519853591918945</real>
+					<real>0.011162042617797852</real>
 				</dict>
 				<key>testPortDisconnectFromExtensionSide</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0014970302581787109</real>
+					<real>0.00077700614929199219</real>
 				</dict>
 				<key>testPortFirstMessageRoutedThroughAdapter</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0040630102157592773</real>
+					<real>0.0033299922943115234</real>
 				</dict>
 				<key>testPortSessionDisconnectIsIdempotent</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.00055706501007080078</real>
+					<real>0.00046706199645996094</real>
 				</dict>
 				<key>testPortUnknownProtocolDisconnectsWithoutLaunch</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0036410093307495117</real>
+					<real>0.058102011680603027</real>
 				</dict>
 				<key>testRelaySourceDoesNotLogMessageBodies</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.012161016464233398</real>
+					<real>0.018437981605529785</real>
 				</dict>
 				<key>testResolverAliasTable</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.00056207180023193359</real>
+					<real>0.00067591667175292969</real>
 				</dict>
 			</dict>
 		</dict>

@@ -12,6 +12,23 @@ enum SumiNativeMessagingErrorMapper {
     static let relayErrorDomain = "Sumi.SafariNativeMessaging"
 
     static func relayError(
+        from source: NSError,
+        diagnostic: SafariExtensionNativeMessagingDiagnostic?
+    ) -> NSError {
+        let code: SumiNativeMessagingRelay.ErrorCode
+        if source.domain == relayErrorDomain,
+           let mapped = SumiNativeMessagingRelay.ErrorCode(rawValue: source.code)
+        {
+            code = mapped
+        } else {
+            code = .hostLaunchFailed
+        }
+
+        let description = source.localizedDescription.isEmpty ? nil : source.localizedDescription
+        return relayError(code: code, description: description, diagnostic: diagnostic)
+    }
+
+    static func relayError(
         code: SumiNativeMessagingRelay.ErrorCode,
         description: String? = nil,
         diagnostic: SafariExtensionNativeMessagingDiagnostic?
