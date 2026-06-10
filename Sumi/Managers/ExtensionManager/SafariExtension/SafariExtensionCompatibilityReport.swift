@@ -57,6 +57,7 @@ struct SafariExtensionCompatibilityEntry: Codable, Equatable, Sendable, Identifi
     let lastErrorBucket: SafariExtensionCompatibilityErrorBucket
     let platformBlockers: [SafariExtensionPlatformBlocker]
     let nativeMessagingClassifications: [SafariExtensionNativeMessagingClassification]
+    let inlineUIClassification: SafariExtensionInlineUIClassification
     let manualVerification: SafariExtensionManualVerificationRow
 }
 
@@ -213,6 +214,8 @@ enum SafariExtensionCompatibilityReportBuilder {
                 nativeMessagingClassifications:
                     SafariExtensionNativeMessagingClassificationCatalog
                     .classifications(forTargetKey: target.key),
+                inlineUIClassification: SafariExtensionInlineUIClassificationCatalog
+                    .classification(forTargetKey: target.key),
                 manualVerification: SafariExtensionManualVerificationCatalog.row(
                     forTargetKey: target.key
                 )

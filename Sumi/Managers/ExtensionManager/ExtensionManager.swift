@@ -169,6 +169,8 @@ final class ExtensionManager: NSObject, ObservableObject {
     let ecRegistry = ExternallyConnectablePortRegistry()
     var extensionLoadGeneration: UInt64 = 0
     var tabOpenNotificationGeneration: UInt64 = 1
+    var extensionContextBindingGenerationByProfile: [UUID: UInt64] = [:]
+    var contentScriptContextLoadTasksByProfile: [UUID: Task<Void, Never>] = [:]
 
     var currentProfileId: UUID?
     var pinnedToolbarExtensionIDsByProfile: [String: [String]] = [:]

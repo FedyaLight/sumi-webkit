@@ -975,16 +975,24 @@ class WebViewCoordinator {
                 }
             }
 
-            if let controller = webView.configuration.userContentController.sumiNormalTabUserContentController {
-                if controller.hasInstalledInitialUserContent {
-                    performLoad()
-                } else {
-                    Task { @MainActor in
-                        await controller.waitForInitialUserContentInstallation()
-                        performLoad()
-                    }
+            let profileId = tab.resolveProfile()?.id ?? tab.profileId
+            Task { @MainActor [weak tab] in
+                if let controller = webView.configuration.userContentController
+                    .sumiNormalTabUserContentController,
+                    controller.hasInstalledInitialUserContent == false
+                {
+                    await controller.waitForInitialUserContentInstallation()
                 }
-            } else {
+                if let profileId,
+                   let extensionsModule = tab?.browserManager?.extensionsModule
+                {
+                    await extensionsModule.ensureContentScriptContextsLoadedIfNeeded(
+                        profileId: profileId
+                    )
+                }
+                tab?.registerNormalTabWithExtensionRuntimeIfNeeded(
+                    reason: "WebViewCoordinator.loadInitialURLIfNeeded"
+                )
                 performLoad()
             }
         }

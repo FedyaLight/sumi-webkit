@@ -368,6 +368,20 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { webViewRuntime.extensionRuntimeState.committedMainDocumentURL }
         set { webViewRuntime.extensionRuntimeState.committedMainDocumentURL = newValue }
     }
+    var extensionRuntimeOpenNotifiedDocumentSequence: UInt64? {
+        get { webViewRuntime.extensionRuntimeState.openNotifiedDocumentSequence }
+        set { webViewRuntime.extensionRuntimeState.openNotifiedDocumentSequence = newValue }
+    }
+    var extensionRuntimeOpenNotifiedExtensionContextBindingGeneration: UInt64? {
+        get { webViewRuntime.extensionRuntimeState.openNotifiedExtensionContextBindingGeneration }
+        set {
+            webViewRuntime.extensionRuntimeState.openNotifiedExtensionContextBindingGeneration = newValue
+        }
+    }
+    var extensionRuntimeOpenNotifiedWithLoadedContexts: Bool? {
+        get { webViewRuntime.extensionRuntimeState.openNotifiedWithLoadedContexts }
+        set { webViewRuntime.extensionRuntimeState.openNotifiedWithLoadedContexts = newValue }
+    }
     var extensionRuntimeLastReportedURL: URL? {
         get { webViewRuntime.extensionRuntimeState.lastReportedURL }
         set { webViewRuntime.extensionRuntimeState.lastReportedURL = newValue }
@@ -462,11 +476,24 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         extensionRuntimeLastReportedTitle = nil
         lastExtensionOpenNotificationGeneration = 0
         extensionRuntimeEligibleGeneration = 0
+        extensionRuntimeOpenNotifiedDocumentSequence = nil
+        extensionRuntimeOpenNotifiedExtensionContextBindingGeneration = nil
+        extensionRuntimeOpenNotifiedWithLoadedContexts = nil
     }
 
     func noteCommittedMainDocumentNavigation(to url: URL) {
         extensionRuntimeDocumentSequence &+= 1
         extensionRuntimeCommittedMainDocumentURL = url
+    }
+
+    /// Clears committed-document binding so a WebView rebuild can reload with extension
+    /// content scripts injected from a fresh `didOpenTab` before navigation.
+    func resetExtensionRuntimeDocumentBindingForContentScriptRebind() {
+        extensionRuntimeDocumentSequence = 0
+        extensionRuntimeCommittedMainDocumentURL = nil
+        extensionRuntimeOpenNotifiedDocumentSequence = nil
+        extensionRuntimeOpenNotifiedExtensionContextBindingGeneration = nil
+        extensionRuntimeOpenNotifiedWithLoadedContexts = nil
     }
 
     func currentPermissionPageId() -> String {
@@ -513,6 +540,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
              .middleMouseDown(let event),
              .keyDown(let event):
             recordWebViewInteraction(event)
+            browserManager?.extensionsModule.reconcileExtensionRuntimeOnUserGestureIfNeeded(
+                self,
+                reason: "Tab.recordWebViewInteraction"
+            )
         case .scrollWheel:
             break
         }

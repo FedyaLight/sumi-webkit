@@ -13,11 +13,9 @@
           "location" : "/Users/fedaefimov/Downloads/Aura/Sumi-webkit/Vendor/DDG/URLPredictor",
           "name" : "URLPredictor"
         },
-        "path" : "/Users/fedaefimov/Downloads/Aura/Sumi-webkit/.derivedData/SourcePackages/artifacts/urlpredictor/URLPredictorRust/URLPredictorRust.xcframework",
+        "path" : "/Users/fedaefimov/Downloads/Aura/Sumi-webkit/Vendor/DDG/URLPredictor/Binary/URLPredictorRust.xcframework",
         "source" : {
-          "checksum" : "64a9158d40ceb86946638a98206a736cfc32dff5af1a544250d506686ea4459a",
-          "type" : "remote",
-          "url" : "https://github.com/duckduckgo/url_predictor/releases/download/0.3.13/URLPredictorRust.xcframework.zip"
+          "type" : "local"
         },
         "targetName" : "URLPredictorRust"
       }

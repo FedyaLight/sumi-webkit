@@ -280,24 +280,49 @@ extension Tab {
 
         if !isPopupHost && _existingWebView == nil {
             if let controller = _webView?.configuration.userContentController.sumiNormalTabUserContentController {
-                if controller.hasInstalledInitialUserContent {
-                    loadURL(url)
-                } else {
-                    let initialWebView = _webView
-                    Task { @MainActor [weak self, weak initialWebView] in
+                let initialWebView = _webView
+                let targetURL = url
+                let profileId = resolveProfile()?.id ?? profileId
+                Task { @MainActor [weak self, weak initialWebView] in
+                    if controller.hasInstalledInitialUserContent == false {
                         await controller.waitForInitialUserContentInstallation()
-                        guard let self,
-                              let initialWebView,
-                              self._existingWebView == nil,
-                              self._webView === initialWebView
-                        else {
-                            return
-                        }
-                        self.loadURL(self.url)
                     }
+                    if let profileId,
+                       let extensionsModule = self?.browserManager?.extensionsModule
+                    {
+                        await extensionsModule.ensureContentScriptContextsLoadedIfNeeded(
+                            profileId: profileId
+                        )
+                    }
+                    guard let self,
+                          let initialWebView,
+                          self._existingWebView == nil,
+                          self._webView === initialWebView
+                    else {
+                        return
+                    }
+                    self.registerNormalTabWithExtensionRuntimeIfNeeded(
+                        reason: "Tab.setupWebView.beforeInitialLoad"
+                    )
+                    self.loadURL(targetURL)
                 }
             } else {
-                loadURL(url)
+                let targetURL = url
+                let profileId = resolveProfile()?.id ?? profileId
+                Task { @MainActor [weak self] in
+                    if let profileId,
+                       let extensionsModule = self?.browserManager?.extensionsModule
+                    {
+                        await extensionsModule.ensureContentScriptContextsLoadedIfNeeded(
+                            profileId: profileId
+                        )
+                    }
+                    guard let self, self._existingWebView == nil else { return }
+                    self.registerNormalTabWithExtensionRuntimeIfNeeded(
+                        reason: "Tab.setupWebView.beforeInitialLoad"
+                    )
+                    self.loadURL(targetURL)
+                }
             }
         }
 

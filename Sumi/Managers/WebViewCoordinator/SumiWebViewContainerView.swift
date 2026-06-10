@@ -22,6 +22,8 @@ final class SumiWebViewContainerView: NSView {
     private func configure(webView: WKWebView) {
         autoresizingMask = [.width, .height]
         wantsLayer = true
+        // Clips AppKit subviews (WKWebView) to the tab viewport. In-page extension overlays
+        // render inside WKWebView's compositor and are not clipped by this AppKit flag.
         clipsToBounds = true
         layer?.backgroundColor = NSColor.clear.cgColor
         if #available(macOS 10.15, *) {
@@ -32,6 +34,7 @@ final class SumiWebViewContainerView: NSView {
 
         addDisplayedContent(webView.sumiTabContentView)
         updateViewportMask()
+        recordInlineUIContainerClippingIfNeeded()
     }
 
     func setBrowserContentViewport(geometry: BrowserChromeGeometry) {
@@ -100,6 +103,14 @@ final class SumiWebViewContainerView: NSView {
             max(0, viewportCornerRadius),
             max(0, bounds.width / 2),
             max(0, bounds.height / 2)
+        )
+    }
+
+    private func recordInlineUIContainerClippingIfNeeded() {
+        SafariExtensionAutofillFillDiagnostics.recordAppKitContainerClipping(
+            clipsToBounds: clipsToBounds,
+            masksToBounds: layer?.masksToBounds == true,
+            inRoundedViewportContainer: effectiveViewportCornerRadius > 0
         )
     }
 

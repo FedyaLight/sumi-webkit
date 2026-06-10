@@ -99,10 +99,38 @@ extension ExtensionManager {
             SafariExtensionAutofillFillDiagnostics.recordContentScriptInjection(
                 injected: false,
                 extensionId: nil,
-                reason: "notifyTabOpenedMissingAdapterOrController"
+                reason: "notifyTabOpenedMissingAdapterOrController",
+                pageURL: tab.url
             )
             return false
         }
+
+        guard let profileId = resolvedProfileId(for: tab) else {
+            SafariExtensionAutofillFillDiagnostics.recordContentScriptInjection(
+                injected: false,
+                extensionId: nil,
+                reason: "notifyTabOpenedMissingProfile",
+                pageURL: tab.url
+            )
+            return false
+        }
+
+        let contextsReady = profileHasLoadedContentScriptContexts(profileId: profileId)
+        guard contextsReady else {
+            SafariExtensionAutofillFillDiagnostics.recordContentScriptInjection(
+                injected: false,
+                extensionId: nil,
+                reason: "notifyTabOpenedContextsNotLoaded",
+                pageURL: tab.url
+            )
+            scheduleDeferredTabNotificationAfterContextLoad(
+                tab,
+                profileId: profileId,
+                reason: "notifyTabOpened"
+            )
+            return false
+        }
+
         extensionRuntimeTrace(
             "didOpenTab start generation=\(extensionLoadGeneration) notifyGeneration=\(tabOpenNotificationGeneration) controller=\(extensionRuntimeControllerDescription(controller)) \(extensionRuntimeTabDescription(tab)) adapter=\(extensionRuntimeObjectDescription(adapter))"
         )
@@ -110,10 +138,15 @@ extension ExtensionManager {
         #if DEBUG
             testHooks.didOpenTab?(tab.id)
         #endif
+        tab.extensionRuntimeOpenNotifiedDocumentSequence = tab.extensionRuntimeDocumentSequence
+        tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration =
+            extensionContextBindingGeneration(for: profileId)
+        tab.extensionRuntimeOpenNotifiedWithLoadedContexts = true
         SafariExtensionAutofillFillDiagnostics.recordContentScriptInjection(
             injected: true,
             extensionId: nil,
-            reason: "didOpenTab"
+            reason: "didOpenTab",
+            pageURL: tab.url
         )
         extensionRuntimeTrace(
             "didOpenTab complete generation=\(extensionLoadGeneration) notifyGeneration=\(tabOpenNotificationGeneration) \(extensionRuntimeTabDescription(tab))"
@@ -153,7 +186,8 @@ extension ExtensionManager {
             SafariExtensionAutofillFillDiagnostics.recordContentScriptInjection(
                 injected: false,
                 extensionId: nil,
-                reason: "notifyTabOpenedIfNeeded:\(reason)"
+                reason: "notifyTabOpenedIfNeeded:\(reason)",
+                pageURL: tab.url
             )
             extensionRuntimeTrace(
                 "notifyTabOpenedIfNeeded aborted reason=\(reason) because=notifyFailed generation=\(generation) \(extensionRuntimeTabDescription(tab))"
@@ -243,10 +277,6 @@ extension ExtensionManager {
         profileId: UUID? = nil
     ) {
         tabOpenNotificationGeneration &+= 1
-        resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
-            reason: reason,
-            allowWhenExtensionsNotLoaded: allowWhenExtensionsNotLoaded
-        )
         var profileIds = Set(extensionControllersByProfile.keys)
         if let profileId {
             profileIds.insert(profileId)
@@ -254,9 +284,18 @@ extension ExtensionManager {
         if let currentProfileId {
             profileIds.insert(currentProfileId)
         }
+        // Attach or rebuild WebViews before `didOpenTab` so WebKit can inject manifest
+        // content scripts (including CSS) on already-open normal tabs.
         for resolvedProfileId in profileIds {
-            updateWebViewsForProfile(resolvedProfileId)
+            updateWebViewsForProfile(
+                resolvedProfileId,
+                allowWhenExtensionsNotLoaded: allowWhenExtensionsNotLoaded
+            )
         }
+        resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
+            reason: reason,
+            allowWhenExtensionsNotLoaded: allowWhenExtensionsNotLoaded
+        )
         registerExistingWindowStateIfAttached()
     }
 
@@ -941,6 +980,176 @@ extension ExtensionManager {
         return normalizedURL.isEmpty || normalizedURL == "about:blank"
     }
 
+    /// WebKit injects manifest `content_scripts` (including CSS) only when `didOpenTab`
+    /// precedes the committed document. A controller on the configuration alone is not enough.
+    func tabNeedsExtensionContentScriptRebind(_ tab: Tab) -> Bool {
+        let documentSequence = tab.extensionRuntimeDocumentSequence
+        guard documentSequence > 0 else { return false }
+        guard let committedURL = tab.extensionRuntimeCommittedMainDocumentURL,
+              isExtensionInjectableCommittedURL(committedURL)
+        else {
+            return false
+        }
+
+        if tab.extensionRuntimeOpenNotifiedWithLoadedContexts == false {
+            return true
+        }
+
+        if let openBinding = tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration,
+           let profileId = resolvedProfileId(for: tab),
+           openBinding != extensionContextBindingGeneration(for: profileId)
+        {
+            return true
+        }
+
+        for webView in liveWebViews(for: tab) where webViewNeedsExtensionRuntimeRebuild(webView, for: tab) {
+            return true
+        }
+
+        guard let openNotifiedDocumentSequence = tab.extensionRuntimeOpenNotifiedDocumentSequence else {
+            return true
+        }
+
+        return openNotifiedDocumentSequence != documentSequence - 1
+    }
+
+    /// Re-binds extension runtime when the user interacts with a page whose committed
+    /// document never received a pre-commit `didOpenTab` notification.
+    func reconcileExtensionRuntimeOnUserGestureIfNeeded(
+        _ tab: Tab,
+        reason: String = #function
+    ) {
+        guard extensionsLoaded else { return }
+        guard tab.isEphemeral == false else { return }
+        guard tabNeedsExtensionContentScriptRebind(tab) else { return }
+        registerTabWithExtensionRuntime(
+            tab,
+            reason: reason
+        )
+    }
+
+    /// Delivers a fresh `didCloseTab`/`didOpenTab` pair before the next main-frame document
+    /// commits so WebKit injects manifest `content_scripts` (including CSS) on reload and other
+    /// regular navigations. Generation-based deduplication alone is insufficient because WebKit
+    /// ignores a second `didOpenTab` on an already-open tab adapter until `didCloseTab` runs.
+    func prepareExtensionRuntimeBeforeCommittedMainFrameNavigation(
+        _ tab: Tab,
+        destinationURL: URL,
+        reason: String = #function
+    ) {
+        guard extensionsLoaded else {
+            extensionRuntimeTrace(
+                "prepareExtensionRuntimeBeforeCommittedMainFrameNavigation skip reason=\(reason) because=extensionsNotLoaded \(extensionRuntimeTabDescription(tab))"
+            )
+            return
+        }
+        guard tab.isEphemeral == false else { return }
+        guard isExtensionInjectableCommittedURL(destinationURL) else { return }
+
+        tab.lastExtensionOpenNotificationGeneration = 0
+        extensionRuntimeTrace(
+            "prepareExtensionRuntimeBeforeCommittedMainFrameNavigation proceed reason=\(reason) destination=\(destinationURL.absoluteString) documentSequence=\(tab.extensionRuntimeDocumentSequence) \(extensionRuntimeTabDescription(tab))"
+        )
+        rebindExtensionTabBeforeCommittedNavigation(
+            tab,
+            reason: reason
+        )
+    }
+
+    /// Re-binds a live tab to WebKit immediately before a committed navigation so manifest
+    /// `content_scripts` can inject on the incoming document.
+    func rebindExtensionTabBeforeCommittedNavigation(
+        _ tab: Tab,
+        reason: String = #function
+    ) {
+        ensureExtensionControllerAttachedForTab(tab, reason: reason)
+
+        if let profileId = resolvedProfileId(for: tab),
+           profileNeedsContentScriptContextLoad(profileId: profileId)
+        {
+            scheduleDeferredTabNotificationAfterContextLoad(
+                tab,
+                profileId: profileId,
+                reason: reason
+            )
+            return
+        }
+
+        scheduleExtensionBackgroundWakeForNavigationIfNeeded(tab, reason: reason)
+
+        let shouldCycleTabLifecycle =
+            tab.extensionRuntimeOpenNotifiedDocumentSequence != nil
+            || tab.extensionRuntimeDocumentSequence > 0
+            || tabNeedsExtensionContentScriptRebind(tab)
+
+        if shouldCycleTabLifecycle,
+           let controller = extensionController(for: tab),
+           let adapter = stableAdapter(for: tab)
+        {
+            extensionRuntimeTrace(
+                "rebindExtensionTabBeforeCommittedNavigation didCloseTab reason=\(reason) \(extensionRuntimeTabDescription(tab))"
+            )
+            controller.didCloseTab(adapter, windowIsClosing: false)
+            #if DEBUG
+                testHooks.didCloseTab?(tab.id)
+            #endif
+            tab.lastExtensionOpenNotificationGeneration = 0
+        }
+
+        registerTabWithExtensionRuntime(
+            tab,
+            reason: reason
+        )
+    }
+
+    func scheduleExtensionBackgroundWakeForNavigationIfNeeded(
+        _ tab: Tab,
+        reason: String
+    ) {
+        guard let profileId = resolvedProfileId(for: tab) else { return }
+
+        let tabId = tab.id
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let neededContextLoad = self.profileNeedsContentScriptContextLoad(profileId: profileId)
+            await self.ensureContentScriptContextsLoaded(for: profileId)
+
+            for entity in self.enabledPersistedExtensionEntities() where entity.isEnabled {
+                guard entity.hasContentScripts else { continue }
+                guard let context = self.getExtensionContext(
+                    for: entity.id,
+                    profileId: profileId
+                ) else {
+                    continue
+                }
+                _ = try? await self.ensureBackgroundAvailableIfRequired(
+                    for: context.webExtension,
+                    context: context,
+                    reason: .reload
+                )
+            }
+
+            guard neededContextLoad,
+                  let resolvedTab = self.browserManager?.tabManager.tab(for: tabId)
+            else {
+                return
+            }
+
+            self.reconcileTabAfterContentScriptContextsLoaded(
+                resolvedTab,
+                reason: "\(reason).afterContextLoad"
+            )
+        }
+    }
+
+    private func isExtensionInjectableCommittedURL(_ url: URL) -> Bool {
+        let scheme = url.scheme?.lowercased() ?? ""
+        if scheme == "about" {
+            return false
+        }
+        return scheme == "http" || scheme == "https" || scheme == "file"
+    }
+
     func allKnownTabs() -> [Tab] {
         guard let browserManager else { return [] }
 
@@ -998,6 +1207,11 @@ extension ExtensionManager {
         }
 
         tab.extensionRuntimeEligibleGeneration = generation
+        ensureExtensionControllerAttachedForTab(
+            tab,
+            reason: reason,
+            allowWhenExtensionsNotLoaded: allowWhenExtensionsNotLoaded
+        )
         notifyTabOpenedIfNeeded(tab, reason: reason)
     }
 

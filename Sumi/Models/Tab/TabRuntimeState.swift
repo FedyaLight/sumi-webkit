@@ -123,6 +123,12 @@ final class TabExtensionRuntimeState {
     var controllerGeneration: UInt64 = 0
     var documentSequence: UInt64 = 0
     var committedMainDocumentURL: URL?
+    /// Document sequence when `didOpenTab` last succeeded; `nil` if never notified.
+    var openNotifiedDocumentSequence: UInt64?
+    /// Profile extension-context binding generation observed at the last pre-commit `didOpenTab`.
+    var openNotifiedExtensionContextBindingGeneration: UInt64?
+    /// Whether every enabled content-script extension context was loaded when `didOpenTab` last ran.
+    var openNotifiedWithLoadedContexts: Bool?
     var lastReportedURL: URL?
     var lastReportedLoadingComplete: Bool?
     var lastReportedTitle: String?

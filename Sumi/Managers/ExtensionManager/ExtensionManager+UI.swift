@@ -602,11 +602,11 @@ extension ExtensionManager: NSPopoverDelegate {
 
         if let owningTab,
            didAttach == false,
-           webView.configuration.webExtensionController == nil,
-           canLateBindExtensionController(to: webView) == false,
+           webViewNeedsExtensionRuntimeRebuild(webView, for: owningTab),
            let coordinator = browserManager?.webViewCoordinator
         {
             coordinator.rebuildLiveWebViews(for: owningTab)
+            owningTab.lastExtensionOpenNotificationGeneration = 0
             registerTabWithExtensionRuntime(
                 owningTab,
                 reason: "prepareWebViewForExtensionRuntime.rebuild"
@@ -849,11 +849,34 @@ extension ExtensionManager: NSPopoverDelegate {
         completionHandler(nil)
     }
 
+    func restoreInlineUIHostingFocusIfNeeded() {
+        guard SafariExtensionAutofillFillDiagnostics
+            .shouldRestoreInlineUIHostingFocusAfterPopupClose()
+        else {
+            return
+        }
+        guard let tab = browserManager?.currentTabForActiveWindow(),
+              let webView = resolvedLiveWebView(for: tab),
+              let window = webView.window,
+              webView.superview != nil
+        else {
+            return
+        }
+        guard !webView.sumiIsInFullscreenElementPresentation else { return }
+
+        DispatchQueue.main.async { [weak webView, weak window] in
+            guard let webView, let window else { return }
+            guard window.firstResponder !== webView else { return }
+            _ = window.makeFirstResponder(webView)
+        }
+    }
+
     func popoverDidClose(_ notification: Notification) {
         isPopupActive = false
         activeExtensionActionPopover = nil
         if let extensionId = activePopupExtensionID {
             SafariExtensionAutofillFillDiagnostics.setPopupActive(false, extensionId: extensionId)
+            restoreInlineUIHostingFocusIfNeeded()
             SafariExtensionAutofillFillDiagnostics.logSnapshotIfEnabled(
                 context: "popoverDidClose"
             )

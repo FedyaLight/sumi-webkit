@@ -375,6 +375,8 @@ enum SafariExtensionContentScriptProbe {
         }
 
         return profiles.contains("reconcileOpenTabsAfterExtensionContextLoad")
+            && profiles.contains("Attach or rebuild WebViews before `didOpenTab`")
+            && profiles.contains("tabNeedsExtensionContentScriptRebind")
             && ui.contains("finalizeEnabledExtensionRuntime")
     }
 }

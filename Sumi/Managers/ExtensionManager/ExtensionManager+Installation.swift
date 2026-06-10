@@ -911,6 +911,10 @@ extension ExtensionManager {
                 // New contexts must see existing windows even before `loadInstalledExtensions` sets
                 // `extensionsLoaded`, or MV3 onboarding (`tabs.create`) may not run reliably.
                 tabOpenNotificationGeneration &+= 1
+                updateWebViewsForProfile(
+                    installProfileId,
+                    allowWhenExtensionsNotLoaded: true
+                )
                 resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
                     reason: "ExtensionManager.performInstallation.afterLoad",
                     allowWhenExtensionsNotLoaded: true

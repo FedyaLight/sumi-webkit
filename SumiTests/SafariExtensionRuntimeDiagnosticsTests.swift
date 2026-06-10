@@ -38,17 +38,57 @@ final class SafariExtensionRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertEqual(row.signInSession, .yes)
         XCTAssertEqual(row.desktopLaunchLoop, .no)
         XCTAssertEqual(row.nativeMessagingProtocol, .unknown)
-        XCTAssertEqual(row.autofill, .classified)
+        XCTAssertEqual(row.autofill, .fixed)
         XCTAssertEqual(row.popupAnchoring, .fixed)
     }
 
-    func testManualVerificationCatalogPasswordManagersNotFullyVerified() {
-        for key in ["1password", "proton-pass"] {
-            let row = SafariExtensionManualVerificationCatalog.row(forTargetKey: key)
-            XCTAssertEqual(row.importEnable, .notVerified)
-            XCTAssertEqual(row.nativeMessagingProtocol, .unknown)
-            XCTAssertTrue(row.notes.contains("companionAppProtocolUnknown"))
-        }
+    func testManualVerificationCatalogOnePasswordPending() {
+        let row = SafariExtensionManualVerificationCatalog.row(forTargetKey: "1password")
+        XCTAssertEqual(row.importEnable, .notVerified)
+        XCTAssertEqual(row.autofill, .pending)
+        XCTAssertEqual(row.nativeMessagingProtocol, .unknown)
+        XCTAssertTrue(row.notes.contains("inject-content-scripts"))
+    }
+
+    func testManualVerificationCatalogProtonPassScriptingBlocked() {
+        let row = SafariExtensionManualVerificationCatalog.row(forTargetKey: "proton-pass")
+        XCTAssertEqual(row.importEnable, .notVerified)
+        XCTAssertEqual(row.autofill, .classified)
+        XCTAssertEqual(row.nativeMessagingProtocol, .unknown)
+        XCTAssertTrue(row.notes.contains("scripting denied"))
+    }
+
+    func testInlineUIClassificationCatalogPasswordManagers() {
+        let bitwarden = SafariExtensionInlineUIClassificationCatalog
+            .classification(forTargetKey: "bitwarden")
+        XCTAssertEqual(bitwarden.verificationStatus, .fixed)
+        XCTAssertEqual(bitwarden.primaryBlocker, .none)
+        XCTAssertEqual(bitwarden.fixtures.localBasic, .expected)
+        XCTAssertEqual(bitwarden.fixtures.iframe, .expected)
+        XCTAssertEqual(bitwarden.fixtures.realSite, .classifiedOnly)
+
+        let onePassword = SafariExtensionInlineUIClassificationCatalog
+            .classification(forTargetKey: "1password")
+        XCTAssertEqual(onePassword.verificationStatus, .pending)
+        XCTAssertEqual(onePassword.primaryBlocker, .manualVerificationRequired)
+        XCTAssertEqual(onePassword.fixtures.localBasic, .pending)
+        XCTAssertTrue(onePassword.notes.contains("shouldDenyAutoGrantForWebKitRuntime"))
+
+        let protonPass = SafariExtensionInlineUIClassificationCatalog
+            .classification(forTargetKey: "proton-pass")
+        XCTAssertEqual(protonPass.verificationStatus, .blockedByPlatform)
+        XCTAssertEqual(protonPass.primaryBlocker, .scriptingPermissionDenied)
+        XCTAssertTrue(protonPass.notes.contains("browser_specific_settings.safari"))
+    }
+
+    func testCompatibilityReportIncludesInlineUIClassification() {
+        let report = SafariExtensionCompatibilityReportBuilder.build(
+            targets: [SafariExtensionCompatibilityTargets.all[0]],
+            discovered: [],
+            importStore: importStore
+        )
+
+        XCTAssertEqual(report.entries[0].inlineUIClassification.verificationStatus, .fixed)
     }
 
     func testPopupAnchorProbePasses() {

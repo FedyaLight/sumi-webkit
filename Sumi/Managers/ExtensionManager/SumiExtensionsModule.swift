@@ -157,6 +157,16 @@ final class SumiExtensionsModule {
         )
     }
 
+    func reconcileExtensionRuntimeOnUserGestureIfNeeded(
+        _ tab: Tab,
+        reason: String
+    ) {
+        managerIfLoadedAndEnabled()?.reconcileExtensionRuntimeOnUserGestureIfNeeded(
+            tab,
+            reason: reason
+        )
+    }
+
     func releaseExternallyConnectableRuntimeIfLoaded(
         for webView: WKWebView,
         reason: String
@@ -212,6 +222,24 @@ final class SumiExtensionsModule {
             tab,
             reason: reason
         )
+    }
+
+    func prepareExtensionRuntimeBeforeCommittedMainFrameNavigationIfLoaded(
+        _ tab: Tab,
+        destinationURL: URL,
+        reason: String
+    ) {
+        managerIfLoadedAndEnabled()?.prepareExtensionRuntimeBeforeCommittedMainFrameNavigation(
+            tab,
+            destinationURL: destinationURL,
+            reason: reason
+        )
+    }
+
+    func ensureContentScriptContextsLoadedIfNeeded(profileId: UUID) async {
+        guard isEnabled else { return }
+        await managerIfNeededForNormalTabRuntime()?
+            .ensureContentScriptContextsLoaded(for: profileId)
     }
 
     func consumeRecentlyOpenedExtensionTabRequestIfLoaded(for url: URL) -> Bool {

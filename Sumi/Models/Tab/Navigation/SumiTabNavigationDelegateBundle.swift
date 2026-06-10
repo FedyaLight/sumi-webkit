@@ -23,6 +23,8 @@ final class SumiTabNavigationDelegateBundle {
     private let autoplayPolicyAdapter: SumiNavigationResponderAdapter
     private let lifecycle: SumiTabLifecycleNavigationResponder
     private let lifecycleAdapter: SumiNavigationResponderAdapter
+    private let inlineUIExtensionResources: SafariExtensionInlineUINavigationResponder
+    private let inlineUIExtensionResourcesAdapter: SumiNavigationResponderAdapter
     private let findInPageAdapter: SumiNavigationResponderAdapter
 
     init(tab: Tab) {
@@ -46,6 +48,10 @@ final class SumiTabNavigationDelegateBundle {
         self.autoplayPolicyAdapter = SumiNavigationResponderAdapter(target: autoplayPolicy)
         self.lifecycle = SumiTabLifecycleNavigationResponder(tab: tab)
         self.lifecycleAdapter = SumiNavigationResponderAdapter(target: lifecycle)
+        self.inlineUIExtensionResources = SafariExtensionInlineUINavigationResponder(tab: tab)
+        self.inlineUIExtensionResourcesAdapter = SumiNavigationResponderAdapter(
+            target: inlineUIExtensionResources
+        )
         self.findInPageAdapter = SumiNavigationResponderAdapter(target: tab.findInPage)
 
         distributedNavigationDelegate.setResponders(
@@ -57,6 +63,7 @@ final class SumiTabNavigationDelegateBundle {
             .strong(scriptAttachmentAdapter),
             .strong(autoplayPolicyAdapter),
             .strong(lifecycleAdapter),
+            .strong(inlineUIExtensionResourcesAdapter),
             .strong(findInPageAdapter)
         )
     }

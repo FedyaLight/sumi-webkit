@@ -124,6 +124,13 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             return
         }
 
+        tab.extensionRuntimeOpenNotifiedDocumentSequence = tab.extensionRuntimeDocumentSequence
+        if let profileId = resolvedProfileId(for: tab) {
+            tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration =
+                extensionContextBindingGeneration(for: profileId)
+            tab.extensionRuntimeOpenNotifiedWithLoadedContexts =
+                profileHasLoadedContentScriptContexts(profileId: profileId)
+        }
         tab.didNotifyOpenToExtensions = true
         tab.lastExtensionOpenNotificationGeneration = generation
         extensionRuntimeTrace(
@@ -208,6 +215,10 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                 reason: "presentActionPopup"
             )
             if let extensionId {
+                SafariExtensionAutofillFillDiagnostics.recordInlinePopupFocusSteal(
+                    extensionId: extensionId,
+                    reason: "presentActionPopup"
+                )
                 SafariExtensionAutofillFillDiagnostics.setPopupActive(true, extensionId: extensionId)
             }
             SafariExtensionAutofillFillDiagnostics.recordScriptingAvailability(

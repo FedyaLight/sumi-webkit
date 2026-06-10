@@ -13,7 +13,7 @@ final class SafariExtensionAutofillFillDiagnosticsTests: XCTestCase {
     func testAllBucketsExist() {
         XCTAssertEqual(
             SafariExtensionAutofillFillDiagnosticBucket.allCases.count,
-            25
+            44
         )
         XCTAssertTrue(
             SafariExtensionAutofillFillDiagnosticBucket.allCases.contains(.popupSeesCurrentTab)
@@ -21,6 +21,44 @@ final class SafariExtensionAutofillFillDiagnosticsTests: XCTestCase {
         XCTAssertTrue(
             SafariExtensionAutofillFillDiagnosticBucket.allCases.contains(.pageWorldBridgeMissing)
         )
+        XCTAssertTrue(
+            SafariExtensionAutofillFillDiagnosticBucket.allCases.contains(.inlineUIRenderAttempted)
+        )
+        XCTAssertTrue(
+            SafariExtensionAutofillFillDiagnosticBucket.allCases.contains(.overlayHeightCollapsed)
+        )
+    }
+
+    func testInlineUIInfrastructureProbeDocumentsTabContainerChromeClipping() {
+        let probe = SafariExtensionInlineUIInfrastructureProbe.evaluate()
+        XCTAssertTrue(probe.clipsToBoundsOnTabContainer)
+        XCTAssertFalse(probe.clipsToBoundsAffectsInPageExtensionOverlays)
+        XCTAssertTrue(probe.inlineUINavigationResponderWired)
+        XCTAssertTrue(probe.detail.contains("tabContainerClipsToBoundsChromeOnly"))
+    }
+
+    func testShouldRestoreInlineUIHostingFocusAfterPopupClose() {
+        SafariExtensionAutofillFillDiagnostics.beginInlineUISession(extensionId: "ext-focus")
+        SafariExtensionAutofillFillDiagnostics.recordInlineUIRenderAttempted(
+            extensionId: "ext-focus",
+            reason: "test"
+        )
+        XCTAssertTrue(
+            SafariExtensionAutofillFillDiagnostics.shouldRestoreInlineUIHostingFocusAfterPopupClose()
+        )
+
+        SafariExtensionAutofillFillDiagnostics.endInlineUISession(extensionId: "ext-focus")
+        XCTAssertFalse(
+            SafariExtensionAutofillFillDiagnostics.shouldRestoreInlineUIHostingFocusAfterPopupClose()
+        )
+    }
+
+    func testBeginInlineUISessionWithoutRenderAttemptDoesNotRequestFocusRestore() {
+        SafariExtensionAutofillFillDiagnostics.beginInlineUISession(extensionId: "ext-focus")
+        XCTAssertFalse(
+            SafariExtensionAutofillFillDiagnostics.shouldRestoreInlineUIHostingFocusAfterPopupClose()
+        )
+        SafariExtensionAutofillFillDiagnostics.endInlineUISession(extensionId: "ext-focus")
     }
 
     func testRecordIsNoOpWhenVerboseDisabled() {
@@ -58,6 +96,31 @@ final class SafariExtensionAutofillFillDiagnosticsTests: XCTestCase {
         let probe = SafariExtensionPasswordManagerFormFixtureProbe.evaluate()
         XCTAssertTrue(probe.passed, probe.detail)
         XCTAssertTrue(probe.detail.contains("login-basic.html"))
+    }
+
+    func testInlineUINavigationResponderObservesExtensionResourceSchemes() {
+        let navigationPath = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent(
+                "Sumi/Models/Tab/Navigation/SafariExtensionInlineUINavigationResponder.swift"
+            )
+        let navigationSource = try? String(contentsOf: navigationPath, encoding: .utf8)
+        XCTAssertTrue(navigationSource?.contains("\"webkit-extension\"") == true)
+        XCTAssertTrue(navigationSource?.contains("\"safari-web-extension\"") == true)
+        XCTAssertTrue(navigationSource?.contains("recordExtensionResourceNavigation") == true)
+    }
+
+    func testContentScriptTabReconcileProbeRequiresWebViewAttachBeforeNotify() {
+        let profilesPath = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sumi/Managers/ExtensionManager/ExtensionManager+Profiles.swift")
+        let profilesSource = try? String(contentsOf: profilesPath, encoding: .utf8)
+        XCTAssertTrue(
+            profilesSource?.contains("Attach or rebuild WebViews before `didOpenTab`") == true
+        )
+        XCTAssertTrue(SafariExtensionContentScriptProbe.isTabReconcilePathWiredInSources())
     }
 
     func testFillProbeScriptExistsInAutofillFixtures() {

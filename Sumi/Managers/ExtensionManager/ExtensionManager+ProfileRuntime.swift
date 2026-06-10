@@ -26,6 +26,22 @@ extension ExtensionManager {
         var contexts = extensionContextsByProfile[profileId] ?? [:]
         contexts[extensionId] = context
         extensionContextsByProfile[profileId] = contexts
+        bumpExtensionContextBindingGeneration(for: profileId, reason: "setExtensionContext")
+    }
+
+    func extensionContextBindingGeneration(for profileId: UUID) -> UInt64 {
+        extensionContextBindingGenerationByProfile[profileId] ?? 0
+    }
+
+    func bumpExtensionContextBindingGeneration(
+        for profileId: UUID,
+        reason: String
+    ) {
+        let next = (extensionContextBindingGenerationByProfile[profileId] ?? 0) &+ 1
+        extensionContextBindingGenerationByProfile[profileId] = next
+        extensionRuntimeTrace(
+            "extensionContextBindingGeneration profile=\(profileId.uuidString) generation=\(next) reason=\(reason)"
+        )
     }
 
     @discardableResult
@@ -41,6 +57,12 @@ extension ExtensionManager {
             extensionContextsByProfile.removeValue(forKey: profileId)
         } else {
             extensionContextsByProfile[profileId] = contexts
+        }
+        if removed != nil {
+            bumpExtensionContextBindingGeneration(
+                for: profileId,
+                reason: "removeExtensionContext"
+            )
         }
         return removed
     }
@@ -350,6 +372,83 @@ extension ExtensionManager {
         return getExtensionContext(for: extensionId, profileId: profileId)
     }
 
+    func profileHasLoadedContentScriptContexts(profileId: UUID) -> Bool {
+        let contentScriptEntities = enabledPersistedExtensionEntities().filter {
+            $0.isEnabled && $0.hasContentScripts
+        }
+        guard contentScriptEntities.isEmpty == false else { return true }
+
+        return contentScriptEntities.allSatisfy { entity in
+            guard let context = getExtensionContext(for: entity.id, profileId: profileId) else {
+                return false
+            }
+            return context.isLoaded
+        }
+    }
+
+    func profileNeedsContentScriptContextLoad(profileId: UUID) -> Bool {
+        profileHasLoadedContentScriptContexts(profileId: profileId) == false
+    }
+
+    func ensureContentScriptContextsLoaded(for profileId: UUID) async {
+        guard profileNeedsContentScriptContextLoad(profileId: profileId) else { return }
+
+        if let existingTask = contentScriptContextLoadTasksByProfile[profileId] {
+            await existingTask.value
+            return
+        }
+
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.contentScriptContextLoadTasksByProfile.removeValue(forKey: profileId) }
+
+            for entity in self.enabledPersistedExtensionEntities()
+                where entity.isEnabled && entity.hasContentScripts
+            {
+                _ = try? await self.ensureExtensionLoaded(
+                    extensionId: entity.id,
+                    profileId: profileId
+                )
+            }
+        }
+        contentScriptContextLoadTasksByProfile[profileId] = task
+        await task.value
+    }
+
+    func scheduleDeferredTabNotificationAfterContextLoad(
+        _ tab: Tab,
+        profileId: UUID,
+        reason: String = #function
+    ) {
+        let tabId = tab.id
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.ensureContentScriptContextsLoaded(for: profileId)
+            guard let resolvedTab = self.browserManager?.tabManager.tab(for: tabId) else { return }
+            self.reconcileTabAfterContentScriptContextsLoaded(
+                resolvedTab,
+                reason: "\(reason).afterContextLoad"
+            )
+        }
+    }
+
+    func reconcileTabAfterContentScriptContextsLoaded(
+        _ tab: Tab,
+        reason: String = #function
+    ) {
+        guard tab.isEphemeral == false else { return }
+
+        if tab.extensionRuntimeDocumentSequence > 0,
+           tabNeedsExtensionContentScriptRebind(tab)
+        {
+            ensureExtensionControllerAttachedForTab(tab, reason: reason)
+            return
+        }
+
+        tab.lastExtensionOpenNotificationGeneration = 0
+        registerTabWithExtensionRuntime(tab, reason: reason)
+    }
+
     /// Loads every enabled extension for a profile. Prefer `ensureExtensionLoaded` for lazy paths.
     func ensureEnabledExtensionsLoaded(for profileId: UUID) async {
         guard isExtensionSupportAvailable else { return }
@@ -428,7 +527,10 @@ extension ExtensionManager {
         }
 
         if let existingController = webView.configuration.webExtensionController {
-            return existingController === expectedController
+            if existingController === expectedController {
+                return true
+            }
+            return false
         }
 
         guard canLateBindExtensionController(to: webView) else { return false }
@@ -476,24 +578,26 @@ extension ExtensionManager {
 
     func ensureExtensionControllerAttachedForTab(
         _ tab: Tab,
-        reason: String = #function
+        reason: String = #function,
+        allowWhenExtensionsNotLoaded: Bool = false
     ) {
         guard tab.isEphemeral == false else { return }
-        guard extensionsLoaded else { return }
+        guard extensionsLoaded || allowWhenExtensionsNotLoaded else { return }
         guard resolvedProfileId(for: tab) != nil else { return }
 
-        var needsRebuild = false
-        for webView in liveWebViews(for: tab) {
-            let attached = attachExtensionControllerIfNeeded(to: webView, for: tab)
-            extensionRuntimeTrace(
-                "ensureExtensionControllerAttachedForTab webView=\(extensionRuntimeWebViewDescription(webView)) attached=\(attached) \(extensionRuntimeTabDescription(tab))"
-            )
-            if attached == false,
-               webView.configuration.webExtensionController == nil,
-               canLateBindExtensionController(to: webView) == false
-            {
-                needsRebuild = true
-                break
+        var needsRebuild = tabNeedsExtensionContentScriptRebind(tab)
+        if needsRebuild == false {
+            for webView in liveWebViews(for: tab) {
+                let attached = attachExtensionControllerIfNeeded(to: webView, for: tab)
+                extensionRuntimeTrace(
+                    "ensureExtensionControllerAttachedForTab webView=\(extensionRuntimeWebViewDescription(webView)) attached=\(attached) \(extensionRuntimeTabDescription(tab))"
+                )
+                if attached == false,
+                   webViewNeedsExtensionRuntimeRebuild(webView, for: tab)
+                {
+                    needsRebuild = true
+                    break
+                }
             }
         }
 
@@ -501,49 +605,52 @@ extension ExtensionManager {
            let coordinator = browserManager?.webViewCoordinator
         {
             extensionRuntimeTrace(
-                "ensureExtensionControllerAttachedForTab rebuild reason=\(reason) \(extensionRuntimeTabDescription(tab))"
+                "ensureExtensionControllerAttachedForTab rebuild reason=\(reason) contentScriptRebind=\(tabNeedsExtensionContentScriptRebind(tab)) \(extensionRuntimeTabDescription(tab))"
             )
+            tab.resetExtensionRuntimeDocumentBindingForContentScriptRebind()
             coordinator.rebuildLiveWebViews(for: tab)
-            registerTabWithExtensionRuntime(
-                tab,
-                reason: "\(reason).rebuild"
-            )
+            // WebKit only injects manifest content scripts when the controller is on the
+            // configuration before navigation; allow `notifyTabOpenedIfNeeded` to run again.
+            tab.lastExtensionOpenNotificationGeneration = 0
         }
     }
 
-    func updateWebViewsForProfile(_ profileId: UUID) {
-        guard let controller = extensionControllersByProfile[profileId] else { return }
-        guard let browserManager else { return }
+    func webViewNeedsExtensionRuntimeRebuild(
+        _ webView: WKWebView,
+        for tab: Tab
+    ) -> Bool {
+        if webView.configuration.webExtensionController == nil,
+           canLateBindExtensionController(to: webView) == false
+        {
+            return true
+        }
+
+        guard let profileId = resolvedProfileId(for: tab),
+              let expectedController = extensionControllersByProfile[profileId],
+              let existingController = webView.configuration.webExtensionController,
+              existingController !== expectedController
+        else {
+            return false
+        }
+
+        return true
+    }
+
+    func updateWebViewsForProfile(
+        _ profileId: UUID,
+        allowWhenExtensionsNotLoaded: Bool = false
+    ) {
+        guard extensionControllersByProfile[profileId] != nil else { return }
+        guard browserManager != nil else { return }
 
         for tab in allKnownTabs() {
             guard resolvedProfileId(for: tab) == profileId else { continue }
             guard tab.isEphemeral == false else { continue }
-
-            var needsRebuild = false
-            for webView in liveWebViews(for: tab) {
-                let existingController = webView.configuration.webExtensionController
-                let attached = attachExtensionControllerIfNeeded(to: webView, for: tab)
-                extensionRuntimeTrace(
-                    "updateWebViewsForProfile webView=\(extensionRuntimeWebViewDescription(webView)) profile=\(profileId.uuidString) existingController=\(extensionRuntimeControllerDescription(existingController)) targetController=\(extensionRuntimeControllerDescription(controller)) attached=\(attached) \(extensionRuntimeTabDescription(tab))"
-                )
-                if attached == false,
-                   webView.configuration.webExtensionController == nil,
-                   canLateBindExtensionController(to: webView) == false
-                {
-                    needsRebuild = true
-                    break
-                }
-            }
-
-            if needsRebuild,
-               let coordinator = browserManager.webViewCoordinator
-            {
-                coordinator.rebuildLiveWebViews(for: tab)
-                registerTabWithExtensionRuntime(
-                    tab,
-                    reason: "updateWebViewsForProfile.rebuild"
-                )
-            }
+            ensureExtensionControllerAttachedForTab(
+                tab,
+                reason: "updateWebViewsForProfile",
+                allowWhenExtensionsNotLoaded: allowWhenExtensionsNotLoaded
+            )
         }
     }
 

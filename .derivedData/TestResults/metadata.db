@@ -13,22 +13,22 @@
 				<key>testAdapterSourcesDoNotLogPayloads</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.021970987319946289</real>
+					<real>0.20849096775054932</real>
 				</dict>
 				<key>testAdapterUnavailableReturnsCompanionAppProtocolUnknown</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.12532603740692139</real>
+					<real>0.027824044227600098</real>
 				</dict>
 				<key>testBiometricUnlockHandledLocallyViaPort</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.034180998802185059</real>
+					<real>0.0057439804077148438</real>
 				</dict>
 				<key>testBitwardenPublicOneShotCommandsNeverReturnGenericProtocolUnknown</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.39580202102661133</real>
+					<real>0.1176680326461792</real>
 				</dict>
 				<key>testCommandNotYetImplementedDoesNotRelay</key>
 				<dict>
@@ -38,112 +38,112 @@
 				<key>testConnectCompletesBeforeHandshakeAcceptsEarlyPortMessage</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.21576595306396484</real>
+					<real>0.20843303203582764</real>
 				</dict>
 				<key>testConnectLaunchesDesktopWhenHandshakeReportsAppNotRunning</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.034358024597167969</real>
+					<real>0.0032529830932617188</real>
 				</dict>
 				<key>testContainingAppLegacyBundleSelectsBitwardenAdapterWithoutExplicitAppId</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.026726961135864258</real>
+					<real>0.010074973106384277</real>
 				</dict>
 				<key>testDelegateImplementsWebKitNativeMessagingSelectors</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0015720129013061523</real>
+					<real>0.0015239715576171875</real>
 				</dict>
 				<key>testDelegateNativeMessagingSelectorsVisibleToObjC</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.024317026138305664</real>
+					<real>0.024775981903076172</real>
 				</dict>
 				<key>testDesktopIntegrationDisabledReturnsSpecificErrorMessage</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.072200894355773926</real>
+					<real>0.00640106201171875</real>
 				</dict>
 				<key>testDisconnectCancelsPendingReplyTimeout</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.13718795776367188</real>
+					<real>0.13166499137878418</real>
 				</dict>
 				<key>testGenericRuntimeHasNoBitwardenBranchesExceptRegistration</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0034639835357666016</real>
+					<real>0.0029070377349853516</real>
 				</dict>
 				<key>testHandshakeWithFakeDesktopTransport</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0066829919815063477</real>
+					<real>0.0019639730453491211</real>
 				</dict>
 				<key>testMalformedResponseHandledSafely</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0035239458084106445</real>
+					<real>0.0046329498291015625</real>
 				</dict>
 				<key>testPopupOpenPortSequenceGetBiometricsStatusBeforeHandshake</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.045814037322998047</real>
+					<real>0.016781091690063477</real>
 				</dict>
 				<key>testPortDisconnectHandledSafely</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0031169652938842773</real>
+					<real>0.0017429590225219727</real>
 				</dict>
 				<key>testPortGetBiometricsStatusHandledLocallyWithoutDesktopRelay</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0051399469375610352</real>
+					<real>0.0018290281295776367</real>
 				</dict>
 				<key>testRegistryRegistersBitwardenAdapter</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0023560523986816406</real>
+					<real>0.00073492527008056641</real>
 				</dict>
 				<key>testRegistryResolvesAllBitwardenPublicApplicationIdentifiers</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.00069200992584228516</real>
+					<real>0.00058901309967041016</real>
 				</dict>
 				<key>testRegistryResolvesByLegacyContainingHostBundleIdentifier</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.00046694278717041016</real>
+					<real>0.00045192241668701172</real>
 				</dict>
 				<key>testRelayPreservesBitwardenSpecificErrorDescription</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0086480379104614258</real>
+					<real>0.009013056755065918</real>
 				</dict>
 				<key>testRelaySelectsBitwardenAdapterForAllPublicIdentifiers</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.027359962463378906</real>
+					<real>0.029128909111022949</real>
 				</dict>
 				<key>testRepeatedUnsupportedCommandsDoNotAccumulateTransportSends</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0018249750137329102</real>
+					<real>0.0021469593048095703</real>
 				</dict>
 				<key>testSetupEncryptionRelaysToDesktopProxy</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.001849055290222168</real>
+					<real>0.0018559694290161133</real>
 				</dict>
 				<key>testShowPopoverOneShotMatchesSafariWebExtensionHandler</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0014830827713012695</real>
+					<real>0.015586018562316895</real>
 				</dict>
 				<key>testSleepOneShotCompletesAsynchronously</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.059635043144226074</real>
+					<real>0.055500984191894531</real>
 				</dict>
 				<key>testStatusWithFakeTransport</key>
 				<dict>
@@ -153,27 +153,27 @@
 				<key>testSupportedBitwardenSendAfterConnectNeverReturnsGenericProtocolUnknown</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.035174012184143066</real>
+					<real>0.015486955642700195</real>
 				</dict>
 				<key>testTimeoutHandledSafely</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0078160762786865234</real>
+					<real>0.0017540454864501953</real>
 				</dict>
 				<key>testTransportOutcomeMappingCoversFailureBuckets</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.00059401988983154297</real>
+					<real>0.0004749298095703125</real>
 				</dict>
 				<key>testUnsupportedHostFailsSafelyWithoutLaunch</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0062479972839355469</real>
+					<real>0.0037410259246826172</real>
 				</dict>
 				<key>testUnsupportedOneShotCommandReturnsSpecificErrorMessage</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.038892030715942383</real>
+					<real>0.0020830631256103516</real>
 				</dict>
 				<key>testUnsupportedPortCommandDoesNotRelayOrScheduleTimeout</key>
 				<dict>
@@ -183,7 +183,7 @@
 				<key>testUnsupportedPortCommandRepliesWithoutDesktopRelay</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.13262200355529785</real>
+					<real>0.12732100486755371</real>
 				</dict>
 			</dict>
 			<key>BitwardenNativeMessagingCPUTeardownTests</key>
@@ -422,47 +422,90 @@
 				<key>testCompatibilityReportUsesNativeMessagingClassifications</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0023710727691650391</real>
+					<real>0.0019199848175048828</real>
 				</dict>
 				<key>testContentScriptTabReconcileProbeFindsWiring</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.027347922325134277</real>
+					<real>0.0021859407424926758</real>
 				</dict>
 				<key>testLiveAcceptanceMatrixAgainstInstalledTargets</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.045560956001281738</real>
+					<real>0.0277099609375</real>
 				</dict>
 				<key>testMatrixBuildsForUndiscoveredTarget</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0060169696807861328</real>
+					<real>0.0051649808883666992</real>
 				</dict>
 				<key>testMatrixSyntheticEnableSkippedWhenDisabled</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.027258992195129395</real>
+					<real>0.0065230131149291992</real>
 				</dict>
 				<key>testPasswordManagersClassifyCompanionProtocolUnknownRaindropDoesNot</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0012990236282348633</real>
+					<real>0.00077497959136962891</real>
 				</dict>
 				<key>testRaindropTabAdapterProbePasses</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0027070045471191406</real>
+					<real>0.002823948860168457</real>
 				</dict>
 				<key>testSDKProbeDocumentsWKWebExtensionDelegateMessaging</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.00079798698425292969</real>
+					<real>0.0008029937744140625</real>
 				</dict>
 				<key>testSyntheticEnableActionSurfaceLogic</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0017299652099609375</real>
+					<real>0.0012329816818237305</real>
+				</dict>
+			</dict>
+			<key>SafariExtensionActionPopupRuntimeTests</key>
+			<dict>
+				<key>testActionPopupPathLoadsOnlySelectedExtension</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0037670135498046875</real>
+				</dict>
+				<key>testImportedSafariAppexCanOpenActionPopupAfterEnable</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.075932979583740234</real>
+				</dict>
+				<key>testLazyRuntimeLoadDoesNotResetExistingProfileContextsOnSourceGuard</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0023729801177978516</real>
+				</dict>
+				<key>testMV2SafariAppexStillLoadsThroughRuntimeGate</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.033105969429016113</real>
+				</dict>
+				<key>testProfileExtensionRuntimeReadinessTracksMissingContextsPerProfile</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.045470118522644043</real>
+				</dict>
+				<key>testRaindropManualE2EPathRepresentedInAcceptanceMatrix</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.00091493129730224609</real>
+				</dict>
+				<key>testReimportAfterDeleteCanReachPopupRuntimeGate</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.050698995590209961</real>
+				</dict>
+				<key>testRequestExtensionRuntimeAndWaitHonorsProfileReadinessWithoutForceReload</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.010157942771911621</real>
 				</dict>
 			</dict>
 			<key>SafariExtensionAutofillFillDiagnosticsTests</key>
@@ -470,32 +513,62 @@
 				<key>testAllBucketsExist</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0032459497451782227</real>
+					<real>0.0035759210586547852</real>
+				</dict>
+				<key>testBeginInlineUISessionWithoutRenderAttemptDoesNotRequestFocusRestore</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.00065493583679199219</real>
+				</dict>
+				<key>testContentScriptTabReconcileProbeRequiresWebViewAttachBeforeNotify</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.15663003921508789</real>
 				</dict>
 				<key>testFillProbeScriptExistsInAutofillFixtures</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.039291024208068848</real>
+					<real>0.0005950927734375</real>
 				</dict>
 				<key>testFillSessionDefersTeardownAfterPopupCloseWithNativeMessaging</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0012819766998291016</real>
+					<real>0.00044107437133789062</real>
+				</dict>
+				<key>testInlineUIInfrastructureProbeDocumentsTabContainerChromeClipping</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.00088798999786376953</real>
+				</dict>
+				<key>testInlineUIInfrastructureProbeFindsTabContainerClipping</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.001195073127746582</real>
+				</dict>
+				<key>testInlineUINavigationResponderObservesExtensionResourceSchemes</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.00078296661376953125</real>
 				</dict>
 				<key>testIntentionalDeferredTeardownSuppressesRelayCancellationDiagnostics</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0013750791549682617</real>
+					<real>0.0005130767822265625</real>
 				</dict>
 				<key>testPasswordManagerFixtureProbeFindsAutofillPages</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.001932978630065918</real>
+					<real>0.00073695182800292969</real>
 				</dict>
 				<key>testRecordIsNoOpWhenVerboseDisabled</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0019079446792602539</real>
+					<real>0.0020619630813598633</real>
+				</dict>
+				<key>testShouldRestoreInlineUIHostingFocusAfterPopupClose</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0013780593872070312</real>
 				</dict>
 			</dict>
 			<key>SafariExtensionAutofillInfrastructureTests</key>
@@ -503,47 +576,47 @@
 				<key>testClassifySiteSpecificURLDoesNotPreemptivelyBlockProductionSites</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.00077295303344726562</real>
+					<real>0.0015890598297119141</real>
 				</dict>
 				<key>testClassifyTabReadyForWiredNormalTab</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.14533698558807373</real>
+					<real>0.36234402656555176</real>
 				</dict>
 				<key>testClassifyTabReportsMissingControllerOnLoadedHTTPSPage</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.14702105522155762</real>
+					<real>0.18644404411315918</real>
 				</dict>
 				<key>testClassifyTabReportsPrivateTabBlocked</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.02776801586151123</real>
+					<real>0.06874394416809082</real>
 				</dict>
 				<key>testFileURLClassifiedAsHostPermissionDeniedForAllURLs</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.071068048477172852</real>
+					<real>0.084208011627197266</real>
 				</dict>
 				<key>testHTTPSLocalhostPassesHostPermissionWithAllURLs</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.05541694164276123</real>
+					<real>0.051496028900146484</real>
 				</dict>
 				<key>testInfrastructureClassificationPassesWhenModuleEnabled</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0018270015716552734</real>
+					<real>0.0033450126647949219</real>
 				</dict>
 				<key>testInfrastructureClassificationWhenModuleDisabled</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.045791029930114746</real>
+					<real>0.00048494338989257812</real>
 				</dict>
 				<key>testRuntimeDiagnosticReportIncludesAutofillInfrastructureBlocker</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.005005955696105957</real>
+					<real>0.054418087005615234</real>
 				</dict>
 				<key>testYandexURLClassifiedAsSiteSpecific</key>
 				<dict>
@@ -556,42 +629,42 @@
 				<key>testAutofillPagesHTTPServerServesLoginBasic</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.039113044738769531</real>
+					<real>0.13855600357055664</real>
 				</dict>
 				<key>testEphemeralTabNeverReturnsExtensionWebView</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.06544804573059082</real>
+					<real>0.091981887817382812</real>
 				</dict>
 				<key>testExtensionWebViewRejectsLoadedPageWithoutController</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.062299013137817383</real>
+					<real>0.11777698993682861</real>
 				</dict>
 				<key>testLoginFormFixtureExistsForManualAutofillVerification</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.00062000751495361328</real>
+					<real>0.00064289569854736328</real>
 				</dict>
 				<key>testMarkTabEligibleAfterCommittedNavigationTriggersContentScriptPath</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.018024921417236328</real>
+					<real>0.029111027717590332</real>
 				</dict>
 				<key>testModuleBootstrapsControllerBeforeManagerWasCached</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.047564029693603516</real>
+					<real>0.063048005104064941</real>
 				</dict>
 				<key>testPrepareConfigurationReplacesMismatchedProfileController</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.011439085006713867</real>
+					<real>0.017374038696289062</real>
 				</dict>
 				<key>testRegisterTabWithExtensionRuntimeKeepsStableAdapterEligible</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.041186094284057617</real>
+					<real>0.073956966400146484</real>
 				</dict>
 			</dict>
 			<key>SafariExtensionCleanImportSourceGuardTests</key>
@@ -599,47 +672,161 @@
 				<key>testDeletedCompatArtifactsAreAbsentFromRepository</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.19298005104064941</real>
+					<real>0.12157094478607178</real>
 				</dict>
 				<key>testExtensionManagerDoesNotAttachCompatUserScriptsToNormalTabs</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0013729333877563477</real>
+					<real>0.0012780427932739258</real>
 				</dict>
 				<key>testLazyRuntimeDoesNotEagerlyLoadAllExtensions</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0037250518798828125</real>
+					<real>0.003229975700378418</real>
 				</dict>
 				<key>testNativeMessagingUsesSwiftRelayNotCompatJS</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.044680953025817871</real>
+					<real>0.030190110206604004</real>
 				</dict>
 				<key>testPopupAnchorAndSuppressionProbesHaveNoExtensionSpecificBranches</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0012938976287841797</real>
+					<real>0.0011769533157348633</real>
 				</dict>
 				<key>testPopupAndActionPathsDoNotReferenceCompatBundles</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0042550563812255859</real>
+					<real>0.0036519765853881836</real>
 				</dict>
 				<key>testProfileIsolationAndPrivateTabGuardsRemainWired</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0020810365676879883</real>
+					<real>0.0011699199676513672</real>
 				</dict>
 				<key>testRaindropAndRescanPathsDoNotRestoreMV3Shims</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0021669864654541016</real>
+					<real>0.010493040084838867</real>
 				</dict>
 				<key>testSafariImportPathDoesNotPatchManifestOrInjectCompatJS</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0070999860763549805</real>
+					<real>0.0073620080947875977</real>
+				</dict>
+			</dict>
+			<key>SafariExtensionCompatibilityReportTests</key>
+			<dict>
+				<key>testEnablePathReconcilesOpenTabsForContentScripts</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0020409822463989258</real>
+				</dict>
+				<key>testRealBundleProbeRecordsExpectedIdentifiersWhenPresent</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.013052940368652344</real>
+				</dict>
+				<key>testReportIncludesNativeMessagingClassificationsForPasswordManagers</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0015369653701782227</real>
+				</dict>
+				<key>testReportMarksImportedDisabledExtension</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0023679733276367188</real>
+				</dict>
+				<key>testReportMarksModuleDisabled</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0012209415435791016</real>
+				</dict>
+				<key>testReportMarksUndiscoveredTarget</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0011880397796630859</real>
+				</dict>
+				<key>testReportPopupLoadStatusNotApplicableWithoutPopup</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0011740922927856445</real>
+				</dict>
+				<key>testReportPopupLoadStatusUnavailableWhenDisabled</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0026839971542358398</real>
+				</dict>
+				<key>testResolvePopupLoadStatusEmptyWhenPopupResourceExistsButNotSurfaced</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0014410018920898438</real>
+				</dict>
+				<key>testResolvePopupLoadStatusLoadedWhenActionPresentsPopup</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0017549991607666016</real>
+				</dict>
+			</dict>
+			<key>SafariExtensionLazyRuntimePolicyTests</key>
+			<dict>
+				<key>testCachedWebExtensionIsReusedAcrossProfiles</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.082877993583679199</real>
+				</dict>
+				<key>testDisableUnloadsAllProfileContextsForExtension</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.054617047309875488</real>
+				</dict>
+				<key>testEightProfilesWithOneExtensionCreatesAtMostOneContextUntilUsed</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.41914200782775879</real>
+				</dict>
+				<key>testLaunchStartsWithZeroExtensionContexts</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0086069107055664062</real>
+				</dict>
+			</dict>
+			<key>SafariExtensionNativeMessagingHostTests</key>
+			<dict>
+				<key>testProductNativeMessagingSourceAvoidsChromeShimAndSubprocessIO</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.01188206672668457</real>
+				</dict>
+				<key>testResolverFallsBackToContainingAppWhenRequestIsEmpty</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0017549991607666016</real>
+				</dict>
+				<key>testResolverNormalizesKnownHostAliases</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.00052690505981445312</real>
+				</dict>
+				<key>testResolverReturnsNilForDirectoryExtensionWithoutExplicitHostRequest</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.00046205520629882812</real>
+				</dict>
+				<key>testResolverUsesRequestedApplicationIdentifier</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0018060207366943359</real>
+				</dict>
+				<key>testSendMessageReturnsHostNotFoundWhenLauncherCannotResolveApp</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0041450262069702148</real>
+				</dict>
+				<key>testSendMessageUnknownProtocolWithoutLaunch</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0028300285339355469</real>
 				</dict>
 			</dict>
 			<key>SafariExtensionPopupNativeMessagingLifecycleTests</key>
@@ -647,32 +834,60 @@
 				<key>testContextUnloadCancelsPendingOneShotRelay</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.039695978164672852</real>
+					<real>0.27134799957275391</real>
 				</dict>
 				<key>testFillSurvivesPopupCloseWhenNativeMessagingObserved</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.004738926887512207</real>
+					<real>0.026766061782836914</real>
 				</dict>
 				<key>testGenericPopupCloseReleasesPortAndAllowsReconnect</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0055119991302490234</real>
+					<real>0.010432004928588867</real>
 				</dict>
 				<key>testPopoverDidCloseUsesGenericNativeMessagingTeardown</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.00757598876953125</real>
+					<real>0.0086209774017333984</real>
 				</dict>
 				<key>testPortInactivityTimeoutDisconnectsIdlePort</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.12211406230926514</real>
+					<real>0.12832808494567871</real>
 				</dict>
 				<key>testRelayNotCancelledMidFillWhenTeardownDeferred</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.31074798107147217</real>
+					<real>0.31836295127868652</real>
+				</dict>
+			</dict>
+			<key>SafariExtensionProfileIsolationTests</key>
+			<dict>
+				<key>testExtensionControllerIdentifierDiffersFromProfileDataStoreIdentifier</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0090090036392211914</real>
+				</dict>
+				<key>testExtensionControllersAreDistinctPerProfile</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0099610090255737305</real>
+				</dict>
+				<key>testPrepareWebViewConfigurationUsesTabProfileStore</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0092989206314086914</real>
+				</dict>
+				<key>testPrivateTabActionPopupGuardRemainsWired</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.00094103813171386719</real>
+				</dict>
+				<key>testSwitchProfileActivatesDistinctControllerAndStore</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0098500251770019531</real>
 				</dict>
 			</dict>
 			<key>SafariExtensionRuntimeDiagnosticsTests</key>
@@ -680,57 +895,110 @@
 				<key>testAcceptanceMatrixIncludesGlobalProbes</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0080980062484741211</real>
+					<real>0.015907049179077148</real>
+				</dict>
+				<key>testCompatibilityReportIncludesInlineUIClassification</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.001314997673034668</real>
 				</dict>
 				<key>testCompatibilityReportIncludesManualVerification</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0028799772262573242</real>
+					<real>0.0011689662933349609</real>
+				</dict>
+				<key>testInlineUIClassificationCatalogPasswordManagers</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.00095593929290771484</real>
 				</dict>
 				<key>testManualVerificationCatalogBitwardenStatuses</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0010370016098022461</real>
+					<real>0.00093400478363037109</real>
+				</dict>
+				<key>testManualVerificationCatalogOnePasswordPending</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.001031041145324707</real>
 				</dict>
 				<key>testManualVerificationCatalogPasswordManagersNotFullyVerified</key>
 				<dict>
 					<key>mrnet</key>
 					<real>0.0007610321044921875</real>
 				</dict>
+				<key>testManualVerificationCatalogProtonPassScriptingBlocked</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0061709880828857422</real>
+				</dict>
 				<key>testManualVerificationCatalogRaindropVerified</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0010550022125244141</real>
+					<real>0.0010139942169189453</real>
 				</dict>
 				<key>testNativeMessagingProbeIncludesSuppressionReport</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0061959028244018555</real>
+					<real>0.0088980197906494141</real>
 				</dict>
 				<key>testNativeMessagingSuppressionProbePasses</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0024180412292480469</real>
+					<real>0.001829981803894043</real>
 				</dict>
 				<key>testPasswordManagerFormFixtureProbePasses</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0010049343109130859</real>
+					<real>0.0010830163955688477</real>
 				</dict>
 				<key>testPopupAnchorProbePasses</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0014449357986450195</real>
+					<real>0.001461029052734375</real>
 				</dict>
 				<key>testRuntimeDiagnosticReportIncludesManualVerification</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0091799497604370117</real>
+					<real>0.004940032958984375</real>
 				</dict>
 				<key>testTabFrameMappingProbePasses</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0016269683837890625</real>
+					<real>0.0021369457244873047</real>
+				</dict>
+			</dict>
+			<key>SafariExtensionScannerTests</key>
+			<dict>
+				<key>testAppWithoutPluginsProducesNoCandidates</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0011880397796630859</real>
+				</dict>
+				<key>testCorruptInfoPlistIsRejected</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0021970272064208984</real>
+				</dict>
+				<key>testDiscoversSafariWebExtensionInsideAppBundle</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.003090977668762207</real>
+				</dict>
+				<key>testMissingManifestIsReportedButCandidateStillReturned</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0023540258407592773</real>
+				</dict>
+				<key>testRejectsNonSafariAppex</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.049094915390014648</real>
+				</dict>
+				<key>testScanReportsDuplicateExtensionIdentifiers</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0070739984512329102</real>
 				</dict>
 			</dict>
 			<key>SafariExtensionWebViewControllerWiringTests</key>
@@ -738,57 +1006,127 @@
 				<key>testAttachExtensionControllerIfNeededAssignsProfileController</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.035109996795654297</real>
+					<real>0.052157998085021973</real>
+				</dict>
+				<key>testConfigureContextIdentitySetsWebkitExtensionBaseURL</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0885009765625</real>
+				</dict>
+				<key>testContentScriptProbeExtensionDeclaresManifestCSS</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.12819290161132812</real>
+				</dict>
+				<key>testEnsureExtensionControllerAttachedRebuildsWhenContentScriptRebindNeeded</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.013386964797973633</real>
 				</dict>
 				<key>testExtensionTabAdapterDoesNotReturnWebViewWithoutController</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.13056206703186035</real>
+					<real>0.18965506553649902</real>
 				</dict>
 				<key>testExtensionWebViewRejectsCrossProfileContext</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.069412946701049805</real>
+					<real>0.14003896713256836</real>
 				</dict>
 				<key>testExtensionWebViewReturnsNilWithoutControllerOnLoadedPage</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.20039689540863037</real>
+					<real>0.20207405090332031</real>
 				</dict>
 				<key>testExtensionWebViewReturnsProfileMatchedController</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.064275026321411133</real>
+					<real>0.13019490242004395</real>
 				</dict>
 				<key>testIsTabEligibleForCurrentExtensionRuntimeBlocksEphemeralTabs</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.019742012023925781</real>
+					<real>0.021746039390563965</real>
+				</dict>
+				<key>testLifecycleNavigationResponderReNotifiesExtensionBeforeCommit</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.00069892406463623047</real>
 				</dict>
 				<key>testMarkTabEligibleAfterCommittedNavigationDoesNotNotifyTwice</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.020741939544677734</real>
+					<real>0.037394046783447266</real>
 				</dict>
 				<key>testMarkTabEligibleAfterCommittedNavigationEnablesExtensionWebView</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.24312710762023926</real>
+					<real>0.56971204280853271</real>
 				</dict>
 				<key>testMarkTabEligibleAfterCommittedNavigationNotifiesTabOpened</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.029075026512145996</real>
+					<real>0.046243906021118164</real>
 				</dict>
 				<key>testNormalTabWebViewIncludesProfileExtensionController</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.065909028053283691</real>
+					<real>0.11120808124542236</real>
+				</dict>
+				<key>testPerformInstallationUpdatesWebViewsBeforeTabResync</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0015890598297119141</real>
+				</dict>
+				<key>testPrepareBeforeNavigationCyclesCloseOpenOnReload</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.023454070091247559</real>
+				</dict>
+				<key>testPrepareExtensionRuntimeBeforeNavigationReNotifiesOnReload</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.053237080574035645</real>
 				</dict>
 				<key>testPrepareWebViewForExtensionRuntimeAttachesControllerOnBlankWebView</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.016137003898620605</real>
+					<real>0.02873992919921875</real>
+				</dict>
+				<key>testReconcileOpenTabsRebuildsLoadedTabBeforeNotifyingExtensionRuntime</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0</real>
+				</dict>
+				<key>testRegisterTabWithExtensionRuntimeAttachesControllerBeforeNotifying</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0026109218597412109</real>
+				</dict>
+				<key>testTabDoesNotNeedExtensionContentScriptRebindWhenOpenPrecededCommit</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.018679022789001465</real>
+				</dict>
+				<key>testTabNeedsExtensionContentScriptRebindAfterReloadCommitWithoutWillStartNotification</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.2213890552520752</real>
+				</dict>
+				<key>testTabNeedsExtensionContentScriptRebindWhenOpenNotifiedAfterCommit</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.01514899730682373</real>
+				</dict>
+				<key>testTabNeedsRebindWhenExtensionContextBindingChanges</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.016839027404785156</real>
+				</dict>
+				<key>testWrongControllerTriggersContentScriptRebind</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.19165301322937012</real>
 				</dict>
 			</dict>
 			<key>SumiCompanionAppLaunchPolicyTests</key>
@@ -1109,77 +1447,77 @@
 				<key>testClassificationCatalogForPasswordManagers</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0012940168380737305</real>
+					<real>0.00066196918487548828</real>
 				</dict>
 				<key>testOneShotCancellation</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0024789571762084961</real>
+					<real>0.00073003768920898438</real>
 				</dict>
 				<key>testOneShotReplyHandlerCalledExactlyOnce</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.10490500926971436</real>
+					<real>0.0038520097732543945</real>
 				</dict>
 				<key>testOneShotSuccessWithFakeAdapter</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.013001918792724609</real>
+					<real>0.010955929756164551</real>
 				</dict>
 				<key>testOneShotTimeout</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.056854963302612305</real>
+					<real>0.056118965148925781</real>
 				</dict>
 				<key>testOneShotUnknownProtocolWithoutLaunch</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0028510093688964844</real>
+					<real>0.0034170150756835938</real>
 				</dict>
 				<key>testPolicyDeniesPrivateBrowsingWhenIncognitoNotAllowed</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0018960237503051758</real>
+					<real>0.00083804130554199219</real>
 				</dict>
 				<key>testPolicyDeniesWhenModuleDisabled</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0019949674606323242</real>
+					<real>0.00095295906066894531</real>
 				</dict>
 				<key>testPortConnectSuccessWithFakeAdapter</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.011162042617797852</real>
+					<real>0.0092980861663818359</real>
 				</dict>
 				<key>testPortDisconnectFromExtensionSide</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.00077700614929199219</real>
+					<real>0.0065701007843017578</real>
 				</dict>
 				<key>testPortFirstMessageRoutedThroughAdapter</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0033299922943115234</real>
+					<real>0.0041220188140869141</real>
 				</dict>
 				<key>testPortSessionDisconnectIsIdempotent</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.00046706199645996094</real>
+					<real>0.00050103664398193359</real>
 				</dict>
 				<key>testPortUnknownProtocolDisconnectsWithoutLaunch</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.058102011680603027</real>
+					<real>0.0040860176086425781</real>
 				</dict>
 				<key>testRelaySourceDoesNotLogMessageBodies</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.018437981605529785</real>
+					<real>0.01302802562713623</real>
 				</dict>
 				<key>testResolverAliasTable</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.00067591667175292969</real>
+					<real>0.00051999092102050781</real>
 				</dict>
 			</dict>
 			<key>SumiPerformanceModularRegressionTests</key>
@@ -1295,42 +1633,90 @@
 				<key>testBrokeredTabMessagesRemainScopedByContext</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.3398209810256958</real>
+					<real>0.65241992473602295</real>
 				</dict>
 				<key>testControllerCleanupRemovesBrokerHandlers</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.66006505489349365</real>
+					<real>1.1629390716552734</real>
 				</dict>
 				<key>testMalformedAndIrrelevantTabSuspensionMessagesAreIgnoredSafely</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.28465902805328369</real>
+					<real>0.80959594249725342</real>
 				</dict>
 				<key>testMalformedBrokerPayloadFailsLocally</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.58608400821685791</real>
+					<real>0.83117103576660156</real>
 				</dict>
 				<key>testTabSuspensionBridgeDoesNotStartOptionalModuleRuntimes</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.037642002105712891</real>
+					<real>0.032531023025512695</real>
 				</dict>
 				<key>testTabSuspensionMessagesRemainScopedByContext</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.095288991928100586</real>
+					<real>0.07977902889251709</real>
 				</dict>
 				<key>testTabSuspensionPageAPIUpdatesPageVetoState</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.11882007122039795</real>
+					<real>0.13768899440765381</real>
 				</dict>
 				<key>testUnknownBrokerMethodIsIgnoredSafely</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.59646594524383545</real>
+					<real>0.61870896816253662</real>
+				</dict>
+			</dict>
+			<key>WebExtensionManifestValidationTests</key>
+			<dict>
+				<key>testInstalledExtensionMetadataRecordsManifestVersionTwo</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0015089511871337891</real>
+				</dict>
+				<key>testManifestValidationPolicyForSourceKind</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.00048899650573730469</real>
+				</dict>
+				<key>testManifestVersionThreeDoesNotShowLegacyManifestWarning</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0011720657348632812</real>
+				</dict>
+				<key>testManifestVersionTwoShowsLegacyManifestWarning</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0011689662933349609</real>
+				</dict>
+				<key>testSafariAppexManifestVersionTwoPassesValidatorBeforeWebKitLoad</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.12266302108764648</real>
+				</dict>
+				<key>testSafariPolicyAcceptsManifestVersionThree</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0013859272003173828</real>
+				</dict>
+				<key>testSafariPolicyAcceptsManifestVersionTwo</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0013279914855957031</real>
+				</dict>
+				<key>testSafariPolicyRejectsUnsupportedManifestVersion</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0016570091247558594</real>
+				</dict>
+				<key>testUnpackedDirectoryPolicyRejectsManifestVersionTwo</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0015059709548950195</real>
 				</dict>
 			</dict>
 		</dict>

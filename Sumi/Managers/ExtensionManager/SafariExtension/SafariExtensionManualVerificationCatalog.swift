@@ -60,11 +60,14 @@ enum SafariExtensionManualVerificationCatalog {
                 profileIsolation: .pending,
                 desktopLaunchLoop: .no,
                 nativeMessagingProtocol: .unknown,
-                autofill: .classified,
+                autofill: .fixed,
                 popupAnchoring: .fixed,
-                notes: "MV2 manifest loads; NM returns companionAppProtocolUnknown with launch suppression; autofill pending manual retest."
+                notes: """
+                Inline UI: manifest content_scripts CSS + overlay iframes; tab-reconcile fix applied — \
+                fixtures expected, GUI retest pending. NM companionAppProtocolUnknown; does not block overlay.
+                """
             )
-        case "1password", "proton-pass":
+        case "1password":
             return SafariExtensionManualVerificationRow(
                 importEnable: .notVerified,
                 mv2WarningObserved: .notVerified,
@@ -74,9 +77,29 @@ enum SafariExtensionManualVerificationCatalog {
                 profileIsolation: .notVerified,
                 desktopLaunchLoop: .notVerified,
                 nativeMessagingProtocol: .unknown,
-                autofill: .notVerified,
+                autofill: .pending,
                 popupAnchoring: .notVerified,
-                notes: "Not fully verified on dev machine; companionAppProtocolUnknown unless proven."
+                notes: """
+                Inline UI: inject-content-scripts.js bootstrap via dynamic import (scripting granted — no \
+                browser_specific_settings). Fixtures pending manual verification.
+                """
+            )
+        case "proton-pass":
+            return SafariExtensionManualVerificationRow(
+                importEnable: .notVerified,
+                mv2WarningObserved: .notApplicable,
+                popup: .notVerified,
+                signInSession: .notVerified,
+                saveFlow: .notApplicable,
+                profileIsolation: .notVerified,
+                desktopLaunchLoop: .notVerified,
+                nativeMessagingProtocol: .unknown,
+                autofill: .classified,
+                popupAnchoring: .notVerified,
+                notes: """
+                Inline UI: orchestrator manifest content_script + dropdown.html; scripting denied \
+                (browser_specific_settings.safari) — dynamic background bootstrap blocked-by-platform.
+                """
             )
         default:
             return SafariExtensionManualVerificationRow(

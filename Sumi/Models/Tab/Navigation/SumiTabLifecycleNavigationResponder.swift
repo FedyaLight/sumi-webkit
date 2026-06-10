@@ -38,6 +38,14 @@ final class SumiTabLifecycleNavigationResponder:
                 currentURL: url,
                 reason: "SumiTabLifecycleNavigationResponder.willStart"
             )
+            if context.action?.navigationType.isBackForward != true {
+                tab.browserManager?.extensionsModule
+                    .prepareExtensionRuntimeBeforeCommittedMainFrameNavigationIfLoaded(
+                        tab,
+                        destinationURL: url,
+                        reason: "SumiTabLifecycleNavigationResponder.willStart"
+                    )
+            }
         }
     }
 
@@ -153,6 +161,7 @@ final class SumiTabLifecycleNavigationResponder:
             properties: [.URL, .title, .loading]
         )
         tab.browserManager?.enforceSiteDataPolicyAfterNavigation(for: tab)
+        SafariExtensionAutofillFillDiagnostics.endInlineUISession(extensionId: nil)
     }
 
     func navigationDidSameDocumentNavigation(
