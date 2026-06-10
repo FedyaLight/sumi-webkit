@@ -447,9 +447,8 @@ struct SumiExtensionsSettingsPane: View {
 
     @ViewBuilder
     private var extensionsManagerBody: some View {
-        if let extensionManager = browserManager.extensionsModule.managerIfEnabled() {
+        if browserManager.extensionsModule.managerIfEnabled() != nil {
             extensionsBody(
-                extensionManager: extensionManager,
                 installedExtensions: extensionSurfaceStore.installedExtensions
             )
         } else {
@@ -469,29 +468,13 @@ struct SumiExtensionsSettingsPane: View {
 
     @ViewBuilder
     private func extensionsBody(
-        extensionManager: ExtensionManager,
         installedExtensions: [InstalledExtension]
     ) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            SettingsSection(
-                title: "Extensions",
-                subtitle: extensionManager.extensionsLoaded
-                    ? "Sumi is using the WebKit WebExtension backend"
-                    : "The WebKit extension runtime is idle"
-            ) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(extensionManager.isExtensionSupportAvailable
-                         ? "Manage installed WebKit extensions and toolbar action surfaces."
-                         : "WebKit extensions require macOS 15.5 or newer in this Sumi build.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    if let statusMessage {
-                        Text(statusMessage)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+            if let statusMessage {
+                Text(statusMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             SettingsSection(
@@ -618,7 +601,7 @@ private struct ExtensionCatalogRow: View {
 
                     if extensionRecord.legacyManifestMayUseMoreEnergy {
                         Image(systemName: "battery.100percent.bolt")
-                            .font(.caption)
+                            .font(.system(size: 16, weight: .medium))
                             .foregroundStyle(.orange)
                             .help(InstalledExtensionRecord.legacyManifestWarningTooltip)
                             .accessibilityLabel(InstalledExtensionRecord.legacyManifestWarningTooltip)
@@ -649,6 +632,7 @@ private struct ExtensionCatalogRow: View {
 
                 Toggle("", isOn: $isEnabled)
                     .labelsHidden()
+                    .toggleStyle(.switch)
                     .disabled(isBusy)
                     .help(extensionRecord.isEnabled ? "Disable extension" : "Enable extension")
                     .onChange(of: isEnabled) { oldValue, newValue in

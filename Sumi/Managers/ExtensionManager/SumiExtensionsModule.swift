@@ -251,21 +251,13 @@ final class SumiExtensionsModule {
 
         let installed = try await manager.performInstallation(
             from: candidate.appexURL,
-            enableOnInstall: false
+            enableOnInstall: true
         )
         SafariExtensionImportStore.shared.markImported(
             candidate: candidate,
             installedExtensionId: installed.id
         )
-
-        do {
-            return try await manager.enableExtension(installed.id)
-        } catch {
-            try? await manager.disableExtension(installed.id)
-            throw ExtensionError.importSucceededEnableFailed(
-                "\(installed.name) was imported but could not be enabled: \(error.localizedDescription)"
-            )
-        }
+        return installed
     }
 
     func orderedPinnedToolbarSlots(

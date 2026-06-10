@@ -17,9 +17,8 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
             ),
             encoding: .utf8
         )
-        XCTAssertTrue(source.contains("enableExtension(installed.id)"))
-        XCTAssertTrue(source.contains("enableOnInstall: false"))
-        XCTAssertTrue(source.contains("importSucceededEnableFailed"))
+        XCTAssertTrue(source.contains("enableOnInstall: true"))
+        XCTAssertFalse(source.contains("enableOnInstall: false"))
     }
 
     func testImportCandidatesSectionDoesNotAutoEnableDiscoveredCandidates() throws {
