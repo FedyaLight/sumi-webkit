@@ -225,17 +225,7 @@ extension ExtensionManager: NSPopoverDelegate {
             )
         }
         switchProfile(profileId: tabProfileId)
-
-        guard await requestExtensionRuntimeAndWait(reason: .extensionAction) else {
-            return .blocked(
-                runtimeState == .failed ? .runtimeLoadFailed : .runtimeUnavailable,
-                message: "\(installedExtension.name) could not load WebKit extension runtime for the action popup."
-            )
-        }
-        await ensureEnabledExtensionsLoaded(for: tabProfileId)
-        extensionRuntimeTrace(
-            "urlHubAction runtime ready extensionId=\(extensionId) profileId=\(tabProfileId.uuidString) loadedContexts=\(extensionContexts.count) selectedContextLoaded=\(getExtensionContext(for: extensionId, profileId: tabProfileId) != nil)"
-        )
+        _ = ensureExtensionController(for: tabProfileId)
 
         let extensionContext: WKWebExtensionContext
         do {
@@ -243,21 +233,85 @@ extension ExtensionManager: NSPopoverDelegate {
                 for: installedExtension,
                 profileId: tabProfileId
             ) else {
+                let failureBucket = classifyActionPopupRuntimeFailure(
+                    extensionId: extensionId,
+                    profileId: tabProfileId,
+                    installedExtension: installedExtension
+                )
+                let diagnostics = actionPopupRuntimeDiagnosticLines(
+                    extensionId: extensionId,
+                    profileId: tabProfileId,
+                    installedExtension: installedExtension,
+                    failureBucket: failureBucket,
+                    lastLoadError: lastExtensionLoadError(
+                        extensionId: extensionId,
+                        profileId: tabProfileId
+                    )
+                )
                 return .blocked(
                     .contextUnavailable,
-                    message: "\(installedExtension.name) has no enabled persisted local package record for WebKit context loading."
+                    message: "\(installedExtension.name) has no enabled persisted local package record for WebKit context loading.",
+                    diagnostics: diagnostics
                 )
             }
             extensionContext = loadedContext
         } catch {
+            let failureBucket = classifyActionPopupRuntimeFailure(
+                extensionId: extensionId,
+                profileId: tabProfileId,
+                installedExtension: installedExtension
+            )
+            let diagnostics = actionPopupRuntimeDiagnosticLines(
+                extensionId: extensionId,
+                profileId: tabProfileId,
+                installedExtension: installedExtension,
+                failureBucket: failureBucket,
+                lastLoadError: error
+            )
             extensionRuntimeTrace(
-                "urlHubAction selected context load failed extensionId=\(extensionId) error=\(error.localizedDescription)"
+                "urlHubAction selected context load failed extensionId=\(extensionId) bucket=\(failureBucket.rawValue) error=\(error.localizedDescription) \(diagnostics.joined(separator: " "))"
             )
             return .blocked(
                 .runtimeLoadFailed,
-                message: "\(installedExtension.name) WebKit context load failed for the selected local package: \(error.localizedDescription)"
+                message: "\(installedExtension.name) WebKit context load failed for the selected local package: \(error.localizedDescription)",
+                diagnostics: diagnostics
             )
         }
+
+        guard extensionContext.isLoaded else {
+            let failureBucket = classifyActionPopupRuntimeFailure(
+                extensionId: extensionId,
+                profileId: tabProfileId,
+                installedExtension: installedExtension
+            )
+            let diagnostics = actionPopupRuntimeDiagnosticLines(
+                extensionId: extensionId,
+                profileId: tabProfileId,
+                installedExtension: installedExtension,
+                failureBucket: failureBucket,
+                lastLoadError: lastExtensionLoadError(
+                    extensionId: extensionId,
+                    profileId: tabProfileId
+                )
+            )
+            extensionRuntimeTrace(
+                "urlHubAction runtime gate failed extensionId=\(extensionId) profileId=\(tabProfileId.uuidString) bucket=\(failureBucket.rawValue) \(diagnostics.joined(separator: " "))"
+            )
+            let blocker: BrowserExtensionActionPopupBlocker =
+                failureBucket == .globalRuntimeLoadFailed
+                    || failureBucket == .webExtensionCreationFailed
+                    || failureBucket == .profileContextNotLoaded
+                ? .runtimeLoadFailed
+                : .runtimeUnavailable
+            return .blocked(
+                blocker,
+                message: "\(installedExtension.name) could not load WebKit extension runtime for the action popup.",
+                diagnostics: diagnostics
+            )
+        }
+        extensionRuntimeTrace(
+            "urlHubAction runtime ready extensionId=\(extensionId) profileId=\(tabProfileId.uuidString) loadedContexts=\(extensionContexts(for: tabProfileId).count) selectedContextLoaded=true"
+        )
 
         let adapter = stableAdapter(for: currentTab)
         guard let action = extensionContext.action(for: adapter) else {
@@ -315,28 +369,13 @@ extension ExtensionManager: NSPopoverDelegate {
         for installedExtension: InstalledExtension,
         profileId: UUID
     ) async throws -> WKWebExtensionContext? {
-        if let extensionContext = getExtensionContext(
-            for: installedExtension.id,
-            profileId: profileId
-        ) {
-            return extensionContext
-        }
-
-        guard let entity = try extensionEntity(for: installedExtension.id),
-              entity.isEnabled
-        else {
-            return nil
-        }
-
         extensionRuntimeTrace(
-            "urlHubAction loading selected missing context extensionId=\(installedExtension.id) profileId=\(profileId.uuidString) runtimeState=\(runtimeState.rawValue) packagePath=\(entity.packagePath)"
+            "urlHubAction loading selected context extensionId=\(installedExtension.id) profileId=\(profileId.uuidString) runtimeState=\(runtimeState.rawValue) packagePath=\(installedExtension.packagePath)"
         )
-        _ = try await loadEnabledExtension(
-            from: entity,
-            profileId: profileId,
-            expectedLoadGeneration: extensionLoadGeneration
+        return try await ensureExtensionLoaded(
+            extensionId: installedExtension.id,
+            profileId: profileId
         )
-        return getExtensionContext(for: installedExtension.id, profileId: profileId)
     }
 
     private func sanitizedURLHubTraceURL(_ url: URL?) -> String {

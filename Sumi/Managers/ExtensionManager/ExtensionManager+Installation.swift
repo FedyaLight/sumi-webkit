@@ -161,17 +161,28 @@ extension ExtensionManager {
             manager.upsertInstalledExtension(refreshed)
         }
         loadInstalledExtensionMetadata()
-        _ = await requestExtensionRuntimeAndWait(
-            reason: .enable,
-            forceReload: getExtensionContext(for: extensionId) == nil,
-            allowWithoutEnabledExtensions: true
-        )
 
-        if getExtensionContext(for: extensionId) == nil {
-            return try await loadEnabledExtension(from: entity)
+        let enableProfileId =
+            currentProfileId
+            ?? browserManager?.currentProfile?.id
+        guard let enableProfileId else {
+            throw ExtensionError.installationFailed(
+                "Extension runtime profile is unavailable"
+            )
         }
 
-        await finalizeEnabledExtensionRuntime(for: extensionId)
+        _ = ensureExtensionController(for: enableProfileId)
+        if getExtensionContext(for: extensionId, profileId: enableProfileId) == nil {
+            return try await loadEnabledExtension(
+                from: entity,
+                profileId: enableProfileId
+            )
+        }
+
+        await finalizeEnabledExtensionRuntime(
+            for: extensionId,
+            profileId: enableProfileId
+        )
         return refreshed
     }
 
@@ -419,7 +430,8 @@ extension ExtensionManager {
                 $0.manifestValidationDuration = CFAbsoluteTimeGetCurrent() - validationStart
             }
             let webExtensionStart = CFAbsoluteTimeGetCurrent()
-            let (webExtension, runtimeLoadSource) = try await SafariAppExtensionResources.makeWebExtension(
+            let (webExtension, runtimeLoadSource) = try await cachedOrCreateWebExtension(
+                extensionId: entity.id,
                 sourceKind: sourceKind,
                 sourceBundlePath: entity.sourceBundlePath,
                 packageRoot: extensionRoot
@@ -491,10 +503,24 @@ extension ExtensionManager {
                 "loadEnabledExtension loaded extensionId=\(entity.id) context=\(extensionRuntimeObjectDescription(extensionContext)) controller=\(extensionRuntimeControllerDescription(extensionController))"
             )
 
+            clearExtensionLoadError(
+                extensionId: entity.id,
+                profileId: resolvedProfileId
+            )
+            touchLiveExtensionContext(
+                extensionId: entity.id,
+                profileId: resolvedProfileId
+            )
+            enforceBoundedLiveExtensionContexts(
+                keepingProfileId: resolvedProfileId,
+                keepingExtensionId: entity.id
+            )
+
             await finalizeEnabledExtensionRuntime(
                 for: entity.id,
                 profileId: resolvedProfileId
             )
+            markExtensionRuntimeReadyIfProfileContextsLoaded(for: resolvedProfileId)
 
             let refreshed = try refreshedRecord(for: entity, manifest: manifest)
             await applyInstalledExtensionsMutationOnNextRunLoop { manager in
@@ -504,9 +530,39 @@ extension ExtensionManager {
             try context.save()
             return refreshed
         } catch {
+            let errorProfileId =
+                profileId
+                ?? currentProfileId
+                ?? browserManager?.currentProfile?.id
+            if let errorProfileId {
+                recordExtensionLoadError(
+                    error,
+                    extensionId: entity.id,
+                    profileId: errorProfileId
+                )
+            }
             tearDownExtensionRuntimeState(for: entity.id, removeUIState: false)
             throw error
         }
+    }
+
+    func cachedOrCreateWebExtension(
+        extensionId: String,
+        sourceKind: WebExtensionSourceKind,
+        sourceBundlePath: String,
+        packageRoot: URL
+    ) async throws -> (extension: WKWebExtension, loadSource: SafariAppExtensionRuntimeLoadSource) {
+        if let cached = cachedWebExtensionsByID[extensionId] {
+            return (cached, .copiedPackage)
+        }
+
+        let created = try await SafariAppExtensionResources.makeWebExtension(
+            sourceKind: sourceKind,
+            sourceBundlePath: sourceBundlePath,
+            packageRoot: packageRoot
+        )
+        cachedWebExtensionsByID[extensionId] = created.extension
+        return created
     }
 
     @discardableResult
@@ -793,7 +849,8 @@ extension ExtensionManager {
                 }
                 let installController = ensureExtensionController(for: installProfileId)
 
-                let (webExtension, runtimeLoadSource) = try await SafariAppExtensionResources.makeWebExtension(
+                let (webExtension, runtimeLoadSource) = try await cachedOrCreateWebExtension(
+                    extensionId: extensionId,
                     sourceKind: resolvedSource.sourceKind,
                     sourceBundlePath: resolvedSource.sourceBundlePath.path,
                     packageRoot: destinationDirectory
@@ -875,6 +932,7 @@ extension ExtensionManager {
                         "Failed to wake background worker after install for \(installedDisplayName, privacy: .public): \(error.localizedDescription, privacy: .public)"
                     )
                 }
+                markExtensionRuntimeReadyIfProfileContextsLoaded(for: installProfileId)
             } else {
                 ensureWebExtensionStorageDirectoryExists(for: extensionId)
             }

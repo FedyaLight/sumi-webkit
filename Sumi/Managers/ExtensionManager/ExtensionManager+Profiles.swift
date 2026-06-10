@@ -81,10 +81,10 @@ extension ExtensionManager {
 
         let controller = ensureExtensionController(for: profileId)
         browserConfiguration.webViewConfiguration.webExtensionController = controller
+        unloadExtensionContextsForInactiveProfiles(keepingProfileId: profileId)
 
         Task { @MainActor [weak self] in
             guard let self else { return }
-            await self.ensureEnabledExtensionsLoaded(for: profileId)
             self.updateWebViewsForProfile(profileId)
             self.refreshActionSurfaceStateForCurrentProfile()
         }
@@ -329,7 +329,8 @@ extension ExtensionManager {
     func requestExtensionRuntime(
         reason: ExtensionRuntimeRequestReason,
         forceReload: Bool = false,
-        allowWithoutEnabledExtensions: Bool = false
+        allowWithoutEnabledExtensions: Bool = false,
+        profileId: UUID? = nil
     ) -> WKWebExtensionController? {
         PerformanceTrace.emitEvent("ExtensionManager.lazyRuntimeRequested")
 
@@ -345,14 +346,21 @@ extension ExtensionManager {
             return nil
         }
 
-        let controller = ensureExtensionController(reason: reason)
+        let resolvedProfileId =
+            profileId ?? currentProfileId ?? browserManager?.currentProfile?.id
+        let controller: WKWebExtensionController
+        if let resolvedProfileId {
+            controller = ensureExtensionController(for: resolvedProfileId)
+        } else {
+            controller = ensureExtensionController(reason: reason)
+        }
 
         if runtimeState == .loading, forceReload == false {
             return controller
         }
 
         if runtimeState == .ready, forceReload == false {
-            if let profileId = currentProfileId {
+            if let profileId = resolvedProfileId ?? currentProfileId {
                 updateWebViewsForProfile(profileId)
             }
             return controller
@@ -361,7 +369,8 @@ extension ExtensionManager {
         startExtensionRuntimeLoad(
             reason: reason,
             forceReload: forceReload,
-            allowWithoutEnabledExtensions: allowWithoutEnabledExtensions
+            allowWithoutEnabledExtensions: allowWithoutEnabledExtensions,
+            profileId: resolvedProfileId
         )
         return controller
     }
@@ -370,12 +379,37 @@ extension ExtensionManager {
     func requestExtensionRuntimeAndWait(
         reason: ExtensionRuntimeRequestReason,
         forceReload: Bool = false,
-        allowWithoutEnabledExtensions: Bool = false
+        allowWithoutEnabledExtensions: Bool = false,
+        profileId: UUID? = nil,
+        extensionId: String? = nil
     ) async -> Bool {
+        let resolvedProfileId =
+            profileId ?? currentProfileId ?? browserManager?.currentProfile?.id
+
+        if forceReload == false,
+           let resolvedProfileId,
+           let extensionId,
+           isExtensionRuntimeReady(extensionId: extensionId, profileId: resolvedProfileId)
+        {
+            markExtensionRuntimeReadyIfProfileContextsLoaded(for: resolvedProfileId)
+            return true
+        }
+
+        if forceReload == false,
+           extensionId == nil,
+           let resolvedProfileId,
+           extensionControllersByProfile[resolvedProfileId] != nil,
+           isProfileExtensionRuntimeReady(for: resolvedProfileId)
+        {
+            markExtensionRuntimeReadyIfProfileContextsLoaded(for: resolvedProfileId)
+            return true
+        }
+
         guard requestExtensionRuntime(
             reason: reason,
             forceReload: forceReload,
-            allowWithoutEnabledExtensions: allowWithoutEnabledExtensions
+            allowWithoutEnabledExtensions: allowWithoutEnabledExtensions,
+            profileId: resolvedProfileId
         ) != nil else {
             return false
         }
@@ -384,7 +418,30 @@ extension ExtensionManager {
             await runtimeInitializationTask.value
         }
 
-        return runtimeState == .ready
+        if let resolvedProfileId,
+           let extensionId,
+           isExtensionRuntimeReady(extensionId: extensionId, profileId: resolvedProfileId)
+        {
+            markExtensionRuntimeReadyIfProfileContextsLoaded(for: resolvedProfileId)
+            return true
+        }
+
+        if let resolvedProfileId,
+           extensionId == nil,
+           isProfileExtensionRuntimeReady(for: resolvedProfileId)
+        {
+            markExtensionRuntimeReadyIfProfileContextsLoaded(for: resolvedProfileId)
+            return true
+        }
+
+        if let resolvedProfileId,
+           extensionControllersByProfile[resolvedProfileId] != nil,
+           runtimeState == .ready
+        {
+            return extensionId == nil
+        }
+
+        return false
     }
 
     private func ensureExtensionController(
@@ -405,82 +462,45 @@ extension ExtensionManager {
     private func startExtensionRuntimeLoad(
         reason: ExtensionRuntimeRequestReason,
         forceReload: Bool,
-        allowWithoutEnabledExtensions: Bool
+        allowWithoutEnabledExtensions: Bool,
+        profileId: UUID?
     ) {
         runtimeInitializationTask?.cancel()
         runtimeInitializationTask = nil
 
-        extensionsLoaded = false
-        runtimeState = .loading
-        extensionLoadGeneration &+= 1
-        let loadGeneration = extensionLoadGeneration
+        let resolvedProfileId =
+            profileId ?? currentProfileId ?? browserManager?.currentProfile?.id
 
-        if forceReload || extensionContextsByProfile.isEmpty == false {
+        if forceReload {
             resetLoadedExtensionRuntimeStateForReload()
+            cachedWebExtensionsByID.removeAll()
+            lastExtensionLoadErrors.removeAll()
+            liveExtensionContextOrder.removeAll()
         }
 
-        let enabledEntities = enabledPersistedExtensionEntities()
-        runtimeInitializationTask = Task { @MainActor [weak self] in
-            let signpostState = PerformanceTrace.beginInterval(
-                "ExtensionManager.lazyRuntime"
-            )
-            defer {
-                PerformanceTrace.endInterval(
-                    "ExtensionManager.lazyRuntime",
-                    signpostState
-                )
-            }
-
-            guard let self else { return }
-            defer {
-                if self.extensionLoadGeneration == loadGeneration {
-                    self.runtimeInitializationTask = nil
-                }
-            }
-
-            guard enabledEntities.isEmpty == false || allowWithoutEnabledExtensions else {
-                self.extensionsLoaded = true
-                self.runtimeState = .idle
-                return
-            }
-
-            for entity in enabledEntities {
-                guard self.extensionLoadGeneration == loadGeneration,
-                      Task.isCancelled == false else {
-                    return
-                }
-
-                do {
-                    _ = try await self.loadEnabledExtension(
-                        from: entity,
-                        expectedLoadGeneration: loadGeneration
-                    )
-                } catch is CancellationError {
-                    return
-                } catch {
-                    Self.logger.error("Failed to load enabled extension \(entity.name, privacy: .public): \(error.localizedDescription, privacy: .public)")
-                    self.runtimeState = .failed
-                }
-            }
-
-            guard self.extensionLoadGeneration == loadGeneration,
-                  Task.isCancelled == false else {
-                return
-            }
-
-            self.extensionsLoaded = true
-            if self.runtimeState != .failed {
-                self.runtimeState = .ready
-            }
-            self.tabOpenNotificationGeneration &+= 1
-            self.extensionRuntimeTrace(
-                "lazyRuntime finalize reason=\(reason.rawValue) loadGeneration=\(loadGeneration) notifyGeneration=\(self.tabOpenNotificationGeneration) loadedContexts=\(self.extensionContexts.count) profiles=\(self.extensionContextsByProfile.count)"
-            )
-            self.resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
-                reason: "ExtensionManager.lazyRuntime.finalize"
-            )
-            self.registerExistingWindowStateIfAttached()
+        let hasDemand =
+            enabledPersistedExtensionEntities().isEmpty == false
+            || allowWithoutEnabledExtensions
+        guard hasDemand else {
+            extensionsLoaded = true
+            runtimeState = .idle
+            return
         }
+
+        guard let resolvedProfileId else {
+            extensionsLoaded = true
+            runtimeState = .idle
+            return
+        }
+
+        runtimeState = .loading
+        _ = ensureExtensionController(for: resolvedProfileId)
+        extensionsLoaded = true
+        runtimeState = .ready
+        markExtensionRuntimeReadyIfProfileContextsLoaded(for: resolvedProfileId)
+        extensionRuntimeTrace(
+            "lazyRuntime controller-only reason=\(reason.rawValue) profileId=\(resolvedProfileId.uuidString) loadedContexts=\(countLoadedExtensionContexts()) forceReload=\(forceReload)"
+        )
     }
 
     func enabledPersistedExtensionEntities() -> [ExtensionEntity] {
@@ -554,6 +574,11 @@ extension ExtensionManager {
         unloadExtensionContextIfNeeded(for: extensionId)
         removeExtensionErrorObserver(for: extensionId)
         loadedExtensionManifests.removeValue(forKey: extensionId)
+        cachedWebExtensionsByID.removeValue(forKey: extensionId)
+        lastExtensionLoadErrors = lastExtensionLoadErrors.filter {
+            !$0.key.hasSuffix(":\(extensionId)")
+        }
+        liveExtensionContextOrder.removeAll { $0.hasSuffix(":\(extensionId)") }
         removeExternallyConnectablePageBridge(for: extensionId)
         lastLoggedExtensionErrorFingerprints.removeValue(forKey: extensionId)
         closeOptionsWindow(for: extensionId)
@@ -589,6 +614,9 @@ extension ExtensionManager {
         extensionContextsByProfile.removeAll()
         loadedExtensionManifests.removeAll()
         actionStatesByExtensionID.removeAll()
+        cachedWebExtensionsByID.removeAll()
+        lastExtensionLoadErrors.removeAll()
+        liveExtensionContextOrder.removeAll()
         backgroundWakeTasks.values.forEach { $0.cancel() }
         backgroundWakeTasks.removeAll()
         backgroundRuntimeStateByExtensionID.removeAll()
@@ -660,6 +688,9 @@ extension ExtensionManager {
         extensionContextsByProfile.removeAll()
         loadedExtensionManifests.removeAll()
         actionStatesByExtensionID.removeAll()
+        cachedWebExtensionsByID.removeAll()
+        lastExtensionLoadErrors.removeAll()
+        liveExtensionContextOrder.removeAll()
         backgroundWakeTasks.removeAll()
         backgroundRuntimeStateByExtensionID.removeAll()
         runtimeMetricsByExtensionID.removeAll()

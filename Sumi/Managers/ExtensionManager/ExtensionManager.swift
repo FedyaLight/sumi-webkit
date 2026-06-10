@@ -110,6 +110,10 @@ final class ExtensionManager: NSObject, ObservableObject {
     weak var browserManager: BrowserManager?
     var extensionControllersByProfile: [UUID: WKWebExtensionController] = [:]
     var extensionContextsByProfile: [UUID: [String: WKWebExtensionContext]] = [:]
+    /// Parsed extension resources are profile-agnostic; each profile gets its own context.
+    var cachedWebExtensionsByID: [String: WKWebExtension] = [:]
+    var lastExtensionLoadErrors: [String: Error] = [:]
+    var liveExtensionContextOrder: [String] = []
     var runtimeState: ExtensionRuntimeState = .idle
     var runtimeInitializationTask: Task<Void, Never>?
     var loadedExtensionManifests: [String: [String: Any]] = [:]
@@ -150,6 +154,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     var pinnedToolbarExtensionIDsByProfile: [String: [String]] = [:]
 
     nonisolated static let profileExtensionStoreLimit = 4
+    nonisolated static let maxLiveExtensionContexts = 8
     nonisolated static let recentExtensionTabOpenRequestTTL: TimeInterval = 2
 
     init(

@@ -76,19 +76,32 @@ enum SafariExtensionScannerTestSupport {
         )
 
         if specification.includeManifest {
-            let manifestURL = contentsURL
+            let resourcesURL = contentsURL
                 .appendingPathComponent("Resources", isDirectory: true)
-                .appendingPathComponent("manifest.json")
-            let manifest: [String: Any] = [
+            let manifestURL = resourcesURL.appendingPathComponent("manifest.json")
+            var manifest: [String: Any] = [
                 "manifest_version": specification.manifestVersion,
                 "name": specification.displayName,
                 "version": specification.version,
             ]
+            if specification.includeActionPopup {
+                manifest["action"] = ["default_popup": "popup.html"]
+            }
+            if specification.hostPermissions.isEmpty == false {
+                manifest["host_permissions"] = specification.hostPermissions
+            }
             let data = try JSONSerialization.data(
                 withJSONObject: manifest,
                 options: [.prettyPrinted, .sortedKeys]
             )
             try data.write(to: manifestURL, options: [.atomic])
+
+            if specification.includeActionPopup {
+                let popupURL = resourcesURL.appendingPathComponent("popup.html")
+                try Data(
+                    "<!doctype html><title>popup</title>".utf8
+                ).write(to: popupURL, options: [.atomic])
+            }
         }
 
         return appexURL
@@ -136,5 +149,7 @@ enum SafariExtensionScannerTestSupport {
         var includeExtensionAttributes: Bool = true
         var corruptPlist: Bool = false
         var manifestVersion: Int = 3
+        var includeActionPopup: Bool = false
+        var hostPermissions: [String] = []
     }
 }

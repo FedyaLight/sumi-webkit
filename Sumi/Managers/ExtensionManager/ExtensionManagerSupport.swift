@@ -27,6 +27,24 @@ enum BrowserExtensionActionPopupBlocker:
     case contextUnavailable
 }
 
+/// Precise internal buckets when the generic action-popup runtime gate fails.
+enum ExtensionActionPopupRuntimeFailureBucket: String, Codable, CaseIterable, Sendable {
+    case profileRuntimeNotFound
+    case profileContextNotCreated
+    case profileContextNotLoaded
+    case wrongProfileRuntimeLookup
+    case enabledStateWithoutRuntime
+    case originalAppExtensionBundleMissing
+    case copiedResourcesMissing
+    case webExtensionCreationFailed
+    case manifestValidationPolicyWrongForSourceKind
+    case staleActionSurfaceRecord
+    case deletedImportRecordStale
+    case privateTabGuardFalsePositive
+    case globalRuntimeLoadFailed
+    case globalRuntimeUnavailable
+}
+
 struct BrowserExtensionActionPopupRequestResult:
     Codable,
     Equatable
@@ -45,13 +63,14 @@ struct BrowserExtensionActionPopupRequestResult:
 
     static func blocked(
         _ blocker: BrowserExtensionActionPopupBlocker,
-        message: String
+        message: String,
+        diagnostics: [String] = []
     ) -> BrowserExtensionActionPopupRequestResult {
         BrowserExtensionActionPopupRequestResult(
             opened: false,
             blocker: blocker,
             message: message,
-            diagnostics: []
+            diagnostics: diagnostics
         )
     }
 }
