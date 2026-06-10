@@ -52,10 +52,21 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
             extensionManager.resolvedProfileId(for: tab) == contextProfileId,
             extensionManager.isTabEligibleForCurrentExtensionRuntime(tab)
         else {
+            SafariExtensionAutofillFillDiagnostics.recordPopupTabVisibility(
+                seesCurrentTab: false,
+                extensionId: extensionManager?.extensionID(for: extensionContext),
+                reason: "activeTabAdapterUnavailable"
+            )
             return nil
         }
 
-        return extensionManager.stableAdapter(for: tab)
+        let adapter = extensionManager.stableAdapter(for: tab)
+        SafariExtensionAutofillFillDiagnostics.recordPopupTabVisibility(
+            seesCurrentTab: adapter != nil,
+            extensionId: extensionManager.extensionID(for: extensionContext),
+            reason: "activeTabAdapterResolved"
+        )
+        return adapter
     }
 
     func tabs(for extensionContext: WKWebExtensionContext) -> [any WKWebExtensionTab] {
@@ -355,12 +366,23 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
         guard let tab = eligibleTab(),
               let extensionManager
         else {
+            SafariExtensionAutofillFillDiagnostics.recordFrameResolution(
+                resolved: false,
+                extensionId: extensionManager?.extensionID(for: extensionContext),
+                reason: "tabAdapterWebViewUnavailable"
+            )
             return nil
         }
-        return extensionManager.extensionWebView(
+        let webView = extensionManager.extensionWebView(
             for: tab,
             extensionContext: extensionContext
         )
+        SafariExtensionAutofillFillDiagnostics.recordFrameResolution(
+            resolved: webView != nil,
+            extensionId: extensionManager.extensionID(for: extensionContext),
+            reason: "tabAdapterWebView"
+        )
+        return webView
     }
 
     func activate(

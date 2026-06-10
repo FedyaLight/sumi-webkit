@@ -433,37 +433,63 @@ enum SafariExtensionPasswordManagerFormFixtureProbe {
         let detail: String
     }
 
-    static let fixtureRelativePath = "SumiTests/Fixtures/Extensions/login-form.html"
+    static let legacyFixtureRelativePath = "SumiTests/Fixtures/Extensions/login-form.html"
+    static let autofillFixtureRelativePaths = [
+        "SumiTests/Fixtures/AutofillPages/login-basic.html",
+        "SumiTests/Fixtures/AutofillPages/login-autocomplete.html",
+        "SumiTests/Fixtures/AutofillPages/login-same-origin-iframe.html",
+        "SumiTests/Fixtures/AutofillPages/login-cross-origin-iframe.html",
+        "SumiTests/Fixtures/AutofillPages/login-dynamic-spa.html",
+        "SumiTests/Fixtures/AutofillPages/shared/fill-probe.js",
+    ]
 
     static func evaluate() -> Result {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let fixtureURL = repoRoot.appendingPathComponent(fixtureRelativePath)
-        guard FileManager.default.fileExists(atPath: fixtureURL.path) else {
+        let repoRoot = repoRootURL()
+        let missing = missingFixturePaths(repoRoot: repoRoot)
+        guard missing.isEmpty else {
             return Result(
                 passed: false,
-                detail: "Missing local login form fixture at \(fixtureRelativePath)"
+                detail: "Missing autofill fixtures: \(missing.joined(separator: ", "))"
             )
         }
 
-        guard let contents = try? String(contentsOf: fixtureURL, encoding: .utf8),
+        let basicURL = repoRoot.appendingPathComponent(
+            "SumiTests/Fixtures/AutofillPages/login-basic.html"
+        )
+        guard let contents = try? String(contentsOf: basicURL, encoding: .utf8),
               contents.contains("type=\"password\""),
               contents.contains("autocomplete=\"username\"")
         else {
             return Result(
                 passed: false,
-                detail: "Login form fixture missing password/username fields"
+                detail: "login-basic.html missing password/username fields"
             )
         }
 
         return Result(
             passed: true,
-            detail: "Local login-form.html fixture available; serve via http://127.0.0.1 (file:// is not covered by <all_urls>)"
+            detail: """
+            Controlled autofill fixtures available; serve with scripts/serve_autofill_fixtures.sh \
+            at http://127.0.0.1:8765/login-basic.html (do not use file:// for <all_urls> PM tests)
+            """
         )
+    }
+
+    private static func repoRootURL() -> URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+    }
+
+    private static func missingFixturePaths(repoRoot: URL) -> [String] {
+        var paths = autofillFixtureRelativePaths
+        paths.append(legacyFixtureRelativePath)
+        return paths.filter {
+            FileManager.default.fileExists(atPath: repoRoot.appendingPathComponent($0).path) == false
+        }
     }
 }
 

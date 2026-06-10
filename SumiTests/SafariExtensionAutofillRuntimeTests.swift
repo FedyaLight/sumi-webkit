@@ -187,6 +187,73 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         XCTAssertNil(manager.extensionWebView(for: tab, extensionContext: extensionContext))
     }
 
+    func testAutofillPagesHTTPServerServesLoginBasic() async throws {
+        let server = try await AutofillPagesHTTPServer.start()
+        addTeardownBlock {
+            server.stop()
+        }
+
+        let url = server.loginBasicURL
+        XCTAssertTrue(url.absoluteString.contains("login-basic.html"))
+
+        let (data, response) = try await URLSession.shared.data(from: url)
+        let httpResponse = try XCTUnwrap(response as? HTTPURLResponse)
+        XCTAssertEqual(httpResponse.statusCode, 200)
+        let html = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertTrue(html.contains("autocomplete=\"username\""))
+        XCTAssertTrue(html.contains("autocomplete=\"current-password\""))
+    }
+
+    func testMarkTabEligibleAfterCommittedNavigationTriggersContentScriptPath() throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: profile
+        )
+        _ = manager.requestExtensionRuntime(
+            reason: .attach,
+            allowWithoutEnabledExtensions: true
+        )
+        _ = manager.ensureExtensionController(for: profile.id)
+        manager.extensionsLoaded = true
+        manager.tabOpenNotificationGeneration = 4
+
+        let browserManager = BrowserManager()
+        manager.attach(browserManager: browserManager)
+        browserManager.profileManager.profiles = [profile]
+
+        let tab = makeTab(profileId: profile.id, url: URL(string: "about:blank")!)
+        tab.browserManager = browserManager
+
+        let configuration = BrowserConfiguration().auxiliaryWebViewConfiguration(
+            surface: .extensionOptions
+        )
+        manager.prepareWebViewConfigurationForExtensionRuntime(
+            configuration,
+            profileId: profile.id,
+            reason: "SafariExtensionAutofillRuntimeTests"
+        )
+        let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
+        webView.owningTab = tab
+        tab._webView = webView
+
+        let didOpenExpectation = expectation(description: "didOpenTab after commit")
+        manager.testHooks.didOpenTab = { tabID in
+            if tabID == tab.id {
+                didOpenExpectation.fulfill()
+            }
+        }
+
+        manager.markTabEligibleAfterCommittedNavigation(
+            tab,
+            reason: "SafariExtensionAutofillRuntimeTests"
+        )
+
+        wait(for: [didOpenExpectation], timeout: 2)
+        XCTAssertTrue(manager.isTabEligibleForCurrentExtensionRuntime(tab))
+    }
+
     func testLoginFormFixtureExistsForManualAutofillVerification() throws {
         let loginForm = try fixtureURL(named: "login-form.html")
         let iframeLogin = try fixtureURL(named: "iframe-login.html")

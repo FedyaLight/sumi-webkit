@@ -129,6 +129,10 @@ final class ExtensionManager: NSObject, ObservableObject {
     var lastLoggedExtensionErrorFingerprints: [String: String] = [:]
     var optionsWindows: [String: NSWindow] = [:]
     var optionsWindowDelegates: [String: ExtensionOptionsWindowDelegate] = [:]
+    weak var activeExtensionActionPopover: NSPopover?
+    var extensionActionPopupUIDelegates: [String: ExtensionActionPopupUIDelegate] = [:]
+    var deferredPopupContextUnloadTasks: [String: Task<Void, Never>] = [:]
+    var deferredPopupContextUnloadProfileIDs: [String: UUID] = [:]
     var tabAdapters: [UUID: ExtensionTabAdapter] = [:]
     var windowAdapters: [UUID: ExtensionWindowAdapter] = [:]
     var installedPageBridgeIDs: Set<String> = []
@@ -193,6 +197,14 @@ final class ExtensionManager: NSObject, ObservableObject {
             ] ?? []
         )
         super.init()
+        SafariExtensionAutofillFillDiagnostics.deferredFillCompletionHandler = {
+            [weak self] extensionId in
+            guard let extensionId else { return }
+            self?.completeDeferredPopupContextUnload(
+                forExtensionId: extensionId,
+                reason: "relaySucceeded"
+            )
+        }
 
         guard isExtensionSupportAvailable else {
             extensionsLoaded = true

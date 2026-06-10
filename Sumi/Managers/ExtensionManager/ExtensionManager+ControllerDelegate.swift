@@ -199,6 +199,27 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                 tab: activeTab,
                 manifest: manifest
             )
+            let seesCurrentTab =
+                stableAdapter(for: activeTab) != nil
+                && isTabEligibleForCurrentExtensionRuntime(activeTab)
+            SafariExtensionAutofillFillDiagnostics.recordPopupTabVisibility(
+                seesCurrentTab: seesCurrentTab,
+                extensionId: extensionId,
+                reason: "presentActionPopup"
+            )
+            if let extensionId {
+                SafariExtensionAutofillFillDiagnostics.setPopupActive(true, extensionId: extensionId)
+            }
+            SafariExtensionAutofillFillDiagnostics.recordScriptingAvailability(
+                extensionContext: extensionContext,
+                manifest: manifest
+            )
+        } else {
+            SafariExtensionAutofillFillDiagnostics.recordPopupTabVisibility(
+                seesCurrentTab: false,
+                extensionId: extensionId,
+                reason: "presentActionPopupNoActiveTab"
+            )
         }
 
         guard let popover = action.popupPopover else {
@@ -229,6 +250,15 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                 popupWebView.configuration.websiteDataStore = self.getExtensionDataStore(for: profileId)
                 popupWebView.configuration.defaultWebpagePreferences.allowsContentJavaScript = true
             }
+            let popupUIDelegate = ExtensionActionPopupUIDelegate(
+                manager: self,
+                popover: popover
+            )
+            if let extensionId {
+                extensionActionPopupUIDelegates[extensionId] = popupUIDelegate
+            }
+            popupWebView.uiDelegate = popupUIDelegate
+            activeExtensionActionPopover = popover
         }
 
         if let extensionId {
@@ -263,6 +293,11 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                 for: extensionId,
                 profileId: profileId,
                 preferredWindowId: preferredWindowId
+            )
+
+            SafariExtensionAutofillFillDiagnostics.recordPopoverPresentation(
+                anchorResolved: resolution.anchorResolved,
+                extensionId: extensionId
             )
 
             guard resolution.anchorResolved else {
@@ -344,18 +379,34 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         var autoGranted = Set<URL>()
         var denied = Set<URL>()
 
+        let extensionId = extensionID(for: extensionContext)
         for url in urls {
             let status = extensionContext.permissionStatus(for: url)
             if isGrantedPermissionStatus(status) {
                 autoGranted.insert(url)
+                SafariExtensionAutofillFillDiagnostics.recordHostPermission(
+                    granted: true,
+                    extensionId: extensionId,
+                    reason: "promptAlreadyGranted"
+                )
             } else if explicitlyGrantURLIfCoveredByGrantedMatchPattern(
                 url,
                 in: extensionContext
             ) {
                 autoGranted.insert(url)
+                SafariExtensionAutofillFillDiagnostics.recordHostPermission(
+                    granted: true,
+                    extensionId: extensionId,
+                    reason: "promptMatchPattern"
+                )
             } else {
                 extensionContext.setPermissionStatus(.deniedExplicitly, for: url)
                 denied.insert(url)
+                SafariExtensionAutofillFillDiagnostics.recordHostPermission(
+                    granted: false,
+                    extensionId: extensionId,
+                    reason: "promptDenied"
+                )
             }
         }
 
@@ -422,6 +473,9 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         _ = controller
         SumiNativeMessagingRuntimeCounters.recordDelegateSendMessageInvoked()
         let extensionId = extensionID(for: extensionContext)
+        SafariExtensionAutofillFillDiagnostics.recordNativeMessagingActivity(
+            extensionId: extensionId
+        )
         Task { @MainActor [weak self] in
             guard let self else { return }
             _ = try? await self.ensureBackgroundAvailableIfRequired(
@@ -462,6 +516,9 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         _ = controller
         SumiNativeMessagingRuntimeCounters.recordDelegateConnectInvoked()
         let extensionId = extensionID(for: extensionContext)
+        SafariExtensionAutofillFillDiagnostics.recordNativeMessagingActivity(
+            extensionId: extensionId
+        )
         Task { @MainActor [weak self] in
             guard let self else { return }
             _ = try? await self.ensureBackgroundAvailableIfRequired(

@@ -1451,14 +1451,31 @@ extension ExtensionManager {
         guard let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https"
         else {
+            SafariExtensionAutofillFillDiagnostics.recordActiveTabPermission(
+                granted: false,
+                extensionId: extensionID(for: extensionContext),
+                reason: "nonHTTPActiveTab"
+            )
             return
         }
 
         let permissions = (manifest["permissions"] as? [String] ?? [])
             + (manifest["optional_permissions"] as? [String] ?? [])
-        guard permissions.contains("activeTab") else { return }
+        guard permissions.contains("activeTab") else {
+            SafariExtensionAutofillFillDiagnostics.recordActiveTabPermission(
+                granted: false,
+                extensionId: extensionID(for: extensionContext),
+                reason: "activeTabNotDeclared"
+            )
+            return
+        }
 
         extensionContext.setPermissionStatus(.grantedExplicitly, for: url)
+        SafariExtensionAutofillFillDiagnostics.recordActiveTabPermission(
+            granted: true,
+            extensionId: extensionID(for: extensionContext),
+            reason: "activeTabGranted"
+        )
     }
 
     func isGrantedPermissionStatus(

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Sumi Autofill — Cross-Origin Iframe Login</title>
+</head>
+<body>
+  <h1>Cross-origin iframe login</h1>
+  <p>
+  Parent origin is <code>127.0.0.1</code>; iframe loads the same fixture from
+  <code>localhost</code> (different site, same machine).
+  </p>
+  <iframe
+    id="login-frame"
+    name="login-frame"
+    src="http://localhost:8765/login-basic.html"
+    title="Cross-origin login frame"
+    width="520"
+    height="360"
+  ></iframe>
+  <script src="shared/fill-probe.js"></script>
+</body>
+</html>

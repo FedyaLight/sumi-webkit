@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Sumi Autofill — Dynamic SPA Login</title>
+</head>
+<body>
+  <h1>Dynamic SPA login</h1>
+  <div id="app">
+    <p id="status">Rendering login form…</p>
+  </div>
+  <script>
+    (function () {
+      const app = document.getElementById("app");
+      const status = document.getElementById("status");
+
+      function renderForm() {
+        status.remove();
+        const form = document.createElement("form");
+        form.id = "login";
+        form.method = "post";
+        form.action = "/login";
+        form.innerHTML = `
+          <label>
+            Username
+            <input id="username" name="username" type="text" autocomplete="username">
+          </label>
+          <label>
+            Password
+            <input id="password" name="password" type="password" autocomplete="current-password">
+          </label>
+          <button type="submit">Sign in</button>
+        `;
+        app.appendChild(form);
+        window.dispatchEvent(new CustomEvent("sumi:spa-form-ready"));
+      }
+
+      window.setTimeout(renderForm, 350);
+    })();
+  </script>
+  <script src="shared/fill-probe.js"></script>
+</body>
+</html>

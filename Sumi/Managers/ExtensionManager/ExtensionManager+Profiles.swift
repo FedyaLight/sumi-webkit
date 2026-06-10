@@ -94,7 +94,15 @@ extension ExtensionManager {
     @discardableResult
     func notifyTabOpened(_ tab: Tab) -> Bool {
         guard let controller = extensionController(for: tab),
-              let adapter = stableAdapter(for: tab) else { return false }
+              let adapter = stableAdapter(for: tab)
+        else {
+            SafariExtensionAutofillFillDiagnostics.recordContentScriptInjection(
+                injected: false,
+                extensionId: nil,
+                reason: "notifyTabOpenedMissingAdapterOrController"
+            )
+            return false
+        }
         extensionRuntimeTrace(
             "didOpenTab start generation=\(extensionLoadGeneration) notifyGeneration=\(tabOpenNotificationGeneration) controller=\(extensionRuntimeControllerDescription(controller)) \(extensionRuntimeTabDescription(tab)) adapter=\(extensionRuntimeObjectDescription(adapter))"
         )
@@ -102,6 +110,11 @@ extension ExtensionManager {
         #if DEBUG
             testHooks.didOpenTab?(tab.id)
         #endif
+        SafariExtensionAutofillFillDiagnostics.recordContentScriptInjection(
+            injected: true,
+            extensionId: nil,
+            reason: "didOpenTab"
+        )
         extensionRuntimeTrace(
             "didOpenTab complete generation=\(extensionLoadGeneration) notifyGeneration=\(tabOpenNotificationGeneration) \(extensionRuntimeTabDescription(tab))"
         )
@@ -137,6 +150,11 @@ extension ExtensionManager {
             "notifyTabOpenedIfNeeded proceed reason=\(reason) generation=\(generation) lastNotified=\(tab.lastExtensionOpenNotificationGeneration) \(extensionRuntimeTabDescription(tab))"
         )
         guard notifyTabOpened(tab) else {
+            SafariExtensionAutofillFillDiagnostics.recordContentScriptInjection(
+                injected: false,
+                extensionId: nil,
+                reason: "notifyTabOpenedIfNeeded:\(reason)"
+            )
             extensionRuntimeTrace(
                 "notifyTabOpenedIfNeeded aborted reason=\(reason) because=notifyFailed generation=\(generation) \(extensionRuntimeTabDescription(tab))"
             )
@@ -307,6 +325,10 @@ extension ExtensionManager {
             ?? extensionContext.webExtension.manifest
         extensionContext.unsupportedAPIs = Self.webKitRuntimeUnsupportedAPIs(
             for: resolvedManifest
+        )
+        SafariExtensionAutofillFillDiagnostics.recordScriptingAvailability(
+            extensionContext: extensionContext,
+            manifest: resolvedManifest
         )
 
         let profileStore = getExtensionDataStore(for: profileId)
@@ -994,6 +1016,8 @@ extension ExtensionManager {
         }
 
         tab.extensionRuntimeEligibleGeneration = generation
+        ensureExtensionControllerAttachedForTab(tab, reason: reason)
+        notifyTabOpenedIfNeeded(tab, reason: reason)
     }
 
     func isTabEligibleForCurrentExtensionRuntime(_ tab: Tab) -> Bool {

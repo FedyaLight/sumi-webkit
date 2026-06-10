@@ -445,6 +445,11 @@ extension ExtensionManager {
         guard tabMatchesExtensionContext(tab, extensionContext: extensionContext),
               let webView = resolvedLiveWebView(for: tab)
         else {
+            SafariExtensionAutofillFillDiagnostics.recordFrameResolution(
+                resolved: false,
+                extensionId: extensionID(for: extensionContext),
+                reason: "extensionWebViewMissingLiveTarget"
+            )
             return nil
         }
 
@@ -453,10 +458,57 @@ extension ExtensionManager {
               let expectedController = extensionControllersByProfile[profileId],
               webView.configuration.webExtensionController === expectedController
         else {
+            SafariExtensionAutofillFillDiagnostics.recordFrameResolution(
+                resolved: false,
+                extensionId: extensionID(for: extensionContext),
+                reason: "extensionWebViewControllerMismatch"
+            )
             return nil
         }
 
+        SafariExtensionAutofillFillDiagnostics.recordFrameResolution(
+            resolved: true,
+            extensionId: extensionID(for: extensionContext),
+            reason: "extensionWebViewReady"
+        )
         return webView
+    }
+
+    func ensureExtensionControllerAttachedForTab(
+        _ tab: Tab,
+        reason: String = #function
+    ) {
+        guard tab.isEphemeral == false else { return }
+        guard extensionsLoaded else { return }
+        guard resolvedProfileId(for: tab) != nil else { return }
+
+        var needsRebuild = false
+        for webView in liveWebViews(for: tab) {
+            let attached = attachExtensionControllerIfNeeded(to: webView, for: tab)
+            extensionRuntimeTrace(
+                "ensureExtensionControllerAttachedForTab webView=\(extensionRuntimeWebViewDescription(webView)) attached=\(attached) \(extensionRuntimeTabDescription(tab))"
+            )
+            if attached == false,
+               webView.configuration.webExtensionController == nil,
+               canLateBindExtensionController(to: webView) == false
+            {
+                needsRebuild = true
+                break
+            }
+        }
+
+        if needsRebuild,
+           let coordinator = browserManager?.webViewCoordinator
+        {
+            extensionRuntimeTrace(
+                "ensureExtensionControllerAttachedForTab rebuild reason=\(reason) \(extensionRuntimeTabDescription(tab))"
+            )
+            coordinator.rebuildLiveWebViews(for: tab)
+            registerTabWithExtensionRuntime(
+                tab,
+                reason: "\(reason).rebuild"
+            )
+        }
     }
 
     func updateWebViewsForProfile(_ profileId: UUID) {

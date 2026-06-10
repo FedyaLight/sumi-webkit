@@ -277,6 +277,182 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         )
     }
 
+    func testMarkTabEligibleAfterCommittedNavigationNotifiesTabOpened() throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile
+        ).manager
+        _ = manager.requestExtensionRuntime(
+            reason: .attach,
+            allowWithoutEnabledExtensions: true
+        )
+        _ = manager.ensureExtensionController(for: profile.id)
+        manager.extensionsLoaded = true
+        manager.tabOpenNotificationGeneration = 9
+
+        let browserManager = BrowserManager()
+        manager.attach(browserManager: browserManager)
+        browserManager.profileManager.profiles = [profile]
+
+        let tab = makeTab(profileId: profile.id, url: URL(string: "about:blank")!)
+        tab.browserManager = browserManager
+
+        let configuration = BrowserConfiguration().auxiliaryWebViewConfiguration(
+            surface: .extensionOptions
+        )
+        manager.prepareWebViewConfigurationForExtensionRuntime(
+            configuration,
+            profileId: profile.id,
+            reason: "SafariExtensionWebViewControllerWiringTests"
+        )
+        let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
+        webView.owningTab = tab
+        tab._webView = webView
+
+        let didOpenExpectation = expectation(description: "didOpenTab")
+        manager.testHooks.didOpenTab = { tabID in
+            if tabID == tab.id {
+                didOpenExpectation.fulfill()
+            }
+        }
+
+        manager.markTabEligibleAfterCommittedNavigation(
+            tab,
+            reason: "SafariExtensionWebViewControllerWiringTests"
+        )
+
+        wait(for: [didOpenExpectation], timeout: 2)
+        XCTAssertEqual(
+            tab.lastExtensionOpenNotificationGeneration,
+            manager.tabOpenNotificationGeneration
+        )
+        XCTAssertTrue(tab.didNotifyOpenToExtensions)
+    }
+
+    func testMarkTabEligibleAfterCommittedNavigationDoesNotNotifyTwice() throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile
+        ).manager
+        _ = manager.requestExtensionRuntime(
+            reason: .attach,
+            allowWithoutEnabledExtensions: true
+        )
+        _ = manager.ensureExtensionController(for: profile.id)
+        manager.extensionsLoaded = true
+        manager.tabOpenNotificationGeneration = 11
+
+        let browserManager = BrowserManager()
+        manager.attach(browserManager: browserManager)
+        browserManager.profileManager.profiles = [profile]
+
+        let tab = makeTab(profileId: profile.id, url: URL(string: "about:blank")!)
+        tab.browserManager = browserManager
+
+        let configuration = BrowserConfiguration().auxiliaryWebViewConfiguration(
+            surface: .extensionOptions
+        )
+        manager.prepareWebViewConfigurationForExtensionRuntime(
+            configuration,
+            profileId: profile.id,
+            reason: "SafariExtensionWebViewControllerWiringTests"
+        )
+        let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
+        webView.owningTab = tab
+        tab._webView = webView
+
+        var notifyCount = 0
+        manager.testHooks.didOpenTab = { tabID in
+            if tabID == tab.id {
+                notifyCount += 1
+            }
+        }
+
+        manager.markTabEligibleAfterCommittedNavigation(
+            tab,
+            reason: "SafariExtensionWebViewControllerWiringTests.first"
+        )
+        manager.markTabEligibleAfterCommittedNavigation(
+            tab,
+            reason: "SafariExtensionWebViewControllerWiringTests.second"
+        )
+
+        XCTAssertEqual(notifyCount, 1)
+    }
+
+    func testMarkTabEligibleAfterCommittedNavigationEnablesExtensionWebView() async throws {
+        let server = try await AutofillPagesHTTPServer.start()
+        addTeardownBlock {
+            server.stop()
+        }
+
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let browserConfiguration = BrowserConfiguration()
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile,
+            browserConfiguration: browserConfiguration
+        ).manager
+        _ = manager.requestExtensionRuntime(
+            reason: .attach,
+            allowWithoutEnabledExtensions: true
+        )
+        let expectedController = manager.ensureExtensionController(for: profile.id)
+        manager.extensionsLoaded = true
+
+        let browserManager = BrowserManager()
+        manager.attach(browserManager: browserManager)
+        browserManager.profileManager.profiles = [profile]
+
+        let pageURL = server.loginBasicURL
+        let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
+            surface: .extensionOptions
+        )
+        manager.prepareWebViewConfigurationForExtensionRuntime(
+            configuration,
+            profileId: profile.id,
+            reason: "SafariExtensionWebViewControllerWiringTests"
+        )
+
+        let tab = makeTab(profileId: profile.id, url: pageURL)
+        tab.browserManager = browserManager
+        let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
+        webView.owningTab = tab
+        tab._webView = webView
+
+        let extensionContext = try await makeLoadedExtensionContext(
+            manager: manager,
+            profile: profile
+        )
+
+        let didFinish = expectation(description: "page loaded")
+        let delegate = AutofillPagesNavigationDelegateBox {
+            didFinish.fulfill()
+        }
+        webView.navigationDelegate = delegate
+        webView.load(URLRequest(url: pageURL, cachePolicy: .reloadIgnoringLocalCacheData))
+        await fulfillment(of: [didFinish], timeout: 5)
+        webView.navigationDelegate = nil
+
+        manager.markTabEligibleAfterCommittedNavigation(
+            tab,
+            reason: "SafariExtensionWebViewControllerWiringTests"
+        )
+
+        XCTAssertIdentical(
+            webView.configuration.webExtensionController,
+            expectedController
+        )
+        XCTAssertNotNil(
+            manager.extensionWebView(for: tab, extensionContext: extensionContext)
+        )
+    }
+
     func testPrepareWebViewForExtensionRuntimeAttachesControllerOnBlankWebView() throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
@@ -358,6 +534,21 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         return directory
+    }
+
+    private final class AutofillPagesNavigationDelegateBox: NSObject, WKNavigationDelegate {
+        private let onFinish: () -> Void
+
+        init(onFinish: @escaping () -> Void) {
+            self.onFinish = onFinish
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            didFinish navigation: WKNavigation!
+        ) {
+            onFinish()
+        }
     }
 
     private func installUnpackedExtension(

@@ -5,6 +5,25 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
+final class ExtensionActionPopupUIDelegate: NSObject, WKUIDelegate {
+    private weak var manager: ExtensionManager?
+    private weak var popover: NSPopover?
+
+    init(manager: ExtensionManager, popover: NSPopover) {
+        self.manager = manager
+        self.popover = popover
+        super.init()
+    }
+
+    func webViewDidClose(_ webView: WKWebView) {
+        _ = webView
+        guard let popover, popover.isShown else { return }
+        popover.close()
+    }
+}
+
+@available(macOS 15.5, *)
+@MainActor
 final class ExtensionOptionsWindowDelegate: NSObject, NSWindowDelegate, WKUIDelegate {
     private let extensionId: String
     private weak var manager: ExtensionManager?
@@ -832,14 +851,16 @@ extension ExtensionManager: NSPopoverDelegate {
 
     func popoverDidClose(_ notification: Notification) {
         isPopupActive = false
+        activeExtensionActionPopover = nil
         if let extensionId = activePopupExtensionID {
+            SafariExtensionAutofillFillDiagnostics.setPopupActive(false, extensionId: extensionId)
+            SafariExtensionAutofillFillDiagnostics.logSnapshotIfEnabled(
+                context: "popoverDidClose"
+            )
             let profileId = browserManager?.currentProfile?.id
             SumiNativeMessagingRuntimeCounters.recordPopupClosed(extensionId: extensionId)
-            safariNativeMessagingHost.clearLaunchSessionOnExtensionContextUnload(
-                forExtensionId: extensionId,
-                profileId: profileId
-            )
-            pruneNativeMessagePortHandlerEntries(
+            extensionActionPopupUIDelegates.removeValue(forKey: extensionId)
+            scheduleOrPerformDeferredPopupContextUnload(
                 forExtensionId: extensionId,
                 profileId: profileId
             )
@@ -851,9 +872,90 @@ extension ExtensionManager: NSPopoverDelegate {
                     extensionManager: self
                 )
                 SafariExtensionSessionDiagnosticsBuilder.logIfDiagnosticsEnabled(diagnostic)
-                self.activePopupExtensionID = nil
+                if SafariExtensionAutofillFillDiagnostics.shouldDeferNativeMessagingTeardownOnPopupClose()
+                    == false
+                {
+                    self.activePopupExtensionID = nil
+                }
             }
         }
+    }
+
+    func performExtensionPopupContextUnload(
+        forExtensionId extensionId: String,
+        profileId: UUID?
+    ) {
+        safariNativeMessagingHost.clearLaunchSessionOnExtensionContextUnload(
+            forExtensionId: extensionId,
+            profileId: profileId
+        )
+        pruneNativeMessagePortHandlerEntries(
+            forExtensionId: extensionId,
+            profileId: profileId
+        )
+    }
+
+    func scheduleOrPerformDeferredPopupContextUnload(
+        forExtensionId extensionId: String,
+        profileId: UUID?
+    ) {
+        if SafariExtensionAutofillFillDiagnostics.shouldDeferNativeMessagingTeardownOnPopupClose() {
+            scheduleDeferredPopupContextUnload(
+                forExtensionId: extensionId,
+                profileId: profileId
+            )
+            return
+        }
+        SafariExtensionAutofillFillDiagnostics.endFillSession(extensionId: extensionId)
+        performExtensionPopupContextUnload(
+            forExtensionId: extensionId,
+            profileId: profileId
+        )
+        activePopupExtensionID = nil
+    }
+
+    func scheduleDeferredPopupContextUnload(
+        forExtensionId extensionId: String,
+        profileId: UUID?
+    ) {
+        cancelDeferredPopupContextUnload(forExtensionId: extensionId)
+        deferredPopupContextUnloadProfileIDs[extensionId] = profileId
+        deferredPopupContextUnloadTasks[extensionId] = Task { @MainActor [weak self] in
+            try? await Task.sleep(
+                for: SafariExtensionAutofillFillDiagnostics.deferredFillTeardownTimeout
+            )
+            guard !Task.isCancelled else { return }
+            self?.completeDeferredPopupContextUnload(
+                forExtensionId: extensionId,
+                reason: "timeout"
+            )
+        }
+    }
+
+    func completeDeferredPopupContextUnload(
+        forExtensionId extensionId: String,
+        reason: String
+    ) {
+        cancelDeferredPopupContextUnload(forExtensionId: extensionId)
+        SafariExtensionAutofillFillDiagnostics.beginIntentionalDeferredTeardown()
+        defer {
+            SafariExtensionAutofillFillDiagnostics.endIntentionalDeferredTeardown()
+        }
+        SafariExtensionAutofillFillDiagnostics.endFillSession(extensionId: extensionId)
+        let profileId = deferredPopupContextUnloadProfileIDs.removeValue(forKey: extensionId)
+        performExtensionPopupContextUnload(
+            forExtensionId: extensionId,
+            profileId: profileId
+        )
+        activePopupExtensionID = nil
+        SafariExtensionAutofillFillDiagnostics.logSnapshotIfEnabled(
+            context: "deferredPopupContextUnload:\(reason)"
+        )
+    }
+
+    func cancelDeferredPopupContextUnload(forExtensionId extensionId: String) {
+        deferredPopupContextUnloadTasks[extensionId]?.cancel()
+        deferredPopupContextUnloadTasks.removeValue(forKey: extensionId)
     }
 
     func recordExtensionActionPopupPresentation(

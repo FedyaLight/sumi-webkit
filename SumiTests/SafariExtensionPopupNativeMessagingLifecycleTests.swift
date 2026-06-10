@@ -198,12 +198,112 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
         )
         XCTAssertTrue(profilesSource.contains("nativeMessagePortHandlers[handlerID]?.disconnect()"))
         XCTAssertTrue(uiSource.contains("clearLaunchSessionOnExtensionContextUnload("))
-        let clearIndex = uiSource.range(of: "clearLaunchSessionOnExtensionContextUnload(")!.lowerBound
-        let pruneIndex = uiSource.range(of: "pruneNativeMessagePortHandlerEntries(")!.lowerBound
-        XCTAssertLessThan(clearIndex, pruneIndex)
+        XCTAssertTrue(uiSource.contains("scheduleOrPerformDeferredPopupContextUnload("))
+        XCTAssertTrue(uiSource.contains("ExtensionActionPopupUIDelegate"))
+        XCTAssertTrue(uiSource.contains("popover.close()"))
         XCTAssertTrue(uiSource.contains("SumiNativeMessagingRuntimeCounters.recordPopupClosed"))
         XCTAssertFalse(uiSource.contains("BitwardenNativeMessagingAdapter"))
         XCTAssertFalse(uiSource.contains("com.bitwarden.desktop"))
+    }
+
+    func testFillSurvivesPopupCloseWhenNativeMessagingObserved() async throws {
+        let installed = try makeInstalledExtension(
+            id: "ext-fill-survive",
+            sourceBundlePath: try makeFixtureApp(
+                appBundleID: "com.example.host",
+                appexBundleID: "com.example.host.extension"
+            )
+        )
+        let launcher = MockHostLauncher()
+        launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
+        let adapter = SumiNativeMessagingFakePublicAdapter(
+            supportedHosts: ["com.example.host"],
+            shouldLaunchOnConnect: false
+        )
+        let relay = SumiNativeMessagingRelay(
+            launcher: launcher,
+            adapterRegistry: SumiNativeMessagingAdapterRegistry(adapters: [adapter]),
+            launchPolicy: SumiCompanionAppLaunchPolicy(),
+            loopGuard: SumiNativeMessagingRelayLoopGuard(),
+            extensionsModuleEnabled: { true }
+        )
+
+        SafariExtensionAutofillFillDiagnostics.resetForTesting()
+        SafariExtensionAutofillFillDiagnostics.beginFillSession(extensionId: installed.id)
+        SafariExtensionAutofillFillDiagnostics.recordNativeMessagingActivity(
+            extensionId: installed.id
+        )
+        SafariExtensionAutofillFillDiagnostics.setPopupActive(false, extensionId: installed.id)
+
+        XCTAssertTrue(
+            SafariExtensionAutofillFillDiagnostics.shouldDeferNativeMessagingTeardownOnPopupClose()
+        )
+        XCTAssertTrue(SafariExtensionAutofillFillDiagnostics.isFillSessionActive)
+
+        let port = MockNativeMessagingPort()
+        port.applicationIdentifier = "com.example.host"
+        _ = await connectReply(relay: relay, port: port, installed: installed)
+        XCTAssertFalse(port.isDisconnected)
+
+        var teardownExtensionId: String?
+        SafariExtensionAutofillFillDiagnostics.deferredFillCompletionHandler = { extensionId in
+            teardownExtensionId = extensionId
+            SafariExtensionAutofillFillDiagnostics.endFillSession(extensionId: extensionId)
+            relay.clearLaunchSessionOnExtensionContextUnload(forExtensionId: installed.id)
+        }
+        SafariExtensionAutofillFillDiagnostics.noteNativeMessagingRelaySucceeded(
+            extensionId: installed.id
+        )
+
+        XCTAssertEqual(teardownExtensionId, installed.id)
+        XCTAssertTrue(port.isDisconnected)
+        XCTAssertFalse(SafariExtensionAutofillFillDiagnostics.isFillSessionActive)
+    }
+
+    func testRelayNotCancelledMidFillWhenTeardownDeferred() async throws {
+        let installed = try makeInstalledExtension(
+            id: "ext-mid-fill",
+            sourceBundlePath: try makeFixtureApp(
+                appBundleID: "com.example.host",
+                appexBundleID: "com.example.host.extension"
+            )
+        )
+        let launcher = MockHostLauncher()
+        launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
+        let relay = SumiNativeMessagingRelay(
+            launcher: launcher,
+            adapterRegistry: SumiNativeMessagingAdapterRegistry(
+                adapters: [SlowOneShotAdapter(sleepDuration: .milliseconds(300))]
+            ),
+            launchPolicy: SumiCompanionAppLaunchPolicy(),
+            loopGuard: SumiNativeMessagingRelayLoopGuard(),
+            extensionsModuleEnabled: { true }
+        )
+
+        SafariExtensionAutofillFillDiagnostics.resetForTesting()
+        SafariExtensionAutofillFillDiagnostics.beginFillSession(extensionId: installed.id)
+        SafariExtensionAutofillFillDiagnostics.recordNativeMessagingActivity(
+            extensionId: installed.id
+        )
+        SafariExtensionAutofillFillDiagnostics.setPopupActive(false, extensionId: installed.id)
+
+        let expectation = expectation(description: "oneShotCompleted")
+        var replyError: (any Error)?
+        relay.handleSendMessage(
+            applicationIdentifier: "com.example.host",
+            message: ["type": "fill"],
+            extensionId: installed.id,
+            installedExtensions: [installed]
+        ) { _, error in
+            replyError = error
+            expectation.fulfill()
+        }
+
+        await fulfillment(of: [expectation], timeout: 2)
+        XCTAssertNil(replyError)
+        XCTAssertTrue(
+            SafariExtensionAutofillFillDiagnostics.shouldDeferNativeMessagingTeardownOnPopupClose()
+        )
     }
 
     // MARK: - Helpers

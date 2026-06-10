@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Sumi Autofill — Basic Login</title>
+</head>
+<body>
+  <h1>Basic login</h1>
+  <form id="login" action="/login" method="post">
+    <label>
+      Username
+      <input id="username" name="username" type="text" autocomplete="username">
+    </label>
+    <label>
+      Password
+      <input id="password" name="password" type="password" autocomplete="current-password">
+    </label>
+    <button type="submit">Sign in</button>
+  </form>
+  <script src="shared/fill-probe.js"></script>
+</body>
+</html>

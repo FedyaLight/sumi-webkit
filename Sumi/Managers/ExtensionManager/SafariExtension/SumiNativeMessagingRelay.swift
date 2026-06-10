@@ -453,6 +453,9 @@ final class SumiNativeMessagingRelay {
                     }
                 } else {
                     self.loopGuard.recordSupportedAdapterLaunchAttempt(key: loopKey)
+                    SafariExtensionAutofillFillDiagnostics.noteNativeMessagingRelaySucceeded(
+                        extensionId: extensionId
+                    )
                 }
                 once.call(value, error)
             },
@@ -1217,6 +1220,13 @@ final class SumiNativeMessagingRelay {
         SafariExtensionNativeMessagingDiagnostic
     ) -> Void = { diagnostic in
         guard RuntimeDiagnostics.isVerboseEnabled else { return }
+        if diagnostic.outcome == .relayCancelled,
+           SafariExtensionAutofillFillDiagnostics.shouldRecordRelayCancellation()
+        {
+            SafariExtensionAutofillFillDiagnostics.recordNativeMessagingRelayCancelled(
+                extensionId: diagnostic.extensionId
+            )
+        }
         RuntimeDiagnostics.debug(category: "SafariNativeMessaging") {
             """
             ext=\(diagnostic.extensionId) \
