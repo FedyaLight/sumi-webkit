@@ -373,6 +373,24 @@ extension ExtensionManager {
         let profileStore = getExtensionDataStore(for: profileId)
         let profileController = extensionControllersByProfile[profileId]
             ?? ensureExtensionController(for: profileId)
+        if let extensionPageUserContentController =
+            extensionPageUserContentControllersByProfile[profileId]
+        {
+            installURLSchemeCompatibilityPreludes(
+                into: extensionPageUserContentController,
+                profileId: profileId,
+                extensionId: extensionId,
+                extensionContext: extensionContext,
+                scopes: [.extensionPage]
+            )
+            installRuntimeConnectCompatibilityPreludes(
+                into: extensionPageUserContentController,
+                profileId: profileId,
+                extensionId: extensionId,
+                extensionContext: extensionContext,
+                scopes: [.extensionPage]
+            )
+        }
 
         guard let configuration = extensionContext.webViewConfiguration else {
             let fallbackConfiguration = browserConfiguration.webViewConfiguration
@@ -696,6 +714,10 @@ extension ExtensionManager {
         backgroundWakeTasks.removeAll()
         backgroundRuntimeStateByExtensionID.removeAll()
         recentExtensionTabOpenRequests.removeAll()
+        clearPermissionsOriginsCompatibilityInstallations()
+        clearURLSchemeCompatibilityInstallations()
+        clearRuntimeConnectCompatibilityInstallations()
+        extensionPageUserContentControllersByProfile.removeAll()
         cancelNativeMessagingSessions(reason: "resetLoadedExtensionRuntimeStateForReload")
         externallyConnectablePolicies.removeAll()
         clearExternallyConnectablePendingRequests()
@@ -773,6 +795,10 @@ extension ExtensionManager {
         installedPageBridgeIDs.removeAll()
         externallyConnectablePolicies.removeAll()
         recentExtensionTabOpenRequests.removeAll()
+        clearPermissionsOriginsCompatibilityInstallations()
+        clearURLSchemeCompatibilityInstallations()
+        clearRuntimeConnectCompatibilityInstallations()
+        extensionPageUserContentControllersByProfile.removeAll()
         tabAdapters.removeAll()
         windowAdapters.removeAll()
 
@@ -851,6 +877,8 @@ extension ExtensionManager {
                 from: runtimeWebConfiguration,
                 websiteDataStore: defaultDataStore
             )
+        extensionPageUserContentControllersByProfile[profileId] =
+            extensionPageConfiguration.userContentController
         configuration.webViewConfiguration = extensionPageConfiguration
         configuration.defaultWebsiteDataStore = defaultDataStore
 

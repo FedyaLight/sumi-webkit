@@ -490,6 +490,12 @@ struct ExtensionUtils {
         if background["service_worker"] as? String != nil {
             return .serviceWorker
         }
+        if background["page"] as? String != nil {
+            return .persistentPage
+        }
+        if (background["scripts"] as? [String])?.isEmpty == false {
+            return .persistentPage
+        }
 
         return .none
     }

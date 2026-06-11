@@ -20,6 +20,9 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingAdapterTransport.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingProtocolAdapter.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiCompanionAppResolver.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionURLSchemeCompatibility.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionPermissionsOriginsCompatibility.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionRuntimeConnectCompatibility.swift",
     ]
 
     private let deletedCompatArtifacts = [
@@ -87,6 +90,100 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         XCTAssertFalse(
             managerSource.contains("SumiExternallyConnectableUserScript"),
             "Externally-connectable page bridge must not be injected into normal tabs"
+        )
+    }
+
+    func testPermissionsOriginsCompatibilityLayerIsNarrowAndExtensionScoped() throws {
+        let permissionsCompatibilitySource = try source(named: extensionManagerPaths[16])
+
+        XCTAssertTrue(
+            permissionsCompatibilitySource.contains(
+                "SafariExtensionPermissionsOriginsCompatibility"
+            )
+        )
+        XCTAssertTrue(
+            permissionsCompatibilitySource.contains(
+                "location.protocol !== \"webkit-extension:\""
+            )
+        )
+        XCTAssertTrue(
+            permissionsCompatibilitySource.contains(
+                "for (const name of [\"contains\", \"request\", \"remove\"])"
+            )
+        )
+        assertExcludes(
+            permissionsCompatibilitySource,
+            [
+                "patchManifestForWebKit",
+                "ExtensionRuntimeResources",
+                "sumi_webkit_runtime_compat",
+                "selective_content_script_guard",
+            ],
+            context: "permissions origins compatibility"
+        )
+    }
+
+    func testURLSchemeCompatibilityLayerIsNarrowAndSafariScoped() throws {
+        let urlSchemeCompatibilitySource = try source(named: extensionManagerPaths[15])
+
+        XCTAssertTrue(
+            urlSchemeCompatibilitySource.contains(
+                "SafariExtensionURLSchemeCompatibility"
+            )
+        )
+        XCTAssertTrue(
+            urlSchemeCompatibilitySource.contains("safari-web-extension://")
+        )
+        XCTAssertTrue(
+            urlSchemeCompatibilitySource.contains("runtime.getURL = wrapped")
+        )
+        XCTAssertTrue(
+            urlSchemeCompatibilitySource.contains("toInternalString")
+        )
+        assertExcludes(
+            urlSchemeCompatibilitySource,
+            [
+                "patchManifestForWebKit",
+                "ExtensionRuntimeResources",
+                "sumi_webkit_runtime_compat",
+                "selective_content_script_guard",
+            ],
+            context: "URL scheme compatibility"
+        )
+    }
+
+    func testRuntimeConnectCompatibilityLayerIsNarrowAndExtensionScoped() throws {
+        let runtimeConnectCompatibilitySource = try source(named: extensionManagerPaths[17])
+
+        XCTAssertTrue(
+            runtimeConnectCompatibilitySource.contains(
+                "SafariExtensionRuntimeConnectCompatibility"
+            )
+        )
+        XCTAssertTrue(
+            runtimeConnectCompatibilitySource.contains(
+                "__sumiRuntimeConnectCompatibility"
+            )
+        )
+        XCTAssertTrue(
+            runtimeConnectCompatibilitySource.contains(
+                "runtime.connect = wrappedConnect"
+            )
+        )
+        XCTAssertTrue(
+            runtimeConnectCompatibilitySource.contains(
+                "nativeOnConnect.addListener"
+            )
+        )
+        assertExcludes(
+            runtimeConnectCompatibilitySource,
+            [
+                "patchManifestForWebKit",
+                "ExtensionRuntimeResources",
+                "sumi_webkit_runtime_compat",
+                "selective_content_script_guard",
+            ],
+            context: "runtime connect compatibility"
         )
     }
 

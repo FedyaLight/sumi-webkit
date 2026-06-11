@@ -171,6 +171,14 @@ final class ExtensionManager: NSObject, ObservableObject {
     var tabOpenNotificationGeneration: UInt64 = 1
     var extensionContextBindingGenerationByProfile: [UUID: UInt64] = [:]
     var contentScriptContextLoadTasksByProfile: [UUID: Task<Void, Never>] = [:]
+    var permissionsOriginsCompatibilityInstallations:
+        [ObjectIdentifier: Set<String>] = [:]
+    var urlSchemeCompatibilityInstallations:
+        [ObjectIdentifier: Set<String>] = [:]
+    var runtimeConnectCompatibilityInstallations:
+        [ObjectIdentifier: Set<String>] = [:]
+    var extensionPageUserContentControllersByProfile:
+        [UUID: WKUserContentController] = [:]
 
     var currentProfileId: UUID?
     var pinnedToolbarExtensionIDsByProfile: [String: [String]] = [:]

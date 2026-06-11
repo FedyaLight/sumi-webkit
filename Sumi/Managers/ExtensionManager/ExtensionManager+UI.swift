@@ -497,6 +497,22 @@ extension ExtensionManager: NSPopoverDelegate {
         }
         configuration.websiteDataStore = getExtensionDataStore(for: resolvedProfileId)
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        installURLSchemeCompatibilityPreludes(
+            into: configuration.userContentController,
+            profileId: resolvedProfileId,
+            requireLoadedContext: true,
+            scopes: [.contentScript, .extensionPage]
+        )
+        installPermissionsOriginsCompatibilityPreludes(
+            into: configuration.userContentController,
+            profileId: resolvedProfileId
+        )
+        installRuntimeConnectCompatibilityPreludes(
+            into: configuration.userContentController,
+            profileId: resolvedProfileId,
+            requireLoadedContext: true,
+            scopes: [.contentScript, .extensionPage]
+        )
     }
 
     func setActionAnchor(for extensionId: String, anchorView: NSView) {
@@ -618,6 +634,26 @@ extension ExtensionManager: NSPopoverDelegate {
         )
 
         webView.configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        if let owningTab,
+           let profileId = resolvedProfileId(for: owningTab)
+        {
+            installURLSchemeCompatibilityPreludes(
+                into: webView.configuration.userContentController,
+                profileId: profileId,
+                requireLoadedContext: true,
+                scopes: [.contentScript, .extensionPage]
+            )
+            installPermissionsOriginsCompatibilityPreludes(
+                into: webView.configuration.userContentController,
+                profileId: profileId
+            )
+            installRuntimeConnectCompatibilityPreludes(
+                into: webView.configuration.userContentController,
+                profileId: profileId,
+                requireLoadedContext: true,
+                scopes: [.contentScript, .extensionPage]
+            )
+        }
         installExternallyConnectableNativeBridgeIfNeeded(
             into: webView.configuration.userContentController
         )

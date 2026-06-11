@@ -302,9 +302,31 @@ extension ExtensionManager {
 
         for entity in entities {
             let packageURL = URL(fileURLWithPath: entity.packagePath, isDirectory: true)
-            guard FileManager.default.fileExists(atPath: packageURL.path),
-                  let record = InstalledExtensionRecord(from: entity)
-            else {
+            guard FileManager.default.fileExists(atPath: packageURL.path) else {
+                context.delete(entity)
+                didMutatePersistence = true
+                Self.logger.error(
+                    "Dropped invalid persisted extension record for \(entity.name, privacy: .public)"
+                )
+                continue
+            }
+
+            var record = InstalledExtensionRecord(from: entity)
+            if let manifest = try? ExtensionUtils.loadJSONObject(
+                at: packageURL.appendingPathComponent("manifest.json")
+            ),
+               let refreshed = try? refreshedRecord(for: entity, manifest: manifest),
+               extensionMetadataNeedsRefresh(entity, refreshedRecord: refreshed)
+            {
+                update(entity, from: refreshed)
+                record = refreshed
+                didMutatePersistence = true
+                extensionRuntimeTrace(
+                    "Refreshed extension metadata id=\(entity.id) background=\(refreshed.backgroundModel.rawValue)"
+                )
+            }
+
+            guard let record else {
                 context.delete(entity)
                 didMutatePersistence = true
                 Self.logger.error(
@@ -340,6 +362,34 @@ extension ExtensionManager {
             "loadInstalledExtensionMetadata complete records=\(loadedRecords.count) enabled=\(enabledEntitiesToLoad.count)"
         )
         return enabledEntitiesToLoad
+    }
+
+    private func extensionMetadataNeedsRefresh(
+        _ entity: ExtensionEntity,
+        refreshedRecord: InstalledExtension
+    ) -> Bool {
+        entity.name != refreshedRecord.name
+            || entity.version != refreshedRecord.version
+            || entity.manifestVersion != refreshedRecord.manifestVersion
+            || entity.extensionDescription != refreshedRecord.description
+            || entity.packagePath != refreshedRecord.packagePath
+            || entity.iconPath != refreshedRecord.iconPath
+            || entity.sourceKindRawValue != refreshedRecord.sourceKind.rawValue
+            || entity.backgroundModelRawValue != refreshedRecord.backgroundModel.rawValue
+            || entity.incognitoModeRawValue != refreshedRecord.incognitoMode.rawValue
+            || entity.sourcePathFingerprint != refreshedRecord.sourcePathFingerprint
+            || entity.manifestRootFingerprint != refreshedRecord.manifestRootFingerprint
+            || entity.sourceBundlePath != refreshedRecord.sourceBundlePath
+            || entity.optionsPagePath != refreshedRecord.optionsPagePath
+            || entity.defaultPopupPath != refreshedRecord.defaultPopupPath
+            || entity.hasBackground != refreshedRecord.hasBackground
+            || entity.hasAction != refreshedRecord.hasAction
+            || entity.hasOptionsPage != refreshedRecord.hasOptionsPage
+            || entity.hasContentScripts != refreshedRecord.hasContentScripts
+            || entity.hasExtensionPages != refreshedRecord.hasExtensionPages
+            || entity.broadScope != refreshedRecord.activationSummary.broadScope
+            || entity.activationSummaryJSON != refreshedRecord.encodedActivationSummary
+            || entity.manifestSnapshotJSON != refreshedRecord.encodedManifestSnapshot
     }
 
     private nonisolated func cleanupOrphanedExtensionPackages(

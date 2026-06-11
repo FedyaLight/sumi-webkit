@@ -42,6 +42,7 @@ enum WebExtensionSourceKind: String, Codable, CaseIterable, Sendable {
 
 enum WebExtensionBackgroundModel: String, Codable, CaseIterable {
     case serviceWorker = "service_worker"
+    case persistentPage = "persistent_page"
     case none
 }
 

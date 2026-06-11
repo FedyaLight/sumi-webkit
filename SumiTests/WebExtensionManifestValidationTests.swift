@@ -1,3 +1,4 @@
+import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -80,6 +81,142 @@ final class WebExtensionManifestValidationTests: XCTestCase {
             WebExtensionManifestValidationPolicy.forSourceKind(.directory),
             .unpackedDirectory
         )
+    }
+
+    func testBackgroundModelDetectsManifestVersionTwoPersistentPage() {
+        XCTAssertEqual(
+            ExtensionUtils.backgroundModel(from: [
+                "background": [
+                    "page": "background.html",
+                    "persistent": true,
+                ],
+            ]),
+            .persistentPage
+        )
+    }
+
+    func testBackgroundModelDetectsManifestVersionTwoPersistentScripts() {
+        XCTAssertEqual(
+            ExtensionUtils.backgroundModel(from: [
+                "background": [
+                    "scripts": ["background.js"],
+                    "persistent": true,
+                ],
+            ]),
+            .persistentPage
+        )
+    }
+
+    func testBackgroundModelDetectsManifestVersionThreeServiceWorker() {
+        XCTAssertEqual(
+            ExtensionUtils.backgroundModel(from: [
+                "background": [
+                    "service_worker": "worker.js",
+                ],
+            ]),
+            .serviceWorker
+        )
+    }
+
+    func testBackgroundModelReturnsNoneWhenManifestHasNoBackground() {
+        XCTAssertEqual(
+            ExtensionUtils.backgroundModel(from: [:]),
+            .none
+        )
+    }
+
+    @available(macOS 15.5, *)
+    @MainActor
+    func testLoadInstalledMetadataRefreshesLegacyMV2BackgroundRecord() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let manifest: [String: Any] = [
+            "manifest_version": 2,
+            "name": "MV2 Background Page",
+            "version": "1.0",
+            "background": [
+                "page": "background.html",
+                "persistent": true,
+            ],
+            "content_scripts": [[
+                "matches": ["<all_urls>"],
+                "js": ["content.js"],
+            ]],
+        ]
+        let manifestURL = directory.appendingPathComponent("manifest.json")
+        let data = try JSONSerialization.data(
+            withJSONObject: manifest,
+            options: [.sortedKeys]
+        )
+        try data.write(to: manifestURL, options: [.atomic])
+
+        let staleRecord = InstalledExtensionRecord(
+            id: "mv2-background-page",
+            name: "MV2 Background Page",
+            version: "1.0",
+            manifestVersion: 2,
+            description: nil,
+            isEnabled: true,
+            installDate: Date(),
+            lastUpdateDate: Date(),
+            packagePath: directory.path,
+            iconPath: nil,
+            sourceKind: .safariAppExtension,
+            backgroundModel: .none,
+            incognitoMode: .spanning,
+            sourcePathFingerprint: "stale",
+            manifestRootFingerprint: "stale",
+            sourceBundlePath: "/Applications/Test.app/Contents/PlugIns/test.appex",
+            optionsPagePath: nil,
+            defaultPopupPath: nil,
+            hasBackground: false,
+            hasAction: false,
+            hasOptionsPage: false,
+            hasContentScripts: true,
+            hasExtensionPages: false,
+            activationSummary: ExtensionActivationSummary(
+                matchPatternStrings: ["<all_urls>"],
+                broadScope: true,
+                hasContentScripts: true,
+                hasAction: false,
+                hasOptionsPage: false,
+                hasExtensionPages: false
+            ),
+            manifest: manifest
+        )
+
+        let container = try ModelContainer(
+            for: SumiStartupPersistence.schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        container.mainContext.insert(ExtensionEntity(record: staleRecord))
+        try container.mainContext.save()
+
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: Profile(name: "Metadata Refresh Profile"),
+            browserConfiguration: BrowserConfiguration()
+        )
+
+        _ = manager.loadInstalledExtensionMetadata()
+
+        let refreshed = try XCTUnwrap(
+            manager.installedExtensions.first { $0.id == staleRecord.id }
+        )
+        XCTAssertEqual(refreshed.backgroundModel, .persistentPage)
+        XCTAssertTrue(refreshed.hasBackground)
+
+        let entity = try XCTUnwrap(try manager.extensionEntity(for: staleRecord.id))
+        XCTAssertEqual(entity.backgroundModelRawValue, "persistent_page")
+        XCTAssertTrue(entity.hasBackground)
     }
 
     func testInstalledExtensionMetadataRecordsManifestVersionTwo() throws {
