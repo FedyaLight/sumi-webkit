@@ -66,7 +66,7 @@ struct SumiSettingsModuleToggleDescriptor: Identifiable, Equatable {
         moduleID: .extensions,
         title: "Extensions",
         toggleTitle: "Enable Extensions",
-        detail: "When off, Sumi does not scan manifests, attach extension scripts, start native messaging, or register extension message handlers."
+        detail: "When off, this module does not use system resources."
     )
 
     static let userScripts = SumiSettingsModuleToggleDescriptor(

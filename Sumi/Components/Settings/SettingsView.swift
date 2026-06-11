@@ -611,15 +611,6 @@ private struct ExtensionCatalogRow: View {
                 Text("Version \(extensionRecord.version)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-
-                Text(extensionRecord.isEnabled ? "Enabled in Sumi’s extension runtime" : "Installed but currently disabled")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Text(extensionRecord.sourceBundlePath)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
             }
 
             Spacer()
