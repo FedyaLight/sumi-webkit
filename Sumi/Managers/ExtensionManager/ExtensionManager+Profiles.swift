@@ -383,13 +383,6 @@ extension ExtensionManager {
                 extensionContext: extensionContext,
                 scopes: [.extensionPage]
             )
-            installRuntimeConnectCompatibilityPreludes(
-                into: extensionPageUserContentController,
-                profileId: profileId,
-                extensionId: extensionId,
-                extensionContext: extensionContext,
-                scopes: [.extensionPage]
-            )
         }
 
         guard let configuration = extensionContext.webViewConfiguration else {
@@ -671,7 +664,6 @@ extension ExtensionManager {
             !$0.key.hasSuffix(":\(extensionId)")
         }
         liveExtensionContextOrder.removeAll { $0.hasSuffix(":\(extensionId)") }
-        removeExternallyConnectablePageBridge(for: extensionId)
         lastLoggedExtensionErrorFingerprints.removeValue(forKey: extensionId)
         closeOptionsWindow(for: extensionId)
         tearDownNativeMessageHandlers(for: extensionId)
@@ -716,13 +708,8 @@ extension ExtensionManager {
         recentExtensionTabOpenRequests.removeAll()
         clearPermissionsOriginsCompatibilityInstallations()
         clearURLSchemeCompatibilityInstallations()
-        clearRuntimeConnectCompatibilityInstallations()
         extensionPageUserContentControllersByProfile.removeAll()
         cancelNativeMessagingSessions(reason: "resetLoadedExtensionRuntimeStateForReload")
-        externallyConnectablePolicies.removeAll()
-        clearExternallyConnectablePendingRequests()
-        clearExternallyConnectableNativePorts()
-        installedPageBridgeIDs.removeAll()
         pruneRuntimeAdapters()
     }
 
@@ -754,7 +741,6 @@ extension ExtensionManager {
             .union(loadedExtensionManifests.keys)
             .union(optionsWindows.keys)
             .union(nativeMessagePortExtensionIDs.values)
-            .union(installedPageBridgeIDs)
             .union(extensionErrorObserverTokens.keys)
             .union(uiStateIDs)
 
@@ -778,9 +764,6 @@ extension ExtensionManager {
 
         Array(optionsWindows.keys).forEach { closeOptionsWindow(for: $0) }
         cancelNativeMessagingSessions(reason: reason)
-        clearExternallyConnectableNativePorts()
-        clearExternallyConnectablePendingRequests()
-        ecRegistry.clearAllTrackedPageURLs()
 
         extensionContextsByProfile.removeAll()
         loadedExtensionManifests.removeAll()
@@ -792,17 +775,12 @@ extension ExtensionManager {
         backgroundRuntimeStateByExtensionID.removeAll()
         runtimeMetricsByExtensionID.removeAll()
         lastLoggedExtensionErrorFingerprints.removeAll()
-        installedPageBridgeIDs.removeAll()
-        externallyConnectablePolicies.removeAll()
         recentExtensionTabOpenRequests.removeAll()
         clearPermissionsOriginsCompatibilityInstallations()
         clearURLSchemeCompatibilityInstallations()
-        clearRuntimeConnectCompatibilityInstallations()
         extensionPageUserContentControllersByProfile.removeAll()
         tabAdapters.removeAll()
         windowAdapters.removeAll()
-
-        removeManagedExternallyConnectableScriptsAndHandlers()
 
         if releaseController {
             browserConfiguration.webViewConfiguration.webExtensionController = nil
@@ -831,10 +809,6 @@ extension ExtensionManager {
             nativeMessagePortProfileIDs.removeAll()
         }
         loadedNativeMessagingRelay?.clearAllLoopGuardState()
-    }
-
-    private func removeManagedExternallyConnectableScriptsAndHandlers() {
-        installedPageBridgeIDs.removeAll()
     }
 
     private func pruneRuntimeAdapters() {

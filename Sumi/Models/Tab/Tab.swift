@@ -37,11 +37,6 @@ enum SumiWebViewShutdown {
         webView.stopLoading()
         stopNativeMedia(on: webView)
 
-        browserManager?.extensionsModule.releaseExternallyConnectableRuntimeIfLoaded(
-            for: webView,
-            reason: auxiliaryReleaseReason(for: scope)
-        )
-
         if case .normal(let tabId) = scope {
             browserManager?.userscriptsModule.cleanupWebViewIfLoaded(
                 controller: webView.configuration.userContentController,
@@ -77,16 +72,6 @@ enum SumiWebViewShutdown {
             browserManager: browserManager,
             additionalTabCleanup: additionalTabCleanup
         )
-    }
-
-    @MainActor
-    private static func auxiliaryReleaseReason(for scope: Scope) -> String {
-        switch scope {
-        case .normal:
-            return "WebView cleanup"
-        case .auxiliary(let reason):
-            return reason
-        }
     }
 
     @MainActor

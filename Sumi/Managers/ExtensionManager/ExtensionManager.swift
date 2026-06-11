@@ -18,10 +18,6 @@ final class ExtensionManager: NSObject, ObservableObject {
     static let logger = Logger.sumi(category: "Extensions")
     static let controllerIdentifierKey =
         "\(SumiAppIdentity.bundleIdentifier).WKWebExtensionController.Identifier"
-    nonisolated static let externallyConnectableNativeBridgeHandlerName =
-        "sumiExternallyConnectableRuntime"
-    nonisolated static let externallyConnectableBridgeDebugLoggingKey =
-        "debug.extensions.externallyConnectable.bridge.logging.enabled"
     nonisolated static let orphanedExtensionCleanupDefaultsKey =
         "\(SumiAppIdentity.bundleIdentifier).extensions.orphanedPackageCleanup.lastRunAt"
     nonisolated static let orphanedExtensionCleanupInterval: TimeInterval =
@@ -35,8 +31,6 @@ final class ExtensionManager: NSObject, ObservableObject {
             }
         }()
     #endif
-    nonisolated static let externallyConnectablePageBridgeMarker =
-        "SUMI_EC_PAGE_BRIDGE:"
     nonisolated static let extensionSchemes: Set<String> = [
         "webkit-extension",
         "safari-web-extension",
@@ -58,7 +52,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         case enable
         case actionPopup
         case toolbarAction
-        case externallyConnectable
         case nativeMessaging
         case reload
     }
@@ -96,7 +89,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         case enable
         case refresh
         case extensionAction
-        case externallyConnectable
         case resetReload
     }
 
@@ -135,8 +127,6 @@ final class ExtensionManager: NSObject, ObservableObject {
     var deferredPopupContextUnloadProfileIDs: [String: UUID] = [:]
     var tabAdapters: [UUID: ExtensionTabAdapter] = [:]
     var windowAdapters: [UUID: ExtensionWindowAdapter] = [:]
-    var installedPageBridgeIDs: Set<String> = []
-    var externallyConnectablePolicies: [String: ExternallyConnectablePolicy] = [:]
     var nativeMessagePortHandlers: [ObjectIdentifier: NativeMessagingHandler] = [:]
     var nativeMessagePortExtensionIDs: [ObjectIdentifier: String] = [:]
     var nativeMessagePortProfileIDs: [ObjectIdentifier: UUID] = [:]
@@ -166,7 +156,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         maxKeys: 128,
         maxDatesPerKey: 4
     )
-    let ecRegistry = ExternallyConnectablePortRegistry()
     var extensionLoadGeneration: UInt64 = 0
     var tabOpenNotificationGeneration: UInt64 = 1
     var extensionContextBindingGenerationByProfile: [UUID: UInt64] = [:]
@@ -174,8 +163,6 @@ final class ExtensionManager: NSObject, ObservableObject {
     var permissionsOriginsCompatibilityInstallations:
         [ObjectIdentifier: Set<String>] = [:]
     var urlSchemeCompatibilityInstallations:
-        [ObjectIdentifier: Set<String>] = [:]
-    var runtimeConnectCompatibilityInstallations:
         [ObjectIdentifier: Set<String>] = [:]
     var extensionPageUserContentControllersByProfile:
         [UUID: WKUserContentController] = [:]
@@ -370,21 +357,6 @@ final class ExtensionManager: NSObject, ObservableObject {
 
     func normalTabUserScripts() -> [SumiUserScript] {
         []
-    }
-
-    static var isExternallyConnectableBridgeDebugLoggingEnabled: Bool {
-        RuntimeDiagnostics.isVerboseEnabled
-            || RuntimeDiagnostics.debugDefaultBool(
-                forKey: externallyConnectableBridgeDebugLoggingKey
-            )
-    }
-
-    nonisolated static var externallyConnectableBridgeDebugLoggingLiteral: String {
-        let isEnabled = RuntimeDiagnostics.isVerboseEnabled
-            || RuntimeDiagnostics.debugDefaultBool(
-                forKey: externallyConnectableBridgeDebugLoggingKey
-            )
-        return isEnabled ? "true" : "false"
     }
 
     nonisolated static var isWebKitRuntimeTraceEnabled: Bool {

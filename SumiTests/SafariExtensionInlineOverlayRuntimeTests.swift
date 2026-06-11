@@ -84,6 +84,10 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
             result.detail.contains("safari-web-extension:"),
             result.detail
         )
+        XCTAssertTrue(
+            result.detail.contains("\"runtimeConnectWrapped\":false"),
+            result.detail
+        )
     }
 
     private func waitForInlineOverlayResult(
@@ -261,13 +265,13 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
               runtimeURL: api.runtime.getURL('overlay/menu-list.html'),
               runtimeURLProtocol: new URL(api.runtime.getURL('overlay/menu-list.html')).protocol,
               probeState,
-              connectWrapped:
-                api.runtime.connect &&
-                api.runtime.connect.__sumiRuntimeConnectCompatibilityWrapped === true,
-              onConnectWrapped:
+              connectNative:
+                typeof api.runtime.connect === 'function' &&
+                api.runtime.connect.__sumiRuntimeConnectCompatibilityWrapped !== true,
+              onConnectNative:
                 api.runtime.onConnect &&
                 api.runtime.onConnect.addListener &&
-                api.runtime.onConnect.addListener.__sumiRuntimeConnectCompatibilityWrapped === true
+                api.runtime.onConnect.addListener.__sumiRuntimeConnectCompatibilityWrapped !== true
             });
             return true;
           });
@@ -297,6 +301,11 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
             if (typeof runtime.connect !== 'function') {
               throw new Error('runtime.connect unavailable in content script');
             }
+            const runtimeConnectWrapped = () =>
+              Boolean(
+                runtime.connect &&
+                runtime.connect.__sumiRuntimeConnectCompatibilityWrapped === true
+              );
             if (typeof runtime.sendMessage === 'function') {
               runtime.sendMessage(
                 { command: 'sumi-inline-background-ping' },
@@ -316,8 +325,6 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
             const extensionOrigin = runtime.getURL('').replace(/\\/$/, '');
             const outerFrameURL = runtime.getURL('overlay/menu.html');
             const iframe = document.createElement('iframe');
-            document.documentElement.dataset.sumiInlineRuntimeConnectWrapped =
-              String(runtime.connect.__sumiRuntimeConnectCompatibilityWrapped === true);
             document.documentElement.dataset.sumiInlineRuntimeURL = outerFrameURL;
             document.documentElement.dataset.sumiInlineRuntimeURLProtocol =
               new URL(outerFrameURL).protocol;
@@ -362,7 +369,8 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
                 runtimeURL: outerFrameURL,
                 runtimeURLProtocol: new URL(outerFrameURL).protocol,
                 iframeSrc: iframe.src,
-                extensionOrigin
+                extensionOrigin,
+                runtimeConnectWrapped: runtimeConnectWrapped()
               });
             });
 
@@ -416,8 +424,7 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
                 const finishTimeout = () => {
                   setStatus('error:timeout', {
                     current,
-                    connectWrapped:
-                      document.documentElement.dataset.sumiInlineRuntimeConnectWrapped || null,
+                    runtimeConnectWrapped: runtimeConnectWrapped(),
                     backgroundMessage:
                       document.documentElement.dataset.sumiInlineBackgroundMessage || null
                   });

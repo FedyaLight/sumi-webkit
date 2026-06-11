@@ -538,12 +538,6 @@ extension ExtensionManager {
                     into: webView.configuration.userContentController,
                     profileId: profileId
                 )
-                installRuntimeConnectCompatibilityPreludes(
-                    into: webView.configuration.userContentController,
-                    profileId: profileId,
-                    requireLoadedContext: true,
-                    scopes: [.contentScript, .extensionPage]
-                )
                 return true
             }
             return false
@@ -562,12 +556,6 @@ extension ExtensionManager {
         installPermissionsOriginsCompatibilityPreludes(
             into: webView.configuration.userContentController,
             profileId: profileId
-        )
-        installRuntimeConnectCompatibilityPreludes(
-            into: webView.configuration.userContentController,
-            profileId: profileId,
-            requireLoadedContext: true,
-            scopes: [.contentScript, .extensionPage]
         )
         return true
     }

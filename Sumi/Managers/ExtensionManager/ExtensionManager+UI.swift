@@ -507,12 +507,6 @@ extension ExtensionManager: NSPopoverDelegate {
             into: configuration.userContentController,
             profileId: resolvedProfileId
         )
-        installRuntimeConnectCompatibilityPreludes(
-            into: configuration.userContentController,
-            profileId: resolvedProfileId,
-            requireLoadedContext: true,
-            scopes: [.contentScript, .extensionPage]
-        )
     }
 
     func setActionAnchor(for extensionId: String, anchorView: NSView) {
@@ -647,20 +641,7 @@ extension ExtensionManager: NSPopoverDelegate {
                 into: webView.configuration.userContentController,
                 profileId: profileId
             )
-            installRuntimeConnectCompatibilityPreludes(
-                into: webView.configuration.userContentController,
-                profileId: profileId,
-                requireLoadedContext: true,
-                scopes: [.contentScript, .extensionPage]
-            )
         }
-        installExternallyConnectableNativeBridgeIfNeeded(
-            into: webView.configuration.userContentController
-        )
-        updateExternallyConnectableNavigationLifecycle(
-            for: webView,
-            currentURL: currentURL
-        )
     }
 
     func openExtensionWindowUsingTabURLs(

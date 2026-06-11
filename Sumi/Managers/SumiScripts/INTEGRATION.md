@@ -51,7 +51,6 @@ Each script or feature owns its own `SumiUserScriptMessageBroker` context:
 | `sumiGM_<script.uuid>` | Installed userscript GM bridge. |
 | `sumiLinkInteraction_<tab.uuid>` | Link hover, command hover, and modified-click handling. |
 | `sumiIdentity_<tab.uuid>` | Page identity request bridge. |
-| `sumiExternallyConnectableRuntime` | WebExtension externally-connectable page bridge. |
 
 Payload parsing stays local to the subfeature. Malformed payloads return no side effects, unknown methods are ignored by the broker, and handler lifetime is tied to the Sumi normal-tab user-content controller.
 

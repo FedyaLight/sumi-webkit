@@ -1,6 +1,6 @@
 # Sumi Safari Web Extension Compatibility
 
-Last updated: 2026-06-10 (Cycle 11 clean Safari `.appex` import — no compat JS / manifest patching)
+Last updated: 2026-06-11 (Cycle 13 native WebKit cleanup: runtime.connect wrapper and stale externally-connectable bridge deleted)
 
 Sumi targets native Safari Web Extension support through public WebKit APIs
 (`WKWebExtension`, `WKWebExtensionContext`, `WKWebExtensionController`,
@@ -10,6 +10,113 @@ controlled Chrome compatibility popups are out of scope and must not return.
 Deployment target remains **macOS 15.7** until a specific API is confirmed to
 require macOS 27. Local SDK (Xcode macOS SDK) exposes `WKWebExtension` from
 **macOS 15.4+** including `extensionWithAppExtensionBundle:completionHandler:`.
+
+## Cycle 13 Stabilization Audit (2026-06-11)
+
+Evidence base:
+
+- Local SDK headers: `/Library/Developer/CommandLineTools/SDKs/MacOSX27.0.sdk/System/Library/Frameworks/WebKit.framework/Headers`
+  confirm `WKWebExtension(appExtensionBundle:)`, `manifestVersion`,
+  `WKWebExtensionController.Configuration.configurationWithIdentifier`,
+  `defaultWebsiteDataStore`, `WKWebExtensionControllerDelegate`
+  `sendMessage` / `connectUsing`, `WKWebExtension.MessagePort`, and
+  `WKWebExtensionPermissionNativeMessaging`.
+- Official Apple surfaces used as the contract:
+  [`WKWebExtension`](https://developer.apple.com/documentation/webkit/wkwebextension),
+  [`WKWebExtensionControllerDelegate`](https://developer.apple.com/documentation/webkit/wkwebextensioncontrollerdelegate),
+  [action popup presentation](https://developer.apple.com/documentation/webkit/wkwebextensioncontrollerdelegate/webextensioncontroller%28_%3Apresentactionpopup%3Afor%3Acompletionhandler%3A%29),
+  [`WKWebExtensionContext.webViewConfiguration`](https://developer.apple.com/documentation/webkit/wkwebextensioncontext/webviewconfiguration),
+  [Safari web extensions](https://developer.apple.com/documentation/safariservices/safari-web-extensions),
+  [Safari native app messaging](https://developer.apple.com/documentation/safariservices/messaging-between-the-app-and-javascript-in-a-safari-web-extension),
+  and [Safari optimization / MV3 guidance](https://developer.apple.com/documentation/safariservices/optimizing-your-web-extension-for-safari).
+- Public architecture references only:
+  [Bitwarden browser native-messaging `desktop_proxy` documentation](https://contributing.bitwarden.com/getting-started/clients/browser/biometric/)
+  and [DuckDuckGo `apple-browsers`](https://github.com/duckduckgo/apple-browsers);
+  no code copied and no product-specific runtime branch added.
+
+### Already Correct
+
+- Safari import stays native: `.app` / `.appex` discovery is read-only and runtime
+  load prefers `WKWebExtension(appExtensionBundle:)`; persisted copied resources
+  remain fallback-only and manifests are not patched.
+- MV2 and MV3 remain separated by validation/background-model policy. Safari
+  imports may load MV2 through WebKit while unpacked directory imports keep the
+  stricter modern policy.
+- Profile isolation is native WebKit: each Sumi profile owns a distinct
+  `WKWebExtensionController`, `WKWebExtensionContext`, context identity, and
+  `WKWebsiteDataStore`.
+- Action popup, options page, extension-created tab/window, and normal-tab
+  lifecycle continue through `WKWebExtensionControllerDelegate`; private tabs are
+  blocked from popup/runtime eligibility.
+- Native messaging uses WebKit delegate entry points and
+  `WKWebExtension.MessagePort`; Sumi diagnostics log buckets and identifiers, not
+  credentials, cookies, form values, tokens, or native-message payload bodies.
+- Content scripts, CSS, and web-accessible resources are manifest/WebKit driven.
+  The local inline-overlay fixture proves content-script `runtime.connect` to
+  background `runtime.onConnect` and extension-page iframe resize without a Sumi
+  `runtime.connect` wrapper.
+
+### Fixed
+
+- Removed the bounded timer retry in `SafariExtensionURLSchemeCompatibility` and
+  replaced it with generic `browser` / `chrome` namespace assignment hooks. This
+  preserves Safari-style `safari-web-extension:` public URLs while avoiding a
+  user-script hot-path timer.
+- Updated the inline overlay runtime fixture to assert
+  `"runtimeConnectWrapped":false` on the successful resize path.
+- Updated auxiliary-surface and modular-performance guards so they no longer keep
+  stale externally-connectable handler names as expected filter inputs.
+
+### Deleted
+
+- `SafariExtensionRuntimeConnectCompatibility.swift`, including the private-SPI
+  JavaScript `runtime.connect` / `runtime.onConnect` wrapper.
+- Dormant externally-connectable bridge code:
+  `ExtensionManager+ExternallyConnectableBridgeProtocol.swift`,
+  `ExtensionManager+ExternallyConnectableLifecycle.swift`,
+  `ExtensionManager+ExternallyConnectableModels.swift`,
+  `ExtensionManager+ExternallyConnectableNativeMessaging.swift`,
+  `ExtensionManagerSupport+BrokerSubfeatures.swift`, and
+  `ExternallyConnectablePortRegistry.swift`.
+- No-op install, teardown, state, and diagnostic references for the deleted bridge,
+  including `sumiExternallyConnectableRuntime`, `SUMI_EC_PAGE_BRIDGE`, and the
+  stale userscript hot-path exception.
+
+### Tests Corrected
+
+- `SafariExtensionCleanImportSourceGuardTests` now guards absence of the deleted
+  runtime-connect wrapper and externally-connectable bridge artifacts.
+- `SafariExtensionInlineOverlayRuntimeTests` now proves native WebKit
+  `runtime.connect` / `runtime.onConnect` behavior instead of checking for a Sumi
+  wrapper marker.
+- `BrowserConfigurationNormalTabTests` and `SumiPerformanceModularRegressionTests`
+  no longer model deleted bridge markers as auxiliary-filter inputs.
+- `scripts/check_userscript_hot_paths.sh` no longer carries an exception for the
+  deleted externally-connectable native-messaging file.
+
+### Suspicious Code Intentionally Kept
+
+- `SafariExtensionURLSchemeCompatibility` stays because Sumi uses WebKit's
+  internal `webkit-extension:` base URL while Safari Web Extension code expects
+  `safari-web-extension:` URLs at API and resource boundaries. The layer is
+  generic, source-guarded, and not a Chrome MV3 shim.
+- `SafariExtensionPermissionsOriginsCompatibility` stays because WebKit behavior
+  around extension-origin permission checks with explicit ports is still covered
+  by generic tests. It is scoped to extension worlds and does not patch
+  manifests.
+- `BitwardenNativeMessagingAdapter` stays as a native messaging protocol adapter,
+  not generic runtime branching. Generic relay code remains source-guarded
+  against Bitwarden-specific branches except adapter registration/resolution.
+
+### Proven Remaining Gaps
+
+- Raindrop, Bitwarden, 1Password, and Proton Pass manual E2E checks were not
+  re-run in this audit. Automated tests preserve the covered behavior, but the
+  final product claims still require the manual checklist below.
+- 1Password and Proton Pass desktop IPC remains adapter-unavailable /
+  protocol-unknown by design until a documented generic adapter exists.
+- Safari/WebKit docs do not expose a Chrome-style host-manifest IPC surface.
+  Native messaging remains routed through Sumi's WebKit delegate implementation.
 
 ## Phase 0 Code Audit (2026-06-10)
 
@@ -33,7 +140,7 @@ require macOS 27. Local SDK (Xcode macOS SDK) exposes `WKWebExtension` from
 | Manifest disk patching | `ExtensionManager+ManifestPatching` (historical) | **Removed in Cycle 11** — no `patchManifestForWebKit`, no `sumi_webkit_runtime_compat*` writes |
 | Compat JS bundle | `ExtensionRuntimeResources/*.js` | **Deleted in Cycle 11** — `webkit_runtime_compat*`, `externally_connectable_*`, `selective_content_script_guard` |
 | Page-world EC bridge injection | `SumiExternallyConnectableUserScript` | **Removed in Cycle 11** — normal tabs no longer inject compat bridge scripts |
-| Externally-connectable native relay (legacy) | `ExtensionManager+ExternallyConnectableNativeMessaging` | Retained for teardown only; no Safari import/runtime dependency |
+| Externally-connectable native relay (legacy) | `ExtensionManager+ExternallyConnectableNativeMessaging` | **Deleted in Cycle 13** — no active registration or runtime dependency |
 | Architecture doc wording | `docs/architecture.md` | Still says "Chrome MV3" — update in cleanup phase |
 | Stale test guards | `SumiPerformanceModularRegressionTests`, `NativeMessagingProcessSessionTests` | Assert old `ChromeMV3*` symbols absent (good) |
 
@@ -326,7 +433,7 @@ IPC primitives (no documented XPC service for arbitrary companion apps). The del
 | `sendMessage(toApplicationWithIdentifier:…)` | Resolves host, wakes via `NSWorkspace`, returns `companionAppProtocolUnknown` (code 3) |
 | `connectUsing(_:for:…)` | Wakes host, completes port; first extension message → `companionAppProtocolUnknown` disconnect |
 | Host bundle resolution | Alias table: `com.8bit.bitwarden` → `com.bitwarden.desktop`, `me.proton.pass.nm` → `me.proton.pass.catalyst` |
-| `ExtensionManager+ExternallyConnectableNativeMessaging` | Unchanged — page bridge only |
+| Externally-connectable bridge | Deleted; native messaging enters only through WebKit delegate send/connect callbacks |
 
 **Reclassification:** `hostApplicationMessageRelay` was removed as a `platformBlocked` entry in
 Cycle 8. Absence of Chrome-style relay is expected on Safari. PM unlock pending
@@ -503,6 +610,20 @@ cookie domain counts only, popup lifecycle phase).
 - **Settings UI:** installed extensions listed above Safari import candidates; toggle + trash.
 - **Tests:** `SafariExtensionRuntimeDataStoreTests`, `SafariExtensionImportAutoEnableTests`,
   `SafariExtensionSessionDiagnosticsTests`.
+
+### Cycle 13 (2026-06-11)
+
+- **Deleted runtime-connect wrapper:** `SafariExtensionRuntimeConnectCompatibility.swift`
+  removed after `SafariExtensionInlineOverlayRuntimeTests` passed with native
+  WebKit `runtime.connect` / `runtime.onConnect`.
+- **Deleted stale externally-connectable bridge:** bridge protocol, lifecycle,
+  models, native-messaging bridge, port registry, broker subfeature, no-op
+  install/teardown state, docs, and hot-path exception removed.
+- **URL-scheme compatibility narrowed:** retry timers replaced with namespace
+  assignment hooks; `scripts/check_userscript_hot_paths.sh` passes.
+- **Tests:** clean-import guard, inline-overlay runtime, auxiliary config,
+  performance modular guards, and targeted Safari/WebKit extension suite pass.
+- **Build:** `xcodebuild build -project Sumi.xcodeproj -scheme Sumi -configuration Debug -destination 'platform=macOS'`.
 
 ### Cycle 12 (2026-06-10)
 

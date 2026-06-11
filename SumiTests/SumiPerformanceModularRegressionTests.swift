@@ -466,8 +466,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             "sumiIdentity_",
             "SUMI_USER_SCRIPT_RUNTIME",
             "sumiGM_",
-            "SUMI_EC_PAGE_BRIDGE:",
-            "sumiExternallyConnectableRuntime",
         ] {
             sourceConfiguration.userContentController.addUserScript(
                 WKUserScript(
@@ -948,8 +946,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             "SUMI_USER_SCRIPT_RUNTIME",
             "data-sumi-userscript",
             "sumiGM_",
-            "SUMI_EC_PAGE_BRIDGE:",
-            "sumiExternallyConnectableRuntime",
             "SumiAdBlocking",
             "sumiAdBlocking",
             "adBlocking",

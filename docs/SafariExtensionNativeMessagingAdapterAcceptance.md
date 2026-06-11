@@ -1,6 +1,6 @@
 # Safari Extension Native Messaging Adapter — Manual Acceptance
 
-Last updated: 2026-06-10 (Bitwarden adapter registered; routing diagnostics cycle)
+Last updated: 2026-06-11 (native WebKit cleanup; stale externally-connectable bridge removed)
 
 Use with Extensions module enabled. Automated guards live in
 `SumiNativeMessagingAdapterRegressionGuardTests` and
@@ -8,11 +8,33 @@ Use with Extensions module enabled. Automated guards live in
 **Extensions → Run Safari Extension Native Messaging Probe** or
 **Run Safari Extension Dev Diagnostics Report** (`adapterCompatibility` section).
 
+Public references: Apple
+[Safari native app messaging](https://developer.apple.com/documentation/safariservices/messaging-between-the-app-and-javascript-in-a-safari-web-extension),
+WebKit `WKWebExtensionControllerDelegate` send/connect callbacks, Bitwarden
+[desktop_proxy native messaging documentation](https://contributing.bitwarden.com/getting-started/clients/browser/biometric/),
+and DuckDuckGo [`apple-browsers`](https://github.com/duckduckgo/apple-browsers).
+
 ## Preconditions
 
 - macOS 15.7+ with target containing apps installed under `/Applications` when testing PMs.
 - No compat JS shims or manifest patching (verified by source guards).
+- No `SafariExtensionRuntimeConnectCompatibility` wrapper or externally-connectable page bridge.
+  `runtime.connect` / `runtime.onConnect` must be native WebKit behavior, verified by
+  `SafariExtensionInlineOverlayRuntimeTests`.
 - `SumiNativeMessagingAdapterRegistry.shared` registers `BitwardenNativeMessagingAdapter` on macOS 15.5+.
+
+## Current Implementation Boundary
+
+- Native messaging enters Sumi through `WKWebExtensionControllerDelegate`
+  `sendMessage` and `connectUsing` callbacks, backed by `WKWebExtension.MessagePort`.
+- The deleted externally-connectable bridge is not part of native messaging,
+  popup lifecycle, or manual password-manager verification.
+- Bitwarden has a protocol adapter because its public desktop proxy protocol is
+  documented and test-covered. 1Password and Proton Pass intentionally remain
+  adapter-unavailable / protocol-unknown until a documented generic adapter exists.
+- Diagnostics may record identifiers, routing buckets, launch/suppression flags,
+  retry buckets, and session state. They must not record credentials, tokens,
+  cookies, form values, or native-message payload bodies.
 
 ## Per-target manual checklist
 
@@ -30,11 +52,30 @@ Use with Extensions module enabled. Automated guards live in
 ### Bitwarden-specific manual steps (adapter registered)
 
 1. Import + enable Bitwarden Safari extension; confirm `adapterCompatibility` row shows `adapterSelected=true`, `adapterIdentifier=com.bitwarden.desktop.native-messaging`, `protocolStatus=adapterReady`.
-2. With Bitwarden Desktop installed, trigger unlock from the extension popup on `SumiTests/Fixtures/Extensions/login-form.html`.
+2. Start `scripts/serve_autofill_fixtures.sh` and open `http://127.0.0.1:8765/login-basic.html`; with Bitwarden Desktop installed, trigger unlock and inline suggestion UI from the extension popup/page.
 3. In verbose logs (`SafariNativeMessaging`), confirm routing fields on the first detailed line: `adapterSelected`, `adapterId`, `req`, `resolved`, `launched`, `suppressed`, `protocol`, `handshake`, `failure`, `retry`, `state`.
-4. Repeat unlock quickly; confirm Sumi emits one detailed line then `coalesced ext=… repeatCount=… bucket=…` lines — WebKit extension console may still show one NSError per callback (not coalesced by Sumi).
+4. Repeat unlock quickly; confirm Sumi emits one detailed line then `coalesced ext=… repeatCount=… bucket=…` lines; WebKit extension console may still show one NSError per callback (not coalesced by Sumi).
 5. Record `realTransportAttempted`, `desktopResolved`, `desktopRunning`, `biometricsStatusProbe` from runtime probe after connect attempt (static probe leaves `realTransportAttempted=false`).
-6. Do **not** claim autofill or full Desktop IPC support without observing successful port handshake and biometrics/status replies.
+6. Do **not** claim autofill, inline suggestion UI, or full Desktop IPC support without observing successful port handshake and biometrics/status replies.
+
+### Raindrop manual steps
+
+1. Import + enable the Raindrop Safari extension from the containing app.
+2. Open a normal, non-private tab on an `https://` page; confirm the URL-hub
+   action appears and the popup loads non-empty.
+3. Log in using Raindrop's normal web flow, save the current page, close and
+   reopen the popup, and confirm the saved/logged-in state is profile-scoped.
+
+### 1Password / Proton Pass manual readiness steps
+
+1. Import + enable the Safari extension from the containing app.
+2. Open `http://127.0.0.1:8765/login-basic.html` from
+   `scripts/serve_autofill_fixtures.sh`; confirm popup/login/autofill UI readiness.
+3. Trigger native unlock once; expected Sumi result without a dedicated adapter is
+   `adapterUnavailable` or `companionAppProtocolUnknown`, with repeated launch
+   attempts suppressed.
+4. Record only diagnostic buckets and visible UI observations. Do not record
+   passwords, tokens, cookies, form values, or native-message payloads.
 
 ## Native messaging adapter diagnostics (runtime)
 

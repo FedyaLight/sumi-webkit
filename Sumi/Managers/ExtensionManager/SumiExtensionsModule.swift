@@ -167,16 +167,6 @@ final class SumiExtensionsModule {
         )
     }
 
-    func releaseExternallyConnectableRuntimeIfLoaded(
-        for webView: WKWebView,
-        reason: String
-    ) {
-        cachedManager?.releaseExternallyConnectableRuntime(
-            for: webView,
-            reason: reason
-        )
-    }
-
     func notifyWindowOpenedIfLoaded(_ windowState: BrowserWindowState) {
         managerIfLoadedAndEnabled()?.notifyWindowOpened(windowState)
     }

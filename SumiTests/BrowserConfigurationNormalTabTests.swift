@@ -264,8 +264,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertTrue(sources.contains("sumiLinkInteraction_\(tab.id.uuidString)"))
         XCTAssertTrue(sources.contains("sumiIdentity_\(tab.id.uuidString)"))
         XCTAssertTrue(sources.contains("sumiTabSuspension_\(tab.id.uuidString)"))
-        XCTAssertFalse(sources.contains("SUMI_EC_PAGE_BRIDGE:"))
-        XCTAssertFalse(sources.contains("sumiExternallyConnectableRuntime"))
         XCTAssertNil(webView.configuration.webExtensionController)
         XCTAssertEqual(probe.managerCount, 0)
         XCTAssertFalse(module.hasLoadedRuntime)
@@ -826,8 +824,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             XCTAssertFalse(sources.contains("data-sumi-userscript"))
             XCTAssertFalse(sources.contains("sumiLinkInteraction_"))
             XCTAssertFalse(sources.contains("sumiIdentity_"))
-            XCTAssertFalse(sources.contains("SUMI_EC_PAGE_BRIDGE:"))
-            XCTAssertFalse(sources.contains("sumiExternallyConnectableRuntime"))
         }
     }
 
@@ -844,9 +840,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             "__sumiTabSuspension",
             SumiTransientChromeInteractionShieldUserScript.sourceMarker,
             "SUMI_USER_SCRIPT_RUNTIME",
-            "SUMI_EC_PAGE_BRIDGE:",
             UserScriptInjector.userScriptMarker,
-            "sumiExternallyConnectableRuntime",
             "sumiFavicons",
             "sumiGM_",
             "sumiIdentity_",
@@ -880,9 +874,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             "__sumiTabSuspension",
             SumiTransientChromeInteractionShieldUserScript.sourceMarker,
             "SUMI_USER_SCRIPT_RUNTIME",
-            "SUMI_EC_PAGE_BRIDGE:",
             UserScriptInjector.userScriptMarker,
-            "sumiExternallyConnectableRuntime",
             "sumiFavicons",
             "sumiGM_",
             "sumiIdentity_",

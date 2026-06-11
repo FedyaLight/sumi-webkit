@@ -679,16 +679,66 @@ enum SafariExtensionURLSchemeCompatibility {
             installResourceBoundaryTranslations();
           };
 
-          install();
-          let attempts = 0;
-          const retry = () => {
-            attempts += 1;
-            install();
-            if (attempts < 20) {
-              setTimeout(retry, attempts < 4 ? 0 : 25);
+          const installNamespaceHook = (namespaceName) => {
+            const descriptor = Object.getOwnPropertyDescriptor(globalThis, namespaceName);
+            if (descriptor && descriptor.configurable === false) {
+              wrapGetURL(globalThis[namespaceName]);
+              return;
+            }
+            if (descriptor &&
+                descriptor.get &&
+                descriptor.get.__sumiURLSchemeCompatibilityWrapped === true) {
+              wrapGetURL(globalThis[namespaceName]);
+              return;
+            }
+
+            const getter = descriptor && descriptor.get;
+            const setter = descriptor && descriptor.set;
+            const isWritableDataDescriptor =
+              !descriptor ||
+              (
+                Object.prototype.hasOwnProperty.call(descriptor, "value") &&
+                descriptor.writable !== false
+              );
+            let storedValue = getter ? undefined : globalThis[namespaceName];
+            wrapGetURL(getter ? getter.call(globalThis) : storedValue);
+
+            if (!setter && !isWritableDataDescriptor) {
+              return;
+            }
+
+            const wrappedGetter = function() {
+              return getter ? getter.call(this) : storedValue;
+            };
+            Object.defineProperty(wrappedGetter, "__sumiURLSchemeCompatibilityWrapped", {
+              value: true,
+              configurable: false,
+              enumerable: false,
+              writable: false
+            });
+
+            try {
+              Object.defineProperty(globalThis, namespaceName, {
+                configurable: true,
+                enumerable: descriptor ? descriptor.enumerable : true,
+                get: wrappedGetter,
+                set(nextValue) {
+                  if (setter) {
+                    setter.call(this, nextValue);
+                    wrapGetURL(getter ? getter.call(this) : nextValue);
+                  } else {
+                    storedValue = nextValue;
+                    wrapGetURL(storedValue);
+                  }
+                }
+              });
+            } catch (_) {
             }
           };
-          setTimeout(retry, 0);
+
+          install();
+          installNamespaceHook("browser");
+          installNamespaceHook("chrome");
         })();
         """
     }

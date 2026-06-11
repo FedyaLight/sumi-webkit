@@ -22,7 +22,6 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiCompanionAppResolver.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionURLSchemeCompatibility.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionPermissionsOriginsCompatibility.swift",
-        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionRuntimeConnectCompatibility.swift",
     ]
 
     private let deletedCompatArtifacts = [
@@ -39,6 +38,14 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         "ExtensionRuntimeBundledScript",
         "ExtensionManager+ExternallyConnectableScripts",
         "SumiExternallyConnectableUserScript",
+        "SafariExtensionRuntimeConnectCompatibility",
+        "ExternallyConnectablePortRegistry",
+        "ExtensionManager+ExternallyConnectableNativeMessaging",
+        "sumiExternallyConnectableRuntime",
+        "SUMI_EC_PAGE_BRIDGE",
+        "__sumiRuntimeConnectCompatibility",
+        "runtime.connect = wrappedConnect",
+        "nativeOnConnect.addListener",
         "patchManifestForWebKit",
         "manifestPatchCache",
     ]
@@ -152,38 +159,16 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         )
     }
 
-    func testRuntimeConnectCompatibilityLayerIsNarrowAndExtensionScoped() throws {
-        let runtimeConnectCompatibilitySource = try source(named: extensionManagerPaths[17])
-
-        XCTAssertTrue(
-            runtimeConnectCompatibilitySource.contains(
-                "SafariExtensionRuntimeConnectCompatibility"
-            )
+    func testRuntimeConnectCompatibilityLayerWasDeleted() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let deletedRuntimeConnectShim = repoRoot.appendingPathComponent(
+            "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionRuntimeConnectCompatibility.swift"
         )
-        XCTAssertTrue(
-            runtimeConnectCompatibilitySource.contains(
-                "__sumiRuntimeConnectCompatibility"
-            )
-        )
-        XCTAssertTrue(
-            runtimeConnectCompatibilitySource.contains(
-                "runtime.connect = wrappedConnect"
-            )
-        )
-        XCTAssertTrue(
-            runtimeConnectCompatibilitySource.contains(
-                "nativeOnConnect.addListener"
-            )
-        )
-        assertExcludes(
-            runtimeConnectCompatibilitySource,
-            [
-                "patchManifestForWebKit",
-                "ExtensionRuntimeResources",
-                "sumi_webkit_runtime_compat",
-                "selective_content_script_guard",
-            ],
-            context: "runtime connect compatibility"
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: deletedRuntimeConnectShim.path),
+            "runtime.connect/onConnect must use native WebKit behavior unless a proven WebKit gap reappears"
         )
     }
 
