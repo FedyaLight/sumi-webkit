@@ -147,6 +147,10 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         XCTAssertTrue(
             urlSchemeCompatibilitySource.contains("toInternalString")
         )
+        XCTAssertTrue(
+            urlSchemeCompatibilitySource.contains("Reflect.get(target, property, target)"),
+            "Wrapped iframe WindowProxy access must preserve native DOM accessor receivers"
+        )
         assertExcludes(
             urlSchemeCompatibilitySource,
             [
@@ -182,6 +186,24 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
                 "pageWorldExternallyConnectableBridgeScript",
             ],
             context: "extension popup/action UI"
+        )
+    }
+
+    func testActionPopupDelegateDoesNotRetargetWebKitOwnedPopupConfiguration() throws {
+        let delegateSource = try source(named: extensionManagerPaths[7])
+        XCTAssertTrue(
+            delegateSource.contains("action.popupPopover")
+                && delegateSource.contains("action.popupWebView"),
+            "Action popup presentation should use WebKit's native popup popover/web view"
+        )
+        assertExcludes(
+            delegateSource,
+            [
+                "popupWebView.configuration.webExtensionController =",
+                "popupWebView.configuration.websiteDataStore =",
+                "popupWebView.configuration.defaultWebpagePreferences",
+            ],
+            context: "WebKit-owned action popup web view"
         )
     }
 

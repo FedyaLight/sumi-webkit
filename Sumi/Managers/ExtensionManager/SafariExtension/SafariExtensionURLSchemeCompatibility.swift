@@ -262,15 +262,15 @@ enum SafariExtensionURLSchemeCompatibility {
                 if (property === "postMessage") {
                   return function() {
                     const args = translatePostMessageArguments(arguments);
-                    const postMessage = Reflect.get(target, "postMessage", receiver);
+                    const postMessage = Reflect.get(target, "postMessage", target);
                     return postMessage.apply(target, args);
                   };
                 }
-                const value = Reflect.get(target, property, receiver);
+                const value = Reflect.get(target, property, target);
                 return typeof value === "function" ? value.bind(target) : value;
               },
               set(target, property, value, receiver) {
-                return Reflect.set(target, property, value, receiver);
+                return Reflect.set(target, property, value, target);
               }
             });
 

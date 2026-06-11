@@ -252,15 +252,11 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             if RuntimeDiagnostics.isDeveloperInspectionEnabled {
                 popupWebView.isInspectable = true
             }
-            if let profileId = self.profileId(for: extensionContext),
-               let controller = self.extensionControllersByProfile[profileId]
-            {
-                if popupWebView.configuration.webExtensionController == nil {
-                    popupWebView.configuration.webExtensionController = controller
-                }
-                popupWebView.configuration.websiteDataStore = self.getExtensionDataStore(for: profileId)
-                popupWebView.configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-            }
+            // WebKit creates and preloads this web view with the extension
+            // context configuration before this delegate method is called.
+            // Retargeting its configuration here is too late to repair origin
+            // or resource loading, and can invalidate extension-owned popup
+            // pages that rely on nested extension resources.
             let popupUIDelegate = ExtensionActionPopupUIDelegate(
                 manager: self,
                 popover: popover
